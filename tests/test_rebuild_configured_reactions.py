@@ -1,0 +1,205 @@
+"""Tests for HeimaEngine._rebuild_configured_reactions()."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_engine(options: dict | None = None) -> HeimaEngine:
+    hass = MagicMock()
+    hass.states.get.return_value = None
+    entry = MagicMock()
+    entry.options = options or {}
+    entry.entry_id = "test_entry"
+
+    engine = HeimaEngine.__new__(HeimaEngine)
+    engine._hass = hass
+    engine._entry = entry
+    engine._reactions = []
+    engine._muted_reactions = set()
+    engine._configured_reaction_ids = set()
+    return engine
+
+
+def _presence_cfg(
+    weekday: int = 0,
+    median_arrival_min: int = 480,
+    **kwargs,
+) -> dict:
+    return {
+        "reaction_class": "PresencePatternReaction",
+        "weekday": weekday,
+        "median_arrival_min": median_arrival_min,
+        "window_half_min": kwargs.get("window_half_min", 15),
+        "pre_condition_min": kwargs.get("pre_condition_min", 20),
+        "min_arrivals": kwargs.get("min_arrivals", 5),
+        "steps": kwargs.get("steps", []),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_no_configured_entries_noop():
+    engine = _make_engine()
+    engine._rebuild_configured_reactions()
+    assert engine._reactions == []
+    assert engine._configured_reaction_ids == set()
+
+
+def test_presence_reaction_built_and_registered():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "proposal-abc": _presence_cfg(weekday=1, median_arrival_min=480),
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    r = engine._reactions[0]
+    assert isinstance(r, PresencePatternReaction)
+    assert r.reaction_id == "proposal-abc"
+    assert "proposal-abc" in engine._configured_reaction_ids
+
+
+def test_reaction_pre_seeded_with_synthetic_arrivals():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "p1": _presence_cfg(weekday=2, median_arrival_min=540, min_arrivals=5),
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+
+    r = engine._reactions[0]
+    # Should have min_arrivals synthetic records for weekday 2 at minute 540
+    arrivals = r.arrivals_for_weekday(2)
+    assert len(arrivals) >= 5
+    assert all(a == 540 for a in arrivals)
+
+
+def test_unknown_reaction_class_skipped(caplog):
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "p1": {"reaction_class": "UnknownReaction", "weekday": 0},
+            }
+        }
+    })
+    import logging
+    with caplog.at_level(logging.DEBUG, logger="custom_components.heima.runtime.engine"):
+        engine._rebuild_configured_reactions()
+
+    assert engine._reactions == []
+    assert engine._configured_reaction_ids == set()
+
+
+def test_malformed_config_skipped(caplog):
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "bad": {
+                    "reaction_class": "PresencePatternReaction",
+                    # missing weekday and median_arrival_min
+                },
+            }
+        }
+    })
+    import logging
+    with caplog.at_level(logging.WARNING, logger="custom_components.heima.runtime.engine"):
+        engine._rebuild_configured_reactions()
+
+    assert engine._reactions == []
+    assert "bad" not in engine._configured_reaction_ids
+
+
+def test_rebuild_replaces_previous_configured_reactions():
+    """Calling rebuild twice should not accumulate duplicates."""
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+    assert len(engine._reactions) == 1
+
+    engine._rebuild_configured_reactions()
+    assert len(engine._reactions) == 1  # not 2
+
+
+def test_non_configured_reactions_preserved_on_rebuild():
+    """Code-registered reactions must survive rebuild."""
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+            }
+        }
+    })
+    # Manually register a non-configured reaction
+    manual = PresencePatternReaction(steps=[], reaction_id="manual_react")
+    engine._reactions.append(manual)
+
+    engine._rebuild_configured_reactions()
+
+    ids = {r.reaction_id for r in engine._reactions}
+    assert "manual_react" in ids
+    assert "p1" in ids
+
+
+def test_multiple_weekday_proposals_all_registered():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                f"p{d}": _presence_cfg(weekday=d, median_arrival_min=480 + d * 10)
+                for d in range(3)
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+    assert len(engine._reactions) == 3
+    assert len(engine._configured_reaction_ids) == 3
+
+
+def test_rebuild_clears_removed_proposals():
+    """If a proposal is removed from options, its reaction should be removed."""
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+                "p2": _presence_cfg(weekday=1, median_arrival_min=500),
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+    assert len(engine._reactions) == 2
+
+    # Remove p2 from options
+    engine._entry.options = {
+        "reactions": {
+            "configured": {
+                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+            }
+        }
+    }
+    engine._rebuild_configured_reactions()
+    assert len(engine._reactions) == 1
+    assert engine._reactions[0].reaction_id == "p1"

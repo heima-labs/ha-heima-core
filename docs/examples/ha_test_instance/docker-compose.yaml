@@ -1,0 +1,35 @@
+services:
+  homeassistant-test:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant-test
+    restart: unless-stopped
+    ports:
+      - "8823:8123"
+    environment:
+      - TZ=Europe/Rome
+    volumes:
+      - ./docker/ha_config:/config
+      - ../../../custom_components:/config/custom_components:ro
+    networks:
+      - heima-test-net
+    depends_on:
+      - mosquitto-test
+
+  mosquitto-test:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto-test
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001" #default mqtt port for websockets
+    volumes:
+      - ./docker/mosquitto/config:/mosquitto/config:rw
+      - ./docker/mosquitto/data:/mosquitto/data:rw
+      - ./docker/mosquitto/log:/mosquitto/log:rw
+    networks:
+      - heima-test-net
+
+networks:
+  heima-test-net:
+    name: heima-test-net
+ 

@@ -1,0 +1,14 @@
+default_config:
+
+homeassistant:
+  packages: !include_dir_named packages
+
+lovelace:
+  resource_mode: yaml
+  dashboards:
+    heima-test-lab:
+      mode: yaml
+      title: Heima Test Lab
+      icon: mdi:test-tube
+      show_in_sidebar: true
+      filename: dashboards/heima_test_lab_dashboard.yaml

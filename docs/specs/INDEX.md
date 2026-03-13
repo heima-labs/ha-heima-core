@@ -1,0 +1,48 @@
+# Heima — Specifications Index
+## Canonical Specs Structure
+
+**Last verified against code:** 2026-03-11 (`main`)
+
+This folder is organized by maturity and scope:
+
+- `core/` → implemented contracts used by runtime and UI
+- `domains/` → per-domain specs
+- `learning/` → learning/inference pipeline specs
+- `rfc/` → future architecture and historical baseline specs
+
+## Core
+
+- `core/core_product_spec.md` — current product semantics (consolidated)
+- `core/options_flow_spec.md` — configuration and options flow
+- `core/events_and_notifications_spec.md` — event model + routing model (consolidated)
+- `core/runtime_scheduler_spec.md` — runtime timer scheduler
+- `core/house_state_override_spec.md` — `heima.set_mode` semantics
+- `core/reactive_behavior_spec.md` — behavior/reaction runtime
+
+## Domains
+
+- `domains/heating_spec.md` — heating domain (implemented/partial)
+- `domains/watering_spec.md` — watering domain (planned)
+
+## Learning
+
+- `learning/learning_system_spec.md` — event store, analyzers, proposals
+- `learning/inference_engine_spec.md` — inference v2 draft
+
+## RFC / Historical
+
+- `rfc/policy_plugin_framework_spec.md`
+- `rfc/extension_strategy_solution_a.md`
+- `rfc/constraints_dependencies_spec.md`
+- `rfc/domain_framework_spec.md`
+- `rfc/input_normalization_layer_spec.md`
+- `rfc/mapping_model_spec.md`
+- `rfc/event_catalog_spec.md`
+- `rfc/security_mismatch_generalization_spec.md`
+- `rfc/notification_recipients_spec.md`
+- `rfc/heima_spec_v1.md`
+- `rfc/heima_spec_v1_1_behavior_framework.md`
+
+## Compatibility Notes
+
+Legacy root-level spec filenames are kept as thin redirect stubs for compatibility.

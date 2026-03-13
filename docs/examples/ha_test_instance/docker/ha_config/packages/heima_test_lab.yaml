@@ -1,0 +1,405 @@
+# Heima test lab package for a dedicated Home Assistant test instance.
+# Copy this file to /config/packages/heima_test_lab.yaml
+
+input_boolean:
+  test_heima_vacation_mode:
+    name: "Test Heima Vacation Mode"
+  test_heima_guest_mode:
+    name: "Test Heima Guest Mode"
+  test_heima_sleep_mode:
+    name: "Test Heima Sleep Mode"
+  test_heima_relax_mode:
+    name: "Test Heima Relax Mode"
+  test_heima_work_mode:
+    name: "Test Heima Work Mode"
+  test_heima_room_studio_motion_raw:
+    name: "Test Heima Studio Motion Raw"
+  test_heima_room_living_motion_raw:
+    name: "Test Heima Living Motion Raw"
+  test_heima_anonymous_presence_raw:
+    name: "Test Heima Anonymous Presence Raw"
+  test_heima_heater_relay_raw:
+    name: "Test Heima Heater Relay Raw"
+
+input_number:
+  test_heima_people_score:
+    name: "Test Heima People Score"
+    min: 0
+    max: 1
+    step: 0.05
+    mode: slider
+    unit_of_measurement: "score"
+  test_heima_outdoor_temp:
+    name: "Test Heima Outdoor Temp"
+    min: -20
+    max: 45
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 8
+  test_heima_room_temp:
+    name: "Test Heima Room Temp"
+    min: 5
+    max: 35
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 19
+  test_heima_vacation_min_temp:
+    name: "Test Heima Vacation Min Temp"
+    min: 12
+    max: 21
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 16.5
+  test_heima_vacation_comfort_temp:
+    name: "Test Heima Vacation Comfort Temp"
+    min: 16
+    max: 24
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 19.5
+
+input_datetime:
+  test_heima_vacation_start:
+    name: "Test Heima Vacation Start"
+    has_date: true
+    has_time: true
+  test_heima_vacation_end:
+    name: "Test Heima Vacation End"
+    has_date: true
+    has_time: true
+
+alarm_control_panel:
+  - platform: manual
+    name: "test_heima_alarm"
+    code: "1234"
+    arming_time: 0
+    delay_time: 0
+    trigger_time: 0
+    disarmed:
+      trigger_time: 0
+    armed_home:
+      arming_time: 0
+      delay_time: 0
+    armed_away:
+      arming_time: 0
+      delay_time: 0
+
+template:
+  - binary_sensor:
+      - name: "test_heima_sleep_window"
+        unique_id: "test_heima_sleep_window"
+        icon: mdi:sleep
+        state: "{{ is_state('input_boolean.test_heima_sleep_mode', 'on') }}"
+      - name: "test_heima_relax_mode"
+        unique_id: "test_heima_relax_mode"
+        icon: mdi:sofa
+        state: "{{ is_state('input_boolean.test_heima_relax_mode', 'on') }}"
+      - name: "test_heima_work_window"
+        unique_id: "test_heima_work_window"
+        icon: mdi:briefcase-clock
+        state: "{{ is_state('input_boolean.test_heima_work_mode', 'on') }}"
+      - name: "test_heima_room_studio_motion"
+        unique_id: "test_heima_room_studio_motion"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_room_studio_motion_raw', 'on') }}"
+      - name: "test_heima_room_living_motion"
+        unique_id: "test_heima_room_living_motion"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_room_living_motion_raw', 'on') }}"
+      - name: "test_heima_anonymous_presence"
+        unique_id: "test_heima_anonymous_presence"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_anonymous_presence_raw', 'on') }}"
+    sensor:
+      - name: "test_heima_people_score"
+        unique_id: "test_heima_people_score"
+        unit_of_measurement: "score"
+        state: "{{ states('input_number.test_heima_people_score') }}"
+      - name: "test_heima_outdoor_temp"
+        unique_id: "test_heima_outdoor_temp"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_outdoor_temp') }}"
+      - name: "test_heima_room_temp"
+        unique_id: "test_heima_room_temp"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_room_temp') }}"
+    switch:
+      - name: "test_heima_heater_relay"
+        unique_id: "test_heima_heater_relay"
+        icon: mdi:radiator
+        state: "{{ is_state('input_boolean.test_heima_heater_relay_raw', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_heater_relay_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_heater_relay_raw
+
+  - trigger:
+      - platform: state
+        entity_id:
+          - input_datetime.test_heima_vacation_start
+          - input_datetime.test_heima_vacation_end
+      - platform: time_pattern
+        minutes: "/5"
+    sensor:
+      - name: "test_heima_vacation_total_hours"
+        unique_id: "test_heima_vacation_total_hours"
+        unit_of_measurement: "h"
+        icon: mdi:timeline-clock
+        state: >-
+          {% set s = states('input_datetime.test_heima_vacation_start') %}
+          {% set e = states('input_datetime.test_heima_vacation_end') %}
+          {% if s in ['unknown', 'unavailable', 'none'] or e in ['unknown', 'unavailable', 'none'] %}
+            0
+          {% else %}
+            {% set sd = as_datetime(s) %}
+            {% set ed = as_datetime(e) %}
+            {% if sd is none or ed is none %}
+              0
+            {% else %}
+              {{ ((as_timestamp(ed) - as_timestamp(sd)) / 3600) | round(2) }}
+            {% endif %}
+          {% endif %}
+      - name: "test_heima_vacation_hours_from_start"
+        unique_id: "test_heima_vacation_hours_from_start"
+        unit_of_measurement: "h"
+        icon: mdi:clock-start
+        state: >-
+          {% set s = states('input_datetime.test_heima_vacation_start') %}
+          {% if s in ['unknown', 'unavailable', 'none'] %}
+            0
+          {% else %}
+            {% set sd = as_datetime(s) %}
+            {% if sd is none %}
+              0
+            {% else %}
+              {{ ((as_timestamp(now()) - as_timestamp(sd)) / 3600) | round(2) }}
+            {% endif %}
+          {% endif %}
+      - name: "test_heima_vacation_hours_to_end"
+        unique_id: "test_heima_vacation_hours_to_end"
+        unit_of_measurement: "h"
+        icon: mdi:clock-end
+        state: >-
+          {% set e = states('input_datetime.test_heima_vacation_end') %}
+          {% if e in ['unknown', 'unavailable', 'none'] %}
+            0
+          {% else %}
+            {% set ed = as_datetime(e) %}
+            {% if ed is none %}
+              0
+            {% else %}
+              {{ ((as_timestamp(ed) - as_timestamp(now())) / 3600) | round(2) }}
+            {% endif %}
+          {% endif %}
+    binary_sensor:
+      - name: "test_heima_vacation_is_long"
+        unique_id: "test_heima_vacation_is_long"
+        icon: mdi:timer-sand-complete
+        state: "{{ states('sensor.test_heima_vacation_total_hours') | float(0) >= 24 }}"
+
+mqtt:
+  binary_sensor:
+    - name: "test_heima_mqtt_motion"
+      unique_id: "test_heima_mqtt_motion"
+      state_topic: "heima/test/lab/motion"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: occupancy
+  sensor:
+    - name: "test_heima_mqtt_presence_score"
+      unique_id: "test_heima_mqtt_presence_score"
+      state_topic: "heima/test/lab/presence_score"
+      unit_of_measurement: "score"
+    - name: "test_heima_mqtt_external_temp"
+      unique_id: "test_heima_mqtt_external_temp"
+      state_topic: "heima/test/lab/external_temp"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+climate:
+  - platform: generic_thermostat
+    name: "test_heima_thermostat"
+    heater: switch.test_heima_heater_relay
+    target_sensor: sensor.test_heima_room_temp
+    precision: 0.1
+    min_temp: 10
+    max_temp: 28
+    target_temp: 19.5
+    cold_tolerance: 0.2
+    hot_tolerance: 0.2
+    min_cycle_duration:
+      minutes: 1
+    initial_hvac_mode: "heat"
+
+automation:
+  - alias: "Test Heima Thermal Plant Simulation"
+    id: test_heima_thermal_plant_simulation
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/1"
+    variables:
+      room_temp: "{{ states('input_number.test_heima_room_temp') | float(19) }}"
+      outdoor_temp: "{{ states('input_number.test_heima_outdoor_temp') | float(8) }}"
+      heater_on: "{{ is_state('switch.test_heima_heater_relay', 'on') }}"
+      passive_drift: "{{ (outdoor_temp - room_temp) * 0.03 }}"
+      heating_gain: "{{ 0.25 if heater_on else 0 }}"
+      next_temp: "{{ (room_temp + passive_drift + heating_gain) | round(2) }}"
+      clamped_temp: "{{ [35, [5, next_temp] | max] | min }}"
+    action:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_room_temp
+        data:
+          value: "{{ clamped_temp }}"
+
+script:
+  test_heima_reset:
+    alias: "Test Heima Reset"
+    icon: mdi:restore
+    sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id:
+            - input_boolean.test_heima_vacation_mode
+            - input_boolean.test_heima_guest_mode
+            - input_boolean.test_heima_sleep_mode
+            - input_boolean.test_heima_relax_mode
+            - input_boolean.test_heima_work_mode
+            - input_boolean.test_heima_room_studio_motion_raw
+            - input_boolean.test_heima_room_living_motion_raw
+            - input_boolean.test_heima_anonymous_presence_raw
+            - input_boolean.test_heima_heater_relay_raw
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_people_score
+        data:
+          value: 0
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_outdoor_temp
+        data:
+          value: 8
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_room_temp
+        data:
+          value: 19
+      - action: alarm_control_panel.alarm_disarm
+        target:
+          entity_id: alarm_control_panel.test_heima_alarm
+        data:
+          code: "1234"
+        continue_on_error: true
+      - if:
+          - condition: template
+            value_template: "{{ has_service('mqtt', 'publish') }}"
+        then:
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/motion
+              payload: "OFF"
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/presence_score
+              payload: "0.0"
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/external_temp
+              payload: "8.0"
+
+  test_heima_set_vacation_curve_short:
+    alias: "Test Heima Set Vacation Curve Short"
+    icon: mdi:chart-bell-curve
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.test_heima_vacation_mode
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.test_heima_vacation_start
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.test_heima_vacation_end
+        data:
+          datetime: "{{ (now() + timedelta(hours=36)).strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  test_heima_mqtt_publish_demo:
+    alias: "Test Heima MQTT Publish Demo"
+    icon: mdi:wifi
+    sequence:
+      - if:
+          - condition: template
+            value_template: "{{ has_service('mqtt', 'publish') }}"
+        then:
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/motion
+              payload: "ON"
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/presence_score
+              payload: "0.92"
+          - action: mqtt.publish
+            data:
+              topic: heima/test/lab/external_temp
+              payload: "2.3"
+
+  test_heima_set_cold_house:
+    alias: "Test Heima Set Cold House"
+    icon: mdi:snowflake-thermometer
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_room_temp
+        data:
+          value: 15.5
+
+  test_heima_alarm_arm_away:
+    alias: "Test Heima Alarm Arm Away"
+    icon: mdi:shield-lock
+    sequence:
+      - action: alarm_control_panel.alarm_arm_away
+        target:
+          entity_id: alarm_control_panel.test_heima_alarm
+        data:
+          code: "1234"
+
+  test_heima_alarm_arm_home:
+    alias: "Test Heima Alarm Arm Home"
+    icon: mdi:shield-home
+    sequence:
+      - action: alarm_control_panel.alarm_arm_home
+        target:
+          entity_id: alarm_control_panel.test_heima_alarm
+        data:
+          code: "1234"
+
+  test_heima_alarm_disarm:
+    alias: "Test Heima Alarm Disarm"
+    icon: mdi:shield-off
+    sequence:
+      - action: alarm_control_panel.alarm_disarm
+        target:
+          entity_id: alarm_control_panel.test_heima_alarm
+        data:
+          code: "1234"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_outdoor_temp
+        data:
+          value: 1.0

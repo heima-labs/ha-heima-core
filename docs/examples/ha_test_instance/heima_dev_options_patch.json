@@ -1,0 +1,13 @@
+{
+  "heating": {
+    "outdoor_temperature_entity": "sensor.test_heima_outdoor_temp"
+  },
+  "notifications": {
+    "routes": [
+      "persistent_notification"
+    ],
+    "route_targets": [],
+    "recipients": {},
+    "recipient_groups": {}
+  }
+}

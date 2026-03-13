@@ -1,0 +1,315 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Heima",
+        "description": "Set up Heima (initial). Most configuration is done in Options.",
+        "data": {
+          "engine_enabled": "Enable engine"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Heima Configuration",
+        "menu_options": {
+          "general": "General",
+          "people_menu": "People",
+          "rooms_menu": "Rooms",
+          "lighting_rooms_menu": "Lighting",
+          "heating": "Heating",
+          "security": "Security",
+          "notifications": "Notifications",
+          "reactions": "Reactions",
+          "proposals": "Review proposals",
+          "save": "Save and close"
+        }
+      },
+      "general": {
+        "title": "General",
+        "data": {
+          "engine_enabled": "Enable engine",
+          "timezone": "Timezone",
+          "language": "Language",
+          "lighting_apply_mode": "Lighting apply mode",
+          "vacation_mode_entity": "Vacation mode entity",
+          "guest_mode_entity": "Guest mode entity",
+          "sleep_window_entity": "Sleep window entity",
+          "relax_mode_entity": "Relax mode entity",
+          "work_window_entity": "Work window entity"
+        }
+      },
+      "people_menu": {
+        "title": "People",
+        "menu_options": {
+          "people_add": "Add person",
+          "people_edit": "Edit person",
+          "people_remove": "Remove person",
+          "people_anonymous": "Anonymous presence",
+          "people_save": "Save and close",
+          "people_next": "Next"
+        }
+      },
+      "people_add": {
+        "title": "Add Person",
+        "data": {
+          "slug": "Slug",
+          "display_name": "Display name",
+          "presence_method": "Presence method",
+          "person_entity": "Person entity",
+          "sources": "Sources",
+          "required": "Required sources",
+          "arrive_hold_s": "Arrive hold (s)",
+          "leave_hold_s": "Leave hold (s)",
+          "enable_override": "Enable override"
+        }
+      },
+      "people_edit": {
+        "title": "Edit Person",
+        "data": {
+          "person": "Person"
+        }
+      },
+      "people_edit_form": {
+        "title": "Edit Person",
+        "data": {
+          "slug": "Slug",
+          "display_name": "Display name",
+          "presence_method": "Presence method",
+          "person_entity": "Person entity",
+          "sources": "Sources",
+          "required": "Required sources",
+          "arrive_hold_s": "Arrive hold (s)",
+          "leave_hold_s": "Leave hold (s)",
+          "enable_override": "Enable override"
+        }
+      },
+      "people_remove": {
+        "title": "Remove Person",
+        "data": {
+          "person": "Person"
+        }
+      },
+      "people_anonymous": {
+        "title": "Anonymous Presence",
+        "data": {
+          "enabled": "Enable anonymous presence",
+          "sources": "Sources",
+          "required": "Required sources",
+          "anonymous_count_weight": "Count weight",
+          "arrive_hold_s": "Arrive hold (s)",
+          "leave_hold_s": "Leave hold (s)"
+        }
+      },
+      "rooms_menu": {
+        "title": "Rooms",
+        "menu_options": {
+          "rooms_add": "Add room",
+          "rooms_edit": "Edit room",
+          "rooms_remove": "Remove room",
+          "rooms_import_areas": "Import HA areas",
+          "rooms_save": "Save and close",
+          "rooms_next": "Next"
+        }
+      },
+      "rooms_add": {
+        "title": "Add Room",
+        "data": {
+          "room_id": "Room id",
+          "display_name": "Display name",
+          "area_id": "HA area",
+          "sources": "Sources",
+          "logic": "Logic",
+          "on_dwell_s": "On dwell (s)",
+          "off_dwell_s": "Off dwell (s)",
+          "max_on_s": "Max on (s)"
+        }
+      },
+      "rooms_edit": {
+        "title": "Edit Room",
+        "data": {
+          "room": "Room"
+        }
+      },
+      "rooms_edit_form": {
+        "title": "Edit Room",
+        "data": {
+          "room_id": "Room id",
+          "display_name": "Display name",
+          "area_id": "HA area",
+          "sources": "Sources",
+          "logic": "Logic",
+          "on_dwell_s": "On dwell (s)",
+          "off_dwell_s": "Off dwell (s)",
+          "max_on_s": "Max on (s)"
+        }
+      },
+      "rooms_remove": {
+        "title": "Remove Room",
+        "data": {
+          "room": "Room"
+        }
+      },
+      "lighting_rooms_menu": {
+        "title": "Lighting Rooms",
+        "menu_options": {
+          "lighting_rooms_edit": "Edit room scenes",
+          "lighting_rooms_save": "Save and close",
+          "lighting_rooms_next": "Next"
+        }
+      },
+      "lighting_rooms_edit": {
+        "title": "Select Room",
+        "data": {
+          "room": "Room"
+        }
+      },
+      "lighting_rooms_edit_form": {
+        "title": "Room Scenes",
+        "data": {
+          "room_id": "Room id",
+          "scene_evening": "Evening scene",
+          "scene_relax": "Relax scene",
+          "scene_night": "Night scene",
+          "scene_off": "Off scene",
+          "enable_manual_hold": "Enable manual hold"
+        }
+      },
+      "lighting_zones_menu": {
+        "title": "Lighting Zones",
+        "menu_options": {
+          "lighting_zones_add": "Add zone",
+          "lighting_zones_edit": "Edit zone",
+          "lighting_zones_remove": "Remove zone",
+          "lighting_zones_save": "Save and close",
+          "lighting_zones_next": "Next"
+        }
+      },
+      "lighting_zones_add": {
+        "title": "Add Lighting Zone",
+        "data": {
+          "zone_id": "Zone id",
+          "display_name": "Display name",
+          "rooms": "Rooms"
+        }
+      },
+      "lighting_zones_edit": {
+        "title": "Edit Lighting Zone",
+        "data": {
+          "zone": "Zone"
+        }
+      },
+      "lighting_zones_edit_form": {
+        "title": "Edit Lighting Zone",
+        "data": {
+          "zone_id": "Zone id",
+          "display_name": "Display name",
+          "rooms": "Rooms"
+        }
+      },
+      "lighting_zones_remove": {
+        "title": "Remove Lighting Zone",
+        "data": {
+          "zone": "Zone"
+        }
+      },
+      "heating": {
+        "title": "Heating",
+        "data": {
+          "climate_entity": "Climate entity",
+          "apply_mode": "Apply mode",
+          "temperature_step": "Temperature step",
+          "manual_override_guard": "Block on manual override",
+          "outdoor_temperature_entity": "Outdoor temperature entity",
+          "vacation_hours_from_start_entity": "Vacation hours from start entity",
+          "vacation_hours_to_end_entity": "Vacation hours to end entity",
+          "vacation_total_hours_entity": "Vacation total hours entity",
+          "vacation_is_long_entity": "Vacation is long entity",
+          "context_entities": "Environmental context entities"
+        }
+      },
+      "security": {
+        "title": "Security",
+        "data": {
+          "enabled": "Enable security checks",
+          "security_state_entity": "Security state entity",
+          "armed_away_value": "Armed away value",
+          "armed_home_value": "Armed home value"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "data": {
+          "routes": "Legacy routes (deprecated)",
+          "recipients": "Recipient aliases (object mapping: alias -> [notify services])",
+          "recipient_groups": "Recipient groups (object mapping: group -> [aliases])",
+          "route_targets": "Default notification targets (aliases/groups)",
+          "enabled_event_categories": "Enabled event categories",
+          "dedup_window_s": "Dedup window (s)",
+          "rate_limit_per_key_s": "Rate limit per key (s)",
+          "occupancy_mismatch_policy": "Occupancy mismatch policy",
+          "occupancy_mismatch_min_derived_rooms": "Min derived rooms for occupancy mismatch",
+          "occupancy_mismatch_persist_s": "Occupancy mismatch persistence (s)",
+          "security_mismatch_policy": "Security mismatch policy",
+          "security_mismatch_persist_s": "Security mismatch persistence (s)",
+          "security_mismatch_event_mode": "Security mismatch event mode"
+        }
+      },
+      "reactions": {
+        "title": "Reactions",
+        "data": {
+          "muted_reactions": "Muted reactions"
+        },
+        "data_description": {
+          "muted_reactions": "Select reactions to silence. Muted reactions are skipped entirely until unmuted. State is persisted across restarts."
+        }
+      },
+      "proposals": {
+        "title": "Review Proposals",
+        "description": "Heima detected recurring patterns. Select proposals to accept or reject. Accepted proposals become configured reactions.",
+        "data": {
+          "proposals_accept": "Accept proposals",
+          "proposals_reject": "Reject proposals"
+        }
+      },
+      "heating_branches_menu": {
+        "title": "Heating Override Branches",
+        "menu_options": {
+          "heating_branches_edit": "Edit branch",
+          "heating_branches_save": "Done"
+        }
+      },
+      "heating_branches_edit": {
+        "title": "Select House State",
+        "data": {
+          "house_state": "House state"
+        }
+      },
+      "heating_branch_edit_form": {
+        "title": "Edit Heating Branch",
+        "data": {
+          "house_state": "House state",
+          "branch": "Branch",
+          "target_temperature": "Target temperature",
+          "vacation_ramp_down_h": "Vacation ramp-down hours",
+          "vacation_ramp_up_h": "Vacation ramp-up hours",
+          "vacation_min_temp": "Vacation minimum temperature",
+          "vacation_comfort_temp": "Vacation return preheat temperature",
+          "vacation_min_total_hours_for_ramp": "Vacation minimum total hours for ramp"
+        }
+      }
+    },
+    "error": {
+      "required": "Required",
+      "duplicate": "Already exists",
+      "invalid_required": "Required count must be less than or equal to sources",
+      "reserved_prefix": "Value cannot start with 'heima_'",
+      "invalid_time_zone": "Invalid timezone",
+      "invalid_slug": "Invalid slug",
+      "invalid_number": "Enter a valid positive number",
+      "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+
+# Local dev artifacts — keep untracked
+*.png
+*.zip
+config_entry-*.json
+heima_specs_index.md
+HA-COMMUNITY-POST.txt
+
+# Claude Code
+.claude/settings.json
+
+# Docker HA test instance runtime files
+docs/examples/ha_test_instance/docker/ha_config/.HA_VERSION
+docs/examples/ha_test_instance/docker/mosquitto/config/pwfile
+docs/examples/ha_test_instance/docker/mosquitto/data/
