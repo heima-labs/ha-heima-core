@@ -1,0 +1,7 @@
+# Example base config for a dedicated Heima test instance.
+# Merge this into your real /config/configuration.yaml.
+
+default_config:
+
+homeassistant:
+  packages: !include_dir_named packages

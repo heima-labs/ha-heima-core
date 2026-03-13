@@ -1,0 +1,10 @@
+# HA runtime state — do not commit
+.cache/
+.storage/
+.ha_run.lock
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.log.*
+home-assistant_v2*
