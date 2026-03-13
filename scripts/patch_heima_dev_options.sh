@@ -9,6 +9,11 @@ set -euo pipefail
 # Default container:
 #   homeassistant-dev
 
+# Load local env overrides if present (not committed)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+[[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
+
 REMOTE_HOST="${REMOTE_HOST:-user@ha-host}"
 REMOTE_BASE="${REMOTE_BASE:-HA/HA-dev}"
 CONTAINER_NAME="${CONTAINER_NAME:-homeassistant-dev}"

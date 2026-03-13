@@ -6,6 +6,11 @@ set -euo pipefail
 # 2) optionally patch HA-dev Heima options
 # 3) run Python live smoke tests
 
+# Load local env overrides if present (not committed)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+[[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
+
 DEPLOY_TARGET="dev"
 DEPLOY_MODE="tar"
 SKIP_DEPLOY=false
