@@ -21,7 +21,6 @@ This folder contains deploy/patch tooling and live E2E checks for Heima.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
 - Live orchestration:
   - `check_all_live.sh`: dynamically discovers and runs all tests in `live_tests/` alphabetically.
-  - `test_heima_live.sh`: compatibility wrapper (delegates to `live_tests/000_live_smoke.py`).
   - `test_heima_live_runner.sh`: deploy + patch + smoke orchestrator.
   - `test_heima_learning_live_runner.sh`: baseline reset + learning test.
 
