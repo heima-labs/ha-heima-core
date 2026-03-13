@@ -12,9 +12,14 @@ set -euo pipefail
 # into:
 #   <target>/custom_components/heima
 
+# Load local env overrides if present (not committed)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+[[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
+
 REMOTE_HOST="${REMOTE_HOST:-user@ha-host}"
-REMOTE_PROD_BASE="HA"
-REMOTE_DEV_BASE="HA/HA-dev/config"
+REMOTE_PROD_BASE="${REMOTE_PROD_BASE:-HA}"
+REMOTE_DEV_BASE="${REMOTE_DEV_BASE:-HA/HA-dev/config}"
 SOURCE_DIR="custom_components/heima/"
 DEV_CONTAINER_NAME="${DEV_CONTAINER_NAME:-homeassistant-dev}"
 

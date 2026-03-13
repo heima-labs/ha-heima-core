@@ -16,6 +16,10 @@ HA-COMMUNITY-POST.txt
 # Claude Code
 .claude/settings.json
 
+# Local env config (credentials, host, paths)
+scripts/.env
+.venv/
+
 # Docker HA test instance runtime files
 docs/examples/ha_test_instance/docker/ha_config/.HA_VERSION
 docs/examples/ha_test_instance/docker/mosquitto/config/pwfile
