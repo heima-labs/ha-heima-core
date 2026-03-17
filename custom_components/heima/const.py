@@ -27,6 +27,17 @@ OPT_HEATING = "heating"
 OPT_SECURITY = "security"
 OPT_NOTIFICATIONS = "notifications"
 OPT_REACTIONS = "reactions"
+OPT_CALENDAR = "calendar"
+
+DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 7
+DEFAULT_CALENDAR_CACHE_TTL_HOURS = 2
+DEFAULT_CALENDAR_KEYWORDS: dict[str, list[str]] = {
+    "vacation": ["vacanza", "holiday", "ferie", "viaggio", "vacation"],
+    "wfh": ["wfh", "smart working", "lavoro da casa", "remote"],
+    "office": ["ufficio", "office", "in sede"],
+    "visitor": ["ospiti", "visitor", "amici", "guests"],
+}
+DEFAULT_CALENDAR_CATEGORY_PRIORITY: list[str] = ["vacation", "office", "wfh", "visitor"]
 
 HOUSE_SIGNAL_NAMES = [
     "vacation_mode",
