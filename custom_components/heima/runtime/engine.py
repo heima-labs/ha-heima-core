@@ -999,6 +999,7 @@ class HeimaEngine:
                     for step in self._apply_plan.steps
                 ],
             },
+            "calendar": self._calendar_domain.diagnostics(),
             "lighting": self._lighting_domain.diagnostics(),
             "heating": self._heating_domain.diagnostics(),
             "security": self._security_domain.diagnostics(),

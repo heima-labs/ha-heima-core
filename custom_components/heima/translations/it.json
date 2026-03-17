@@ -22,6 +22,7 @@
           "heating": "Riscaldamento",
           "security": "Sicurezza",
           "notifications": "Notifiche",
+          "calendar": "Calendario",
           "reactions": "Reazioni",
           "proposals": "Revisione proposte",
           "save": "Salva e chiudi"
@@ -255,6 +256,16 @@
           "security_mismatch_policy": "Policy mismatch sicurezza",
           "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
           "security_mismatch_event_mode": "Modalita evento mismatch sicurezza"
+        }
+      },
+      "calendar": {
+        "title": "Calendario",
+        "data": {
+          "calendar_entities": "Entità calendario",
+          "lookahead_days": "Giorni di anticipo",
+          "cache_ttl_hours": "Cache TTL (ore)",
+          "keywords_text": "Parole chiave per categoria (una per riga: nome: kw1, kw2)",
+          "priority_text": "Priorità categorie (comma-separated, dalla più alta)"
         }
       },
       "reactions": {
