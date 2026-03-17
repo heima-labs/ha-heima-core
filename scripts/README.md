@@ -16,6 +16,7 @@ This folder contains deploy/patch tooling and live E2E checks for Heima.
     - `020_learning_pipeline.py`
     - `030_learning_proposals_diag.py`
     - `040_security_mismatch_runtime.py`
+    - `050_calendar_domain.py`
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.

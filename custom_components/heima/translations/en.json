@@ -22,6 +22,7 @@
           "heating": "Heating",
           "security": "Security",
           "notifications": "Notifications",
+          "calendar": "Calendar",
           "reactions": "Reactions",
           "proposals": "Review proposals",
           "save": "Save and close"
@@ -39,7 +40,8 @@
           "sleep_window_entity": "Sleep window entity",
           "relax_mode_entity": "Relax mode entity",
           "work_window_entity": "Work window entity"
-        }
+        },
+        "submit": "OK"
       },
       "people_menu": {
         "title": "People",
@@ -64,13 +66,15 @@
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)",
           "enable_override": "Enable override"
-        }
+        },
+        "submit": "OK"
       },
       "people_edit": {
         "title": "Edit Person",
         "data": {
           "person": "Person"
-        }
+        },
+        "submit": "OK"
       },
       "people_edit_form": {
         "title": "Edit Person",
@@ -84,13 +88,15 @@
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)",
           "enable_override": "Enable override"
-        }
+        },
+        "submit": "OK"
       },
       "people_remove": {
         "title": "Remove Person",
         "data": {
           "person": "Person"
-        }
+        },
+        "submit": "OK"
       },
       "people_anonymous": {
         "title": "Anonymous Presence",
@@ -101,7 +107,8 @@
           "anonymous_count_weight": "Count weight",
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_menu": {
         "title": "Rooms",
@@ -125,13 +132,15 @@
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_edit": {
         "title": "Edit Room",
         "data": {
           "room": "Room"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_edit_form": {
         "title": "Edit Room",
@@ -144,13 +153,15 @@
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_remove": {
         "title": "Remove Room",
         "data": {
           "room": "Room"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_rooms_menu": {
         "title": "Lighting Rooms",
@@ -164,7 +175,8 @@
         "title": "Select Room",
         "data": {
           "room": "Room"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_rooms_edit_form": {
         "title": "Room Scenes",
@@ -175,7 +187,8 @@
           "scene_night": "Night scene",
           "scene_off": "Off scene",
           "enable_manual_hold": "Enable manual hold"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_menu": {
         "title": "Lighting Zones",
@@ -193,13 +206,15 @@
           "zone_id": "Zone id",
           "display_name": "Display name",
           "rooms": "Rooms"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_edit": {
         "title": "Edit Lighting Zone",
         "data": {
           "zone": "Zone"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_edit_form": {
         "title": "Edit Lighting Zone",
@@ -207,13 +222,15 @@
           "zone_id": "Zone id",
           "display_name": "Display name",
           "rooms": "Rooms"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_remove": {
         "title": "Remove Lighting Zone",
         "data": {
           "zone": "Zone"
-        }
+        },
+        "submit": "OK"
       },
       "heating": {
         "title": "Heating",
@@ -228,7 +245,8 @@
           "vacation_total_hours_entity": "Vacation total hours entity",
           "vacation_is_long_entity": "Vacation is long entity",
           "context_entities": "Environmental context entities"
-        }
+        },
+        "submit": "OK"
       },
       "security": {
         "title": "Security",
@@ -237,7 +255,8 @@
           "security_state_entity": "Security state entity",
           "armed_away_value": "Armed away value",
           "armed_home_value": "Armed home value"
-        }
+        },
+        "submit": "OK"
       },
       "notifications": {
         "title": "Notifications",
@@ -255,7 +274,19 @@
           "security_mismatch_policy": "Security mismatch policy",
           "security_mismatch_persist_s": "Security mismatch persistence (s)",
           "security_mismatch_event_mode": "Security mismatch event mode"
-        }
+        },
+        "submit": "OK"
+      },
+      "calendar": {
+        "title": "Calendar",
+        "data": {
+          "calendar_entities": "Calendar entities",
+          "lookahead_days": "Lookahead days",
+          "cache_ttl_hours": "Cache TTL (hours)",
+          "calendar_keywords": "Category keywords (YAML: category: [kw1, kw2])",
+          "priority_text": "Category priority (comma-separated, highest first)"
+        },
+        "submit": "OK"
       },
       "reactions": {
         "title": "Reactions",
@@ -264,7 +295,8 @@
         },
         "data_description": {
           "muted_reactions": "Select reactions to silence. Muted reactions are skipped entirely until unmuted. State is persisted across restarts."
-        }
+        },
+        "submit": "OK"
       },
       "proposals": {
         "title": "Review Proposals",
@@ -272,7 +304,8 @@
         "data": {
           "proposals_accept": "Accept proposals",
           "proposals_reject": "Reject proposals"
-        }
+        },
+        "submit": "OK"
       },
       "heating_branches_menu": {
         "title": "Heating Override Branches",
@@ -285,7 +318,8 @@
         "title": "Select House State",
         "data": {
           "house_state": "House state"
-        }
+        },
+        "submit": "OK"
       },
       "heating_branch_edit_form": {
         "title": "Edit Heating Branch",
@@ -298,7 +332,8 @@
           "vacation_min_temp": "Vacation minimum temperature",
           "vacation_comfort_temp": "Vacation return preheat temperature",
           "vacation_min_total_hours_for_ramp": "Vacation minimum total hours for ramp"
-        }
+        },
+        "submit": "OK"
       }
     },
     "error": {

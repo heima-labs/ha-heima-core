@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .calendar import CalendarResult
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -109,6 +110,7 @@ class HouseStateDomain:
         anyone_home: bool,
         events: EventsDomain,
         state: Any,
+        calendar_result: CalendarResult | None = None,
     ) -> HouseStateResult:
         vacation_mode = self._compute_house_signal(
             "vacation_mode",
@@ -140,6 +142,15 @@ class HouseStateDomain:
             if "work_window" in house_signal_entities
             else [],
         )
+
+        # Calendar overrides: calendar signals take precedence over entity-based signals
+        if calendar_result is not None:
+            if calendar_result.is_vacation_active:
+                vacation_mode = True
+            if calendar_result.is_office_today:
+                work_window = False
+            elif calendar_result.is_wfh_today:
+                work_window = True
 
         derived_house_state, derived_house_reason = resolve_house_state(
             anyone_home=anyone_home,
