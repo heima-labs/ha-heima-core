@@ -40,7 +40,8 @@
           "sleep_window_entity": "Entita finestra sonno",
           "relax_mode_entity": "Entita modalita relax",
           "work_window_entity": "Entita finestra lavoro"
-        }
+        },
+        "submit": "OK"
       },
       "people_menu": {
         "title": "Persone",
@@ -65,13 +66,15 @@
           "arrive_hold_s": "Hold arrivo (s)",
           "leave_hold_s": "Hold uscita (s)",
           "enable_override": "Abilita override"
-        }
+        },
+        "submit": "OK"
       },
       "people_edit": {
         "title": "Modifica Persona",
         "data": {
           "person": "Persona"
-        }
+        },
+        "submit": "OK"
       },
       "people_edit_form": {
         "title": "Modifica Persona",
@@ -85,13 +88,15 @@
           "arrive_hold_s": "Hold arrivo (s)",
           "leave_hold_s": "Hold uscita (s)",
           "enable_override": "Abilita override"
-        }
+        },
+        "submit": "OK"
       },
       "people_remove": {
         "title": "Rimuovi Persona",
         "data": {
           "person": "Persona"
-        }
+        },
+        "submit": "OK"
       },
       "people_anonymous": {
         "title": "Presenza Anonima",
@@ -102,7 +107,8 @@
           "anonymous_count_weight": "Peso conteggio",
           "arrive_hold_s": "Hold arrivo (s)",
           "leave_hold_s": "Hold uscita (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_menu": {
         "title": "Stanze",
@@ -126,13 +132,15 @@
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_edit": {
         "title": "Modifica Stanza",
         "data": {
           "room": "Stanza"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_edit_form": {
         "title": "Modifica Stanza",
@@ -145,13 +153,15 @@
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
-        }
+        },
+        "submit": "OK"
       },
       "rooms_remove": {
         "title": "Rimuovi Stanza",
         "data": {
           "room": "Stanza"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_rooms_menu": {
         "title": "Stanze Illuminazione",
@@ -165,7 +175,8 @@
         "title": "Seleziona Stanza",
         "data": {
           "room": "Stanza"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_rooms_edit_form": {
         "title": "Scene Stanza",
@@ -176,7 +187,8 @@
           "scene_night": "Scena notte",
           "scene_off": "Scena off",
           "enable_manual_hold": "Abilita hold manuale"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_menu": {
         "title": "Zone Illuminazione",
@@ -194,13 +206,15 @@
           "zone_id": "Zone id",
           "display_name": "Nome visualizzato",
           "rooms": "Stanze"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_edit": {
         "title": "Modifica Zona Illuminazione",
         "data": {
           "zone": "Zona"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_edit_form": {
         "title": "Modifica Zona Illuminazione",
@@ -208,13 +222,15 @@
           "zone_id": "Zone id",
           "display_name": "Nome visualizzato",
           "rooms": "Stanze"
-        }
+        },
+        "submit": "OK"
       },
       "lighting_zones_remove": {
         "title": "Rimuovi Zona Illuminazione",
         "data": {
           "zone": "Zona"
-        }
+        },
+        "submit": "OK"
       },
       "heating": {
         "title": "Riscaldamento",
@@ -229,7 +245,8 @@
           "vacation_total_hours_entity": "Entita ore totali vacanza",
           "vacation_is_long_entity": "Entita vacanza lunga",
           "context_entities": "Entità contesto ambientale"
-        }
+        },
+        "submit": "OK"
       },
       "security": {
         "title": "Sicurezza",
@@ -238,7 +255,8 @@
           "security_state_entity": "Entita stato sicurezza",
           "armed_away_value": "Valore armed away",
           "armed_home_value": "Valore armed home"
-        }
+        },
+        "submit": "OK"
       },
       "notifications": {
         "title": "Notifiche",
@@ -256,7 +274,8 @@
           "security_mismatch_policy": "Policy mismatch sicurezza",
           "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
           "security_mismatch_event_mode": "Modalita evento mismatch sicurezza"
-        }
+        },
+        "submit": "OK"
       },
       "calendar": {
         "title": "Calendario",
@@ -264,9 +283,10 @@
           "calendar_entities": "Entità calendario",
           "lookahead_days": "Giorni di anticipo",
           "cache_ttl_hours": "Cache TTL (ore)",
-          "keywords_text": "Parole chiave per categoria (una per riga: nome: kw1, kw2)",
+          "calendar_keywords": "Parole chiave per categoria (YAML: categoria: [kw1, kw2])",
           "priority_text": "Priorità categorie (comma-separated, dalla più alta)"
-        }
+        },
+        "submit": "OK"
       },
       "reactions": {
         "title": "Reazioni",
@@ -275,7 +295,8 @@
         },
         "data_description": {
           "muted_reactions": "Seleziona le reazioni da silenziare. Le reazioni silenziate vengono saltate completamente finche non riabilitate. Lo stato e persistente tra i riavvii."
-        }
+        },
+        "submit": "OK"
       },
       "proposals": {
         "title": "Revisione Proposte",
@@ -283,7 +304,8 @@
         "data": {
           "proposals_accept": "Accetta proposte",
           "proposals_reject": "Rifiuta proposte"
-        }
+        },
+        "submit": "OK"
       },
       "heating_branches_menu": {
         "title": "Branch Override Riscaldamento",
@@ -296,7 +318,8 @@
         "title": "Seleziona Stato Casa",
         "data": {
           "house_state": "Stato casa"
-        }
+        },
+        "submit": "OK"
       },
       "heating_branch_edit_form": {
         "title": "Modifica Branch Riscaldamento",
@@ -309,7 +332,8 @@
           "vacation_min_temp": "Temperatura minima vacanza",
           "vacation_comfort_temp": "Temperatura preriscaldamento rientro vacanza",
           "vacation_min_total_hours_for_ramp": "Ore totali minime per ramp vacanza"
-        }
+        },
+        "submit": "OK"
       }
     },
     "error": {

@@ -41,8 +41,8 @@ def get_engine_diagnostics(client: HAClient) -> dict:
 
 def get_heima_options(client: HAClient) -> dict:
     entry_id = client.find_heima_entry_id()
-    entry = client.get_entry(entry_id)
-    return dict(entry.get("options") or {})
+    diag = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    return dict((diag.get("data") or {}).get("entry", {}).get("options") or {})
 
 
 def calendar_entities_from_options(options: dict) -> list[str]:
