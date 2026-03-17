@@ -138,6 +138,15 @@ class EventStore:
         """Immediately flush current state to HA storage."""
         await self._store.async_save(self._serialize())
 
+    def diagnostics(self) -> dict[str, Any]:
+        from collections import Counter
+        type_counts = Counter(e.event_type for e in self._events)
+        return {
+            "total_events": len(self._events),
+            "max_records": self.MAX_RECORDS,
+            "by_type": dict(type_counts),
+        }
+
     def _serialize(self) -> dict[str, Any]:
         return {"data": {"events": [event.as_dict() for event in self._events]}}
 

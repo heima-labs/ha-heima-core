@@ -28,6 +28,8 @@ async def async_get_config_entry_diagnostics(
             "data": getattr(coordinator, "data", None),
             "engine": coordinator.engine.diagnostics() if coordinator else {},
             "scheduler": coordinator.scheduler.diagnostics() if coordinator else {},
+            "event_store": coordinator._event_store.diagnostics() if coordinator else {},
+            "proposals": coordinator._proposal_engine.diagnostics() if coordinator else {},
         },
     }
 

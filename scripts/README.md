@@ -17,6 +17,8 @@ This folder contains deploy/patch tooling and live E2E checks for Heima.
     - `030_learning_proposals_diag.py`
     - `040_security_mismatch_runtime.py`
     - `050_calendar_domain.py`
+- Diagnostics:
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, scheduler). Utile per verificare quanti eventi sono stati registrati e se il learning system sta accumulando dati.
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
@@ -36,7 +38,17 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 ./scripts/check_all_live.sh --ha-url http://ha-host:8123
 ```
 
-- To run learning E2E from clean baseline:
+- Per visualizzare i diagnostics runtime:
+
+```bash
+source scripts/.env
+python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
+
+# Solo una sezione: event_store | proposals | calendar | engine | scheduler
+python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section event_store
+```
+
+- Per run learning E2E from clean baseline:
 
 ```bash
 HA_TOKEN='<token>' PERSON_SLUG='stefano' \

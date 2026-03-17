@@ -124,6 +124,23 @@ class ProposalEngine:
             return True
         return False
 
+    def diagnostics(self) -> dict[str, Any]:
+        return {
+            "total": len(self._proposals),
+            "pending": len(self.pending_proposals()),
+            "proposals": [
+                {
+                    "id": p.proposal_id,
+                    "type": p.reaction_type,
+                    "analyzer": p.analyzer_id,
+                    "description": p.description,
+                    "confidence": round(p.confidence, 2),
+                    "status": p.status,
+                }
+                for p in self._proposals
+            ],
+        }
+
     def _serialize(self) -> dict[str, Any]:
         return {"data": {"proposals": [p.as_dict() for p in self._proposals]}}
 
