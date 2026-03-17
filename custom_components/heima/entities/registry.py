@@ -151,6 +151,9 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
     sensors.append(_s(_k("heima_reactions_active"), "Heima Reactions Active"))
     sensors.append(_s(_k("heima_reaction_proposals"), "Heima Reaction Proposals"))
 
+    # Learning
+    sensors.append(_s(_k("heima_event_store"), "Heima Event Store"))
+
     return HeimaRegistry(sensors=sensors, binary_sensors=binaries, selects=selects)
 
 

@@ -82,6 +82,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         await self._proposal_engine.async_run()
+        self._write_event_store_sensor()
         self._schedule_proposal_tick()
         self._subscribe_state_changes()
         self._sync_scheduler()
@@ -204,6 +205,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Reset learning event/proposal stores and refresh runtime sensors."""
         await self._event_store.async_clear()
         await self._proposal_engine.async_clear()
+        self._write_event_store_sensor()
         await self.async_refresh()
 
     async def async_shutdown(self) -> None:
@@ -262,6 +264,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     async def _async_run_proposal_tick(self) -> None:
         try:
             await self._proposal_engine.async_run()
+            self._write_event_store_sensor()
             await self.async_refresh()
         finally:
             self._schedule_proposal_tick()
@@ -269,3 +272,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     def _write_proposals_sensor(self, pending_count: int, attributes: dict) -> None:
         self.engine.state.set_sensor("heima_reaction_proposals", pending_count)
         self.engine.state.set_sensor_attributes("heima_reaction_proposals", attributes)
+
+    def _write_event_store_sensor(self) -> None:
+        diag = self._event_store.diagnostics()
+        self.engine.state.set_sensor("heima_event_store", diag["total_events"])
+        self.engine.state.set_sensor_attributes("heima_event_store", diag["by_type"])
