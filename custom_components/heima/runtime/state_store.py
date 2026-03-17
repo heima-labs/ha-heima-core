@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .domains.calendar import CalendarResult
 
 
 @dataclass
@@ -14,6 +17,7 @@ class CanonicalState:
     sensors: dict[str, Any] = field(default_factory=dict)
     sensor_attributes: dict[str, dict[str, Any]] = field(default_factory=dict)
     selects: dict[str, str | None] = field(default_factory=dict)
+    calendar_result: "CalendarResult | None" = None
 
     def get_binary(self, key: str) -> bool | None:
         return self.binary_sensors.get(key)

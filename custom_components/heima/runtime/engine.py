@@ -18,6 +18,7 @@ from ..const import (
     DEFAULT_OCCUPANCY_MISMATCH_MIN_DERIVED_ROOMS,
     DEFAULT_OCCUPANCY_MISMATCH_PERSIST_S,
     DEFAULT_OCCUPANCY_MISMATCH_POLICY,
+    OPT_CALENDAR,
     OPT_HEATING,
     OPT_HOUSE_SIGNALS,
     OPT_LIGHTING_APPLY_MODE,
@@ -37,6 +38,7 @@ from .contracts import ApplyPlan, ApplyStep, HeimaEvent
 from .reactions.base import HeimaReaction
 from .reactions.presence import _ArrivalRecord, PresencePatternReaction
 from .snapshot_buffer import SnapshotBuffer
+from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
 from .domains.heating import HeatingDomain
 from .domains.house_state import HouseStateDomain
@@ -87,6 +89,7 @@ class HeimaEngine:
         self._events_domain = EventsDomain(hass)
         self._people_domain = PeopleDomain(hass, self._normalizer)
         self._occupancy_domain = OccupancyDomain(hass, self._normalizer)
+        self._calendar_domain = CalendarDomain(hass)
         self._house_state_domain = HouseStateDomain(hass, self._normalizer)
         self._lighting_domain = LightingDomain(hass, self._normalizer)
         self._heating_domain = HeatingDomain(hass, self._normalizer)
@@ -135,6 +138,7 @@ class HeimaEngine:
         self._options = HeimaOptions.from_entry(entry)
         self._people_domain.reset()
         self._occupancy_domain.reset()
+        self._calendar_domain.reset()
         self._house_state_domain.reset()
         self._lighting_domain.reset()
         self._heating_domain.reset()
@@ -262,6 +266,8 @@ class HeimaEngine:
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
         _LOGGER.debug("Heima evaluation requested: %s", reason)
+        calendar_cfg = dict(self._entry.options.get(OPT_CALENDAR, {}))
+        await self._calendar_domain.async_maybe_refresh(calendar_cfg)
         snapshot = self._compute_snapshot(reason=reason)
         self._snapshot = snapshot
         self._snapshot_buffer.push(snapshot)
@@ -444,6 +450,10 @@ class HeimaEngine:
         )
         occupied_rooms = occ_result.occupied_rooms
 
+        calendar_cfg = dict(options.get(OPT_CALENDAR, {}))
+        calendar_result = self._calendar_domain.compute(calendar_cfg)
+        self._state.calendar_result = calendar_result
+
         security_cfg = dict(options.get(OPT_SECURITY, {}))
         security_state, security_reason = self._security_domain.compute(
             security_cfg=security_cfg,
@@ -458,6 +468,7 @@ class HeimaEngine:
             anyone_home=anyone_home,
             events=self._events_domain,
             state=self._state,
+            calendar_result=calendar_result,
         )
         house_state = hs_result.house_state
         house_reason = hs_result.house_reason
@@ -988,6 +999,7 @@ class HeimaEngine:
                     for step in self._apply_plan.steps
                 ],
             },
+            "calendar": self._calendar_domain.diagnostics(),
             "lighting": self._lighting_domain.diagnostics(),
             "heating": self._heating_domain.diagnostics(),
             "security": self._security_domain.diagnostics(),

@@ -263,6 +263,8 @@ def test_diagnostics_includes_muted_reactions():
     engine._people_domain.diagnostics.return_value = {}
     engine._occupancy_domain = MagicMock()
     engine._occupancy_domain.diagnostics.return_value = {}
+    engine._calendar_domain = MagicMock()
+    engine._calendar_domain.diagnostics.return_value = {}
     engine._events_domain = MagicMock()
     engine._events_domain.diagnostics.return_value = {}
     engine._normalizer = MagicMock()

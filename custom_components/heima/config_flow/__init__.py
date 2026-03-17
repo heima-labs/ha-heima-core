@@ -27,6 +27,7 @@ from ..const import (
     OPT_SECURITY,
 )
 from ._common import _default_language, _default_timezone
+from ._steps_calendar import _CalendarStepsMixin
 from ._steps_general import _GeneralStepsMixin
 from ._steps_heating import _HeatingStepsMixin
 from ._steps_lighting import _LightingStepsMixin
@@ -76,6 +77,7 @@ class HeimaOptionsFlowHandler(
     _SecurityStepsMixin,
     _NotificationsStepsMixin,
     _ReactionsStepsMixin,
+    _CalendarStepsMixin,
     config_entries.OptionsFlow,
 ):
     """Handle Heima options."""
@@ -102,6 +104,7 @@ class HeimaOptionsFlowHandler(
                 "heating",
                 "security",
                 "notifications",
+                "calendar",
                 "reactions",
                 "proposals",
                 "save",
