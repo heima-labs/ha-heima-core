@@ -22,6 +22,7 @@
           "heating": "Heating",
           "security": "Security",
           "notifications": "Notifications",
+          "calendar": "Calendar",
           "reactions": "Reactions",
           "proposals": "Review proposals",
           "save": "Save and close"
@@ -255,6 +256,16 @@
           "security_mismatch_policy": "Security mismatch policy",
           "security_mismatch_persist_s": "Security mismatch persistence (s)",
           "security_mismatch_event_mode": "Security mismatch event mode"
+        }
+      },
+      "calendar": {
+        "title": "Calendar",
+        "data": {
+          "calendar_entities": "Calendar entities",
+          "lookahead_days": "Lookahead days",
+          "cache_ttl_hours": "Cache TTL (hours)",
+          "keywords_text": "Category keywords (one category per line: name: kw1, kw2)",
+          "priority_text": "Category priority (comma-separated, highest first)"
         }
       },
       "reactions": {
