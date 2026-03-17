@@ -156,6 +156,23 @@ views:
           - entity: sensor.heima_heating_last_command_result
           - entity: sensor.heima_heating_last_command_reason
 
+      - type: entities
+        title: Learning
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_event_store
+            name: Pattern events recorded
+          - type: attribute
+            entity: sensor.heima_event_store
+            attribute: presence
+            name: Presence events
+          - type: attribute
+            entity: sensor.heima_event_store
+            attribute: heating
+            name: Heating events
+          - entity: sensor.heima_reaction_proposals
+            name: Pending proposals
+
       - type: history-graph
         title: Heima Runtime History (12h)
         hours_to_show: 12
