@@ -534,3 +534,202 @@ def test_house_state_no_calendar_result_unchanged():
         calendar_result=None,
     )
     assert result.house_state == "home"
+
+
+# ---------------------------------------------------------------------------
+# Pipeline integration: CalendarDomain + HouseStateDomain end-to-end
+# ---------------------------------------------------------------------------
+
+def _make_hass_with_calendar_state(entity_id: str, summary: str) -> SimpleNamespace:
+    """Helper: creates a fake hass with a calendar entity in state 'on'."""
+    state = _fake_state("on", {
+        "message": summary,
+        "start_time": _now().isoformat(),
+        "end_time": (_now() + timedelta(hours=8)).isoformat(),
+        "all_day": True,
+    })
+    return SimpleNamespace(
+        states=SimpleNamespace(get=lambda eid: state if eid == entity_id else None),
+        services=SimpleNamespace(
+            async_call=None,
+            async_services=lambda: {"notify": {}},
+        ),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+
+
+def _run_pipeline(hass, entity_id: str, anyone_home: bool = False) -> "any":
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
+    from custom_components.heima.runtime.normalization.service import InputNormalizer
+    from custom_components.heima.runtime.domains.events import EventsDomain
+
+    calendar = CalendarDomain(hass)
+    cal_result = calendar.compute({"calendar_entities": [entity_id]})
+
+    normalizer = InputNormalizer(hass)
+    hs_domain = HouseStateDomain(hass, normalizer)
+    events = EventsDomain(hass)
+    return hs_domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=anyone_home,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: None, get_binary=lambda _: None),
+        calendar_result=cal_result,
+    )
+
+
+def test_pipeline_vacation_active_drives_vacation():
+    """Entity 'on' with vacation summary → house_state = vacation."""
+    hass = _make_hass_with_calendar_state("calendar.personal", "Vacanza settimana bianca")
+    result = _run_pipeline(hass, "calendar.personal", anyone_home=False)
+    assert result.house_state == "vacation"
+
+
+def test_pipeline_wfh_drives_working():
+    """Entity 'on' with WFH summary + anyone_home=True → house_state = working."""
+    hass = _make_hass_with_calendar_state("calendar.work", "Smart working oggi")
+    result = _run_pipeline(hass, "calendar.work", anyone_home=True)
+    assert result.house_state == "working"
+
+
+def test_pipeline_custom_sick_does_not_alter_house_state():
+    """A 'sick' category event (custom) doesn't map to any house_state change."""
+    hass = _make_hass_with_calendar_state("calendar.personal", "Influenza a casa")
+    # Need sick in keywords to get classified
+    calendar = CalendarDomain(hass)
+    cal_result = calendar.compute({
+        "calendar_entities": ["calendar.personal"],
+        "calendar_keywords": {"sick": ["influenza", "malattia"]},
+    })
+    # sick category classified but doesn't affect vacation/wfh/office
+    assert cal_result.is_vacation_active is False
+    assert cal_result.is_wfh_today is False
+    assert cal_result.is_office_today is False
+
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
+    from custom_components.heima.runtime.normalization.service import InputNormalizer
+    from custom_components.heima.runtime.domains.events import EventsDomain
+    normalizer = InputNormalizer(hass)
+    hs_domain = HouseStateDomain(hass, normalizer)
+    events = EventsDomain(hass)
+    result = hs_domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: None, get_binary=lambda _: None),
+        calendar_result=cal_result,
+    )
+    # stays "home" — sick doesn't change anything
+    assert result.house_state == "home"
+
+
+def test_pipeline_allday_vacation_from_cache_entity_off():
+    """All-day vacation event in cache, entity currently 'off' → still is_vacation_active."""
+    from custom_components.heima.runtime.domains.calendar import CalendarEvent
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda _: _fake_state("off")),  # entity is off
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    calendar = CalendarDomain(hass)
+    today = _now().date()
+    tomorrow = today + timedelta(days=1)
+    calendar._cached_events = [
+        CalendarEvent(
+            summary="Ferie",
+            start=datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+            end=datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc),
+            all_day=True,
+            category="vacation",
+            calendar_entity="calendar.personal",
+        )
+    ]
+    calendar._cache_ts = _now()
+
+    cal_result = calendar.compute({"calendar_entities": ["calendar.personal"]})
+    assert cal_result.is_vacation_active is True
+
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
+    from custom_components.heima.runtime.normalization.service import InputNormalizer
+    from custom_components.heima.runtime.domains.events import EventsDomain
+    normalizer = InputNormalizer(hass)
+    hs_domain = HouseStateDomain(hass, normalizer)
+    events = EventsDomain(hass)
+    result = hs_domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=False,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: None, get_binary=lambda _: None),
+        calendar_result=cal_result,
+    )
+    assert result.house_state == "vacation"
+
+
+# ---------------------------------------------------------------------------
+# async_maybe_refresh — TTL expiry
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_async_maybe_refresh_triggers_after_ttl_expired():
+    """Second call after TTL window does trigger a re-fetch."""
+    call_count = 0
+
+    async def _counting_call(domain, service, data, blocking=False, return_response=False):
+        nonlocal call_count
+        call_count += 1
+        return {}
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda _: None),
+        services=SimpleNamespace(async_call=_counting_call),
+    )
+    domain = CalendarDomain(hass)
+    cfg = {"calendar_entities": ["calendar.personal"], "cache_ttl_hours": 1}
+
+    await domain.async_maybe_refresh(cfg)
+    assert call_count == 1
+
+    # Simulate cache older than TTL
+    domain._cache_ts = _now() - timedelta(hours=2)
+    await domain.async_maybe_refresh(cfg)
+    assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# diagnostics
+# ---------------------------------------------------------------------------
+
+def test_diagnostics_empty():
+    domain = CalendarDomain(_fake_hass())
+    d = domain.diagnostics()
+    assert d["cache_ts"] is None
+    assert d["cached_events_count"] == 0
+    assert d["cached_events"] == []
+
+
+def test_diagnostics_with_events():
+    from custom_components.heima.runtime.domains.calendar import CalendarEvent
+    domain = CalendarDomain(_fake_hass())
+    today = _now().date()
+    domain._cached_events = [
+        CalendarEvent(
+            summary="Ferie",
+            start=datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+            end=datetime(today.year, today.month, today.day + 1, tzinfo=timezone.utc),
+            all_day=True,
+            category="vacation",
+            calendar_entity="calendar.test",
+        )
+    ]
+    domain._cache_ts = _now()
+    d = domain.diagnostics()
+    assert d["cached_events_count"] == 1
+    assert d["cache_ts"] is not None
+    ev = d["cached_events"][0]
+    assert ev["summary"] == "Ferie"
+    assert ev["category"] == "vacation"
+    assert ev["all_day"] is True
