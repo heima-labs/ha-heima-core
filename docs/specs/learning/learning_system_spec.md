@@ -124,9 +124,10 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P4 ProposalEngine | Implemented | `runtime/proposal_engine.py`, periodic coordinator run |
 | P5 Approval Flow | Implemented | Config flow step `proposals` accepts/rejects proposals |
 | P6 Generalization | Partial | `IPatternAnalyzer` exists; ecosystem/process still RFC |
-| P7 LightingEvent | **Designed** | See §P7 — new event type for EventStore |
-| P8 LightingRecorderBehavior | **Designed** | See §P8 — observes user light actions |
-| P9 LightingPatternAnalyzer | **Designed** | See §P9 — detects recurring on/off schedule patterns |
+| P7 LightingEvent | Implemented | `HeimaEvent(event_type="lighting")` — unified EventStore; EventContext shared |
+| P8 LightingRecorderBehavior | Implemented | `runtime/behaviors/lighting_recorder.py` |
+| P9 LightingPatternAnalyzer | Implemented | `runtime/analyzers/lighting.py` |
+| P10 Learning Config Flow | Implemented | `config_flow/_steps_learning.py` — outdoor_lux, temp, weather, signals |
 
 ---
 
