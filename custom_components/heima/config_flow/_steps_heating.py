@@ -40,7 +40,7 @@ class _HeatingStepsMixin:
 
         existing = self._normalize_heating_payload(self._heating_config())
         payload["override_branches"] = existing.get("override_branches", {})
-        self.options[OPT_HEATING] = payload
+        self._update_options({OPT_HEATING: payload})
         return await self.async_step_heating_branches_menu()
 
     async def async_step_heating_branches_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
@@ -50,6 +50,7 @@ class _HeatingStepsMixin:
                 "heating_branches_edit",
                 "heating_branches_save",
             ],
+            description_placeholders={"summary": self._heating_menu_summary()},
         )
 
     async def async_step_heating_branches_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
@@ -61,30 +62,62 @@ class _HeatingStepsMixin:
         if house_state not in HEATING_HOUSE_STATES:
             return await self.async_step_heating_branches_menu()
         self._editing_heating_house_state = house_state
-        return await self.async_step_heating_branch_edit_form()
+        return await self.async_step_heating_branch_select()
 
-    async def async_step_heating_branch_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branch_select(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+        """Step 1: select branch type only."""
         house_state = self._editing_heating_house_state
         if not house_state:
             return await self.async_step_heating_branches_menu()
 
-        current_branch = self._heating_override_branches().get(house_state, {"branch": "disabled"})
+        current_branch = self._heating_override_branches().get(house_state, {})
+        current_type = str(current_branch.get("branch", "disabled"))
+
         if user_input is None:
-            defaults = dict(current_branch)
-            defaults["house_state"] = house_state
+            schema = self._with_suggested(
+                vol.Schema({vol.Required("branch"): vol.In(HEATING_BRANCH_TYPES)}),
+                {"branch": current_type},
+            )
+            return self.async_show_form(step_id="heating_branch_select", data_schema=schema)
+
+        branch = str(user_input.get("branch", "disabled")).strip()
+        if branch not in HEATING_BRANCH_TYPES:
+            branch = "disabled"
+        self._editing_heating_branch = branch
+        return await self.async_step_heating_branch_edit_form()
+
+    async def async_step_heating_branch_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+        """Step 2: parameters for the selected branch type."""
+        house_state = self._editing_heating_house_state
+        branch = self._editing_heating_branch
+        if not house_state or not branch:
+            return await self.async_step_heating_branches_menu()
+
+        # Skip parameter form for branch types with no parameters
+        if branch == "disabled":
+            heating = self._normalize_heating_payload(self._heating_config())
+            branches = dict(heating.get("override_branches", {}))
+            branches[house_state] = {"branch": "disabled"}
+            heating["override_branches"] = branches
+            self._update_options({OPT_HEATING: heating})
+            return await self.async_step_heating_branches_menu()
+
+        current_branch = self._heating_override_branches().get(house_state, {})
+        defaults = dict(current_branch)
+        defaults["branch"] = branch
+
+        if user_input is None:
             return self.async_show_form(
                 step_id="heating_branch_edit_form",
                 data_schema=self._heating_branch_schema(defaults),
             )
 
-        payload = self._normalize_heating_branch_payload(user_input)
+        payload = self._normalize_heating_branch_payload({**user_input, "branch": branch})
         errors = self._validate_heating_branch(payload)
         if errors:
-            defaults = dict(payload)
-            defaults["house_state"] = house_state
             return self.async_show_form(
                 step_id="heating_branch_edit_form",
-                data_schema=self._heating_branch_schema(defaults),
+                data_schema=self._heating_branch_schema({**user_input, "branch": branch}),
                 errors=errors,
             )
 
@@ -92,7 +125,7 @@ class _HeatingStepsMixin:
         branches = dict(heating.get("override_branches", {}))
         branches[house_state] = payload
         heating["override_branches"] = branches
-        self.options[OPT_HEATING] = heating
+        self._update_options({OPT_HEATING: heating})
         return await self.async_step_heating_branches_menu()
 
     async def async_step_heating_branches_save(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
@@ -130,10 +163,7 @@ class _HeatingStepsMixin:
         branch = str(defaults.get("branch", "disabled") or "disabled").strip()
         if branch not in HEATING_BRANCH_TYPES:
             branch = "disabled"
-        schema_map: dict[Any, Any] = {
-            vol.Required("house_state"): vol.In(HEATING_HOUSE_STATES),
-            vol.Required("branch", default=branch): vol.In(HEATING_BRANCH_TYPES),
-        }
+        schema_map: dict[Any, Any] = {}
         if branch == "fixed_target":
             schema_map[vol.Optional("target_temperature")] = vol.Coerce(float)
         elif branch == "vacation_curve":
