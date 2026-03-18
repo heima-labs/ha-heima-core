@@ -40,6 +40,14 @@ class HeimaReaction:
         """
         return []
 
+    def scheduled_jobs(self, entry_id: str) -> "dict[str, Any]":
+        """Return keyed ScheduledRuntimeJob instances this reaction wants scheduled.
+
+        Called by the engine after each evaluation to sync timed jobs with the
+        RuntimeScheduler. Return {} (default) if this reaction has no scheduled jobs.
+        """
+        return {}
+
     def on_options_reloaded(self, options: dict[str, Any]) -> None:
         """Called when the config entry options change. No-op by default."""
 
