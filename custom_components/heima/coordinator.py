@@ -217,6 +217,68 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._write_event_store_sensor()
         await self.async_refresh()
 
+    async def async_seed_lighting_events(
+        self,
+        *,
+        entity_id: str,
+        room_id: str,
+        weekday: int,
+        minute: int,
+        brightness: int | None = None,
+        color_temp_kelvin: int | None = None,
+        count: int = 6,
+    ) -> int:
+        """Inject synthetic lighting events backfilled across 2 ISO weeks (for testing).
+
+        Returns the number of events appended.
+        """
+        from datetime import timedelta
+
+        from .runtime.event_store import EventContext, HeimaEvent
+
+        now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        # Distribute events: first half in week-2, second half in week-1
+        n_week1 = count // 2
+        n_week2 = count - n_week1
+        offsets = (
+            [timedelta(weeks=-2)] * n_week1
+            + [timedelta(weeks=-1)] * n_week2
+        )
+
+        ctx = EventContext(
+            weekday=weekday,
+            minute_of_day=minute,
+            month=now_utc.month,
+            house_state="home",
+            occupants_count=1,
+            occupied_rooms=(room_id,),
+            outdoor_lux=None,
+            outdoor_temp=None,
+            weather_condition=None,
+            signals={},
+        )
+        for offset in offsets:
+            ts = (now_utc + offset).isoformat()
+            event = HeimaEvent(
+                ts=ts,
+                event_type="lighting",
+                context=ctx,
+                source="user",
+                data={
+                    "entity_id": entity_id,
+                    "room_id": room_id,
+                    "action": "on",
+                    "brightness": brightness,
+                    "color_temp_kelvin": color_temp_kelvin,
+                    "rgb_color": None,
+                },
+            )
+            await self._event_store.async_append(event)
+
+        await self._event_store.async_flush()
+        self._write_event_store_sensor()
+        return count
+
     async def async_shutdown(self) -> None:
         """Shutdown runtime."""
         self._unsubscribe_state_changes()
