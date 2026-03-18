@@ -31,8 +31,14 @@ class _SecurityStepsMixin:
                 errors={"security_state_entity": "required"},
             )
 
-        self.options[OPT_SECURITY] = user_input
+        self._update_options({OPT_SECURITY: user_input})
         return await self.async_step_init()
+
+    def _security_menu_summary(self) -> str:
+        security = dict(self.options.get(OPT_SECURITY, {}))
+        if security.get("enabled") and security.get("security_state_entity"):
+            return str(security["security_state_entity"])
+        return "—"
 
     def _security_schema(self, defaults: dict[str, Any]) -> vol.Schema:
         schema = vol.Schema(

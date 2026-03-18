@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS
+from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
 from .services import async_register_services
 
@@ -43,13 +43,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update.
+    """Handle options update with selective reload.
 
-    Reloading the config entry is required to rebuild entity platforms because
-    entity sets are derived from options (people, rooms, zones, etc.).
+    - Structural keys (people, rooms, zones): full HA reload to rebuild entity sets.
+    - Runtime keys (heating, security, calendar, etc.): in-place coordinator reload.
     """
-    _LOGGER.debug("Options updated for %s, reloading entry %s", DOMAIN, entry.entry_id)
-    await hass.config_entries.async_reload(entry.entry_id)
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+    if coordinator is None:
+        _LOGGER.debug("No coordinator found for %s, skipping update", entry.entry_id)
+        return
+
+    prev = coordinator.last_options_snapshot
+    new = dict(entry.options)
+    changed = {k for k in (prev.keys() | new.keys()) if prev.get(k) != new.get(k)}
+    is_structural = bool(changed & STRUCTURAL_OPTION_KEYS)
+
+    coordinator.last_options_snapshot = new
+
+    if is_structural:
+        _LOGGER.debug("Structural options changed (%s), reloading entry %s", changed & STRUCTURAL_OPTION_KEYS, entry.entry_id)
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        _LOGGER.debug("Runtime options changed (%s), reloading coordinator %s", changed, entry.entry_id)
+        await coordinator.async_reload_options()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

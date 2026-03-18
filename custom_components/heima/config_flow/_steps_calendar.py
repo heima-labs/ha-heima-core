@@ -78,14 +78,21 @@ class _CalendarStepsMixin:
             if cat not in priority:
                 priority.append(cat)
 
-        self.options[OPT_CALENDAR] = {
+        self._update_options({OPT_CALENDAR: {
             "calendar_entities": list(entities),
             "lookahead_days": int(user_input.get("lookahead_days") or DEFAULT_CALENDAR_LOOKAHEAD_DAYS),
             "cache_ttl_hours": int(user_input.get("cache_ttl_hours") or DEFAULT_CALENDAR_CACHE_TTL_HOURS),
             "calendar_keywords": normalised,
             "category_priority": priority,
-        }
+        }})
         return await self.async_step_init()
+
+    def _calendar_menu_summary(self) -> str:
+        calendar = dict(self.options.get(OPT_CALENDAR, {}))
+        entities = list(calendar.get("calendar_entities") or [])
+        if not entities:
+            return "—"
+        return f"{len(entities)}: {', '.join(entities)}"
 
     def _calendar_schema(self, calendar_cfg: dict[str, Any]) -> vol.Schema:
         return vol.Schema(

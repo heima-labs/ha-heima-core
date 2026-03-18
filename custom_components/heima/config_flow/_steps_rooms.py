@@ -42,6 +42,7 @@ class _RoomsStepsMixin:
                 "rooms_save",
                 "rooms_next",
             ],
+            description_placeholders={"summary": self._rooms_menu_summary()},
         )
 
     async def async_step_rooms_add(self, user_input: dict[str, Any] | None = None) -> "FlowResult":

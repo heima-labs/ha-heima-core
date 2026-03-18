@@ -14,6 +14,7 @@
     "step": {
       "init": {
         "title": "Heima Configuration",
+        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}",
         "menu_options": {
           "general": "General",
           "people_menu": "People",
@@ -25,7 +26,8 @@
           "calendar": "Calendar",
           "reactions": "Reactions",
           "proposals": "Review proposals",
-          "save": "Save and close"
+          "save": "Save and close",
+          "reactions_edit": "Edit reaction"
         }
       },
       "general": {
@@ -45,6 +47,7 @@
       },
       "people_menu": {
         "title": "People",
+        "description": "Configured: {summary}",
         "menu_options": {
           "people_add": "Add person",
           "people_edit": "Edit person",
@@ -112,6 +115,7 @@
       },
       "rooms_menu": {
         "title": "Rooms",
+        "description": "Configured: {summary}",
         "menu_options": {
           "rooms_add": "Add room",
           "rooms_edit": "Edit room",
@@ -165,6 +169,7 @@
       },
       "lighting_rooms_menu": {
         "title": "Lighting Rooms",
+        "description": "Scenes configured: {summary}",
         "menu_options": {
           "lighting_rooms_edit": "Edit room scenes",
           "lighting_rooms_save": "Save and close",
@@ -309,6 +314,7 @@
       },
       "heating_branches_menu": {
         "title": "Heating Override Branches",
+        "description": "{summary}",
         "menu_options": {
           "heating_branches_edit": "Edit branch",
           "heating_branches_save": "Done"
@@ -321,11 +327,16 @@
         },
         "submit": "OK"
       },
+      "heating_branch_select": {
+        "title": "Select Branch Type",
+        "data": {
+          "branch": "Branch type"
+        },
+        "submit": "OK"
+      },
       "heating_branch_edit_form": {
         "title": "Edit Heating Branch",
         "data": {
-          "house_state": "House state",
-          "branch": "Branch",
           "target_temperature": "Target temperature",
           "vacation_ramp_down_h": "Vacation ramp-down hours",
           "vacation_ramp_up_h": "Vacation ramp-up hours",
@@ -334,6 +345,29 @@
           "vacation_min_total_hours_for_ramp": "Vacation minimum total hours for ramp"
         },
         "submit": "OK"
+      },
+      "proposal_configure_action": {
+        "title": "Configure pre-arrival action",
+        "description": "Accepted proposal: {proposal_description}\n\nSelect the actions to trigger before your typical arrival.",
+        "data": {
+          "action_entities": "Scenes or scripts to activate",
+          "pre_condition_min": "Lead time (minutes)"
+        }
+      },
+      "reactions_edit": {
+        "title": "Edit reaction",
+        "description": "Select the reaction to edit.",
+        "data": {
+          "reaction": "Reaction"
+        }
+      },
+      "reactions_edit_form": {
+        "title": "Edit reaction actions",
+        "description": "{reaction_description}",
+        "data": {
+          "action_entities": "Scenes or scripts to activate",
+          "pre_condition_min": "Lead time (minutes)"
+        }
       }
     },
     "error": {

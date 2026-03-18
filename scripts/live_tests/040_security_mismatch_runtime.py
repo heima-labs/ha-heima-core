@@ -50,7 +50,6 @@ def _flow_save(client: HAFlowClient, flow_id: str) -> None:
 
 def _notification_payload_from_entry(client: HAFlowClient, entry_id: str) -> dict[str, Any]:
     defaults: dict[str, Any] = {
-        "routes": [],
         "recipients": {},
         "recipient_groups": {},
         "route_targets": [],
