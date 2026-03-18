@@ -923,6 +923,12 @@ For each key (room_id, action, weekday):
     # Same formula as PresencePatternAnalyzer for consistency
     confidence = max(0.3, 1.0 - IQR / 120.0)
 
+    # Aggregate light attributes (only meaningful for action="on")
+    # Use median of non-None values; None if fewer than MIN_OCCURRENCES/2 samples present
+    brightness       = _median_or_none([e.data.get("brightness") for e in matching])
+    color_temp_k     = _median_or_none([e.data.get("color_temp_kelvin") for e in matching])
+    rgb_color        = _mode_rgb_or_none([e.data.get("rgb_color") for e in matching])
+
     Emit ReactionProposal(reaction_type="lighting_schedule", ...)
 ```
 
@@ -934,10 +940,19 @@ high-confidence if the core behavior is tight.
 week of consistent behavior (e.g., a holiday week) from generating a proposal that becomes active.
 This check is missing in `PresencePatternAnalyzer` (open item for a future iteration).
 
-**Why per `(room_id, action, weekday)` and not per scene:** scene is too granular for the initial
-proposal. The user may activate different named scenes for the same "turn on the living room at
-07:30" intent. The `action` granularity is sufficient for a proposal; the user can specify the
-target scene in the Options Flow acceptance step.
+**Why per `(room_id, action, weekday)` and not per scene:** le scene HA sono un dettaglio
+implementativo dell'utente che può variare (diverse scene per lo stesso intento, scene rinominate,
+ecc.). Heima aggrega direttamente gli attributi fisici osservati (`brightness`, `color_temp_kelvin`)
+che sono stabili e indipendenti dalla configurazione scene. La reaction replica il comportamento
+osservato senza richiedere all'utente di pre-configurare scene manualmente.
+
+**Attributi aggregati (`action="on"`):**
+- `brightness`: mediana degli eventi con `brightness != None`. `None` se meno di `MIN_OCCURRENCES/2`
+  eventi forniscono il dato (luce senza dimmer, o attributo assente).
+- `color_temp_kelvin`: mediana degli eventi con `color_temp_kelvin != None`. `None` se insufficiente.
+- `rgb_color`: moda degli eventi con `rgb_color != None` (confronto per vettore `[r,g,b]`). `None`
+  se misto o insufficiente. La rgb prevale su `color_temp_kelvin` se presente.
+- Per `action="off"`: tutti e tre sempre `None`.
 
 ### P9.3 Output proposal
 
@@ -953,13 +968,21 @@ ReactionProposal(
         "reaction_class": "LightingScheduleReaction",
         "room_id": room_id,
         "action": action,               # "on" or "off"
-        "scene": None,                  # user fills in Options Flow
         "weekday": weekday,
         "scheduled_min": median,        # minute_of_day to schedule
         "window_half_min": 10,          # fire within ±10 min of scheduled_min
         "house_state_filter": None,     # optional: only fire in specific house_state
+        # Aggregated light attributes (action="on" only; all None for "off")
+        "brightness": brightness,           # int 0-255 or None
+        "color_temp_kelvin": color_temp_k,  # int or None
+        "rgb_color": rgb_color,             # [r,g,b] or None
     },
 )
+```
+
+**Note:** non c'è un campo `"scene"`. Heima usa direttamente gli attributi aggregati osservati.
+Se l'utente vuole sovrascrivere con una scena specifica, potrà farlo editando la reaction accettata
+nell'options flow (funzionalità futura). Per ora la reaction usa sempre gli attributi fisici.
 ```
 
 ### P9.4 Fingerprint for deduplication
@@ -970,17 +993,114 @@ f"LightingPatternAnalyzer|lighting_schedule|{room_id}|{action}|{weekday}"
 
 Same deduplication semantics as existing analyzers in `ProposalEngine`.
 
-### P9.5 LightingScheduleReaction (design, implementation deferred)
+### P9.5 LightingScheduleReaction
 
-The reaction that gets instantiated when the user accepts the proposal:
-- Fires at `scheduled_min ± window_half_min` on the configured `weekday`
-- Checks `house_state_filter` if set
-- Calls `hass.services.async_call("light", "turn_on"/"turn_off", {"entity_id": [...]})` for the
-  configured room entities, optionally activating the chosen scene
+**File:** `runtime/reactions/lighting_schedule.py`
 
-**Dependency:** requires a time-based trigger mechanism in the engine (different from the current
-event-driven eval cycle). This is a prerequisite to implement before `LightingScheduleReaction` can
-be made active.
+#### Trigger — RuntimeScheduler
+
+Non richiede un meccanismo separato: usa il `RuntimeScheduler` già presente nel coordinator.
+
+La reaction implementa `scheduled_jobs(entry_id) -> dict[str, ScheduledRuntimeJob]` (nuovo hook
+no-op su `HeimaReaction` base). L'engine raccoglie i job da tutte le reaction in
+`scheduled_runtime_jobs()` e li passa al coordinator che li sincronizza con lo scheduler. Quando il
+job scatta → `coordinator.async_request_evaluation(reason="scheduler:<job_id>")` → ciclo di
+valutazione normale → `evaluate()` verifica la finestra e produce lo step.
+
+```python
+def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
+    """Restituisce il prossimo job di scheduling per questa reaction."""
+    due_monotonic = self._next_due_monotonic()  # prossima occorrenza di scheduled_min - window_half_min
+    job_id = f"lighting_schedule:{self.reaction_id}"
+    return {
+        job_id: ScheduledRuntimeJob(
+            job_id=job_id,
+            owner="LightingScheduleReaction",
+            entry_id=entry_id,
+            due_monotonic=due_monotonic,
+            label=f"lighting schedule: {self._room_id} {self._action} {_WEEKDAY_NAMES[self._weekday]}",
+        )
+    }
+```
+
+`_next_due_monotonic()` calcola il prossimo momento in cui `minute_of_day == scheduled_min - window_half_min`
+cade sul `weekday` configurato. Se già passato oggi, proietta alla settimana successiva.
+
+#### Evaluate — time-window check + debounce
+
+```python
+def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
+    if not history:
+        return []
+    now_local = dt_util.now()
+    if now_local.weekday() != self._weekday:
+        return []
+    current_min = now_local.hour * 60 + now_local.minute
+    lo = self._scheduled_min - self._window_half_min
+    hi = self._scheduled_min + self._window_half_min
+    if not (lo <= current_min <= hi):
+        return []
+    if self._house_state_filter and history[-1].house_state != self._house_state_filter:
+        return []
+    today = now_local.date().isoformat()
+    if self._last_fired_date == today:
+        return []  # già fired oggi nella finestra
+    self._last_fired_date = today
+    return [self._build_step()]
+```
+
+#### ApplyStep — semantic step (Option B)
+
+La reaction emette uno step semantico che `LightingDomain.execute_lighting_steps()` sa risolvere:
+
+```python
+def _build_step(self) -> ApplyStep:
+    if self._action == "on":
+        return ApplyStep(
+            domain="lighting",
+            target=self._room_id,
+            action="light.turn_on",          # nuovo ramo in execute_lighting_steps
+            params={
+                "brightness": self._brightness,
+                "color_temp_kelvin": self._color_temp_kelvin,
+                "rgb_color": self._rgb_color,
+            },
+            reason=f"lighting_schedule:{self.reaction_id}",
+        )
+    else:
+        return ApplyStep(
+            domain="lighting",
+            target=self._room_id,
+            action="light.turn_off_area",    # nuovo ramo: spegne per area_id
+            params={},
+            reason=f"lighting_schedule:{self.reaction_id}",
+        )
+```
+
+`execute_lighting_steps()` in `LightingDomain` aggiunge due rami:
+- `action="light.turn_on"`: risolve `room_id → area_id` da options, chiama `light.turn_on` con gli
+  attributi forniti (omette i campi `None`). Aggiorna `last_apply_ts_by_room`.
+- `action="light.turn_off_area"`: risolve `room_id → area_id`, chiama `light.turn_off`.
+  (Equivalente al ramo `"light.turn_off"` già esistente ma con risoluzione da `room_id`.)
+
+#### Config
+
+```python
+LightingScheduleReaction(
+    room_id="living",
+    action="on",
+    weekday=0,
+    scheduled_min=1200,
+    window_half_min=10,
+    house_state_filter=None,
+    brightness=128,
+    color_temp_kelvin=3000,
+    rgb_color=None,
+    reaction_id="LightingPatternAnalyzer|lighting_schedule|living|on|0",
+)
+```
+
+Istanziata da `_rebuild_configured_reactions()` quando `reaction_class == "LightingScheduleReaction"`.
 
 ### P9.6 Registration
 
