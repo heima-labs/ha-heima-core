@@ -177,8 +177,17 @@ class _ReactionsStepsMixin:
             reactions_cfg["labels"] = labels
             self._update_options({OPT_REACTIONS: reactions_cfg})
 
-        if accepted_ids:
-            self._pending_action_configs = list(accepted_ids)
+        # Self-contained reactions (e.g. LightingScheduleReaction) carry all their
+        # config in suggested_reaction_config — skip the action configuration step.
+        proposal_map = {p.proposal_id: p for p in pending}
+        needs_action_config = [
+            pid for pid in accepted_ids
+            if proposal_map.get(pid) is not None
+            and proposal_map[pid].suggested_reaction_config.get("reaction_class")
+            != "LightingScheduleReaction"
+        ]
+        if needs_action_config:
+            self._pending_action_configs = needs_action_config
             return await self.async_step_proposal_configure_action()
 
         return await self.async_step_init()
@@ -303,6 +312,18 @@ class _ReactionsStepsMixin:
                 spread = f" (± {window_half} min)" if window_half > 0 else ""
                 day = _WEEKDAY_IT[weekday] if 0 <= weekday <= 6 else str(weekday)
                 return f"{day}: arrivo alle {hhmm}{spread}"
+            except (KeyError, TypeError, ValueError, IndexError):
+                pass
+
+        if cfg.get("reaction_class") == "LightingScheduleReaction":
+            try:
+                weekday = int(cfg["weekday"])
+                scheduled_min = int(cfg["scheduled_min"])
+                room_id = str(cfg.get("room_id", ""))
+                hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
+                day = _WEEKDAY_IT[weekday] if 0 <= weekday <= 6 else str(weekday)
+                n_steps = len(cfg.get("entity_steps", []))
+                return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
 
