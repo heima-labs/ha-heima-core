@@ -23,6 +23,7 @@ class ReactionProposal:
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    fingerprint: str = ""  # if set, used by ProposalEngine instead of the computed fingerprint
 
     def as_dict(self) -> dict[str, Any]:
         return {

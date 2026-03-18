@@ -376,22 +376,66 @@ class LightingDomain:
 
             elif step.action == "light.turn_off":
                 area_id = step.params.get("area_id")
-                if not isinstance(area_id, str) or not area_id:
+                entity_id = step.params.get("entity_id")
+                if entity_id:
+                    # Entity-level turn_off (from LightingScheduleReaction)
+                    try:
+                        await self._hass.services.async_call(
+                            "light",
+                            "turn_off",
+                            {"entity_id": entity_id},
+                            blocking=False,
+                        )
+                        self._mark_scene_applied(step.target, f"light.turn_off:entity:{entity_id}")
+                    except ServiceNotFound:
+                        _LOGGER.warning(
+                            "Skipping lighting apply during startup/race: service light.turn_off not available"
+                        )
+                    except Exception:
+                        _LOGGER.exception("Lighting apply failed for entity '%s'", entity_id)
+                elif isinstance(area_id, str) and area_id:
+                    # Area-level turn_off (from lighting domain)
+                    try:
+                        await self._hass.services.async_call(
+                            "light",
+                            "turn_off",
+                            {"area_id": area_id},
+                            blocking=False,
+                        )
+                        self._mark_scene_applied(step.target, f"light.turn_off:area:{area_id}")
+                    except ServiceNotFound:
+                        _LOGGER.warning(
+                            "Skipping lighting apply during startup/race: service light.turn_off not available"
+                        )
+                    except Exception:
+                        _LOGGER.exception("Lighting apply failed for room area '%s'", area_id)
+
+            elif step.action == "light.turn_on":
+                # Entity-level turn_on with attributes (from LightingScheduleReaction)
+                entity_id = step.params.get("entity_id")
+                if not isinstance(entity_id, str) or not entity_id:
                     continue
+                call_params: dict = {"entity_id": entity_id}
+                if step.params.get("brightness") is not None:
+                    call_params["brightness"] = step.params["brightness"]
+                if step.params.get("rgb_color") is not None:
+                    call_params["rgb_color"] = step.params["rgb_color"]
+                elif step.params.get("color_temp_kelvin") is not None:
+                    call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
                 try:
                     await self._hass.services.async_call(
                         "light",
-                        "turn_off",
-                        {"area_id": area_id},
+                        "turn_on",
+                        call_params,
                         blocking=False,
                     )
-                    self._mark_scene_applied(step.target, f"light.turn_off:area:{area_id}")
+                    self._mark_scene_applied(step.target, f"light.turn_on:entity:{entity_id}")
                 except ServiceNotFound:
                     _LOGGER.warning(
-                        "Skipping lighting apply during startup/race: service light.turn_off not available"
+                        "Skipping lighting apply during startup/race: service light.turn_on not available"
                     )
                 except Exception:
-                    _LOGGER.exception("Lighting apply failed for room area '%s'", area_id)
+                    _LOGGER.exception("Lighting apply failed for entity '%s'", entity_id)
 
     # ------------------------------------------------------------------
     # Hold events

@@ -144,6 +144,7 @@ class LightingRecorderBehavior(HeimaBehavior):
             context=context,
             source="user",
             data={
+                "entity_id": entity_id,
                 "room_id": room_id,
                 "action": action,
                 "scene": None,  # direct entity change; no scene context

@@ -36,6 +36,7 @@ from ..models import HeimaOptions
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent
 from .reactions.base import HeimaReaction
+from .reactions.lighting_schedule import LightingScheduleReaction
 from .reactions.presence import _ArrivalRecord, PresencePatternReaction
 from .snapshot_buffer import SnapshotBuffer
 from .domains.calendar import CalendarDomain
@@ -239,6 +240,11 @@ class HeimaEngine:
                 if reaction is not None:
                     self._reactions.append(reaction)
                     self._configured_reaction_ids.add(reaction.reaction_id)
+            elif reaction_class == "LightingScheduleReaction":
+                reaction = self._build_lighting_schedule_reaction(proposal_id, cfg)
+                if reaction is not None:
+                    self._reactions.append(reaction)
+                    self._configured_reaction_ids.add(reaction.reaction_id)
             else:
                 _LOGGER.debug(
                     "Skipping configured reaction with unknown class %r (proposal %s)",
@@ -269,6 +275,32 @@ class HeimaEngine:
             pre_condition_min=pre_cond,
             reaction_id=proposal_id,
             initial_arrivals=seed,
+        )
+
+    def _build_lighting_schedule_reaction(
+        self, proposal_id: str, cfg: dict
+    ) -> LightingScheduleReaction | None:
+        """Build a LightingScheduleReaction from a stored proposal config."""
+        try:
+            room_id = str(cfg["room_id"]).strip()
+            weekday = int(cfg["weekday"])
+            scheduled_min = int(cfg["scheduled_min"])
+            window_half = int(cfg.get("window_half_min", 10))
+            house_state_filter = cfg.get("house_state_filter") or None
+            entity_steps = list(cfg.get("entity_steps", []))
+            if not room_id or not entity_steps:
+                raise ValueError("room_id or entity_steps missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed LightingScheduleReaction config for proposal %s", proposal_id)
+            return None
+        return LightingScheduleReaction(
+            room_id=room_id,
+            weekday=weekday,
+            scheduled_min=scheduled_min,
+            window_half_min=window_half,
+            house_state_filter=house_state_filter,
+            entity_steps=entity_steps,
+            reaction_id=proposal_id,
         )
 
     def set_house_state_override(
@@ -570,6 +602,11 @@ class HeimaEngine:
                 due_monotonic=float(spec["due_monotonic"]),
                 label=str(spec.get("label", job_id)),
             )
+        for reaction in self._reactions:
+            try:
+                jobs.update(reaction.scheduled_jobs(entry_id))
+            except Exception:
+                _LOGGER.exception("Reaction %s raised in scheduled_jobs", reaction.reaction_id)
         return jobs
 
     def next_dwell_recheck_delay_s(self) -> float | None:
