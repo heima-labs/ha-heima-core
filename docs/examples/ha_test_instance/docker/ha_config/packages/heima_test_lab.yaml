@@ -20,6 +20,38 @@ input_boolean:
     name: "Test Heima Anonymous Presence Raw"
   test_heima_heater_relay_raw:
     name: "Test Heima Heater Relay Raw"
+  test_heima_light_living_raw:
+    name: "Test Heima Light Living Raw"
+  test_heima_light_studio_raw:
+    name: "Test Heima Light Studio Raw"
+
+light:
+  - platform: template
+    lights:
+      test_heima_living_main:
+        friendly_name: "Test Heima Living Main"
+        unique_id: test_heima_living_main
+        value_template: "{{ is_state('input_boolean.test_heima_light_living_raw', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_living_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_living_raw
+      test_heima_studio_main:
+        friendly_name: "Test Heima Studio Main"
+        unique_id: test_heima_studio_main
+        value_template: "{{ is_state('input_boolean.test_heima_light_studio_raw', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_studio_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_studio_raw
 
 input_number:
   test_heima_people_score:

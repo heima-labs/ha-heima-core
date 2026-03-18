@@ -2,13 +2,15 @@
 """Live E2E test for Heima lighting-schedule learning pipeline (P9).
 
 Pipeline tested:
-  1. (optional) learning_reset  — wipe all learning data first
-  2. seed_lighting_events        — inject synthetic events via heima.command
-  3. reload config entry         → ProposalEngine.async_run()
-  4. sensor + diagnostic check   → lighting_scene_schedule proposal pending
-  5. accept proposal             → options flow reactions/proposals step
-  6. verify accepted status      → sensor poll
-  7. (best-effort) diagnostics   → LightingScheduleReaction instantiated
+  1. (optional) learning_reset        — wipe all learning data first
+  2. real recording check             — toggle light entity → verify LightingRecorderBehavior
+                                        captures STATE_CHANGED (requires area_id on room,
+                                        set via recover_test_lab_config.py --section lighting_areas)
+  3. seed_lighting_events             — inject synthetic events (for _spans_min_weeks gate)
+  4. reload config entry              → ProposalEngine.async_run()
+  5. sensor + diagnostic check        → lighting_scene_schedule proposal pending
+  6. accept proposal                  → options flow reactions/proposals step
+  7. verify accepted status           → sensor poll
 
 NOTE: by default this script does NOT reset learning data so it can run safely
 after 020_learning_pipeline.py and 030_learning_proposals_diag.py without
@@ -157,6 +159,54 @@ def step_seed_events(
         "target": {"entry_id": entry_id},
         "params": params,
     })
+
+
+def step_verify_real_recording(
+    client: HAClient,
+    light_entity: str,
+    event_store_entity: str,
+    poll_s: float,
+    timeout_s: int = 10,
+) -> None:
+    """Toggle the real light entity and verify LightingRecorderBehavior records the event.
+
+    Requires:
+    - The light entity to exist in HA
+    - The corresponding room to have area_id set in Heima options (via recover_lighting_areas)
+    - LightingRecorderBehavior to be subscribed to EVENT_STATE_CHANGED
+
+    If the entity does not exist, the step is skipped with a warning.
+    """
+    if not client.entity_exists(light_entity):
+        print(f"  → WARN: {light_entity} non trovata, skip verifica recording reale")
+        return
+
+    state_before = client.get_state(event_store_entity)
+    attrs_before = state_before.get("attributes") or {}
+    lighting_before = _to_int(attrs_before.get("lighting", 0))
+
+    print(f"  → toggle {light_entity} per verificare LightingRecorderBehavior "
+          f"(lighting events prima: {lighting_before})")
+
+    # Turn on
+    client.call_service("light", "turn_on", {"entity_id": light_entity})
+    time.sleep(0.5)
+    # Turn off
+    client.call_service("light", "turn_off", {"entity_id": light_entity})
+
+    # Poll for new lighting event
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        attrs = (client.get_state(event_store_entity).get("attributes") or {})
+        lighting_after = _to_int(attrs.get("lighting", 0))
+        if lighting_after > lighting_before:
+            print(f"     OK: LightingRecorderBehavior ha registrato l'evento "
+                  f"(lighting events: {lighting_before} → {lighting_after})")
+            return
+        time.sleep(poll_s)
+
+    print(f"  → WARN: nessun nuovo lighting event in {timeout_s}s — "
+          f"verificare che il room abbia area_id configurato e corrisponda all'area di {light_entity}")
 
 
 def step_trigger_proposal_run(client: HAClient, entry_id: str) -> None:
@@ -312,7 +362,17 @@ def main() -> int:
     else:
         print("  → learning_reset saltato (usa --reset per azzerare)")
 
-    # 2. Seed eventi sintetici
+    # 2. Verifica recording reale: toggle della luce vera e verifica che
+    #    LightingRecorderBehavior catturi l'evento via STATE_CHANGED
+    #    (funziona solo se il room ha area_id configurato via recover_lighting_areas)
+    step_verify_real_recording(
+        client,
+        light_entity=args.light_entity,
+        event_store_entity="sensor.heima_event_store",
+        poll_s=args.poll_s,
+    )
+
+    # 3. Seed eventi sintetici (per superare il gate _spans_min_weeks)
     step_seed_events(
         client,
         entry_id,
@@ -325,15 +385,15 @@ def main() -> int:
         count=args.event_count,
     )
 
-    # 3. Trigger proposal run
+    # 4. Trigger proposal run
     step_trigger_proposal_run(client, entry_id)
 
-    # 4. Attesa proposta lighting
+    # 5. Attesa proposta lighting
     proposal_id, proposal = step_wait_for_proposal(
         client, proposals_entity, timeout_s=args.timeout_s, poll_s=args.poll_s
     )
 
-    # 5. Verifica diagnostica (stile 030)
+    # 6. Verifica diagnostica (stile 030)
     step_diag_check(client, proposals_entity, proposal_id)
 
     if not args.reset:
@@ -344,10 +404,10 @@ def main() -> int:
         print("PASS: proposta lighting generata e verificata (accept saltato)")
         return 0
 
-    # 6. Accetta proposta
+    # 7. Accetta proposta
     step_accept_proposal(client, entry_id, proposals_entity, proposal_id)
 
-    # 7. Verifica accepted
+    # 8. Verifica accepted
     step_verify_accepted(client, proposals_entity, proposal_id,
                          timeout_s=30, poll_s=args.poll_s)
 
