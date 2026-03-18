@@ -24,6 +24,7 @@
           "security": "Security",
           "notifications": "Notifications",
           "calendar": "Calendar",
+          "learning": "Learning context",
           "reactions": "Reactions",
           "proposals": "Review proposals",
           "save": "Save and close",
@@ -290,6 +291,20 @@
           "cache_ttl_hours": "Cache TTL (hours)",
           "calendar_keywords": "Category keywords (YAML: category: [kw1, kw2])",
           "priority_text": "Category priority (comma-separated, highest first)"
+        },
+        "submit": "OK"
+      },
+      "learning": {
+        "title": "Learning Context",
+        "description": "Configure the contextual signals Heima records with each event. These allow the learning system to detect patterns correlated with specific conditions (e.g. light level, weather).",
+        "data": {
+          "outdoor_lux_entity": "Outdoor light level entity (sensor)",
+          "outdoor_temp_entity": "Outdoor temperature entity (sensor)",
+          "weather_entity": "Weather entity (fallback for temp and condition)",
+          "context_signal_entities": "Strong context signals (max 10 entities)"
+        },
+        "data_description": {
+          "context_signal_entities": "Entities whose state is recorded alongside every learning event. Use for strong contextual signals such as a projector or a specific media player. Max 10."
         },
         "submit": "OK"
       },
