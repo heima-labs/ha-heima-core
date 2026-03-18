@@ -42,6 +42,7 @@ class _PeopleStepsMixin:
                 "people_save",
                 "people_next",
             ],
+            description_placeholders={"summary": self._people_menu_summary()},
         )
 
     async def async_step_people_add(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
@@ -119,7 +120,7 @@ class _PeopleStepsMixin:
                 step_id="people_anonymous", data_schema=self._people_anonymous_schema(current)
             )
 
-        self.options[OPT_PEOPLE_ANON] = self._normalize_people_anonymous_payload(user_input)
+        self._update_options({OPT_PEOPLE_ANON: self._normalize_people_anonymous_payload(user_input)})
         return await self.async_step_people_menu()
 
     async def async_step_people_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":

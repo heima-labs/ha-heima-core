@@ -177,12 +177,14 @@ async def test_heating_flow_persists_general_config_and_branch_mapping():
 
     selected = await flow.async_step_heating_branches_edit({"house_state": "vacation"})
     assert selected["type"] == "form"
-    assert selected["step_id"] == "heating_branch_edit_form"
+    assert selected["step_id"] == "heating_branch_select"
+
+    params_form = await flow.async_step_heating_branch_select({"branch": "vacation_curve"})
+    assert params_form["type"] == "form"
+    assert params_form["step_id"] == "heating_branch_edit_form"
 
     updated = await flow.async_step_heating_branch_edit_form(
         {
-            "house_state": "vacation",
-            "branch": "vacation_curve",
             "vacation_ramp_down_h": 8,
             "vacation_ramp_up_h": 10,
             "vacation_min_temp": 16.5,
