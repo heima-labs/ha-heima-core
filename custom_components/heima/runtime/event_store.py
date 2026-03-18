@@ -3,57 +3,113 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 
 @dataclass(frozen=True)
-class PresenceEvent:
-    """Presence transition event used by pattern analyzers."""
+class EventContext:
+    """House context snapshot captured at event time.
 
-    ts: str
-    event_type: Literal["presence"]
-    transition: Literal["arrive", "depart"]
-    weekday: int
-    minute_of_day: int
+    Embedded in every HeimaEvent so analyzers can correlate actions with context
+    (outdoor darkness, house state, who's home, strong-signal device states, etc.).
+    """
 
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    # --- Time (always present, derived from local datetime) ---
+    weekday: int           # 0=Monday … 6=Sunday
+    minute_of_day: int     # 0–1439 (local time)
+    month: int             # 1–12 (season proxy)
 
-
-@dataclass(frozen=True)
-class HeatingEvent:
-    """Heating setpoint event used by pattern analyzers."""
-
-    ts: str
-    event_type: Literal["heating"]
+    # --- Aggregated house state (always present) ---
     house_state: str
-    temperature_set: float
-    source: Literal["user", "heima"]
-    env: dict[str, str] = field(default_factory=dict)
+
+    # --- Occupancy (always present, derived from PeopleResult) ---
+    occupants_count: int
+    occupied_rooms: tuple[str, ...]  # tuple for frozen-dataclass compatibility
+
+    # --- External environment (None if sensor not configured) ---
+    outdoor_lux: float | None
+    outdoor_temp: float | None
+    weather_condition: str | None    # "sunny", "cloudy", "rainy", …
+
+    # --- Strong signals: user-configured entities, max 10, entity_id → state ---
+    signals: dict[str, str]
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "weekday": self.weekday,
+            "minute_of_day": self.minute_of_day,
+            "month": self.month,
+            "house_state": self.house_state,
+            "occupants_count": self.occupants_count,
+            "occupied_rooms": list(self.occupied_rooms),
+            "outdoor_lux": self.outdoor_lux,
+            "outdoor_temp": self.outdoor_temp,
+            "weather_condition": self.weather_condition,
+            "signals": dict(self.signals),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "EventContext":
+        return cls(
+            weekday=int(raw.get("weekday", 0)),
+            minute_of_day=int(raw.get("minute_of_day", 0)),
+            month=int(raw.get("month", 1)),
+            house_state=str(raw.get("house_state", "")),
+            occupants_count=int(raw.get("occupants_count", 0)),
+            occupied_rooms=tuple(raw.get("occupied_rooms", [])),
+            outdoor_lux=float(raw["outdoor_lux"]) if raw.get("outdoor_lux") is not None else None,
+            outdoor_temp=float(raw["outdoor_temp"]) if raw.get("outdoor_temp") is not None else None,
+            weather_condition=str(raw["weather_condition"]) if raw.get("weather_condition") else None,
+            signals={str(k): str(v) for k, v in raw.get("signals", {}).items()},
+        )
 
 
 @dataclass(frozen=True)
-class HouseStateEvent:
-    """House-state transition event used by pattern analyzers."""
+class HeimaEvent:
+    """Unified event type for all learning system pattern events.
+
+    Every event carries a full EventContext so analyzers can detect correlations
+    between actions and the state of the house at the time they occurred.
+
+    Fields:
+      ts          ISO-8601 UTC timestamp
+      event_type  discriminator: "presence", "heating", "house_state", "lighting", …
+      context     house context snapshot at event time
+      source      "user" | "heima" | None (PresenceEvent / HouseStateEvent have None)
+      data        event-specific payload (see below per event_type)
+
+    data payloads by event_type:
+      presence:    {"transition": "arrive"|"depart"}
+      heating:     {"temperature_set": float}
+      house_state: {"from_state": str, "to_state": str}
+      lighting:    {"room_id": str, "action": "on"|"off", "scene": str|None,
+                    "brightness": int|None, "color_temp_kelvin": int|None,
+                    "rgb_color": [r,g,b]|None}
+    """
 
     ts: str
-    event_type: Literal["house_state"]
-    from_state: str
-    to_state: str
+    event_type: str
+    context: EventContext
+    source: str | None
+    data: dict[str, Any]
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "ts": self.ts,
+            "event_type": self.event_type,
+            "context": self.context.as_dict(),
+            "source": self.source,
+            "data": dict(self.data),
+        }
 
 
-PatternEvent = PresenceEvent | HeatingEvent | HouseStateEvent
+# Single type alias — kept so import sites don't need updating when adding new event_types
+PatternEvent = HeimaEvent
 
 
 class EventStore:
@@ -72,7 +128,7 @@ class EventStore:
             version=self.STORAGE_VERSION,
             key=self.STORAGE_KEY,
         )
-        self._events: deque[PatternEvent] = deque(maxlen=self.MAX_RECORDS)
+        self._events: deque[HeimaEvent] = deque(maxlen=self.MAX_RECORDS)
         self._loaded = False
 
     async def async_load(self) -> None:
@@ -95,7 +151,7 @@ class EventStore:
         self._loaded = True
         self._schedule_save()
 
-    async def async_append(self, event: PatternEvent) -> None:
+    async def async_append(self, event: HeimaEvent) -> None:
         """Append a pattern event, enforcing TTL and max capacity."""
         if not self._loaded:
             await self.async_load()
@@ -109,13 +165,13 @@ class EventStore:
         event_type: str | None = None,
         since: str | None = None,
         limit: int | None = None,
-    ) -> list[PatternEvent]:
+    ) -> list[HeimaEvent]:
         """Query events by optional type/time filters."""
         if not self._loaded:
             await self.async_load()
 
         since_dt = self._parse_iso_ts(since) if since else None
-        results: list[PatternEvent] = []
+        results: list[HeimaEvent] = []
         for event in self._events:
             if event_type and event.event_type != event_type:
                 continue
@@ -157,7 +213,7 @@ class EventStore:
         if not self._events:
             return
         cutoff = datetime.now(UTC) - timedelta(days=self.TTL_DAYS)
-        filtered: deque[PatternEvent] = deque(maxlen=self.MAX_RECORDS)
+        filtered: deque[HeimaEvent] = deque(maxlen=self.MAX_RECORDS)
         for event in self._events:
             event_dt = self._parse_iso_ts(event.ts)
             if event_dt is None:
@@ -166,46 +222,70 @@ class EventStore:
                 filtered.append(event)
         self._events = filtered
 
-    def _event_from_dict(self, raw: Any) -> PatternEvent | None:
+    def _event_from_dict(self, raw: Any) -> HeimaEvent | None:
         if not isinstance(raw, dict):
             return None
         event_type = raw.get("event_type")
+        if not event_type:
+            return None
+
+        # Context: from nested "context" key, or reconstructed from legacy top-level fields
+        if "context" in raw and isinstance(raw["context"], dict):
+            try:
+                context = EventContext.from_dict(raw["context"])
+            except (KeyError, TypeError, ValueError):
+                return None
+        else:
+            # Backward compat: old records had weekday/minute_of_day/house_state at top level
+            context = EventContext(
+                weekday=int(raw.get("weekday", 0)),
+                minute_of_day=int(raw.get("minute_of_day", 0)),
+                month=1,
+                house_state=str(raw.get("house_state", "")),
+                occupants_count=0,
+                occupied_rooms=(),
+                outdoor_lux=None,
+                outdoor_temp=None,
+                weather_condition=None,
+                signals={},
+            )
+
+        source = raw.get("source")
+
+        if "data" in raw and isinstance(raw["data"], dict):
+            data = dict(raw["data"])
+        else:
+            data = self._legacy_data_from_raw(str(event_type), raw)
+
+        try:
+            return HeimaEvent(
+                ts=str(raw["ts"]),
+                event_type=str(event_type),
+                context=context,
+                source=str(source) if source is not None else None,
+                data=data,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _legacy_data_from_raw(event_type: str, raw: dict[str, Any]) -> dict[str, Any]:
+        """Reconstruct data dict from legacy flat event format."""
         if event_type == "presence":
-            try:
-                return PresenceEvent(
-                    ts=str(raw["ts"]),
-                    event_type="presence",
-                    transition=str(raw["transition"]),  # type: ignore[arg-type]
-                    weekday=int(raw["weekday"]),
-                    minute_of_day=int(raw["minute_of_day"]),
-                )
-            except (KeyError, TypeError, ValueError):
-                return None
+            return {"transition": str(raw.get("transition", "arrive"))}
         if event_type == "heating":
-            try:
-                raw_env = raw.get("env", {})
-                env = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
-                return HeatingEvent(
-                    ts=str(raw["ts"]),
-                    event_type="heating",
-                    house_state=str(raw["house_state"]),
-                    temperature_set=float(raw["temperature_set"]),
-                    source=str(raw["source"]),  # type: ignore[arg-type]
-                    env=env,
-                )
-            except (KeyError, TypeError, ValueError):
-                return None
+            raw_env = raw.get("env", {})
+            signals = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
+            return {
+                "temperature_set": float(raw.get("temperature_set", 0.0)),
+                "signals": signals,  # env migrated to signals
+            }
         if event_type == "house_state":
-            try:
-                return HouseStateEvent(
-                    ts=str(raw["ts"]),
-                    event_type="house_state",
-                    from_state=str(raw["from_state"]),
-                    to_state=str(raw["to_state"]),
-                )
-            except (KeyError, TypeError, ValueError):
-                return None
-        return None
+            return {
+                "from_state": str(raw.get("from_state", "")),
+                "to_state": str(raw.get("to_state", "")),
+            }
+        return {}
 
     @staticmethod
     def _parse_iso_ts(ts: str | None) -> datetime | None:
@@ -218,4 +298,3 @@ class EventStore:
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
-

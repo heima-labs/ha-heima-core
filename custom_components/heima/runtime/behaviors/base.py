@@ -57,6 +57,20 @@ class HeimaBehavior:
         Use for: re-reading behavior config from options.
         """
 
+    async def async_setup(self) -> None:
+        """Called once after the coordinator is initialized.
+
+        Use for: registering HA listeners, async initialization.
+        Default: no-op.
+        """
+
+    async def async_teardown(self) -> None:
+        """Called on coordinator shutdown.
+
+        Use for: unregistering HA listeners, cleanup.
+        Default: no-op.
+        """
+
     def diagnostics(self) -> dict[str, Any]:
         """Return behavior-specific diagnostics dict."""
         return {}

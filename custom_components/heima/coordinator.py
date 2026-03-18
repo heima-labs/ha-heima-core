@@ -11,8 +11,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .models import HeimaRuntimeState
-from .runtime.analyzers import HeatingPatternAnalyzer, PresencePatternAnalyzer
-from .runtime.behaviors import EventRecorderBehavior, HeatingRecorderBehavior
+from .runtime.analyzers import HeatingPatternAnalyzer, LightingPatternAnalyzer, PresencePatternAnalyzer
+from .runtime.behaviors import EventRecorderBehavior, HeatingRecorderBehavior, LightingRecorderBehavior
+from .runtime.context_builder import ContextBuilder
 from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.proposal_engine import ProposalEngine
@@ -35,9 +36,17 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.entry = entry
         self.engine = HeimaEngine(hass, entry)
         self._event_store = EventStore(hass)
-        self.engine.register_behavior(EventRecorderBehavior(hass, self._event_store))
-        self._heating_recorder = HeatingRecorderBehavior(hass, self._event_store, self._get_context_entities(entry))
-        self.engine.register_behavior(self._heating_recorder)
+        self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
+        self.engine.register_behavior(EventRecorderBehavior(hass, self._event_store, self._context_builder))
+        self.engine.register_behavior(HeatingRecorderBehavior(hass, self._event_store, self._context_builder))
+        self._lighting_recorder = LightingRecorderBehavior(
+            hass,
+            self._event_store,
+            self._context_builder,
+            entry,
+            lambda: self.engine.lighting_last_apply_ts_by_room,
+        )
+        self.engine.register_behavior(self._lighting_recorder)
         self._proposal_engine = ProposalEngine(
             hass,
             self._event_store,
@@ -45,6 +54,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         self._proposal_engine.register_analyzer(PresencePatternAnalyzer())
         self._proposal_engine.register_analyzer(HeatingPatternAnalyzer())
+        self._proposal_engine.register_analyzer(LightingPatternAnalyzer())
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self.last_options_snapshot: dict = dict(entry.options)
@@ -97,15 +107,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         await self.async_refresh()
 
-    def _get_context_entities(self, entry: ConfigEntry) -> list[str]:
-        heating = entry.options.get("heating", {})
-        ctx = heating.get("context_entities", [])
-        return list(ctx) if isinstance(ctx, list) else []
+    def _get_learning_config(self, entry: ConfigEntry) -> dict:
+        return dict(entry.options.get("learning", {}))
 
     async def async_reload_options(self) -> None:
         """Reload options and refresh state."""
         await self.engine.async_reload_options(self.entry)
-        self._heating_recorder.set_context_entities(self._get_context_entities(self.entry))
+        self._context_builder.update_config(self._get_learning_config(self.entry))
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(

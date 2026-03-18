@@ -120,17 +120,36 @@ class HeimaEngine:
     def state(self) -> CanonicalState:
         return self._state
 
+    @property
+    def lighting_last_apply_ts_by_room(self) -> dict[str, float]:
+        """Wall-clock timestamps of the last Heima lighting apply per room_id.
+
+        Used by LightingRecorderBehavior to distinguish Heima-applied changes
+        from user-initiated light changes.
+        """
+        return self._lighting_domain.last_apply_ts_by_room
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)
         self._health = EngineHealth(ok=True, reason="initialized")
         self._rebuild_configured_reactions()
         self._build_default_state()
+        for behavior in self._behaviors:
+            try:
+                await behavior.async_setup()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in async_setup", behavior.behavior_id)
         await self.async_evaluate(reason="initialize")
 
     async def async_shutdown(self) -> None:
         _LOGGER.debug("Heima engine shutdown")
         self._health = EngineHealth(ok=True, reason="shutdown")
+        for behavior in self._behaviors:
+            try:
+                await behavior.async_teardown()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in async_teardown", behavior.behavior_id)
 
     async def async_reload_options(self, entry: ConfigEntry) -> None:
         _LOGGER.debug("Heima engine reload options")
