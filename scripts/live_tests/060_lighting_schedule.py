@@ -325,9 +325,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Heima lighting-schedule live E2E test (P9)")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--light-entity", required=True,
-                        help="HA entity_id della luce (es. light.living_main)")
-    parser.add_argument("--room-id", required=True, help="Heima room_id")
+    parser.add_argument("--light-entity", default="light.test_heima_living_main",
+                        help="HA entity_id della luce (default: test lab living)")
+    parser.add_argument("--room-id", default="living", help="Heima room_id (default: living)")
     parser.add_argument("--weekday", type=int, default=0, help="0=Lun … 6=Dom")
     parser.add_argument("--minute", type=int, default=1200,
                         help="minuto del giorno (0-1439); default 1200=20:00")
