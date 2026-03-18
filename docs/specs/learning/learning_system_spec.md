@@ -742,7 +742,8 @@ This is a deliberate v1 constraint, **not** an architectural one. Any analyzer t
 
 | Field | Why |
 |---|---|
-| `room_id` | Patterns are per-room; whole-house aggregation loses too much signal |
+| `entity_id` | Granularità per entità: Heima impara quale specifica luce l'utente tocca, non solo la stanza |
+| `room_id` | Contesto stanza per il grouping in scene candidate (fase 2 di P9) |
 | `action` | Both "on" and "off" are learnable; going to bed at 23:00 is as valuable as waking at 07:00 |
 | `scene` | When a named scene is activated, the proposal can replicate it exactly, not just "turn on" |
 | `brightness` | Dim at 10% warm for cinema vs full brightness for cooking — same action, different intent |
@@ -759,6 +760,7 @@ Attributes are read from the HA entity state at the moment of the user action:
 new_state = event.data.get("new_state")
 attributes = new_state.attributes if new_state else {}
 
+entity_id = event.data.get("entity_id")                # str — entità specifica
 brightness = attributes.get("brightness")               # int 0-255 or None
 color_temp_kelvin = attributes.get("color_temp_kelvin") # int or None
 rgb_color_raw = attributes.get("rgb_color")             # [r, g, b] list or None
@@ -868,17 +870,20 @@ async def _handle_state_changed(self, event: Event) -> None:
         return  # Heima caused this, skip
 
     action: Literal["on", "off"] = "on" if new_state.state == "on" else "off"
-    now_local = dt_util.now()
-    lighting_event = LightingEvent(
-        ts=datetime.now(UTC).isoformat(),
+    lighting_event = HeimaEvent(
+        ts=new_state.last_changed.isoformat(),
         event_type="lighting",
-        room_id=self._entity_to_room[entity_id],
-        scene=self._extract_scene(event),  # None if not determinable
-        action=action,
-        weekday=now_local.weekday(),
-        minute_of_day=now_local.hour * 60 + now_local.minute,
-        house_state=self._canonical_state.house_state,
+        context=self._context_builder.build(self._last_snapshot),
         source="user",
+        data={
+            "entity_id": entity_id,          # entità specifica — chiave per entity-level analysis
+            "room_id": self._entity_to_room[entity_id],
+            "action": action,
+            "scene": None,
+            "brightness": brightness,
+            "color_temp_kelvin": color_temp_kelvin,
+            "rgb_color": rgb_color,
+        },
     )
     self._hass.async_create_task(self._store.async_append(lighting_event))
 ```
@@ -891,107 +896,182 @@ async def _handle_state_changed(self, event: Event) -> None:
 
 ### P9.1 Responsibility
 
-Detect recurring on/off patterns per `(room_id, action, weekday)` from `LightingEvent` objects
-with `source="user"`, and emit `ReactionProposal` objects for user review.
+Rilevare configurazioni ricorrenti di luci per stanza e giorno della settimana, e proporre
+all'utente di automatizzarle come una reazione temporizzata. L'analisi avviene in tre fasi:
+
+1. **Entity-level pattern detection** — per ogni `(entity_id, action, weekday)`, rileva se
+   l'entità viene modificata in modo ricorrente a un orario consistente.
+2. **Scene candidate grouping** — raggruppa le entità della stessa stanza con `scheduled_min`
+   simili (entro `SCENE_GROUP_WINDOW_MIN = 15 min`) in un'unica "scena candidata".
+3. **Proposal emission** — emette una `ReactionProposal` per ogni scena candidata, con la lista
+   completa degli stati entità da applicare.
+
+Questo approccio cattura l'intento reale dell'utente: "ogni lunedì sera configuro il living così",
+senza frammentare in 4-8 proposte separate per ogni singola luce.
 
 ### P9.2 Algorithm
 
-```
-Input: all LightingEvent from EventStore where source="user"
+#### Fase 1 — Entity-level pattern detection
 
-For each key (room_id, action, weekday):
+```
+Input: all HeimaEvent(event_type="lighting") from EventStore where source="user"
+
+entity_patterns = {}   # (entity_id, action, weekday) -> EntityPattern
+
+For each key (entity_id, action, weekday):
     matching = [e for e in lighting_events
-                if e.source == "user"
-                and e.room_id == room_id
-                and e.action == action
+                if e.data["entity_id"] == entity_id
+                and e.data["action"] == action
                 and e.context.weekday == weekday]
 
-    samples = [e.context.minute_of_day for e in matching]
+    Gate 1: len(matching) >= MIN_OCCURRENCES (default 5)
+    Gate 2: distinct ISO weeks >= MIN_WEEKS (default 2)
+    If either gate fails: skip
 
-    Requirement 1: len(samples) >= MIN_OCCURRENCES (default 5)
-    Requirement 2: distinct ISO weeks in [e.ts for e in matching] >= MIN_WEEKS (default 2)
-
-    If requirements not met: skip
-
-    samples_sorted = sorted(samples)
+    samples_sorted = sorted(e.context.minute_of_day for e in matching)
     n = len(samples_sorted)
-    median = samples_sorted[n // 2]
-    p25    = samples_sorted[n // 4]
-    p75    = samples_sorted[3 * n // 4]
-    IQR    = p75 - p25
-
-    # Same formula as PresencePatternAnalyzer for consistency
+    median    = samples_sorted[n // 2]
+    p25       = samples_sorted[n // 4]
+    p75       = samples_sorted[3 * n // 4]
+    IQR       = p75 - p25
     confidence = max(0.3, 1.0 - IQR / 120.0)
 
-    # Aggregate light attributes (only meaningful for action="on")
-    # Use median of non-None values; None if fewer than MIN_OCCURRENCES/2 samples present
-    brightness       = _median_or_none([e.data.get("brightness") for e in matching])
-    color_temp_k     = _median_or_none([e.data.get("color_temp_kelvin") for e in matching])
-    rgb_color        = _mode_rgb_or_none([e.data.get("rgb_color") for e in matching])
+    # Attributi fisici aggregati (action="on" only)
+    brightness       = _median_int([e.data["brightness"] for e in matching])
+    color_temp_kelvin = _median_int([e.data["color_temp_kelvin"] for e in matching])
+    rgb_color        = _mode_rgb([e.data["rgb_color"] for e in matching])
 
-    Emit ReactionProposal(reaction_type="lighting_schedule", ...)
+    entity_patterns[(entity_id, action, weekday)] = EntityPattern(
+        entity_id, action, weekday,
+        room_id=matching[0].data["room_id"],
+        scheduled_min=median,
+        confidence=confidence,
+        brightness=brightness,
+        color_temp_kelvin=color_temp_kelvin,
+        rgb_color=rgb_color,
+    )
 ```
 
-**Why IQR, not std-dev:** same rationale as `PresencePatternAnalyzer` — IQR is robust to outliers
-and works without assuming a Gaussian distribution. A pattern with one very late outlier stays
-high-confidence if the core behavior is tight.
+`_median_int(values)`: mediana dei valori non-None; `None` se meno di `MIN_OCCURRENCES // 2`
+valori sono presenti (luce senza dimmer o attributo non disponibile).
 
-**Why `MIN_WEEKS=2`:** satisfies the "at least 2 distinct weeks" rule from §0.3. Prevents a single
-week of consistent behavior (e.g., a holiday week) from generating a proposal that becomes active.
-This check is missing in `PresencePatternAnalyzer` (open item for a future iteration).
+`_mode_rgb(values)`: moda dei vettori `[r,g,b]` non-None (confronto esatto); `None` se
+misto o insufficiente. La rgb ha precedenza su `color_temp_kelvin` se entrambi presenti.
 
-**Why per `(room_id, action, weekday)` and not per scene:** le scene HA sono un dettaglio
-implementativo dell'utente che può variare (diverse scene per lo stesso intento, scene rinominate,
-ecc.). Heima aggrega direttamente gli attributi fisici osservati (`brightness`, `color_temp_kelvin`)
-che sono stabili e indipendenti dalla configurazione scene. La reaction replica il comportamento
-osservato senza richiedere all'utente di pre-configurare scene manualmente.
+#### Fase 2 — Scene candidate grouping
 
-**Attributi aggregati (`action="on"`):**
-- `brightness`: mediana degli eventi con `brightness != None`. `None` se meno di `MIN_OCCURRENCES/2`
-  eventi forniscono il dato (luce senza dimmer, o attributo assente).
-- `color_temp_kelvin`: mediana degli eventi con `color_temp_kelvin != None`. `None` se insufficiente.
-- `rgb_color`: moda degli eventi con `rgb_color != None` (confronto per vettore `[r,g,b]`). `None`
-  se misto o insufficiente. La rgb prevale su `color_temp_kelvin` se presente.
-- Per `action="off"`: tutti e tre sempre `None`.
+```
+# Raggruppa per (room_id, weekday), poi clusterizza per scheduled_min
+
+for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
+    sorted_patterns = sorted(patterns, key=lambda p: p.scheduled_min)
+
+    # Gap-based clustering: nuovo cluster se gap > SCENE_GROUP_WINDOW_MIN
+    clusters = []
+    current_cluster = [sorted_patterns[0]]
+    for p in sorted_patterns[1:]:
+        if p.scheduled_min - current_cluster[-1].scheduled_min <= SCENE_GROUP_WINDOW_MIN:
+            current_cluster.append(p)
+        else:
+            clusters.append(current_cluster)
+            current_cluster = [p]
+    clusters.append(current_cluster)
+
+    for cluster in clusters:
+        scheduled_min = median([p.scheduled_min for p in cluster])
+        confidence    = mean([p.confidence for p in cluster])   # media, non min
+        entity_steps  = [p.as_entity_step() for p in cluster]
+        Emit SceneCandidate(room_id, weekday, scheduled_min, confidence, entity_steps)
+```
+
+**Confidence del gruppo:** media delle confidence individuali. Riflette la qualità complessiva del
+pattern; penalizza meno i casi in cui la maggioranza delle entità è consistente ma una sola è
+leggermente più variabile.
+
+#### Fase 3 — Proposal emission
+
+Per ogni `SceneCandidate`, emetti una `ReactionProposal` (vedi §P9.3).
+
+**Why IQR, not std-dev:** same rationale as `PresencePatternAnalyzer` — robust to outliers.
+
+**Why `MIN_WEEKS=2`:** previene che una settimana di comportamento consistente (es. settimana di
+vacanza) generi proposte spurie. Mancante in `PresencePatternAnalyzer` (open item futuro).
+
+**Why entity-level + grouping, not session detection on raw events:** il session detection richiede
+clustering temporale sugli eventi grezzi e una misura di similarità tra sessioni diverse — complessità
+significativa. Il grouping post-analisi (fase 2) ottiene lo stesso risultato lavorando su mediane già
+calcolate, con un algoritmo molto più semplice.
+
+**Why no HA scene creation:** Heima non crea scene HA persistenti. Applica gli stati entità
+direttamente tramite il service `light.turn_on`/`light.turn_off`. La logica è self-contained e non
+dipende dalla configurazione scene dell'utente.
 
 ### P9.3 Output proposal
+
+Una proposta per `SceneCandidate` (= per stanza × giorno × cluster orario):
 
 ```python
 ReactionProposal(
     analyzer_id="LightingPatternAnalyzer",
-    reaction_type="lighting_schedule",
-    description=f"{ROOM_LABELS[room_id]}: lights {action} every "
-                f"{WEEKDAY_NAMES[weekday]} around {hhmm(median)}"
-                + (f" (± {IQR // 2} min)" if IQR > 0 else ""),
+    reaction_type="lighting_scene_schedule",
+    description=(
+        f"{room_id}: {WEEKDAY_NAMES[weekday]} ~{hhmm(scheduled_min)} — "
+        + ", ".join(
+            f"{step['entity_id'].split('.')[-1]} {'on' if step['action']=='on' else 'off'}"
+            + (f" {step['brightness']}bri/{step['color_temp_kelvin']}K"
+               if step['action'] == 'on' and step['brightness'] else "")
+            for step in entity_steps
+        )
+    ),
     confidence=confidence,
     suggested_reaction_config={
         "reaction_class": "LightingScheduleReaction",
         "room_id": room_id,
-        "action": action,               # "on" or "off"
         "weekday": weekday,
-        "scheduled_min": median,        # minute_of_day to schedule
-        "window_half_min": 10,          # fire within ±10 min of scheduled_min
-        "house_state_filter": None,     # optional: only fire in specific house_state
-        # Aggregated light attributes (action="on" only; all None for "off")
-        "brightness": brightness,           # int 0-255 or None
-        "color_temp_kelvin": color_temp_k,  # int or None
-        "rgb_color": rgb_color,             # [r,g,b] or None
+        "scheduled_min": scheduled_min,
+        "window_half_min": 10,
+        "house_state_filter": None,
+        "entity_steps": [
+            # Un dict per entità nel cluster
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,          # int o None
+                "color_temp_kelvin": 3000,  # int o None
+                "rgb_color": None,          # [r,g,b] o None
+            },
+            {
+                "entity_id": "light.living_spot",
+                "action": "on",
+                "brightness": 64,
+                "color_temp_kelvin": 3500,
+                "rgb_color": None,
+            },
+            {
+                "entity_id": "light.living_floor",
+                "action": "off",
+                "brightness": None,
+                "color_temp_kelvin": None,
+                "rgb_color": None,
+            },
+        ],
     },
 )
-```
-
-**Note:** non c'è un campo `"scene"`. Heima usa direttamente gli attributi aggregati osservati.
-Se l'utente vuole sovrascrivere con una scena specifica, potrà farlo editando la reaction accettata
-nell'options flow (funzionalità futura). Per ora la reaction usa sempre gli attributi fisici.
 ```
 
 ### P9.4 Fingerprint for deduplication
 
 ```
-f"LightingPatternAnalyzer|lighting_schedule|{room_id}|{action}|{weekday}"
+f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{scheduled_min}"
 ```
 
-Same deduplication semantics as existing analyzers in `ProposalEngine`.
+Il `scheduled_min` nel fingerprint è la mediana del cluster, arrotondata a 5 minuti per evitare
+che piccole variazioni di un'iterazione all'altra creino proposte duplicate.
+
+```python
+fingerprint_min = (scheduled_min // 5) * 5
+fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{fingerprint_min}"
+```
 
 ### P9.5 LightingScheduleReaction
 
@@ -999,18 +1079,14 @@ Same deduplication semantics as existing analyzers in `ProposalEngine`.
 
 #### Trigger — RuntimeScheduler
 
-Non richiede un meccanismo separato: usa il `RuntimeScheduler` già presente nel coordinator.
-
-La reaction implementa `scheduled_jobs(entry_id) -> dict[str, ScheduledRuntimeJob]` (nuovo hook
-no-op su `HeimaReaction` base). L'engine raccoglie i job da tutte le reaction in
-`scheduled_runtime_jobs()` e li passa al coordinator che li sincronizza con lo scheduler. Quando il
-job scatta → `coordinator.async_request_evaluation(reason="scheduler:<job_id>")` → ciclo di
-valutazione normale → `evaluate()` verifica la finestra e produce lo step.
+Usa il `RuntimeScheduler` già presente. La reaction implementa `scheduled_jobs(entry_id)` (nuovo
+hook no-op su `HeimaReaction` base). L'engine raccoglie i job da tutte le reaction in
+`scheduled_runtime_jobs()` e li passa al coordinator via `_sync_scheduler()`. Quando il job
+scatta → eval cycle → `evaluate()` verifica la finestra e produce gli step.
 
 ```python
 def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
-    """Restituisce il prossimo job di scheduling per questa reaction."""
-    due_monotonic = self._next_due_monotonic()  # prossima occorrenza di scheduled_min - window_half_min
+    due_monotonic = self._next_due_monotonic()
     job_id = f"lighting_schedule:{self.reaction_id}"
     return {
         job_id: ScheduledRuntimeJob(
@@ -1018,13 +1094,14 @@ def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
             owner="LightingScheduleReaction",
             entry_id=entry_id,
             due_monotonic=due_monotonic,
-            label=f"lighting schedule: {self._room_id} {self._action} {_WEEKDAY_NAMES[self._weekday]}",
+            label=f"lighting: {self._room_id} {WEEKDAY_NAMES[self._weekday]} ~{hhmm(self._scheduled_min)}",
         )
     }
 ```
 
-`_next_due_monotonic()` calcola il prossimo momento in cui `minute_of_day == scheduled_min - window_half_min`
-cade sul `weekday` configurato. Se già passato oggi, proietta alla settimana successiva.
+`_next_due_monotonic()`: prossimo wall-clock in cui `minute_of_day == scheduled_min - window_half_min`
+sul `weekday` configurato. Se già passato oggi (o non è il giorno giusto), proietta alla prossima
+occorrenza del weekday.
 
 #### Evaluate — time-window check + debounce
 
@@ -1036,9 +1113,9 @@ def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
     if now_local.weekday() != self._weekday:
         return []
     current_min = now_local.hour * 60 + now_local.minute
-    lo = self._scheduled_min - self._window_half_min
-    hi = self._scheduled_min + self._window_half_min
-    if not (lo <= current_min <= hi):
+    if not (self._scheduled_min - self._window_half_min
+            <= current_min <=
+            self._scheduled_min + self._window_half_min):
         return []
     if self._house_state_filter and history[-1].house_state != self._house_state_filter:
         return []
@@ -1046,57 +1123,66 @@ def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
     if self._last_fired_date == today:
         return []  # già fired oggi nella finestra
     self._last_fired_date = today
-    return [self._build_step()]
+    return self._build_steps()
 ```
 
-#### ApplyStep — semantic step (Option B)
-
-La reaction emette uno step semantico che `LightingDomain.execute_lighting_steps()` sa risolvere:
+#### ApplyStep — uno per entità
 
 ```python
-def _build_step(self) -> ApplyStep:
-    if self._action == "on":
-        return ApplyStep(
-            domain="lighting",
-            target=self._room_id,
-            action="light.turn_on",          # nuovo ramo in execute_lighting_steps
-            params={
-                "brightness": self._brightness,
-                "color_temp_kelvin": self._color_temp_kelvin,
-                "rgb_color": self._rgb_color,
-            },
-            reason=f"lighting_schedule:{self.reaction_id}",
-        )
-    else:
-        return ApplyStep(
-            domain="lighting",
-            target=self._room_id,
-            action="light.turn_off_area",    # nuovo ramo: spegne per area_id
-            params={},
-            reason=f"lighting_schedule:{self.reaction_id}",
-        )
+def _build_steps(self) -> list[ApplyStep]:
+    steps = []
+    for step_cfg in self._entity_steps:
+        entity_id = step_cfg["entity_id"]
+        action    = step_cfg["action"]
+        if action == "on":
+            params: dict[str, Any] = {"entity_id": entity_id}
+            if step_cfg.get("brightness") is not None:
+                params["brightness"] = step_cfg["brightness"]
+            if step_cfg.get("rgb_color") is not None:
+                params["rgb_color"] = step_cfg["rgb_color"]
+            elif step_cfg.get("color_temp_kelvin") is not None:
+                params["color_temp_kelvin"] = step_cfg["color_temp_kelvin"]
+            steps.append(ApplyStep(
+                domain="lighting",
+                target=self._room_id,       # per apply-timestamp tracking
+                action="light.turn_on",
+                params=params,
+                reason=f"lighting_schedule:{self.reaction_id}",
+            ))
+        else:
+            steps.append(ApplyStep(
+                domain="lighting",
+                target=self._room_id,
+                action="light.turn_off",
+                params={"entity_id": entity_id},
+                reason=f"lighting_schedule:{self.reaction_id}",
+            ))
+    return steps
 ```
 
 `execute_lighting_steps()` in `LightingDomain` aggiunge due rami:
-- `action="light.turn_on"`: risolve `room_id → area_id` da options, chiama `light.turn_on` con gli
-  attributi forniti (omette i campi `None`). Aggiorna `last_apply_ts_by_room`.
-- `action="light.turn_off_area"`: risolve `room_id → area_id`, chiama `light.turn_off`.
-  (Equivalente al ramo `"light.turn_off"` già esistente ma con risoluzione da `room_id`.)
+
+- `action="light.turn_on"` con `params["entity_id"]`: chiama `light.turn_on` sull'entità specifica
+  con gli attributi forniti. Aggiorna `last_apply_ts_by_room[step.target]`.
+- `action="light.turn_off"` con `params["entity_id"]` (anziché `area_id`): chiama `light.turn_off`
+  sull'entità specifica. Il ramo esistente con `area_id` rimane invariato per gli step del dominio
+  lighting ordinario.
 
 #### Config
 
 ```python
 LightingScheduleReaction(
     room_id="living",
-    action="on",
     weekday=0,
     scheduled_min=1200,
     window_half_min=10,
     house_state_filter=None,
-    brightness=128,
-    color_temp_kelvin=3000,
-    rgb_color=None,
-    reaction_id="LightingPatternAnalyzer|lighting_schedule|living|on|0",
+    entity_steps=[
+        {"entity_id": "light.living_main",  "action": "on",  "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+        {"entity_id": "light.living_spot",  "action": "on",  "brightness": 64,  "color_temp_kelvin": 3500, "rgb_color": None},
+        {"entity_id": "light.living_floor", "action": "off", "brightness": None, "color_temp_kelvin": None, "rgb_color": None},
+    ],
+    reaction_id="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
 )
 ```
 
@@ -1122,13 +1208,13 @@ custom_components/heima/runtime/
     base.py                         Implemented — IPatternAnalyzer + ReactionProposal
     presence.py                     Implemented — PresencePatternAnalyzer
     heating.py                      Implemented — HeatingPatternAnalyzer
-    lighting.py                     Designed (P9) — LightingPatternAnalyzer
+    lighting.py                     Implemented — LightingPatternAnalyzer (da aggiornare: entity-level + grouping)
   behaviors/
     event_recorder.py               Implemented — presence + house_state events
     heating_recorder.py             Implemented — heating setpoint events
-    lighting_recorder.py            Designed (P8) — user light action events
+    lighting_recorder.py            Implemented — user light action events (da aggiornare: aggiungere entity_id)
   reactions/
-    lighting_schedule.py            Deferred — LightingScheduleReaction (requires time trigger)
+    lighting_schedule.py            Designed (P9.5) — LightingScheduleReaction
 ```
 
 ### Existing files that change
