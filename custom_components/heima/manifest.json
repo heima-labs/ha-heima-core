@@ -1,7 +1,7 @@
 {
   "domain": "heima",
   "name": "Heima",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "documentation": "https://github.com/heima-labs/ha-heima-core",
   "issue_tracker": "https://github.com/heima-labs/ha-heima-core/issues",
   "codeowners": [
