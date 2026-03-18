@@ -1,0 +1,190 @@
+"""Behavior that records LightingEvent when users change lights."""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Callable
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import Event, HomeAssistant
+
+from ..context_builder import ContextBuilder
+from ..event_store import EventStore, HeimaEvent
+from ..snapshot import DecisionSnapshot
+from .base import HeimaBehavior
+
+# Seconds after a Heima lighting apply within which state changes are attributed to Heima.
+# Scenes are applied with blocking=False so changes arrive asynchronously.
+_HEIMA_APPLY_TTL_S = 5.0
+
+
+class LightingRecorderBehavior(HeimaBehavior):
+    """Listen to HA light entity state changes and record user-initiated ones.
+
+    Source discrimination: if a light entity's room was applied by Heima within
+    _HEIMA_APPLY_TTL_S seconds, the change is attributed to Heima and skipped.
+    Everything else is attributed to the user and recorded as a LightingEvent.
+
+    Entity → room mapping is derived from HA entity registry (area_id) matched
+    against the room configs (area_id field in options["rooms"]).
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        store: EventStore,
+        context_builder: ContextBuilder,
+        entry: ConfigEntry,
+        lighting_apply_ts_fn: Callable[[], dict[str, float]],
+    ) -> None:
+        self._hass = hass
+        self._store = store
+        self._context_builder = context_builder
+        self._entry = entry
+        self._lighting_apply_ts_fn = lighting_apply_ts_fn
+        self._entity_to_room: dict[str, str] = {}
+        self._last_snapshot: DecisionSnapshot | None = None
+        self._unsub: Any = None
+
+    @property
+    def behavior_id(self) -> str:
+        return "lighting_recorder"
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def async_setup(self) -> None:
+        self._entity_to_room = self._build_entity_room_map()
+        if self._entity_to_room:
+            self._unsub = self._hass.bus.async_listen(
+                EVENT_STATE_CHANGED, self._handle_state_changed
+            )
+
+    async def async_teardown(self) -> None:
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
+
+    def on_options_reloaded(self, options: dict[str, Any]) -> None:
+        self._entity_to_room = self._build_entity_room_map()
+
+    # ------------------------------------------------------------------
+    # Snapshot hook (context caching)
+    # ------------------------------------------------------------------
+
+    def on_snapshot(self, snapshot: DecisionSnapshot) -> None:
+        self._last_snapshot = snapshot
+
+    # ------------------------------------------------------------------
+    # State change handler
+    # ------------------------------------------------------------------
+
+    async def _handle_state_changed(self, event: Event) -> None:
+        entity_id = event.data.get("entity_id", "")
+        if not entity_id.startswith("light."):
+            return
+
+        room_id = self._entity_to_room.get(entity_id)
+        if not room_id:
+            return
+
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+        if new_state is None:
+            return
+        if new_state.state not in ("on", "off"):
+            return
+        if old_state is not None and old_state.state == new_state.state:
+            return  # no change in on/off status
+
+        # Source discrimination
+        apply_ts = self._lighting_apply_ts_fn()
+        room_apply_ts = apply_ts.get(room_id, 0.0)
+        if time.time() - room_apply_ts < _HEIMA_APPLY_TTL_S:
+            return  # Heima caused this change
+
+        if self._last_snapshot is None:
+            return  # no context available yet
+
+        context = self._context_builder.build(self._last_snapshot)
+        attrs = new_state.attributes
+        action: str = new_state.state  # "on" or "off"
+
+        brightness: int | None = None
+        color_temp_kelvin: int | None = None
+        rgb_color: list[int] | None = None
+
+        if action == "on":
+            raw_brightness = attrs.get("brightness")
+            if raw_brightness is not None:
+                try:
+                    brightness = int(raw_brightness)
+                except (ValueError, TypeError):
+                    pass
+
+            raw_ctek = attrs.get("color_temp_kelvin")
+            if raw_ctek is not None:
+                try:
+                    color_temp_kelvin = int(raw_ctek)
+                except (ValueError, TypeError):
+                    pass
+
+            raw_rgb = attrs.get("rgb_color")
+            if isinstance(raw_rgb, (list, tuple)) and len(raw_rgb) == 3:
+                try:
+                    rgb_color = [int(raw_rgb[0]), int(raw_rgb[1]), int(raw_rgb[2])]
+                except (ValueError, TypeError):
+                    pass
+
+        lighting_event = HeimaEvent(
+            ts=new_state.last_changed.isoformat(),
+            event_type="lighting",
+            context=context,
+            source="user",
+            data={
+                "room_id": room_id,
+                "action": action,
+                "scene": None,  # direct entity change; no scene context
+                "brightness": brightness,
+                "color_temp_kelvin": color_temp_kelvin,
+                "rgb_color": rgb_color,
+            },
+        )
+        self._hass.async_create_task(self._store.async_append(lighting_event))
+
+    # ------------------------------------------------------------------
+    # Entity → room mapping
+    # ------------------------------------------------------------------
+
+    def _build_entity_room_map(self) -> dict[str, str]:
+        """Map light entity_ids to room_ids via HA area registry."""
+        from homeassistant.helpers.entity_registry import async_get as async_get_er
+
+        area_to_room: dict[str, str] = {}
+        for room in self._entry.options.get("rooms", []):
+            room_id = str(room.get("room_id", "")).strip()
+            area_id = str(room.get("area_id", "")).strip()
+            if room_id and area_id:
+                area_to_room[area_id] = room_id
+
+        if not area_to_room:
+            return {}
+
+        entity_registry = async_get_er(self._hass)
+        entity_to_room: dict[str, str] = {}
+        for entry in entity_registry.entities.values():
+            if not entry.entity_id.startswith("light."):
+                continue
+            entity_area = entry.area_id
+            if entity_area and entity_area in area_to_room:
+                entity_to_room[entry.entity_id] = area_to_room[entity_area]
+
+        return entity_to_room
+
+    def diagnostics(self) -> dict[str, Any]:
+        return {
+            "monitored_entities": len(self._entity_to_room),
+            "entity_to_room": dict(self._entity_to_room),
+        }

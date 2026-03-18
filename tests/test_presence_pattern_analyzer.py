@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from custom_components.heima.runtime.analyzers.presence import PresencePatternAnalyzer
-from custom_components.heima.runtime.event_store import PresenceEvent
+from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 
 
 class _StoreStub:
@@ -14,13 +14,28 @@ class _StoreStub:
         return [e for e in self._events if event_type is None or e.event_type == event_type]
 
 
-def _arrive(minute_of_day: int, weekday: int = 0) -> PresenceEvent:
-    return PresenceEvent(
+def _ctx(weekday: int = 0, minute: int = 480) -> EventContext:
+    return EventContext(
+        weekday=weekday,
+        minute_of_day=minute,
+        month=3,
+        house_state="home",
+        occupants_count=1,
+        occupied_rooms=(),
+        outdoor_lux=None,
+        outdoor_temp=None,
+        weather_condition=None,
+        signals={},
+    )
+
+
+def _arrive(minute_of_day: int, weekday: int = 0) -> HeimaEvent:
+    return HeimaEvent(
         ts="2026-03-10T08:00:00+00:00",
         event_type="presence",
-        transition="arrive",
-        weekday=weekday,
-        minute_of_day=minute_of_day,
+        context=_ctx(weekday=weekday, minute=minute_of_day),
+        source=None,
+        data={"transition": "arrive"},
     )
 
 
@@ -56,4 +71,3 @@ async def test_presence_analyzer_per_weekday():
     proposals = await analyzer.analyze(_StoreStub(monday + tuesday))  # type: ignore[arg-type]
     assert len(proposals) == 1
     assert proposals[0].suggested_reaction_config["weekday"] == 0
-
