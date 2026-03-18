@@ -31,6 +31,7 @@ class _LightingStepsMixin:
                 "lighting_rooms_save",
                 "lighting_rooms_next",
             ],
+            description_placeholders={"summary": self._lighting_menu_summary()},
         )
 
     async def async_step_lighting_rooms_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":

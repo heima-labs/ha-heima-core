@@ -47,7 +47,7 @@ class _NotificationsStepsMixin:
             )
 
         user_input = self._normalize_notifications_payload(user_input)
-        self.options[OPT_NOTIFICATIONS] = user_input
+        self._update_options({OPT_NOTIFICATIONS: user_input})
         return await self.async_step_init()
 
     def _notifications_schema(self, defaults: dict[str, Any] | None = None) -> vol.Schema:

@@ -43,7 +43,9 @@ class PresencePatternAnalyzer:
                     reaction_type="presence_preheat",
                     description=(
                         f"{_WEEKDAY_NAMES[weekday]}: typical arrival around "
-                        f"{self._hhmm(median)} (IQR {iqr}m)."
+                        f"{self._hhmm(median)}"
+                        + (f" (± {iqr // 2} min)" if iqr > 0 else "")
+                        + "."
                     ),
                     confidence=float(confidence),
                     suggested_reaction_config={

@@ -15,6 +15,7 @@ from ..const import (
     CONF_TIMEZONE,
     DEFAULT_ENGINE_ENABLED,
     DEFAULT_LIGHTING_APPLY_MODE,
+    OPT_CALENDAR,
     OPT_HEATING,
     OPT_LIGHTING_APPLY_MODE,
     OPT_LIGHTING_ROOMS,
@@ -90,6 +91,7 @@ class HeimaOptionsFlowHandler(
         self._editing_zone_id: str | None = None
         self._editing_lighting_room_id: str | None = None
         self._editing_heating_house_state: str | None = None
+        self._editing_heating_branch: str | None = None
 
     # ---- Toplevel menu (CF2) ----
 
@@ -106,14 +108,29 @@ class HeimaOptionsFlowHandler(
                 "notifications",
                 "calendar",
                 "reactions",
+                "reactions_edit",
                 "proposals",
                 "save",
             ],
+            description_placeholders=self._init_status_block(),
         )
 
     async def async_step_save(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Persist options and close the flow from the toplevel menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
+
+    def _update_options(self, updates: dict[str, Any]) -> None:
+        """Persist options keys immediately to disk.
+
+        Triggers selective reload via _async_entry_updated:
+        - structural keys (people, rooms, zones) → full HA reload
+        - runtime keys → coordinator.async_reload_options() only
+        """
+        self.options.update(updates)
+        config_entries = getattr(getattr(self, "hass", None), "config_entries", None)
+        config_entry = getattr(self, "_config_entry", None)
+        if config_entries is not None and config_entry is not None:
+            config_entries.async_update_entry(config_entry, options=dict(self.options))
 
     # ---- Shared state helpers ----
 
@@ -136,6 +153,51 @@ class HeimaOptionsFlowHandler(
         branches = self._heating_config().get("override_branches", {})
         return dict(branches) if isinstance(branches, dict) else {}
 
+    # ---- Summary helpers (for description_placeholders) ----
+
+    def _init_status_block(self) -> dict[str, str]:
+        """Return description_placeholders for the init menu.
+
+        All labels live in translations. This method provides only values.
+        Boolean states (engine on/off) are localised via CONF_LANGUAGE.
+        """
+        lang = self.options.get(CONF_LANGUAGE, "it")
+        is_it = lang.startswith("it")
+        engine_on = self.options.get(CONF_ENGINE_ENABLED, True)
+        return {
+            "engine_status": ("attivo" if engine_on else "disabilitato") if is_it else ("enabled" if engine_on else "disabled"),
+            "people_summary": self._people_menu_summary(),
+            "rooms_summary": self._rooms_menu_summary(),
+            "lighting_summary": self._lighting_menu_summary(),
+            "heating_summary": self._heating_menu_summary(),
+            "security_summary": self._security_menu_summary(),
+            "calendar_summary": self._calendar_menu_summary(),
+        }
+
+    def _people_menu_summary(self) -> str:
+        people = self._people_named()
+        if not people:
+            return "—"
+        names = [p.get("display_name") or p.get("slug", "") for p in people]
+        return f"{len(people)}: {', '.join(names)}"
+
+    def _rooms_menu_summary(self) -> str:
+        rooms = self._rooms()
+        if not rooms:
+            return "—"
+        names = [r.get("display_name") or r.get("room_id", "") for r in rooms]
+        return f"{len(rooms)}: {', '.join(names)}"
+
+    def _lighting_menu_summary(self) -> str:
+        return f"{len(self._lighting_rooms())}/{len(self._rooms())}"
+
+    def _heating_menu_summary(self) -> str:
+        cfg = self._heating_config()
+        thermostat = cfg.get("climate_entity") or "—"
+        branches = self._heating_override_branches()
+        configured = len([v for v in branches.values() if v.get("branch")])
+        return f"{thermostat} | {configured}"
+
     def _room_ids(self) -> list[str]:
         return [room["room_id"] for room in self._rooms()]
 
@@ -151,7 +213,7 @@ class HeimaOptionsFlowHandler(
         return None
 
     def _store_list(self, key: str, items: list[dict[str, Any]]) -> None:
-        self.options[key] = items
+        self._update_options({key: items})
 
     def _with_suggested(
         self, schema: vol.Schema, defaults: dict[str, Any] | None

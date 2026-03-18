@@ -87,6 +87,9 @@ class HAClient:
         _, data = self.request("POST", path, payload, accept_error=accept_error)
         return data
 
+    def delete(self, path: str, *, accept_error: bool = True) -> None:
+        self.request("DELETE", path, accept_error=accept_error)
+
     def get_state(self, entity_id: str) -> dict[str, Any]:
         data = self.get(f"/api/states/{entity_id}")
         if not isinstance(data, dict):

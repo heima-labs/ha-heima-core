@@ -14,6 +14,7 @@
     "step": {
       "init": {
         "title": "Configurazione Heima",
+        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}",
         "menu_options": {
           "general": "Generale",
           "people_menu": "Persone",
@@ -25,7 +26,8 @@
           "calendar": "Calendario",
           "reactions": "Reazioni",
           "proposals": "Revisione proposte",
-          "save": "Salva e chiudi"
+          "save": "Salva e chiudi",
+          "reactions_edit": "Modifica reazione"
         }
       },
       "general": {
@@ -45,6 +47,7 @@
       },
       "people_menu": {
         "title": "Persone",
+        "description": "Configurate: {summary}",
         "menu_options": {
           "people_add": "Aggiungi persona",
           "people_edit": "Modifica persona",
@@ -112,6 +115,7 @@
       },
       "rooms_menu": {
         "title": "Stanze",
+        "description": "Configurate: {summary}",
         "menu_options": {
           "rooms_add": "Aggiungi stanza",
           "rooms_edit": "Modifica stanza",
@@ -165,6 +169,7 @@
       },
       "lighting_rooms_menu": {
         "title": "Stanze Illuminazione",
+        "description": "Scene configurate: {summary}",
         "menu_options": {
           "lighting_rooms_edit": "Modifica scene stanza",
           "lighting_rooms_save": "Salva e chiudi",
@@ -309,6 +314,7 @@
       },
       "heating_branches_menu": {
         "title": "Branch Override Riscaldamento",
+        "description": "{summary}",
         "menu_options": {
           "heating_branches_edit": "Modifica branch",
           "heating_branches_save": "Fatto"
@@ -321,11 +327,16 @@
         },
         "submit": "OK"
       },
+      "heating_branch_select": {
+        "title": "Seleziona Tipo Branch",
+        "data": {
+          "branch": "Tipo branch"
+        },
+        "submit": "OK"
+      },
       "heating_branch_edit_form": {
         "title": "Modifica Branch Riscaldamento",
         "data": {
-          "house_state": "Stato casa",
-          "branch": "Branch",
           "target_temperature": "Temperatura target",
           "vacation_ramp_down_h": "Ore ramp-down vacanza",
           "vacation_ramp_up_h": "Ore ramp-up vacanza",
@@ -334,6 +345,29 @@
           "vacation_min_total_hours_for_ramp": "Ore totali minime per ramp vacanza"
         },
         "submit": "OK"
+      },
+      "proposal_configure_action": {
+        "title": "Configura azione pre-arrivo",
+        "description": "Proposta accettata: {proposal_description}\n\nSeleziona le azioni da eseguire prima del tuo arrivo tipico.",
+        "data": {
+          "action_entities": "Scene o script da attivare",
+          "pre_condition_min": "Anticipo (minuti)"
+        }
+      },
+      "reactions_edit": {
+        "title": "Modifica reazione",
+        "description": "Seleziona la reazione da modificare.",
+        "data": {
+          "reaction": "Reazione"
+        }
+      },
+      "reactions_edit_form": {
+        "title": "Modifica azioni reazione",
+        "description": "{reaction_description}",
+        "data": {
+          "action_entities": "Scene o script da attivare",
+          "pre_condition_min": "Anticipo (minuti)"
+        }
       }
     },
     "error": {
