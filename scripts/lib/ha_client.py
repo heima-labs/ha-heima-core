@@ -157,35 +157,6 @@ class HAClient:
         raise HAApiError(f"config entry not found: {entry_id}")
 
     # ------------------------------------------------------------------
-    # Area registry
-    # ------------------------------------------------------------------
-
-    def list_areas(self) -> list[dict[str, Any]]:
-        data = self.get("/api/config/area_registry")
-        return [a for a in (data or []) if isinstance(a, dict)]
-
-    def get_or_create_area(self, name: str) -> str:
-        """Return the area_id for an area with the given name, creating it if needed."""
-        for area in self.list_areas():
-            if str(area.get("name", "")).lower() == name.lower():
-                return str(area["area_id"])
-        created = self.post("/api/config/area_registry", {"name": name})
-        if not isinstance(created, dict) or "area_id" not in created:
-            raise HAApiError(f"failed to create area '{name}': {created}")
-        return str(created["area_id"])
-
-    # ------------------------------------------------------------------
-    # Entity registry
-    # ------------------------------------------------------------------
-
-    def assign_entity_to_area(self, entity_id: str, area_id: str) -> None:
-        """Assign a HA entity to an area via entity registry PATCH."""
-        self.patch(
-            f"/api/config/entity_registry/{entity_id}",
-            {"area_id": area_id},
-        )
-
-    # ------------------------------------------------------------------
     # Heima
     # ------------------------------------------------------------------
 
