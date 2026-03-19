@@ -6,6 +6,7 @@ Goal:
 - provide deterministic fake entities for Heima validation
 - allow mixing fake helpers/templates/MQTT entities with real integrations
 - avoid polluting a production HA instance
+- provide richer fake lighting entities for reactions/learning tests
 
 ## Files
 
@@ -112,6 +113,20 @@ The script validates three end-to-end scenarios:
 - `sensor.test_heima_*`
 - `switch.test_heima_heater_relay` (template switch)
 
+### Fake lights for reactions / learning
+- living room:
+  - `light.test_heima_living_main`
+  - `light.test_heima_living_spot`
+  - `light.test_heima_living_floor`
+- studio:
+  - `light.test_heima_studio_main`
+  - `light.test_heima_studio_spot`
+  - `light.test_heima_studio_desk`
+- all fake lights are helper-backed template lights and support:
+  - on/off
+  - brightness
+  - color temperature
+
 ### Fake climate
 - `climate.test_heima_thermostat` (`generic_thermostat`)
 - thermal plant simulation automation:
@@ -132,6 +147,8 @@ The script validates three end-to-end scenarios:
 - `script.test_heima_set_vacation_curve_short`
 - `script.test_heima_mqtt_publish_demo`
 - `script.test_heima_set_cold_house`
+- `script.test_heima_set_living_evening_scene`
+- `script.test_heima_set_studio_focus_scene`
 - `script.test_heima_alarm_arm_away`
 - `script.test_heima_alarm_arm_home`
 - `script.test_heima_alarm_disarm`
@@ -151,6 +168,19 @@ The script validates three end-to-end scenarios:
   - `binary_sensor.test_heima_room_living_motion`
   - `sensor.test_heima_people_score`
   - `sensor.test_heima_mqtt_presence_score`
+
+### Lighting learning examples
+- living room lights:
+  - `light.test_heima_living_main`
+  - `light.test_heima_living_spot`
+  - `light.test_heima_living_floor`
+- studio lights:
+  - `light.test_heima_studio_main`
+  - `light.test_heima_studio_spot`
+  - `light.test_heima_studio_desk`
+- helper scripts for repeatable lighting patterns:
+  - `script.test_heima_set_living_evening_scene`
+  - `script.test_heima_set_studio_focus_scene`
 
 ### Heating vacation bindings
 - `thermostat_entity` -> `climate.test_heima_thermostat`
@@ -172,3 +202,10 @@ The script validates three end-to-end scenarios:
 - The thermal model is intentionally simple and deterministic:
   - when heater is `on`, room temperature rises
   - when heater is `off`, room temperature drifts toward outdoor temperature
+- Calendar note:
+  - the Docker lab ships a preconfigured Local Calendar fixture: `calendar.principale`
+  - the mounted HA storage already contains:
+    - the `local_calendar` config entry
+    - the `calendar.principale` entity
+    - a baseline ICS store under `.storage/local_calendar.principale.ics`
+  - `scripts/live_tests/050_calendar_domain.py` now uses this fixture and creates a deterministic all-day test event through `calendar.create_event`

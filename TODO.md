@@ -7,7 +7,127 @@
 - In Progress: `Normalization Layer` (`N1-N4` completed; `N5` materially complete for current rollout, future providers still open)
 - In Progress: `Phase 4` (Heating MVP implemented, scheduler-backed, and service semantics aligned; final polish/documentation remains)
 - Completed: configurable house-signal bindings (no hardcoded helper entity assumptions in house-state resolution)
+- Completed: learning system Phases 1-7 runtime slices (generic event envelope, lighting/heating recorders, proposal persistence, signal recorder, Phase 7 hardening)
 - Next: final Heating real-HA validation, then move to `Phase 5`
+
+## Learning / Reactions Runtime Status
+- Completed:
+  - generic persisted learning-event envelope
+  - lighting entity-level recording with provenance and grouping support
+  - proposal acceptance normalization for `scene.turn_on` / `script.turn_on`
+  - heating learning snapshots based on observed setpoints
+  - proposal fingerprint persistence across restart
+  - generic signal recorder for `learning.context_signal_entities`
+  - `lighting_schedule` midnight-wrap hardening
+  - `learning_reset` full runtime reset semantics
+- Still open:
+  - stronger scene/script provenance expansion to concrete entity batches
+  - executable runtime support for accepted heating proposals
+  - broader cross-domain analyzers on top of generic `state_change` events
+
+## Live Test Remediation Plan
+- Goal:
+  - separate true end-to-end coverage from setup tooling, diagnostics, and seeded-learning integration paths
+  - stop overstating shortcut-driven scripts as "E2E"
+  - make the Docker HA lab deterministic enough to exercise reactions/learning without waiting weeks
+- Current lab status:
+  - available now in `docs/examples/ha_test_instance`:
+    - fake on/off lights (`light.test_heima_living_main`, `light.test_heima_studio_main`)
+    - motion/presence helpers
+    - fake thermostat + thermal loop
+    - fake alarm panel
+    - MQTT helpers
+    - configured Heima entry with rooms/security/heating/calendar in mounted `.storage`
+  - main gaps:
+    - fake lights do not expose brightness / color temperature / RGB, so lighting-learning attribute capture is shallow
+    - calendar live checks are still environment-dependent, not fully lab-authored
+    - live suite mixes provisioning and assertions
+    - some proposal tests still depend on shortcuts (`seed_lighting_events`, overrides, config-entry reload)
+- Execution tiers:
+  - `setup`
+    - environment creation/recovery only
+    - no pass/fail claims about runtime behavior
+  - `live_e2e`
+    - real HA-facing entity/service changes only
+    - must traverse recorder/runtime/event store using the same path a real HA user/device would hit
+  - `seeded_integration`
+    - deterministic historical-data generation for analyzer/proposal coverage
+    - allowed to accelerate time/history, but must be labeled as non-E2E
+  - `diagnostic`
+    - read-only assertions on sensors/diagnostics/event stats
+- Script reclassification targets:
+  - move from live test lane to `setup`:
+    - `scripts/live_tests/005_setup_lab.py`
+    - `scripts/recover_test_lab_config.py`
+  - keep as `diagnostic`:
+    - `scripts/live_tests/030_learning_proposals_diag.py`
+  - keep as `live_e2e` after cleanup:
+    - `scripts/live_tests/000_live_smoke.py`
+    - `scripts/live_tests/010_config_flow.py`
+    - `scripts/live_tests/040_security_mismatch_runtime.py`
+    - `scripts/live_tests/050_calendar_domain.py`
+  - downgrade to `seeded_integration` until shortcut paths are removed:
+    - `scripts/live_tests/015_learning_reset.sh`
+    - `scripts/live_tests/020_learning_pipeline.py`
+    - `scripts/live_tests/060_lighting_schedule.py`
+- Phase A - Lab Capability Upgrades
+  - add richer fake lights to `docs/examples/ha_test_instance/packages/heima_test_lab.yaml`
+    - at least 2-3 lights per room
+    - expose `brightness` and `color_temp_kelvin` at minimum
+    - prefer helper-backed/template-backed state so normal `light.turn_on` calls produce recorder-visible state changes
+  - add deterministic calendar fixtures to the Docker lab
+    - ensure the configured `calendar.principale` can be driven by test scripts
+    - add lab helper flow to create/update known vacation/office/WFH events instead of waiting for ambient calendar state
+  - optional later:
+    - add extra context-signal entities for learning correlation tests
+    - add more than one person source so presence learning can be driven without runtime overrides
+- Phase B - Runner / Suite Structure
+  - replace blind executable discovery in `scripts/check_all_live.sh` with an explicit ordered manifest or per-tier suite selection
+  - make `setup` an explicit prerequisite, not an in-band "test"
+  - keep diagnostics optional/selectable from the runner
+  - remove direct `.storage` patching from the canonical E2E path
+    - `scripts/patch_heima_dev_options.sh` remains an admin/bootstrap tool only
+- Phase C - True E2E Scenario Cleanup
+  - presence learning:
+    - stop using `heima.set_override` as the primary event generator
+    - drive configured person/anonymous sources through real HA entities/MQTT/helpers
+    - verify EventStore growth from recorder behavior before asserting proposals
+  - lighting learning:
+    - make real light toggles mandatory, not warn-only
+    - stop relying on `seed_lighting_events` for the main live path
+    - prove: light state change -> `LightingRecorderBehavior` -> EventStore -> proposal/acceptance path
+  - security mismatch:
+    - keep options-flow edits if the scenario explicitly validates runtime behavior under configured policies
+    - avoid silent self-healing that hides missing lab prerequisites when the goal is coverage
+  - calendar runtime:
+    - create the calendar event in the test, then assert house-state/runtime behavior
+- Phase D - Seeded Learning Path
+  - add a deterministic historical event generator or importer for proposal tests that need multi-week data
+  - do not use random event spam as the primary strategy
+  - generate structured patterns:
+    - weekday arrival windows for presence
+    - repeated room/entity schedules with stable brightness/color temp for lighting
+    - repeated away/home heating preference sessions
+  - add controlled noise only around a strong base pattern
+  - label this tier explicitly as `seeded_integration`, not `live_e2e`
+- Phase E - Documentation / Acceptance Criteria
+  - update `scripts/README.md`:
+    - define the four tiers (`setup`, `live_e2e`, `seeded_integration`, `diagnostic`)
+    - document which scripts belong to which tier
+    - clarify that proposal acceleration is not "true E2E"
+  - update `docs/examples/ha_test_instance/README.md`:
+    - document the richer lab entities and calendar fixtures
+    - document the intended Heima bindings for live learning tests
+  - acceptance criteria per tier:
+    - `live_e2e`: proves real HA entity/service changes become recorded learning events
+    - `seeded_integration`: proves analyzer -> proposal -> acceptance -> configured reaction rebuild with deterministic historical data
+    - `diagnostic`: proves sensors/diagnostics reflect runtime state correctly
+- Suggested implementation order:
+  1. enrich Docker lab lights/calendar fixtures
+  2. split setup from live test execution
+  3. remove shortcut reliance from presence/lighting live scenarios
+  4. add seeded-learning generator for proposal-heavy cases
+  5. update docs and runner UX
 
 ## Roadmap (with Normalization Rollout)
 

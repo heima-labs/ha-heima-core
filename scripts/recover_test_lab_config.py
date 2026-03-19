@@ -18,6 +18,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.ha_client import HAApiError, HAClient
+from lib.ha_websocket import HAWebSocketClient
 
 
 # ---------------------------------------------------------------------------
@@ -39,9 +40,17 @@ GENERAL_CONFIG = {
 
 # Light entities for each room: used by recover_lighting_areas()
 # and referenced in 060_lighting_schedule.py
-ROOM_LIGHT_ENTITIES: dict[str, str] = {
-    "living": "light.test_heima_living_main",
-    "studio": "light.test_heima_studio_main",
+ROOM_LIGHT_ENTITIES: dict[str, list[str]] = {
+    "living": [
+        "light.test_heima_living_main",
+        "light.test_heima_living_spot",
+        "light.test_heima_living_floor",
+    ],
+    "studio": [
+        "light.test_heima_studio_main",
+        "light.test_heima_studio_spot",
+        "light.test_heima_studio_desk",
+    ],
 }
 
 # HA area names (recover_lighting_areas creates them and returns the area_ids)
@@ -212,18 +221,24 @@ def recover_lighting_areas(client: HAFlowClient) -> dict[str, str]:
     """Create HA areas for each room and assign light entities.
 
     Returns {room_id: ha_area_id} so recover_rooms() can set area_id on rooms.
+    Uses WebSocket API (area/entity registry are not available via REST).
     """
     area_ids: dict[str, str] = {}
-    for room_id, area_name in ROOM_AREA_NAMES.items():
-        area_id = client.get_or_create_area(area_name)
-        area_ids[room_id] = area_id
-        print(f"     area '{area_name}' → {area_id}")
-        entity_id = ROOM_LIGHT_ENTITIES.get(room_id)
-        if entity_id and client.entity_exists(entity_id):
-            client.assign_entity_to_area(entity_id, area_id)
-            print(f"     {entity_id} → area {area_id}")
-        else:
-            print(f"     WARN: {entity_id} not found, skipping area assignment")
+    with HAWebSocketClient(client.base_url, client.token) as ws:
+        for room_id, area_name in ROOM_AREA_NAMES.items():
+            area_id = ws.get_or_create_area(area_name)
+            area_ids[room_id] = area_id
+            print(f"     area '{area_name}' → {area_id}")
+            entity_ids = ROOM_LIGHT_ENTITIES.get(room_id, [])
+            if not entity_ids:
+                print(f"     WARN: no lab lights configured for room {room_id}, skipping area assignment")
+                continue
+            for entity_id in entity_ids:
+                if client.entity_exists(entity_id):
+                    ws.assign_entity_to_area(entity_id, area_id)
+                    print(f"     {entity_id} → area {area_id}")
+                else:
+                    print(f"     WARN: {entity_id} not found, skipping area assignment")
     return area_ids
 
 

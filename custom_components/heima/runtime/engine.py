@@ -130,6 +130,11 @@ class HeimaEngine:
         """
         return self._lighting_domain.last_apply_ts_by_room
 
+    @property
+    def lighting_recent_apply_state(self) -> dict[str, Any]:
+        """Recent lighting apply provenance for recorder attribution."""
+        return self._lighting_domain.recent_apply_state()
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)
@@ -209,6 +214,33 @@ class HeimaEngine:
         """Register a reactive behavior. Call before first async_evaluate."""
         self._reactions.append(reaction)
         _LOGGER.debug("Heima reaction registered: %s", reaction.reaction_id)
+
+    def reset_learning_state(self) -> None:
+        """Reset runtime-local learning state without re-emitting bootstrap events."""
+        self._snapshot_buffer.clear()
+        for behavior in self._behaviors:
+            try:
+                behavior.reset_learning_state()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in reset_learning_state", behavior.behavior_id)
+                self._queue_behavior_error_event(
+                    component="behavior",
+                    object_id=behavior.behavior_id,
+                    hook="reset_learning_state",
+                    error="exception_raised",
+                )
+        for reaction in self._reactions:
+            try:
+                reaction.reset_learning_state()
+            except Exception:
+                _LOGGER.exception("Reaction %s raised in reset_learning_state", reaction.reaction_id)
+                self._queue_behavior_error_event(
+                    component="reaction",
+                    object_id=reaction.reaction_id,
+                    hook="reset_learning_state",
+                    error="exception_raised",
+                )
+        self._sync_reactions_sensor()
 
     def mute_reaction(self, reaction_id: str) -> bool:
         """Mute a reaction by ID. Returns True if the reaction exists."""
@@ -587,8 +619,8 @@ class HeimaEngine:
             lighting_intents=lighting_intents,
             security_state=security_state,
             notes=f"reason={reason}",
-            heating_setpoint=self._heating_domain.trace.get("target_temperature"),
-            heating_source="heima" if self._heating_domain.trace.get("apply_allowed") else "user",
+            heating_setpoint=self._heating_domain.trace.get("current_setpoint"),
+            heating_source=str(self._heating_domain.trace.get("observed_source") or "unknown"),
         )
 
     def scheduled_runtime_jobs(self) -> dict[str, ScheduledRuntimeJob]:
@@ -811,6 +843,7 @@ class HeimaEngine:
     async def _execute_apply_plan(self, plan: ApplyPlan) -> None:
         lighting_steps = [s for s in plan.steps if s.domain == "lighting" and not s.blocked_by]
         heating_steps = [s for s in plan.steps if s.domain == "heating" and not s.blocked_by]
+        script_steps = [s for s in plan.steps if s.domain == "script" and not s.blocked_by]
 
         await self._lighting_domain.execute_lighting_steps(lighting_steps)
 
@@ -843,6 +876,29 @@ class HeimaEngine:
                     )
                 except Exception:
                     _LOGGER.exception("Heating apply failed for climate '%s'", climate_entity)
+
+        for step in script_steps:
+            if step.action != "script.turn_on":
+                continue
+            script_entity = step.params.get("entity_id")
+            if not isinstance(script_entity, str) or not script_entity.startswith("script."):
+                continue
+            if self._hass.states.get(script_entity) is None:
+                _LOGGER.warning("Skipping missing script entity: %s", script_entity)
+                continue
+            try:
+                await self._hass.services.async_call(
+                    "script",
+                    "turn_on",
+                    {"entity_id": script_entity},
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping script apply during startup/race: service script.turn_on not available"
+                )
+            except Exception:
+                _LOGGER.exception("Script apply failed for '%s'", script_entity)
 
     def _lighting_room_maps(self) -> dict[str, dict[str, Any]]:
         options = dict(self._entry.options)

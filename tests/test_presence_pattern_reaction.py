@@ -301,6 +301,23 @@ def test_diagnostics_after_arrivals():
     assert len(d["arrivals_by_weekday"]) == 1
 
 
+def test_reset_learning_state_clears_arrivals_and_counters():
+    r = PresencePatternReaction(steps=[_step()], min_arrivals=1, window_half_min=60, pre_condition_min=10)
+    now_dt = _local_now()
+    weekday = now_dt.weekday()
+    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=_minute_of_day(now_dt) + 10)]
+    r._fire_count = 2
+    r._suppressed_count = 1
+    r._last_fired_ts = 123.0
+
+    r.reset_learning_state()
+
+    assert r._arrivals == []
+    assert r._fire_count == 0
+    assert r._suppressed_count == 0
+    assert r._last_fired_ts is None
+
+
 def test_diagnostics_no_learning_key_without_backend():
     r = _reaction()
     assert "learning" not in r.diagnostics()

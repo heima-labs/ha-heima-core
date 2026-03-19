@@ -36,6 +36,7 @@ class ReactionProposal:
             "suggested_reaction_config": dict(self.suggested_reaction_config),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "fingerprint": self.fingerprint,
         }
 
     @classmethod
@@ -50,6 +51,7 @@ class ReactionProposal:
             suggested_reaction_config=dict(raw.get("suggested_reaction_config") or {}),
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
             updated_at=str(raw.get("updated_at") or datetime.now(UTC).isoformat()),
+            fingerprint=str(raw.get("fingerprint") or ""),
         )
 
 
@@ -60,4 +62,3 @@ class IPatternAnalyzer(Protocol):
     def analyzer_id(self) -> str: ...
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]: ...
-

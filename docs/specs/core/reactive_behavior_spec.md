@@ -1,8 +1,8 @@
 # Heima — Reactive Behavior Engine SPEC v1
 ## Phase 7: Behavior-as-Reaction
 
-**Status**: R0–R5 implemented on `main`. Options Flow integration for reactions/proposals available.
-**Last Verified Against Code:** 2026-03-11
+**Status**: R0–R5 implemented on `main`, with partial learning-backend observability and reset hardening added.
+**Last Verified Against Code:** 2026-03-19
 **Supersedes**: The `apply_filter` use case described in SPEC v1.1 (which was found redundant; see decisions).
 **Complements**: `HeimaBehavior` framework (SPEC v1.1) which remains valid for passive observability.
 
@@ -77,6 +77,7 @@ class HeimaReaction:
         return []
 
     def on_options_reloaded(self, options: dict) -> None: ...   # no-op
+    def reset_learning_state(self) -> None: ...                 # no-op
     def diagnostics(self) -> dict: ...                          # {}
 ```
 
@@ -168,7 +169,8 @@ PresencePatternReaction(
 4. Fires `steps` when `current_time + pre_condition_min` falls in the window and nobody is home.
 5. Midnight wrap-around: if target crosses 00:00, the next weekday's window is checked.
 
-**In-memory only**: arrival history is not persisted across restarts in v1.
+**In-memory only**: arrival history is not persisted across restarts in v1. It is also cleared by
+`learning_reset`.
 
 **Known limitation**: arrival time accuracy depends on the evaluation cycle interval.
 
@@ -230,6 +232,13 @@ Always-present canonical sensor. Updated after every evaluation cycle and after 
 }
 ```
 
+Current payload is intentionally minimal. Confidence / override counters are exposed only when a
+reaction backend surfaces them in `diagnostics()`. The base runtime currently guarantees:
+- `muted`
+- `fire_count`
+- `suppressed_count`
+- `last_fired_ts`
+
 ### 8.2 reaction.fired Event
 
 Queued in the notification pipeline whenever a reaction produces at least one step. Emitted before constraints are applied. Rate-limiting and dedup rules from the Event Catalog apply.
@@ -259,9 +268,28 @@ data:
 ```
 
 - Muted reactions are **skipped entirely** in `_dispatch_reactions` (no evaluate, no event, no steps).
-- Mute state is runtime-only: cleared on reload/restart.
+- Mute state is persisted in config-entry options and restored on reload/restart.
 - `heima_reactions_active` is updated immediately on mute/unmute.
 - Service raises `ServiceValidationError` if the `reaction_id` is not registered.
+
+### 8.5 learning_reset
+
+Via `heima.command`:
+
+```yaml
+service: heima.command
+data:
+  command: learning_reset
+```
+
+Semantics:
+- clear persisted `EventStore`
+- flush event storage immediately
+- clear persisted `ProposalEngine` state
+- clear runtime-local learning state in reactions/behaviors
+- clear `SnapshotBuffer`
+
+This is a hard reset of the learning substrate, not only a storage wipe.
 
 ### 8.4 Diagnostics (updated)
 
@@ -295,6 +323,7 @@ engine.register_reaction(reaction: HeimaReaction) -> None
 Call before `async_initialize()`. Reactions are dispatched on every `async_evaluate()`.
 
 `on_options_reloaded(options)` is called for all registered reactions when config entry options change. Exceptions are isolated.
+`reset_learning_state()` is called during `learning_reset` for reactions and behaviors that keep in-memory learning state.
 
 ### 9.1 Full Configuration Example
 

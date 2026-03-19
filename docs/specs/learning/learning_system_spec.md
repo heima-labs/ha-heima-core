@@ -1,8 +1,8 @@
 # Heima Learning System — Specification v1
 
-**Status:** Active — core slices implemented; lighting extension designed
+**Status:** Active — core slices implemented; generic event envelope and signal recording added
 **Date:** 2026-03-10
-**Last Verified Against Code:** 2026-03-18
+**Last Verified Against Code:** 2026-03-19
 
 ---
 
@@ -113,14 +113,14 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 3. Surfaces detected patterns as user-reviewable proposals
 4. Converts accepted proposals into persisted, managed reactions
 
-## 1.1 Implementation Matrix (as of 2026-03-18)
+## 1.1 Implementation Matrix (as of 2026-03-19)
 
 | Phase | Status | Notes |
 |---|---|---|
 | P1 EventStore | Implemented | `runtime/event_store.py` with persistence, TTL, cap, query |
 | P1b EventRecorderBehavior | Implemented | `runtime/behaviors/event_recorder.py` |
 | P2 PresencePatternAnalyzer | Implemented | `runtime/analyzers/presence.py` |
-| P3 HeatingPatternAnalyzer | Implemented | `runtime/analyzers/heating.py` + `heating_recorder.py` |
+| P3 HeatingPatternAnalyzer | Implemented/Partial | preference path implemented; eco path depends on verified `house_state` away sessions |
 | P4 ProposalEngine | Implemented | `runtime/proposal_engine.py`, periodic coordinator run |
 | P5 Approval Flow | Implemented | Config flow step `proposals` accepts/rejects proposals |
 | P6 Generalization | Partial | `IPatternAnalyzer` exists; ecosystem/process still RFC |
@@ -128,6 +128,7 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P8 LightingRecorderBehavior | Implemented | `runtime/behaviors/lighting_recorder.py` |
 | P9 LightingPatternAnalyzer | Implemented | `runtime/analyzers/lighting.py` |
 | P10 Learning Config Flow | Implemented | `config_flow/_steps_learning.py` — outdoor_lux, temp, weather, signals |
+| P11 Generic Signal Recorder | Implemented | `runtime/behaviors/signal_recorder.py` records `state_change` events for configured context entities |
 
 ---
 
@@ -138,9 +139,11 @@ HA Event Loop (hot path — eval cycle)
 ┌──────────────────────────────────────────────────────────┐
 │  engine.async_evaluate()                                 │
 │    ↓ on_snapshot()                                       │
-│    EventRecorderBehavior  ──── append() ──→ EventStore   │
-│    (detects transitions, writes PresenceEvent /          │
-│     HeatingEvent / HouseStateEvent)                      │
+│    EventRecorderBehavior / LightingRecorderBehavior /    │
+│    HeatingRecorderBehavior / SignalRecorderBehavior      │
+│                       ──── append() ──→ EventStore       │
+│    (writes presence / house_state / heating / lighting / │
+│     generic state_change events)                         │
 └──────────────────────────────────────────────────────────┘
                                 │  (async, non-blocking)
                                 ↓
@@ -570,7 +573,7 @@ For each house_state:
   → emit ReactionProposal(reaction_type="heating_preference")
 ```
 
-**HeatingRecorderBehavior** (prerequisite): a `HeimaBehavior` that compares the heating setpoint in `CanonicalState` between consecutive snapshots. Source detection: if `heating_trace["apply_allowed"]` was `True` → `source="heima"`, otherwise `source="user"`.
+**HeatingRecorderBehavior** (prerequisite): a `HeimaBehavior` that compares observed heating setpoints between consecutive snapshots. Source detection is based on the observed thermostat value matching a recent Heima-applied target; otherwise the event is treated as `source="user"`.
 
 ---
 
@@ -597,11 +600,11 @@ class ProposalEngine:
 
 ### 8.3 Deduplication
 
-When a new proposal from an analyzer matches an existing one (same `analyzer_id` + `reaction_type` + key params):
+When a new proposal from an analyzer matches an existing one (same analyzer-defined fingerprint):
 - Status `"accepted"` or `"rejected"` → skip (do not re-surface)
 - Status `"pending"` → update `confidence` + `updated_at` in-place
 
-Key params fingerprint: `reaction_type + str(weekday or house_state)`.
+The runtime persists `ReactionProposal.fingerprint` and uses it as the primary dedup key. The fallback fingerprint remains coarse and exists only for backward compatibility with older stored proposals.
 
 ### 8.4 Sensor
 
@@ -1099,32 +1102,15 @@ def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
     }
 ```
 
-`_next_due_monotonic()`: prossimo wall-clock in cui `minute_of_day == scheduled_min - window_half_min`
-sul `weekday` configurato. Se già passato oggi (o non è il giorno giusto), proietta alla prossima
-occorrenza del weekday.
+`_next_due_monotonic()`: prossimo wall-clock in cui inizia la finestra
+`scheduled_min ± window_half_min` per il `weekday` configurato. L'implementazione reale deve
+gestire correttamente le finestre che attraversano mezzanotte.
 
 #### Evaluate — time-window check + debounce
 
-```python
-def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
-    if not history:
-        return []
-    now_local = dt_util.now()
-    if now_local.weekday() != self._weekday:
-        return []
-    current_min = now_local.hour * 60 + now_local.minute
-    if not (self._scheduled_min - self._window_half_min
-            <= current_min <=
-            self._scheduled_min + self._window_half_min):
-        return []
-    if self._house_state_filter and history[-1].house_state != self._house_state_filter:
-        return []
-    today = now_local.date().isoformat()
-    if self._last_fired_date == today:
-        return []  # già fired oggi nella finestra
-    self._last_fired_date = today
-    return self._build_steps()
-```
+La finestra deve supportare wrap su mezzanotte. Il debounce non è legato semplicemente alla data
+wall-clock corrente, ma al giorno logico dell'occorrenza configurata: una schedule `00:05 ± 10 min`
+può iniziare il giorno precedente e non deve double-fire dopo mezzanotte.
 
 #### ApplyStep — uno per entità
 
@@ -1207,14 +1193,15 @@ custom_components/heima/runtime/
     __init__.py                     Implemented
     base.py                         Implemented — IPatternAnalyzer + ReactionProposal
     presence.py                     Implemented — PresencePatternAnalyzer
-    heating.py                      Implemented — HeatingPatternAnalyzer
-    lighting.py                     Implemented — LightingPatternAnalyzer (da aggiornare: entity-level + grouping)
+    heating.py                      Implemented/Partial — HeatingPatternAnalyzer
+    lighting.py                     Implemented — LightingPatternAnalyzer
   behaviors/
     event_recorder.py               Implemented — presence + house_state events
-    heating_recorder.py             Implemented — heating setpoint events
-    lighting_recorder.py            Implemented — user light action events (da aggiornare: aggiungere entity_id)
+    heating_recorder.py             Implemented — observed heating setpoint events
+    lighting_recorder.py            Implemented — user light action events with entity-level payload
+    signal_recorder.py              Implemented — generic `state_change` events for configured context signals
   reactions/
-    lighting_schedule.py            Designed (P9.5) — LightingScheduleReaction
+    lighting_schedule.py            Implemented — LightingScheduleReaction
 ```
 
 ### Existing files that change

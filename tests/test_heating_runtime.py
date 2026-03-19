@@ -121,6 +121,98 @@ async def test_fixed_target_branch_builds_and_executes_heating_apply_step():
     assert engine.state.get_sensor("heima_heating_last_applied_target") == 20.0
 
 
+def test_heating_snapshot_uses_observed_current_setpoint_not_target():
+    options = {
+        "heating": {
+            "climate_entity": "climate.test_thermostat",
+            "apply_mode": "set_temperature",
+            "temperature_step": 0.5,
+            "manual_override_guard": True,
+            "override_branches": {
+                "away": {
+                    "branch": "fixed_target",
+                    "target_temperature": 20.0,
+                }
+            },
+        }
+    }
+    engine = _build_engine(
+        options,
+        {
+            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+        },
+    )
+
+    snapshot = engine._compute_snapshot(reason="test")
+
+    assert snapshot.heating_setpoint == 18.0
+    assert engine.diagnostics()["heating"]["target_temperature"] == 20.0
+
+
+def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply():
+    options = {
+        "heating": {
+            "climate_entity": "climate.test_thermostat",
+            "apply_mode": "set_temperature",
+            "temperature_step": 0.5,
+            "manual_override_guard": True,
+            "override_branches": {
+                "away": {
+                    "branch": "fixed_target",
+                    "target_temperature": 20.0,
+                }
+            },
+        }
+    }
+    engine = _build_engine(
+        options,
+        {
+            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+        },
+    )
+
+    _ = engine._compute_snapshot(reason="before_apply")
+    engine._heating_domain.mark_applied(20.0)
+    engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 20.0})
+
+    snapshot = engine._compute_snapshot(reason="after_apply")
+
+    assert snapshot.heating_setpoint == 20.0
+    assert snapshot.heating_source == "heima"
+
+
+def test_heating_snapshot_marks_observed_setpoint_as_user_when_not_matching_last_heima_apply():
+    options = {
+        "heating": {
+            "climate_entity": "climate.test_thermostat",
+            "apply_mode": "set_temperature",
+            "temperature_step": 0.5,
+            "manual_override_guard": True,
+            "override_branches": {
+                "away": {
+                    "branch": "fixed_target",
+                    "target_temperature": 20.0,
+                }
+            },
+        }
+    }
+    engine = _build_engine(
+        options,
+        {
+            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+        },
+    )
+
+    _ = engine._compute_snapshot(reason="before_apply")
+    engine._heating_domain.mark_applied(20.0)
+    engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 21.5})
+
+    snapshot = engine._compute_snapshot(reason="manual_change")
+
+    assert snapshot.heating_setpoint == 21.5
+    assert snapshot.heating_source == "user"
+
+
 def test_fixed_target_branch_skips_small_delta_and_sets_guard():
     options = {
         "heating": {

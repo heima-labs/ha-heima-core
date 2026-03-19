@@ -36,13 +36,13 @@ class LightingRecorderBehavior(HeimaBehavior):
         store: EventStore,
         context_builder: ContextBuilder,
         entry: ConfigEntry,
-        lighting_apply_ts_fn: Callable[[], dict[str, float]],
+        lighting_apply_state_fn: Callable[[], dict[str, Any]],
     ) -> None:
         self._hass = hass
         self._store = store
         self._context_builder = context_builder
         self._entry = entry
-        self._lighting_apply_ts_fn = lighting_apply_ts_fn
+        self._lighting_apply_state_fn = lighting_apply_state_fn
         self._entity_to_room: dict[str, str] = {}
         self._last_snapshot: DecisionSnapshot | None = None
         self._unsub: Any = None
@@ -57,10 +57,7 @@ class LightingRecorderBehavior(HeimaBehavior):
 
     async def async_setup(self) -> None:
         self._entity_to_room = self._build_entity_room_map()
-        if self._entity_to_room:
-            self._unsub = self._hass.bus.async_listen(
-                EVENT_STATE_CHANGED, self._handle_state_changed
-            )
+        self._sync_listener_subscription()
 
     async def async_teardown(self) -> None:
         if self._unsub:
@@ -69,6 +66,7 @@ class LightingRecorderBehavior(HeimaBehavior):
 
     def on_options_reloaded(self, options: dict[str, Any]) -> None:
         self._entity_to_room = self._build_entity_room_map()
+        self._sync_listener_subscription()
 
     # ------------------------------------------------------------------
     # Snapshot hook (context caching)
@@ -76,6 +74,9 @@ class LightingRecorderBehavior(HeimaBehavior):
 
     def on_snapshot(self, snapshot: DecisionSnapshot) -> None:
         self._last_snapshot = snapshot
+
+    def reset_learning_state(self) -> None:
+        self._last_snapshot = None
 
     # ------------------------------------------------------------------
     # State change handler
@@ -100,9 +101,7 @@ class LightingRecorderBehavior(HeimaBehavior):
             return  # no change in on/off status
 
         # Source discrimination
-        apply_ts = self._lighting_apply_ts_fn()
-        room_apply_ts = apply_ts.get(room_id, 0.0)
-        if time.time() - room_apply_ts < _HEIMA_APPLY_TTL_S:
+        if self._is_recent_heima_apply(entity_id=entity_id, room_id=room_id):
             return  # Heima caused this change
 
         if self._last_snapshot is None:
@@ -143,6 +142,11 @@ class LightingRecorderBehavior(HeimaBehavior):
             event_type="lighting",
             context=context,
             source="user",
+            domain="lighting",
+            subject_type="entity",
+            subject_id=entity_id,
+            room_id=room_id,
+            correlation_id=self._extract_correlation_id(event, new_state),
             data={
                 "entity_id": entity_id,
                 "room_id": room_id,
@@ -154,6 +158,49 @@ class LightingRecorderBehavior(HeimaBehavior):
             },
         )
         self._hass.async_create_task(self._store.async_append(lighting_event))
+
+    def _sync_listener_subscription(self) -> None:
+        """Keep the state_changed listener aligned with whether we have tracked lights."""
+        should_listen = bool(self._entity_to_room)
+        if should_listen and self._unsub is None:
+            self._unsub = self._hass.bus.async_listen(
+                EVENT_STATE_CHANGED, self._handle_state_changed
+            )
+        elif not should_listen and self._unsub is not None:
+            self._unsub()
+            self._unsub = None
+
+    @staticmethod
+    def _extract_correlation_id(event: Event, new_state: Any) -> str | None:
+        """Use HA context id when available so related entity changes can be grouped later."""
+        for candidate in (
+            getattr(new_state, "context", None),
+            event.data.get("context"),
+        ):
+            context_id = getattr(candidate, "id", None)
+            if isinstance(context_id, str) and context_id:
+                return context_id
+            if isinstance(candidate, dict):
+                raw_id = candidate.get("id")
+                if isinstance(raw_id, str) and raw_id:
+                    return raw_id
+        return None
+
+    def _is_recent_heima_apply(self, *, entity_id: str, room_id: str) -> bool:
+        """Prefer entity-level apply provenance, then fall back to room-level timestamps."""
+        apply_state = self._lighting_apply_state_fn()
+        now = time.monotonic()
+
+        entities = apply_state.get("entities", {}) if isinstance(apply_state, dict) else {}
+        entity_apply = entities.get(entity_id) if isinstance(entities, dict) else None
+        if isinstance(entity_apply, dict):
+            applied_ts = entity_apply.get("applied_ts")
+            if isinstance(applied_ts, (int, float)) and (now - applied_ts) < _HEIMA_APPLY_TTL_S:
+                return True
+
+        rooms = apply_state.get("rooms", {}) if isinstance(apply_state, dict) else apply_state
+        room_apply_ts = rooms.get(room_id, 0.0) if isinstance(rooms, dict) else 0.0
+        return isinstance(room_apply_ts, (int, float)) and (now - room_apply_ts) < _HEIMA_APPLY_TTL_S
 
     # ------------------------------------------------------------------
     # Entity → room mapping

@@ -323,6 +323,71 @@ def test_e2e_reaction_evaluate_debounce_prevents_double_fire():
     assert second == []
 
 
+def test_e2e_reaction_evaluate_wraps_from_previous_day_before_midnight():
+    reaction = LightingScheduleReaction(
+        room_id="living",
+        weekday=0,
+        scheduled_min=5,
+        window_half_min=10,
+        entity_steps=[
+            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+        ],
+        reaction_id="midnight-wrap",
+    )
+    history = [_snapshot("home")]
+    with _make_hass_mock_for_weekday(weekday=6, hour=23, minute=58):
+        steps = reaction.evaluate(history)
+    assert len(steps) == 1
+    assert reaction.diagnostics()["last_fired_date"] == "2026-03-09"
+
+
+def test_e2e_reaction_debounce_uses_occurrence_day_across_midnight():
+    from datetime import datetime, timezone
+    from unittest.mock import patch
+
+    reaction = LightingScheduleReaction(
+        room_id="living",
+        weekday=0,
+        scheduled_min=5,
+        window_half_min=10,
+        entity_steps=[
+            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+        ],
+        reaction_id="midnight-debounce",
+    )
+    history = [_snapshot("home")]
+    with patch(
+        "custom_components.heima.runtime.reactions.lighting_schedule.dt_util.now",
+        return_value=datetime(2026, 3, 8, 23, 58, 0, tzinfo=timezone.utc),
+    ):
+        first = reaction.evaluate(history)
+    with patch(
+        "custom_components.heima.runtime.reactions.lighting_schedule.dt_util.now",
+        return_value=datetime(2026, 3, 9, 0, 3, 0, tzinfo=timezone.utc),
+    ):
+        second = reaction.evaluate(history)
+    assert len(first) == 1
+    assert second == []
+
+
+def test_e2e_reaction_evaluate_wraps_to_next_day_after_midnight():
+    reaction = LightingScheduleReaction(
+        room_id="living",
+        weekday=0,
+        scheduled_min=23 * 60 + 55,
+        window_half_min=10,
+        entity_steps=[
+            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+        ],
+        reaction_id="late-wrap",
+    )
+    history = [_snapshot("home")]
+    with _make_hass_mock_for_weekday(weekday=1, hour=0, minute=3):
+        steps = reaction.evaluate(history)
+    assert len(steps) == 1
+    assert reaction.diagnostics()["last_fired_date"] == "2026-03-02"
+
+
 def test_e2e_reaction_evaluate_house_state_filter_mismatch():
     """evaluate() with house_state_filter that doesn't match → no steps."""
     reaction = LightingScheduleReaction(

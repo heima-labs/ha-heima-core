@@ -109,12 +109,14 @@ def _state_event(
     new_state: str,
     old_state: str | None = None,
     attributes: dict | None = None,
+    context_id: str | None = None,
 ) -> dict:
     """Build state_changed event data dict."""
     new = MagicMock()
     new.state = new_state
     new.attributes = attributes or {}
     new.last_changed = _LAST_CHANGED
+    new.context = MagicMock(id=context_id) if context_id else None
 
     old = None
     if old_state is not None:
@@ -132,7 +134,7 @@ def _behavior(
     hass: _FakeHass,
     store: _FakeStore,
     entity_to_room: dict[str, str] | None = None,
-    apply_ts: dict[str, float] | None = None,
+    apply_state: dict | None = None,
 ) -> LightingRecorderBehavior:
     """Build behavior with mocked entity→room map and snapshot pre-set."""
     b = LightingRecorderBehavior(
@@ -140,7 +142,7 @@ def _behavior(
         store,  # type: ignore[arg-type]
         _FakeContextBuilder(),  # type: ignore[arg-type]
         _FakeEntry(),  # type: ignore[arg-type]
-        lambda: apply_ts or {},
+        lambda: apply_state or {"rooms": {}, "entities": {}},
     )
     b._entity_to_room = entity_to_room or {"light.living_main": "living"}
     b._last_snapshot = _snapshot()
@@ -166,6 +168,10 @@ async def test_lighting_recorder_records_user_on():
     assert isinstance(e, HeimaEvent)
     assert e.event_type == "lighting"
     assert e.source == "user"
+    assert e.domain == "lighting"
+    assert e.subject_type == "entity"
+    assert e.subject_id == "light.living_main"
+    assert e.room_id == "living"
     assert e.data["room_id"] == "living"
     assert e.data["action"] == "on"
 
@@ -291,8 +297,8 @@ async def test_lighting_recorder_ignores_heima_applied_within_ttl():
     hass = _FakeHass()
     store = _FakeStore()
     # Simulate recent Heima apply for "living"
-    recent_apply_ts = {"living": time.time() - 2.0}  # 2s ago < 5s TTL
-    b = _behavior(hass, store, apply_ts=recent_apply_ts)
+    recent_apply_state = {"rooms": {"living": time.monotonic() - 2.0}, "entities": {}}
+    b = _behavior(hass, store, apply_state=recent_apply_state)
 
     event_data = _state_event("light.living_main", "on", old_state="off")
     await b._handle_state_changed(_FakeEvent(event_data))
@@ -306,8 +312,8 @@ async def test_lighting_recorder_records_after_heima_ttl_expired():
     import time
     hass = _FakeHass()
     store = _FakeStore()
-    stale_apply_ts = {"living": time.time() - 10.0}  # 10s ago > 5s TTL
-    b = _behavior(hass, store, apply_ts=stale_apply_ts)
+    stale_apply_state = {"rooms": {"living": time.monotonic() - 10.0}, "entities": {}}
+    b = _behavior(hass, store, apply_state=stale_apply_state)
 
     event_data = _state_event("light.living_main", "on", old_state="off")
     await b._handle_state_changed(_FakeEvent(event_data))
@@ -358,6 +364,51 @@ async def test_lighting_recorder_context_has_house_state():
     assert store.events[0].context.house_state == "away"
 
 
+async def test_lighting_recorder_uses_context_id_as_correlation_id():
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(hass, store)
+
+    event_data = _state_event(
+        "light.living_main",
+        "on",
+        old_state="off",
+        context_id="ctx-abc",
+    )
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert store.events[0].correlation_id == "ctx-abc"
+
+
+async def test_lighting_recorder_ignores_recent_heima_entity_apply():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        apply_state={
+            "rooms": {},
+            "entities": {
+                "light.living_main": {
+                    "room_id": "living",
+                    "action": "light.turn_on",
+                    "applied_ts": time.monotonic() - 2.0,
+                    "correlation_id": "lighting-apply:1",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 0
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle: async_setup / async_teardown
 # ---------------------------------------------------------------------------
@@ -398,3 +449,31 @@ async def test_lighting_recorder_on_options_reloaded_rebuilds_map():
     b.on_options_reloaded({})
 
     assert b._entity_to_room == {"light.new_entity": "new_room"}
+
+
+async def test_lighting_recorder_on_options_reloaded_subscribes_when_map_becomes_non_empty():
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(hass, store, entity_to_room={})
+    b._unsub = None
+    b._build_entity_room_map = lambda: {"light.new_entity": "new_room"}
+
+    b.on_options_reloaded({})
+
+    assert b._entity_to_room == {"light.new_entity": "new_room"}
+    assert b._unsub is not None
+
+
+async def test_lighting_recorder_on_options_reloaded_unsubscribes_when_map_becomes_empty():
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(hass, store, entity_to_room={"light.old_entity": "old_room"})
+    unsub_called: list[bool] = []
+    b._unsub = lambda: unsub_called.append(True)
+    b._build_entity_room_map = lambda: {}
+
+    b.on_options_reloaded({})
+
+    assert b._entity_to_room == {}
+    assert unsub_called == [True]
+    assert b._unsub is None

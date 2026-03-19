@@ -48,6 +48,21 @@ def _heating_event(
     )
 
 
+def _house_state_event(
+    *,
+    from_state: str,
+    to_state: str,
+    ts: str,
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="house_state",
+        context=_ctx(house_state=to_state),
+        source=None,
+        data={"from_state": from_state, "to_state": to_state},
+    )
+
+
 async def test_heating_analyzer_requires_min_events():
     analyzer = HeatingPatternAnalyzer()
     events = [_heating_event() for _ in range(9)]
@@ -105,6 +120,8 @@ async def test_heating_analyzer_eco_pattern():
     for i in range(3):
         away_ts = (base + timedelta(days=i * 2)).isoformat()
         home_ts = (base + timedelta(days=i * 2, hours=3)).isoformat()
+        events.append(_house_state_event(from_state="home", to_state="away", ts=away_ts))
+        events.append(_house_state_event(from_state="away", to_state="home", ts=home_ts))
         events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
         events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
 
@@ -112,6 +129,20 @@ async def test_heating_analyzer_eco_pattern():
     eco_proposals = [p for p in proposals if p.reaction_type == "heating_eco"]
     assert eco_proposals
     assert eco_proposals[0].suggested_reaction_config["eco_sessions_observed"] >= 3
+
+
+async def test_heating_analyzer_no_eco_without_house_state_sessions():
+    analyzer = HeatingPatternAnalyzer()
+    base = datetime(2026, 3, 1, 8, 0, 0, tzinfo=UTC)
+    events = []
+    for i in range(3):
+        away_ts = (base + timedelta(days=i * 2)).isoformat()
+        home_ts = (base + timedelta(days=i * 2, hours=3)).isoformat()
+        events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
+        events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert not [p for p in proposals if p.reaction_type == "heating_eco"]
 
 
 async def test_heating_analyzer_only_user_events_for_preference():

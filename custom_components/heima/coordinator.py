@@ -12,7 +12,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN
 from .models import HeimaRuntimeState
 from .runtime.analyzers import HeatingPatternAnalyzer, LightingPatternAnalyzer, PresencePatternAnalyzer
-from .runtime.behaviors import EventRecorderBehavior, HeatingRecorderBehavior, LightingRecorderBehavior
+from .runtime.behaviors import (
+    EventRecorderBehavior,
+    HeatingRecorderBehavior,
+    LightingRecorderBehavior,
+    SignalRecorderBehavior,
+)
 from .runtime.context_builder import ContextBuilder
 from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
@@ -44,9 +49,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._event_store,
             self._context_builder,
             entry,
-            lambda: self.engine.lighting_last_apply_ts_by_room,
+            lambda: self.engine.lighting_recent_apply_state,
         )
         self.engine.register_behavior(self._lighting_recorder)
+        self.engine.register_behavior(
+            SignalRecorderBehavior(hass, self._event_store, self._context_builder, entry)
+        )
         self._proposal_engine = ProposalEngine(
             hass,
             self._event_store,
@@ -213,7 +221,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     async def async_reset_learning_data(self) -> None:
         """Reset learning event/proposal stores and refresh runtime sensors."""
         await self._event_store.async_clear()
+        await self._event_store.async_flush()
         await self._proposal_engine.async_clear()
+        self.engine.reset_learning_state()
         self._write_event_store_sensor()
         await self.async_refresh()
 

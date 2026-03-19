@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -76,15 +76,14 @@ class LightingScheduleReaction(HeimaReaction):
         Trigger point = (scheduled_min - window_half_min) on the configured weekday.
         If that moment has already passed this week, project to next week.
         """
-        trigger_min = self._scheduled_min - self._window_half_min
         now_local = dt_util.now()
         days_ahead = (self._weekday - now_local.weekday()) % 7
         candidate = now_local.replace(
-            hour=trigger_min // 60,
-            minute=trigger_min % 60,
+            hour=0,
+            minute=0,
             second=0,
             microsecond=0,
-        ) + timedelta(days=days_ahead)
+        ) + timedelta(days=days_ahead, minutes=self._scheduled_min - self._window_half_min)
         if candidate <= now_local:
             candidate += timedelta(weeks=1)
         delta_s = (candidate - now_local).total_seconds()
@@ -98,20 +97,48 @@ class LightingScheduleReaction(HeimaReaction):
         if not history:
             return []
         now_local = dt_util.now()
-        if now_local.weekday() != self._weekday:
-            return []
-        current_min = now_local.hour * 60 + now_local.minute
-        lo = self._scheduled_min - self._window_half_min
-        hi = self._scheduled_min + self._window_half_min
-        if not (lo <= current_min <= hi):
+        occurrence_date = self._window_occurrence_date(now_local)
+        if occurrence_date is None:
             return []
         if self._house_state_filter and history[-1].house_state != self._house_state_filter:
             return []
-        today = now_local.date().isoformat()
-        if self._last_fired_date == today:
+        occurrence_day = occurrence_date.isoformat()
+        if self._last_fired_date == occurrence_day:
             return []
-        self._last_fired_date = today
+        self._last_fired_date = occurrence_day
         return self._build_steps()
+
+    def reset_learning_state(self) -> None:
+        self._last_fired_date = None
+
+    def _window_occurrence_date(self, now_local: datetime) -> date | None:
+        current_min = _minute_of_day(now_local)
+        start_min = self._scheduled_min - self._window_half_min
+        end_min = self._scheduled_min + self._window_half_min
+        configured_weekday = self._weekday
+        previous_weekday = (configured_weekday - 1) % 7
+        next_weekday = (configured_weekday + 1) % 7
+
+        if 0 <= start_min and end_min < 1440:
+            if now_local.weekday() == configured_weekday and start_min <= current_min <= end_min:
+                return now_local.date()
+            return None
+
+        if start_min < 0:
+            if now_local.weekday() == previous_weekday and current_min >= start_min + 1440:
+                return now_local.date() + timedelta(days=1)
+            if now_local.weekday() == configured_weekday and current_min <= end_min:
+                return now_local.date()
+            return None
+
+        if end_min >= 1440:
+            if now_local.weekday() == configured_weekday and current_min >= start_min:
+                return now_local.date()
+            if now_local.weekday() == next_weekday and current_min <= end_min - 1440:
+                return now_local.date() - timedelta(days=1)
+            return None
+
+        return None
 
     def _build_steps(self) -> list[ApplyStep]:
         steps = []
@@ -159,3 +186,7 @@ class LightingScheduleReaction(HeimaReaction):
 
 def _hhmm(minute_of_day: int) -> str:
     return f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}"
+
+
+def _minute_of_day(dt: datetime) -> int:
+    return dt.hour * 60 + dt.minute
