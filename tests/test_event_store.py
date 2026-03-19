@@ -80,6 +80,26 @@ def _house_state(ts: str, from_state: str = "away", to_state: str = "home") -> H
     )
 
 
+def _lighting(ts: str, entity_id: str = "light.living_main", room_id: str = "living") -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="lighting",
+        context=_ctx(),
+        source="user",
+        domain="lighting",
+        subject_type="entity",
+        subject_id=entity_id,
+        room_id=room_id,
+        correlation_id="ctx-123",
+        data={
+            "entity_id": entity_id,
+            "room_id": room_id,
+            "action": "on",
+            "brightness": 128,
+        },
+    )
+
+
 async def test_event_store_append_and_query(monkeypatch):
     monkeypatch.setattr(event_store_module, "Store", _FakeStore)
     store = EventStore(object())  # type: ignore[arg-type]
@@ -177,6 +197,27 @@ async def test_event_store_clear(monkeypatch):
     await store.async_append(_presence(_iso_now_minus(minutes=1)))
     await store.async_clear()
     assert await store.async_query() == []
+
+
+async def test_event_store_persists_generic_event_fields(monkeypatch):
+    monkeypatch.setattr(event_store_module, "Store", _FakeStore)
+    store1 = EventStore(object())  # type: ignore[arg-type]
+    await store1.async_load()
+    event = _lighting(_iso_now_minus(minutes=1))
+    await store1.async_append(event)
+    await store1.async_flush()
+
+    store2 = EventStore(object())  # type: ignore[arg-type]
+    store2._store._data = store1._store._data
+    await store2.async_load()
+    result = await store2.async_query(event_type="lighting")
+    assert len(result) == 1
+    reloaded = result[0]
+    assert reloaded.domain == "lighting"
+    assert reloaded.subject_type == "entity"
+    assert reloaded.subject_id == "light.living_main"
+    assert reloaded.room_id == "living"
+    assert reloaded.correlation_id == "ctx-123"
 
 
 async def test_event_store_backward_compat_legacy_presence(monkeypatch):

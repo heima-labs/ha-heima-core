@@ -80,7 +80,9 @@ Dopo che l'utente accetta una o più proposte nel passo `proposals`, il flow non
 La descrizione della proposal è mostrata via `description_placeholders: {proposal_description}`.
 
 **Comportamento:**
-- Se `action_entities` è valorizzato: `steps = [ApplyStep(domain=e.split(".")[0], target=e, action="turn_on") for e in action_entities]`
+- Se `action_entities` è valorizzato, vengono normalizzati in step eseguibili dal runtime:
+  - `scene.*` → `{"domain": "lighting", "target": entity_id, "action": "scene.turn_on", "params": {"entity_id": entity_id}}`
+  - `script.*` → `{"domain": "script", "target": entity_id, "action": "script.turn_on", "params": {"entity_id": entity_id}}`
 - Se vuoto: `steps = []` — la reaction viene registrata senza azione (configurabile in seguito)
 - `pre_condition_min` sovrascrive il default nel config della reaction
 

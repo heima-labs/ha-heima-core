@@ -97,6 +97,15 @@ class HeimaEvent:
     context: EventContext
     source: str | None
     data: dict[str, Any]
+    domain: str = ""
+    subject_type: str = ""
+    subject_id: str = ""
+    room_id: str | None = None
+    correlation_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.domain:
+            object.__setattr__(self, "domain", str(self.event_type or "").split(".", 1)[0])
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +114,11 @@ class HeimaEvent:
             "context": self.context.as_dict(),
             "source": self.source,
             "data": dict(self.data),
+            "domain": self.domain,
+            "subject_type": self.subject_type,
+            "subject_id": self.subject_id,
+            "room_id": self.room_id,
+            "correlation_id": self.correlation_id,
         }
 
 
@@ -264,6 +278,15 @@ class EventStore:
                 context=context,
                 source=str(source) if source is not None else None,
                 data=data,
+                domain=str(raw.get("domain") or ""),
+                subject_type=str(raw.get("subject_type") or ""),
+                subject_id=str(raw.get("subject_id") or ""),
+                room_id=str(raw["room_id"]) if raw.get("room_id") is not None else None,
+                correlation_id=(
+                    str(raw["correlation_id"])
+                    if raw.get("correlation_id") is not None
+                    else None
+                ),
             )
         except (KeyError, TypeError, ValueError):
             return None

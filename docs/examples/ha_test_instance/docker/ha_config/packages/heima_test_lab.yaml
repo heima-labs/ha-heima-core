@@ -20,10 +20,18 @@ input_boolean:
     name: "Test Heima Anonymous Presence Raw"
   test_heima_heater_relay_raw:
     name: "Test Heima Heater Relay Raw"
-  test_heima_light_living_raw:
-    name: "Test Heima Light Living Raw"
-  test_heima_light_studio_raw:
-    name: "Test Heima Light Studio Raw"
+  test_heima_light_living_main_raw:
+    name: "Test Heima Light Living Main Raw"
+  test_heima_light_living_spot_raw:
+    name: "Test Heima Light Living Spot Raw"
+  test_heima_light_living_floor_raw:
+    name: "Test Heima Light Living Floor Raw"
+  test_heima_light_studio_main_raw:
+    name: "Test Heima Light Studio Main Raw"
+  test_heima_light_studio_spot_raw:
+    name: "Test Heima Light Studio Spot Raw"
+  test_heima_light_studio_desk_raw:
+    name: "Test Heima Light Studio Desk Raw"
 
 light:
   - platform: template
@@ -31,27 +39,159 @@ light:
       test_heima_living_main:
         friendly_name: "Test Heima Living Main"
         unique_id: test_heima_living_main
-        value_template: "{{ is_state('input_boolean.test_heima_light_living_raw', 'on') }}"
+        value_template: "{{ is_state('input_boolean.test_heima_light_living_main_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_living_main_brightness') | int(180) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_living_main_color_temp') | int(3000) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
-            entity_id: input_boolean.test_heima_light_living_raw
+            entity_id: input_boolean.test_heima_light_living_main_raw
         turn_off:
           action: input_boolean.turn_off
           target:
-            entity_id: input_boolean.test_heima_light_living_raw
+            entity_id: input_boolean.test_heima_light_living_main_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_main_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_main_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+      test_heima_living_spot:
+        friendly_name: "Test Heima Living Spot"
+        unique_id: test_heima_living_spot
+        value_template: "{{ is_state('input_boolean.test_heima_light_living_spot_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_living_spot_brightness') | int(96) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_living_spot_color_temp') | int(3200) }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_living_spot_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_living_spot_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_spot_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_spot_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+      test_heima_living_floor:
+        friendly_name: "Test Heima Living Floor"
+        unique_id: test_heima_living_floor
+        value_template: "{{ is_state('input_boolean.test_heima_light_living_floor_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_living_floor_brightness') | int(64) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_living_floor_color_temp') | int(2700) }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_living_floor_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_living_floor_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_floor_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_living_floor_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
       test_heima_studio_main:
         friendly_name: "Test Heima Studio Main"
         unique_id: test_heima_studio_main
-        value_template: "{{ is_state('input_boolean.test_heima_light_studio_raw', 'on') }}"
+        value_template: "{{ is_state('input_boolean.test_heima_light_studio_main_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_studio_main_brightness') | int(170) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_studio_main_color_temp') | int(3300) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
-            entity_id: input_boolean.test_heima_light_studio_raw
+            entity_id: input_boolean.test_heima_light_studio_main_raw
         turn_off:
           action: input_boolean.turn_off
           target:
-            entity_id: input_boolean.test_heima_light_studio_raw
+            entity_id: input_boolean.test_heima_light_studio_main_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_main_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_main_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+      test_heima_studio_spot:
+        friendly_name: "Test Heima Studio Spot"
+        unique_id: test_heima_studio_spot
+        value_template: "{{ is_state('input_boolean.test_heima_light_studio_spot_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_studio_spot_brightness') | int(90) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_studio_spot_color_temp') | int(3600) }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_studio_spot_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_studio_spot_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_spot_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_spot_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+      test_heima_studio_desk:
+        friendly_name: "Test Heima Studio Desk"
+        unique_id: test_heima_studio_desk
+        value_template: "{{ is_state('input_boolean.test_heima_light_studio_desk_raw', 'on') }}"
+        level_template: "{{ states('input_number.test_heima_light_studio_desk_brightness') | int(120) }}"
+        temperature_template: "{{ states('input_number.test_heima_light_studio_desk_color_temp') | int(4000) }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_light_studio_desk_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_light_studio_desk_raw
+        set_level:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_desk_brightness
+          data:
+            value: "{{ brightness }}"
+        set_temperature:
+          action: input_number.set_value
+          target:
+            entity_id: input_number.test_heima_light_studio_desk_color_temp
+          data:
+            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
 
 input_number:
   test_heima_people_score:
@@ -93,6 +233,96 @@ input_number:
     mode: box
     unit_of_measurement: "°C"
     initial: 19.5
+  test_heima_light_living_main_brightness:
+    name: "Test Heima Light Living Main Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 180
+  test_heima_light_living_spot_brightness:
+    name: "Test Heima Light Living Spot Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 96
+  test_heima_light_living_floor_brightness:
+    name: "Test Heima Light Living Floor Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 64
+  test_heima_light_studio_main_brightness:
+    name: "Test Heima Light Studio Main Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 170
+  test_heima_light_studio_spot_brightness:
+    name: "Test Heima Light Studio Spot Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 90
+  test_heima_light_studio_desk_brightness:
+    name: "Test Heima Light Studio Desk Brightness"
+    min: 1
+    max: 255
+    step: 1
+    mode: box
+    initial: 120
+  test_heima_light_living_main_color_temp:
+    name: "Test Heima Light Living Main Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 3000
+  test_heima_light_living_spot_color_temp:
+    name: "Test Heima Light Living Spot Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 3200
+  test_heima_light_living_floor_color_temp:
+    name: "Test Heima Light Living Floor Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 2700
+  test_heima_light_studio_main_color_temp:
+    name: "Test Heima Light Studio Main Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 3300
+  test_heima_light_studio_spot_color_temp:
+    name: "Test Heima Light Studio Spot Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 3600
+  test_heima_light_studio_desk_color_temp:
+    name: "Test Heima Light Studio Desk Color Temp"
+    min: 2000
+    max: 6500
+    step: 50
+    mode: box
+    unit_of_measurement: "K"
+    initial: 4000
 
 input_datetime:
   test_heima_vacation_start:
@@ -314,6 +544,12 @@ script:
             - input_boolean.test_heima_room_living_motion_raw
             - input_boolean.test_heima_anonymous_presence_raw
             - input_boolean.test_heima_heater_relay_raw
+            - input_boolean.test_heima_light_living_main_raw
+            - input_boolean.test_heima_light_living_spot_raw
+            - input_boolean.test_heima_light_living_floor_raw
+            - input_boolean.test_heima_light_studio_main_raw
+            - input_boolean.test_heima_light_studio_spot_raw
+            - input_boolean.test_heima_light_studio_desk_raw
       - action: input_number.set_value
         target:
           entity_id: input_number.test_heima_people_score
@@ -329,6 +565,28 @@ script:
           entity_id: input_number.test_heima_room_temp
         data:
           value: 19
+      - action: input_number.set_value
+        target:
+          entity_id:
+            - input_number.test_heima_light_living_main_brightness
+            - input_number.test_heima_light_living_spot_brightness
+            - input_number.test_heima_light_living_floor_brightness
+            - input_number.test_heima_light_studio_main_brightness
+            - input_number.test_heima_light_studio_spot_brightness
+            - input_number.test_heima_light_studio_desk_brightness
+        data:
+          value: 160
+      - action: input_number.set_value
+        target:
+          entity_id:
+            - input_number.test_heima_light_living_main_color_temp
+            - input_number.test_heima_light_living_spot_color_temp
+            - input_number.test_heima_light_living_floor_color_temp
+            - input_number.test_heima_light_studio_main_color_temp
+            - input_number.test_heima_light_studio_spot_color_temp
+            - input_number.test_heima_light_studio_desk_color_temp
+        data:
+          value: 3200
       - action: alarm_control_panel.alarm_disarm
         target:
           entity_id: alarm_control_panel.test_heima_alarm
@@ -400,6 +658,72 @@ script:
           entity_id: input_number.test_heima_room_temp
         data:
           value: 15.5
+
+  test_heima_set_living_evening_scene:
+    alias: "Test Heima Set Living Evening Scene"
+    icon: mdi:lamps
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_living_main_brightness
+        data:
+          value: 190
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_living_main_color_temp
+        data:
+          value: 2850
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_living_spot_brightness
+        data:
+          value: 96
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_living_spot_color_temp
+        data:
+          value: 3200
+      - action: input_boolean.turn_on
+        target:
+          entity_id:
+            - input_boolean.test_heima_light_living_main_raw
+            - input_boolean.test_heima_light_living_spot_raw
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.test_heima_light_living_floor_raw
+
+  test_heima_set_studio_focus_scene:
+    alias: "Test Heima Set Studio Focus Scene"
+    icon: mdi:desk-lamp
+    sequence:
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_studio_main_brightness
+        data:
+          value: 180
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_studio_main_color_temp
+        data:
+          value: 3600
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_studio_desk_brightness
+        data:
+          value: 140
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_light_studio_desk_color_temp
+        data:
+          value: 4200
+      - action: input_boolean.turn_on
+        target:
+          entity_id:
+            - input_boolean.test_heima_light_studio_main_raw
+            - input_boolean.test_heima_light_studio_desk_raw
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.test_heima_light_studio_spot_raw
 
   test_heima_alarm_arm_away:
     alias: "Test Heima Alarm Arm Away"

@@ -51,6 +51,9 @@ class HeimaReaction:
     def on_options_reloaded(self, options: dict[str, Any]) -> None:
         """Called when the config entry options change. No-op by default."""
 
+    def reset_learning_state(self) -> None:
+        """Reset reaction-local state that affects learning semantics."""
+
     def diagnostics(self) -> dict[str, Any]:
         """Return a dict of diagnostic data for this reaction. Empty by default."""
         return {}

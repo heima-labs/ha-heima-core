@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any
+from uuid import uuid4
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
@@ -29,6 +30,7 @@ class LightingDomain:
         self._normalizer = normalizer
         self._lighting_last_scene: dict[str, str] = {}
         self._lighting_last_ts: dict[str, float] = {}
+        self._lighting_recent_entity_applies: dict[str, dict[str, Any]] = {}
         self._lighting_hold_seen_state: dict[str, bool] = {}
         self._lighting_zone_trace: dict[str, dict[str, Any]] = {}
         self._lighting_room_trace: dict[str, list[dict[str, Any]]] = {}
@@ -38,6 +40,7 @@ class LightingDomain:
         """Called on options reload."""
         self._lighting_last_scene = {}
         self._lighting_last_ts = {}
+        self._lighting_recent_entity_applies = {}
         self._lighting_hold_seen_state = {}
         self._lighting_zone_trace = {}
         self._lighting_room_trace = {}
@@ -71,6 +74,19 @@ class LightingDomain:
     def hold_seen_state_by_room(self) -> dict[str, bool]:
         return self._lighting_hold_seen_state
 
+    @property
+    def recent_entity_applies(self) -> dict[str, dict[str, Any]]:
+        return {
+            entity_id: dict(payload)
+            for entity_id, payload in self._lighting_recent_entity_applies.items()
+        }
+
+    def recent_apply_state(self) -> dict[str, Any]:
+        return {
+            "rooms": dict(self._lighting_last_ts),
+            "entities": self.recent_entity_applies,
+        }
+
     def diagnostics(self) -> dict[str, Any]:
         return {
             "zone_trace": dict(self._lighting_zone_trace),
@@ -81,6 +97,7 @@ class LightingDomain:
             "conflicts_last_eval": list(self._lighting_conflicts_last_eval),
             "last_scene_by_room": dict(self._lighting_last_scene),
             "last_apply_ts_by_room": dict(self._lighting_last_ts),
+            "recent_entity_applies": self.recent_entity_applies,
             "hold_seen_state_by_room": dict(self._lighting_hold_seen_state),
         }
 
@@ -351,6 +368,7 @@ class LightingDomain:
 
     async def execute_lighting_steps(self, steps: list[ApplyStep]) -> None:
         """Execute lighting ApplySteps (scene.turn_on / light.turn_off)."""
+        apply_batch_id = f"lighting-apply:{uuid4()}"
         for step in steps:
             if step.action == "scene.turn_on":
                 scene_entity = step.params.get("entity_id")
@@ -366,7 +384,7 @@ class LightingDomain:
                         {"entity_id": scene_entity},
                         blocking=False,
                     )
-                    self._mark_scene_applied(step.target, scene_entity)
+                    self._mark_room_applied(step.target, scene_entity)
                 except ServiceNotFound:
                     _LOGGER.warning(
                         "Skipping lighting apply during startup/race: service scene.turn_on not available"
@@ -386,7 +404,12 @@ class LightingDomain:
                             {"entity_id": entity_id},
                             blocking=False,
                         )
-                        self._mark_scene_applied(step.target, f"light.turn_off:entity:{entity_id}")
+                        self._mark_entity_applied(
+                            room_id=step.target,
+                            entity_id=entity_id,
+                            action="light.turn_off",
+                            correlation_id=apply_batch_id,
+                        )
                     except ServiceNotFound:
                         _LOGGER.warning(
                             "Skipping lighting apply during startup/race: service light.turn_off not available"
@@ -402,7 +425,7 @@ class LightingDomain:
                             {"area_id": area_id},
                             blocking=False,
                         )
-                        self._mark_scene_applied(step.target, f"light.turn_off:area:{area_id}")
+                        self._mark_room_applied(step.target, f"light.turn_off:area:{area_id}")
                     except ServiceNotFound:
                         _LOGGER.warning(
                             "Skipping lighting apply during startup/race: service light.turn_off not available"
@@ -429,7 +452,12 @@ class LightingDomain:
                         call_params,
                         blocking=False,
                     )
-                    self._mark_scene_applied(step.target, f"light.turn_on:entity:{entity_id}")
+                    self._mark_entity_applied(
+                        room_id=step.target,
+                        entity_id=entity_id,
+                        action="light.turn_on",
+                        correlation_id=apply_batch_id,
+                    )
                 except ServiceNotFound:
                     _LOGGER.warning(
                         "Skipping lighting apply during startup/race: service light.turn_on not available"
@@ -492,6 +520,24 @@ class LightingDomain:
             return False
         return True
 
-    def _mark_scene_applied(self, room_id: str, scene_entity: str) -> None:
+    def _mark_room_applied(self, room_id: str, scene_entity: str) -> None:
         self._lighting_last_scene[room_id] = scene_entity
         self._lighting_last_ts[room_id] = time.monotonic()
+
+    def _mark_entity_applied(
+        self,
+        *,
+        room_id: str,
+        entity_id: str,
+        action: str,
+        correlation_id: str | None = None,
+    ) -> None:
+        applied_ts = time.monotonic()
+        self._lighting_last_scene[room_id] = f"{action}:entity:{entity_id}"
+        self._lighting_last_ts[room_id] = applied_ts
+        self._lighting_recent_entity_applies[entity_id] = {
+            "room_id": room_id,
+            "action": action,
+            "applied_ts": applied_ts,
+            "correlation_id": correlation_id,
+        }

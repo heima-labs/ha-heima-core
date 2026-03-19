@@ -192,6 +192,12 @@ class PresencePatternReaction(HeimaReaction):
         # Arrival history is in-memory only; no config to reload in v1.
         pass
 
+    def reset_learning_state(self) -> None:
+        self._arrivals.clear()
+        self._fire_count = 0
+        self._suppressed_count = 0
+        self._last_fired_ts = None
+
     def diagnostics(self) -> dict[str, Any]:
         diag: dict[str, Any] = {
             "arrivals_count": len(self._arrivals),

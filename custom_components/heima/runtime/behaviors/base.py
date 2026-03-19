@@ -57,6 +57,9 @@ class HeimaBehavior:
         Use for: re-reading behavior config from options.
         """
 
+    def reset_learning_state(self) -> None:
+        """Reset behavior-local state that affects learning semantics."""
+
     async def async_setup(self) -> None:
         """Called once after the coordinator is initialized.
 

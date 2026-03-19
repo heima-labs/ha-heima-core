@@ -58,3 +58,7 @@ class HeatingRecorderBehavior(HeimaBehavior):
             data={"temperature_set": snapshot.heating_setpoint},
         )
         self._hass.async_create_task(self._store.async_append(event))
+
+    def reset_learning_state(self) -> None:
+        self._previous_setpoint = None
+        self._previous_house_state = None

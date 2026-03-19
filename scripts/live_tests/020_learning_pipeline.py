@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Live E2E test for Heima learning pipeline (P1 + P1b + P2 + P4)."""
+"""Seeded integration test for the Heima learning pipeline.
+
+This script is not true live E2E because it drives presence transitions via
+`heima.set_override` instead of real Home Assistant source entities.
+"""
 
 from __future__ import annotations
 
@@ -108,7 +112,9 @@ def _toggle_presence(client: HAClient, person_slug: str, cycles: int, delay_s: f
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Heima learning live E2E test")
+    parser = argparse.ArgumentParser(
+        description="Heima learning seeded-integration test"
+    )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--person-slug", required=True)

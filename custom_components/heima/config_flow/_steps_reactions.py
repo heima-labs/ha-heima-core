@@ -111,10 +111,7 @@ class _ReactionsStepsMixin:
             )
 
         entities = self._normalize_multi_value(user_input.get("action_entities"))
-        steps = [
-            {"domain": e.split(".")[0], "target": e, "action": "turn_on"}
-            for e in entities
-        ]
+        steps = self._action_entities_to_steps(entities)
         cfg["steps"] = steps
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
         configured[pid] = cfg
@@ -225,10 +222,7 @@ class _ReactionsStepsMixin:
 
         # Build steps from selected entities
         entities = self._normalize_multi_value(user_input.get("action_entities"))
-        steps = [
-            {"domain": e.split(".")[0], "target": e, "action": "turn_on"}
-            for e in entities
-        ]
+        steps = self._action_entities_to_steps(entities)
         pre_condition_min = int(user_input.get("pre_condition_min") or 20)
 
         reactions_cfg = dict(self._reactions_options())
@@ -251,6 +245,32 @@ class _ReactionsStepsMixin:
 
     def _reactions_options(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_REACTIONS, {}))
+
+    @staticmethod
+    def _action_entities_to_steps(entities: list[str]) -> list[dict[str, Any]]:
+        """Normalize selected action entities into executable ApplyStep-like dicts."""
+        steps: list[dict[str, Any]] = []
+        for entity_id in entities:
+            domain = str(entity_id).split(".", 1)[0]
+            if domain == "scene":
+                steps.append(
+                    {
+                        "domain": "lighting",
+                        "target": entity_id,
+                        "action": "scene.turn_on",
+                        "params": {"entity_id": entity_id},
+                    }
+                )
+            elif domain == "script":
+                steps.append(
+                    {
+                        "domain": "script",
+                        "target": entity_id,
+                        "action": "script.turn_on",
+                        "params": {"entity_id": entity_id},
+                    }
+                )
+        return steps
 
     def _get_coordinator(self) -> Any | None:
         """Return the running coordinator for this entry, or None."""

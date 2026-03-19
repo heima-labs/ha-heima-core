@@ -90,6 +90,10 @@ class HeatingDomain:
         manual_hold = bool(state.get_binary("heima_heating_manual_hold"))
         temperature_step = self._coerce_positive_float(heating_cfg.get("temperature_step"), default=0.5)
         current_setpoint = self._current_climate_setpoint(climate_entity)
+        observed_source = self._infer_observed_source(
+            current_setpoint=current_setpoint,
+            temperature_step=temperature_step,
+        )
         outdoor_temperature = self._coerce_float_from_entity(heating_cfg.get("outdoor_temperature_entity"))
         climate_preset_mode = self._coerce_text(self._state_attr(climate_entity, "preset_mode"))
         climate_manual_override = self._heating_climate_manual_override_detected(climate_preset_mode)
@@ -201,6 +205,7 @@ class HeatingDomain:
             "current_house_state": house_state,
             "selected_branch": branch_type,
             "current_setpoint": current_setpoint,
+            "observed_source": observed_source,
             "outdoor_temperature": outdoor_temperature,
             "target_temperature": target_temperature,
             "temperature_step": temperature_step,
@@ -242,6 +247,29 @@ class HeatingDomain:
             temperature_step=temperature_step,
             schedule_recheck=schedule_recheck,
         )
+
+    def _infer_observed_source(
+        self,
+        *,
+        current_setpoint: float | None,
+        temperature_step: float,
+    ) -> str:
+        """Infer whether the currently observed thermostat state likely came from Heima.
+
+        The learning recorder should classify the observed setpoint, not the currently
+        planned target. If the thermostat now reflects the last target that Heima
+        successfully applied, attribute it to `heima`; otherwise treat it as `user`.
+        """
+        if (
+            current_setpoint is None
+            or self._heating_last_target_temp is None
+            or self._heating_last_apply_ts is None
+        ):
+            return "user"
+        tolerance = max(0.05, float(temperature_step) / 2.0)
+        if abs(float(current_setpoint) - float(self._heating_last_target_temp)) <= tolerance:
+            return "heima"
+        return "user"
 
     # ------------------------------------------------------------------
     # Event queuing
