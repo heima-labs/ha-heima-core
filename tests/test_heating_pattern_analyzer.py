@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from custom_components.heima.runtime.analyzers.heating import HeatingPatternAnalyzer
-from custom_components.heima.runtime.event_store import HeatingEvent
+from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 
 
 class _StoreStub:
@@ -16,27 +16,55 @@ class _StoreStub:
         return [e for e in self._events if event_type is None or e.event_type == event_type]
 
 
+def _ctx(house_state: str = "home", signals: dict | None = None) -> EventContext:
+    return EventContext(
+        weekday=0,
+        minute_of_day=480,
+        month=3,
+        house_state=house_state,
+        occupants_count=1,
+        occupied_rooms=(),
+        outdoor_lux=None,
+        outdoor_temp=None,
+        weather_condition=None,
+        signals=signals or {},
+    )
+
+
 def _heating_event(
     *,
     house_state: str = "home",
     temperature_set: float = 21.5,
-    source: str = "heima",
+    source: str = "user",
     ts: str = "2026-03-10T08:00:00+00:00",
-    env: dict | None = None,
-) -> HeatingEvent:
-    return HeatingEvent(
+    signals: dict | None = None,
+) -> HeimaEvent:
+    return HeimaEvent(
         ts=ts,
         event_type="heating",
-        house_state=house_state,
-        temperature_set=temperature_set,
-        source=source,  # type: ignore[arg-type]
-        env=env or {},
+        context=_ctx(house_state=house_state, signals=signals or {}),
+        source=source,
+        data={"temperature_set": temperature_set},
+    )
+
+
+def _house_state_event(
+    *,
+    from_state: str,
+    to_state: str,
+    ts: str,
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="house_state",
+        context=_ctx(house_state=to_state),
+        source=None,
+        data={"from_state": from_state, "to_state": to_state},
     )
 
 
 async def test_heating_analyzer_requires_min_events():
     analyzer = HeatingPatternAnalyzer()
-    # 9 events for "home" — below the minimum of 10
     events = [_heating_event() for _ in range(9)]
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
@@ -61,7 +89,6 @@ async def test_heating_analyzer_confidence_consistent():
 
 async def test_heating_analyzer_confidence_spread():
     analyzer = HeatingPatternAnalyzer()
-    # Spread of 6°C (18 to 24) → confidence should be low
     temps = [18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 20.5, 21.5, 22.5]
     events = [_heating_event(temperature_set=t) for t in temps]
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
@@ -72,7 +99,6 @@ async def test_heating_analyzer_confidence_spread():
 
 async def test_heating_analyzer_per_house_state():
     analyzer = HeatingPatternAnalyzer()
-    # 10 "home" events (qualifies) + 4 "away" events (below minimum)
     home_events = [_heating_event(house_state="home", temperature_set=21.5) for _ in range(10)]
     away_events = [_heating_event(house_state="away", temperature_set=18.0) for _ in range(4)]
     proposals = await analyzer.analyze(_StoreStub(home_events + away_events))  # type: ignore[arg-type]
@@ -89,14 +115,13 @@ async def test_heating_analyzer_empty_store():
 
 async def test_heating_analyzer_eco_pattern():
     analyzer = HeatingPatternAnalyzer()
-    # Build 3 eco sessions: away → home (user) with >120 min gap
     base = datetime(2026, 3, 1, 8, 0, 0, tzinfo=UTC)
     events = []
     for i in range(3):
-        # away event
         away_ts = (base + timedelta(days=i * 2)).isoformat()
-        # return home event 3 hours later — qualifies as eco session
         home_ts = (base + timedelta(days=i * 2, hours=3)).isoformat()
+        events.append(_house_state_event(from_state="home", to_state="away", ts=away_ts))
+        events.append(_house_state_event(from_state="away", to_state="home", ts=home_ts))
         events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
         events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
 
@@ -106,22 +131,45 @@ async def test_heating_analyzer_eco_pattern():
     assert eco_proposals[0].suggested_reaction_config["eco_sessions_observed"] >= 3
 
 
-async def test_heating_analyzer_env_correlation():
+async def test_heating_analyzer_no_eco_without_house_state_sessions():
     analyzer = HeatingPatternAnalyzer()
-    # 10 events with low outdoor temp → higher setpoint
-    # 10 events with high outdoor temp → lower setpoint
+    base = datetime(2026, 3, 1, 8, 0, 0, tzinfo=UTC)
+    events = []
+    for i in range(3):
+        away_ts = (base + timedelta(days=i * 2)).isoformat()
+        home_ts = (base + timedelta(days=i * 2, hours=3)).isoformat()
+        events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
+        events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert not [p for p in proposals if p.reaction_type == "heating_eco"]
+
+
+async def test_heating_analyzer_only_user_events_for_preference():
+    """Pattern B must use only source=user events."""
+    analyzer = HeatingPatternAnalyzer()
+    # 10 heima events at 18°C + 10 user events at 22°C for same house_state
+    heima_events = [_heating_event(temperature_set=18.0, source="heima") for _ in range(10)]
+    user_events = [_heating_event(temperature_set=22.0, source="user") for _ in range(10)]
+    proposals = await analyzer.analyze(_StoreStub(heima_events + user_events))  # type: ignore[arg-type]
+    pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
+    assert pref_proposals
+    # median must be 22.0 (user-only), not a mix
+    assert pref_proposals[0].suggested_reaction_config["target_temperature"] == 22.0
+
+
+async def test_heating_analyzer_signal_correlation():
+    analyzer = HeatingPatternAnalyzer()
     events = []
     for _ in range(10):
         events.append(_heating_event(
-            house_state="home",
             temperature_set=22.0,
-            env={"sensor.outdoor_temp": "5"},
+            signals={"sensor.outdoor_temp": "5"},
         ))
     for _ in range(10):
         events.append(_heating_event(
-            house_state="home",
             temperature_set=19.0,
-            env={"sensor.outdoor_temp": "20"},
+            signals={"sensor.outdoor_temp": "20"},
         ))
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
@@ -129,5 +177,4 @@ async def test_heating_analyzer_env_correlation():
     assert pref_proposals
     env_corr = pref_proposals[0].suggested_reaction_config.get("env_correlations", {})
     assert "sensor.outdoor_temp" in env_corr
-    corr = env_corr["sensor.outdoor_temp"]
-    assert corr["delta"] > 0
+    assert env_corr["sensor.outdoor_temp"]["delta"] > 0

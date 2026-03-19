@@ -6,14 +6,14 @@ Scenarios:
   2. If calendar entities are configured in Heima options:
      a. Trigger recompute → CalendarDomain runs.
      b. Diagnostics report cached_events_count (0 or more).
-     c. If a calendar entity is currently 'on' with a classifiable summary:
-        verify house_state reflects the classification (vacation / working).
+     c. Create a deterministic local-calendar event and verify house_state classification.
   3. If no calendar entities configured → SKIP scenarios 2-3 with a notice.
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import date, timedelta
 from pathlib import Path
 import sys
 
@@ -48,6 +48,26 @@ def get_heima_options(client: HAClient) -> dict:
 def calendar_entities_from_options(options: dict) -> list[str]:
     cal_cfg = options.get("calendar") or {}
     return list(cal_cfg.get("calendar_entities") or [])
+
+
+def create_all_day_event(
+    client: HAClient,
+    *,
+    entity_id: str,
+    summary: str,
+    start_day: date,
+    end_day: date,
+) -> None:
+    client.call_service(
+        "calendar",
+        "create_event",
+        {
+            "entity_id": entity_id,
+            "summary": summary,
+            "start_date": start_day.isoformat(),
+            "end_date": end_day.isoformat(),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -95,31 +115,27 @@ def scenario_active_vacation_event(
     timeout_s: int,
     poll_s: float,
 ) -> None:
-    """If any calendar entity is 'on' with a vacation summary → house_state = vacation."""
-    print("== Scenario 3: active vacation event drives house_state ==")
+    """Create a deterministic vacation event and verify it drives house_state."""
+    print("== Scenario 3: deterministic local-calendar vacation event drives house_state ==")
 
-    active_vacation = None
-    for entity_id in calendar_entities:
-        if not client.entity_exists(entity_id):
-            continue
-        state = client.get_state(entity_id)
-        if state.get("state") != "on":
-            continue
-        summary = str(
-            state.get("attributes", {}).get("message")
-            or state.get("attributes", {}).get("summary")
-            or ""
-        ).lower()
-        vacation_kw = ["vacanza", "holiday", "ferie", "viaggio", "vacation"]
-        if any(kw in summary for kw in vacation_kw):
-            active_vacation = entity_id
-            print(f"  active vacation event found on {entity_id}: '{summary}'")
-            break
-
-    if active_vacation is None:
-        print("SKIP scenario 3 (no active vacation event on any calendar entity right now)")
+    target_calendar = next((entity_id for entity_id in calendar_entities if client.entity_exists(entity_id)), None)
+    if target_calendar is None:
+        print("SKIP scenario 3 (configured calendar entity not found in HA)")
         return
 
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    summary = "vacanza live test"
+    print(f"  creating all-day event on {target_calendar}: '{summary}'")
+    create_all_day_event(
+        client,
+        entity_id=target_calendar,
+        summary=summary,
+        start_day=today,
+        end_day=tomorrow,
+    )
+
+    client.wait_state(target_calendar, "on", timeout_s, poll_s)
     recompute(client)
     client.wait_state("sensor.heima_house_state", "vacation", timeout_s, poll_s)
     print("PASS scenario 3")

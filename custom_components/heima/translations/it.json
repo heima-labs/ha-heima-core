@@ -24,6 +24,7 @@
           "security": "Sicurezza",
           "notifications": "Notifiche",
           "calendar": "Calendario",
+          "learning": "Contesto learning",
           "reactions": "Reazioni",
           "proposals": "Revisione proposte",
           "save": "Salva e chiudi",
@@ -290,6 +291,20 @@
           "cache_ttl_hours": "Cache TTL (ore)",
           "calendar_keywords": "Parole chiave per categoria (YAML: categoria: [kw1, kw2])",
           "priority_text": "Priorità categorie (comma-separated, dalla più alta)"
+        },
+        "submit": "OK"
+      },
+      "learning": {
+        "title": "Contesto Learning",
+        "description": "Configura i segnali contestuali registrati da Heima insieme a ogni evento. Permettono al sistema di apprendimento di rilevare pattern correlati a condizioni specifiche (es. luminosità esterna, meteo).",
+        "data": {
+          "outdoor_lux_entity": "Entità luminosità esterna (sensor)",
+          "outdoor_temp_entity": "Entità temperatura esterna (sensor)",
+          "weather_entity": "Entità meteo (fallback per temperatura e condizione)",
+          "context_signal_entities": "Segnali contestuali forti (max 10 entità)"
+        },
+        "data_description": {
+          "context_signal_entities": "Entità il cui stato viene registrato insieme a ogni evento di apprendimento. Usa per segnali contestuali forti come un proiettore o un media player specifico. Max 10."
         },
         "submit": "OK"
       },

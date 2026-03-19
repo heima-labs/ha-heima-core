@@ -87,6 +87,10 @@ class HAClient:
         _, data = self.request("POST", path, payload, accept_error=accept_error)
         return data
 
+    def patch(self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False) -> Any:
+        _, data = self.request("PATCH", path, payload, accept_error=accept_error)
+        return data
+
     def delete(self, path: str, *, accept_error: bool = True) -> None:
         self.request("DELETE", path, accept_error=accept_error)
 
@@ -151,6 +155,10 @@ class HAClient:
             if str(entry.get("entry_id") or "") == entry_id:
                 return entry
         raise HAApiError(f"config entry not found: {entry_id}")
+
+    # ------------------------------------------------------------------
+    # Heima
+    # ------------------------------------------------------------------
 
     def find_heima_entry_id(self) -> str:
         for entry in self.list_config_entries():

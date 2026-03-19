@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 
 from custom_components.heima.runtime.behaviors.heating_recorder import HeatingRecorderBehavior
-from custom_components.heima.runtime.event_store import HeatingEvent
+from custom_components.heima.runtime.context_builder import ContextBuilder
+from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -42,6 +43,10 @@ class _FakeHass:
         return task
 
 
+def _builder(hass, *, signal_entities: list[str] | None = None) -> ContextBuilder:
+    return ContextBuilder(hass, {"context_signal_entities": signal_entities or []})
+
+
 def _snapshot(
     *,
     ts: str = "2026-03-10T08:00:00+00:00",
@@ -66,7 +71,7 @@ def _snapshot(
 async def test_heating_recorder_records_on_setpoint_change():
     hass = _FakeHass()
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store)  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(ts="2026-03-10T08:00:00+00:00", heating_setpoint=20.0))
     behavior.on_snapshot(_snapshot(ts="2026-03-10T09:00:00+00:00", heating_setpoint=22.0))
@@ -74,29 +79,28 @@ async def test_heating_recorder_records_on_setpoint_change():
         await asyncio.gather(*hass.tasks)
 
     assert len(store.events) == 2
-    assert all(isinstance(e, HeatingEvent) for e in store.events)
-    assert store.events[0].temperature_set == 20.0
-    assert store.events[1].temperature_set == 22.0
+    assert all(isinstance(e, HeimaEvent) for e in store.events)
+    assert store.events[0].data["temperature_set"] == 20.0
+    assert store.events[1].data["temperature_set"] == 22.0
 
 
 async def test_heating_recorder_no_event_on_stable():
     hass = _FakeHass()
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store)  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0, house_state="home"))
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0, house_state="home"))
     if hass.tasks:
         await asyncio.gather(*hass.tasks)
 
-    # First snapshot always records (prev_setpoint is None), second is stable → no new event
     assert len(store.events) == 1
 
 
 async def test_heating_recorder_no_event_when_setpoint_none():
     hass = _FakeHass()
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store)  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=None))
     if hass.tasks:
@@ -108,66 +112,64 @@ async def test_heating_recorder_no_event_when_setpoint_none():
 async def test_heating_recorder_records_on_house_state_change():
     hass = _FakeHass()
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store)  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0, house_state="home"))
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0, house_state="away"))
     if hass.tasks:
         await asyncio.gather(*hass.tasks)
 
-    # Both snapshots differ (first has prev_setpoint=None, second differs by house_state)
     assert len(store.events) == 2
-    assert store.events[0].house_state == "home"
-    assert store.events[1].house_state == "away"
+    assert store.events[0].context.house_state == "home"
+    assert store.events[1].context.house_state == "away"
 
 
-async def test_heating_recorder_reads_env_entities():
+async def test_heating_recorder_reads_signal_entities():
     states = {
         "sensor.outdoor_temp": _FakeState("12.5"),
     }
     hass = _FakeHass(states=states)
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store, context_entities=["sensor.outdoor_temp"])  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass, signal_entities=["sensor.outdoor_temp"]))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))
     if hass.tasks:
         await asyncio.gather(*hass.tasks)
 
     assert len(store.events) == 1
-    assert store.events[0].env.get("sensor.outdoor_temp") == "12.5"
+    assert store.events[0].context.signals.get("sensor.outdoor_temp") == "12.5"
 
 
 async def test_heating_recorder_skips_unavailable_entity():
-    hass = _FakeHass(states={})  # entity not present
+    hass = _FakeHass(states={})
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store, context_entities=["sensor.missing"])  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass, signal_entities=["sensor.missing"]))  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))
     if hass.tasks:
         await asyncio.gather(*hass.tasks)
 
     assert len(store.events) == 1
-    assert "sensor.missing" not in store.events[0].env
+    assert "sensor.missing" not in store.events[0].context.signals
 
 
-async def test_heating_recorder_expands_weather_entity():
+async def test_heating_recorder_reads_weather_condition():
     states = {
         "weather.home": _FakeState(
             "sunny",
-            attributes={"temperature": 15.0, "humidity": 60, "wind_speed": 10.5},
+            attributes={"temperature": 15.0},
         ),
     }
     hass = _FakeHass(states=states)
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store, context_entities=["weather.home"])  # type: ignore[arg-type]
+    builder = ContextBuilder(hass, {"weather_entity": "weather.home"})
+    behavior = HeatingRecorderBehavior(hass, store, builder)  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))
     if hass.tasks:
         await asyncio.gather(*hass.tasks)
 
     assert len(store.events) == 1
-    env = store.events[0].env
-    assert env.get("weather.home") == "sunny"
-    assert env.get("weather.home.temperature") == "15.0"
-    assert env.get("weather.home.humidity") == "60"
-    assert env.get("weather.home.wind_speed") == "10.5"
+    ctx = store.events[0].context
+    assert ctx.weather_condition == "sunny"
+    assert ctx.outdoor_temp == 15.0

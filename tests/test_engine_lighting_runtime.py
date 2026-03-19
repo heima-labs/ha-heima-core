@@ -6,6 +6,7 @@ import pytest
 from homeassistant.exceptions import ServiceNotFound
 
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -186,6 +187,45 @@ async def test_apply_plan_ignores_light_turn_off_service_race():
 
 
 @pytest.mark.asyncio
+async def test_entity_level_light_apply_tracks_recent_entity_provenance():
+    options = {
+        "rooms": [
+            {
+                "room_id": "living",
+                "area_id": "living",
+                "occupancy_mode": "none",
+                "sources": [],
+                "logic": "any_of",
+            }
+        ],
+        "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
+        "lighting_zones": [],
+    }
+    engine = _build_engine(options, {"light.living_main": "off"})
+    plan = SimpleNamespace(
+        steps=[
+            ApplyStep(
+                domain="lighting",
+                target="living",
+                action="light.turn_on",
+                params={"entity_id": "light.living_main", "brightness": 128},
+                reason="test",
+            )
+        ]
+    )
+
+    await engine._execute_apply_plan(plan)
+
+    recent = engine.lighting_recent_apply_state
+    assert "light.living_main" in recent["entities"]
+    entity_meta = recent["entities"]["light.living_main"]
+    assert entity_meta["room_id"] == "living"
+    assert entity_meta["action"] == "light.turn_on"
+    assert isinstance(entity_meta["correlation_id"], str)
+    assert entity_meta["correlation_id"].startswith("lighting-apply:")
+
+
+@pytest.mark.asyncio
 async def test_apply_plan_ignores_scene_turn_on_service_race():
     options = {
         "rooms": [
@@ -224,6 +264,53 @@ async def test_apply_plan_ignores_scene_turn_on_service_race():
     )
     plan = engine._build_apply_plan(snapshot)
     assert len(plan.steps) == 1
+
+    await engine._execute_apply_plan(plan)
+
+    assert engine._hass.services.calls == []
+
+
+@pytest.mark.asyncio
+async def test_execute_apply_plan_runs_script_turn_on_steps():
+    options = {}
+    engine = _build_engine(options, {"script.preheat_home": "off"})
+    plan = SimpleNamespace(
+        steps=[
+            ApplyStep(
+                domain="script",
+                target="script.preheat_home",
+                action="script.turn_on",
+                params={"entity_id": "script.preheat_home"},
+                reason="test",
+            )
+        ]
+    )
+
+    await engine._execute_apply_plan(plan)
+
+    assert engine._hass.services.calls[-1] == (
+        "script",
+        "turn_on",
+        {"entity_id": "script.preheat_home"},
+        False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_apply_plan_ignores_script_turn_on_service_race():
+    options = {}
+    engine = _build_engine(options, {"script.preheat_home": "off"}, fail_services={("script", "turn_on")})
+    plan = SimpleNamespace(
+        steps=[
+            ApplyStep(
+                domain="script",
+                target="script.preheat_home",
+                action="script.turn_on",
+                params={"entity_id": "script.preheat_home"},
+                reason="test",
+            )
+        ]
+    )
 
     await engine._execute_apply_plan(plan)
 

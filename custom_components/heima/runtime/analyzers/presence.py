@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..event_store import EventStore, PresenceEvent
+from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -24,10 +24,12 @@ class PresencePatternAnalyzer:
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         events = await event_store.async_query(event_type="presence")
-        arrivals = [e for e in events if isinstance(e, PresenceEvent) and e.transition == "arrive"]
+        arrivals = [e for e in events if isinstance(e, HeimaEvent) and e.data.get("transition") == "arrive"]
         proposals: list[ReactionProposal] = []
         for weekday in range(7):
-            day_samples = sorted(e.minute_of_day for e in arrivals if e.weekday == weekday)
+            day_samples = sorted(
+                e.context.minute_of_day for e in arrivals if e.context.weekday == weekday
+            )
             if len(day_samples) < self.min_arrivals:
                 continue
 
@@ -66,4 +68,3 @@ class PresencePatternAnalyzer:
         hour = minute_of_day // 60
         minute = minute_of_day % 60
         return f"{hour:02d}:{minute:02d}"
-

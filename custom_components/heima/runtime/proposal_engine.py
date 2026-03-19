@@ -162,6 +162,8 @@ class ProposalEngine:
 
     @staticmethod
     def _fingerprint(proposal: ReactionProposal) -> str:
+        if proposal.fingerprint:
+            return proposal.fingerprint
         cfg = proposal.suggested_reaction_config
         weekday = cfg.get("weekday")
         house_state = cfg.get("house_state")

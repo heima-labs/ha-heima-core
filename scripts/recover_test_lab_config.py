@@ -18,6 +18,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.ha_client import HAApiError, HAClient
+from lib.ha_websocket import HAWebSocketClient
 
 
 # ---------------------------------------------------------------------------
@@ -37,11 +38,32 @@ GENERAL_CONFIG = {
     "work_window_entity": "binary_sensor.test_heima_work_window",
 }
 
+# Light entities for each room: used by recover_lighting_areas()
+# and referenced in 060_lighting_schedule.py
+ROOM_LIGHT_ENTITIES: dict[str, list[str]] = {
+    "living": [
+        "light.test_heima_living_main",
+        "light.test_heima_living_spot",
+        "light.test_heima_living_floor",
+    ],
+    "studio": [
+        "light.test_heima_studio_main",
+        "light.test_heima_studio_spot",
+        "light.test_heima_studio_desk",
+    ],
+}
+
+# HA area names (recover_lighting_areas creates them and returns the area_ids)
+ROOM_AREA_NAMES: dict[str, str] = {
+    "living": "Test Heima Living",
+    "studio": "Test Heima Studio",
+}
+
 ROOMS_BASELINE = [
     {
         "room_id": "studio",
         "display_name": "Studio",
-        "area_id": None,
+        "area_id": None,  # filled dynamically by recover_rooms() when area_ids provided
         "occupancy_mode": "derived",
         "sources": ["binary_sensor.test_heima_room_studio_motion"],
         "logic": "any_of",
@@ -52,7 +74,7 @@ ROOMS_BASELINE = [
     {
         "room_id": "living",
         "display_name": "Soggiorno",
-        "area_id": None,
+        "area_id": None,  # filled dynamically by recover_rooms() when area_ids provided
         "occupancy_mode": "derived",
         "sources": ["binary_sensor.test_heima_room_living_motion"],
         "logic": "any_of",
@@ -195,12 +217,40 @@ def _open_rooms_menu(client: HAFlowClient, entry_id: str) -> tuple[str, dict]:
     return flow_id, step
 
 
-def recover_rooms(client: HAFlowClient, entry_id: str) -> None:
+def recover_lighting_areas(client: HAFlowClient) -> dict[str, str]:
+    """Create HA areas for each room and assign light entities.
+
+    Returns {room_id: ha_area_id} so recover_rooms() can set area_id on rooms.
+    Uses WebSocket API (area/entity registry are not available via REST).
+    """
+    area_ids: dict[str, str] = {}
+    with HAWebSocketClient(client.base_url, client.token) as ws:
+        for room_id, area_name in ROOM_AREA_NAMES.items():
+            area_id = ws.get_or_create_area(area_name)
+            area_ids[room_id] = area_id
+            print(f"     area '{area_name}' → {area_id}")
+            entity_ids = ROOM_LIGHT_ENTITIES.get(room_id, [])
+            if not entity_ids:
+                print(f"     WARN: no lab lights configured for room {room_id}, skipping area assignment")
+                continue
+            for entity_id in entity_ids:
+                if client.entity_exists(entity_id):
+                    ws.assign_entity_to_area(entity_id, area_id)
+                    print(f"     {entity_id} → area {area_id}")
+                else:
+                    print(f"     WARN: {entity_id} not found, skipping area assignment")
+    return area_ids
+
+
+def recover_rooms(client: HAFlowClient, entry_id: str, area_ids: dict[str, str] | None = None) -> None:
     print("  → rooms")
     flow_id, _ = _open_rooms_menu(client, entry_id)
 
     for room in ROOMS_BASELINE:
-        payload = {k: v for k, v in room.items() if v is not None}
+        room_data = dict(room)
+        if area_ids and room_data.get("area_id") is None:
+            room_data["area_id"] = area_ids.get(room_data["room_id"])
+        payload = {k: v for k, v in room_data.items() if v is not None}
 
         # Try add first; if duplicate, abort + reopen + edit existing.
         step = _menu_next(client, flow_id, "rooms_add")
@@ -340,7 +390,7 @@ def main() -> int:
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "general", "rooms", "people", "heating", "security", "notifications"],
+        choices=["all", "general", "rooms", "people", "heating", "security", "notifications", "lighting_areas"],
         default="all",
     )
     args = parser.parse_args()
@@ -349,13 +399,34 @@ def main() -> int:
     entry_id = client.find_heima_entry_id()
     print(f"Heima entry_id={entry_id}")
 
+    # When running all sections: create lighting areas first so recover_rooms gets area_ids
+    if args.section == "lighting_areas":
+        try:
+            print("  → lighting_areas")
+            area_ids = recover_lighting_areas(client)
+            print(f"  ✓ lighting_areas: {area_ids}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ lighting_areas: {exc}", file=sys.stderr)
+            return 1
+        print("Recovery complete.")
+        return 0
+
+    area_ids: dict[str, str] = {}
+    if args.section == "all":
+        try:
+            print("  → lighting_areas (pre-step)")
+            area_ids = recover_lighting_areas(client)
+            print(f"  ✓ lighting_areas: {area_ids}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  WARN: lighting_areas failed ({exc}), continuing without area_ids", file=sys.stderr)
+
     sections = {
-        "general": recover_general,
-        "rooms": recover_rooms,
-        "people": recover_people,
-        "heating": recover_heating,
-        "security": recover_security,
-        "notifications": recover_notifications,
+        "general": lambda c, eid: recover_general(c, eid),
+        "rooms": lambda c, eid: recover_rooms(c, eid, area_ids),
+        "people": lambda c, eid: recover_people(c, eid),
+        "heating": lambda c, eid: recover_heating(c, eid),
+        "security": lambda c, eid: recover_security(c, eid),
+        "notifications": lambda c, eid: recover_notifications(c, eid),
     }
 
     to_run = list(sections.keys()) if args.section == "all" else [args.section]
