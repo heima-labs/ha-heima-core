@@ -1,8 +1,99 @@
 # Heima Learning System — Specification v1
 
-**Status:** Partial — core slices implemented on `main`
+**Status:** Active — core slices implemented; generic event envelope and signal recording added
 **Date:** 2026-03-10
-**Last Verified Against Code:** 2026-03-11
+**Last Verified Against Code:** 2026-03-19
+
+---
+
+## 0. Architectural Rationale — Batch vs Continuous Learning
+
+This section documents the architectural decisions on how Heima learns, justified by analysis of
+production systems (Alexa Hunches, Google Home) and academic literature (CASAS dataset, MIT PlaceLab,
+Association Rule Mining on IoT streams).
+
+### 0.1 Decision: batch periodic learning, not continuous
+
+**Heima uses batch periodic learning.** The `ProposalEngine` runs offline on a schedule (every 6h)
+and reads the accumulated `EventStore`. It does **not** update its models incrementally on every
+eval cycle.
+
+**Reasons:**
+
+| Problem with continuous learning | Impact on a home assistant |
+|---|---|
+| Catastrophic forgetting | A seasonal pattern (summer late arrivals) gets overwritten by autumn behavior |
+| Instability from temporary deviations | One sick week at home should not cancel "always at office on Monday" |
+| Premature proposals | A pattern seen only twice fires as a suggestion — false positive rate is very high |
+| Computational cost on the hot eval path | The eval cycle must be deterministic and fast; pattern analysis is expensive |
+
+Alexa Hunches uses deep device embeddings trained offline in batch on large cross-customer corpora,
+with only lightweight per-device context updated online. Google Home Routines Suggestions (legacy)
+used frequency-based batch analysis. The academic literature on CASAS (WSU) and MIT PlaceLab
+consistently uses offline training on multi-week windows before making any predictions.
+
+**Conclusion:** batch periodic is the right choice for Heima. It matches the temporal scale of home
+routines (days/weeks), it is deterministic and debuggable, and it keeps the hot eval path clean.
+
+### 0.2 Decision: observe always, analyze periodically
+
+The observation layer (`EventRecorderBehavior`, `LightingRecorderBehavior`, etc.) runs on every
+eval cycle and writes to `EventStore`. This is the **continuous** part.
+
+The analysis layer (`IPatternAnalyzer` implementations) runs periodically and is the **batch** part.
+
+This separation is already enforced by the architecture:
+- Behaviors: `on_snapshot()` → `hass.async_create_task(event_store.async_append(event))`
+- Analyzers: `ProposalEngine.async_run()` → called every 6h by the coordinator
+
+No analyzer code ever runs in `async_evaluate()`.
+
+### 0.3 Decision: minimum training window before emitting proposals
+
+Based on the literature, a pattern is considered reliable only when it has been observed a sufficient
+number of times across a sufficient time span. Producing proposals too early is worse than producing
+none (false positives cause user distrust that is hard to recover from — Alexa research confirms this).
+
+**Heima rules (apply to all analyzers):**
+
+| Condition | Threshold | Rationale |
+|---|---|---|
+| Minimum occurrences per pattern key | ≥ 5 | ARM minimum support; used by `PresencePatternAnalyzer` |
+| Minimum distinct weeks spanned | ≥ 2 | Prevents a single-week anomaly from triggering a proposal |
+| Minimum confidence to surface proposal | ≥ 0.4 | `ProposalEngine.min_confidence` filter |
+| Recommended observation period before first useful proposal | 3–4 weeks | Literature consensus (CASAS, MIT PlaceLab, industry) |
+
+The `min_arrivals=5` in `PresencePatternAnalyzer` satisfies the occurrence threshold.
+The week-span check is added for `LightingPatternAnalyzer` (see §P9) and should be retrofitted to
+existing analyzers in a future iteration.
+
+### 0.4 Decision: propose-then-confirm, never auto-execute
+
+All patterns detected by analyzers surface as `ReactionProposal` objects that the user must
+explicitly accept in the Options Flow. Execution never happens automatically on first detection.
+
+This mirrors the universal pattern in mature systems:
+- Alexa Hunches: phase 1 = verbal suggestion, phase 2 = Automatic Actions (opt-in)
+- RL Shadow Mode (arxiv 2410.23419): agent acts only after reward of autonomous action exceeds
+  the human controller baseline — a formal version of the same principle
+
+In Heima terms: after the user accepts a proposal, the resulting `HeimaReaction` becomes active and
+executes automatically. The user can always mute or delete it from the Reactions step.
+
+### 0.5 Decision: source discrimination is mandatory for lighting (and heating)
+
+Recording actions emitted by Heima itself as "user behavior" would create a positive feedback loop:
+Heima learns to reinforce its own previous decisions, regardless of actual user preferences.
+
+**Rule:** every recorder behavior MUST set `source` on the event.
+- `source="heima"`: action was emitted by Heima's apply plan in this cycle.
+- `source="user"`: action was detected from HA state changes not caused by Heima.
+
+Analyzers MUST filter on `source="user"` when inferring user preferences.
+
+`HeatingEvent` already has this field. `LightingEvent` adds it (see §P7).
+`PresenceEvent` does not need it (presence is always a user action, Heima does not move people).
+`HouseStateEvent` does not need it (transitions are system-level, not analyzed for user preference).
 
 ---
 
@@ -22,17 +113,22 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 3. Surfaces detected patterns as user-reviewable proposals
 4. Converts accepted proposals into persisted, managed reactions
 
-## 1.1 Implementation Matrix (as of 2026-03-11)
+## 1.1 Implementation Matrix (as of 2026-03-19)
 
 | Phase | Status | Notes |
 |---|---|---|
 | P1 EventStore | Implemented | `runtime/event_store.py` with persistence, TTL, cap, query |
 | P1b EventRecorderBehavior | Implemented | `runtime/behaviors/event_recorder.py` |
 | P2 PresencePatternAnalyzer | Implemented | `runtime/analyzers/presence.py` |
-| P3 HeatingPatternAnalyzer | Implemented | `runtime/analyzers/heating.py` + `heating_recorder.py` |
+| P3 HeatingPatternAnalyzer | Implemented/Partial | preference path implemented; eco path depends on verified `house_state` away sessions |
 | P4 ProposalEngine | Implemented | `runtime/proposal_engine.py`, periodic coordinator run |
 | P5 Approval Flow | Implemented | Config flow step `proposals` accepts/rejects proposals |
 | P6 Generalization | Partial | `IPatternAnalyzer` exists; ecosystem/process still RFC |
+| P7 LightingEvent | Implemented | `HeimaEvent(event_type="lighting")` — unified EventStore; EventContext shared |
+| P8 LightingRecorderBehavior | Implemented | `runtime/behaviors/lighting_recorder.py` |
+| P9 LightingPatternAnalyzer | Implemented | `runtime/analyzers/lighting.py` |
+| P10 Learning Config Flow | Implemented | `config_flow/_steps_learning.py` — outdoor_lux, temp, weather, signals |
+| P11 Generic Signal Recorder | Implemented | `runtime/behaviors/signal_recorder.py` records `state_change` events for configured context entities |
 
 ---
 
@@ -43,9 +139,11 @@ HA Event Loop (hot path — eval cycle)
 ┌──────────────────────────────────────────────────────────┐
 │  engine.async_evaluate()                                 │
 │    ↓ on_snapshot()                                       │
-│    EventRecorderBehavior  ──── append() ──→ EventStore   │
-│    (detects transitions, writes PresenceEvent /          │
-│     HeatingEvent / HouseStateEvent)                      │
+│    EventRecorderBehavior / LightingRecorderBehavior /    │
+│    HeatingRecorderBehavior / SignalRecorderBehavior      │
+│                       ──── append() ──→ EventStore       │
+│    (writes presence / house_state / heating / lighting / │
+│     generic state_change events)                         │
 └──────────────────────────────────────────────────────────┘
                                 │  (async, non-blocking)
                                 ↓
@@ -82,26 +180,124 @@ Options Flow (user-driven)
 
 ## 3. Data Models
 
+### 3.0 EventContext — shared context snapshot
+
+Every pattern event carries an `EventContext` that captures the state of the house at the moment
+the event occurred. This enables analyzers to detect correlations between actions and context
+(e.g., "lights dimmed when it was dark outside and house_state=relax").
+
+```python
+# runtime/event_store.py
+
+@dataclass(frozen=True)
+class EventContext:
+    # --- Time (always present, derived from local datetime) ---
+    weekday: int                          # 0=Monday … 6=Sunday
+    minute_of_day: int                    # 0–1439 (local time)
+    month: int                            # 1–12 (season proxy)
+
+    # --- Aggregated house state (always present) ---
+    house_state: str                      # e.g. "morning", "relax", "away"
+
+    # --- Occupancy (always present, derived from PeopleResult) ---
+    occupants_count: int
+    occupied_rooms: tuple[str, ...]       # rooms with detected presence
+
+    # --- External environment (None if sensor not configured) ---
+    outdoor_lux: float | None             # luminosity — is it dark/light outside?
+    outdoor_temp: float | None            # outdoor temperature
+    weather_condition: str | None         # "sunny", "cloudy", "rainy", etc.
+
+    # --- Strong signals (user-configured, max 10 entities) ---
+    # Entities the user declares relevant for learning context.
+    # Captured at event time as entity_id → state string.
+    # Examples: projector, TV, alarm panel, music player.
+    signals: dict[str, str]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "weekday": self.weekday,
+            "minute_of_day": self.minute_of_day,
+            "month": self.month,
+            "house_state": self.house_state,
+            "occupants_count": self.occupants_count,
+            "occupied_rooms": list(self.occupied_rooms),
+            "outdoor_lux": self.outdoor_lux,
+            "outdoor_temp": self.outdoor_temp,
+            "weather_condition": self.weather_condition,
+            "signals": dict(self.signals),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "EventContext":
+        return cls(
+            weekday=int(raw.get("weekday", 0)),
+            minute_of_day=int(raw.get("minute_of_day", 0)),
+            month=int(raw.get("month", 1)),
+            house_state=str(raw.get("house_state", "")),
+            occupants_count=int(raw.get("occupants_count", 0)),
+            occupied_rooms=tuple(raw.get("occupied_rooms", [])),
+            outdoor_lux=float(raw["outdoor_lux"]) if raw.get("outdoor_lux") is not None else None,
+            outdoor_temp=float(raw["outdoor_temp"]) if raw.get("outdoor_temp") is not None else None,
+            weather_condition=str(raw["weather_condition"]) if raw.get("weather_condition") else None,
+            signals={str(k): str(v) for k, v in raw.get("signals", {}).items()},
+        )
+```
+
+**Design constraints:**
+- `signals` is bounded to 10 entries max (enforced by the recorder at construction time).
+  More entities → diminishing returns for analysis, higher storage cost.
+- `outdoor_lux`, `outdoor_temp`, `weather_condition` are `None` when the corresponding entity
+  is not configured. Analyzers must handle `None` gracefully.
+- `occupied_rooms` uses `tuple` (hashable) rather than `list` to preserve `frozen=True` semantics
+  on the parent event dataclass.
+- `signals` is a regular `dict` (same pattern as `HeatingEvent.env`); the reference is frozen even
+  if the dict itself is technically mutable.
+
+**Configuration** (new fields in integration options, `learning` sub-key):
+```yaml
+learning:
+  outdoor_lux_entity: sensor.outdoor_illuminance   # optional
+  outdoor_temp_entity: sensor.outdoor_temperature  # optional
+  weather_entity: weather.home                     # optional
+  context_signal_entities:                         # optional, max 10
+    - media_player.projector
+    - binary_sensor.tv_power
+```
+
+**Migration from v1 events:**
+Existing `PresenceEvent`, `HeatingEvent`, `HouseStateEvent` records on disk do not have an
+`EventContext`. Deserialization handles this gracefully: if `"context"` key is absent, a minimal
+`EventContext` is reconstructed from the top-level fields that existed previously (e.g., `weekday`,
+`minute_of_day`, `house_state`), with all new fields set to `None` / empty defaults. Old records
+remain queryable; they simply carry less context. No `STORAGE_VERSION` bump is required.
+
+---
+
 ### 3.1 Pattern Events
+
+All events embed an `EventContext` instead of duplicating contextual fields inline.
+`HeatingEvent.env` is subsumed by `context.signals` + `context.outdoor_temp` (kept for now during
+migration; will be removed once recorders are updated).
 
 ```python
 # runtime/event_store.py
 
 @dataclass(frozen=True)
 class PresenceEvent:
-    ts: str                           # ISO-8601 UTC
-    event_type: Literal["presence"]   # discriminator
+    ts: str                                  # ISO-8601 UTC
+    event_type: Literal["presence"]          # discriminator
     transition: Literal["arrive", "depart"]
-    weekday: int                      # 0=Monday … 6=Sunday
-    minute_of_day: int                # 0–1439 (local time)
+    context: EventContext
 
 @dataclass(frozen=True)
 class HeatingEvent:
     ts: str
     event_type: Literal["heating"]
-    house_state: str
     temperature_set: float
     source: Literal["user", "heima"]
+    context: EventContext
+    # env kept temporarily for migration compatibility; deprecated
 
 @dataclass(frozen=True)
 class HouseStateEvent:
@@ -109,9 +305,31 @@ class HouseStateEvent:
     event_type: Literal["house_state"]
     from_state: str
     to_state: str
+    context: EventContext
 
-PatternEvent = PresenceEvent | HeatingEvent | HouseStateEvent
+@dataclass(frozen=True)
+class LightingEvent:
+    ts: str
+    event_type: Literal["lighting"]
+    room_id: str
+    action: Literal["on", "off"]
+    # Light state at action time (None if not available)
+    scene: str | None
+    brightness: int | None                   # 0–255
+    color_temp_kelvin: int | None
+    rgb_color: tuple[int, int, int] | None
+    source: Literal["user", "heima"]
+    context: EventContext
+
+PatternEvent = PresenceEvent | HeatingEvent | HouseStateEvent | LightingEvent
 ```
+
+**Key changes from v1:**
+- `PresenceEvent`: `weekday` + `minute_of_day` removed from top level → live in `context`
+- `HeatingEvent`: `house_state` removed from top level → lives in `context.house_state`
+- `HouseStateEvent`: gains `context` (previously had none)
+- `LightingEvent`: new type (see §P7), designed with `context` from the start
+- All analyzers that previously accessed `event.weekday` etc. must now access `event.context.weekday`
 
 ### 3.2 ReactionProposal
 
@@ -146,14 +364,17 @@ The v1 built-in analyzers use **pure descriptive statistics only** — no extern
 
 ```
 Input: list[PresenceEvent] for one weekday, transition="arrive"
-       n = len(arrivals)  (minute_of_day values)
+       n = len(arrivals)  (context.minute_of_day values)
 
 Require: n ≥ MIN_ARRIVALS (default 5)
 
-median = arrivals_sorted[n // 2]          # 50th percentile, O(n log n) sort
-p25    = arrivals_sorted[n // 4]          # 25th percentile
-p75    = arrivals_sorted[3 * n // 4]      # 75th percentile
-IQR    = p75 - p25                        # interquartile range (minutes)
+# Access via event.context.weekday and event.context.minute_of_day
+samples = [e.context.minute_of_day for e in arrivals if e.context.weekday == weekday]
+
+median = samples_sorted[n // 2]          # 50th percentile, O(n log n) sort
+p25    = samples_sorted[n // 4]          # 25th percentile
+p75    = samples_sorted[3 * n // 4]      # 75th percentile
+IQR    = p75 - p25                       # interquartile range (minutes)
 
 # Confidence: 1.0 when IQR=0 (perfectly punctual), 0.3 floor when IQR≥120 min
 confidence = max(0.3, 1.0 - IQR / 120.0)
@@ -176,7 +397,7 @@ Output: ReactionProposal(
 **Pattern B (temperature preference):**
 
 ```
-Input: list[HeatingEvent] for one house_state
+Input: list[HeatingEvent] where source="user", grouped by context.house_state
        n = len(temps)
 
 Require: n ≥ 10
@@ -190,7 +411,9 @@ confidence = max(0.3, 1.0 - spread / 5.0)
 Output: ReactionProposal(reaction_type="heating_preference", confidence=confidence)
 ```
 
-**Pattern A (eco opportunity):** event-count heuristic, no statistical fit. If `away_duration > 2h` and subsequent user setpoint raise > 1°C is observed in ≥3 distinct sessions → emit proposal with fixed `confidence=0.7`.
+**Pattern A (eco opportunity):** event-count heuristic, no statistical fit. If `away_duration > 2h`
+(inferred from `HouseStateEvent` transitions) and subsequent user setpoint raise > 1°C is observed
+in ≥3 distinct sessions → emit proposal with fixed `confidence=0.7`.
 
 #### Confidence interpretation
 
@@ -296,8 +519,8 @@ def on_snapshot(self, snapshot: DecisionSnapshot) -> None:
 
 ```
 For each weekday 0..6:
-  arrivals = [e.minute_of_day for e in presence_events
-              if e.transition=="arrive" and e.weekday==weekday]
+  arrivals = [e.context.minute_of_day for e in presence_events
+              if e.transition=="arrive" and e.context.weekday==weekday]
   if len(arrivals) < MIN_ARRIVALS (5): skip
   median = sorted(arrivals)[len(arrivals) // 2]
   p25 = sorted(arrivals)[len(arrivals) // 4]
@@ -341,7 +564,8 @@ Detects two patterns from `HeatingEvent` + `HouseStateEvent`:
 **Pattern B — consistent temperature preference:**
 ```
 For each house_state:
-  temps = [e.temperature_set for e in heating_events if e.house_state == hs]
+  temps = [e.temperature_set for e in heating_events
+           if e.source == "user" and e.context.house_state == hs]
   if len(temps) < 10: skip
   median = sorted(temps)[len(temps)//2]
   spread = max(temps) - min(temps)
@@ -349,7 +573,7 @@ For each house_state:
   → emit ReactionProposal(reaction_type="heating_preference")
 ```
 
-**HeatingRecorderBehavior** (prerequisite): a `HeimaBehavior` that compares the heating setpoint in `CanonicalState` between consecutive snapshots. Source detection: if `heating_trace["apply_allowed"]` was `True` → `source="heima"`, otherwise `source="user"`.
+**HeatingRecorderBehavior** (prerequisite): a `HeimaBehavior` that compares observed heating setpoints between consecutive snapshots. Source detection is based on the observed thermostat value matching a recent Heima-applied target; otherwise the event is treated as `source="user"`.
 
 ---
 
@@ -376,11 +600,11 @@ class ProposalEngine:
 
 ### 8.3 Deduplication
 
-When a new proposal from an analyzer matches an existing one (same `analyzer_id` + `reaction_type` + key params):
+When a new proposal from an analyzer matches an existing one (same analyzer-defined fingerprint):
 - Status `"accepted"` or `"rejected"` → skip (do not re-surface)
 - Status `"pending"` → update `confidence` + `updated_at` in-place
 
-Key params fingerprint: `reaction_type + str(weekday or house_state)`.
+The runtime persists `ReactionProposal.fingerprint` and uses it as the primary dedup key. The fallback fingerprint remains coarse and exists only for backward compatibility with older stored proposals.
 
 ### 8.4 Sensor
 
@@ -511,20 +735,473 @@ This is a deliberate v1 constraint, **not** an architectural one. Any analyzer t
 
 ---
 
+---
+
+## P7. LightingEvent — Detail
+
+**File:** `runtime/event_store.py` (see §3.1 for the full dataclass definition)
+
+### P7.1 Field rationale
+
+| Field | Why |
+|---|---|
+| `entity_id` | Granularità per entità: Heima impara quale specifica luce l'utente tocca, non solo la stanza |
+| `room_id` | Contesto stanza per il grouping in scene candidate (fase 2 di P9) |
+| `action` | Both "on" and "off" are learnable; going to bed at 23:00 is as valuable as waking at 07:00 |
+| `scene` | When a named scene is activated, the proposal can replicate it exactly, not just "turn on" |
+| `brightness` | Dim at 10% warm for cinema vs full brightness for cooking — same action, different intent |
+| `color_temp_kelvin` | Warm (2700K) vs cool (5000K) is a strong behavioral signal for time-of-day and activity |
+| `rgb_color` | Captures colored light settings (e.g., party, relax ambient); `None` for white-only lights |
+| `source` | Critical: only `source="user"` analyzed (see §0.5) |
+| `context` | Full `EventContext` — enables correlation with outdoor darkness, house_state, projector state, etc. |
+
+### P7.2 Light attribute capture
+
+Attributes are read from the HA entity state at the moment of the user action:
+
+```python
+new_state = event.data.get("new_state")
+attributes = new_state.attributes if new_state else {}
+
+entity_id = event.data.get("entity_id")                # str — entità specifica
+brightness = attributes.get("brightness")               # int 0-255 or None
+color_temp_kelvin = attributes.get("color_temp_kelvin") # int or None
+rgb_color_raw = attributes.get("rgb_color")             # [r, g, b] list or None
+rgb_color = tuple(rgb_color_raw) if rgb_color_raw else None
+```
+
+When `action="off"`, brightness/color fields are always `None` (the light has no state to read).
+
+### P7.3 Storage integration
+
+`PatternEvent` union extended (see §3.1). `EventStore._event_from_dict()` gains an
+`elif event_type == "lighting"` branch that deserializes `context` via `EventContext.from_dict()`.
+
+`STORAGE_VERSION` is **not bumped**: unknown event types return `None` in the switch — already
+the fallback behavior. New records simply start appearing alongside old ones.
+
+### P7.4 Capacity considerations
+
+~10–30 `LightingEvent` per day in a typical household. At TTL=60 days: 600–1800 lighting events,
+well within the 5000-record shared cap. Each event serializes to ~400–700 bytes (larger than v1
+events due to `EventContext`).
+
+Revised storage estimate including `EventContext` on all event types:
+
+| Event type | Est. size | Daily volume | 60-day total |
+|---|---|---|---|
+| PresenceEvent | ~400 B | ~4 | ~240 |
+| HeatingEvent | ~500 B | ~6 | ~360 |
+| HouseStateEvent | ~450 B | ~10 | ~600 |
+| LightingEvent | ~600 B | ~20 | ~1200 |
+| **Total** | | | **~2400 records / ~1.4 MB** |
+
+Comfortably within the 5000-record cap and HA Storage limits.
+
+---
+
+## P8. LightingRecorderBehavior
+
+**File:** `runtime/behaviors/lighting_recorder.py`
+
+### P8.1 Responsibility
+
+Observe HA entity state changes for configured light entities, determine whether the change was
+caused by Heima or by the user, and append `LightingEvent` objects to `EventStore`.
+
+### P8.2 Source discrimination — the core challenge
+
+The lighting domain applies scenes by calling HA services on light entities. The recorder must not
+re-record those same changes as `source="user"`. The mechanism:
+
+**Approach: applied-entity tracking via LightingDomain trace**
+
+After each eval cycle, the LightingDomain's apply plan lists the exact entity IDs it called. The
+coordinator exposes this as `engine.lighting_applied_entities: frozenset[str]` — populated at end
+of `async_evaluate()`, cleared at the start of the next cycle.
+
+When the recorder receives a HA `STATE_CHANGED` event for a light entity:
+1. If the entity is in `engine.lighting_applied_entities` → `source="heima"` → **do not record**.
+2. Otherwise → `source="user"` → record `LightingEvent`.
+
+This approach is deterministic and requires no heuristics or timing windows.
+
+### P8.3 Room and scene resolution
+
+The recorder needs to resolve `entity_id → room_id` and optionally `entity_id → scene`:
+
+- `room_id`: derived from the heima room configuration (same mapping used by LightingDomain).
+  Entities not belonging to any configured room are ignored.
+- `scene`: if the state change comes with a `context` that matches a HA scene activation, the scene
+  name is extracted. Otherwise `scene=None` and only `action` is recorded.
+
+In practice, most user scene activations go through HA scripts or the dashboard; those typically do
+carry scene context. Direct switch flips (physical switch, voice) will have `scene=None`.
+
+### P8.4 Registration
+
+`LightingRecorderBehavior` is a `HeimaBehavior` subclass. It is instantiated by the coordinator
+and registered alongside `EventRecorderBehavior`. It does NOT use `on_snapshot()` — it registers
+a HA `STATE_CHANGED` listener on startup for all configured light entity IDs.
+
+```python
+async def async_setup(self) -> None:
+    self._unsub = self._hass.bus.async_listen(
+        EVENT_STATE_CHANGED, self._handle_state_changed
+    )
+
+async def async_teardown(self) -> None:
+    if self._unsub:
+        self._unsub()
+```
+
+The coordinator calls `async_setup()` / `async_teardown()` on integration load/unload.
+
+### P8.5 Event construction
+
+```python
+async def _handle_state_changed(self, event: Event) -> None:
+    entity_id = event.data.get("entity_id", "")
+    new_state = event.data.get("new_state")
+    if new_state is None:
+        return
+    if entity_id not in self._entity_to_room:
+        return  # not a configured light entity
+
+    # source discrimination
+    if entity_id in self._engine.lighting_applied_entities:
+        return  # Heima caused this, skip
+
+    action: Literal["on", "off"] = "on" if new_state.state == "on" else "off"
+    lighting_event = HeimaEvent(
+        ts=new_state.last_changed.isoformat(),
+        event_type="lighting",
+        context=self._context_builder.build(self._last_snapshot),
+        source="user",
+        data={
+            "entity_id": entity_id,          # entità specifica — chiave per entity-level analysis
+            "room_id": self._entity_to_room[entity_id],
+            "action": action,
+            "scene": None,
+            "brightness": brightness,
+            "color_temp_kelvin": color_temp_kelvin,
+            "rgb_color": rgb_color,
+        },
+    )
+    self._hass.async_create_task(self._store.async_append(lighting_event))
+```
+
+---
+
+## P9. LightingPatternAnalyzer
+
+**File:** `runtime/analyzers/lighting.py`
+
+### P9.1 Responsibility
+
+Rilevare configurazioni ricorrenti di luci per stanza e giorno della settimana, e proporre
+all'utente di automatizzarle come una reazione temporizzata. L'analisi avviene in tre fasi:
+
+1. **Entity-level pattern detection** — per ogni `(entity_id, action, weekday)`, rileva se
+   l'entità viene modificata in modo ricorrente a un orario consistente.
+2. **Scene candidate grouping** — raggruppa le entità della stessa stanza con `scheduled_min`
+   simili (entro `SCENE_GROUP_WINDOW_MIN = 15 min`) in un'unica "scena candidata".
+3. **Proposal emission** — emette una `ReactionProposal` per ogni scena candidata, con la lista
+   completa degli stati entità da applicare.
+
+Questo approccio cattura l'intento reale dell'utente: "ogni lunedì sera configuro il living così",
+senza frammentare in 4-8 proposte separate per ogni singola luce.
+
+### P9.2 Algorithm
+
+#### Fase 1 — Entity-level pattern detection
+
+```
+Input: all HeimaEvent(event_type="lighting") from EventStore where source="user"
+
+entity_patterns = {}   # (entity_id, action, weekday) -> EntityPattern
+
+For each key (entity_id, action, weekday):
+    matching = [e for e in lighting_events
+                if e.data["entity_id"] == entity_id
+                and e.data["action"] == action
+                and e.context.weekday == weekday]
+
+    Gate 1: len(matching) >= MIN_OCCURRENCES (default 5)
+    Gate 2: distinct ISO weeks >= MIN_WEEKS (default 2)
+    If either gate fails: skip
+
+    samples_sorted = sorted(e.context.minute_of_day for e in matching)
+    n = len(samples_sorted)
+    median    = samples_sorted[n // 2]
+    p25       = samples_sorted[n // 4]
+    p75       = samples_sorted[3 * n // 4]
+    IQR       = p75 - p25
+    confidence = max(0.3, 1.0 - IQR / 120.0)
+
+    # Attributi fisici aggregati (action="on" only)
+    brightness       = _median_int([e.data["brightness"] for e in matching])
+    color_temp_kelvin = _median_int([e.data["color_temp_kelvin"] for e in matching])
+    rgb_color        = _mode_rgb([e.data["rgb_color"] for e in matching])
+
+    entity_patterns[(entity_id, action, weekday)] = EntityPattern(
+        entity_id, action, weekday,
+        room_id=matching[0].data["room_id"],
+        scheduled_min=median,
+        confidence=confidence,
+        brightness=brightness,
+        color_temp_kelvin=color_temp_kelvin,
+        rgb_color=rgb_color,
+    )
+```
+
+`_median_int(values)`: mediana dei valori non-None; `None` se meno di `MIN_OCCURRENCES // 2`
+valori sono presenti (luce senza dimmer o attributo non disponibile).
+
+`_mode_rgb(values)`: moda dei vettori `[r,g,b]` non-None (confronto esatto); `None` se
+misto o insufficiente. La rgb ha precedenza su `color_temp_kelvin` se entrambi presenti.
+
+#### Fase 2 — Scene candidate grouping
+
+```
+# Raggruppa per (room_id, weekday), poi clusterizza per scheduled_min
+
+for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
+    sorted_patterns = sorted(patterns, key=lambda p: p.scheduled_min)
+
+    # Gap-based clustering: nuovo cluster se gap > SCENE_GROUP_WINDOW_MIN
+    clusters = []
+    current_cluster = [sorted_patterns[0]]
+    for p in sorted_patterns[1:]:
+        if p.scheduled_min - current_cluster[-1].scheduled_min <= SCENE_GROUP_WINDOW_MIN:
+            current_cluster.append(p)
+        else:
+            clusters.append(current_cluster)
+            current_cluster = [p]
+    clusters.append(current_cluster)
+
+    for cluster in clusters:
+        scheduled_min = median([p.scheduled_min for p in cluster])
+        confidence    = mean([p.confidence for p in cluster])   # media, non min
+        entity_steps  = [p.as_entity_step() for p in cluster]
+        Emit SceneCandidate(room_id, weekday, scheduled_min, confidence, entity_steps)
+```
+
+**Confidence del gruppo:** media delle confidence individuali. Riflette la qualità complessiva del
+pattern; penalizza meno i casi in cui la maggioranza delle entità è consistente ma una sola è
+leggermente più variabile.
+
+#### Fase 3 — Proposal emission
+
+Per ogni `SceneCandidate`, emetti una `ReactionProposal` (vedi §P9.3).
+
+**Why IQR, not std-dev:** same rationale as `PresencePatternAnalyzer` — robust to outliers.
+
+**Why `MIN_WEEKS=2`:** previene che una settimana di comportamento consistente (es. settimana di
+vacanza) generi proposte spurie. Mancante in `PresencePatternAnalyzer` (open item futuro).
+
+**Why entity-level + grouping, not session detection on raw events:** il session detection richiede
+clustering temporale sugli eventi grezzi e una misura di similarità tra sessioni diverse — complessità
+significativa. Il grouping post-analisi (fase 2) ottiene lo stesso risultato lavorando su mediane già
+calcolate, con un algoritmo molto più semplice.
+
+**Why no HA scene creation:** Heima non crea scene HA persistenti. Applica gli stati entità
+direttamente tramite il service `light.turn_on`/`light.turn_off`. La logica è self-contained e non
+dipende dalla configurazione scene dell'utente.
+
+### P9.3 Output proposal
+
+Una proposta per `SceneCandidate` (= per stanza × giorno × cluster orario):
+
+```python
+ReactionProposal(
+    analyzer_id="LightingPatternAnalyzer",
+    reaction_type="lighting_scene_schedule",
+    description=(
+        f"{room_id}: {WEEKDAY_NAMES[weekday]} ~{hhmm(scheduled_min)} — "
+        + ", ".join(
+            f"{step['entity_id'].split('.')[-1]} {'on' if step['action']=='on' else 'off'}"
+            + (f" {step['brightness']}bri/{step['color_temp_kelvin']}K"
+               if step['action'] == 'on' and step['brightness'] else "")
+            for step in entity_steps
+        )
+    ),
+    confidence=confidence,
+    suggested_reaction_config={
+        "reaction_class": "LightingScheduleReaction",
+        "room_id": room_id,
+        "weekday": weekday,
+        "scheduled_min": scheduled_min,
+        "window_half_min": 10,
+        "house_state_filter": None,
+        "entity_steps": [
+            # Un dict per entità nel cluster
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,          # int o None
+                "color_temp_kelvin": 3000,  # int o None
+                "rgb_color": None,          # [r,g,b] o None
+            },
+            {
+                "entity_id": "light.living_spot",
+                "action": "on",
+                "brightness": 64,
+                "color_temp_kelvin": 3500,
+                "rgb_color": None,
+            },
+            {
+                "entity_id": "light.living_floor",
+                "action": "off",
+                "brightness": None,
+                "color_temp_kelvin": None,
+                "rgb_color": None,
+            },
+        ],
+    },
+)
+```
+
+### P9.4 Fingerprint for deduplication
+
+```
+f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{scheduled_min}"
+```
+
+Il `scheduled_min` nel fingerprint è la mediana del cluster, arrotondata a 5 minuti per evitare
+che piccole variazioni di un'iterazione all'altra creino proposte duplicate.
+
+```python
+fingerprint_min = (scheduled_min // 5) * 5
+fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{fingerprint_min}"
+```
+
+### P9.5 LightingScheduleReaction
+
+**File:** `runtime/reactions/lighting_schedule.py`
+
+#### Trigger — RuntimeScheduler
+
+Usa il `RuntimeScheduler` già presente. La reaction implementa `scheduled_jobs(entry_id)` (nuovo
+hook no-op su `HeimaReaction` base). L'engine raccoglie i job da tutte le reaction in
+`scheduled_runtime_jobs()` e li passa al coordinator via `_sync_scheduler()`. Quando il job
+scatta → eval cycle → `evaluate()` verifica la finestra e produce gli step.
+
+```python
+def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
+    due_monotonic = self._next_due_monotonic()
+    job_id = f"lighting_schedule:{self.reaction_id}"
+    return {
+        job_id: ScheduledRuntimeJob(
+            job_id=job_id,
+            owner="LightingScheduleReaction",
+            entry_id=entry_id,
+            due_monotonic=due_monotonic,
+            label=f"lighting: {self._room_id} {WEEKDAY_NAMES[self._weekday]} ~{hhmm(self._scheduled_min)}",
+        )
+    }
+```
+
+`_next_due_monotonic()`: prossimo wall-clock in cui inizia la finestra
+`scheduled_min ± window_half_min` per il `weekday` configurato. L'implementazione reale deve
+gestire correttamente le finestre che attraversano mezzanotte.
+
+#### Evaluate — time-window check + debounce
+
+La finestra deve supportare wrap su mezzanotte. Il debounce non è legato semplicemente alla data
+wall-clock corrente, ma al giorno logico dell'occorrenza configurata: una schedule `00:05 ± 10 min`
+può iniziare il giorno precedente e non deve double-fire dopo mezzanotte.
+
+#### ApplyStep — uno per entità
+
+```python
+def _build_steps(self) -> list[ApplyStep]:
+    steps = []
+    for step_cfg in self._entity_steps:
+        entity_id = step_cfg["entity_id"]
+        action    = step_cfg["action"]
+        if action == "on":
+            params: dict[str, Any] = {"entity_id": entity_id}
+            if step_cfg.get("brightness") is not None:
+                params["brightness"] = step_cfg["brightness"]
+            if step_cfg.get("rgb_color") is not None:
+                params["rgb_color"] = step_cfg["rgb_color"]
+            elif step_cfg.get("color_temp_kelvin") is not None:
+                params["color_temp_kelvin"] = step_cfg["color_temp_kelvin"]
+            steps.append(ApplyStep(
+                domain="lighting",
+                target=self._room_id,       # per apply-timestamp tracking
+                action="light.turn_on",
+                params=params,
+                reason=f"lighting_schedule:{self.reaction_id}",
+            ))
+        else:
+            steps.append(ApplyStep(
+                domain="lighting",
+                target=self._room_id,
+                action="light.turn_off",
+                params={"entity_id": entity_id},
+                reason=f"lighting_schedule:{self.reaction_id}",
+            ))
+    return steps
+```
+
+`execute_lighting_steps()` in `LightingDomain` aggiunge due rami:
+
+- `action="light.turn_on"` con `params["entity_id"]`: chiama `light.turn_on` sull'entità specifica
+  con gli attributi forniti. Aggiorna `last_apply_ts_by_room[step.target]`.
+- `action="light.turn_off"` con `params["entity_id"]` (anziché `area_id`): chiama `light.turn_off`
+  sull'entità specifica. Il ramo esistente con `area_id` rimane invariato per gli step del dominio
+  lighting ordinario.
+
+#### Config
+
+```python
+LightingScheduleReaction(
+    room_id="living",
+    weekday=0,
+    scheduled_min=1200,
+    window_half_min=10,
+    house_state_filter=None,
+    entity_steps=[
+        {"entity_id": "light.living_main",  "action": "on",  "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+        {"entity_id": "light.living_spot",  "action": "on",  "brightness": 64,  "color_temp_kelvin": 3500, "rgb_color": None},
+        {"entity_id": "light.living_floor", "action": "off", "brightness": None, "color_temp_kelvin": None, "rgb_color": None},
+    ],
+    reaction_id="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+)
+```
+
+Istanziata da `_rebuild_configured_reactions()` quando `reaction_class == "LightingScheduleReaction"`.
+
+### P9.6 Registration
+
+```python
+# coordinator.py
+proposal_engine.register_analyzer(LightingPatternAnalyzer())
+```
+
+---
+
 ## 11. File Structure
 
 ```
 custom_components/heima/runtime/
-  event_store.py                    NEW
-  proposal_engine.py                NEW
+  event_store.py                    Implemented + LightingEvent (P7)
+  proposal_engine.py                Implemented
   analyzers/
-    __init__.py                     NEW
-    base.py                         NEW — IPatternAnalyzer + ReactionProposal
-    presence.py                     NEW — PresencePatternAnalyzer
-    heating.py                      NEW — HeatingPatternAnalyzer
+    __init__.py                     Implemented
+    base.py                         Implemented — IPatternAnalyzer + ReactionProposal
+    presence.py                     Implemented — PresencePatternAnalyzer
+    heating.py                      Implemented/Partial — HeatingPatternAnalyzer
+    lighting.py                     Implemented — LightingPatternAnalyzer
   behaviors/
-    event_recorder.py               NEW — presence + house_state events
-    heating_recorder.py             NEW — heating setpoint events
+    event_recorder.py               Implemented — presence + house_state events
+    heating_recorder.py             Implemented — observed heating setpoint events
+    lighting_recorder.py            Implemented — user light action events with entity-level payload
+    signal_recorder.py              Implemented — generic `state_change` events for configured context signals
+  reactions/
+    lighting_schedule.py            Implemented — LightingScheduleReaction
 ```
 
 ### Existing files that change

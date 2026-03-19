@@ -45,6 +45,23 @@ def _proposal(*, conf: float, weekday: int = 0, status: str = "pending") -> Reac
     )
 
 
+def _lighting_proposal(*, conf: float, room_id: str, weekday: int, scheduled_min: int, fingerprint: str) -> ReactionProposal:
+    return ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=conf,
+        description=f"{room_id}:{scheduled_min}",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": room_id,
+            "weekday": weekday,
+            "scheduled_min": scheduled_min,
+            "entity_steps": [{"entity_id": f"light.{room_id}_main", "action": "on"}],
+        },
+        fingerprint=fingerprint,
+    )
+
+
 async def test_proposal_engine_run_and_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     sensor_updates = []
@@ -102,3 +119,66 @@ async def test_proposal_engine_reject(monkeypatch):
     assert await engine.async_reject_proposal(pid)
     assert engine.pending_proposals() == []
 
+
+async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine1.register_analyzer(
+        _AnalyzerStub(
+            [
+                _lighting_proposal(
+                    conf=0.9,
+                    room_id="living",
+                    weekday=0,
+                    scheduled_min=1200,
+                    fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+                )
+            ]
+        )
+    )
+    await engine1.async_initialize()
+    await engine1.async_run()
+
+    engine2 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine2._store._data = engine1._store._data
+    await engine2.async_initialize()
+
+    assert len(engine2._proposals) == 1
+    assert engine2._proposals[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+
+
+async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    fp1 = "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    fp2 = "LightingPatternAnalyzer|lighting_scene_schedule|bedroom|0|1200"
+
+    engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine1.register_analyzer(
+        _AnalyzerStub(
+            [
+                _lighting_proposal(conf=0.7, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1),
+                _lighting_proposal(conf=0.8, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2),
+            ]
+        )
+    )
+    await engine1.async_initialize()
+    await engine1.async_run()
+    assert len(engine1.pending_proposals()) == 2
+
+    engine2 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine2._store._data = engine1._store._data
+    await engine2.async_initialize()
+    analyzer = _AnalyzerStub(
+        [
+            _lighting_proposal(conf=0.9, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1),
+            _lighting_proposal(conf=0.95, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2),
+        ]
+    )
+    engine2.register_analyzer(analyzer)
+    await engine2.async_run()
+
+    pending = engine2.pending_proposals()
+    assert len(pending) == 2
+    by_room = {p.suggested_reaction_config["room_id"]: p for p in pending}
+    assert by_room["living"].confidence == 0.9
+    assert by_room["bedroom"].confidence == 0.95

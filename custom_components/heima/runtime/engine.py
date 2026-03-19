@@ -36,6 +36,7 @@ from ..models import HeimaOptions
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent
 from .reactions.base import HeimaReaction
+from .reactions.lighting_schedule import LightingScheduleReaction
 from .reactions.presence import _ArrivalRecord, PresencePatternReaction
 from .snapshot_buffer import SnapshotBuffer
 from .domains.calendar import CalendarDomain
@@ -120,17 +121,41 @@ class HeimaEngine:
     def state(self) -> CanonicalState:
         return self._state
 
+    @property
+    def lighting_last_apply_ts_by_room(self) -> dict[str, float]:
+        """Wall-clock timestamps of the last Heima lighting apply per room_id.
+
+        Used by LightingRecorderBehavior to distinguish Heima-applied changes
+        from user-initiated light changes.
+        """
+        return self._lighting_domain.last_apply_ts_by_room
+
+    @property
+    def lighting_recent_apply_state(self) -> dict[str, Any]:
+        """Recent lighting apply provenance for recorder attribution."""
+        return self._lighting_domain.recent_apply_state()
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)
         self._health = EngineHealth(ok=True, reason="initialized")
         self._rebuild_configured_reactions()
         self._build_default_state()
+        for behavior in self._behaviors:
+            try:
+                await behavior.async_setup()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in async_setup", behavior.behavior_id)
         await self.async_evaluate(reason="initialize")
 
     async def async_shutdown(self) -> None:
         _LOGGER.debug("Heima engine shutdown")
         self._health = EngineHealth(ok=True, reason="shutdown")
+        for behavior in self._behaviors:
+            try:
+                await behavior.async_teardown()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in async_teardown", behavior.behavior_id)
 
     async def async_reload_options(self, entry: ConfigEntry) -> None:
         _LOGGER.debug("Heima engine reload options")
@@ -190,6 +215,33 @@ class HeimaEngine:
         self._reactions.append(reaction)
         _LOGGER.debug("Heima reaction registered: %s", reaction.reaction_id)
 
+    def reset_learning_state(self) -> None:
+        """Reset runtime-local learning state without re-emitting bootstrap events."""
+        self._snapshot_buffer.clear()
+        for behavior in self._behaviors:
+            try:
+                behavior.reset_learning_state()
+            except Exception:
+                _LOGGER.exception("Behavior %s raised in reset_learning_state", behavior.behavior_id)
+                self._queue_behavior_error_event(
+                    component="behavior",
+                    object_id=behavior.behavior_id,
+                    hook="reset_learning_state",
+                    error="exception_raised",
+                )
+        for reaction in self._reactions:
+            try:
+                reaction.reset_learning_state()
+            except Exception:
+                _LOGGER.exception("Reaction %s raised in reset_learning_state", reaction.reaction_id)
+                self._queue_behavior_error_event(
+                    component="reaction",
+                    object_id=reaction.reaction_id,
+                    hook="reset_learning_state",
+                    error="exception_raised",
+                )
+        self._sync_reactions_sensor()
+
     def mute_reaction(self, reaction_id: str) -> bool:
         """Mute a reaction by ID. Returns True if the reaction exists."""
         exists = any(r.reaction_id == reaction_id for r in self._reactions)
@@ -217,6 +269,11 @@ class HeimaEngine:
             reaction_class = cfg.get("reaction_class")
             if reaction_class == "PresencePatternReaction":
                 reaction = self._build_presence_reaction(proposal_id, cfg)
+                if reaction is not None:
+                    self._reactions.append(reaction)
+                    self._configured_reaction_ids.add(reaction.reaction_id)
+            elif reaction_class == "LightingScheduleReaction":
+                reaction = self._build_lighting_schedule_reaction(proposal_id, cfg)
                 if reaction is not None:
                     self._reactions.append(reaction)
                     self._configured_reaction_ids.add(reaction.reaction_id)
@@ -250,6 +307,32 @@ class HeimaEngine:
             pre_condition_min=pre_cond,
             reaction_id=proposal_id,
             initial_arrivals=seed,
+        )
+
+    def _build_lighting_schedule_reaction(
+        self, proposal_id: str, cfg: dict
+    ) -> LightingScheduleReaction | None:
+        """Build a LightingScheduleReaction from a stored proposal config."""
+        try:
+            room_id = str(cfg["room_id"]).strip()
+            weekday = int(cfg["weekday"])
+            scheduled_min = int(cfg["scheduled_min"])
+            window_half = int(cfg.get("window_half_min", 10))
+            house_state_filter = cfg.get("house_state_filter") or None
+            entity_steps = list(cfg.get("entity_steps", []))
+            if not room_id or not entity_steps:
+                raise ValueError("room_id or entity_steps missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed LightingScheduleReaction config for proposal %s", proposal_id)
+            return None
+        return LightingScheduleReaction(
+            room_id=room_id,
+            weekday=weekday,
+            scheduled_min=scheduled_min,
+            window_half_min=window_half,
+            house_state_filter=house_state_filter,
+            entity_steps=entity_steps,
+            reaction_id=proposal_id,
         )
 
     def set_house_state_override(
@@ -536,8 +619,8 @@ class HeimaEngine:
             lighting_intents=lighting_intents,
             security_state=security_state,
             notes=f"reason={reason}",
-            heating_setpoint=self._heating_domain.trace.get("target_temperature"),
-            heating_source="heima" if self._heating_domain.trace.get("apply_allowed") else "user",
+            heating_setpoint=self._heating_domain.trace.get("current_setpoint"),
+            heating_source=str(self._heating_domain.trace.get("observed_source") or "unknown"),
         )
 
     def scheduled_runtime_jobs(self) -> dict[str, ScheduledRuntimeJob]:
@@ -551,6 +634,11 @@ class HeimaEngine:
                 due_monotonic=float(spec["due_monotonic"]),
                 label=str(spec.get("label", job_id)),
             )
+        for reaction in self._reactions:
+            try:
+                jobs.update(reaction.scheduled_jobs(entry_id))
+            except Exception:
+                _LOGGER.exception("Reaction %s raised in scheduled_jobs", reaction.reaction_id)
         return jobs
 
     def next_dwell_recheck_delay_s(self) -> float | None:
@@ -755,6 +843,7 @@ class HeimaEngine:
     async def _execute_apply_plan(self, plan: ApplyPlan) -> None:
         lighting_steps = [s for s in plan.steps if s.domain == "lighting" and not s.blocked_by]
         heating_steps = [s for s in plan.steps if s.domain == "heating" and not s.blocked_by]
+        script_steps = [s for s in plan.steps if s.domain == "script" and not s.blocked_by]
 
         await self._lighting_domain.execute_lighting_steps(lighting_steps)
 
@@ -787,6 +876,29 @@ class HeimaEngine:
                     )
                 except Exception:
                     _LOGGER.exception("Heating apply failed for climate '%s'", climate_entity)
+
+        for step in script_steps:
+            if step.action != "script.turn_on":
+                continue
+            script_entity = step.params.get("entity_id")
+            if not isinstance(script_entity, str) or not script_entity.startswith("script."):
+                continue
+            if self._hass.states.get(script_entity) is None:
+                _LOGGER.warning("Skipping missing script entity: %s", script_entity)
+                continue
+            try:
+                await self._hass.services.async_call(
+                    "script",
+                    "turn_on",
+                    {"entity_id": script_entity},
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping script apply during startup/race: service script.turn_on not available"
+                )
+            except Exception:
+                _LOGGER.exception("Script apply failed for '%s'", script_entity)
 
     def _lighting_room_maps(self) -> dict[str, dict[str, Any]]:
         options = dict(self._entry.options)

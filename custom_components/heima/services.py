@@ -55,6 +55,7 @@ SUPPORTED_COMMANDS = {
     "mute_reaction",
     "unmute_reaction",
     "learning_reset",
+    "seed_lighting_events",
 }
 
 
@@ -227,6 +228,31 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if command == "learning_reset":
             for coordinator in coordinators:
                 await coordinator.async_reset_learning_data()
+            return
+
+        if command == "seed_lighting_events":
+            p = params
+            entity_id = str(p.get("entity_id") or "")
+            room_id = str(p.get("room_id") or "")
+            if not entity_id or not room_id:
+                raise ServiceValidationError("seed_lighting_events requires 'entity_id' and 'room_id' in params")
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1200))
+            brightness = int(p["brightness"]) if p.get("brightness") is not None else None
+            color_temp_kelvin = int(p["color_temp_kelvin"]) if p.get("color_temp_kelvin") is not None else None
+            count = int(p.get("count", 6))
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_lighting_events(
+                    entity_id=entity_id,
+                    room_id=room_id,
+                    weekday=weekday,
+                    minute=minute,
+                    brightness=brightness,
+                    color_temp_kelvin=color_temp_kelvin,
+                    count=count,
+                )
+            _LOGGER.info("seed_lighting_events: injected %d events for %s", total, entity_id)
             return
 
     async def _handle_set_mode(call: ServiceCall) -> None:

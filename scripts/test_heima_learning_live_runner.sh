@@ -20,7 +20,8 @@ Options:
 
 This runner:
 1) Resets Heima learning data via `heima.command` -> `learning_reset`
-2) Executes scripts/live_tests/020_learning_pipeline.py with the provided person slug
+2) Executes the seeded-integration learning path in
+   `scripts/live_tests/020_learning_pipeline.py` with the provided person slug
 EOF
 }
 
@@ -53,7 +54,7 @@ curl -fsS -X POST \
   -d '{"command":"learning_reset"}' \
   "${HA_URL%/}/api/services/heima/command" >/dev/null
 
-echo "Running learning live E2E..."
+echo "Running learning seeded-integration path..."
 ./scripts/live_tests/020_learning_pipeline.py \
   --ha-url "${HA_URL}" \
   --ha-token "${HA_TOKEN}" \

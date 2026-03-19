@@ -39,6 +39,10 @@ def test_on_options_reloaded_is_noop():
     HeimaBehavior().on_options_reloaded({})  # must not raise
 
 
+def test_reset_learning_state_is_noop():
+    HeimaBehavior().reset_learning_state()  # must not raise
+
+
 def test_diagnostics_returns_empty_dict():
     assert HeimaBehavior().diagnostics() == {}
 

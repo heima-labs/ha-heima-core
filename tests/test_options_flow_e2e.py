@@ -204,3 +204,48 @@ async def test_heating_flow_persists_general_config_and_branch_mapping():
     assert heating["temperature_step"] == 0.5
     assert heating["override_branches"]["vacation"]["branch"] == "vacation_curve"
     assert heating["override_branches"]["vacation"]["vacation_min_temp"] == 16.5
+
+
+@pytest.mark.asyncio
+async def test_proposal_configure_action_normalizes_scene_and_script_steps():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "proposal-1": {
+                        "reaction_class": "PresencePatternReaction",
+                        "weekday": 0,
+                        "median_arrival_min": 480,
+                        "steps": [],
+                    }
+                },
+                "labels": {"proposal-1": "Arrival proposal"},
+            }
+        }
+    )
+    flow._pending_action_configs = ["proposal-1"]
+
+    result = await flow.async_step_proposal_configure_action(
+        {
+            "action_entities": ["scene.arrival", "script.preheat_home"],
+            "pre_condition_min": 15,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["proposal-1"]
+    assert cfg["pre_condition_min"] == 15
+    assert cfg["steps"] == [
+        {
+            "domain": "lighting",
+            "target": "scene.arrival",
+            "action": "scene.turn_on",
+            "params": {"entity_id": "scene.arrival"},
+        },
+        {
+            "domain": "script",
+            "target": "script.preheat_home",
+            "action": "script.turn_on",
+            "params": {"entity_id": "script.preheat_home"},
+        },
+    ]

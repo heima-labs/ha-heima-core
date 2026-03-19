@@ -258,6 +258,19 @@ Output:
 - P0 Spec Foundation
   - mini-spec cross-domain definita
   - separazione esplicita da normalization plugins
+
+### 11. Live Test and Docker Lab Remediation
+- Obiettivo:
+  - riallineare i test "live" con cio che provano davvero
+  - separare setup, diagnostica, true E2E e seeded integration
+  - rendere il Docker HA lab abbastanza ricco per reactions/learning senza dipendere da shortcut impropri
+- Piano:
+  - potenziare `docs/examples/ha_test_instance` con luci fake piu ricche (brightness / color temp) e fixture calendario deterministiche
+  - spostare provisioning/recovery fuori dal lane dei test live
+  - mantenere `live_e2e` solo per path che attraversano realmente entita/servizi HA -> recorder -> runtime/event store
+  - introdurre un tier `seeded_integration` per proposal/analyzer che richiedono storico multi-settimana
+  - rimuovere il patching diretto di `.storage` dal path canonico dei runner E2E
+  - aggiornare `scripts/README.md` e `docs/examples/ha_test_instance/README.md` con tassonomia suite e prerequisiti del lab
   - Heating identificato come primo adopter futuro
 - P1 Framework Only
   - introdurre registry policy plugin
@@ -408,6 +421,11 @@ Se `confidence < threshold` (default 0.5), la reaction viene silenziata e loggat
 - Pluggabile: future `StatisticalBackend`, `MLBackend` implementano stessa interfaccia.
 - Test: counter increment, confidence decay, reset, suppression event.
 
+Nota stato reale su `main`:
+- `ILearningBackend` e `NaiveLearningBackend` esistono e sono integrati nelle reaction che lo usano esplicitamente
+- il rilevamento automatico degli override post-reaction non è ancora wired nel runtime generale
+- `reaction.suppressed` non è oggi un evento runtime dedicato
+
 ### Step R4 — PresencePatternReaction (prima reazione adattiva)
 
 - Apprende le fasce orarie tipiche di arrivo per le persone configurate.
@@ -421,7 +439,7 @@ Se `confidence < threshold` (default 0.5), la reaction viene silenziata e loggat
 ### Step R5 — Config, Observability, Commands
 
 - Reaction config leggibile da Options Flow (abilita/disabilita singola reaction, parametri soglia, backend).
-- Sensor canonico `heima_reactions_active`: JSON con lista reazioni attive, confidence, last_fired.
+- Sensor canonico `heima_reactions_active`: JSON con lista reazioni attive, almeno `muted`, `fire_count`, `suppressed_count`, `last_fired`.
 - Evento `reaction.fired` nel pipeline notifiche (con context: reaction_id, steps_count, confidence).
 - Diagnostics per reaction: `last_fired_ts`, `confidence`, `override_count`, `suppressed_count`.
 - Comando `heima.command` con `command: mute_reaction` / `unmute_reaction`.
@@ -431,9 +449,9 @@ Se `confidence < threshold` (default 0.5), la reaction viene silenziata e loggat
 - R0: completato — SnapshotBuffer, 13 test
 - R1: completato — HeimaReaction base, engine dispatch, source tag su ApplyStep, 14 test
 - R2: completato — IPatternDetector, ConsecutiveMatchDetector, ConsecutiveStateReaction, 22 test
-- R3: completato — ILearningBackend, NaiveLearningBackend, integrazione ConsecutiveStateReaction, 22 test
+- R3: parziale — backend e integrazione base completati; override detection runtime e `reaction.suppressed` restano aperti
 - R4: completato — PresencePatternReaction (learn + trigger + midnight wrap), 28 test
-- R5: completato — heima_reactions_active sensor, reaction.fired event, mute_reaction/unmute_reaction commands, 15 test (Options Flow escluso per v1)
+- R5: completato per il perimetro v1 attuale — `heima_reactions_active`, `reaction.fired`, mute/unmute persistiti, reset learning hardening
 
 ---
 
