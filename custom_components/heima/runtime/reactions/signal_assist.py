@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -11,6 +10,12 @@ from homeassistant.core import HomeAssistant
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
+from .composite import (
+    RuntimeCompositeMatcher,
+    RuntimeCompositePatternSpec,
+    RuntimeCompositeSignalSpec,
+    parse_snapshot_ts,
+)
 
 
 class RoomSignalAssistReaction(HeimaReaction):
@@ -23,7 +28,13 @@ class RoomSignalAssistReaction(HeimaReaction):
         room_id: str,
         trigger_signal_entities: list[str],
         steps: list[ApplyStep],
+        primary_signal_entities: list[str] | None = None,
+        primary_rise_threshold: float | None = None,
+        primary_signal_name: str = "primary",
         humidity_rise_threshold: float = 8.0,
+        corroboration_signal_entities: list[str] | None = None,
+        corroboration_rise_threshold: float | None = None,
+        corroboration_signal_name: str = "corroboration",
         temperature_signal_entities: list[str] | None = None,
         temperature_rise_threshold: float = 0.8,
         correlation_window_s: int = 600,
@@ -32,15 +43,47 @@ class RoomSignalAssistReaction(HeimaReaction):
     ) -> None:
         self._hass = hass
         self._room_id = room_id
-        self._humidity_entities = [e for e in trigger_signal_entities if e]
-        self._temperature_entities = [e for e in (temperature_signal_entities or []) if e]
+        resolved_primary_entities = [e for e in (primary_signal_entities or trigger_signal_entities) if e]
+        resolved_primary_threshold = (
+            primary_rise_threshold if primary_rise_threshold is not None else humidity_rise_threshold
+        )
+        resolved_corroboration_entities = [
+            e for e in (corroboration_signal_entities or temperature_signal_entities or []) if e
+        ]
+        resolved_corroboration_threshold = (
+            corroboration_rise_threshold
+            if corroboration_rise_threshold is not None
+            else temperature_rise_threshold
+        )
+        self._primary_entities = resolved_primary_entities
+        self._corroboration_entities = resolved_corroboration_entities
         self._steps = list(steps)
-        self._humidity_rise_threshold = humidity_rise_threshold
-        self._temperature_rise_threshold = temperature_rise_threshold
+        self._primary_rise_threshold = float(resolved_primary_threshold)
+        self._corroboration_rise_threshold = float(resolved_corroboration_threshold)
+        self._primary_signal_name = primary_signal_name or "primary"
+        self._corroboration_signal_name = corroboration_signal_name or "corroboration"
         self._correlation_window_s = correlation_window_s
         self._followup_window_s = followup_window_s
         self._reaction_id = reaction_id or self.__class__.__name__
-        self._last_values: dict[str, tuple[float, datetime]] = {}
+        self._matcher = RuntimeCompositeMatcher(hass)
+        self._pattern = RuntimeCompositePatternSpec(
+            primary=RuntimeCompositeSignalSpec(
+                name=self._primary_signal_name,
+                entity_ids=tuple(self._primary_entities),
+                threshold=self._primary_rise_threshold,
+            ),
+            corroborations=(
+                RuntimeCompositeSignalSpec(
+                    name=self._corroboration_signal_name,
+                    entity_ids=tuple(self._corroboration_entities),
+                    threshold=self._corroboration_rise_threshold,
+                    required=bool(self._corroboration_entities),
+                ),
+            )
+            if self._corroboration_entities
+            else (),
+            correlation_window_s=self._correlation_window_s,
+        )
         self._pending_episode_ts: datetime | None = None
         self._last_fired_ts: float | None = None
         self._fire_count = 0
@@ -55,29 +98,19 @@ class RoomSignalAssistReaction(HeimaReaction):
             return []
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
-            self._observe_signals(snapshot.ts)
             return []
 
-        now = _parse_ts(snapshot.ts)
+        now = parse_snapshot_ts(snapshot.ts)
         if now is None:
-            self._observe_signals(snapshot.ts)
             return []
 
-        humidity_burst = self._observe_humidity_burst(now)
-        temperature_burst = self._observe_temperature_burst(now)
-
-        should_fire = False
-        if humidity_burst:
-            if self._temperature_entities:
-                self._pending_episode_ts = now
-            else:
-                should_fire = True
-        elif self._pending_episode_ts is not None:
-            age = (now - self._pending_episode_ts).total_seconds()
-            if age > self._correlation_window_s:
-                self._pending_episode_ts = None
-            elif temperature_burst:
-                should_fire = True
+        result = self._matcher.observe(
+            now=now,
+            pending_since=self._pending_episode_ts,
+            spec=self._pattern,
+        )
+        self._pending_episode_ts = result.pending_since
+        should_fire = result.ready
 
         if should_fire and self._is_cooled_down():
             self._pending_episode_ts = None
@@ -89,7 +122,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         return []
 
     def reset_learning_state(self) -> None:
-        self._last_values.clear()
+        self._matcher.reset()
         self._pending_episode_ts = None
         self._last_fired_ts = None
         self._fire_count = 0
@@ -98,62 +131,21 @@ class RoomSignalAssistReaction(HeimaReaction):
     def diagnostics(self) -> dict[str, Any]:
         return {
             "room_id": self._room_id,
-            "humidity_entities": list(self._humidity_entities),
-            "temperature_entities": list(self._temperature_entities),
+            "primary_signal_name": self._primary_signal_name,
+            "primary_entities": list(self._primary_entities),
+            "primary_rise_threshold": self._primary_rise_threshold,
+            "corroboration_signal_name": self._corroboration_signal_name,
+            "corroboration_entities": list(self._corroboration_entities),
+            "corroboration_rise_threshold": self._corroboration_rise_threshold,
+            "humidity_entities": list(self._primary_entities),
+            "temperature_entities": list(self._corroboration_entities),
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
             "pending_episode": self._pending_episode_ts.isoformat() if self._pending_episode_ts else None,
         }
 
-    def _observe_humidity_burst(self, now: datetime) -> bool:
-        return self._observe_numeric_burst(
-            entity_ids=self._humidity_entities,
-            now=now,
-            threshold=self._humidity_rise_threshold,
-        )
-
-    def _observe_temperature_burst(self, now: datetime) -> bool:
-        return self._observe_numeric_burst(
-            entity_ids=self._temperature_entities,
-            now=now,
-            threshold=self._temperature_rise_threshold,
-        )
-
-    def _observe_numeric_burst(self, *, entity_ids: list[str], now: datetime, threshold: float) -> bool:
-        burst = False
-        for entity_id in entity_ids:
-            current = self._current_numeric_state(entity_id)
-            if current is None:
-                continue
-            prev = self._last_values.get(entity_id)
-            self._last_values[entity_id] = (current, now)
-            if prev is None:
-                continue
-            previous_value, previous_ts = prev
-            if (now - previous_ts).total_seconds() > self._correlation_window_s:
-                continue
-            if current - previous_value >= threshold:
-                burst = True
-        return burst
-
-    def _current_numeric_state(self, entity_id: str) -> float | None:
-        state = self._hass.states.get(entity_id)
-        if state is None:
-            return None
-        try:
-            return float(state.state)
-        except (TypeError, ValueError):
-            return None
-
     def _is_cooled_down(self) -> bool:
         if self._last_fired_ts is None:
             return True
         return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
-
-
-def _parse_ts(raw: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(raw).astimezone(UTC)
-    except (TypeError, ValueError):
-        return None

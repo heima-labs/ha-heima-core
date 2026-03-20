@@ -245,6 +245,33 @@ def test_room_signal_assist_reaction_built_and_registered():
     assert reaction.reaction_id == "sa1"
 
 
+def test_room_signal_assist_reaction_builds_generic_signal_config():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "sa2": {
+                    "reaction_class": "RoomSignalAssistReaction",
+                    "room_id": "studio",
+                    "primary_signal_entities": ["sensor.studio_temperature"],
+                    "primary_rise_threshold": 1.5,
+                    "primary_signal_name": "temperature",
+                    "corroboration_signal_entities": ["sensor.studio_humidity"],
+                    "corroboration_rise_threshold": 5.0,
+                    "corroboration_signal_name": "humidity",
+                    "steps": [{"domain": "script", "target": "script.cool_room", "action": "script.turn_on"}],
+                }
+            }
+        }
+    })
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    reaction = engine._reactions[0]
+    assert isinstance(reaction, RoomSignalAssistReaction)
+    assert reaction.reaction_id == "sa2"
+
+
 def test_rebuild_clears_removed_proposals():
     """If a proposal is removed from options, its reaction should be removed."""
     engine = _make_engine(options={

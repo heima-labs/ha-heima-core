@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from custom_components.heima.runtime.analyzers.cross_domain import CrossDomainPatternAnalyzer
+from custom_components.heima.runtime.analyzers.cross_domain import (
+    CrossDomainPatternAnalyzer,
+    RoomCoolingPatternAnalyzer,
+)
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 
 
@@ -133,5 +136,63 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "bathroom"
     assert proposal.suggested_reaction_config["trigger_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert proposal.suggested_reaction_config["temperature_signal_entities"] == [
+        "sensor.bathroom_temperature"
+    ]
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
+        "fan.bathroom_fan"
+    ]
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
 
+
+async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal():
+    analyzer = RoomCoolingPatternAnalyzer()
+    base = datetime(2026, 3, 1, 15, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        ts = (base + timedelta(days=i * 7)).isoformat()
+        humidity_ts = (base + timedelta(days=i * 7, minutes=2)).isoformat()
+        fan_ts = (base + timedelta(days=i * 7, minutes=5)).isoformat()
+        events.extend(
+            [
+                _state_change(
+                    entity_id="sensor.studio_temperature",
+                    room="studio",
+                    ts=ts,
+                    old_state="24.0",
+                    new_state="25.8",
+                    device_class="temperature",
+                ),
+                _state_change(
+                    entity_id="sensor.studio_humidity",
+                    room="studio",
+                    ts=humidity_ts,
+                    old_state="52",
+                    new_state="58",
+                    device_class="humidity",
+                ),
+                _state_change(
+                    entity_id="fan.studio_fan",
+                    room="studio",
+                    ts=fan_ts,
+                    old_state="off",
+                    new_state="on",
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.reaction_type == "room_cooling_assist"
+    assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
+    assert proposal.suggested_reaction_config["room_id"] == "studio"
+    assert proposal.suggested_reaction_config["primary_signal_entities"] == [
+        "sensor.studio_temperature"
+    ]
+    assert proposal.suggested_reaction_config["corroboration_signal_entities"] == [
+        "sensor.studio_humidity"
+    ]
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
+        "fan.studio_fan"
+    ]

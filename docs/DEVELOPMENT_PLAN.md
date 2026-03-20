@@ -286,8 +286,9 @@ Output:
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
   - analyzer cross-domain composti sopra eventi `state_change`
-  - primo target cross-domain definito a livello spec:
-    - room-scoped humidity/temperature burst + occupancy -> generic assist proposal
+  - primi target cross-domain definiti a livello spec e runtime:
+    - room-scoped humidity/temperature burst + occupancy -> generic ventilation assist proposal
+    - room-scoped temperature/humidity burst + occupancy -> generic cooling assist proposal
 
 ### 11. Live Test and Docker Lab Remediation
 - Obiettivo:

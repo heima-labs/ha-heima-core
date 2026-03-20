@@ -83,3 +83,43 @@ def test_signal_assist_reaction_waits_for_temperature_corroboration():
     assert len(steps) == 1
     assert steps[0].action == "script.turn_on"
 
+
+def test_signal_assist_reaction_supports_generic_primary_and_corroboration_signals():
+    hass = MagicMock()
+    states = {
+        "sensor.studio_temperature": "24.0",
+        "sensor.studio_humidity": "50.0",
+    }
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="studio",
+        trigger_signal_entities=["sensor.studio_temperature"],
+        primary_signal_entities=["sensor.studio_temperature"],
+        primary_rise_threshold=1.5,
+        primary_signal_name="temperature",
+        corroboration_signal_entities=["sensor.studio_humidity"],
+        corroboration_rise_threshold=5.0,
+        corroboration_signal_name="humidity",
+        steps=[ApplyStep(domain="script", target="script.cool_room", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
+    ts3 = datetime(2026, 3, 20, 15, 4, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)]) == []
+
+    states["sensor.studio_temperature"] = "25.8"
+    assert reaction.evaluate([
+        _snapshot(occupied_rooms=["studio"], ts=ts1),
+        _snapshot(occupied_rooms=["studio"], ts=ts2),
+    ]) == []
+
+    states["sensor.studio_humidity"] = "56.0"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["studio"], ts=ts2),
+        _snapshot(occupied_rooms=["studio"], ts=ts3),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.cool_room"
