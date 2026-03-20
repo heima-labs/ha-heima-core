@@ -1,6 +1,6 @@
 # Heima Inference Engine — Specification v2
 
-**Status:** Draft/RFC — not started on `main`
+**Status:** Draft/RFC — v2 target contract
 **Date:** 2026-03-11
 **Last Verified Against Code:** 2026-03-11
 **Scope:** v2 — predict when/how known behaviors will occur, from all domain inputs/outputs
@@ -9,6 +9,27 @@
 > but not implemented. The extension points are called out explicitly.
 
 ---
+
+## Normative precedence
+
+This document defines the intended v2 inference architecture and contracts.
+
+Interpretation rule:
+- if implementation and spec diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
+
+## Scope and non-goals
+
+In scope:
+- predictive inference over known behaviors
+- persistent snapshot substrate for offline learning
+- inference signal contracts and routing semantics
+- domain consumption of optional inference hints
+
+Not a goal of this document:
+- replacing the v1 learning proposal system described in `learning_system_spec.md`
+- describing every future v3 discovery capability in detail
+- prescribing one exact internal package/module layout
 
 ## 1. Motivation
 
@@ -25,6 +46,10 @@ The Inference Engine adds a parallel learning pipeline that:
 
 Nothing in the existing eval cycle changes contract: signals are additive inputs, never
 substitutes for real sensor data.
+
+Normative rule:
+- inference may refine or bias domain decisions when inputs are ambiguous
+- inference must never fabricate hard sensor truth or override explicit observed facts
 
 ---
 

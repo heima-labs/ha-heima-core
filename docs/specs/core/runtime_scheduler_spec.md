@@ -1,7 +1,15 @@
 # Heima Runtime Scheduler — Mini-SPEC v1
 
-**Status:** Implemented on `main`
+**Status:** Active v1 runtime scheduler contract
 **Last Verified Against Code:** 2026-03-11
+
+## Normative precedence
+
+This document defines the intended contract of the shared runtime scheduler.
+
+Interpretation rule:
+- if implementation and spec diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
 
 ## 1. Purpose
 
@@ -33,6 +41,13 @@ The Runtime Scheduler is **not** responsible for:
 - replacing the Heima event pipeline
 
 When a job fires, the scheduler must trigger a controlled runtime callback (typically a re-evaluation request), not arbitrary business logic embedded inside the scheduler.
+
+## 2.1 Non-goals
+
+This document does not attempt to:
+- prescribe a specific timer primitive or internal scheduler class layout
+- define domain policies that happen to rely on scheduled rechecks
+- define any user-facing scheduling UI or automation DSL
 
 ---
 

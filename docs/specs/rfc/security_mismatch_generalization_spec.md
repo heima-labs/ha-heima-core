@@ -1,6 +1,6 @@
-# Heima — Security Mismatch Generalization Spec (v1.1 Draft)
+# Heima — Security Mismatch Generalization Spec (v1.1)
 
-**Status:** Draft (not implemented)  
+**Status:** Implemented on `main`  
 **Scope:** Event taxonomy and migration only (no behavior-policy changes)
 
 ## 1. Goal
@@ -14,6 +14,11 @@ while still covering the already implemented case:
 - `security.armed_away_but_home`
 
 without breaking existing automations.
+
+Current runtime status:
+- canonical `security.mismatch` is emitted on `main`
+- compatibility modes `explicit_only | generic_only | dual_emit` are implemented
+- default remains `explicit_only`
 
 ## 2. Event Model
 
@@ -37,7 +42,7 @@ Initial subtype set:
 
 - `armed_away_but_home`
 
-Mapping of existing runtime event:
+Mapping of current runtime event:
 
 - `security.armed_away_but_home` -> `security.mismatch` with `subtype=armed_away_but_home`
 
@@ -46,7 +51,7 @@ Mapping of existing runtime event:
 To avoid breaking existing automations, v1.1 introduces an emission mode:
 
 - `security_mismatch_event_mode`
-  - `explicit_only` (default in v1.1)
+  - `explicit_only` (default in v1.1 and current `main`)
   - `generic_only`
   - `dual_emit`
 
@@ -54,7 +59,7 @@ Semantics:
 
 - `explicit_only`: emit current specific event(s) only.
 - `generic_only`: emit only `security.mismatch`.
-- `dual_emit`: emit both generic and specific events.
+- `dual_emit`: emit both generic and specific events in the same evaluation cycle.
 
 Notes:
 
@@ -85,9 +90,9 @@ This keeps a stable top-level schema while preserving current diagnostics.
 
 Phase A (v1.1):
 
-- Add mode switch.
-- Keep default `explicit_only`.
-- Document generic event and subtype mapping.
+- Add mode switch. Implemented on `main`.
+- Keep default `explicit_only`. Implemented on `main`.
+- Document generic event and subtype mapping. Implemented on `main`.
 
 Phase B (v1.x later):
 
@@ -104,3 +109,14 @@ Phase C (v2):
 - No change to mismatch detection policy (`smart|strict|off`) logic.
 - No change to corroboration logic or persistence timers.
 - No change to notification routing internals besides event type consumption.
+
+## 8. Verification Notes
+
+Current runtime behavior is covered by:
+- unit coverage in `tests/test_security_mismatch_policy.py`
+- live validation in `scripts/live_tests/040_security_mismatch_runtime.py`
+
+The live test asserts:
+- `explicit_only` emits only the specific event
+- `generic_only` emits only `security.mismatch`
+- `dual_emit` emits both forms on the HA event bus

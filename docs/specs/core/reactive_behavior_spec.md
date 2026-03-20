@@ -1,10 +1,15 @@
 # Heima — Reactive Behavior Engine SPEC v1
 ## Phase 7: Behavior-as-Reaction
 
-**Status**: R0–R5 implemented on `main`, with partial learning-backend observability and reset hardening added.
+**Status**: Active v1 reaction contract
 **Last Verified Against Code:** 2026-03-19
 **Supersedes**: The `apply_filter` use case described in SPEC v1.1 (which was found redundant; see decisions).
 **Complements**: `HeimaBehavior` framework (SPEC v1.1) which remains valid for passive observability.
+
+Normative precedence:
+- this document defines the intended reaction contract
+- implementation details may evolve, but they must preserve the externally visible semantics defined here
+- if code and this spec diverge, the divergence must be resolved explicitly rather than inferred from code alone
 
 ---
 
@@ -15,6 +20,34 @@ Heima observes behavioral patterns over time — from people, sensors, and house
 A **Reaction** does not replace domain logic. It enriches the apply plan with context the domain pipeline cannot compute on its own (temporal patterns, learned habits, anticipatory pre-conditioning).
 
 Core principle: **observe a sliding window of snapshots → detect pattern → produce ApplyStep**.
+
+### 1.1 Core terms
+
+This spec uses the following terms normatively:
+
+- **DecisionSnapshot**: the normalized system view for one evaluation cycle. It is the input surface
+  used by reactions to decide whether to fire.
+- **ApplyStep**: one concrete actuation request that can later be filtered, constrained, and
+  executed by the runtime.
+- **Reaction**: a component that observes snapshot history and may add `ApplyStep` instances to the
+  current plan.
+- **Domain logic**: the base deterministic logic of a domain such as lighting or heating, evaluated
+  even when no reaction exists.
+- **Constraint layer**: the common policy/filter layer that can block, modify, or suppress any
+  apply step before execution.
+
+Normative rule:
+- a reaction is an enrichment layer, never an authority that bypasses domain constraints or direct
+  runtime safety rules
+
+### 1.2 Design goals
+
+The reaction system exists to satisfy four goals:
+
+1. express temporal or learned behavior that the domain pipeline cannot derive from one snapshot
+2. keep learned behavior explainable as explicit conditions plus explicit actions
+3. route reaction actions through the same execution and safety path as all other actions
+4. allow reactions to be muted, observed, reset, and rebuilt from persisted configuration
 
 ---
 
@@ -43,11 +76,23 @@ async_evaluate()
 
 **Key invariant**: Reaction steps pass through the same constraint layer as domain steps. A reaction cannot bypass security constraints.
 
+### 2.1 Normative lifecycle
+
+Each evaluation cycle MUST follow this conceptual order:
+
+1. compute the current normalized snapshot
+2. append it to bounded history
+3. let domain pipelines build their base apply steps
+4. let registered reactions inspect history and contribute additional steps
+5. pass the merged step set through the shared constraint layer
+6. execute the resulting plan
+7. update observability surfaces
+
+The runtime MAY optimize internals, but it MUST preserve these semantics.
+
 ---
 
 ## 3. SnapshotBuffer
-
-**File**: `runtime/snapshot_buffer.py`
 
 A bounded ring buffer (default capacity: 20) that stores `DecisionSnapshot` objects in chronological order. Oldest entry is evicted when full.
 
@@ -59,13 +104,14 @@ class SnapshotBuffer:
     def clear() -> None
 ```
 
-Exposed as `engine.snapshot_history: list[DecisionSnapshot]`.
+Normative requirements:
+- history ordering must be chronological
+- the newest snapshot must be directly accessible
+- clearing history must remove all prior reaction-learning context that depends only on the buffer
 
 ---
 
 ## 4. HeimaReaction Base Class
-
-**File**: `runtime/reactions/base.py`
 
 ```python
 class HeimaReaction:
@@ -87,15 +133,24 @@ The engine:
 3. Exception-isolates each reaction (exceptions are logged, never propagated).
 4. Merges reaction steps into the plan before the constraint layer.
 
-### 4.1 ApplyStep.source Field
+### 4.1 Behavioral contract
+
+Every reaction implementation MUST obey these rules:
+
+- `evaluate(history)` must be a pure decision step with respect to external side effects
+- the returned steps must be fully executable by the normal runtime, not by private reaction code
+- an exception inside one reaction must not stop evaluation of other reactions or domains
+- if a reaction keeps internal learning state, that state must be resettable through
+  `reset_learning_state()`
+- if a reaction depends on persisted configuration, it must be rebuildable from options alone
+
+### 4.2 ApplyStep.source Field
 
 `source: str = ""` added to `ApplyStep`. Non-empty for reaction-generated steps (`"reaction:{id}"`). Domain pipeline steps remain `""`.
 
 ---
 
 ## 5. Pattern Detection Plugin
-
-**File**: `runtime/reactions/patterns.py`
 
 ```python
 class IPatternDetector(Protocol):
@@ -117,9 +172,10 @@ Returns `True` if the last `consecutive_n` snapshots all satisfy `predicate`. St
 
 ## 6. Built-in Reactions
 
-### 6.1 ConsecutiveStateReaction
+This section describes the semantic contract of the built-in reactions. The code may vary, but the
+observable behavior described here is normative.
 
-**File**: `runtime/reactions/builtin.py`
+### 6.1 ConsecutiveStateReaction
 
 Level-triggered reaction: fires on every evaluation cycle where the last N snapshots match a predicate.
 
@@ -144,8 +200,6 @@ ConsecutiveStateReaction(
 - `anyone_home == False` for 5+ cycles → turn-off unoccupied lighting zones
 
 ### 6.2 PresencePatternReaction
-
-**File**: `runtime/reactions/presence.py`
 
 Learns typical daily arrival times per weekday and fires pre-conditioning steps when the current time approaches the expected arrival window.
 
@@ -174,11 +228,26 @@ PresencePatternReaction(
 
 **Known limitation**: arrival time accuracy depends on the evaluation cycle interval.
 
+### 6.3 Proposal-driven reactions
+
+Currently wired proposal-driven classes:
+- `PresencePatternReaction`
+- `LightingScheduleReaction`
+- `HeatingPreferenceReaction`
+- `HeatingEcoReaction`
+
+`HeatingPreferenceReaction` fires when the configured `house_state` is entered and the observed setpoint differs from the learned target.
+
+`HeatingEcoReaction` fires on entry into `away` and applies the learned eco target temperature derived from observed away sessions.
+
+Normative rebuild rule:
+- if a proposal type is user-acceptible in the options flow, the runtime must either rebuild it
+  into an executable reaction class or explicitly reject/defer that proposal type
+- the system must not persist “accepted but non-executable” learning reactions
+
 ---
 
 ## 7. Learning Backend Plugin
-
-**File**: `runtime/reactions/learning.py`
 
 ### 7.1 Interface
 
@@ -207,7 +276,7 @@ NaiveLearningBackend(
 - `observe(fired=True)` increments `cycles_since_last_override`. When `>= reset_cycles`, confidence is restored to `1.0`.
 - State is independent per `reaction_id`.
 
-**Override detection responsibility**: The caller (engine or reaction) is responsible for detecting when the user negated the reaction's output. The backend only tracks what it's told. Future engine integration will detect overrides automatically (e.g., comparing last reaction steps with subsequent HA state).
+**Override detection responsibility**: The caller (engine or reaction) is responsible for detecting when the user negated the reaction's output. The backend only tracks what it's told. Future engine integration may detect overrides automatically (e.g., comparing last reaction steps with subsequent HA state), but this is not yet wired globally.
 
 ### 7.3 Pluggability
 
@@ -216,6 +285,9 @@ NaiveLearningBackend(
 ---
 
 ## 8. Observability and Runtime Commands (R5)
+
+This section defines the minimum external observability contract. Internal counters or richer
+diagnostics may evolve, but these surfaces are the compatibility baseline.
 
 ### 8.1 heima_reactions_active Sensor
 
@@ -239,9 +311,16 @@ reaction backend surfaces them in `diagnostics()`. The base runtime currently gu
 - `suppressed_count`
 - `last_fired_ts`
 
+The runtime MAY expose more fields, but consumers must treat these four as the compatibility floor.
+
 ### 8.2 reaction.fired Event
 
 Queued in the notification pipeline whenever a reaction produces at least one step. Emitted before constraints are applied. Rate-limiting and dedup rules from the Event Catalog apply.
+
+Normative meaning:
+- `reaction.fired` means “this reaction produced one or more candidate steps”
+- it does not guarantee that the steps were ultimately executed, because constraints may still
+  suppress them later
 
 ```json
 {
@@ -272,6 +351,18 @@ data:
 - `heima_reactions_active` is updated immediately on mute/unmute.
 - Service raises `ServiceValidationError` if the `reaction_id` is not registered.
 
+### 8.4 Diagnostics
+
+The reaction subsystem MUST expose diagnostics sufficient to answer at least:
+- which reactions are currently registered
+- which reactions are currently muted
+- how many times each reaction fired
+- how many times each reaction was suppressed
+- the last fire timestamp for each reaction
+
+Reaction-specific diagnostics MAY include richer fields such as learned arrival counts or
+configuration thresholds, but those fields are additive and not part of the compatibility minimum.
+
 ### 8.5 learning_reset
 
 Via `heima.command`:
@@ -291,114 +382,44 @@ Semantics:
 
 This is a hard reset of the learning substrate, not only a storage wipe.
 
-### 8.4 Diagnostics (updated)
-
-`engine.diagnostics()` includes:
-
-```json
-{
-  "reactions": {
-    "PresencePatternReaction": {
-      "arrivals_count": 14,
-      "fire_count": 3,
-      "suppressed_count": 0,
-      "last_fired_ts": 1234567.8,
-      "min_arrivals": 5,
-      "window_half_min": 15,
-      "pre_condition_min": 20
-    }
-  },
-  "muted_reactions": ["SomeOtherReaction"]
-}
-```
-
 ---
 
 ## 9. Registration and Lifecycle
 
-```python
-engine.register_reaction(reaction: HeimaReaction) -> None
-```
+The runtime MUST support this lifecycle:
 
-Call before `async_initialize()`. Reactions are dispatched on every `async_evaluate()`.
+1. reactions are registered before normal evaluation begins
+2. registered reactions participate in every evaluation cycle unless muted
+3. option reload propagates updated configuration to registered reactions
+4. learning reset propagates reset calls to reactions and behaviors that keep local learning state
 
-`on_options_reloaded(options)` is called for all registered reactions when config entry options change. Exceptions are isolated.
-`reset_learning_state()` is called during `learning_reset` for reactions and behaviors that keep in-memory learning state.
+Normative rules:
+- registration order may affect diagnostic ordering, but must not change the semantic meaning of
+  the merged apply plan
+- unknown muted reaction ids loaded from persisted config must be ignored safely
+- option reload must not require process restart to refresh reaction configuration
+- reset must clear in-memory learning state even when the reaction itself remains registered
 
-### 9.1 Full Configuration Example
+### 9.1 Persisted mute state
 
-Reactions are defined in Python code (e.g. in `custom_components/heima/__init__.py`) and registered before `async_initialize()`:
+The reaction mute list is part of persisted user configuration.
 
-```python
-from custom_components.heima.runtime.reactions.builtin import ConsecutiveStateReaction
-from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
-from custom_components.heima.runtime.contracts import ApplyStep
+Required semantics:
+- muted reaction ids survive restart
+- a muted reaction does not evaluate, emit `reaction.fired`, or contribute steps
+- if persisted mute state contains ids that are not currently registered, those ids are ignored
+  rather than treated as errors
 
-# Example 1: set eco temperature after 3 consecutive "away" cycles
-eco_heating = ConsecutiveStateReaction(
-    reaction_id="eco_heating_away",
-    predicate=lambda s: s.house_state == "away",
-    consecutive_n=3,
-    steps=[
-        ApplyStep(
-            domain="heating",
-            target="climate.termostato",
-            action="climate.set_temperature",
-            params={"temperature": 17.0},
-        )
-    ],
-)
+### 9.2 Minimum observability guarantee
 
-# Example 2: pre-condition home before typical arrival time
-preheat = PresencePatternReaction(
-    reaction_id="arrival_preheat",
-    steps=[
-        ApplyStep(
-            domain="heating",
-            target="climate.termostato",
-            action="climate.set_temperature",
-            params={"temperature": 21.0},
-        )
-    ],
-    min_arrivals=5,
-    pre_condition_min=20,
-)
+After each evaluation cycle, external observability must be able to show live state for all
+registered reactions, including at least:
+- `muted`
+- `fire_count`
+- `suppressed_count`
+- `last_fired_ts`
 
-engine.register_reaction(eco_heating)
-engine.register_reaction(preheat)
-# engine.async_initialize() called by coordinator afterwards
-```
-
-### 9.2 Mute Management
-
-**Runtime (cleared on restart)** — via `heima.command` service:
-
-```yaml
-service: heima.command
-data:
-  command: mute_reaction       # or unmute_reaction
-  params:
-    reaction_id: "eco_heating_away"
-```
-
-**Persisted (survives restarts)** — via Options Flow → Reactions, or by editing `options["reactions"]["muted"]` directly.
-
-On every `on_options_reloaded`, the engine restores `_muted_reactions` from `options["reactions"]["muted"]`, intersected with currently registered reaction IDs. Unknown IDs are silently dropped.
-
-```json
-{ "reactions": { "muted": ["eco_heating_away"] } }
-```
-
-### 9.3 Observability
-
-After each evaluation cycle, `heima_reactions_active` is updated with the live state of all registered reactions:
-
-```json
-{
-  "eco_heating_away": { "muted": false, "fire_count": 12, "suppressed_count": 0, "last_fired_ts": 1234567.8 },
-  "arrival_preheat":  { "muted": true,  "fire_count": 3,  "suppressed_count": 0, "last_fired_ts": null }
-}
-```
+Additional diagnostic detail is allowed but optional.
 
 ---
 
@@ -421,10 +442,10 @@ After each evaluation cycle, `heima_reactions_active` is updated with the live s
 
 - **Stability first**: each step is autonomous and does not break existing domain logic.
 - **Plugin-first**: `IPatternDetector` and `ILearningBackend` are swappable without touching reactions.
-- **Constraint layer invariant**: all steps (domain + reaction) pass through `_apply_filter`. No bypass.
+- **Constraint layer invariant**: all steps (domain + reaction) pass through the shared constraint layer. No bypass.
 - **Learning is opt-in**: `ILearningBackend` is only active when explicitly provided.
-- **Reversibility**: reactions are silenceable at runtime via `mute_reaction` / `unmute_reaction` commands (runtime-only, cleared on restart). Confidence suppression via `ILearningBackend` provides soft suppression.
-- **No heavy refactor**: uses existing `ApplyStep` with one new field (`source`). Domain handlers unchanged.
+- **Reversibility**: reactions are silenceable at runtime via `mute_reaction` / `unmute_reaction` commands, and mute state can also be persisted through configuration. Confidence suppression via `ILearningBackend` provides soft suppression.
+- **Compatibility-first evolution**: the externally visible reaction contract must remain stable even if the internal engine structure evolves.
 
 ---
 
@@ -432,6 +453,5 @@ After each evaluation cycle, `heima_reactions_active` is updated with the live s
 
 - Persistent arrival history (in-memory only; cleared on restart).
 - Automatic override detection from HA state (future engine integration).
-- User-configurable reactions via Options Flow (deferred; mute/unmute via service command is available).
-- DSL-based or YAML-based reaction definitions.
+- A general-purpose reaction DSL or YAML language.
 - ML/statistical learning backends (interface is ready; implementation is future work).

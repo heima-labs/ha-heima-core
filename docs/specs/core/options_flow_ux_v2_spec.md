@@ -1,6 +1,6 @@
 # Heima — Options Flow UX v2 SPEC
 
-**Status:** In progress — branch `main`
+**Status:** Active v2 UX and persistence contract
 **Created:** 2026-03-17
 
 ---
@@ -13,9 +13,37 @@ Il config flow v1 presentava tre problemi principali:
 2. **UX confusa per la heating vacation curve**: selettore del tipo di branch e parametri nello stesso form — cambiare il tipo richiedeva un submit intermedio per aggiornare i campi visibili.
 3. **Reactions menu silenziosamente vuoto**: dopo aver accettato una proposta nel config flow ma prima di salvare, il menu Reazioni risultava vuoto perché `_get_registered_reaction_ids` leggeva solo l'engine post-save, non la sessione corrente.
 
+## Contratto di questa spec
+
+Questa spec descrive il comportamento utente e il contratto di persistenza dell'Options Flow.
+Non richiede la lettura del codice per capire:
+- quali step esistono
+- quali dati l'utente può configurare
+- quando una modifica deve essere salvata
+- quali oggetti runtime devono risultare configurabili o ricostruibili dopo il salvataggio
+
+Regola normativa:
+- l'Options Flow è la fonte di verità del profilo configurato dall'utente
+- il runtime deve potersi ricostruire integralmente a partire dal payload persistito prodotto da
+  questo flow
+
 ---
 
-## Decisioni implementate
+## Obiettivi e non-obiettivi
+
+Obiettivi:
+- rendere visibile lo stato configurato senza entrare in ogni sotto-step
+- permettere salvataggi incrementali senza perdere coerenza del profilo
+- garantire che le proposal accettate producano configurazione runtime ricostruibile
+
+Non-obiettivi:
+- descrivere dettagli interni di rendering dell'interfaccia oltre ciò che è necessario al
+  contratto UX
+- imporre una specifica organizzazione dei file o dei mixin del flow
+
+---
+
+## Decisioni di prodotto e contratto
 
 ### D1 — Status block nel menù principale (init)
 
@@ -33,8 +61,6 @@ Sicurezza: disabilitata
 
 **Nota tecnica:** HA non supporta `description_placeholders` nelle singole voci `menu_options` — il testo delle voci è statico. Il blocco di stato va quindi nella `description` del menù tramite un singolo placeholder `{status_block}`.
 
-**Implementazione:** metodo `_init_status_block() -> str` in `HeimaOptionsFlowHandler`.
-
 ### D2 — Configuration summary nei menù di secondo livello
 
 Ogni menù di secondo livello mostra un riassunto della configurazione attuale tramite `description_placeholders`.
@@ -45,10 +71,6 @@ Ogni menù di secondo livello mostra un riassunto della configurazione attuale t
 | `rooms_menu` | `summary` | `Configurate: 4: Soggiorno, Cucina, Studio, Camera` |
 | `lighting_rooms_menu` | `summary` | `Scene configurate: 3/4 stanze` |
 | `heating_branches_menu` | `summary` | `climate.termostato \| 2 branch` |
-
-**Implementazione:** helper `_people_menu_summary()`, `_rooms_menu_summary()`, `_lighting_menu_summary()`, `_heating_menu_summary()` in `HeimaOptionsFlowHandler`.
-
-> **Stato:** D1 e D2 implementati. Le label stanno nelle traduzioni (`init.description`), i valori vengono dai mixin. `_init_status_block()` è orchestratore puro e localizza i valori booleani via `CONF_LANGUAGE`.
 
 ### D3 — Heating branch: flusso in due step
 
@@ -61,10 +83,12 @@ Se il branch selezionato è `disabled`, il form parametri viene saltato e si tor
 
 ### D4 — Reactions: merge engine + sessione corrente
 
-`_get_registered_reaction_labels()` (già `_get_registered_reaction_ids`) ora:
-1. Aggrega le reaction dall'engine in esecuzione e dalla sessione corrente (proposte accettate non ancora salvate)
-2. Restituisce `dict[str, str]` — `{reaction_id: label}` — per la `multi_select` del form "Reazioni silenziose"
-3. La label viene salvata in `reactions["labels"][pid]` al momento dell'accettazione della proposta
+Il menù Reazioni deve mostrare sia:
+1. reaction già ricostruite dal runtime
+2. reaction accettate nella sessione corrente ma non ancora salvate definitivamente
+
+Il payload persistito deve includere una label leggibile per le reaction accettate, così che la UI
+possa mostrarle senza dipendere dal runtime già ricostruito.
 
 ### D5 — Proposal action configuration
 
@@ -86,9 +110,51 @@ La descrizione della proposal è mostrata via `description_placeholders: {propos
 - Se vuoto: `steps = []` — la reaction viene registrata senza azione (configurabile in seguito)
 - `pre_condition_min` sovrascrive il default nel config della reaction
 
-**Session state:** `_pending_action_configs: list[str]` — coda di proposal ID da configurare. Viene popolata in `async_step_proposals` e consumata uno alla volta da `async_step_proposal_configure_action`.
+**Contratto di normalizzazione:**
+- lo step salvato deve rappresentare una richiesta eseguibile dal runtime, non una scelta UI grezza
+- la shape persistita deve essere sufficiente per ricostruire la reaction senza dipendere da stato
+  temporaneo della sessione UI
+- accettare una proposal non deve mai produrre uno stato “accepted but not executable”
 
-**Storage:** `configured[pid]["steps"]` e `configured[pid]["pre_condition_min"]` vengono aggiornati in-place prima di chiamare `_update_options`.
+**Nota runtime aggiornata:**
+- `scene.turn_on` continua a passare dal `LightingDomain`; il runtime marca anche un batch best-effort di luci attese della room/area per migliorare la provenance multi-entità nel learning.
+- `script.turn_on` è eseguibile come passo runtime reale; gli effetti osservati successivi vengono attribuiti con provenance batch-level a finestra breve, come fallback meno preciso rispetto al caso `scene`.
+
+### D5.1 Provenance e correlation nel contesto UX
+
+L'Options Flow non registra direttamente eventi di learning, ma deve produrre configurazioni che
+non rompano i contratti del learning runtime.
+
+- **Provenance**: il runtime deve poter distinguere tra effetti generati dall'utente ed effetti
+  generati da Heima, per evitare di apprendere dai propri output.
+- **Correlation**: il runtime deve poter collegare più cambi entità che appartengono alla stessa
+  azione logica, ad esempio una scena o uno script che tocca più luci.
+
+Per questo motivo la normalizzazione delle `action_entities` non può limitarsi a salvare un
+riferimento simbolico della UI: deve produrre uno step eseguibile che attraversi i normali percorsi
+runtime, così che provenance e `correlation_id` possano essere applicati correttamente quando gli
+effetti vengono osservati.
+
+Contratto di sessione:
+- se più proposal vengono accettate insieme, la configurazione delle azioni deve avvenire una
+  proposta alla volta, in ordine deterministico
+- la sessione del flow deve poter mantenere questo stato intermedio senza richiedere che il runtime
+  sia già stato ricostruito
+
+Contratto di persistenza:
+- il salvataggio finale deve aggiornare `configured[proposal_id]["steps"]`
+- il salvataggio finale deve aggiornare `configured[proposal_id]["pre_condition_min"]`
+- questi campi devono essere sufficienti per ricostruire la reaction senza rileggere la sessione UI
+
+---
+
+## Invarianti
+
+- il payload persistito dell'Options Flow è autosufficiente per ricostruire il runtime
+- una scelta UI non deve essere persistita in forma ambigua o non eseguibile
+- la UI può mostrare stato di sessione non ancora salvato, ma non deve confonderlo con stato runtime
+- l'accettazione di una proposal e la sua configurazione devono essere atomicamente riconducibili a
+  un payload persistito coerente
 
 ---
 
@@ -109,23 +175,3 @@ La descrizione della proposal è mostrata via `description_placeholders: {propos
 
 - Aggiunta di nuovi step o domini
 - Backward compatibility con entry versioni precedenti
-
----
-
-## File modificati
-
-- `custom_components/heima/const.py` — `STRUCTURAL_OPTION_KEYS`
-- `custom_components/heima/__init__.py` — selective reload in `_async_entry_updated`
-- `custom_components/heima/coordinator.py` — `last_options_snapshot`
-- `custom_components/heima/config_flow/__init__.py` — `_update_options`, `_init_status_block`, summary helpers
-- `custom_components/heima/config_flow/_steps_general.py`
-- `custom_components/heima/config_flow/_steps_heating.py`
-- `custom_components/heima/config_flow/_steps_security.py`
-- `custom_components/heima/config_flow/_steps_calendar.py`
-- `custom_components/heima/config_flow/_steps_notifications.py`
-- `custom_components/heima/config_flow/_steps_reactions.py` — D4, D5
-- `custom_components/heima/config_flow/_steps_people.py`
-- `custom_components/heima/config_flow/_steps_rooms.py`
-- `custom_components/heima/config_flow/_steps_lighting.py`
-- `custom_components/heima/translations/it.json`
-- `custom_components/heima/translations/en.json`

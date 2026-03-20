@@ -1,7 +1,15 @@
 # Heima House-State Override Service Spec v1
 
-**Status:** Implemented on `main`
+**Status:** Active v1 house-state override contract
 **Last Verified Against Code:** 2026-03-11
+
+## Normative precedence
+
+This document defines the intended contract of the house-state override service.
+
+Interpretation rule:
+- if implementation and spec diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
 
 ## Purpose
 
@@ -238,7 +246,7 @@ different name.
 
 ---
 
-## Implementation Notes
+## Implementation Notes (informative)
 
 Recommended v1 implementation approach:
 
