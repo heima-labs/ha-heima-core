@@ -23,6 +23,7 @@
 - Still open:
   - stronger scene/script provenance expansion to concrete entity batches
   - broader cross-domain analyzers on top of generic `state_change` events
+  - move from fixed ventilation/cooling cases to a reusable library of reviewable room-scoped composite patterns
   - richer cross-event grouping beyond HA context/correlation ids for composite routines
 
 ## Live Test Remediation Plan

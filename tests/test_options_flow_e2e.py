@@ -249,3 +249,22 @@ async def test_proposal_configure_action_normalizes_scene_and_script_steps():
             "params": {"entity_id": "script.preheat_home"},
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_reaction_label_from_room_signal_assist_config_is_readable():
+    flow = _flow()
+
+    label = flow._reaction_label_from_config(
+        "proposal-bathroom",
+        {
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": "bathroom",
+            "trigger_signal_entities": ["sensor.bathroom_humidity"],
+            "temperature_signal_entities": ["sensor.bathroom_temperature"],
+            "episodes_observed": 5,
+        },
+        {},
+    )
+
+    assert label == "Assist bathroom — hum:1 — temp:1 — 5 episodi"

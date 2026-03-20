@@ -16,6 +16,7 @@ from .runtime.analyzers import (
     HeatingPatternAnalyzer,
     LightingPatternAnalyzer,
     PresencePatternAnalyzer,
+    RoomCoolingPatternAnalyzer,
 )
 from .runtime.behaviors import (
     EventRecorderBehavior,
@@ -69,6 +70,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._proposal_engine.register_analyzer(HeatingPatternAnalyzer())
         self._proposal_engine.register_analyzer(LightingPatternAnalyzer())
         self._proposal_engine.register_analyzer(CrossDomainPatternAnalyzer())
+        self._proposal_engine.register_analyzer(RoomCoolingPatternAnalyzer())
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self.last_options_snapshot: dict = dict(entry.options)

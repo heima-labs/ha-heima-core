@@ -347,4 +347,21 @@ class _ReactionsStepsMixin:
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
 
+        if cfg.get("reaction_class") == "RoomSignalAssistReaction":
+            try:
+                room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+                humidity_entities = list(cfg.get("trigger_signal_entities", []))
+                temperature_entities = list(cfg.get("temperature_signal_entities", []))
+                observed = int(cfg.get("episodes_observed", 0))
+                parts = [f"Assist {room_id}"]
+                if humidity_entities:
+                    parts.append(f"hum:{len(humidity_entities)}")
+                if temperature_entities:
+                    parts.append(f"temp:{len(temperature_entities)}")
+                if observed > 0:
+                    parts.append(f"{observed} episodi")
+                return " — ".join(parts)
+            except (TypeError, ValueError):
+                pass
+
         return labels_map.get(reaction_id, reaction_id)
