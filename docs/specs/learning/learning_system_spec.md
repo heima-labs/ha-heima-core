@@ -1,8 +1,8 @@
 # Heima Learning System — Specification v1
 
 **Status:** Active v1 learning contract
-**Date:** 2026-03-10
-**Last Verified Against Code:** 2026-03-19
+**Date:** 2026-03-20
+**Last Verified Against Code:** 2026-03-20
 
 ---
 
@@ -1251,12 +1251,16 @@ proposal_engine.register_analyzer(LightingPatternAnalyzer())
 
 ---
 
-## P10. First Cross-Domain Analyzers (v1 target)
+## P10. Composite Pattern Engine (v1)
 
 ### P10.1 Goal
 
 The first cross-domain analyzers in v1 should prove that the generic event substrate can support
 multi-signal, room-scoped behavioral inference beyond lighting/heating preferences.
+
+The longer-term goal is not a growing list of unrelated bespoke analyzers, but a small,
+reviewable, explainable composite pattern engine that can host several room-scoped behavioral
+patterns on the same substrate.
 
 The canonical v1 starter use cases are:
 - bathroom occupied
@@ -1270,17 +1274,19 @@ and:
 - optional humidity rise corroborates the episode
 - the user usually starts cooling shortly after
 
-The analyzers should convert repeated occurrences of these composite behaviors into user-reviewable
-proposal.
+The engine should convert repeated occurrences of these composite behaviors into user-reviewable
+proposals.
 
 ### P10.2 Scope
 
-These first analyzers are intentionally narrow.
+The first engine version is intentionally narrow.
 
 In scope:
-- a small number of room-scoped composite patterns
+- a small library of room-scoped composite patterns
 - signal correlation over a short window
 - proposal generation for a generic assist reaction with user-configured actions
+- standardized, explainable episode detection over the shared `state_change` substrate
+- a declarative pattern catalog that remains smaller than the runtime implementation
 
 Out of scope for v1:
 - arbitrary unsupervised cross-domain discovery
@@ -1288,9 +1294,59 @@ Out of scope for v1:
 - automatic actuation without user approval
 - probabilistic or ML-heavy shower detection
 
-### P10.3 Input requirements
+Normative rule:
+- adding a new v1 composite behavior SHOULD prefer extending the pattern catalog over introducing a
+  new analyzer with mostly duplicated logic
 
-The analyzers read from the shared `EventStore` and correlate:
+Normative design direction:
+- the v1 system MUST converge toward a declared pattern library plus shared matching and proposal
+  infrastructure
+- concrete starter cases such as `room_signal_assist` and `room_cooling_assist` are exemplars of
+  that library, not permanent architecture exceptions
+
+### P10.3 Core concepts
+
+The composite pattern engine uses the following terms normatively:
+
+- **Composite pattern**: a named, reviewable behavioral template expressed as a primary signal,
+  optional corroboration signals, a follow-up action class, support thresholds, and proposal output
+  metadata.
+- **Episode**: one candidate occurrence of a composite pattern in one room, anchored by a primary
+  signal event and evaluated over bounded correlation and follow-up windows.
+- **Primary signal**: the first meaningful observed signal that opens an episode, such as a sharp
+  humidity or temperature rise.
+- **Corroboration signal**: an optional additional signal that strengthens confidence in the
+  episode, but is not required for episode existence unless a pattern explicitly marks it as
+  required.
+- **Follow-up action**: the later user-observed actuation that confirms the inferred behavioral
+  intent of the episode.
+- **Pattern catalog**: the declarative list of supported composite patterns in v1.
+- **Composite assist reaction**: the generic runtime reaction class rebuilt from accepted composite
+  proposals.
+
+Normative rule:
+- a composite pattern MUST be explainable in terms of these concepts without requiring code
+  knowledge
+
+### P10.4 Engine architecture
+
+The v1 composite learning engine has three conceptual layers:
+
+1. **Shared event substrate**
+   - `state_change` events with `room_id`, `source`, `context`, and optional `correlation_id`
+2. **Composite matcher**
+   - deterministic room-scoped episode detector using configured thresholds and windows
+3. **Pattern catalog + proposal layer**
+   - one library of named patterns that reuses the same matcher and emits stable proposal types
+
+Normative rule:
+- the matcher layer is generic and room-scoped
+- the pattern catalog decides semantics, thresholds, explanation text, and proposal metadata
+- proposal emission must not depend on one-off analyzer-private behavior that is invisible in spec
+
+### P10.5 Input requirements
+
+The engine reads from the shared `EventStore` and correlates:
 - room occupancy evidence from `EventContext.occupied_rooms`
 - room-scoped `state_change` events for humidity sensors
 - room-scoped `state_change` events for temperature sensors
@@ -1310,25 +1366,61 @@ Minimum required signals for the v1 cooling assist:
 Optional strengthening signal:
 - one humidity signal mapped to the same room
 
-### P10.4 Episode definition
+### P10.6 Episode definition
 
-Each analyzer works in two stages:
+Each composite pattern works in two stages:
 
 1. **Episode detection**
-   - find a humidity `state_change` event in room `R`
+   - find the primary `state_change` event in room `R`
    - compute delta = `new_state - old_state` for numeric values
    - keep only events where:
      - room `R` is occupied in the event context, and
-     - humidity delta exceeds a configured threshold
-   - optionally mark the episode as corroborated if a temperature rise above threshold occurs in the
-     same room within the same short window
+     - the primary delta exceeds the configured primary threshold
+   - optionally mark the episode as corroborated if one or more corroboration signals above
+     threshold occur in the same room within the same short window
 
 2. **Behavior confirmation**
-   - for each detected episode, look for a later user-observed fan activation in the same room
+   - for each detected episode, look for a later user-observed follow-up activation in the same room
      within a bounded follow-up window
    - repeated confirmed episodes with sufficient support become a proposal candidate
 
-### P10.5 V1 thresholds
+Normative rules:
+- episode detection must be deterministic for a given ordered event history
+- the same event history must produce the same episode boundaries and support counts
+- corroboration may affect confidence and explanation, but must not silently redefine the primary
+  pattern semantics
+
+### P10.7 Standard pattern fields
+
+Every catalog pattern in the v1 composite engine MUST define:
+- `pattern_id`
+- `proposal_type`
+- `reaction_type`
+- `reaction_class`
+- `room_scope` semantics
+- primary signal predicate and threshold
+- primary signal label
+- optional corroboration signal predicates and thresholds
+- optional corroboration signal label
+- follow-up action predicate
+- follow-up action label
+- correlation window
+- follow-up window
+- support threshold
+- week-span threshold
+- confidence shaping rule
+- explanation template
+- suggested reaction class
+
+The implementation MAY represent these through one or more internal data classes, but the above
+fields are the normative contract.
+
+Normative rule:
+- the pattern catalog defines semantics and product intent
+- the matcher defines only how episodes are detected
+- the proposal layer defines only how a matched pattern is surfaced and stored
+
+### P10.8 V1 thresholds
 
 Recommended default thresholds for the first implementation:
 - humidity rise threshold: configurable, default `>= 8` percentage points in one observed change
@@ -1340,10 +1432,15 @@ Recommended default thresholds for the first implementation:
 
 These thresholds are intended to be simple and explainable, not universally optimal.
 
-### P10.6 Output proposal
+Each catalog pattern MAY override these defaults when justified, but every override MUST be:
+- explicit in the pattern catalog
+- explainable in prose
+- covered by deterministic tests
 
-The analyzer emits a `ReactionProposal` with:
-- a stable analyzer id such as `CrossDomainPatternAnalyzer` or `RoomCoolingPatternAnalyzer`
+### P10.9 Output proposal
+
+The engine emits a `ReactionProposal` with:
+- a stable analyzer id
 - a stable reaction type such as `room_signal_assist` or `room_cooling_assist`
 - description that explains the inferred pattern in plain language
 - confidence derived from support and temporal consistency
@@ -1369,7 +1466,41 @@ V1 target config shape:
 - `followup_window_s`
 - `steps=[]` by default, to be completed by the user in the proposal action configuration flow
 
-### P10.7 Execution model
+Normative rules:
+- composite proposal types MUST remain stable across restart and rebuild boundaries
+- accepted proposals MUST rebuild into a runtime reaction without requiring analyzer-only hidden
+  state
+- diagnostics-visible descriptions MUST remain understandable without inspecting code
+- human-readable description text is explanatory only; structured proposal fields remain
+  authoritative
+
+For composite patterns, the proposal payload SHOULD also preserve:
+- primary signal family name
+- corroboration signal family name when present
+- observed follow-up entities used to confirm the learned behavior
+- episode counts needed for diagnostics and review
+
+### P10.10 Pattern catalog (v1)
+
+The initial v1 catalog contains at least these named patterns:
+
+1. `room_signal_assist`
+- primary signal: humidity rise
+- optional corroboration: temperature rise
+- follow-up action class: ventilation/cooling-like user activation
+- canonical example: bathroom shower ventilation assist
+
+2. `room_cooling_assist`
+- primary signal: temperature rise
+- optional corroboration: humidity rise
+- follow-up action class: cooling-like user activation
+- canonical example: studio cooling assist
+
+Normative rule:
+- new v1 patterns SHOULD be added by extending this catalog and reusing the same composite engine,
+  unless a pattern truly requires different episode semantics
+
+### P10.11 Execution model
 
 The accepted reaction must be generic:
 - it detects the configured room-scoped composite pattern at runtime
@@ -1381,7 +1512,18 @@ This keeps the analyzer domain-agnostic:
 - the analyzer learns "when a fan-like assist is appropriate"
 - the user decides which HA action implements that assist in the house
 
-### P10.8 Explainability requirement
+Normative runtime contract:
+- the generic runtime reaction for v1 composite assists MUST remain more general than any one
+  concrete learned pattern
+- a new declared pattern SHOULD reuse the same runtime reaction whenever its execution model is
+  "detect room-scoped composite condition, then execute user-configured steps"
+
+Backward-compatibility rule:
+- legacy config aliases may remain valid for previously accepted proposals
+- the normalized long-term contract is the generic composite contract, not legacy case-specific
+  field names
+
+### P10.12 Explainability requirement
 
 Every emitted proposal must be explainable in plain language, for example:
 
@@ -1394,16 +1536,48 @@ The diagnostics for the analyzer should make it possible to inspect:
 - confirmed fan-followup episodes
 - thresholds used for acceptance
 
-### P10.9 Relationship with future analyzers
+V1 review payload rule:
+- the suggested config for a composite proposal SHOULD include a stable
+  `learning_diagnostics` object
+- `learning_diagnostics` SHOULD expose at least:
+  - `pattern_id`
+  - `room_id`
+  - `primary_signal`
+  - `corroboration_signals`
+  - `followup_signal`
+  - `episodes_detected`
+  - `episodes_confirmed`
+  - `weeks_observed`
+  - `corroborated_episodes`
+  - matched primary, corroboration, and follow-up entity sets
+- this block is informative for review and diagnostics; the executable reaction contract
+  remains the authoritative part of the proposal
 
-These analyzers are the v1 bridge from domain-specific preference learning to true cross-domain
-behavior learning.
+### P10.13 Relationship with future analyzers
+
+This composite engine is the v1 bridge from domain-specific preference learning to true
+cross-domain behavior learning.
 
 If successful, the same substrate can later support:
 - kitchen cooking extraction
 - bedroom sleep-environment assists
 - office/working-mode assists
 - generalized multi-signal routines in inference v2
+
+The intended next architectural step is:
+- keep the matcher generic
+- keep the pattern library explicit and reviewable
+- avoid adding one bespoke analyzer class per new room-scoped assist case unless that is
+  semantically necessary
+
+Boundary with future discovery systems:
+- the v1 composite engine searches known pattern families only
+- it does not mine the full event space for arbitrary latent routines
+
+This boundary is intentional because it preserves:
+- explainability
+- deterministic testability
+- product control over what behaviors may be proposed
 
 ---
 

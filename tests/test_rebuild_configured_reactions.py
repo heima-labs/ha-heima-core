@@ -272,6 +272,28 @@ def test_room_signal_assist_reaction_builds_generic_signal_config():
     assert reaction.reaction_id == "sa2"
 
 
+def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_legacy_aliases():
+    normalized = HeimaEngine._normalize_room_signal_assist_config(
+        {
+            "trigger_signal_entities": ["sensor.legacy_humidity"],
+            "primary_signal_entities": ["sensor.generic_temperature"],
+            "humidity_rise_threshold": 8.0,
+            "primary_rise_threshold": 1.5,
+            "temperature_signal_entities": ["sensor.legacy_temperature"],
+            "corroboration_signal_entities": ["sensor.generic_humidity"],
+            "temperature_rise_threshold": 0.8,
+            "corroboration_rise_threshold": 5.0,
+            "primary_signal_name": "temperature",
+            "corroboration_signal_name": "humidity",
+        }
+    )
+
+    assert normalized["primary_signal_entities"] == ["sensor.generic_temperature"]
+    assert normalized["primary_rise_threshold"] == 1.5
+    assert normalized["corroboration_signal_entities"] == ["sensor.generic_humidity"]
+    assert normalized["corroboration_rise_threshold"] == 5.0
+
+
 def test_rebuild_clears_removed_proposals():
     """If a proposal is removed from options, its reaction should be removed."""
     engine = _make_engine(options={

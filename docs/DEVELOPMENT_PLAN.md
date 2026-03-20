@@ -287,13 +287,46 @@ Output:
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
-  - analyzer cross-domain composti sopra eventi `state_change`
-  - primi target cross-domain definiti a livello spec e runtime:
+  - passare da analyzer compositi fissi a un composite pattern engine v1 con pattern catalog esplicito
+  - consolidare i primi target cross-domain in una libreria reviewable di pattern room-scoped:
     - room-scoped humidity/temperature burst + occupancy -> generic ventilation assist proposal
     - room-scoped temperature rise + occupancy -> generic cooling assist proposal
-    - room-scoped temperature/humidity burst + occupancy -> generic cooling assist proposal
+  - standardizzare il contratto dichiarativo dei pattern prima di ampliare il catalogo
+  - migliorare il grouping composito oltre il solo HA context / correlation id
 
-### 11. Live Test and Docker Lab Remediation
+### 11.1 Next Step — Composite Pattern Engine v1.1
+- Obiettivo:
+  - trasformare i primi casi `room_signal_assist` / `room_cooling_assist` in un vero motore
+    composito room-scoped, con pattern catalog esplicito e reaction generica coerente
+- Deliverable attesi:
+  - pattern catalog dichiarativo per i pattern compositi reviewable
+  - un orchestratore unico per il matching offline dei pattern room-scoped
+  - contratto reaction/runtime unificato per `RoomSignalAssistReaction`
+  - test e live coverage che continuino a validare i due pattern canonici gia introdotti
+- Vincoli:
+  - niente discovery arbitraria in questa track
+  - ogni pattern nuovo deve restare spiegabile in linguaggio umano
+  - ogni pattern nuovo deve essere validabile con fixture/live test deterministici
+- Slices pianificate:
+  - S1:
+    - introdurre lo shape dichiarativo del pattern catalog
+    - migrare `room_signal_assist` e `room_cooling_assist` a entry di catalogo
+  - S2:
+    - sostituire i path analyzer semi-duplicati con un orchestratore unico catalog-driven
+    - uniformare confidence, proposal fields e explanation template
+  - S3:
+    - normalizzare il rebuild/runtime contract della reaction composita
+    - mantenere backward compatibility per proposal gia accettate
+  - S4:
+    - potenziare diagnostics e test sull’engine composito
+    - esporre una diagnostica reviewable stabile nel payload proposta
+      (`learning_diagnostics`) con episodi, settimane osservate e segnali/follow-up matched
+    - valutare grouping piu forte oltre `correlation_id` / finestre temporali
+  - niente discovery arbitraria non supervisionata in v1.1
+  - ogni pattern deve restare spiegabile in termini di primary signal, corroboration, follow-up
+  - l’aggiunta di un nuovo pattern SHOULD preferire il catalogo rispetto a un nuovo analyzer quasi duplicato
+
+### 11.2 Live Test and Docker Lab Remediation
 - Obiettivo:
   - riallineare i test "live" con cio che provano davvero
   - separare setup, diagnostica, true E2E e seeded integration

@@ -26,7 +26,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         *,
         hass: HomeAssistant,
         room_id: str,
-        trigger_signal_entities: list[str],
+        trigger_signal_entities: list[str] | None = None,
         steps: list[ApplyStep],
         primary_signal_entities: list[str] | None = None,
         primary_rise_threshold: float | None = None,
@@ -43,7 +43,9 @@ class RoomSignalAssistReaction(HeimaReaction):
     ) -> None:
         self._hass = hass
         self._room_id = room_id
-        resolved_primary_entities = [e for e in (primary_signal_entities or trigger_signal_entities) if e]
+        resolved_primary_entities = [
+            e for e in (primary_signal_entities or trigger_signal_entities or []) if e
+        ]
         resolved_primary_threshold = (
             primary_rise_threshold if primary_rise_threshold is not None else humidity_rise_threshold
         )
@@ -65,6 +67,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._correlation_window_s = correlation_window_s
         self._followup_window_s = followup_window_s
         self._reaction_id = reaction_id or self.__class__.__name__
+        self._legacy_trigger_entities = [e for e in (trigger_signal_entities or []) if e]
         self._matcher = RuntimeCompositeMatcher(hass)
         self._pattern = RuntimeCompositePatternSpec(
             primary=RuntimeCompositeSignalSpec(
@@ -131,6 +134,7 @@ class RoomSignalAssistReaction(HeimaReaction):
     def diagnostics(self) -> dict[str, Any]:
         return {
             "room_id": self._room_id,
+            "trigger_signal_entities": list(self._legacy_trigger_entities),
             "primary_signal_name": self._primary_signal_name,
             "primary_entities": list(self._primary_entities),
             "primary_rise_threshold": self._primary_rise_threshold,

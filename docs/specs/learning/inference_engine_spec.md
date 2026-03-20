@@ -2,7 +2,7 @@
 
 **Status:** Draft/RFC — v2 target contract
 **Date:** 2026-03-11
-**Last Verified Against Code:** 2026-03-11
+**Last Verified Against Code:** 2026-03-20
 **Scope:** v2 — predict when/how known behaviors will occur, from all domain inputs/outputs
 
 > v3 (discover unnamed patterns, propose new states) is architecturally enabled by this spec
@@ -31,6 +31,16 @@ Not a goal of this document:
 - describing every future v3 discovery capability in detail
 - prescribing one exact internal package/module layout
 
+Relationship with v1 composite learning:
+- v1 may learn declared room-scoped composite assist patterns and convert them into reviewable
+  accepted reactions
+- v2 may later consume the same event substrate and semantic pattern families for predictive hints
+
+Normative rule:
+- v1 composite proposal learning and v2 predictive inference must remain compatible in terminology
+  and event semantics
+- they must not be silently merged into one subsystem before a dedicated unification spec exists
+
 ## 1. Motivation
 
 As of v0.4.0, Heima's DAG is purely reactive: it computes the current house state from current
@@ -50,6 +60,12 @@ substitutes for real sensor data.
 Normative rule:
 - inference may refine or bias domain decisions when inputs are ambiguous
 - inference must never fabricate hard sensor truth or override explicit observed facts
+
+The v1 composite pattern library is an architectural precursor:
+- it validates that multi-signal room-scoped behavior can be represented and explained
+- it does not yet predict future behavior
+- it does define stable semantic pattern families that v2 modules may later reuse as features or
+  inference labels
 
 ---
 

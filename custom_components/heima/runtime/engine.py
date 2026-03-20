@@ -405,31 +405,12 @@ class HeimaEngine:
         """Build a RoomSignalAssistReaction from a stored proposal config."""
         try:
             room_id = str(cfg["room_id"]).strip()
-            trigger_signal_entities = [str(v).strip() for v in cfg.get("trigger_signal_entities", []) if str(v).strip()]
-            primary_signal_entities = [
-                str(v).strip() for v in cfg.get("primary_signal_entities", trigger_signal_entities) if str(v).strip()
-            ]
-            temperature_signal_entities = [
-                str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
-            ]
-            corroboration_signal_entities = [
-                str(v).strip()
-                for v in cfg.get("corroboration_signal_entities", temperature_signal_entities)
-                if str(v).strip()
-            ]
-            humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
-            primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
-            temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
-            corroboration_rise_threshold = float(
-                cfg.get("corroboration_rise_threshold", temperature_rise_threshold)
-            )
-            primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
-            corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+            normalized = self._normalize_room_signal_assist_config(cfg)
             correlation_window_s = int(cfg.get("correlation_window_s", 600))
             followup_window_s = int(cfg.get("followup_window_s", 900))
             steps_raw: list = cfg.get("steps", [])
             steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
-            if not room_id or not primary_signal_entities:
+            if not room_id or not normalized["primary_signal_entities"]:
                 raise ValueError("room_id or primary_signal_entities missing")
         except (KeyError, TypeError, ValueError):
             _LOGGER.warning("Malformed RoomSignalAssistReaction config for proposal %s", proposal_id)
@@ -437,21 +418,61 @@ class HeimaEngine:
         return RoomSignalAssistReaction(
             hass=self._hass,
             room_id=room_id,
-            trigger_signal_entities=trigger_signal_entities,
-            primary_signal_entities=primary_signal_entities,
-            primary_rise_threshold=primary_rise_threshold,
-            primary_signal_name=primary_signal_name,
-            corroboration_signal_entities=corroboration_signal_entities,
-            corroboration_rise_threshold=corroboration_rise_threshold,
-            corroboration_signal_name=corroboration_signal_name,
-            temperature_signal_entities=temperature_signal_entities,
-            humidity_rise_threshold=humidity_rise_threshold,
-            temperature_rise_threshold=temperature_rise_threshold,
+            trigger_signal_entities=normalized["trigger_signal_entities"],
+            primary_signal_entities=normalized["primary_signal_entities"],
+            primary_rise_threshold=normalized["primary_rise_threshold"],
+            primary_signal_name=normalized["primary_signal_name"],
+            corroboration_signal_entities=normalized["corroboration_signal_entities"],
+            corroboration_rise_threshold=normalized["corroboration_rise_threshold"],
+            corroboration_signal_name=normalized["corroboration_signal_name"],
+            temperature_signal_entities=normalized["temperature_signal_entities"],
+            humidity_rise_threshold=normalized["humidity_rise_threshold"],
+            temperature_rise_threshold=normalized["temperature_rise_threshold"],
             correlation_window_s=correlation_window_s,
             followup_window_s=followup_window_s,
             steps=steps,
             reaction_id=proposal_id,
         )
+
+    @staticmethod
+    def _normalize_room_signal_assist_config(cfg: dict) -> dict[str, Any]:
+        """Normalize legacy aliases to the generic composite reaction contract."""
+        trigger_signal_entities = [
+            str(v).strip() for v in cfg.get("trigger_signal_entities", []) if str(v).strip()
+        ]
+        primary_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("primary_signal_entities", trigger_signal_entities)
+            if str(v).strip()
+        ]
+        temperature_signal_entities = [
+            str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
+        ]
+        corroboration_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("corroboration_signal_entities", temperature_signal_entities)
+            if str(v).strip()
+        ]
+        humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
+        primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
+        temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
+        corroboration_rise_threshold = float(
+            cfg.get("corroboration_rise_threshold", temperature_rise_threshold)
+        )
+        primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
+        corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+        return {
+            "trigger_signal_entities": trigger_signal_entities,
+            "primary_signal_entities": primary_signal_entities,
+            "temperature_signal_entities": temperature_signal_entities,
+            "corroboration_signal_entities": corroboration_signal_entities,
+            "humidity_rise_threshold": humidity_rise_threshold,
+            "primary_rise_threshold": primary_rise_threshold,
+            "temperature_rise_threshold": temperature_rise_threshold,
+            "corroboration_rise_threshold": corroboration_rise_threshold,
+            "primary_signal_name": primary_signal_name,
+            "corroboration_signal_name": corroboration_signal_name,
+        }
 
     def set_house_state_override(
         self,

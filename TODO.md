@@ -22,9 +22,31 @@
   - `learning_reset` full runtime reset semantics
 - Still open:
   - stronger scene/script provenance expansion to concrete entity batches
-  - broader cross-domain analyzers on top of generic `state_change` events
   - move from fixed ventilation/cooling cases to a reusable library of reviewable room-scoped composite patterns
+  - formalize a declarative composite pattern catalog before adding more assist cases
   - richer cross-event grouping beyond HA context/correlation ids for composite routines
+
+## Composite Pattern Engine v1.1
+- Goal:
+  - turn the first cross-domain assists into a reusable room-scoped composite pattern engine
+- Planned slices:
+  - S1:
+    - define a declarative composite pattern catalog
+    - move current fixed assist cases behind catalog entries
+  - S2:
+    - replace semi-duplicated fixed analyzers with a single catalog-driven composite analyzer path
+    - standardize proposal payload shaping around catalog-defined fields
+  - S3:
+    - keep `RoomSignalAssistReaction` as the generic runtime target for accepted composite proposals
+    - normalize runtime rebuild/config parsing around the generic composite contract
+  - S4:
+    - improve diagnostics for detected episodes, corroboration, and follow-up matches
+    - expose stable `learning_diagnostics` in composite proposal payloads for review/debugging
+    - evaluate richer grouping beyond plain HA context/correlation ids
+- Constraints:
+  - stay reviewable and explainable
+  - do not expand to arbitrary unsupervised discovery
+  - prefer adding catalog entries over creating new near-duplicate analyzer classes
 
 ## Live Test Remediation Plan
 - Goal:

@@ -123,3 +123,32 @@ def test_signal_assist_reaction_supports_generic_primary_and_corroboration_signa
     ])
     assert len(steps) == 1
     assert steps[0].target == "script.cool_room"
+
+
+def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger_alias():
+    hass = MagicMock()
+    states = {
+        "sensor.office_temperature": "24.0",
+    }
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="office",
+        primary_signal_entities=["sensor.office_temperature"],
+        primary_rise_threshold=1.2,
+        primary_signal_name="temperature",
+        steps=[ApplyStep(domain="script", target="script.cool_office", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
+
+    states["sensor.office_temperature"] = "25.6"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["office"], ts=ts1),
+        _snapshot(occupied_rooms=["office"], ts=ts2),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.cool_office"

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from custom_components.heima.runtime.analyzers.cross_domain import (
+    CompositePatternCatalogAnalyzer,
+    DEFAULT_COMPOSITE_PATTERN_CATALOG,
     CrossDomainPatternAnalyzer,
     RoomCoolingPatternAnalyzer,
 )
@@ -143,6 +145,17 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
         "fan.bathroom_fan"
     ]
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
+    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "room_signal_assist"
+    assert diagnostics["primary_signal"] == "humidity"
+    assert diagnostics["corroboration_signals"] == ["temperature"]
+    assert diagnostics["followup_signal"] == "ventilation"
+    assert diagnostics["episodes_detected"] >= 5
+    assert diagnostics["episodes_confirmed"] >= 5
+    assert diagnostics["weeks_observed"] >= 2
+    assert diagnostics["matched_primary_entities"] == ["sensor.bathroom_humidity"]
+    assert diagnostics["matched_corroboration_entities"] == ["sensor.bathroom_temperature"]
+    assert diagnostics["observed_followup_entities"] == ["fan.bathroom_fan"]
 
 
 async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal():
@@ -196,3 +209,87 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     assert proposal.suggested_reaction_config["observed_followup_entities"] == [
         "fan.studio_fan"
     ]
+    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "room_cooling_assist"
+    assert diagnostics["primary_signal"] == "temperature"
+    assert diagnostics["corroboration_signals"] == ["humidity"]
+    assert diagnostics["followup_signal"] == "cooling"
+    assert diagnostics["matched_primary_entities"] == ["sensor.studio_temperature"]
+    assert diagnostics["matched_corroboration_entities"] == ["sensor.studio_humidity"]
+    assert diagnostics["observed_followup_entities"] == ["fan.studio_fan"]
+
+
+def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
+    pattern_ids = {definition.pattern_id for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
+    reaction_types = {definition.reaction_type for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
+
+    assert pattern_ids == {"room_signal_assist", "room_cooling_assist"}
+    assert reaction_types == {"room_signal_assist", "room_cooling_assist"}
+
+
+async def test_catalog_analyzer_emits_both_current_v1_patterns():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base_bathroom = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+    base_studio = datetime(2026, 3, 1, 15, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        events.extend(
+            [
+                _state_change(
+                    entity_id="sensor.bathroom_humidity",
+                    room="bathroom",
+                    ts=(base_bathroom + timedelta(days=i * 7)).isoformat(),
+                    old_state="55",
+                    new_state="66",
+                    device_class="humidity",
+                ),
+                _state_change(
+                    entity_id="sensor.bathroom_temperature",
+                    room="bathroom",
+                    ts=(base_bathroom + timedelta(days=i * 7, minutes=3)).isoformat(),
+                    old_state="21.0",
+                    new_state="22.1",
+                    device_class="temperature",
+                ),
+                _state_change(
+                    entity_id="fan.bathroom_fan",
+                    room="bathroom",
+                    ts=(base_bathroom + timedelta(days=i * 7, minutes=5)).isoformat(),
+                    old_state="off",
+                    new_state="on",
+                ),
+                _state_change(
+                    entity_id="sensor.studio_temperature",
+                    room="studio",
+                    ts=(base_studio + timedelta(days=i * 7)).isoformat(),
+                    old_state="24.0",
+                    new_state="25.8",
+                    device_class="temperature",
+                ),
+                _state_change(
+                    entity_id="sensor.studio_humidity",
+                    room="studio",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=2)).isoformat(),
+                    old_state="52",
+                    new_state="58",
+                    device_class="humidity",
+                ),
+                _state_change(
+                    entity_id="fan.studio_fan",
+                    room="studio",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=5)).isoformat(),
+                    old_state="off",
+                    new_state="on",
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    reaction_types = {proposal.reaction_type for proposal in proposals}
+    assert reaction_types == {"room_signal_assist", "room_cooling_assist"}
+    diagnostics_by_type = {
+        proposal.reaction_type: proposal.suggested_reaction_config["learning_diagnostics"]
+        for proposal in proposals
+    }
+    assert diagnostics_by_type["room_signal_assist"]["room_id"] == "bathroom"
+    assert diagnostics_by_type["room_cooling_assist"]["room_id"] == "studio"

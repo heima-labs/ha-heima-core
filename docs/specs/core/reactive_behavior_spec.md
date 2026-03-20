@@ -2,7 +2,7 @@
 ## Phase 7: Behavior-as-Reaction
 
 **Status**: Active v1 reaction contract
-**Last Verified Against Code:** 2026-03-19
+**Last Verified Against Code:** 2026-03-20
 **Supersedes**: The `apply_filter` use case described in SPEC v1.1 (which was found redundant; see decisions).
 **Complements**: `HeimaBehavior` framework (SPEC v1.1) which remains valid for passive observability.
 
@@ -235,15 +235,49 @@ Currently wired proposal-driven classes:
 - `LightingScheduleReaction`
 - `HeatingPreferenceReaction`
 - `HeatingEcoReaction`
+- `RoomSignalAssistReaction`
 
 `HeatingPreferenceReaction` fires when the configured `house_state` is entered and the observed setpoint differs from the learned target.
 
 `HeatingEcoReaction` fires on entry into `away` and applies the learned eco target temperature derived from observed away sessions.
 
+`RoomSignalAssistReaction` is the generic room-scoped composite assist reaction rebuilt from
+accepted composite learning proposals such as `room_signal_assist` and `room_cooling_assist`.
+
 Normative rebuild rule:
 - if a proposal type is user-acceptible in the options flow, the runtime must either rebuild it
   into an executable reaction class or explicitly reject/defer that proposal type
 - the system must not persist “accepted but non-executable” learning reactions
+
+### 6.3.1 Generic composite assist reaction contract
+
+`RoomSignalAssistReaction` exists to execute accepted room-scoped composite proposals without
+hardcoding a single bathroom/fan semantic into the runtime.
+
+Normative configuration fields:
+- `room_id`
+- `primary_signal_entities`
+- `primary_rise_threshold`
+- `primary_signal_name`
+- optional `corroboration_signal_entities`
+- optional `corroboration_rise_threshold`
+- optional `corroboration_signal_name`
+- `correlation_window_s`
+- `followup_window_s`
+- `steps`
+
+Backward-compatible aliases MAY exist for the first v1 patterns, but new work SHOULD target the
+generic field set.
+
+Normative runtime behavior:
+- the reaction inspects room-scoped signal history in bounded windows
+- it fires only when the configured composite condition is observed again
+- it emits only the configured `steps`
+- those steps still pass through the normal shared constraint and execution path
+
+Normative design intent:
+- one generic composite assist reaction SHOULD support multiple reviewable room-scoped patterns
+- the reaction contract must stay understandable without reading implementation internals
 
 ---
 

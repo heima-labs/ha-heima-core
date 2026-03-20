@@ -1,4 +1,4 @@
-"""Cross-domain pattern analyzer (v1) for room-scoped signal assist proposals."""
+"""Cross-domain pattern analyzers for room-scoped composite assist proposals."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from .composite import (
     CompositeSignalSpec,
     RoomScopedCompositeMatcher,
 )
+from .pattern_library import CompositeLearningPatternDefinition
 
 _MIN_OCCURRENCES = 5
 _MIN_WEEKS = 2
@@ -26,102 +27,18 @@ class CrossDomainPatternAnalyzer:
 
     def __init__(self) -> None:
         self._matcher = RoomScopedCompositeMatcher()
-        self._pattern = CompositePatternSpec(
-            primary=CompositeSignalSpec(
-                name="humidity",
-                predicate=_is_humidity_event,
-                min_delta=_HUMIDITY_RISE_THRESHOLD,
-            ),
-            corroborations=(
-                CompositeSignalSpec(
-                    name="temperature",
-                    predicate=_is_temperature_event,
-                    min_delta=_TEMPERATURE_RISE_THRESHOLD,
-                    required=False,
-                ),
-            ),
-            followup=CompositeSignalSpec(
-                name="ventilation",
-                predicate=_is_activation_event,
-            ),
-            require_room_occupancy=True,
-            correlation_window_s=_CORRELATION_WINDOW_S,
-            followup_window_s=_FOLLOWUP_WINDOW_S,
-        )
+        self._definition = _definition_by_pattern_id("room_signal_assist")
 
     @property
     def analyzer_id(self) -> str:
-        return "CrossDomainPatternAnalyzer"
+        return self._definition.analyzer_id
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
-        raw = await event_store.async_query(event_type="state_change")
-        events = [e for e in raw if isinstance(e, HeimaEvent) and e.room_id]
-        if not events:
-            return []
-
-        by_room: dict[str, list[HeimaEvent]] = {}
-        for event in events:
-            by_room.setdefault(str(event.room_id), []).append(event)
-
-        proposals: list[ReactionProposal] = []
-        for room_id, room_events in by_room.items():
-            room_events.sort(key=lambda e: e.ts)
-            episodes = self._matcher.detect(room_id=room_id, events=room_events, spec=self._pattern)
-            if len(episodes) < _MIN_OCCURRENCES:
-                continue
-            if not _spans_min_weeks(episodes):
-                continue
-
-            confirmed = [ep for ep in episodes if ep.followup_entities]
-            if len(confirmed) < _MIN_OCCURRENCES:
-                continue
-
-            confidence = min(0.95, 0.45 + (0.07 * len(confirmed)) + (0.05 * _corroborated_ratio(confirmed)))
-            humidity_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-            temperature_entities = sorted(
-                {
-                    entity_id
-                    for ep in confirmed
-                    for entity_id in ep.corroboration_matches.get("temperature", ())
-                    if entity_id
-                }
-            )
-            followup_entities = sorted(
-                {
-                    entity_id
-                    for ep in confirmed
-                    for entity_id in ep.followup_entities
-                    if entity_id
-                }
-            )
-            suggested: dict[str, Any] = {
-                "reaction_class": "RoomSignalAssistReaction",
-                "room_id": room_id,
-                "trigger_signal_entities": humidity_entities,
-                "temperature_signal_entities": temperature_entities,
-                "humidity_rise_threshold": _HUMIDITY_RISE_THRESHOLD,
-                "temperature_rise_threshold": _TEMPERATURE_RISE_THRESHOLD,
-                "correlation_window_s": _CORRELATION_WINDOW_S,
-                "followup_window_s": _FOLLOWUP_WINDOW_S,
-                "steps": [],
-                "episodes_observed": len(confirmed),
-                "corroborated_episodes": sum(
-                    1 for ep in confirmed if ep.corroboration_matches.get("temperature")
-                ),
-                "observed_followup_entities": followup_entities,
-            }
-            fingerprint = f"{self.analyzer_id}|room_signal_assist|{room_id}|humidity_burst"
-            proposals.append(
-                ReactionProposal(
-                    analyzer_id=self.analyzer_id,
-                    reaction_type="room_signal_assist",
-                    description=_describe(room_id, len(confirmed), suggested["corroborated_episodes"]),
-                    confidence=round(confidence, 3),
-                    suggested_reaction_config=suggested,
-                    fingerprint=fingerprint,
-                )
-            )
-        return proposals
+        return await _analyze_definition(
+            event_store=event_store,
+            matcher=self._matcher,
+            definition=self._definition,
+        )
 
 
 class RoomCoolingPatternAnalyzer:
@@ -129,105 +46,108 @@ class RoomCoolingPatternAnalyzer:
 
     def __init__(self) -> None:
         self._matcher = RoomScopedCompositeMatcher()
-        self._pattern = CompositePatternSpec(
-            primary=CompositeSignalSpec(
-                name="temperature",
-                predicate=_is_temperature_event,
-                min_delta=1.5,
-            ),
-            corroborations=(
-                CompositeSignalSpec(
-                    name="humidity",
-                    predicate=_is_humidity_event,
-                    min_delta=5.0,
-                    required=False,
-                ),
-            ),
-            followup=CompositeSignalSpec(
-                name="cooling",
-                predicate=_is_cooling_followup_event,
-            ),
-            require_room_occupancy=True,
-            correlation_window_s=_CORRELATION_WINDOW_S,
-            followup_window_s=_FOLLOWUP_WINDOW_S,
-        )
+        self._definition = _definition_by_pattern_id("room_cooling_assist")
 
     @property
     def analyzer_id(self) -> str:
-        return "RoomCoolingPatternAnalyzer"
+        return self._definition.analyzer_id
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
-        raw = await event_store.async_query(event_type="state_change")
-        events = [e for e in raw if isinstance(e, HeimaEvent) and e.room_id]
-        if not events:
-            return []
+        return await _analyze_definition(
+            event_store=event_store,
+            matcher=self._matcher,
+            definition=self._definition,
+        )
 
-        by_room: dict[str, list[HeimaEvent]] = {}
-        for event in events:
-            by_room.setdefault(str(event.room_id), []).append(event)
 
+class CompositePatternCatalogAnalyzer:
+    """Run the declared composite pattern catalog through one shared analyzer path."""
+
+    def __init__(
+        self,
+        *,
+        catalog: tuple[CompositeLearningPatternDefinition, ...] | None = None,
+    ) -> None:
+        self._matcher = RoomScopedCompositeMatcher()
+        self._catalog = tuple(catalog or DEFAULT_COMPOSITE_PATTERN_CATALOG)
+
+    @property
+    def analyzer_id(self) -> str:
+        return "CompositePatternCatalogAnalyzer"
+
+    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         proposals: list[ReactionProposal] = []
-        for room_id, room_events in by_room.items():
-            room_events.sort(key=lambda e: e.ts)
-            episodes = self._matcher.detect(room_id=room_id, events=room_events, spec=self._pattern)
-            if len(episodes) < _MIN_OCCURRENCES or not _spans_min_weeks(episodes):
-                continue
-
-            confirmed = [ep for ep in episodes if ep.followup_entities]
-            if len(confirmed) < _MIN_OCCURRENCES:
-                continue
-
-            temperature_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-            humidity_entities = sorted(
-                {
-                    entity_id
-                    for ep in confirmed
-                    for entity_id in ep.corroboration_matches.get("humidity", ())
-                    if entity_id
-                }
-            )
-            followup_entities = sorted(
-                {
-                    entity_id
-                    for ep in confirmed
-                    for entity_id in ep.followup_entities
-                    if entity_id
-                }
-            )
-            corroborated_count = sum(
-                1 for ep in confirmed if ep.corroboration_matches.get("humidity")
-            )
-            confidence = min(0.95, 0.42 + (0.07 * len(confirmed)) + (0.05 * _ratio(corroborated_count, len(confirmed))))
-            suggested: dict[str, Any] = {
-                "reaction_class": "RoomSignalAssistReaction",
-                "room_id": room_id,
-                "trigger_signal_entities": temperature_entities,
-                "primary_signal_entities": temperature_entities,
-                "primary_rise_threshold": 1.5,
-                "primary_signal_name": "temperature",
-                "temperature_signal_entities": humidity_entities,
-                "corroboration_signal_entities": humidity_entities,
-                "corroboration_rise_threshold": 5.0,
-                "corroboration_signal_name": "humidity",
-                "correlation_window_s": _CORRELATION_WINDOW_S,
-                "followup_window_s": _FOLLOWUP_WINDOW_S,
-                "steps": [],
-                "episodes_observed": len(confirmed),
-                "corroborated_episodes": corroborated_count,
-                "observed_followup_entities": followup_entities,
-            }
-            fingerprint = f"{self.analyzer_id}|room_cooling_assist|{room_id}|temperature_rise"
-            proposals.append(
-                ReactionProposal(
-                    analyzer_id=self.analyzer_id,
-                    reaction_type="room_cooling_assist",
-                    description=_describe_cooling(room_id, len(confirmed), corroborated_count),
-                    confidence=round(confidence, 3),
-                    suggested_reaction_config=suggested,
-                    fingerprint=fingerprint,
+        for definition in self._catalog:
+            proposals.extend(
+                await _analyze_definition(
+                    event_store=event_store,
+                    matcher=self._matcher,
+                    definition=definition,
                 )
             )
         return proposals
+
+
+async def _analyze_definition(
+    *,
+    event_store: EventStore,
+    matcher: RoomScopedCompositeMatcher,
+    definition: CompositeLearningPatternDefinition,
+) -> list[ReactionProposal]:
+    raw = await event_store.async_query(event_type="state_change")
+    events = [e for e in raw if isinstance(e, HeimaEvent) and e.room_id]
+    if not events:
+        return []
+
+    by_room: dict[str, list[HeimaEvent]] = {}
+    for event in events:
+        by_room.setdefault(str(event.room_id), []).append(event)
+
+    proposals: list[ReactionProposal] = []
+    for room_id, room_events in by_room.items():
+        room_events.sort(key=lambda e: e.ts)
+        episodes = matcher.detect(room_id=room_id, events=room_events, spec=definition.matcher_spec)
+        if len(episodes) < definition.min_occurrences or not _spans_min_weeks(
+            episodes, min_weeks=definition.min_weeks
+        ):
+            continue
+
+        confirmed = [ep for ep in episodes if ep.followup_entities]
+        if len(confirmed) < definition.min_occurrences:
+            continue
+
+        suggested = definition.suggested_config_builder(room_id, confirmed)
+        diagnostics = _build_default_diagnostics(
+            room_id=room_id,
+            definition=definition,
+            episodes=episodes,
+            confirmed=confirmed,
+        )
+        if definition.diagnostics_builder is not None:
+            diagnostics.update(
+                definition.diagnostics_builder(
+                    room_id,
+                    episodes,
+                    confirmed,
+                    definition.matcher_spec,
+                )
+            )
+        suggested["learning_diagnostics"] = diagnostics
+        corroborated = int(suggested.get("corroborated_episodes", 0))
+        proposals.append(
+            ReactionProposal(
+                analyzer_id=definition.analyzer_id,
+                reaction_type=definition.reaction_type,
+                description=definition.description_builder(room_id, len(confirmed), corroborated),
+                confidence=round(definition.confidence_builder(confirmed), 3),
+                suggested_reaction_config=suggested,
+                fingerprint=(
+                    f"{definition.analyzer_id}|{definition.reaction_type}|{room_id}|"
+                    f"{definition.fingerprint_key}"
+                ),
+            )
+        )
+    return proposals
 
 
 def _is_humidity_event(event: HeimaEvent) -> bool:
@@ -263,20 +183,148 @@ def _is_cooling_followup_event(event: HeimaEvent) -> bool:
     return False
 
 
-def _spans_min_weeks(episodes: list) -> bool:
+def _spans_min_weeks(episodes: list, *, min_weeks: int) -> bool:
     weeks: set[tuple[int, int]] = set()
     for episode in episodes:
         iso = episode.ts.isocalendar()
         weeks.add((iso.year, iso.week))
-    return len(weeks) >= _MIN_WEEKS
+    return len(weeks) >= min_weeks
 
 
-def _corroborated_ratio(episodes: list) -> float:
+def _corroborated_ratio(episodes: list, key: str) -> float:
     if not episodes:
         return 0.0
-    return (
-        sum(1 for ep in episodes if ep.corroboration_matches.get("temperature")) / len(episodes)
+    return sum(1 for ep in episodes if ep.corroboration_matches.get(key)) / len(episodes)
+
+
+def _build_signal_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+    humidity_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    temperature_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.corroboration_matches.get("temperature", ())
+            if entity_id
+        }
     )
+    followup_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.followup_entities
+            if entity_id
+        }
+    )
+    return {
+        "reaction_class": "RoomSignalAssistReaction",
+        "room_id": room_id,
+        "trigger_signal_entities": humidity_entities,
+        "temperature_signal_entities": temperature_entities,
+        "humidity_rise_threshold": _HUMIDITY_RISE_THRESHOLD,
+        "temperature_rise_threshold": _TEMPERATURE_RISE_THRESHOLD,
+        "correlation_window_s": _CORRELATION_WINDOW_S,
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "steps": [],
+        "episodes_observed": len(confirmed),
+        "corroborated_episodes": sum(
+            1 for ep in confirmed if ep.corroboration_matches.get("temperature")
+        ),
+        "observed_followup_entities": followup_entities,
+    }
+
+
+def _build_cooling_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+    temperature_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    humidity_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.corroboration_matches.get("humidity", ())
+            if entity_id
+        }
+    )
+    followup_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.followup_entities
+            if entity_id
+        }
+    )
+    corroborated_count = sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity"))
+    return {
+        "reaction_class": "RoomSignalAssistReaction",
+        "room_id": room_id,
+        "trigger_signal_entities": temperature_entities,
+        "primary_signal_entities": temperature_entities,
+        "primary_rise_threshold": 1.5,
+        "primary_signal_name": "temperature",
+        "temperature_signal_entities": humidity_entities,
+        "corroboration_signal_entities": humidity_entities,
+        "corroboration_rise_threshold": 5.0,
+        "corroboration_signal_name": "humidity",
+        "correlation_window_s": _CORRELATION_WINDOW_S,
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "steps": [],
+        "episodes_observed": len(confirmed),
+        "corroborated_episodes": corroborated_count,
+        "observed_followup_entities": followup_entities,
+    }
+
+
+def _build_default_diagnostics(
+    *,
+    room_id: str,
+    definition: CompositeLearningPatternDefinition,
+    episodes: list,
+    confirmed: list,
+) -> dict[str, Any]:
+    corroboration_signal_names = [
+        signal.name for signal in definition.matcher_spec.corroborations
+    ]
+    primary_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    corroboration_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for matches in ep.corroboration_matches.values()
+            for entity_id in matches
+            if entity_id
+        }
+    )
+    followup_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.followup_entities
+            if entity_id
+        }
+    )
+    return {
+        "pattern_id": definition.pattern_id,
+        "room_id": room_id,
+        "analyzer_id": definition.analyzer_id,
+        "reaction_type": definition.reaction_type,
+        "primary_signal": definition.matcher_spec.primary.name,
+        "corroboration_signals": corroboration_signal_names,
+        "followup_signal": (
+            definition.matcher_spec.followup.name
+            if definition.matcher_spec.followup is not None
+            else None
+        ),
+        "require_room_occupancy": definition.matcher_spec.require_room_occupancy,
+        "correlation_window_s": definition.matcher_spec.correlation_window_s,
+        "followup_window_s": definition.matcher_spec.followup_window_s,
+        "episodes_detected": len(episodes),
+        "episodes_confirmed": len(confirmed),
+        "weeks_observed": _episode_week_count(episodes),
+        "corroborated_episodes": sum(
+            1 for ep in confirmed if any(ep.corroboration_matches.values())
+        ),
+        "matched_primary_entities": primary_entities,
+        "matched_corroboration_entities": corroboration_entities,
+        "observed_followup_entities": followup_entities,
+    }
 
 
 def _describe(room_id: str, observed: int, corroborated: int) -> str:
@@ -307,7 +355,112 @@ def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
     )
 
 
+_ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_signal_assist",
+    analyzer_id="CrossDomainPatternAnalyzer",
+    reaction_type="room_signal_assist",
+    fingerprint_key="humidity_burst",
+    matcher_spec=CompositePatternSpec(
+        primary=CompositeSignalSpec(
+            name="humidity",
+            predicate=_is_humidity_event,
+            min_delta=_HUMIDITY_RISE_THRESHOLD,
+        ),
+        corroborations=(
+            CompositeSignalSpec(
+                name="temperature",
+                predicate=_is_temperature_event,
+                min_delta=_TEMPERATURE_RISE_THRESHOLD,
+                required=False,
+            ),
+        ),
+        followup=CompositeSignalSpec(
+            name="ventilation",
+            predicate=_is_activation_event,
+        ),
+        require_room_occupancy=True,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+    ),
+    min_occurrences=_MIN_OCCURRENCES,
+    min_weeks=_MIN_WEEKS,
+    description_builder=_describe,
+    suggested_config_builder=lambda room_id, confirmed: _build_signal_assist_config(room_id, confirmed),
+    confidence_builder=lambda confirmed: min(
+        0.95,
+        0.45 + (0.07 * len(confirmed)) + (0.05 * _corroborated_ratio(confirmed, "temperature")),
+    ),
+)
+
+
+_ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_cooling_assist",
+    analyzer_id="RoomCoolingPatternAnalyzer",
+    reaction_type="room_cooling_assist",
+    fingerprint_key="temperature_rise",
+    matcher_spec=CompositePatternSpec(
+        primary=CompositeSignalSpec(
+            name="temperature",
+            predicate=_is_temperature_event,
+            min_delta=1.5,
+        ),
+        corroborations=(
+            CompositeSignalSpec(
+                name="humidity",
+                predicate=_is_humidity_event,
+                min_delta=5.0,
+                required=False,
+            ),
+        ),
+        followup=CompositeSignalSpec(
+            name="cooling",
+            predicate=_is_cooling_followup_event,
+        ),
+        require_room_occupancy=True,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+    ),
+    min_occurrences=_MIN_OCCURRENCES,
+    min_weeks=_MIN_WEEKS,
+    description_builder=_describe_cooling,
+    suggested_config_builder=lambda room_id, confirmed: _build_cooling_assist_config(room_id, confirmed),
+    confidence_builder=lambda confirmed: min(
+        0.95,
+        0.42
+        + (0.07 * len(confirmed))
+        + (
+            0.05
+            * _ratio(
+                sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity")),
+                len(confirmed),
+            )
+        ),
+    ),
+)
+
+
+DEFAULT_COMPOSITE_PATTERN_CATALOG: tuple[CompositeLearningPatternDefinition, ...] = (
+    _ROOM_SIGNAL_ASSIST_PATTERN,
+    _ROOM_COOLING_PATTERN,
+)
+
+
+def _definition_by_pattern_id(pattern_id: str) -> CompositeLearningPatternDefinition:
+    for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG:
+        if definition.pattern_id == pattern_id:
+            return definition
+    raise KeyError(pattern_id)
+
+
 def _ratio(part: int, total: int) -> float:
     if total <= 0:
         return 0.0
     return part / total
+
+
+def _episode_week_count(episodes: list) -> int:
+    weeks: set[tuple[int, int]] = set()
+    for episode in episodes:
+        iso = episode.ts.isocalendar()
+        weeks.add((iso.year, iso.week))
+    return len(weeks)
