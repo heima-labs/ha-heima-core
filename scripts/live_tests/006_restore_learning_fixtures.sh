@@ -14,12 +14,15 @@ STORAGE_DIR="$REPO_ROOT/docs/examples/ha_test_instance/docker/ha_config/.storage
 echo "Generating learning fixture storage..."
 python3 "$REPO_ROOT/scripts/generate_learning_fixtures.py" --storage-dir "$STORAGE_DIR"
 
-echo "Copying fixture storage into container '$DEV_CONTAINER_NAME'..."
+echo "Stopping Home Assistant lab container '$DEV_CONTAINER_NAME' before fixture restore..."
+docker stop "$DEV_CONTAINER_NAME" >/dev/null
+
+echo "Copying fixture storage into stopped container '$DEV_CONTAINER_NAME'..."
 docker cp "$STORAGE_DIR/heima_pattern_events" "$DEV_CONTAINER_NAME:/config/.storage/heima_pattern_events"
 docker cp "$STORAGE_DIR/heima_proposals" "$DEV_CONTAINER_NAME:/config/.storage/heima_proposals"
 
-echo "Restarting Home Assistant lab container..."
-docker restart "$DEV_CONTAINER_NAME" >/dev/null
+echo "Starting Home Assistant lab container..."
+docker start "$DEV_CONTAINER_NAME" >/dev/null
 
 echo "Waiting for Home Assistant to come back on $HA_URL ..."
 deadline=$((SECONDS + 180))
@@ -43,6 +46,12 @@ if [[ -n "$HA_TOKEN" ]]; then
     fi
     sleep 2
   done
+
+  echo "Refreshing room area assignments and room config after restart..."
+  python3 "$REPO_ROOT/scripts/recover_test_lab_config.py" \
+    --ha-url "$HA_URL" \
+    --ha-token "$HA_TOKEN" \
+    --section rooms
 fi
 
 echo "PASS: learning fixtures restored and Home Assistant reachable"

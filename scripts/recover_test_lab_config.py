@@ -13,12 +13,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.ha_client import HAApiError, HAClient
-from lib.ha_websocket import HAWebSocketClient
+from lib.ha_websocket import HAWebSocketClient, HAWebSocketError
 
 
 # ---------------------------------------------------------------------------
@@ -38,9 +39,8 @@ GENERAL_CONFIG = {
     "work_window_entity": "binary_sensor.test_heima_work_window",
 }
 
-# Light entities for each room: used by recover_lighting_areas()
-# and referenced in 060_lighting_schedule.py
-ROOM_LIGHT_ENTITIES: dict[str, list[str]] = {
+# Entities assigned to room areas so recorder/analyzer room resolution stays stable.
+ROOM_AREA_ENTITIES: dict[str, list[str]] = {
     "living": [
         "light.test_heima_living_main",
         "light.test_heima_living_spot",
@@ -51,12 +51,19 @@ ROOM_LIGHT_ENTITIES: dict[str, list[str]] = {
         "light.test_heima_studio_spot",
         "light.test_heima_studio_desk",
     ],
+    "bathroom": [
+        "binary_sensor.test_heima_room_bathroom_motion",
+        "sensor.test_heima_bathroom_humidity",
+        "sensor.test_heima_bathroom_temperature",
+        "switch.test_heima_bathroom_fan",
+    ],
 }
 
 # HA area names (recover_lighting_areas creates them and returns the area_ids)
 ROOM_AREA_NAMES: dict[str, str] = {
     "living": "Test Heima Living",
     "studio": "Test Heima Studio",
+    "bathroom": "Test Heima Bathroom",
 }
 
 ROOMS_BASELINE = [
@@ -69,6 +76,17 @@ ROOMS_BASELINE = [
         "logic": "any_of",
         "on_dwell_s": 5,
         "off_dwell_s": 120,
+        "max_on_s": None,
+    },
+    {
+        "room_id": "bathroom",
+        "display_name": "Bagno",
+        "area_id": None,
+        "occupancy_mode": "derived",
+        "sources": ["binary_sensor.test_heima_room_bathroom_motion"],
+        "logic": "any_of",
+        "on_dwell_s": 5,
+        "off_dwell_s": 180,
         "max_on_s": None,
     },
     {
@@ -153,6 +171,15 @@ NOTIFICATIONS_CONFIG = {
     "security_mismatch_persist_s": 300,
 }
 
+LEARNING_CONFIG = {
+    "outdoor_temp_entity": "sensor.test_heima_outdoor_temp",
+    "context_signal_entities": [
+        "sensor.test_heima_bathroom_humidity",
+        "sensor.test_heima_bathroom_temperature",
+        "switch.test_heima_bathroom_fan",
+    ],
+}
+
 
 # ---------------------------------------------------------------------------
 # Flow client
@@ -229,9 +256,9 @@ def recover_lighting_areas(client: HAFlowClient) -> dict[str, str]:
             area_id = ws.get_or_create_area(area_name)
             area_ids[room_id] = area_id
             print(f"     area '{area_name}' → {area_id}")
-            entity_ids = ROOM_LIGHT_ENTITIES.get(room_id, [])
+            entity_ids = ROOM_AREA_ENTITIES.get(room_id, [])
             if not entity_ids:
-                print(f"     WARN: no lab lights configured for room {room_id}, skipping area assignment")
+                print(f"     WARN: no lab entities configured for room {room_id}, skipping area assignment")
                 continue
             for entity_id in entity_ids:
                 if client.entity_exists(entity_id):
@@ -240,6 +267,31 @@ def recover_lighting_areas(client: HAFlowClient) -> dict[str, str]:
                 else:
                     print(f"     WARN: {entity_id} not found, skipping area assignment")
     return area_ids
+
+
+def recover_lighting_areas_with_retry(
+    client: HAFlowClient,
+    *,
+    ws_retries: int,
+    ws_retry_delay_s: float,
+) -> dict[str, str]:
+    """Retry-safe wrapper for lighting area bootstrap over HA WebSocket."""
+    last_ws_error: Exception | None = None
+    for attempt in range(1, ws_retries + 1):
+        try:
+            return recover_lighting_areas(client)
+        except HAWebSocketError as exc:
+            last_ws_error = exc
+            if attempt >= ws_retries:
+                raise
+            print(
+                f"  WARN: websocket attempt {attempt}/{ws_retries} failed: {exc}; "
+                f"retry in {ws_retry_delay_s:.1f}s"
+            )
+            time.sleep(ws_retry_delay_s)
+    if last_ws_error is not None:
+        raise last_ws_error
+    return {}
 
 
 def recover_rooms(client: HAFlowClient, entry_id: str, area_ids: dict[str, str] | None = None) -> None:
@@ -380,6 +432,18 @@ def recover_notifications(client: HAFlowClient, entry_id: str) -> None:
     _flow_save(client, flow_id)
 
 
+def recover_learning(client: HAFlowClient, entry_id: str) -> None:
+    print("  → learning")
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init["flow_id"])
+    _expect_step(init, "init")
+    step = _menu_next(client, flow_id, "learning")
+    _expect_step(step, "learning")
+    result = client.options_flow_configure(flow_id, LEARNING_CONFIG)
+    _expect_step(result, "init")
+    _flow_save(client, flow_id)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -388,9 +452,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Restore Heima test-lab configuration to baseline")
     parser.add_argument("--ha-url", required=True)
     parser.add_argument("--ha-token", required=True)
+    parser.add_argument("--ws-retries", type=int, default=5)
+    parser.add_argument("--ws-retry-delay-s", type=float, default=2.0)
     parser.add_argument(
         "--section",
-        choices=["all", "general", "rooms", "people", "heating", "security", "notifications", "lighting_areas"],
+        choices=[
+            "all",
+            "general",
+            "rooms",
+            "people",
+            "heating",
+            "security",
+            "notifications",
+            "learning",
+            "lighting_areas",
+        ],
         default="all",
     )
     args = parser.parse_args()
@@ -403,7 +479,11 @@ def main() -> int:
     if args.section == "lighting_areas":
         try:
             print("  → lighting_areas")
-            area_ids = recover_lighting_areas(client)
+            area_ids = recover_lighting_areas_with_retry(
+                client,
+                ws_retries=args.ws_retries,
+                ws_retry_delay_s=args.ws_retry_delay_s,
+            )
             print(f"  ✓ lighting_areas: {area_ids}")
         except Exception as exc:  # noqa: BLE001
             print(f"  ✗ lighting_areas: {exc}", file=sys.stderr)
@@ -412,10 +492,14 @@ def main() -> int:
         return 0
 
     area_ids: dict[str, str] = {}
-    if args.section == "all":
+    if args.section in {"all", "rooms"}:
         try:
             print("  → lighting_areas (pre-step)")
-            area_ids = recover_lighting_areas(client)
+            area_ids = recover_lighting_areas_with_retry(
+                client,
+                ws_retries=args.ws_retries,
+                ws_retry_delay_s=args.ws_retry_delay_s,
+            )
             print(f"  ✓ lighting_areas: {area_ids}")
         except Exception as exc:  # noqa: BLE001
             print(f"  WARN: lighting_areas failed ({exc}), continuing without area_ids", file=sys.stderr)
@@ -427,6 +511,7 @@ def main() -> int:
         "heating": lambda c, eid: recover_heating(c, eid),
         "security": lambda c, eid: recover_security(c, eid),
         "notifications": lambda c, eid: recover_notifications(c, eid),
+        "learning": lambda c, eid: recover_learning(c, eid),
     }
 
     to_run = list(sections.keys()) if args.section == "all" else [args.section]

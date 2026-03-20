@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Generate deterministic learning fixture storage for the Docker test lab.
 
-The lighting-learning live scenario needs real historical events, but the
-analyzer requires at least 5 user lighting events spanning at least 2 weeks.
-This generator prepares a baseline with 4 historical occurrences per weekday
-for the living-evening scene. A live test can then add the 5th occurrence for
-the current weekday through real HA entity changes, without using seeded
-runtime commands.
+The live learning scenarios need real historical events, but analyzers require
+enough prior repetitions to emit proposals. This generator prepares:
+- lighting baseline: 4 historical occurrences per weekday for the living-evening scene
+- cross-domain baseline: 4 historical bathroom shower/ventilation episodes
+
+A live test can then add the final real occurrence through HA entities without
+using seeded runtime commands.
 """
 
 from __future__ import annotations
@@ -55,6 +56,22 @@ def _event_context(*, day: date, weekday: int) -> dict[str, object]:
     }
 
 
+def _bathroom_event_context(*, day: date) -> dict[str, object]:
+    local_dt = datetime.combine(day, time(7, 30), tzinfo=LOCAL_TZ)
+    return {
+        "weekday": local_dt.weekday(),
+        "minute_of_day": 7 * 60 + 30,
+        "month": day.month,
+        "house_state": "home",
+        "occupants_count": 1,
+        "occupied_rooms": ["bathroom"],
+        "outdoor_lux": None,
+        "outdoor_temp": None,
+        "weather_condition": None,
+        "signals": {},
+    }
+
+
 def _lighting_event(
     *,
     day: date,
@@ -89,6 +106,41 @@ def _lighting_event(
     }
 
 
+def _state_change_event(
+    *,
+    day: date,
+    at: time,
+    entity_id: str,
+    room_id: str,
+    old_state: str,
+    new_state: str,
+    unit_of_measurement: str | None,
+    device_class: str | None,
+    correlation_id: str,
+) -> dict[str, object]:
+    local_dt = datetime.combine(day, at, tzinfo=LOCAL_TZ)
+    utc_ts = local_dt.astimezone(UTC).isoformat()
+    domain = entity_id.split(".", 1)[0]
+    return {
+        "ts": utc_ts,
+        "event_type": "state_change",
+        "context": _bathroom_event_context(day=day),
+        "source": "unknown",
+        "data": {
+            "entity_id": entity_id,
+            "old_state": old_state,
+            "new_state": new_state,
+            "unit_of_measurement": unit_of_measurement,
+            "device_class": device_class,
+        },
+        "domain": domain,
+        "subject_type": "entity",
+        "subject_id": entity_id,
+        "room_id": room_id,
+        "correlation_id": correlation_id,
+    }
+
+
 def build_pattern_events(today_local: date) -> dict[str, object]:
     events: list[dict[str, object]] = []
     scene_entities = [
@@ -119,6 +171,51 @@ def build_pattern_events(today_local: date) -> dict[str, object]:
     }
 
 
+def build_cross_domain_events(today_local: date) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    base_days = _recent_past_weekday_dates(today_local, today_local.weekday(), count=4)
+    for day in base_days:
+        correlation_id = f"fixture-bathroom-shower-{day.isoformat()}"
+        events.extend(
+            [
+                _state_change_event(
+                    day=day,
+                    at=time(7, 30),
+                    entity_id="sensor.test_heima_bathroom_humidity",
+                    room_id="bathroom",
+                    old_state="55",
+                    new_state="66",
+                    unit_of_measurement="%",
+                    device_class="humidity",
+                    correlation_id=correlation_id,
+                ),
+                _state_change_event(
+                    day=day,
+                    at=time(7, 33),
+                    entity_id="sensor.test_heima_bathroom_temperature",
+                    room_id="bathroom",
+                    old_state="21.0",
+                    new_state="22.1",
+                    unit_of_measurement="°C",
+                    device_class="temperature",
+                    correlation_id=correlation_id,
+                ),
+                _state_change_event(
+                    day=day,
+                    at=time(7, 35),
+                    entity_id="switch.test_heima_bathroom_fan",
+                    room_id="bathroom",
+                    old_state="off",
+                    new_state="on",
+                    unit_of_measurement=None,
+                    device_class=None,
+                    correlation_id=correlation_id,
+                ),
+            ]
+        )
+    return events
+
+
 def build_proposals_fixture() -> dict[str, object]:
     return {
         "version": 1,
@@ -142,6 +239,9 @@ def main() -> int:
 
     today_local = datetime.now(LOCAL_TZ).date()
     events_fixture = build_pattern_events(today_local)
+    combined_events = list(events_fixture["data"]["data"]["events"])
+    combined_events.extend(build_cross_domain_events(today_local))
+    events_fixture["data"]["data"]["events"] = combined_events
     proposals_fixture = build_proposals_fixture()
 
     events_path = storage_dir / "heima_pattern_events"
@@ -154,7 +254,7 @@ def main() -> int:
     print(
         "Generated lighting baseline: "
         f"{len(events_fixture['data']['data']['events'])} events "
-        "(4 historical occurrences per weekday for the living evening scene)"
+        "(lighting history + 4 bathroom humidity/ventilation episodes)"
     )
     return 0
 

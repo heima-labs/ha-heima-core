@@ -14,7 +14,6 @@ SKIP_PREFIXES=()
 
 SETUP_SCRIPTS=(
   "scripts/recover_test_lab_config.py"
-  "scripts/live_tests/005_setup_lab.py"
   "scripts/live_tests/006_restore_learning_fixtures.sh"
 )
 
@@ -22,7 +21,8 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/000_live_smoke.py"
   "scripts/live_tests/010_config_flow.py"
   "scripts/live_tests/025_lighting_learning_live.py"
-  "scripts/live_tests/026_presence_live.py"
+  "scripts/live_tests/026_room_signal_assist_live.py"
+  "scripts/live_tests/027_presence_live.py"
   "scripts/live_tests/040_security_mismatch_runtime.py"
   "scripts/live_tests/050_calendar_domain.py"
 )

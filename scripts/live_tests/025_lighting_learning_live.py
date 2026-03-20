@@ -87,6 +87,30 @@ def _wait_for_lighting_count_growth(
     )
 
 
+def _wait_for_fixture_baseline(
+    client: HAClient,
+    entry_id: str,
+    *,
+    minimum: int,
+    timeout_s: int,
+    poll_s: float,
+) -> int:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        diag = _event_store_diagnostics(client, entry_id)
+        current = _to_int((diag.get("by_type", {}) or {}).get("lighting"))
+        if current >= minimum:
+            return current
+        time.sleep(poll_s)
+    diag = _event_store_diagnostics(client, entry_id)
+    current = _to_int((diag.get("by_type", {}) or {}).get("lighting"))
+    raise RuntimeError(
+        "Lighting fixture baseline not loaded: "
+        f"expected at least {minimum} historical lighting events, found {current}. "
+        "Run the setup tier to restore learning fixtures first."
+    )
+
+
 def _recompute(client: HAClient) -> None:
     client.call_service("heima", "command", {"command": "recompute_now"})
 
@@ -142,16 +166,15 @@ def main() -> int:
         raise RuntimeError("Missing required entities:\n- " + "\n- ".join(missing))
 
     entry_id = client.find_heima_entry_id()
-    event_store_diag = _event_store_diagnostics(client, entry_id)
-    lighting_before = _to_int((event_store_diag.get("by_type", {}) or {}).get("lighting"))
+    lighting_before = _wait_for_fixture_baseline(
+        client,
+        entry_id,
+        minimum=84,
+        timeout_s=min(args.timeout_s, 60),
+        poll_s=args.poll_s,
+    )
     proposals_diag = _proposal_diagnostics(client, entry_id)
     proposals_before = _to_int(proposals_diag.get("total"))
-
-    if lighting_before < 84:
-        raise RuntimeError(
-            "Lighting fixture baseline not loaded: expected at least 84 historical lighting events. "
-            "Run the setup tier to restore learning fixtures first."
-        )
 
     print(f"Initial lighting events: {lighting_before}")
     print(f"Initial proposals count: {proposals_before}")

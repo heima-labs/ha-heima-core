@@ -13,6 +13,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.ha_client import HAApiError, HAClient
+from lib.ha_websocket import HAWebSocketClient
 
 
 class HAFlowClient(HAClient):
@@ -280,28 +281,101 @@ def _last_event_history(client: HAClient, lookback_minutes: int = 5) -> list[str
     return states
 
 
+def _last_event_history_since(client: HAClient, *, since_ts: float, lookback_minutes: int = 5) -> list[str]:
+    from datetime import datetime, timedelta, timezone
+
+    start = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+    path = f"/api/history/period/{quote(start.isoformat())}?filter_entity_id=sensor.heima_last_event"
+    data = client.get(path)
+    if not isinstance(data, list) or not data:
+        return []
+    series = data[0] if isinstance(data[0], list) else []
+    states: list[str] = []
+    for item in series:
+        if not isinstance(item, dict):
+            continue
+        last_changed_raw = str(item.get("last_changed") or item.get("last_updated") or "")
+        if not last_changed_raw:
+            continue
+        try:
+            last_changed = datetime.fromisoformat(last_changed_raw.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        if last_changed < since_ts:
+            continue
+        value = str(item.get("state") or "")
+        if value:
+            states.append(value)
+    return states
+
+
 def _wait_dual_emit_history(
     client: HAClient,
     *,
-    previous_len: int,
+    since_ts: float,
     timeout_s: int,
     poll_s: float,
 ) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        states = _last_event_history(client, lookback_minutes=5)
-        if len(states) > previous_len:
-            tail = states[previous_len:]
-            has_specific = "security.armed_away_but_home" in tail
-            has_generic = "security.mismatch" in tail
-            if has_specific and has_generic:
-                return
+        tail = _last_event_history_since(client, since_ts=since_ts, lookback_minutes=5)
+        has_specific = "security.armed_away_but_home" in tail
+        has_generic = "security.mismatch" in tail
+        if has_specific and has_generic:
+            return
         time.sleep(poll_s)
-    states = _last_event_history(client, lookback_minutes=5)
-    tail = states[previous_len:]
+    tail = _last_event_history_since(client, since_ts=since_ts, lookback_minutes=5)
     raise RuntimeError(
         "Dual emit not observed in heima_last_event history "
         f"(tail={tail[-8:]})"
+    )
+
+
+def _wait_dual_emit_bus(
+    base_url: str,
+    token: str,
+    *,
+    timeout_s: int,
+    trigger: callable,
+) -> None:
+    with HAWebSocketClient(base_url, token, timeout=timeout_s) as ws:
+        subscription_id = ws.subscribe_events()
+        trigger()
+        events = ws.wait_for_matching_events(
+            subscription_id,
+            timeout_s=timeout_s,
+            predicate=lambda items: _dual_emit_seen(items),
+        )
+    event_types = _heima_event_types(events)
+    has_specific = "security.armed_away_but_home" in event_types
+    has_generic = "security.mismatch" in event_types
+    if has_specific and has_generic:
+        return
+    raise RuntimeError(
+        "Dual emit not observed on heima_event bus "
+        f"(types={event_types[-12:]})"
+    )
+
+
+def _heima_event_types(events: list[dict[str, Any]]) -> list[str]:
+    event_types: list[str] = []
+    for event in events:
+        if str(event.get("event_type") or "") != "heima_event":
+            continue
+        payload = event.get("data") or {}
+        if not isinstance(payload, dict):
+            continue
+        event_type = str(payload.get("type") or "")
+        if event_type:
+            event_types.append(event_type)
+    return event_types
+
+
+def _dual_emit_seen(events: list[dict[str, Any]]) -> bool:
+    event_types = _heima_event_types(events)
+    return (
+        "security.armed_away_but_home" in event_types
+        and "security.mismatch" in event_types
     )
 
 
@@ -411,19 +485,17 @@ def main() -> int:
 
         print("== Scenario E3: dual_emit emits both explicit and generic ==")
         _set_notifications_mode(client, entry_id, payload, mode="dual_emit")
-        baseline_history_len = len(_last_event_history(client, lookback_minutes=5))
-        _trigger_security_mismatch_once(
-            client,
-            person_override_entity=person_override_entity,
-            security_entity=security_entity,
-            armed_away_value=armed_away_value,
-            alarm_code=args.alarm_code,
-        )
-        _wait_dual_emit_history(
-            client,
-            previous_len=baseline_history_len,
+        _wait_dual_emit_bus(
+            args.ha_url,
+            args.ha_token,
             timeout_s=args.timeout_s,
-            poll_s=args.poll_s,
+            trigger=lambda: _trigger_security_mismatch_once(
+                client,
+                person_override_entity=person_override_entity,
+                security_entity=security_entity,
+                armed_away_value=armed_away_value,
+                alarm_code=args.alarm_code,
+            ),
         )
         print("PASS scenario E3")
     finally:

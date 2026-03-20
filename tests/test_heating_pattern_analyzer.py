@@ -129,6 +129,7 @@ async def test_heating_analyzer_eco_pattern():
     eco_proposals = [p for p in proposals if p.reaction_type == "heating_eco"]
     assert eco_proposals
     assert eco_proposals[0].suggested_reaction_config["eco_sessions_observed"] >= 3
+    assert eco_proposals[0].suggested_reaction_config["eco_target_temperature"] == 16.0
 
 
 async def test_heating_analyzer_no_eco_without_house_state_sessions():

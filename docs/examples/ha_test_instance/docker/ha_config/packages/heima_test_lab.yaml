@@ -16,10 +16,14 @@ input_boolean:
     name: "Test Heima Studio Motion Raw"
   test_heima_room_living_motion_raw:
     name: "Test Heima Living Motion Raw"
+  test_heima_room_bathroom_motion_raw:
+    name: "Test Heima Bathroom Motion Raw"
   test_heima_anonymous_presence_raw:
     name: "Test Heima Anonymous Presence Raw"
   test_heima_heater_relay_raw:
     name: "Test Heima Heater Relay Raw"
+  test_heima_bathroom_fan_raw:
+    name: "Test Heima Bathroom Fan Raw"
   test_heima_light_living_main_raw:
     name: "Test Heima Light Living Main Raw"
   test_heima_light_living_spot_raw:
@@ -217,6 +221,22 @@ input_number:
     mode: box
     unit_of_measurement: "°C"
     initial: 19
+  test_heima_bathroom_humidity:
+    name: "Test Heima Bathroom Humidity"
+    min: 0
+    max: 100
+    step: 0.1
+    mode: box
+    unit_of_measurement: "%"
+    initial: 55
+  test_heima_bathroom_temperature:
+    name: "Test Heima Bathroom Temperature"
+    min: 5
+    max: 40
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 21
   test_heima_vacation_min_temp:
     name: "Test Heima Vacation Min Temp"
     min: 12
@@ -372,6 +392,10 @@ template:
         unique_id: "test_heima_room_living_motion"
         device_class: occupancy
         state: "{{ is_state('input_boolean.test_heima_room_living_motion_raw', 'on') }}"
+      - name: "test_heima_room_bathroom_motion"
+        unique_id: "test_heima_room_bathroom_motion"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_room_bathroom_motion_raw', 'on') }}"
       - name: "test_heima_anonymous_presence"
         unique_id: "test_heima_anonymous_presence"
         device_class: occupancy
@@ -393,6 +417,18 @@ template:
         device_class: temperature
         state_class: measurement
         state: "{{ states('input_number.test_heima_room_temp') }}"
+      - name: "test_heima_bathroom_humidity"
+        unique_id: "test_heima_bathroom_humidity"
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_bathroom_humidity') }}"
+      - name: "test_heima_bathroom_temperature"
+        unique_id: "test_heima_bathroom_temperature"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_bathroom_temperature') }}"
     switch:
       - name: "test_heima_heater_relay"
         unique_id: "test_heima_heater_relay"
@@ -406,6 +442,18 @@ template:
           action: input_boolean.turn_off
           target:
             entity_id: input_boolean.test_heima_heater_relay_raw
+      - name: "test_heima_bathroom_fan"
+        unique_id: "test_heima_bathroom_fan"
+        icon: mdi:fan
+        state: "{{ is_state('input_boolean.test_heima_bathroom_fan_raw', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_bathroom_fan_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_bathroom_fan_raw
 
   - trigger:
       - platform: state
@@ -542,8 +590,10 @@ script:
             - input_boolean.test_heima_work_mode
             - input_boolean.test_heima_room_studio_motion_raw
             - input_boolean.test_heima_room_living_motion_raw
+            - input_boolean.test_heima_room_bathroom_motion_raw
             - input_boolean.test_heima_anonymous_presence_raw
             - input_boolean.test_heima_heater_relay_raw
+            - input_boolean.test_heima_bathroom_fan_raw
             - input_boolean.test_heima_light_living_main_raw
             - input_boolean.test_heima_light_living_spot_raw
             - input_boolean.test_heima_light_living_floor_raw
@@ -565,6 +615,16 @@ script:
           entity_id: input_number.test_heima_room_temp
         data:
           value: 19
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_bathroom_humidity
+        data:
+          value: 55
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_bathroom_temperature
+        data:
+          value: 21
       - action: input_number.set_value
         target:
           entity_id:
@@ -724,6 +784,30 @@ script:
       - action: input_boolean.turn_off
         target:
           entity_id: input_boolean.test_heima_light_studio_spot_raw
+
+  test_heima_run_bathroom_shower_pattern:
+    alias: "Test Heima Run Bathroom Shower Pattern"
+    icon: mdi:shower
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.test_heima_room_bathroom_motion_raw
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_bathroom_humidity
+        data:
+          value: 66
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_bathroom_temperature
+        data:
+          value: 22.1
+      - delay: "00:00:01"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.test_heima_bathroom_fan
 
   test_heima_alarm_arm_away:
     alias: "Test Heima Alarm Arm Away"

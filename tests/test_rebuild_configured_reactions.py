@@ -8,7 +8,9 @@ import pytest
 
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
+from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +47,13 @@ def _presence_cfg(
         "pre_condition_min": kwargs.get("pre_condition_min", 20),
         "min_arrivals": kwargs.get("min_arrivals", 5),
         "steps": kwargs.get("steps", []),
+    }
+
+
+def _heating_options(configured: dict[str, dict]) -> dict:
+    return {
+        "heating": {"climate_entity": "climate.test_heating"},
+        "reactions": {"configured": configured},
     }
 
 
@@ -177,6 +186,63 @@ def test_multiple_weekday_proposals_all_registered():
     engine._rebuild_configured_reactions()
     assert len(engine._reactions) == 3
     assert len(engine._configured_reaction_ids) == 3
+
+
+def test_heating_preference_reaction_built_and_registered():
+    engine = _make_engine(options=_heating_options({
+        "hp1": {
+            "reaction_class": "HeatingPreferenceReaction",
+            "house_state": "home",
+            "target_temperature": 21.5,
+        }
+    }))
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    reaction = engine._reactions[0]
+    assert isinstance(reaction, HeatingPreferenceReaction)
+    assert reaction.reaction_id == "hp1"
+
+
+def test_heating_eco_reaction_built_and_registered():
+    engine = _make_engine(options=_heating_options({
+        "he1": {
+            "reaction_class": "HeatingEcoReaction",
+            "eco_target_temperature": 16.0,
+        }
+    }))
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    reaction = engine._reactions[0]
+    assert isinstance(reaction, HeatingEcoReaction)
+    assert reaction.reaction_id == "he1"
+
+
+def test_room_signal_assist_reaction_built_and_registered():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "sa1": {
+                    "reaction_class": "RoomSignalAssistReaction",
+                    "room_id": "bathroom",
+                    "trigger_signal_entities": ["sensor.bathroom_humidity"],
+                    "temperature_signal_entities": ["sensor.bathroom_temperature"],
+                    "humidity_rise_threshold": 8.0,
+                    "temperature_rise_threshold": 0.8,
+                    "correlation_window_s": 600,
+                    "followup_window_s": 900,
+                    "steps": [{"domain": "script", "target": "script.fan_on", "action": "script.turn_on"}],
+                }
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    reaction = engine._reactions[0]
+    assert isinstance(reaction, RoomSignalAssistReaction)
+    assert reaction.reaction_id == "sa1"
 
 
 def test_rebuild_clears_removed_proposals():

@@ -36,8 +36,10 @@ from ..models import HeimaOptions
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent
 from .reactions.base import HeimaReaction
+from .reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from .reactions.lighting_schedule import LightingScheduleReaction
 from .reactions.presence import _ArrivalRecord, PresencePatternReaction
+from .reactions.signal_assist import RoomSignalAssistReaction
 from .snapshot_buffer import SnapshotBuffer
 from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
@@ -103,6 +105,7 @@ class HeimaEngine:
         self._muted_reactions: set[str] = set()
         self._configured_reaction_ids: set[str] = set()
         self._snapshot_buffer = SnapshotBuffer()
+        self._recent_script_applies: dict[str, dict[str, Any]] = {}
 
     @property
     def health(self) -> EngineHealth:
@@ -133,7 +136,12 @@ class HeimaEngine:
     @property
     def lighting_recent_apply_state(self) -> dict[str, Any]:
         """Recent lighting apply provenance for recorder attribution."""
-        return self._lighting_domain.recent_apply_state()
+        state = self._lighting_domain.recent_apply_state()
+        state["scripts"] = {
+            script_id: dict(payload)
+            for script_id, payload in self._recent_script_applies.items()
+        }
+        return state
 
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
@@ -168,6 +176,7 @@ class HeimaEngine:
         self._lighting_domain.reset()
         self._heating_domain.reset()
         self._security_domain.reset()
+        self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
         options = dict(entry.options)
         for behavior in self._behaviors:
@@ -277,6 +286,21 @@ class HeimaEngine:
                 if reaction is not None:
                     self._reactions.append(reaction)
                     self._configured_reaction_ids.add(reaction.reaction_id)
+            elif reaction_class == "HeatingPreferenceReaction":
+                reaction = self._build_heating_preference_reaction(proposal_id, cfg)
+                if reaction is not None:
+                    self._reactions.append(reaction)
+                    self._configured_reaction_ids.add(reaction.reaction_id)
+            elif reaction_class == "HeatingEcoReaction":
+                reaction = self._build_heating_eco_reaction(proposal_id, cfg)
+                if reaction is not None:
+                    self._reactions.append(reaction)
+                    self._configured_reaction_ids.add(reaction.reaction_id)
+            elif reaction_class == "RoomSignalAssistReaction":
+                reaction = self._build_room_signal_assist_reaction(proposal_id, cfg)
+                if reaction is not None:
+                    self._reactions.append(reaction)
+                    self._configured_reaction_ids.add(reaction.reaction_id)
             else:
                 _LOGGER.debug(
                     "Skipping configured reaction with unknown class %r (proposal %s)",
@@ -332,6 +356,80 @@ class HeimaEngine:
             window_half_min=window_half,
             house_state_filter=house_state_filter,
             entity_steps=entity_steps,
+            reaction_id=proposal_id,
+        )
+
+    def _build_heating_preference_reaction(
+        self, proposal_id: str, cfg: dict
+    ) -> HeatingPreferenceReaction | None:
+        """Build a HeatingPreferenceReaction from a stored proposal config."""
+        climate_entity = str(dict(self._entry.options).get(OPT_HEATING, {}).get("climate_entity") or "").strip()
+        try:
+            house_state = str(cfg["house_state"]).strip()
+            target_temperature = float(cfg["target_temperature"])
+            tolerance = float(cfg.get("tolerance", 0.25))
+            if not climate_entity or not house_state:
+                raise ValueError("climate_entity or house_state missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed HeatingPreferenceReaction config for proposal %s", proposal_id)
+            return None
+        return HeatingPreferenceReaction(
+            climate_entity=climate_entity,
+            house_state=house_state,
+            target_temperature=target_temperature,
+            tolerance=tolerance,
+            reaction_id=proposal_id,
+        )
+
+    def _build_heating_eco_reaction(self, proposal_id: str, cfg: dict) -> HeatingEcoReaction | None:
+        """Build a HeatingEcoReaction from a stored proposal config."""
+        climate_entity = str(dict(self._entry.options).get(OPT_HEATING, {}).get("climate_entity") or "").strip()
+        try:
+            eco_target_temperature = float(cfg["eco_target_temperature"])
+            tolerance = float(cfg.get("tolerance", 0.25))
+            if not climate_entity:
+                raise ValueError("climate_entity missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed HeatingEcoReaction config for proposal %s", proposal_id)
+            return None
+        return HeatingEcoReaction(
+            climate_entity=climate_entity,
+            eco_target_temperature=eco_target_temperature,
+            tolerance=tolerance,
+            reaction_id=proposal_id,
+        )
+
+    def _build_room_signal_assist_reaction(
+        self, proposal_id: str, cfg: dict
+    ) -> RoomSignalAssistReaction | None:
+        """Build a RoomSignalAssistReaction from a stored proposal config."""
+        try:
+            room_id = str(cfg["room_id"]).strip()
+            trigger_signal_entities = [str(v).strip() for v in cfg.get("trigger_signal_entities", []) if str(v).strip()]
+            temperature_signal_entities = [
+                str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
+            ]
+            humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
+            temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
+            correlation_window_s = int(cfg.get("correlation_window_s", 600))
+            followup_window_s = int(cfg.get("followup_window_s", 900))
+            steps_raw: list = cfg.get("steps", [])
+            steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+            if not room_id or not trigger_signal_entities:
+                raise ValueError("room_id or trigger_signal_entities missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed RoomSignalAssistReaction config for proposal %s", proposal_id)
+            return None
+        return RoomSignalAssistReaction(
+            hass=self._hass,
+            room_id=room_id,
+            trigger_signal_entities=trigger_signal_entities,
+            temperature_signal_entities=temperature_signal_entities,
+            humidity_rise_threshold=humidity_rise_threshold,
+            temperature_rise_threshold=temperature_rise_threshold,
+            correlation_window_s=correlation_window_s,
+            followup_window_s=followup_window_s,
+            steps=steps,
             reaction_id=proposal_id,
         )
 
@@ -893,6 +991,11 @@ class HeimaEngine:
                     {"entity_id": script_entity},
                     blocking=False,
                 )
+                self._recent_script_applies[script_entity] = {
+                    "target": script_entity,
+                    "applied_ts": time.monotonic(),
+                    "correlation_id": f"script-apply:{uuid4()}",
+                }
             except ServiceNotFound:
                 _LOGGER.warning(
                     "Skipping script apply during startup/race: service script.turn_on not available"

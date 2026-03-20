@@ -108,6 +108,19 @@ class HeatingPatternAnalyzer:
         if eco_sessions < _MIN_ECO_SESSIONS:
             return []
 
+        eco_targets = [
+            float(event.data["temperature_set"])
+            for event in sorted_heating
+            if event.context.house_state == "away"
+            and event.source == "heima"
+            and event.data.get("temperature_set") is not None
+        ]
+        eco_target_temperature = (
+            sorted(eco_targets)[len(eco_targets) // 2]
+            if eco_targets
+            else 16.0
+        )
+
         return [
             ReactionProposal(
                 analyzer_id=self.analyzer_id,
@@ -121,6 +134,7 @@ class HeatingPatternAnalyzer:
                 suggested_reaction_config={
                     "reaction_class": "HeatingEcoReaction",
                     "eco_sessions_observed": eco_sessions,
+                    "eco_target_temperature": eco_target_temperature,
                     "steps": [],
                 },
             )
