@@ -1,13 +1,40 @@
 # Heima — Options Flow SPEC v1
 ## Configuration & UX Schema (Product-Grade)
 
-**Status:** Partial — implemented on `main`, with minor schema/runtime deltas
+**Status:** Active v1 options contract
 **Last Verified Against Code:** 2026-03-11
 
 This document defines the **Options Flow schema** for the Heima integration.
 It specifies UI steps, fields, validation rules, defaults, and runtime effects.
 
 ---
+
+## Normative precedence
+
+This document defines the normative v1 options schema and configuration contract.
+
+Interpretation rule:
+- if implementation and spec diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
+
+## Relationship to UX v2 spec
+
+This document defines the stable configuration schema and runtime effects.
+
+The companion document `core/options_flow_ux_v2_spec.md` refines UX behavior, session flow, and
+proposal-configuration interactions without replacing the schema contract defined here.
+
+## Scope and non-goals
+
+In scope:
+- option names and field meanings
+- validation rules
+- runtime effects of persisted configuration
+
+Not a goal of this document:
+- prescribing one exact UI rendering strategy for every step
+- documenting every internal helper or migration detail
+- replacing narrower specs for reactions, notifications, or scheduler semantics
 
 ## Design Principles
 

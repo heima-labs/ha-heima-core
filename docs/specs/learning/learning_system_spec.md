@@ -1,10 +1,31 @@
 # Heima Learning System — Specification v1
 
-**Status:** Active — core slices implemented; generic event envelope and signal recording added
+**Status:** Active v1 learning contract
 **Date:** 2026-03-10
 **Last Verified Against Code:** 2026-03-19
 
 ---
+
+## Normative precedence
+
+This document defines the intended learning architecture, data contracts, and behavioral rules.
+
+Interpretation rule:
+- if implementation and spec diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
+
+## Scope and non-goals
+
+In scope:
+- learning event model
+- persistence contracts for learnable events and proposals
+- analyzer lifecycle and proposal semantics
+- proposal acceptance into executable reactions
+
+Not a goal of this document:
+- prescribing one exact internal module layout
+- documenting every implementation detail of the current codebase
+- replacing narrower domain specs where they define domain-specific actuation semantics
 
 ## 0. Architectural Rationale — Batch vs Continuous Learning
 
@@ -37,14 +58,14 @@ routines (days/weeks), it is deterministic and debuggable, and it keeps the hot 
 
 ### 0.2 Decision: observe always, analyze periodically
 
-The observation layer (`EventRecorderBehavior`, `LightingRecorderBehavior`, etc.) runs on every
-eval cycle and writes to `EventStore`. This is the **continuous** part.
+The observation layer runs on every evaluation cycle and writes to `EventStore`. This is the
+**continuous** part.
 
 The analysis layer (`IPatternAnalyzer` implementations) runs periodically and is the **batch** part.
 
-This separation is already enforced by the architecture:
-- Behaviors: `on_snapshot()` → `hass.async_create_task(event_store.async_append(event))`
-- Analyzers: `ProposalEngine.async_run()` → called every 6h by the coordinator
+This separation is part of the intended architecture:
+- behaviors append learning events asynchronously
+- analyzers run on an offline cadence and read accumulated events from storage
 
 No analyzer code ever runs in `async_evaluate()`.
 
@@ -113,7 +134,7 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 3. Surfaces detected patterns as user-reviewable proposals
 4. Converts accepted proposals into persisted, managed reactions
 
-## 1.1 Implementation Matrix (as of 2026-03-19)
+## 1.1 Capability Matrix (informative)
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -170,11 +191,11 @@ Options Flow (user-driven)
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Key design rules:**
-- EventStore writes are fire-and-forget: `hass.async_create_task(event_store.async_append(event))`
-- Analyzers run off-cycle: `async_add_executor_job()` or plain async tasks, never inline in `async_evaluate()`
-- ProposalEngine is owned by the coordinator, not the engine
-- EventStore is passed by reference to behaviors and ProposalEngine
+**Normative architecture rules:**
+- event writes must be asynchronous and must not stall the hot evaluation path
+- analyzers run off-cycle and never inline in the hot evaluation path
+- proposal generation is a coordinator-level concern, not a per-cycle decision concern
+- the same persisted event substrate is shared by all analyzers
 
 ---
 
@@ -429,8 +450,6 @@ in ≥3 distinct sessions → emit proposal with fixed `confidence=0.7`.
 
 ## 4. Phase P1 — EventStore
 
-**File:** `runtime/event_store.py`
-
 ### 4.1 API
 
 ```python
@@ -492,8 +511,6 @@ HA `Store` writes JSON to `.storage/heima_pattern_events`:
 
 ## 5. Phase P1b — EventRecorderBehavior
 
-**File:** `runtime/behaviors/event_recorder.py`
-
 `HeimaBehavior` subclass. Observes `DecisionSnapshot` transitions via `on_snapshot()` and writes events to `EventStore`. Detects:
 - `anyone_home False → True` → `PresenceEvent(transition="arrive")`
 - `anyone_home True → False` → `PresenceEvent(transition="depart")`
@@ -512,8 +529,6 @@ def on_snapshot(self, snapshot: DecisionSnapshot) -> None:
 ---
 
 ## 6. Phase P2 — PresencePatternAnalyzer
-
-**File:** `runtime/analyzers/presence.py`
 
 ### 6.1 Algorithm
 
@@ -554,12 +569,15 @@ ReactionProposal(
 
 ## 7. Phase P3 — HeatingPatternAnalyzer
 
-**File:** `runtime/analyzers/heating.py`
-
 Detects two patterns from `HeatingEvent` + `HouseStateEvent`:
 
 **Pattern A — eco opportunity:**
 `away` period > 2h followed by `home` where temperature was raised with `source="user"` → suggest explicit eco heating branch.
+
+Implementation note:
+- eco sessions are derived from real `house_state` transitions (`home -> away -> home`)
+- accepted eco proposals now carry `eco_target_temperature`
+- accepted heating proposals are rebuilt into `HeatingPreferenceReaction` / `HeatingEcoReaction` and are executable
 
 **Pattern B — consistent temperature preference:**
 ```
@@ -578,8 +596,6 @@ For each house_state:
 ---
 
 ## 8. Phase P4 — ProposalEngine
-
-**File:** `runtime/proposal_engine.py`
 
 ### 8.1 Storage
 
@@ -608,7 +624,7 @@ The runtime persists `ReactionProposal.fingerprint` and uses it as the primary d
 
 ### 8.4 Sensor
 
-After each `async_run()`, write to engine state:
+After each analysis run, proposal state must be published to a runtime observability surface:
 ```python
 engine.state.set_sensor("heima_reaction_proposals", json.dumps({
     p.proposal_id: {
@@ -638,37 +654,26 @@ New step after the existing steps. Shown only if `pending_proposals()` is non-em
 UI: for each pending proposal, show description + confidence + boolean selector (Accept / Reject).
 
 On submit:
-- Accept → `coordinator.proposal_engine.async_accept_proposal(pid)`
-- Reject → `coordinator.proposal_engine.async_reject_proposal(pid)`
+- Accept → persist the proposal as accepted and mark it non-pending
+- Reject → persist the proposal as rejected and mark it non-pending
 
 ### 9.2 Acceptance → Configured Reaction
 
-```python
-reactions = dict(entry.options.get("reactions", {}))
-configured = dict(reactions.get("configured", {}))
-configured[proposal.proposal_id] = proposal.suggested_reaction_config
-reactions["configured"] = configured
-# config_entries.async_update_entry(entry, options=...)
-# → triggers async_reload_options() → engine registers the reaction
-```
+Acceptance writes the proposal's suggested reaction config into persisted reaction configuration.
+
+Normative rule:
+- accepting a proposal must produce enough persisted configuration to rebuild an executable
+  reaction later, without depending on transient UI session state
 
 ### 9.3 Reaction instantiation from config
 
-In `engine._rebuild_configured_reactions()` (called from `async_reload_options()`):
+When persisted accepted proposals are rebuilt into runtime reactions:
 
-```python
-for reaction_id, cfg in options.get("reactions", {}).get("configured", {}).items():
-    match cfg.get("reaction_class"):
-        case "PresencePatternReaction":
-            reaction = PresencePatternReaction(
-                reaction_id=reaction_id,
-                steps=cfg.get("steps", []),
-                ...
-            )
-        case "ConsecutiveStateReaction":
-            ...
-    self.register_reaction(reaction)
-```
+Normative rebuild rule:
+- persisted accepted proposals must rebuild into executable runtime reactions
+- proposal types that are user-acceptible in the approval flow must not end up in an
+  “accepted but non-executable” state
+- rebuild semantics must depend only on persisted configuration and stable runtime inputs
 
 ### 9.4 Reactions management
 
@@ -706,11 +711,9 @@ class HeimaAnalyzer:
 
 ### 10.3 Registration
 
-```python
-proposal_engine.register_analyzer(analyzer)
-```
-
 Default analyzers registered by coordinator. Future domains (Watering, Lighting) add their own without touching the core.
+Default analyzers are registered by the learning orchestration layer. Future domains may add their
+own analyzers without changing the core proposal substrate.
 
 ### 10.4 IPatternAnalyzer as a plug-in contract
 
@@ -738,8 +741,6 @@ This is a deliberate v1 constraint, **not** an architectural one. Any analyzer t
 ---
 
 ## P7. LightingEvent — Detail
-
-**File:** `runtime/event_store.py` (see §3.1 for the full dataclass definition)
 
 ### P7.1 Field rationale
 
@@ -774,8 +775,8 @@ When `action="off"`, brightness/color fields are always `None` (the light has no
 
 ### P7.3 Storage integration
 
-`PatternEvent` union extended (see §3.1). `EventStore._event_from_dict()` gains an
-`elif event_type == "lighting"` branch that deserializes `context` via `EventContext.from_dict()`.
+The persisted learning-event substrate must support a `lighting` event kind whose payload can be
+deserialized together with the shared `EventContext`.
 
 `STORAGE_VERSION` is **not bumped**: unknown event types return `None` in the switch — already
 the fallback behavior. New records simply start appearing alongside old ones.
@@ -802,47 +803,103 @@ Comfortably within the 5000-record cap and HA Storage limits.
 
 ## P8. LightingRecorderBehavior
 
-**File:** `runtime/behaviors/lighting_recorder.py`
-
 ### P8.1 Responsibility
 
 Observe HA entity state changes for configured light entities, determine whether the change was
 caused by Heima or by the user, and append `LightingEvent` objects to `EventStore`.
 
+### P8.1.1 Provenance and correlation terminology
+
+This section uses two related concepts repeatedly:
+
+- **Provenance**: metadata used to explain the origin of an observed state change. In practice,
+  provenance answers: "did this change come from the user, from Heima, or from a recent Heima batch
+  that likely caused it?"
+- **Correlation**: metadata used to link multiple observed events that belong to the same logical
+  action burst, even when Home Assistant delivers them as separate `state_changed` events.
+
+Why provenance matters:
+- the learning system must analyze only genuine user behavior when it is trying to infer habits
+- otherwise Heima would learn from its own reactions and reinforce them incorrectly
+- provenance is therefore the guardrail that prevents feedback loops in the event stream
+
+Why correlation matters:
+- real routines are often multi-entity and multi-event
+- Home Assistant emits one event per affected entity, not one semantic "routine" object
+- the analyzer needs a way to understand that "light A off, light B on, light F on" was one grouped
+  interaction, not three unrelated actions
+
+Normative rule:
+- provenance decides whether an event is learnable as `source="user"` or should be treated as
+  Heima-caused and skipped
+- `correlation_id` links the remaining observed events that belong to the same batch, so analyzers
+  can reconstruct grouped patterns from separate entity-level records
+
 ### P8.2 Source discrimination — the core challenge
 
-The lighting domain applies scenes by calling HA services on light entities. The recorder must not
-re-record those same changes as `source="user"`. The mechanism:
+The lighting domain applies scenes and per-entity light services, and accepted reactions can also
+invoke `script.turn_on`. The recorder must not re-record those same changes as `source="user"`.
 
-**Approach: applied-entity tracking via LightingDomain trace**
+Reference implementation pattern: layered recent-apply provenance
 
-After each eval cycle, the LightingDomain's apply plan lists the exact entity IDs it called. The
-coordinator exposes this as `engine.lighting_applied_entities: frozenset[str]` — populated at end
-of `async_evaluate()`, cleared at the start of the next cycle.
+When the recorder receives a HA `STATE_CHANGED` event for a light entity, it checks in order:
+1. **Entity-level applies** tracked by `LightingDomain` for direct `light.turn_on` / `light.turn_off`
+2. **Entity-level scene expansion**: when Heima applies `scene.turn_on`, the runtime resolves a
+   best-effort set of light entities from the room area and marks them in the same apply batch
+3. **Recent script batches**: `script.turn_on` is tracked as a short-lived batch-level provenance
+   fallback for nearby observed light changes
+4. **Room-level fallback TTL**: recent room apply timestamps still prevent obvious self-recording loops
 
-When the recorder receives a HA `STATE_CHANGED` event for a light entity:
-1. If the entity is in `engine.lighting_applied_entities` → `source="heima"` → **do not record**.
-2. Otherwise → `source="user"` → record `LightingEvent`.
+This is intentionally hybrid:
+- deterministic when exact entity provenance is known
+- best-effort for scenes
+- short-window heuristic fallback for scripts
 
-This approach is deterministic and requires no heuristics or timing windows.
+In other words, provenance is layered because the runtime does not always know the full concrete
+entity set in advance:
+- direct light applies give exact provenance
+- scenes give best-effort expanded provenance
+- scripts often require a recent-batch heuristic
+
+The recorder always prefers the strongest provenance available before falling back to weaker forms.
 
 ### P8.3 Room and scene resolution
 
-The recorder needs to resolve `entity_id → room_id` and optionally `entity_id → scene`:
+The recorder resolves:
 
-- `room_id`: derived from the heima room configuration (same mapping used by LightingDomain).
+- `room_id`: derived from HA entity registry `area_id` matched against configured Heima rooms.
   Entities not belonging to any configured room are ignored.
-- `scene`: if the state change comes with a `context` that matches a HA scene activation, the scene
-  name is extracted. Otherwise `scene=None` and only `action` is recorded.
+- `scene`: currently stored as `None` in recorded lighting events. Grouping relies on
+  entity-level changes plus `correlation_id`, not on guaranteed extraction of a named scene from
+  every `state_changed`.
 
-In practice, most user scene activations go through HA scripts or the dashboard; those typically do
-carry scene context. Direct switch flips (physical switch, voice) will have `scene=None`.
+In practice, grouped scene/script effects are correlated through recent apply provenance and HA
+context IDs when available.
+
+### P8.3.1 `correlation_id`
+
+`correlation_id` is the runtime field used to connect multiple entity-level events that belong to
+the same logical action.
+
+Typical sources of `correlation_id`:
+- a Home Assistant `context.id` propagated through related service calls and resulting state changes
+- a Heima-generated batch id for recent apply tracking when the runtime initiates a grouped action
+
+How it is used:
+- the recorder stores it on each relevant event
+- analyzers use it to group nearby per-entity changes into one higher-level routine candidate
+- diagnostics can use it to explain why multiple separate events were treated as one burst
+
+Why it is necessary:
+- without `correlation_id`, grouping would rely only on time windows and room matching
+- that is useful but weaker, especially for scenes/scripts and for future cross-domain behaviors
+- with `correlation_id`, the runtime can preserve a stronger notion of "same action" across several
+  observed entity changes
 
 ### P8.4 Registration
 
-`LightingRecorderBehavior` is a `HeimaBehavior` subclass. It is instantiated by the coordinator
-and registered alongside `EventRecorderBehavior`. It does NOT use `on_snapshot()` — it registers
-a HA `STATE_CHANGED` listener on startup for all configured light entity IDs.
+The lighting recorder is an event-driven behavior. It does not infer lighting events from snapshot
+diffs alone; it listens to HA light state changes for the configured light entities.
 
 ```python
 async def async_setup(self) -> None:
@@ -855,7 +912,7 @@ async def async_teardown(self) -> None:
         self._unsub()
 ```
 
-The coordinator calls `async_setup()` / `async_teardown()` on integration load/unload.
+The runtime must ensure setup and teardown happen with integration load/unload semantics.
 
 ### P8.5 Event construction
 
@@ -868,8 +925,8 @@ async def _handle_state_changed(self, event: Event) -> None:
     if entity_id not in self._entity_to_room:
         return  # not a configured light entity
 
-    # source discrimination
-    if entity_id in self._engine.lighting_applied_entities:
+    # source discrimination (entity -> scene batch -> script batch -> room TTL)
+    if self._is_recent_heima_apply(entity_id=entity_id, room_id=self._entity_to_room[entity_id]):
         return  # Heima caused this, skip
 
     action: Literal["on", "off"] = "on" if new_state.state == "on" else "off"
@@ -895,9 +952,22 @@ async def _handle_state_changed(self, event: Event) -> None:
 
 ## P9. LightingPatternAnalyzer
 
-**File:** `runtime/analyzers/lighting.py`
-
 ### P9.1 Responsibility
+
+**Implementation note**
+
+The current reference implementation can already learn and replay multi-entity lighting routines using:
+- per-entity recorded lighting events
+- `room_id`
+- `correlation_id`
+- aggregated entity attributes (`brightness`, `color_temp_kelvin`, `rgb_color`)
+
+This is sufficient for v1 proposals such as:
+- "living, Monday ~20:00: main on at 190 bri / 2850K, spot on at 96 bri / 3200K, floor off"
+
+The main remaining gap is stronger provenance for arbitrary `script.turn_on` flows that touch many
+entities across domains; the current implementation already applies short-lived batch provenance as a fallback,
+but does not yet reconstruct the full concrete entity set touched by every script.
 
 Rilevare configurazioni ricorrenti di luci per stanza e giorno della settimana, e proporre
 all'utente di automatizzarle come una reazione temporizzata. L'analisi avviene in tre fasi:
@@ -1078,8 +1148,6 @@ fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekd
 
 ### P9.5 LightingScheduleReaction
 
-**File:** `runtime/reactions/lighting_schedule.py`
-
 #### Trigger — RuntimeScheduler
 
 Usa il `RuntimeScheduler` già presente. La reaction implementa `scheduled_jobs(entry_id)` (nuovo
@@ -1183,7 +1251,12 @@ proposal_engine.register_analyzer(LightingPatternAnalyzer())
 
 ---
 
-## 11. File Structure
+## 11. Informative Appendices
+
+The following sections are informative. They help orient implementation work, but they are not the
+normative source of truth for the learning contract.
+
+### 11.1 Reference implementation layout
 
 ```
 custom_components/heima/runtime/
@@ -1204,19 +1277,12 @@ custom_components/heima/runtime/
     lighting_schedule.py            Implemented — LightingScheduleReaction
 ```
 
-### Existing files that change
-
-| File | Change |
-|---|---|
-| `coordinator.py` | Own `EventStore` + `ProposalEngine`; register behaviors; schedule 6h task |
-| `runtime/engine.py` | Add `_rebuild_configured_reactions()`; init `heima_reaction_proposals` sensor |
-| `entities/registry.py` | Add `heima_reaction_proposals` sensor |
-| `config_flow/_steps_reactions.py` | Add "proposals" review sub-step |
-| `translations/en.json`, `it.json` | Proposals step labels |
+This section is informative only. It summarizes one known implementation layout, but the
+normative contract of this spec does not depend on these exact file boundaries.
 
 ---
 
-## 12. Phase Dependencies
+## 12. Informative Dependency View
 
 ```
 P1 (EventStore)
@@ -1235,7 +1301,7 @@ P6 (Generalization) → interfaces designed from P1, enforcement deferred
 
 ---
 
-## 13. Tests to Write
+## 13. Informative Test Plan
 
 ### P1 — EventStore
 
@@ -1303,7 +1369,7 @@ P6 (Generalization) → interfaces designed from P1, enforcement deferred
 
 ---
 
-## 14. Design Constraints
+## 14. Additional Design Constraints
 
 - **No ML libraries in v1.** Built-in analyzers use pure Python: `sorted()`, median/percentile via index arithmetic. Advanced analyzers can be added via the `IPatternAnalyzer` plug-in contract without touching core components (see §10.4).
 - **No blocking the eval cycle.** `async_append()` is always scheduled as a task from `on_snapshot()`.
@@ -1314,7 +1380,7 @@ P6 (Generalization) → interfaces designed from P1, enforcement deferred
 
 ---
 
-## 15. Open Questions
+## 15. Open Questions (informative)
 
 1. **HeatingRecorderBehavior access to `heating_trace`**: preferred option is `engine.heating_trace` property for testability.
 2. **`heima_reaction_proposals` sensor format**: value = count of pending proposals (int, allows HA automations on count changes), attributes = full proposals dict.

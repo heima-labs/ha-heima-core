@@ -54,6 +54,10 @@ Ordine di valutazione nel ciclo (DAG):
 - Milestone 1.1: infrastruttura base completata (HeimaBehavior, dispatch, constraints layer v0.3.0). Behavior concreti con apply_filter rimandati — apply_filter su behavior e ridondante con il constraints layer senza tags su ApplyStep; l'use case primario per i behavior e l'observability passiva (on_snapshot).
 - Cross-cut Normalization Layer: rollout avanzato e gia integrato nei path runtime principali; il framework e ormai oltre lo stato sperimentale.
 - Cross-cut Policy Plugin Framework: definito a livello spec, non ancora implementato nel runtime.
+- Learning / live-lab track: sostanzialmente completato per v1 runtime. Restano aperti solo:
+  - provenance piu forte per scene/script multi-entita
+  - primi analyzer cross-domain sopra `state_change`
+  - stabilizzazione finale del live test `040_security_mismatch_runtime.py`
 
 ## Milestone 0 - Scaffolding e Contratto Entita
 - Inizializzare struttura integrazione.
@@ -243,6 +247,10 @@ Output:
     - small-delta skip
     - rate limit / idempotenza
   - scheduler condiviso usato per timed rechecks del `vacation_curve`
+  - learning heating aggiornato:
+    - recorder basato su setpoint osservato
+    - proposal fingerprint persistito
+    - accepted heating proposals ricostruite come reaction runtime (`HeatingPreferenceReaction`, `HeatingEcoReaction`)
   - eventi:
     - `heating.vacation_phase_changed`
     - `heating.target_changed`
@@ -258,6 +266,27 @@ Output:
 - P0 Spec Foundation
   - mini-spec cross-domain definita
   - separazione esplicita da normalization plugins
+
+### 11. Learning System + Live Lab (current status)
+- Stato attuale:
+  - generic persisted learning-event envelope implementato
+  - `LightingRecorderBehavior`, `HeatingRecorderBehavior`, `SignalRecorderBehavior` operativi
+  - proposal acceptance normalizzata su runtime steps eseguibili (`scene.turn_on`, `script.turn_on`)
+  - `LightingScheduleReaction` completata con hardening midnight-wrap
+  - `learning_reset` hard reset completo di store + stato runtime
+  - live HA Docker lab aggiornato con:
+    - fixture lighting multi-entita
+    - `Local Calendar` reale (`calendar.principale`)
+    - seeded fixtures deterministici per proposal/analyzer
+    - lane `setup`, `live_e2e`, `seeded_integration`, `diagnostic`
+  - scenari true live presenti:
+    - lighting learning (`025_lighting_learning_live.py`)
+    - presence learning (`026_presence_live.py`)
+    - calendar runtime (`050_calendar_domain.py`)
+- Gap residui:
+  - stronger scene/script provenance expansion to concrete entity batches
+  - analyzer cross-domain composti sopra eventi `state_change`
+  - stabilizzazione `040_security_mismatch_runtime.py` per `dual_emit`
 
 ### 11. Live Test and Docker Lab Remediation
 - Obiettivo:

@@ -1,14 +1,36 @@
 # Heima — Event Catalog SPEC v1
 ## Notification Domain: Standard Events, Keys, Severity, Payloads
 
-**Status:** Active v1 catalog (runtime-aligned); deferred items explicitly listed in section 5
-**Last Verified Against Code:** 2026-03-11
+**Status:** Active v1 event catalog
+**Last Verified Against Code:** 2026-03-20
 
 This document defines the **standard event catalog** emitted by Heima.
 Events are consumed by the Notification domain to route messages via `notify.*`
 with **deduplication** and **rate limiting**.
 
 ---
+
+## Normative precedence
+
+This catalog is normative for the stable public event names, keys, severities, and compatibility
+rules of the v1 notification/event system.
+
+Interpretation rule:
+- if implementation and catalog diverge, the divergence must be resolved explicitly
+- code is a reference implementation, not the source of truth
+
+## Scope and non-goals
+
+In scope:
+- canonical event names and keys
+- event severity expectations
+- compatibility and migration-relevant event forms
+- policy-level notes needed to interpret event emission
+
+Not a goal of this document:
+- documenting internal event production code paths
+- describing every diagnostics field emitted by every domain
+- replacing narrower specs that define higher-level routing behavior
 
 ## 0. Event Model
 
@@ -23,6 +45,25 @@ All events conform to this envelope:
 - `title` (string)
 - `message` (string)
 - `context` (object/dict) — redacted, safe to share in diagnostics
+
+### 0.1.1 Provenance and correlation
+
+Two concepts are important across the event system:
+
+- **Provenance**: metadata that explains the origin of an event or observed change. Depending on
+  the domain, this may distinguish user-driven changes, Heima-driven changes, or compatibility/
+  migration-generated emissions.
+- **Correlation**: metadata that links multiple emitted or observed events that belong to the same
+  logical operation or burst.
+
+Why they matter:
+- provenance prevents the learning side of the system from mistaking Heima's own actions for user
+  habits
+- correlation allows multiple low-level events to be interpreted as one higher-level action
+
+For learning events, correlation is carried by `correlation_id` in the persisted event envelope.
+For notification/runtime events, the same idea may be represented by shared HA context or by
+domain-specific batch metadata.
 
 ### 0.2 Dedup & Rate Limit Controls
 Configured in Options Flow:
@@ -369,6 +410,12 @@ To avoid false positives when person trackers lag after arming away, security mi
 `strict` policy semantics:
 - emits immediately when security is `armed_away` and `anyone_home = true`
 
+Compatibility mode for emitted event forms:
+- `security_mismatch_event_mode`: `explicit_only | generic_only | dual_emit` (default: `explicit_only`)
+- `explicit_only`: emit `security.armed_away_but_home`
+- `generic_only`: emit `security.mismatch` with `subtype=armed_away_but_home`
+- `dual_emit`: emit both forms
+
 ---
 
 ## 4. Diagnostics & Privacy
@@ -386,7 +433,7 @@ The following event types are intentionally not implemented in the current v1 ru
 - `heating.apply_failed`
 
 Note:
-- a generic umbrella `security.mismatch` event is intentionally not part of v1 taxonomy.
-- v1 standardizes on explicit event types only (for example `security.armed_away_but_home`).
+- `security.mismatch` is implemented in current v1.x runtime as a compatibility-controlled canonical form.
+- default v1.x behavior still remains `explicit_only`, so existing installs continue to observe explicit event types only unless reconfigured.
 
 ---

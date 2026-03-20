@@ -1,10 +1,45 @@
 # Heima — SPEC v1
 ## Intelligent Home Engine for Home Assistant (Custom Integration)
 
-**Status:** Baseline/Partial — foundational product spec, superseded in parts by v1.1+ runtime specs
+**Status:** Foundational product guide for v1.x
 **Last Verified Against Code:** 2026-03-11
 
 ---
+
+## Role of this document
+
+This document is the foundational product-level guide for Heima v1.x.
+
+It exists to define:
+- what Heima is
+- what kind of product it is trying to be
+- which architectural and product principles are non-negotiable
+- which domains belong to the v1 product perimeter
+
+It is intentionally broader and more stable than the narrower subsystem specs.
+
+## Normative precedence
+
+This document is normative for product intent and product boundaries.
+
+More specific operational behavior is defined in narrower specs such as:
+- `core/options_flow_spec.md`
+- `core/reactive_behavior_spec.md`
+- `core/events_and_notifications_spec.md`
+- `learning/learning_system_spec.md`
+
+Interpretation rule:
+- if a narrow subsystem spec and this document differ in implementation detail, the narrower spec
+  governs that subsystem behavior
+- if a narrow spec or implementation diverges from the product intent defined here, that divergence
+  must be resolved explicitly as a product/design decision
+
+## Non-goals
+
+This document does not try to:
+- describe every runtime detail of the current implementation
+- replace subsystem contracts maintained in narrower specs
+- serve as a changelog of v1.x implementation progress
 
 ## 0. Purpose and Principles
 
