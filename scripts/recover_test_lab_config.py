@@ -50,6 +50,9 @@ ROOM_AREA_ENTITIES: dict[str, list[str]] = {
         "light.test_heima_studio_main",
         "light.test_heima_studio_spot",
         "light.test_heima_studio_desk",
+        "sensor.test_heima_studio_humidity",
+        "sensor.test_heima_studio_temperature",
+        "switch.test_heima_studio_fan",
     ],
     "bathroom": [
         "binary_sensor.test_heima_room_bathroom_motion",
@@ -177,6 +180,9 @@ LEARNING_CONFIG = {
         "sensor.test_heima_bathroom_humidity",
         "sensor.test_heima_bathroom_temperature",
         "switch.test_heima_bathroom_fan",
+        "sensor.test_heima_studio_humidity",
+        "sensor.test_heima_studio_temperature",
+        "switch.test_heima_studio_fan",
     ],
 }
 

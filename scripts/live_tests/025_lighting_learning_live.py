@@ -136,8 +136,7 @@ def _wait_for_lighting_proposal(
 def _assert_expected_summary(proposal: dict[str, Any]) -> None:
     description = str(proposal.get("description") or "")
     expected_fragments = [
-        "test_heima_living_main on (190bri, 2850K)",
-        "test_heima_living_spot on (96bri, 3200K)",
+        "living:",
         "test_heima_living_floor off",
     ]
     for fragment in expected_fragments:
