@@ -47,6 +47,10 @@
   - stay reviewable and explainable
   - do not expand to arbitrary unsupervised discovery
   - prefer adding catalog entries over creating new near-duplicate analyzer classes
+- Current status:
+  - S1-S4 completed
+  - composite learning now acts as the generic layer for reviewable room-scoped assist patterns
+  - lighting and other specialized learners remain valid where they preserve richer domain output
 
 ## Live Test Remediation Plan
 - Goal:

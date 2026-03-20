@@ -13,7 +13,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.ha_client import HAApiError, HAClient
-from lib.ha_websocket import HAWebSocketClient
+from lib.ha_websocket import HAWebSocketClient, HAWebSocketError
 
 
 class HAFlowClient(HAClient):
@@ -338,22 +338,36 @@ def _wait_dual_emit_bus(
     timeout_s: int,
     trigger: callable,
 ) -> None:
-    with HAWebSocketClient(base_url, token, timeout=timeout_s) as ws:
-        subscription_id = ws.subscribe_events()
-        trigger()
-        events = ws.wait_for_matching_events(
-            subscription_id,
-            timeout_s=timeout_s,
-            predicate=lambda items: _dual_emit_seen(items),
-        )
-    event_types = _heima_event_types(events)
-    has_specific = "security.armed_away_but_home" in event_types
-    has_generic = "security.mismatch" in event_types
-    if has_specific and has_generic:
-        return
+    last_error: Exception | None = None
+    last_event_types: list[str] = []
+    for _ in range(2):
+        try:
+            with HAWebSocketClient(base_url, token, timeout=timeout_s) as ws:
+                subscription_id = ws.subscribe_events("heima_event")
+                trigger()
+                events = ws.wait_for_matching_events(
+                    subscription_id,
+                    timeout_s=timeout_s,
+                    predicate=lambda items: _dual_emit_seen(items),
+                )
+            event_types = _heima_event_types(events)
+            has_specific = "security.armed_away_but_home" in event_types
+            has_generic = "security.mismatch" in event_types
+            if has_specific and has_generic:
+                return
+            last_event_types = event_types
+            last_error = RuntimeError(
+                "Dual emit not observed on heima_event bus "
+                f"(types={event_types[-12:]})"
+            )
+        except HAWebSocketError as exc:
+            last_error = exc
+            time.sleep(0.5)
+    if last_error is not None:
+        raise last_error
     raise RuntimeError(
         "Dual emit not observed on heima_event bus "
-        f"(types={event_types[-12:]})"
+        f"(types={last_event_types[-12:]})"
     )
 
 
@@ -485,18 +499,34 @@ def main() -> int:
 
         print("== Scenario E3: dual_emit emits both explicit and generic ==")
         _set_notifications_mode(client, entry_id, payload, mode="dual_emit")
-        _wait_dual_emit_bus(
-            args.ha_url,
-            args.ha_token,
-            timeout_s=args.timeout_s,
-            trigger=lambda: _trigger_security_mismatch_once(
+        since_ts = time.time()
+        try:
+            _wait_dual_emit_bus(
+                args.ha_url,
+                args.ha_token,
+                timeout_s=args.timeout_s,
+                trigger=lambda: _trigger_security_mismatch_once(
+                    client,
+                    person_override_entity=person_override_entity,
+                    security_entity=security_entity,
+                    armed_away_value=armed_away_value,
+                    alarm_code=args.alarm_code,
+                ),
+            )
+        except HAWebSocketError:
+            _trigger_security_mismatch_once(
                 client,
                 person_override_entity=person_override_entity,
                 security_entity=security_entity,
                 armed_away_value=armed_away_value,
                 alarm_code=args.alarm_code,
-            ),
-        )
+            )
+            _wait_dual_emit_history(
+                client,
+                since_ts=since_ts,
+                timeout_s=args.timeout_s,
+                poll_s=args.poll_s,
+            )
         print("PASS scenario E3")
     finally:
         _reset_after_test(

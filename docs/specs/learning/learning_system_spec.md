@@ -1344,6 +1344,39 @@ Normative rule:
 - the pattern catalog decides semantics, thresholds, explanation text, and proposal metadata
 - proposal emission must not depend on one-off analyzer-private behavior that is invisible in spec
 
+### P10.4.1 Relationship with domain-specialized learning
+
+The composite engine is the generic behavioral learning layer for reviewable room-scoped
+multi-signal patterns.
+
+It is intentionally broader in scope than any one domain learner, but it is not automatically a
+replacement for domain-specialized learning modules.
+
+Normative architectural rule:
+- the learning subsystem MAY contain both:
+  - a generic composite learning layer, and
+  - domain-specialized learning layers
+- these layers MUST share the same event substrate and proposal model
+- they MUST be allowed to coexist when a domain-specific learner provides materially richer
+  semantics than the generic composite engine
+
+Examples:
+- the composite engine is a better fit for patterns like:
+  - occupancy + humidity rise -> ventilation assist
+  - occupancy + temperature rise -> cooling assist
+- the lighting learner remains the better fit for patterns like:
+  - recurring multi-entity light scenes
+  - explicit per-entity brightness/color end states
+  - schedule-like room routines reconstructed as detailed light steps
+
+Normative product rule:
+- the composite engine SHOULD become the default path for new explainable room-scoped assist
+  patterns
+- a specialized learner SHOULD remain in place when the generic composite model would lose
+  important domain semantics, fidelity, or actuation detail
+- the presence of the composite engine MUST NOT be interpreted as a requirement to remove existing
+  specialized learners prematurely
+
 ### P10.5 Input requirements
 
 The engine reads from the shared `EventStore` and correlates:
@@ -1557,6 +1590,13 @@ V1 review payload rule:
 
 This composite engine is the v1 bridge from domain-specific preference learning to true
 cross-domain behavior learning.
+
+In the intended architecture, it also becomes the general-purpose layer that sits above specialized
+domain learners:
+- generic composite learning captures explainable multi-signal assist patterns
+- specialized learners remain responsible for domains where the product needs richer output models
+  than "detect condition -> run configured steps"
+- both layers continue to emit reviewable proposals through the same proposal engine
 
 If successful, the same substrate can later support:
 - kitchen cooking extraction

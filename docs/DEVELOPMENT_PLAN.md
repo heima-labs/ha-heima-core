@@ -287,11 +287,8 @@ Output:
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
-  - passare da analyzer compositi fissi a un composite pattern engine v1 con pattern catalog esplicito
-  - consolidare i primi target cross-domain in una libreria reviewable di pattern room-scoped:
-    - room-scoped humidity/temperature burst + occupancy -> generic ventilation assist proposal
-    - room-scoped temperature rise + occupancy -> generic cooling assist proposal
-  - standardizzare il contratto dichiarativo dei pattern prima di ampliare il catalogo
+  - definire i next step dopo la chiusura del Composite Pattern Engine v1.1
+  - decidere come far convivere generic composite learning e learner specializzati di dominio
   - migliorare il grouping composito oltre il solo HA context / correlation id
 
 ### 11.1 Next Step — Composite Pattern Engine v1.1
@@ -325,6 +322,12 @@ Output:
   - niente discovery arbitraria non supervisionata in v1.1
   - ogni pattern deve restare spiegabile in termini di primary signal, corroboration, follow-up
   - l’aggiunta di un nuovo pattern SHOULD preferire il catalogo rispetto a un nuovo analyzer quasi duplicato
+
+Stato attuale:
+- S1-S4 implementate
+- il motore composito v1.1 e ora il layer generico per pattern room-scoped explainable
+- lighting/heating learning specializzati restano attivi quando servono semantiche piu ricche del
+  contratto composito generico
 
 ### 11.2 Live Test and Docker Lab Remediation
 - Obiettivo:
