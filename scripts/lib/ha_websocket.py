@@ -19,6 +19,7 @@ import os
 import socket
 import ssl
 import struct
+import time
 from typing import Any
 
 
@@ -110,14 +111,13 @@ class HAWebSocketClient:
     # Framing
     # ------------------------------------------------------------------
 
-    def _send_raw(self, data: dict[str, Any]) -> None:
+    def _send_frame(self, *, opcode: int, payload: bytes = b"") -> None:
         assert self._sock
-        payload = json.dumps(data).encode("utf-8")
         length = len(payload)
         mask_key = os.urandom(4)
         masked = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
 
-        header = bytearray([0x81])  # FIN + text opcode
+        header = bytearray([0x80 | (opcode & 0x0F)])
         if length < 126:
             header.append(0x80 | length)
         elif length < 65536:
@@ -129,6 +129,10 @@ class HAWebSocketClient:
 
         self._sock.sendall(bytes(header) + mask_key + masked)
 
+    def _send_raw(self, data: dict[str, Any]) -> None:
+        payload = json.dumps(data).encode("utf-8")
+        self._send_frame(opcode=0x1, payload=payload)
+
     def _recv_exactly(self, n: int) -> bytes:
         assert self._sock
         buf = b""
@@ -139,7 +143,7 @@ class HAWebSocketClient:
             buf += chunk
         return buf
 
-    def _recv(self) -> dict[str, Any]:
+    def _recv_message(self) -> tuple[int, bytes]:
         header = self._recv_exactly(2)
         opcode = header[0] & 0x0F
         masked = bool(header[1] & 0x80)
@@ -156,10 +160,21 @@ class HAWebSocketClient:
         if masked:
             payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
 
-        if opcode == 8:
-            raise HAWebSocketError("WebSocket closed by server")
+        return opcode, payload
 
-        return json.loads(payload.decode("utf-8"))
+    def _recv(self) -> dict[str, Any]:
+        while True:
+            opcode, payload = self._recv_message()
+            if opcode == 0x8:
+                raise HAWebSocketError("WebSocket closed by server")
+            if opcode == 0x9:
+                self._send_frame(opcode=0xA, payload=payload)
+                continue
+            if opcode == 0xA:
+                continue
+            if opcode != 0x1:
+                continue
+            return json.loads(payload.decode("utf-8"))
 
     # ------------------------------------------------------------------
     # RPC
@@ -175,6 +190,75 @@ class HAWebSocketClient:
                 if not resp.get("success", True):
                     raise HAWebSocketError(f"WS call {msg_type!r} failed: {resp}")
                 return resp.get("result")
+
+    def subscribe_events(self, event_type: str | None = None) -> int:
+        msg_id = self._msg_id
+        self._msg_id += 1
+        payload: dict[str, Any] = {"id": msg_id, "type": "subscribe_events"}
+        if event_type:
+            payload["event_type"] = event_type
+        self._send_raw(payload)
+        while True:
+            resp = self._recv()
+            if resp.get("id") != msg_id:
+                continue
+            if not resp.get("success", False):
+                raise HAWebSocketError(f"WS subscribe_events failed: {resp}")
+            return msg_id
+
+    def wait_for_subscription_events(
+        self,
+        subscription_id: int,
+        *,
+        timeout_s: float,
+    ) -> list[dict[str, Any]]:
+        deadline = time.monotonic() + timeout_s
+        events: list[dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            remaining = max(0.1, deadline - time.monotonic())
+            assert self._sock
+            self._sock.settimeout(remaining)
+            try:
+                msg = self._recv()
+            except TimeoutError as exc:
+                raise HAWebSocketError("Timed out waiting for subscription events") from exc
+            except socket.timeout as exc:
+                raise HAWebSocketError("Timed out waiting for subscription events") from exc
+            if msg.get("type") != "event" or msg.get("id") != subscription_id:
+                continue
+            event = msg.get("event")
+            if isinstance(event, dict):
+                events.append(event)
+        return events
+
+    def wait_for_matching_events(
+        self,
+        subscription_id: int,
+        *,
+        timeout_s: float,
+        predicate: Any,
+    ) -> list[dict[str, Any]]:
+        deadline = time.monotonic() + timeout_s
+        events: list[dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            remaining = max(0.1, deadline - time.monotonic())
+            assert self._sock
+            self._sock.settimeout(remaining)
+            try:
+                msg = self._recv()
+            except TimeoutError as exc:
+                raise HAWebSocketError("Timed out waiting for subscription events") from exc
+            except socket.timeout as exc:
+                raise HAWebSocketError("Timed out waiting for subscription events") from exc
+            if msg.get("type") != "event" or msg.get("id") != subscription_id:
+                continue
+            event = msg.get("event")
+            if not isinstance(event, dict):
+                continue
+            events.append(event)
+            if predicate(events):
+                return events
+        raise HAWebSocketError("Timed out waiting for matching subscription events")
 
     # ------------------------------------------------------------------
     # Area registry

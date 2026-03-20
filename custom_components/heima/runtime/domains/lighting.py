@@ -28,6 +28,7 @@ class LightingDomain:
     def __init__(self, hass: HomeAssistant, normalizer: InputNormalizer) -> None:
         self._hass = hass
         self._normalizer = normalizer
+        self._room_area_ids: dict[str, str] = {}
         self._lighting_last_scene: dict[str, str] = {}
         self._lighting_last_ts: dict[str, float] = {}
         self._lighting_recent_entity_applies: dict[str, dict[str, Any]] = {}
@@ -38,6 +39,7 @@ class LightingDomain:
 
     def reset(self) -> None:
         """Called on options reload."""
+        self._room_area_ids = {}
         self._lighting_last_scene = {}
         self._lighting_last_ts = {}
         self._lighting_recent_entity_applies = {}
@@ -172,6 +174,11 @@ class LightingDomain:
         room_trace: dict[str, list[dict[str, Any]]] = {}
         room_winner_by_room: dict[str, dict[str, Any]] = {}
         conflicts: list[dict[str, Any]] = []
+        self._room_area_ids = {
+            str(room_id): str(cfg.get("area_id") or "").strip()
+            for room_id, cfg in room_configs.items()
+            if str(room_id).strip()
+        }
 
         def _enqueue_lighting_step(
             *,
@@ -385,6 +392,13 @@ class LightingDomain:
                         blocking=False,
                     )
                     self._mark_room_applied(step.target, scene_entity)
+                    for entity_id in self._expected_scene_entities(step):
+                        self._mark_entity_applied(
+                            room_id=step.target,
+                            entity_id=entity_id,
+                            action="scene.turn_on",
+                            correlation_id=apply_batch_id,
+                        )
                 except ServiceNotFound:
                     _LOGGER.warning(
                         "Skipping lighting apply during startup/race: service scene.turn_on not available"
@@ -541,3 +555,29 @@ class LightingDomain:
             "applied_ts": applied_ts,
             "correlation_id": correlation_id,
         }
+
+    def _expected_scene_entities(self, step: ApplyStep) -> list[str]:
+        """Best-effort expansion of a room scene to concrete light entities in that room area."""
+        room_id = str(step.target or "").strip()
+        if not room_id:
+            return []
+
+        area_id = self._room_area_ids.get(room_id, "")
+        if not area_id:
+            return []
+
+        try:
+            from homeassistant.helpers.entity_registry import async_get as async_get_er
+
+            entity_registry = async_get_er(self._hass)
+        except Exception:
+            return []
+
+        entity_ids: list[str] = []
+        for entry in entity_registry.entities.values():
+            if not entry.entity_id.startswith("light."):
+                continue
+            if entry.area_id != area_id:
+                continue
+            entity_ids.append(entry.entity_id)
+        return sorted(entity_ids)

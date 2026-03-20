@@ -12,13 +12,13 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
   - tiers:
     - `setup`
       - `recover_test_lab_config.py`
-      - `005_setup_lab.py`
       - `006_restore_learning_fixtures.sh`
     - `live_e2e`
       - `000_live_smoke.py`
       - `010_config_flow.py`
       - `025_lighting_learning_live.py`
-      - `026_presence_live.py`
+      - `026_room_signal_assist_live.py`
+      - `027_presence_live.py`
       - `040_security_mismatch_runtime.py`
       - `050_calendar_domain.py`
     - `seeded_integration`
@@ -84,6 +84,8 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 - `setup`
   - provisioning / recovery only
   - not counted as runtime functional proof
+  - canonical lab bootstrap entrypoint is `recover_test_lab_config.py`
+  - `005_setup_lab.py` remains only as a compatibility wrapper for older commands
 - `live_e2e`
   - should traverse real HA entity/service paths into Heima runtime behavior
   - should not depend on synthetic history injection as the primary assertion path
@@ -91,7 +93,8 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
     Docker lab has the expected baseline fixtures and room/entity wiring
   - current learning examples:
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
-    - `026_presence_live.py`: real presence source -> Heima person -> proposal
+    - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
+    - `027_presence_live.py`: real presence source -> Heima person -> proposal
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

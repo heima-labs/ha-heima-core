@@ -112,6 +112,7 @@ The script validates three end-to-end scenarios:
 - `binary_sensor.test_heima_*`
 - `sensor.test_heima_*`
 - `switch.test_heima_heater_relay` (template switch)
+- `switch.test_heima_bathroom_fan` (template ventilation switch)
 
 ### Fake lights for reactions / learning
 - living room:
@@ -149,6 +150,7 @@ The script validates three end-to-end scenarios:
 - `script.test_heima_set_cold_house`
 - `script.test_heima_set_living_evening_scene`
 - `script.test_heima_set_studio_focus_scene`
+- `script.test_heima_run_bathroom_shower_pattern`
 - `script.test_heima_alarm_arm_away`
 - `script.test_heima_alarm_arm_home`
 - `script.test_heima_alarm_disarm`
@@ -181,6 +183,20 @@ The script validates three end-to-end scenarios:
 - helper scripts for repeatable lighting patterns:
   - `script.test_heima_set_living_evening_scene`
   - `script.test_heima_set_studio_focus_scene`
+
+### Cross-domain learning example
+- bathroom occupancy source:
+  - `binary_sensor.test_heima_room_bathroom_motion`
+- bathroom signal entities:
+  - `sensor.test_heima_bathroom_humidity`
+  - `sensor.test_heima_bathroom_temperature`
+  - `switch.test_heima_bathroom_fan`
+- helper script for repeatable shower-like pattern:
+  - `script.test_heima_run_bathroom_shower_pattern`
+- suggested `Learning -> context_signal_entities` bindings:
+  - `sensor.test_heima_bathroom_humidity`
+  - `sensor.test_heima_bathroom_temperature`
+  - `switch.test_heima_bathroom_fan`
 
 ### Heating vacation bindings
 - `thermostat_entity` -> `climate.test_heima_thermostat`

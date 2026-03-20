@@ -409,6 +409,62 @@ async def test_lighting_recorder_ignores_recent_heima_entity_apply():
     assert len(store.events) == 0
 
 
+async def test_lighting_recorder_ignores_recent_scene_entity_apply():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        apply_state={
+            "rooms": {"living": time.monotonic() - 1.0},
+            "entities": {
+                "light.living_main": {
+                    "room_id": "living",
+                    "action": "scene.turn_on",
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "lighting-apply:scene-1",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 0
+
+
+async def test_lighting_recorder_ignores_recent_script_batch_apply():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        apply_state={
+            "rooms": {},
+            "entities": {},
+            "scripts": {
+                "script.preheat_home": {
+                    "target": "script.preheat_home",
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:1",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 0
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle: async_setup / async_teardown
 # ---------------------------------------------------------------------------

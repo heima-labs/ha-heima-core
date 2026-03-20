@@ -69,6 +69,12 @@ def _build_engine(
     return engine
 
 
+class _RegistryEntry:
+    def __init__(self, entity_id: str, area_id: str | None) -> None:
+        self.entity_id = entity_id
+        self.area_id = area_id
+
+
 def test_room_with_occupancy_mode_none_is_off_and_does_not_contribute():
     options = {
         "people_named": [{"slug": "p1", "presence_method": "manual", "enable_override": True}],
@@ -271,6 +277,70 @@ async def test_apply_plan_ignores_scene_turn_on_service_race():
 
 
 @pytest.mark.asyncio
+async def test_scene_apply_tracks_expected_room_light_entities(monkeypatch):
+    options = {
+        "rooms": [
+            {
+                "room_id": "living",
+                "area_id": "living",
+                "occupancy_mode": "none",
+                "sources": [],
+                "logic": "any_of",
+            }
+        ],
+        "lighting_rooms": [
+            {
+                "room_id": "living",
+                "scene_evening": "scene.living_evening",
+                "enable_manual_hold": True,
+            }
+        ],
+        "lighting_zones": [{"zone_id": "living_zone", "rooms": ["living"]}],
+    }
+    engine = _build_engine(
+        options,
+        {
+            "scene.living_evening": "scening",
+            "light.living_main": "off",
+            "light.living_spot": "off",
+        },
+    )
+
+    fake_registry = SimpleNamespace(
+        entities={
+            "a": _RegistryEntry("light.living_main", "living"),
+            "b": _RegistryEntry("light.living_spot", "living"),
+            "c": _RegistryEntry("switch.other", "living"),
+        }
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda hass: fake_registry,
+    )
+
+    snapshot = DecisionSnapshot(
+        snapshot_id="x",
+        ts="2026-01-01T00:00:00+00:00",
+        house_state="home",
+        anyone_home=True,
+        people_count=1,
+        occupied_rooms=[],
+        lighting_intents={"living_zone": "scene_evening"},
+        security_state="unknown",
+        notes="test",
+    )
+    plan = engine._build_apply_plan(snapshot)
+
+    await engine._execute_apply_plan(plan)
+
+    recent = engine.lighting_recent_apply_state
+    assert "light.living_main" in recent["entities"]
+    assert "light.living_spot" in recent["entities"]
+    assert recent["entities"]["light.living_main"]["action"] == "scene.turn_on"
+    assert recent["entities"]["light.living_spot"]["action"] == "scene.turn_on"
+
+
+@pytest.mark.asyncio
 async def test_execute_apply_plan_runs_script_turn_on_steps():
     options = {}
     engine = _build_engine(options, {"script.preheat_home": "off"})
@@ -294,6 +364,9 @@ async def test_execute_apply_plan_runs_script_turn_on_steps():
         {"entity_id": "script.preheat_home"},
         False,
     )
+    recent = engine.lighting_recent_apply_state
+    assert "script.preheat_home" in recent["scripts"]
+    assert recent["scripts"]["script.preheat_home"]["correlation_id"].startswith("script-apply:")
 
 
 @pytest.mark.asyncio

@@ -42,9 +42,6 @@ class EventRecorderBehavior(HeimaBehavior):
             )
             self._hass.async_create_task(self._store.async_append(event))
 
-    def reset_learning_state(self) -> None:
-        self._previous_snapshot = None
-
         if previous.house_state != snapshot.house_state:
             event = HeimaEvent(
                 ts=snapshot.ts,
@@ -57,3 +54,6 @@ class EventRecorderBehavior(HeimaBehavior):
                 },
             )
             self._hass.async_create_task(self._store.async_append(event))
+
+    def reset_learning_state(self) -> None:
+        self._previous_snapshot = None

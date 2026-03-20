@@ -57,7 +57,6 @@ Ordine di valutazione nel ciclo (DAG):
 - Learning / live-lab track: sostanzialmente completato per v1 runtime. Restano aperti solo:
   - provenance piu forte per scene/script multi-entita
   - primi analyzer cross-domain sopra `state_change`
-  - stabilizzazione finale del live test `040_security_mismatch_runtime.py`
 
 ## Milestone 0 - Scaffolding e Contratto Entita
 - Inizializzare struttura integrazione.
@@ -281,12 +280,14 @@ Output:
     - lane `setup`, `live_e2e`, `seeded_integration`, `diagnostic`
   - scenari true live presenti:
     - lighting learning (`025_lighting_learning_live.py`)
-    - presence learning (`026_presence_live.py`)
+    - presence learning (`027_presence_live.py`)
     - calendar runtime (`050_calendar_domain.py`)
+  - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
   - analyzer cross-domain composti sopra eventi `state_change`
-  - stabilizzazione `040_security_mismatch_runtime.py` per `dual_emit`
+  - primo target cross-domain definito a livello spec:
+    - room-scoped humidity/temperature burst + occupancy -> generic assist proposal
 
 ### 11. Live Test and Docker Lab Remediation
 - Obiettivo:

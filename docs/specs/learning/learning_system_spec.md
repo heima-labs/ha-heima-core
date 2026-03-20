@@ -1251,6 +1251,141 @@ proposal_engine.register_analyzer(LightingPatternAnalyzer())
 
 ---
 
+## P10. First Cross-Domain Analyzer (v1 target)
+
+### P10.1 Goal
+
+The first cross-domain analyzer in v1 should prove that the generic event substrate can support
+multi-signal, room-scoped behavioral inference beyond lighting/heating preferences.
+
+The canonical v1 use case is:
+- bathroom occupied
+- humidity rises quickly
+- optional temperature rise corroborates the episode
+- the user usually starts ventilation shortly after
+
+The analyzer should convert repeated occurrences of this composite behavior into a user-reviewable
+proposal.
+
+### P10.2 Scope
+
+This first analyzer is intentionally narrow.
+
+In scope:
+- one room-scoped composite pattern at a time
+- signal correlation over a short window
+- proposal generation for a generic assist reaction with user-configured actions
+
+Out of scope for v1:
+- arbitrary unsupervised cross-domain discovery
+- automatic fan entity selection
+- automatic actuation without user approval
+- probabilistic or ML-heavy shower detection
+
+### P10.3 Input requirements
+
+The analyzer reads from the shared `EventStore` and correlates:
+- room occupancy evidence from `EventContext.occupied_rooms`
+- room-scoped `state_change` events for humidity sensors
+- optional room-scoped `state_change` events for temperature sensors
+- optional later user fan activation events if fan entities are configured as context signals
+
+Minimum required signals for v1:
+- one humidity signal mapped to the room
+- occupancy evidence in the same room
+
+Optional strengthening signal:
+- one temperature signal mapped to the same room
+
+### P10.4 Episode definition
+
+The analyzer works in two stages:
+
+1. **Episode detection**
+   - find a humidity `state_change` event in room `R`
+   - compute delta = `new_state - old_state` for numeric values
+   - keep only events where:
+     - room `R` is occupied in the event context, and
+     - humidity delta exceeds a configured threshold
+   - optionally mark the episode as corroborated if a temperature rise above threshold occurs in the
+     same room within the same short window
+
+2. **Behavior confirmation**
+   - for each detected episode, look for a later user-observed fan activation in the same room
+     within a bounded follow-up window
+   - repeated confirmed episodes with sufficient support become a proposal candidate
+
+### P10.5 V1 thresholds
+
+Recommended default thresholds for the first implementation:
+- humidity rise threshold: configurable, default `>= 8` percentage points in one observed change
+- corroboration temperature rise threshold: configurable, default `>= 0.8 C`
+- signal correlation window: configurable, default `10 min`
+- fan follow-up window: configurable, default `15 min`
+- minimum confirmed episodes: `>= 5`
+- minimum distinct ISO weeks: `>= 2`
+
+These thresholds are intended to be simple and explainable, not universally optimal.
+
+### P10.6 Output proposal
+
+The analyzer emits a `ReactionProposal` with:
+- `analyzer_id="CrossDomainPatternAnalyzer"` (or equivalent stable id)
+- `reaction_type="room_signal_assist"`
+- description that explains the inferred pattern in plain language
+- confidence derived from support and temporal consistency
+
+The suggested reaction config must be executable after user approval and must not depend on a
+domain-specific hardcoded fan semantic.
+
+V1 target config shape:
+- `reaction_class="RoomSignalAssistReaction"`
+- `room_id`
+- `trigger_signal_entities`
+- `humidity_rise_threshold`
+- optional `temperature_rise_threshold`
+- `correlation_window_s`
+- `followup_window_s`
+- `steps=[]` by default, to be completed by the user in the proposal action configuration flow
+
+### P10.7 Execution model
+
+The accepted reaction must be generic:
+- it detects the configured room-scoped composite pattern at runtime
+- when the pattern is observed again, it emits the configured `steps`
+- the actual actuation target is still chosen by the user through the existing proposal action
+  configuration flow
+
+This keeps the analyzer domain-agnostic:
+- the analyzer learns "when a fan-like assist is appropriate"
+- the user decides which HA action implements that assist in the house
+
+### P10.8 Explainability requirement
+
+Every emitted proposal must be explainable in plain language, for example:
+
+> Bathroom: when occupancy is present and humidity rises rapidly, you usually start ventilation
+> within a few minutes.
+
+The diagnostics for the analyzer should make it possible to inspect:
+- detected episodes
+- corroborated episodes
+- confirmed fan-followup episodes
+- thresholds used for acceptance
+
+### P10.9 Relationship with future analyzers
+
+This analyzer is the v1 bridge from domain-specific preference learning to true cross-domain
+behavior learning.
+
+If successful, the same substrate can later support:
+- kitchen cooking extraction
+- bedroom sleep-environment assists
+- office/working-mode assists
+- generalized multi-signal routines in inference v2
+
+---
+
 ## 11. Informative Appendices
 
 The following sections are informative. They help orient implementation work, but they are not the
