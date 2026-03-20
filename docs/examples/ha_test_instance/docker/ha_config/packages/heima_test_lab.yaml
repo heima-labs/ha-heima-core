@@ -24,6 +24,8 @@ input_boolean:
     name: "Test Heima Heater Relay Raw"
   test_heima_bathroom_fan_raw:
     name: "Test Heima Bathroom Fan Raw"
+  test_heima_studio_fan_raw:
+    name: "Test Heima Studio Fan Raw"
   test_heima_light_living_main_raw:
     name: "Test Heima Light Living Main Raw"
   test_heima_light_living_spot_raw:
@@ -237,6 +239,22 @@ input_number:
     mode: box
     unit_of_measurement: "°C"
     initial: 21
+  test_heima_studio_humidity:
+    name: "Test Heima Studio Humidity"
+    min: 0
+    max: 100
+    step: 0.1
+    mode: box
+    unit_of_measurement: "%"
+    initial: 52
+  test_heima_studio_temperature:
+    name: "Test Heima Studio Temperature"
+    min: 5
+    max: 40
+    step: 0.1
+    mode: box
+    unit_of_measurement: "°C"
+    initial: 24
   test_heima_vacation_min_temp:
     name: "Test Heima Vacation Min Temp"
     min: 12
@@ -429,6 +447,18 @@ template:
         device_class: temperature
         state_class: measurement
         state: "{{ states('input_number.test_heima_bathroom_temperature') }}"
+      - name: "test_heima_studio_humidity"
+        unique_id: "test_heima_studio_humidity"
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_studio_humidity') }}"
+      - name: "test_heima_studio_temperature"
+        unique_id: "test_heima_studio_temperature"
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_studio_temperature') }}"
     switch:
       - name: "test_heima_heater_relay"
         unique_id: "test_heima_heater_relay"
@@ -454,6 +484,18 @@ template:
           action: input_boolean.turn_off
           target:
             entity_id: input_boolean.test_heima_bathroom_fan_raw
+      - name: "test_heima_studio_fan"
+        unique_id: "test_heima_studio_fan"
+        icon: mdi:fan
+        state: "{{ is_state('input_boolean.test_heima_studio_fan_raw', 'on') }}"
+        turn_on:
+          action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.test_heima_studio_fan_raw
+        turn_off:
+          action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.test_heima_studio_fan_raw
 
   - trigger:
       - platform: state
@@ -594,6 +636,7 @@ script:
             - input_boolean.test_heima_anonymous_presence_raw
             - input_boolean.test_heima_heater_relay_raw
             - input_boolean.test_heima_bathroom_fan_raw
+            - input_boolean.test_heima_studio_fan_raw
             - input_boolean.test_heima_light_living_main_raw
             - input_boolean.test_heima_light_living_spot_raw
             - input_boolean.test_heima_light_living_floor_raw
@@ -625,6 +668,16 @@ script:
           entity_id: input_number.test_heima_bathroom_temperature
         data:
           value: 21
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_humidity
+        data:
+          value: 52
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_temperature
+        data:
+          value: 24
       - action: input_number.set_value
         target:
           entity_id:
@@ -808,6 +861,30 @@ script:
       - action: switch.turn_on
         target:
           entity_id: switch.test_heima_bathroom_fan
+
+  test_heima_run_studio_cooling_pattern:
+    alias: "Test Heima Run Studio Cooling Pattern"
+    icon: mdi:fan-chevron-down
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.test_heima_room_studio_motion_raw
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_temperature
+        data:
+          value: 25.8
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_humidity
+        data:
+          value: 58
+      - delay: "00:00:01"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.test_heima_studio_fan
 
   test_heima_alarm_arm_away:
     alias: "Test Heima Alarm Arm Away"

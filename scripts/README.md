@@ -18,7 +18,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `010_config_flow.py`
       - `025_lighting_learning_live.py`
       - `026_room_signal_assist_live.py`
-      - `027_presence_live.py`
+      - `027_room_cooling_assist_live.py`
+      - `028_presence_live.py`
       - `040_security_mismatch_runtime.py`
       - `050_calendar_domain.py`
     - `seeded_integration`
@@ -94,7 +95,8 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - current learning examples:
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
-    - `027_presence_live.py`: real presence source -> Heima person -> proposal
+    - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal
+    - `028_presence_live.py`: real presence source -> Heima person -> proposal
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

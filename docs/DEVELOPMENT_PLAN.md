@@ -280,7 +280,9 @@ Output:
     - lane `setup`, `live_e2e`, `seeded_integration`, `diagnostic`
   - scenari true live presenti:
     - lighting learning (`025_lighting_learning_live.py`)
-    - presence learning (`027_presence_live.py`)
+    - room signal assist (`026_room_signal_assist_live.py`)
+    - room cooling assist (`027_room_cooling_assist_live.py`)
+    - presence learning (`028_presence_live.py`)
     - calendar runtime (`050_calendar_domain.py`)
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
 - Gap residui:
@@ -288,6 +290,7 @@ Output:
   - analyzer cross-domain composti sopra eventi `state_change`
   - primi target cross-domain definiti a livello spec e runtime:
     - room-scoped humidity/temperature burst + occupancy -> generic ventilation assist proposal
+    - room-scoped temperature rise + occupancy -> generic cooling assist proposal
     - room-scoped temperature/humidity burst + occupancy -> generic cooling assist proposal
 
 ### 11. Live Test and Docker Lab Remediation

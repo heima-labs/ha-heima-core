@@ -66,7 +66,9 @@
     - `scripts/live_tests/000_live_smoke.py`
     - `scripts/live_tests/010_config_flow.py`
     - `scripts/live_tests/025_lighting_learning_live.py`
-    - `scripts/live_tests/027_presence_live.py`
+    - `scripts/live_tests/026_room_signal_assist_live.py`
+    - `scripts/live_tests/027_room_cooling_assist_live.py`
+    - `scripts/live_tests/028_presence_live.py`
     - `scripts/live_tests/040_security_mismatch_runtime.py`
     - `scripts/live_tests/050_calendar_domain.py`
   - current `seeded_integration` lane:
@@ -77,7 +79,7 @@
   - richer fake lights and room scenes in the Docker lab
   - deterministic Local Calendar fixture used by live tests
   - explicit `setup` / `live_e2e` / `seeded_integration` / `diagnostic` runner tiers
-  - true live presence-learning and lighting-learning scenarios
+  - true live presence-learning, lighting-learning, and cross-domain room assist scenarios
   - deterministic seeded learning-history generator/importer
   - docs and runner UX aligned to the new suite taxonomy
 - Remaining:
