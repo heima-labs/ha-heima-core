@@ -8,6 +8,10 @@ import pytest
 
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.reactions import (
+    builtin_reaction_plugin_builders,
+    builtin_reaction_plugin_descriptors,
+)
 from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
 from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
@@ -31,6 +35,7 @@ def _make_engine(options: dict | None = None) -> HeimaEngine:
     engine._reactions = []
     engine._muted_reactions = set()
     engine._configured_reaction_ids = set()
+    engine._reaction_plugin_builders = builtin_reaction_plugin_builders()
     return engine
 
 
@@ -67,6 +72,35 @@ def test_no_configured_entries_noop():
     engine._rebuild_configured_reactions()
     assert engine._reactions == []
     assert engine._configured_reaction_ids == set()
+
+
+def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
+    registry = builtin_reaction_plugin_builders()
+
+    assert set(registry) == {
+        "PresencePatternReaction",
+        "LightingScheduleReaction",
+        "HeatingPreferenceReaction",
+        "HeatingEcoReaction",
+        "RoomSignalAssistReaction",
+    }
+
+
+def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
+    descriptors = builtin_reaction_plugin_descriptors()
+
+    assert [d.reaction_class for d in descriptors] == [
+        "PresencePatternReaction",
+        "LightingScheduleReaction",
+        "HeatingPreferenceReaction",
+        "HeatingEcoReaction",
+        "RoomSignalAssistReaction",
+    ]
+    assert descriptors[-1].supported_config_contracts == (
+        "room_signal_assist",
+        "room_cooling_assist",
+    )
+    assert descriptors[-1].supports_normalizer is True
 
 
 def test_presence_reaction_built_and_registered():

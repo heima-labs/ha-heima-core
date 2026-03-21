@@ -12,12 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN
 from .models import HeimaRuntimeState
 from .runtime.analyzers import (
-    CompositePatternCatalogAnalyzer,
-    CrossDomainPatternAnalyzer,
-    HeatingPatternAnalyzer,
-    LightingPatternAnalyzer,
-    PresencePatternAnalyzer,
-    RoomCoolingPatternAnalyzer,
+    builtin_learning_pattern_plugins,
 )
 from .runtime.behaviors import (
     EventRecorderBehavior,
@@ -67,10 +62,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._event_store,
             sensor_writer=self._write_proposals_sensor,
         )
-        self._proposal_engine.register_analyzer(PresencePatternAnalyzer())
-        self._proposal_engine.register_analyzer(HeatingPatternAnalyzer())
-        self._proposal_engine.register_analyzer(LightingPatternAnalyzer())
-        self._proposal_engine.register_analyzer(CompositePatternCatalogAnalyzer())
+        for plugin in builtin_learning_pattern_plugins():
+            self._proposal_engine.register_analyzer(plugin)
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self.last_options_snapshot: dict = dict(entry.options)

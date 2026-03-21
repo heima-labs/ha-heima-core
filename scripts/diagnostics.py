@@ -18,7 +18,7 @@ def main() -> int:
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "event_store", "proposals", "scheduler", "calendar"],
+        choices=["all", "engine", "event_store", "proposals", "scheduler", "calendar", "plugins"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -35,6 +35,7 @@ def main() -> int:
         "calendar": runtime.get("engine", {}).get("calendar"),
         "engine": {k: v for k, v in runtime.get("engine", {}).items() if k != "calendar"},
         "scheduler": runtime.get("scheduler"),
+        "plugins": runtime.get("plugins"),
     }
 
     to_print = sections if args.section == "all" else {args.section: sections[args.section]}

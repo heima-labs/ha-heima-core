@@ -138,6 +138,13 @@ A Reaction Plugin owns:
 - the step generation semantics it contributes to the shared apply plan
 - its diagnostics and observability semantics
 
+Minimum plugin metadata:
+- `reaction_class`
+- stable `reaction_id` strategy
+- supported accepted-config contract(s)
+- builder/rebuild entry point from persisted options
+- optional config normalizer for legacy aliases
+
 Examples:
 - `PresencePatternReaction`
 - `LightingScheduleReaction`
@@ -148,6 +155,7 @@ Normative rule:
 - a new reaction capability SHOULD be added as a Reaction Plugin inside the shared reaction system
 - a separate runtime subsystem SHOULD be introduced only if the shared reaction lifecycle and
   constraint-layer execution model are no longer sufficient
+- the initial v1 registry MAY remain built-in only; dynamic third-party loading is not required
 
 The engine:
 1. Calls `reaction.evaluate(history)` for each registered reaction.

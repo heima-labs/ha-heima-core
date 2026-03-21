@@ -35,6 +35,7 @@ from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent
+from .reactions import builtin_reaction_plugin_builders
 from .reactions.base import HeimaReaction
 from .reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from .reactions.lighting_schedule import LightingScheduleReaction
@@ -106,6 +107,7 @@ class HeimaEngine:
         self._configured_reaction_ids: set[str] = set()
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, dict[str, Any]] = {}
+        self._reaction_plugin_builders = builtin_reaction_plugin_builders()
 
     @property
     def health(self) -> EngineHealth:
@@ -276,37 +278,18 @@ class HeimaEngine:
         configured: dict = dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {})
         for proposal_id, cfg in configured.items():
             reaction_class = cfg.get("reaction_class")
-            if reaction_class == "PresencePatternReaction":
-                reaction = self._build_presence_reaction(proposal_id, cfg)
-                if reaction is not None:
-                    self._reactions.append(reaction)
-                    self._configured_reaction_ids.add(reaction.reaction_id)
-            elif reaction_class == "LightingScheduleReaction":
-                reaction = self._build_lighting_schedule_reaction(proposal_id, cfg)
-                if reaction is not None:
-                    self._reactions.append(reaction)
-                    self._configured_reaction_ids.add(reaction.reaction_id)
-            elif reaction_class == "HeatingPreferenceReaction":
-                reaction = self._build_heating_preference_reaction(proposal_id, cfg)
-                if reaction is not None:
-                    self._reactions.append(reaction)
-                    self._configured_reaction_ids.add(reaction.reaction_id)
-            elif reaction_class == "HeatingEcoReaction":
-                reaction = self._build_heating_eco_reaction(proposal_id, cfg)
-                if reaction is not None:
-                    self._reactions.append(reaction)
-                    self._configured_reaction_ids.add(reaction.reaction_id)
-            elif reaction_class == "RoomSignalAssistReaction":
-                reaction = self._build_room_signal_assist_reaction(proposal_id, cfg)
-                if reaction is not None:
-                    self._reactions.append(reaction)
-                    self._configured_reaction_ids.add(reaction.reaction_id)
-            else:
+            builder = self._reaction_plugin_builders.get(str(reaction_class or ""))
+            if builder is None:
                 _LOGGER.debug(
                     "Skipping configured reaction with unknown class %r (proposal %s)",
                     reaction_class,
                     proposal_id,
                 )
+                continue
+            reaction = builder(self, proposal_id, cfg)
+            if reaction is not None:
+                self._reactions.append(reaction)
+                self._configured_reaction_ids.add(reaction.reaction_id)
 
     def _build_presence_reaction(self, proposal_id: str, cfg: dict) -> PresencePatternReaction | None:
         """Build a PresencePatternReaction from a stored proposal config."""

@@ -288,7 +288,7 @@ Output:
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
   - definire i next step dopo la chiusura del Composite Pattern Engine v1.1
-  - formalizzare meglio il catalogo delle pattern families del learning system
+  - far usare i metadata plugin in diagnostics/dev tooling in modo stabile
   - migliorare il grouping composito oltre il solo HA context / correlation id
 
 ### 11.1 Next Step — Composite Pattern Engine v1.1

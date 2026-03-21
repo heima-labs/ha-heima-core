@@ -732,9 +732,9 @@ class HeimaAnalyzer:
 
 ### 10.3 Registration
 
-Default analyzers registered by coordinator. Future domains (Watering, Lighting) add their own without touching the core.
-Default analyzers are registered by the learning orchestration layer. Future domains may add their
-own analyzers without changing the core proposal substrate.
+Built-in Learning Pattern Plugins are registered by the learning orchestration layer through a
+central built-in registry. Future domains may add their own plugins without changing the core
+proposal substrate.
 
 ### 10.4 Learning Pattern Plugin contract
 
@@ -748,6 +748,18 @@ Each plugin owns:
 - the matching logic it applies to the shared event substrate
 - the proposal types it emits
 - the suggested reaction contract it targets after user acceptance
+
+Minimum plugin metadata:
+- `plugin_id`
+- `analyzer_id`
+- `plugin_family`
+- emitted `proposal_types`
+- supported `reaction_targets`
+
+Where a `reaction_target` may be:
+- a concrete `reaction_class`, or
+- a user-completable reaction contract that becomes executable only after the user finishes
+  proposal acceptance/configuration
 
 The v1 built-in plugins (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`,
 `LightingPatternAnalyzer`, room-scoped composite assist analyzers) use simple descriptive
@@ -775,6 +787,7 @@ Normative product rule:
 - a plugin is the preferred unit of extension for new learnable pattern families
 - multiple plugins may share helper matchers, confidence shaping logic, or proposal builders
 - plugin identity MUST remain stable enough that proposals and diagnostics stay understandable
+- the initial v1 registry MAY remain built-in only; dynamic third-party loading is not required
 
 ---
 
@@ -1389,7 +1402,7 @@ Normative rule:
 
 The room-scoped composite assist family is one plugin family inside the shared learning system.
 
-It does not replace other pattern families that may use different matching semantics on the same
+It does not replace other plugins that may use different matching semantics on the same
 event substrate.
 
 Examples:
@@ -1403,10 +1416,10 @@ Examples:
 
 Normative product rule:
 - new explainable room-scoped assist behaviors SHOULD prefer the composite assist plugin family
-- an existing or new plugin family SHOULD remain separate when it preserves materially richer
+- an existing or new plugin SHOULD remain separate when it preserves materially richer
   semantics, fidelity, or actuation detail than the composite room-assist model
 - the presence of the composite assist family MUST NOT be interpreted as a requirement to remove
-  other pattern families prematurely
+  other plugins prematurely
 
 ### P10.5 Input requirements
 
