@@ -49,8 +49,9 @@
   - prefer adding catalog entries over creating new near-duplicate analyzer classes
 - Current status:
   - S1-S4 completed
-  - composite learning now acts as the generic layer for reviewable room-scoped assist patterns
-  - lighting and other specialized learners remain valid where they preserve richer domain output
+  - composite room-assist learning is now one reusable family of Learning Pattern Plugins inside the shared learning system
+  - `RoomSignalAssistReaction` is the first shared Reaction Plugin reused by multiple learning patterns
+  - lighting and other learning plugins remain valid where they preserve richer domain output
 
 ## Live Test Remediation Plan
 - Goal:

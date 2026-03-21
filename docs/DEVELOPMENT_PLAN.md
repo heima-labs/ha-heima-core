@@ -288,7 +288,7 @@ Output:
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches
   - definire i next step dopo la chiusura del Composite Pattern Engine v1.1
-  - decidere come far convivere generic composite learning e learner specializzati di dominio
+  - formalizzare meglio il catalogo delle pattern families del learning system
   - migliorare il grouping composito oltre il solo HA context / correlation id
 
 ### 11.1 Next Step — Composite Pattern Engine v1.1
@@ -325,9 +325,10 @@ Output:
 
 Stato attuale:
 - S1-S4 implementate
-- il motore composito v1.1 e ora il layer generico per pattern room-scoped explainable
-- lighting/heating learning specializzati restano attivi quando servono semantiche piu ricche del
-  contratto composito generico
+- il motore composito v1.1 e ora una famiglia di Learning Pattern Plugins riusabile nel learning system
+- `RoomSignalAssistReaction` funge da primo Reaction Plugin condiviso da piu learning pattern plugins
+- lighting/heating/presence restano altre famiglie di Learning Pattern Plugins quando servono
+  semantiche piu ricche o matching diversi dal contratto composito room-scoped
 
 ### 11.2 Live Test and Docker Lab Remediation
 - Obiettivo:

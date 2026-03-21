@@ -69,6 +69,27 @@ This separation is part of the intended architecture:
 
 No analyzer code ever runs in `async_evaluate()`.
 
+### 0.2.1 Learning system model
+
+Heima has one learning system, not multiple competing learning subsystems.
+
+That learning system consists of:
+- one shared event substrate
+- one shared proposal model
+- one shared proposal acceptance and reaction rebuild pipeline
+- multiple learning pattern plugins that learn different kinds of recurring behavior
+
+Examples of learning pattern plugins:
+- temporal room/light routine plugins
+- room-scoped composite assist plugins
+- preference-oriented plugins such as heating or arrival/preheat behavior
+
+Normative rule:
+- a new learning capability SHOULD be modeled first as a new learning pattern plugin inside the shared
+  learning system
+- it SHOULD become a separate subsystem only if it truly requires a different storage,
+  proposal, or runtime execution model
+
 ### 0.3 Decision: minimum training window before emitting proposals
 
 Based on the literature, a pattern is considered reliable only when it has been observed a sufficient
@@ -715,9 +736,23 @@ Default analyzers registered by coordinator. Future domains (Watering, Lighting)
 Default analyzers are registered by the learning orchestration layer. Future domains may add their
 own analyzers without changing the core proposal substrate.
 
-### 10.4 IPatternAnalyzer as a plug-in contract
+### 10.4 Learning Pattern Plugin contract
 
-`IPatternAnalyzer` is intentionally designed as a **replacement boundary**. The v1 built-in analyzers (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`) use simple descriptive statistics (median, IQR, range) that require no external dependencies and produce deterministic results on small datasets.
+`IPatternAnalyzer` is the minimal protocol boundary behind a **Learning Pattern Plugin**.
+
+A Learning Pattern Plugin is the product-level concept used to add one learnable family of recurring
+behavior to the shared learning system.
+
+Each plugin owns:
+- the pattern semantics it recognizes
+- the matching logic it applies to the shared event substrate
+- the proposal types it emits
+- the suggested reaction contract it targets after user acceptance
+
+The v1 built-in plugins (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`,
+`LightingPatternAnalyzer`, room-scoped composite assist analyzers) use simple descriptive
+statistics or deterministic matchers that require no external dependencies and produce predictable
+results on small datasets.
 
 This is a deliberate v1 constraint, **not** an architectural one. Any analyzer that satisfies the protocol can be dropped in without changing `ProposalEngine`, `EventStore`, or any other component:
 
@@ -729,12 +764,17 @@ This is a deliberate v1 constraint, **not** an architectural one. Any analyzer t
 | v4 — probabilistic | GMM, Bayesian online learning | ✅ |
 | v5 — ML | scikit-learn, tflite, ONNX runtime | ✅ (requires HA add-on or venv with deps) |
 
-**Rules for plug-in analyzers:**
+**Rules for Learning Pattern Plugins:**
 1. Must be async-safe: no blocking I/O inside `analyze()`.
 2. Must not modify `EventStore` (read-only access).
 3. Must return `list[ReactionProposal]` with `confidence` in [0.0, 1.0].
 4. Should emit no more than ~10 proposals per run (ProposalEngine is not a feed).
 5. May maintain internal state between calls (cache last run result, etc.).
+
+Normative product rule:
+- a plugin is the preferred unit of extension for new learnable pattern families
+- multiple plugins may share helper matchers, confidence shaping logic, or proposal builders
+- plugin identity MUST remain stable enough that proposals and diagnostics stay understandable
 
 ---
 
@@ -1328,9 +1368,10 @@ Normative rule:
 - a composite pattern MUST be explainable in terms of these concepts without requiring code
   knowledge
 
-### P10.4 Engine architecture
+### P10.4 Composite assist plugin architecture
 
-The v1 composite learning engine has three conceptual layers:
+The room-scoped composite assist plugin family has three conceptual layers inside the shared
+learning system:
 
 1. **Shared event substrate**
    - `state_change` events with `room_id`, `source`, `context`, and optional `correlation_id`
@@ -1344,38 +1385,28 @@ Normative rule:
 - the pattern catalog decides semantics, thresholds, explanation text, and proposal metadata
 - proposal emission must not depend on one-off analyzer-private behavior that is invisible in spec
 
-### P10.4.1 Relationship with domain-specialized learning
+### P10.4.1 Relationship with other plugins
 
-The composite engine is the generic behavioral learning layer for reviewable room-scoped
-multi-signal patterns.
+The room-scoped composite assist family is one plugin family inside the shared learning system.
 
-It is intentionally broader in scope than any one domain learner, but it is not automatically a
-replacement for domain-specialized learning modules.
-
-Normative architectural rule:
-- the learning subsystem MAY contain both:
-  - a generic composite learning layer, and
-  - domain-specialized learning layers
-- these layers MUST share the same event substrate and proposal model
-- they MUST be allowed to coexist when a domain-specific learner provides materially richer
-  semantics than the generic composite engine
+It does not replace other pattern families that may use different matching semantics on the same
+event substrate.
 
 Examples:
-- the composite engine is a better fit for patterns like:
+- the composite assist family is a better fit for patterns like:
   - occupancy + humidity rise -> ventilation assist
   - occupancy + temperature rise -> cooling assist
-- the lighting learner remains the better fit for patterns like:
+- the lighting routine family remains a better fit for patterns like:
   - recurring multi-entity light scenes
   - explicit per-entity brightness/color end states
   - schedule-like room routines reconstructed as detailed light steps
 
 Normative product rule:
-- the composite engine SHOULD become the default path for new explainable room-scoped assist
-  patterns
-- a specialized learner SHOULD remain in place when the generic composite model would lose
-  important domain semantics, fidelity, or actuation detail
-- the presence of the composite engine MUST NOT be interpreted as a requirement to remove existing
-  specialized learners prematurely
+- new explainable room-scoped assist behaviors SHOULD prefer the composite assist plugin family
+- an existing or new plugin family SHOULD remain separate when it preserves materially richer
+  semantics, fidelity, or actuation detail than the composite room-assist model
+- the presence of the composite assist family MUST NOT be interpreted as a requirement to remove
+  other pattern families prematurely
 
 ### P10.5 Input requirements
 
@@ -1586,17 +1617,15 @@ V1 review payload rule:
 - this block is informative for review and diagnostics; the executable reaction contract
   remains the authoritative part of the proposal
 
-### P10.13 Relationship with future analyzers
+### P10.13 Relationship with future pattern families and inference
 
-This composite engine is the v1 bridge from domain-specific preference learning to true
-cross-domain behavior learning.
+This composite assist family is the v1 bridge from simple domain-specific preference learning to
+more capable cross-domain behavior learning.
 
-In the intended architecture, it also becomes the general-purpose layer that sits above specialized
-domain learners:
-- generic composite learning captures explainable multi-signal assist patterns
-- specialized learners remain responsible for domains where the product needs richer output models
-  than "detect condition -> run configured steps"
-- both layers continue to emit reviewable proposals through the same proposal engine
+It should be understood as:
+- one reusable learning plugin family inside the shared learning system
+- not as a separate learning subsystem
+- not as a universal replacement for all other learning families
 
 If successful, the same substrate can later support:
 - kitchen cooking extraction
@@ -1609,6 +1638,8 @@ The intended next architectural step is:
 - keep the pattern library explicit and reviewable
 - avoid adding one bespoke analyzer class per new room-scoped assist case unless that is
   semantically necessary
+- treat new learning capabilities first as candidate plugins inside the same shared
+  learning system
 
 Boundary with future discovery systems:
 - the v1 composite engine searches known pattern families only

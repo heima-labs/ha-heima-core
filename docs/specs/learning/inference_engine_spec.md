@@ -31,13 +31,14 @@ Not a goal of this document:
 - describing every future v3 discovery capability in detail
 - prescribing one exact internal package/module layout
 
-Relationship with v1 composite learning:
-- v1 may learn declared room-scoped composite assist patterns and convert them into reviewable
-  accepted reactions
+Relationship with the v1 learning system:
+- v1 may learn several pattern families on the shared event substrate and convert them into
+  reviewable accepted reactions
+- one of those families is the room-scoped composite assist family
 - v2 may later consume the same event substrate and semantic pattern families for predictive hints
 
 Normative rule:
-- v1 composite proposal learning and v2 predictive inference must remain compatible in terminology
+- v1 proposal learning and v2 predictive inference must remain compatible in terminology
   and event semantics
 - they must not be silently merged into one subsystem before a dedicated unification spec exists
 
@@ -61,7 +62,7 @@ Normative rule:
 - inference may refine or bias domain decisions when inputs are ambiguous
 - inference must never fabricate hard sensor truth or override explicit observed facts
 
-The v1 composite pattern library is an architectural precursor:
+The v1 room-scoped composite assist family is an architectural precursor:
 - it validates that multi-signal room-scoped behavior can be represented and explained
 - it does not yet predict future behavior
 - it does define stable semantic pattern families that v2 modules may later reuse as features or

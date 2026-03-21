@@ -127,6 +127,28 @@ class HeimaReaction:
     def diagnostics(self) -> dict: ...                          # {}
 ```
 
+### 4.1 Reaction Plugin concept
+
+At the product and architecture level, every concrete `HeimaReaction` family should be treated as a
+**Reaction Plugin**.
+
+A Reaction Plugin owns:
+- the accepted configuration contract it understands
+- the runtime matching/evaluation semantics it applies on history
+- the step generation semantics it contributes to the shared apply plan
+- its diagnostics and observability semantics
+
+Examples:
+- `PresencePatternReaction`
+- `LightingScheduleReaction`
+- `RoomSignalAssistReaction`
+- heating preference/eco reactions
+
+Normative rule:
+- a new reaction capability SHOULD be added as a Reaction Plugin inside the shared reaction system
+- a separate runtime subsystem SHOULD be introduced only if the shared reaction lifecycle and
+  constraint-layer execution model are no longer sufficient
+
 The engine:
 1. Calls `reaction.evaluate(history)` for each registered reaction.
 2. Tags each returned step with `source = "reaction:{reaction_id}"`.
