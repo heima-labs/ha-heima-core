@@ -267,6 +267,9 @@ Output:
   - separazione esplicita da normalization plugins
 
 ### 11. Learning System + Live Lab (current status)
+- Reference status note:
+  - see [`docs/LEARNING_PLUGIN_STATUS.md`](/docs/LEARNING_PLUGIN_STATUS.md)
+    for the compact current-state summary of the plugin-oriented learning/reaction model
 - Stato attuale:
   - generic persisted learning-event envelope implementato
   - `LightingRecorderBehavior`, `HeatingRecorderBehavior`, `SignalRecorderBehavior` operativi
