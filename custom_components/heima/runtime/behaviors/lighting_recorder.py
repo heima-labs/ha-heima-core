@@ -26,8 +26,9 @@ class LightingRecorderBehavior(HeimaBehavior):
     _HEIMA_APPLY_TTL_S seconds, the change is attributed to Heima and skipped.
     Everything else is attributed to the user and recorded as a LightingEvent.
 
-    Entity → room mapping is derived from HA entity registry (area_id) matched
-    against the room configs (area_id field in options["rooms"]).
+    Entity → room mapping is derived from HA entity registry and, when needed,
+    falls back to device registry area assignment matched against the room
+    configs (area_id field in options["rooms"]).
     """
 
     def __init__(
@@ -273,8 +274,9 @@ class LightingRecorderBehavior(HeimaBehavior):
     # ------------------------------------------------------------------
 
     def _build_entity_room_map(self) -> dict[str, str]:
-        """Map light entity_ids to room_ids via HA area registry."""
+        """Map light entity_ids to room_ids via entity area, then device area."""
         from homeassistant.helpers.entity_registry import async_get as async_get_er
+        from homeassistant.helpers.device_registry import async_get as async_get_dr
 
         area_to_room: dict[str, str] = {}
         for room in self._entry.options.get("rooms", []):
@@ -287,13 +289,25 @@ class LightingRecorderBehavior(HeimaBehavior):
             return {}
 
         entity_registry = async_get_er(self._hass)
+        device_registry = async_get_dr(self._hass)
         entity_to_room: dict[str, str] = {}
         for entry in entity_registry.entities.values():
             if not entry.entity_id.startswith("light."):
                 continue
-            entity_area = entry.area_id
+            entity_area = str(entry.area_id or "").strip()
             if entity_area and entity_area in area_to_room:
                 entity_to_room[entry.entity_id] = area_to_room[entity_area]
+                continue
+
+            device_id = getattr(entry, "device_id", None)
+            if not device_id:
+                continue
+            device_entry = device_registry.devices.get(device_id)
+            if not device_entry:
+                continue
+            device_area = str(getattr(device_entry, "area_id", "") or "").strip()
+            if device_area and device_area in area_to_room:
+                entity_to_room[entry.entity_id] = area_to_room[device_area]
 
         return entity_to_room
 

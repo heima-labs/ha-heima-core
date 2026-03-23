@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.heima.runtime.behaviors.lighting_recorder import LightingRecorderBehavior
@@ -630,3 +631,81 @@ async def test_lighting_recorder_on_options_reloaded_unsubscribes_when_map_becom
     assert b._entity_to_room == {}
     assert unsub_called == [True]
     assert b._unsub is None
+
+
+def test_lighting_recorder_build_map_uses_entity_area(monkeypatch):
+    hass = _FakeHass()
+    store = _FakeStore()
+    entry = _FakeEntry(
+        rooms=[{"room_id": "living", "area_id": "soggiorno"}]
+    )
+    b = LightingRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        entry,  # type: ignore[arg-type]
+        lambda: {"rooms": {}, "entities": {}},
+    )
+
+    entity_registry = SimpleNamespace(
+        entities={
+            "light.soggiorno": SimpleNamespace(
+                entity_id="light.soggiorno",
+                area_id="soggiorno",
+                device_id="device-1",
+            )
+        }
+    )
+    device_registry = SimpleNamespace(devices={})
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    assert b._build_entity_room_map() == {"light.soggiorno": "living"}
+
+
+def test_lighting_recorder_build_map_falls_back_to_device_area(monkeypatch):
+    hass = _FakeHass()
+    store = _FakeStore()
+    entry = _FakeEntry(
+        rooms=[{"room_id": "living", "area_id": "soggiorno"}]
+    )
+    b = LightingRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        entry,  # type: ignore[arg-type]
+        lambda: {"rooms": {}, "entities": {}},
+    )
+
+    entity_registry = SimpleNamespace(
+        entities={
+            "light.soggiorno": SimpleNamespace(
+                entity_id="light.soggiorno",
+                area_id=None,
+                device_id="device-1",
+            )
+        }
+    )
+    device_registry = SimpleNamespace(
+        devices={
+            "device-1": SimpleNamespace(area_id="soggiorno"),
+        }
+    )
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    assert b._build_entity_room_map() == {"light.soggiorno": "living"}
