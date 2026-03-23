@@ -55,6 +55,29 @@ def _engine_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return engine
 
 
+def _entry_options(client: HAClient, entry_id: str) -> dict[str, Any]:
+    data = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    if not isinstance(data, dict):
+        raise RuntimeError(f"invalid diagnostics payload: {type(data)}")
+    entry = data.get("data", {}).get("entry", {})
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"invalid entry diagnostics payload: {type(entry)}")
+    options = entry.get("options", {})
+    if not isinstance(options, dict):
+        raise RuntimeError(f"invalid entry options payload: {type(options)}")
+    return options
+
+
+def _room_from_options(options: dict[str, Any], room_id: str) -> dict[str, Any]:
+    rooms = options.get("rooms", [])
+    if not isinstance(rooms, list):
+        raise RuntimeError(f"invalid rooms payload: {type(rooms)}")
+    for room in rooms:
+        if isinstance(room, dict) and str(room.get("room_id")) == room_id:
+            return room
+    raise RuntimeError(f"room {room_id!r} not found in options payload")
+
+
 def _tracked_signal_entities(engine_diag: dict[str, Any]) -> list[str]:
     behaviors = engine_diag.get("behaviors", {})
     if not isinstance(behaviors, dict):
@@ -134,6 +157,15 @@ def main() -> int:
     if step.get("type") != "create_entry":
         raise RuntimeError(f"expected create_entry from rooms_save, got: {step}")
 
+    options = _entry_options(client, entry_id)
+    room = _room_from_options(options, "studio")
+    persisted_occupancy = room.get("occupancy_sources")
+    persisted_learning = room.get("learning_sources")
+    if persisted_occupancy != ["binary_sensor.test_heima_room_studio_motion"]:
+        raise RuntimeError(f"unexpected persisted occupancy_sources: {persisted_occupancy!r}")
+    if persisted_learning != ["binary_sensor.test_heima_room_studio_motion"]:
+        raise RuntimeError(f"unexpected persisted learning_sources: {persisted_learning!r}")
+
     tracked = _wait_for_tracking(
         client,
         entry_id,
@@ -141,7 +173,11 @@ def main() -> int:
         timeout_s=args.timeout_s,
         poll_s=args.poll_s,
     )
-    print(f"PASS: room learning source tracked by runtime [{tracked_entity}]")
+    print(f"PASS: room learning source persisted and tracked by runtime [{tracked_entity}]")
+    print(
+        "Persisted room config: "
+        f"occupancy_sources={persisted_occupancy}, learning_sources={persisted_learning}"
+    )
     print(f"Tracked entities now: {tracked}")
     return 0
 

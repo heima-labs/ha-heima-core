@@ -19,6 +19,7 @@ HA-COMMUNITY-POST.txt
 # Local env config (credentials, host, paths)
 scripts/.env
 scripts/.env-prod
+scripts/prod_daily_check.py
 .venv/
 
 # Docker HA test instance runtime files
