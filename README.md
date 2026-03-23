@@ -31,6 +31,10 @@ Implemented modules:
 
 See `docs/DEVELOPMENT_PLAN.md` for milestone status and `docs/specs/INDEX.md` for the full spec index.
 
+Practical guides:
+- `docs/guides/scene_and_script_usage.md` — when to use `scene.*` vs `script.*`
+- `docs/guides/plugin_authoring.md` — how to add Learning Pattern Plugins and Reaction Plugins
+
 ## Install (HACS custom repo)
 - Add this repository as a custom repository in HACS (Integration)
 - Install **Heima**
@@ -39,6 +43,10 @@ See `docs/DEVELOPMENT_PLAN.md` for milestone status and `docs/specs/INDEX.md` fo
 
 ## Specs
 See `docs/specs/INDEX.md` and the versioned spec files.
+
+## Guides
+- `docs/guides/scene_and_script_usage.md`
+- `docs/guides/plugin_authoring.md`
 
 ## Development
 - Install dev dependencies: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`

@@ -10,6 +10,10 @@ This folder is organized by maturity and scope:
 - `learning/` → learning/inference pipeline specs
 - `rfc/` → future architecture and historical baseline specs
 
+Related practical guides live outside this tree:
+- `docs/guides/scene_and_script_usage.md`
+- `docs/guides/plugin_authoring.md`
+
 ## Core
 
 - `core/core_product_spec.md` — current product semantics (consolidated)

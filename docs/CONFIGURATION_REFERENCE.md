@@ -52,6 +52,10 @@ Fields:
   - `scene`: Heima applies `scene.turn_on`
   - `delegate`: Heima computes lighting state but does not directly apply scenes
 
+Guide:
+- for practical guidance on when to prefer `scene.*` vs `script.*`, see
+  [`docs/guides/scene_and_script_usage.md`](/docs/guides/scene_and_script_usage.md)
+
 ### `vacation_mode_entity`
 - Type: entity selector (`input_boolean`, `binary_sensor`, `sensor`)
 - Optional

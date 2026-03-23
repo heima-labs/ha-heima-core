@@ -4,6 +4,9 @@
 
 This document is the current-state reference for the plugin-oriented learning and reaction model.
 
+For practical authoring guidance, see:
+- [`docs/guides/plugin_authoring.md`](/docs/guides/plugin_authoring.md)
+
 It answers four questions:
 - what the target architecture is
 - what is already implemented

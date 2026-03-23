@@ -2,6 +2,12 @@
 
 This document explains which APIs are available today for plugin-style integrations and extension code, and which plugin APIs are only planned by spec.
 
+For practical authoring guidance on the current learning/reaction plugin model, prefer the guide
+documents:
+- [`docs/guides/plugin_authoring.md`](/docs/guides/plugin_authoring.md) once present
+
+This file should remain a reference/API-oriented document.
+
 Important distinction:
 
 1. **Normalization plugins**  
