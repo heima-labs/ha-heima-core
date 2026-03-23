@@ -370,6 +370,68 @@ async def test_execute_apply_plan_runs_script_turn_on_steps():
 
 
 @pytest.mark.asyncio
+async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities(monkeypatch):
+    options = {
+        "rooms": [
+            {
+                "room_id": "living",
+                "area_id": "living",
+                "occupancy_mode": "none",
+                "sources": [],
+                "logic": "any_of",
+            }
+        ],
+        "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
+    }
+    engine = _build_engine(
+        options,
+        {
+            "script.cool_living": "off",
+            "light.living_main": "off",
+            "light.living_spot": "off",
+        },
+    )
+
+    fake_registry = SimpleNamespace(
+        entities={
+            "a": _RegistryEntry("light.living_main", "living"),
+            "b": _RegistryEntry("light.living_spot", "living"),
+        }
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda hass: fake_registry,
+    )
+    engine._lighting_domain._room_area_ids = {"living": "living"}
+    engine._reactions = [
+        SimpleNamespace(
+            reaction_id="room-assist-1",
+            diagnostics=lambda: {"room_id": "living"},
+        )
+    ]
+    plan = SimpleNamespace(
+        steps=[
+            ApplyStep(
+                domain="script",
+                target="script.cool_living",
+                action="script.turn_on",
+                params={"entity_id": "script.cool_living"},
+                reason="test",
+                source="reaction:room-assist-1",
+            )
+        ]
+    )
+
+    await engine._execute_apply_plan(plan)
+
+    recent = engine.lighting_recent_apply_state
+    payload = recent["scripts"]["script.cool_living"]
+    assert payload["room_id"] == "living"
+    assert payload["expected_entity_ids"] == ["light.living_main", "light.living_spot"]
+    assert payload["source"] == "reaction:room-assist-1"
+
+
+@pytest.mark.asyncio
 async def test_execute_apply_plan_ignores_script_turn_on_service_race():
     options = {}
     engine = _build_engine(options, {"script.preheat_home": "off"}, fail_services={("script", "turn_on")})

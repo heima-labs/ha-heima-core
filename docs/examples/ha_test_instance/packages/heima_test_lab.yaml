@@ -255,6 +255,14 @@ input_number:
     mode: box
     unit_of_measurement: "°C"
     initial: 24
+  test_heima_studio_co2:
+    name: "Test Heima Studio CO2"
+    min: 350
+    max: 2500
+    step: 10
+    mode: box
+    unit_of_measurement: "ppm"
+    initial: 700
   test_heima_vacation_min_temp:
     name: "Test Heima Vacation Min Temp"
     min: 12
@@ -459,6 +467,12 @@ template:
         device_class: temperature
         state_class: measurement
         state: "{{ states('input_number.test_heima_studio_temperature') }}"
+      - name: "test_heima_studio_co2"
+        unique_id: "test_heima_studio_co2"
+        unit_of_measurement: "ppm"
+        device_class: carbon_dioxide
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_studio_co2') }}"
     switch:
       - name: "test_heima_heater_relay"
         unique_id: "test_heima_heater_relay"
@@ -680,6 +694,11 @@ script:
           value: 24
       - action: input_number.set_value
         target:
+          entity_id: input_number.test_heima_studio_co2
+        data:
+          value: 700
+      - action: input_number.set_value
+        target:
           entity_id:
             - input_number.test_heima_light_living_main_brightness
             - input_number.test_heima_light_living_spot_brightness
@@ -881,6 +900,24 @@ script:
           entity_id: input_number.test_heima_studio_humidity
         data:
           value: 58
+      - delay: "00:00:01"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.test_heima_studio_fan
+
+  test_heima_run_studio_air_quality_pattern:
+    alias: "Test Heima Run Studio Air Quality Pattern"
+    icon: mdi:molecule-co2
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.test_heima_room_studio_motion_raw
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_co2
+        data:
+          value: 940
       - delay: "00:00:01"
       - action: switch.turn_on
         target:

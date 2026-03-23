@@ -900,13 +900,15 @@ When the recorder receives a HA `STATE_CHANGED` event for a light entity, it che
 2. **Entity-level scene expansion**: when Heima applies `scene.turn_on`, the runtime resolves a
    best-effort set of light entities from the room area and marks them in the same apply batch
 3. **Recent script batches**: `script.turn_on` is tracked as a short-lived batch-level provenance
-   fallback for nearby observed light changes
+   fallback for nearby observed light changes; when the originating reaction exposes a `room_id`,
+   the batch is scoped to that room and may also carry expected room light entities
 4. **Room-level fallback TTL**: recent room apply timestamps still prevent obvious self-recording loops
 
 This is intentionally hybrid:
 - deterministic when exact entity provenance is known
 - best-effort for scenes
-- short-window heuristic fallback for scripts
+- short-window heuristic fallback for scripts, narrowed to room/entity scope when the runtime can
+  infer it safely
 
 In other words, provenance is layered because the runtime does not always know the full concrete
 entity set in advance:
@@ -1572,6 +1574,12 @@ The initial v1 catalog contains at least these named patterns:
 - optional corroboration: humidity rise
 - follow-up action class: cooling-like user activation
 - canonical example: studio cooling assist
+
+3. `room_air_quality_assist`
+- primary signal: CO2 rise
+- corroboration: none required in v1
+- follow-up action class: ventilation-like user activation
+- canonical example: office air-quality ventilation assist
 
 Normative rule:
 - new v1 patterns SHOULD be added by extending this catalog and reusing the same composite engine,

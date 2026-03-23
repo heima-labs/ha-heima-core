@@ -6,6 +6,7 @@ enough prior repetitions to emit proposals. This generator prepares:
 - lighting baseline: 4 historical occurrences per weekday for the living-evening scene
 - cross-domain baseline: 4 historical bathroom shower/ventilation episodes
 - cross-domain baseline: 4 historical studio cooling/fan episodes
+- cross-domain baseline: 4 historical studio CO2/ventilation episodes
 
 A live test can then add the final real occurrence through HA entities without
 using seeded runtime commands.
@@ -269,6 +270,42 @@ def build_cooling_events(today_local: date) -> list[dict[str, object]]:
     return events
 
 
+def build_air_quality_events(today_local: date) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    base_days = _recent_past_weekday_dates(today_local, today_local.weekday(), count=4)
+    for day in base_days:
+        correlation_id = f"fixture-studio-air-quality-{day.isoformat()}"
+        events.extend(
+            [
+                _state_change_event(
+                    day=day,
+                    at=time(10, 0),
+                    entity_id="sensor.test_heima_studio_co2",
+                    room_id="studio",
+                    context_at=time(10, 0),
+                    old_state="700",
+                    new_state="940",
+                    unit_of_measurement="ppm",
+                    device_class="carbon_dioxide",
+                    correlation_id=correlation_id,
+                ),
+                _state_change_event(
+                    day=day,
+                    at=time(10, 4),
+                    entity_id="switch.test_heima_studio_fan",
+                    room_id="studio",
+                    context_at=time(10, 0),
+                    old_state="off",
+                    new_state="on",
+                    unit_of_measurement=None,
+                    device_class=None,
+                    correlation_id=correlation_id,
+                ),
+            ]
+        )
+    return events
+
+
 def build_proposals_fixture() -> dict[str, object]:
     return {
         "version": 1,
@@ -295,6 +332,7 @@ def main() -> int:
     combined_events = list(events_fixture["data"]["data"]["events"])
     combined_events.extend(build_cross_domain_events(today_local))
     combined_events.extend(build_cooling_events(today_local))
+    combined_events.extend(build_air_quality_events(today_local))
     events_fixture["data"]["data"]["events"] = combined_events
     proposals_fixture = build_proposals_fixture()
 
@@ -308,7 +346,10 @@ def main() -> int:
     print(
         "Generated lighting baseline: "
         f"{len(events_fixture['data']['data']['events'])} events "
-        "(lighting history + 4 bathroom humidity/ventilation episodes + 4 studio cooling episodes)"
+        "("
+        "lighting history + 4 bathroom humidity/ventilation episodes + "
+        "4 studio cooling episodes + 4 studio CO2/ventilation episodes"
+        ")"
     )
     return 0
 

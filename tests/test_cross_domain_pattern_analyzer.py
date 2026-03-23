@@ -219,12 +219,67 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     assert diagnostics["observed_followup_entities"] == ["fan.studio_fan"]
 
 
+async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base = datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        co2_ts = (base + timedelta(days=i * 7)).isoformat()
+        fan_ts = (base + timedelta(days=i * 7, minutes=4)).isoformat()
+        events.extend(
+            [
+                _state_change(
+                    entity_id="sensor.office_co2",
+                    room="office",
+                    ts=co2_ts,
+                    old_state="700",
+                    new_state="940",
+                    device_class="carbon_dioxide",
+                ),
+                _state_change(
+                    entity_id="fan.office_ventilation",
+                    room="office",
+                    ts=fan_ts,
+                    old_state="off",
+                    new_state="on",
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    air_quality = [p for p in proposals if p.reaction_type == "room_air_quality_assist"]
+    assert len(air_quality) == 1
+    proposal = air_quality[0]
+    assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
+    assert proposal.suggested_reaction_config["room_id"] == "office"
+    assert proposal.suggested_reaction_config["primary_signal_entities"] == ["sensor.office_co2"]
+    assert proposal.suggested_reaction_config["primary_signal_name"] == "co2"
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
+        "fan.office_ventilation"
+    ]
+    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "room_air_quality_assist"
+    assert diagnostics["primary_signal"] == "co2"
+    assert diagnostics["corroboration_signals"] == []
+    assert diagnostics["followup_signal"] == "ventilation"
+    assert diagnostics["matched_primary_entities"] == ["sensor.office_co2"]
+    assert diagnostics["observed_followup_entities"] == ["fan.office_ventilation"]
+
+
 def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
     pattern_ids = {definition.pattern_id for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
     reaction_types = {definition.reaction_type for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
 
-    assert pattern_ids == {"room_signal_assist", "room_cooling_assist"}
-    assert reaction_types == {"room_signal_assist", "room_cooling_assist"}
+    assert pattern_ids == {
+        "room_signal_assist",
+        "room_cooling_assist",
+        "room_air_quality_assist",
+    }
+    assert reaction_types == {
+        "room_signal_assist",
+        "room_cooling_assist",
+        "room_air_quality_assist",
+    }
 
 
 async def test_catalog_analyzer_emits_both_current_v1_patterns():
@@ -281,15 +336,35 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
                     old_state="off",
                     new_state="on",
                 ),
+                _state_change(
+                    entity_id="sensor.office_co2",
+                    room="office",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=30)).isoformat(),
+                    old_state="700",
+                    new_state="930",
+                    device_class="carbon_dioxide",
+                ),
+                _state_change(
+                    entity_id="fan.office_ventilation",
+                    room="office",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=34)).isoformat(),
+                    old_state="off",
+                    new_state="on",
+                ),
             ]
         )
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     reaction_types = {proposal.reaction_type for proposal in proposals}
-    assert reaction_types == {"room_signal_assist", "room_cooling_assist"}
+    assert reaction_types == {
+        "room_signal_assist",
+        "room_cooling_assist",
+        "room_air_quality_assist",
+    }
     diagnostics_by_type = {
         proposal.reaction_type: proposal.suggested_reaction_config["learning_diagnostics"]
         for proposal in proposals
     }
     assert diagnostics_by_type["room_signal_assist"]["room_id"] == "bathroom"
     assert diagnostics_by_type["room_cooling_assist"]["room_id"] == "studio"
+    assert diagnostics_by_type["room_air_quality_assist"]["room_id"] == "office"

@@ -153,6 +153,7 @@ The script validates three end-to-end scenarios:
 - `script.test_heima_set_studio_focus_scene`
 - `script.test_heima_run_bathroom_shower_pattern`
 - `script.test_heima_run_studio_cooling_pattern`
+- `script.test_heima_run_studio_air_quality_pattern`
 - `script.test_heima_alarm_arm_away`
 - `script.test_heima_alarm_arm_home`
 - `script.test_heima_alarm_disarm`
@@ -201,6 +202,7 @@ The script validates three end-to-end scenarios:
   - `switch.test_heima_bathroom_fan`
   - `sensor.test_heima_studio_humidity`
   - `sensor.test_heima_studio_temperature`
+  - `sensor.test_heima_studio_co2`
   - `switch.test_heima_studio_fan`
 - studio cooling example:
   - occupancy source:
@@ -211,6 +213,14 @@ The script validates three end-to-end scenarios:
     - `switch.test_heima_studio_fan`
   - helper script:
     - `script.test_heima_run_studio_cooling_pattern`
+- studio air-quality example:
+  - occupancy source:
+    - `binary_sensor.test_heima_room_studio_motion`
+  - signal entities:
+    - `sensor.test_heima_studio_co2`
+    - `switch.test_heima_studio_fan`
+  - helper script:
+    - `script.test_heima_run_studio_air_quality_pattern`
 
 ### Heating vacation bindings
 - `thermostat_entity` -> `climate.test_heima_thermostat`

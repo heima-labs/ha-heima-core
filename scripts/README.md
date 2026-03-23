@@ -96,7 +96,8 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
     - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal
-    - `028_presence_live.py`: real presence source -> Heima person -> proposal
+    - `028_room_air_quality_assist_live.py`: fixture history + real studio CO2/fan sequence -> proposal
+    - `029_presence_live.py`: real presence source -> Heima person -> proposal
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

@@ -204,8 +204,19 @@ class LightingRecorderBehavior(HeimaBehavior):
                 if not isinstance(payload, dict):
                     continue
                 applied_ts = payload.get("applied_ts")
-                if isinstance(applied_ts, (int, float)) and (now - applied_ts) < _HEIMA_APPLY_TTL_S:
-                    return True
+                if not isinstance(applied_ts, (int, float)) or (now - applied_ts) >= _HEIMA_APPLY_TTL_S:
+                    continue
+                expected_entity_ids = payload.get("expected_entity_ids")
+                if isinstance(expected_entity_ids, list) and expected_entity_ids:
+                    if entity_id in expected_entity_ids:
+                        return True
+                    continue
+                script_room_id = payload.get("room_id")
+                if isinstance(script_room_id, str) and script_room_id:
+                    if script_room_id == room_id:
+                        return True
+                    continue
+                return True
 
         rooms = apply_state.get("rooms", {}) if isinstance(apply_state, dict) else apply_state
         room_apply_ts = rooms.get(room_id, 0.0) if isinstance(rooms, dict) else 0.0

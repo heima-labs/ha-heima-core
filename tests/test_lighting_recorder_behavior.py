@@ -465,6 +465,37 @@ async def test_lighting_recorder_ignores_recent_script_batch_apply():
     assert len(store.events) == 0
 
 
+async def test_lighting_recorder_does_not_ignore_script_batch_for_other_room():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        apply_state={
+            "rooms": {},
+            "entities": {},
+            "scripts": {
+                "script.bathroom_fan": {
+                    "target": "script.bathroom_fan",
+                    "room_id": "bathroom",
+                    "expected_entity_ids": ["light.bathroom_main"],
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:2",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 1
+    assert store.events[0].source == "user"
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle: async_setup / async_teardown
 # ---------------------------------------------------------------------------

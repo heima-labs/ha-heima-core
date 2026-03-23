@@ -145,6 +145,26 @@ class HeimaEngine:
         }
         return state
 
+    def _infer_step_room_id(self, step: ApplyStep) -> str | None:
+        """Best-effort room scope for a reaction-generated step."""
+        source = str(step.source or "").strip()
+        if not source.startswith("reaction:"):
+            return None
+        reaction_id = source.split(":", 1)[1].strip()
+        if not reaction_id:
+            return None
+        reaction = next((item for item in self._reactions if item.reaction_id == reaction_id), None)
+        if reaction is None:
+            return None
+        try:
+            diagnostics = reaction.diagnostics()
+        except Exception:
+            return None
+        room_id = diagnostics.get("room_id") if isinstance(diagnostics, dict) else None
+        if isinstance(room_id, str) and room_id.strip():
+            return room_id.strip()
+        return None
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)
@@ -1009,6 +1029,7 @@ class HeimaEngine:
                 _LOGGER.warning("Skipping missing script entity: %s", script_entity)
                 continue
             try:
+                room_id = self._infer_step_room_id(step)
                 await self._hass.services.async_call(
                     "script",
                     "turn_on",
@@ -1017,8 +1038,13 @@ class HeimaEngine:
                 )
                 self._recent_script_applies[script_entity] = {
                     "target": script_entity,
+                    "room_id": room_id,
+                    "expected_entity_ids": self._lighting_domain.expected_room_light_entities(room_id)
+                    if room_id
+                    else [],
                     "applied_ts": time.monotonic(),
                     "correlation_id": f"script-apply:{uuid4()}",
+                    "source": step.source,
                 }
             except ServiceNotFound:
                 _LOGGER.warning(

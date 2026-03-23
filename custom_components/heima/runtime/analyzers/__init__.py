@@ -63,7 +63,11 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
             plugin_id="builtin.composite_room_assist",
             analyzer_id="CompositePatternCatalogAnalyzer",
             plugin_family="composite_room_assist",
-            proposal_types=("room_signal_assist", "room_cooling_assist"),
+            proposal_types=(
+                "room_signal_assist",
+                "room_cooling_assist",
+                "room_air_quality_assist",
+            ),
             reaction_targets=("RoomSignalAssistReaction",),
         ),
     )

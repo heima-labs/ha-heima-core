@@ -18,6 +18,7 @@ _MIN_OCCURRENCES = 5
 _MIN_WEEKS = 2
 _HUMIDITY_RISE_THRESHOLD = 8.0
 _TEMPERATURE_RISE_THRESHOLD = 0.8
+_CO2_RISE_THRESHOLD = 200.0
 _CORRELATION_WINDOW_S = 10 * 60
 _FOLLOWUP_WINDOW_S = 15 * 60
 
@@ -172,6 +173,13 @@ def _is_activation_event(event: HeimaEvent) -> bool:
     return str(event.data.get("new_state") or "") == "on"
 
 
+def _is_co2_event(event: HeimaEvent) -> bool:
+    if event.data.get("device_class") == "carbon_dioxide":
+        return True
+    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
+    return "co2" in entity_id.lower() or "carbon_dioxide" in entity_id.lower()
+
+
 def _is_cooling_followup_event(event: HeimaEvent) -> bool:
     entity_id = str(event.subject_id or event.data.get("entity_id") or "")
     domain = str(event.domain or "")
@@ -272,6 +280,36 @@ def _build_cooling_assist_config(room_id: str, confirmed: list) -> dict[str, Any
     }
 
 
+def _build_air_quality_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+    co2_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    followup_entities = sorted(
+        {
+            entity_id
+            for ep in confirmed
+            for entity_id in ep.followup_entities
+            if entity_id
+        }
+    )
+    return {
+        "reaction_class": "RoomSignalAssistReaction",
+        "room_id": room_id,
+        "trigger_signal_entities": co2_entities,
+        "primary_signal_entities": co2_entities,
+        "primary_rise_threshold": _CO2_RISE_THRESHOLD,
+        "primary_signal_name": "co2",
+        "temperature_signal_entities": [],
+        "corroboration_signal_entities": [],
+        "corroboration_rise_threshold": 0.0,
+        "corroboration_signal_name": "corroboration",
+        "correlation_window_s": _CORRELATION_WINDOW_S,
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "steps": [],
+        "episodes_observed": len(confirmed),
+        "corroborated_episodes": 0,
+        "observed_followup_entities": followup_entities,
+    }
+
+
 def _build_default_diagnostics(
     *,
     room_id: str,
@@ -351,6 +389,15 @@ def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
     return (
         f"{room_id}: when occupancy is present and temperature rises quickly, "
         f"you usually start cooling within a few minutes "
+        f"({observed} observed episodes)."
+    )
+
+
+def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str:
+    del corroborated
+    return (
+        f"{room_id}: when occupancy is present and CO2 rises quickly, "
+        f"you usually start ventilation within a few minutes "
         f"({observed} observed episodes)."
     )
 
@@ -439,9 +486,42 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
 )
 
 
+_ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_air_quality_assist",
+    analyzer_id="CompositePatternCatalogAnalyzer",
+    reaction_type="room_air_quality_assist",
+    fingerprint_key="co2_rise",
+    matcher_spec=CompositePatternSpec(
+        primary=CompositeSignalSpec(
+            name="co2",
+            predicate=_is_co2_event,
+            min_delta=_CO2_RISE_THRESHOLD,
+        ),
+        followup=CompositeSignalSpec(
+            name="ventilation",
+            predicate=_is_activation_event,
+        ),
+        require_room_occupancy=True,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+    ),
+    min_occurrences=_MIN_OCCURRENCES,
+    min_weeks=_MIN_WEEKS,
+    description_builder=_describe_air_quality,
+    suggested_config_builder=lambda room_id, confirmed: _build_air_quality_assist_config(
+        room_id, confirmed
+    ),
+    confidence_builder=lambda confirmed: min(
+        0.93,
+        0.4 + (0.08 * len(confirmed)),
+    ),
+)
+
+
 DEFAULT_COMPOSITE_PATTERN_CATALOG: tuple[CompositeLearningPatternDefinition, ...] = (
     _ROOM_SIGNAL_ASSIST_PATTERN,
     _ROOM_COOLING_PATTERN,
+    _ROOM_AIR_QUALITY_PATTERN,
 )
 
 

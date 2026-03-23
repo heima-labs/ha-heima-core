@@ -559,6 +559,11 @@ class LightingDomain:
     def _expected_scene_entities(self, step: ApplyStep) -> list[str]:
         """Best-effort expansion of a room scene to concrete light entities in that room area."""
         room_id = str(step.target or "").strip()
+        return self.expected_room_light_entities(room_id)
+
+    def expected_room_light_entities(self, room_id: str) -> list[str]:
+        """Best-effort concrete light entities for a room via its mapped HA area."""
+        room_id = str(room_id or "").strip()
         if not room_id:
             return []
 

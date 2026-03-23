@@ -55,7 +55,7 @@ Ordine di valutazione nel ciclo (DAG):
 - Cross-cut Normalization Layer: rollout avanzato e gia integrato nei path runtime principali; il framework e ormai oltre lo stato sperimentale.
 - Cross-cut Policy Plugin Framework: definito a livello spec, non ancora implementato nel runtime.
 - Learning / live-lab track: sostanzialmente completato per v1 runtime. Restano aperti solo:
-  - provenance piu forte per scene/script multi-entita
+  - provenance ancora piu forte per scene/script multi-entita
   - primi analyzer cross-domain sopra `state_change`
 
 ## Milestone 0 - Scaffolding e Contratto Entita
@@ -285,11 +285,16 @@ Output:
     - lighting learning (`025_lighting_learning_live.py`)
     - room signal assist (`026_room_signal_assist_live.py`)
     - room cooling assist (`027_room_cooling_assist_live.py`)
-    - presence learning (`028_presence_live.py`)
+    - room air quality assist (`028_room_air_quality_assist_live.py`)
+    - plugin compositi built-in correnti:
+      - `room_signal_assist`
+      - `room_cooling_assist`
+      - `room_air_quality_assist`
+    - presence learning (`029_presence_live.py`)
     - calendar runtime (`050_calendar_domain.py`)
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
 - Gap residui:
-  - stronger scene/script provenance expansion to concrete entity batches
+  - stronger scene/script provenance expansion to concrete entity batches beyond current room-scoped script attribution
   - definire i next step dopo la chiusura del Composite Pattern Engine v1.1
   - far usare i metadata plugin in diagnostics/dev tooling in modo stabile
   - migliorare il grouping composito oltre il solo HA context / correlation id

@@ -64,6 +64,10 @@ Composite Pattern Engine v1.1:
 - S2: catalog-driven composite analyzer path
 - S3: normalized runtime/rebuild contract for `RoomSignalAssistReaction`
 - S4: stable `learning_diagnostics` in proposal payloads
+- current built-in composite plugins:
+  - `room_signal_assist`
+  - `room_cooling_assist`
+  - `room_air_quality_assist`
 
 Plugin-oriented wiring:
 - coordinator uses a built-in learning plugin registry
@@ -83,7 +87,8 @@ Verification:
 These items are still open by design:
 
 1. Stronger scene/script provenance
-- scene/script effects are improved, but not yet expanded into perfectly reliable concrete entity batches in all cases
+- scene/script effects are improved, including room-scoped script attribution when a reaction source exposes
+  room diagnostics, but not yet expanded into perfectly reliable concrete entity batches in all cases
 
 2. Composite grouping beyond current heuristics
 - composite matching still relies on room scope, windows, event context, and correlation metadata
