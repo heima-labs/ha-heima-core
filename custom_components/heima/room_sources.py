@@ -1,75 +1,125 @@
-"""Helpers for room source configuration and learning signal selection."""
+"""Helpers for room occupancy and learning source configuration."""
 
 from __future__ import annotations
 
 from typing import Any
 
 
-def normalize_room_sources(
-    raw_sources: Any,
-    *,
-    learning_enabled_entities: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Normalize legacy or structured room sources to a stable dict shape."""
-    learning_enabled = {
-        str(entity_id).strip()
-        for entity_id in (learning_enabled_entities or [])
-        if str(entity_id).strip()
-    }
-    normalized: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    if raw_sources is None:
-        return normalized
-
-    if not isinstance(raw_sources, list):
-        raw_sources = [raw_sources]
-
-    for item in raw_sources:
-        entity_id = ""
-        item_learning_enabled: bool | None = None
-        if isinstance(item, dict):
-            entity_id = str(item.get("entity_id", "")).strip()
-            if "learning_enabled" in item:
-                item_learning_enabled = bool(item.get("learning_enabled"))
-        else:
-            entity_id = str(item).strip()
-
-        if not entity_id or entity_id in seen:
-            continue
-        seen.add(entity_id)
-        normalized.append(
-            {
-                "entity_id": entity_id,
-                "learning_enabled": (
-                    entity_id in learning_enabled
-                    if learning_enabled_entities is not None
-                    else bool(item_learning_enabled)
-                ),
-            }
-        )
-    return normalized
+def normalize_entity_id_list(raw_entities: Any) -> list[str]:
+    """Normalize selector outputs or raw lists to a stable list[str]."""
+    if raw_entities is None:
+        return []
+    if isinstance(raw_entities, dict):
+        return [str(key).strip() for key, enabled in raw_entities.items() if enabled and str(key).strip()]
+    if isinstance(raw_entities, (list, tuple, set)):
+        return [str(entity_id).strip() for entity_id in raw_entities if str(entity_id).strip()]
+    if isinstance(raw_entities, str):
+        clean = raw_entities.strip()
+        return [clean] if clean else []
+    clean = str(raw_entities).strip()
+    return [clean] if clean else []
 
 
-def room_source_entity_ids(room_or_sources: Any) -> list[str]:
-    """Return all entity ids configured as sources for a room."""
-    return [
-        str(source.get("entity_id", "")).strip()
-        for source in normalize_room_sources(_extract_sources(room_or_sources))
-        if str(source.get("entity_id", "")).strip()
-    ]
+def normalize_room_signal_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize room occupancy/learning sources with backward-compatible migration."""
+    data = dict(payload)
+
+    explicit_occupancy = "occupancy_sources" in data
+    explicit_learning = "learning_sources" in data
+
+    if explicit_occupancy:
+        occupancy_sources = normalize_entity_id_list(data.get("occupancy_sources"))
+    else:
+        occupancy_sources = _migrate_legacy_occupancy_sources(data.get("sources"))
+
+    if explicit_learning:
+        learning_sources = normalize_entity_id_list(data.get("learning_sources"))
+    else:
+        learning_sources = _migrate_legacy_learning_sources(data.get("sources"))
+
+    data["occupancy_sources"] = _dedupe(occupancy_sources)
+    data["learning_sources"] = _dedupe(learning_sources)
+    data.pop("sources", None)
+    return data
+
+
+def room_occupancy_source_entity_ids(room_or_sources: Any) -> list[str]:
+    """Return occupancy sources for a room, with legacy migration fallback."""
+    if isinstance(room_or_sources, dict):
+        if "occupancy_sources" in room_or_sources:
+            return _dedupe(normalize_entity_id_list(room_or_sources.get("occupancy_sources")))
+        return _dedupe(_migrate_legacy_occupancy_sources(room_or_sources.get("sources")))
+    return _dedupe(normalize_entity_id_list(room_or_sources))
 
 
 def room_learning_source_entity_ids(room_or_sources: Any) -> list[str]:
-    """Return room source entity ids explicitly enabled for learning."""
-    return [
-        str(source.get("entity_id", "")).strip()
-        for source in normalize_room_sources(_extract_sources(room_or_sources))
-        if source.get("learning_enabled") and str(source.get("entity_id", "")).strip()
-    ]
-
-
-def _extract_sources(room_or_sources: Any) -> Any:
+    """Return learning sources for a room, with legacy migration fallback."""
     if isinstance(room_or_sources, dict):
-        return room_or_sources.get("sources", [])
-    return room_or_sources
+        if "learning_sources" in room_or_sources:
+            return _dedupe(normalize_entity_id_list(room_or_sources.get("learning_sources")))
+        return _dedupe(_migrate_legacy_learning_sources(room_or_sources.get("sources")))
+    return _dedupe(normalize_entity_id_list(room_or_sources))
+
+
+def room_all_source_entity_ids(room_cfg: dict[str, Any]) -> list[str]:
+    """Return all room-level sources used for occupancy or learning."""
+    return _dedupe(
+        [
+            *room_occupancy_source_entity_ids(room_cfg),
+            *room_learning_source_entity_ids(room_cfg),
+        ]
+    )
+
+
+def _migrate_legacy_occupancy_sources(raw_sources: Any) -> list[str]:
+    migrated: list[str] = []
+    for item in normalize_entity_id_list_or_structured(raw_sources):
+        if isinstance(item, dict):
+            entity_id = str(item.get("entity_id", "")).strip()
+            if entity_id:
+                migrated.append(entity_id)
+        else:
+            clean = str(item).strip()
+            if clean:
+                migrated.append(clean)
+    return migrated
+
+
+def _migrate_legacy_learning_sources(raw_sources: Any) -> list[str]:
+    migrated: list[str] = []
+    for item in normalize_entity_id_list_or_structured(raw_sources):
+        if not isinstance(item, dict):
+            continue
+        entity_id = str(item.get("entity_id", "")).strip()
+        if entity_id and bool(item.get("learning_enabled")):
+            migrated.append(entity_id)
+    return migrated
+
+
+def normalize_entity_id_list_or_structured(raw_entities: Any) -> list[Any]:
+    """Normalize mixed legacy room source payloads without losing dict entries."""
+    if raw_entities is None:
+        return []
+    if isinstance(raw_entities, list):
+        return list(raw_entities)
+    if isinstance(raw_entities, (tuple, set)):
+        return list(raw_entities)
+    if isinstance(raw_entities, dict):
+        return [raw_entities]
+    if isinstance(raw_entities, str):
+        clean = raw_entities.strip()
+        return [clean] if clean else []
+    clean = str(raw_entities).strip()
+    return [clean] if clean else []
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        clean = str(value).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        deduped.append(clean)
+    return deduped

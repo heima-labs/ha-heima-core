@@ -11,9 +11,9 @@ from homeassistant.util import slugify
 
 from ..const import OPT_ROOMS
 from ..room_sources import (
-    normalize_room_sources,
+    normalize_room_signal_config,
+    room_occupancy_source_entity_ids,
     room_learning_source_entity_ids,
-    room_source_entity_ids,
 )
 from ..runtime.normalization.config import (
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,
@@ -146,7 +146,8 @@ class _RoomsStepsMixin:
                     "display_name": area.name,
                     "area_id": area.id,
                     "occupancy_mode": "none",
-                    "sources": [],
+                    "occupancy_sources": [],
+                    "learning_sources": [],
                     "logic": "any_of",
                     "on_dwell_s": 5,
                     "off_dwell_s": 120,
@@ -162,7 +163,7 @@ class _RoomsStepsMixin:
 
     def _room_schema(self, defaults: dict[str, Any] | None = None) -> vol.Schema:
         defaults = dict(defaults or {})
-        defaults["sources"] = room_source_entity_ids(defaults)
+        defaults["occupancy_sources"] = room_occupancy_source_entity_ids(defaults)
         defaults["learning_sources"] = room_learning_source_entity_ids(defaults)
         defaults["source_weights"] = _format_source_weights(defaults.get("source_weights"))
         from homeassistant.helpers.selector import selector as _sel
@@ -174,9 +175,11 @@ class _RoomsStepsMixin:
                 vol.Optional(
                     "occupancy_mode", default=defaults.get("occupancy_mode", "derived")
                 ): vol.In(ROOM_OCCUPANCY_MODES),
-                vol.Optional("sources"): _entity_selector(["binary_sensor", "sensor"], multiple=True),
-                vol.Optional("learning_sources"): _entity_selector(
+                vol.Optional("occupancy_sources"): _entity_selector(
                     ["binary_sensor", "sensor"], multiple=True
+                ),
+                vol.Optional("learning_sources"): _entity_selector(
+                    ["binary_sensor", "sensor", "switch"], multiple=True
                 ),
                 vol.Optional("logic", default=defaults.get("logic", "any_of")): vol.In(ROOM_LOGIC),
                 vol.Optional("weight_threshold"): vol.Coerce(float),
@@ -223,9 +226,9 @@ class _RoomsStepsMixin:
         if occupancy_mode not in ROOM_OCCUPANCY_MODES:
             errors["occupancy_mode"] = "invalid_option"
 
-        sources = room_source_entity_ids(payload)
+        sources = room_occupancy_source_entity_ids(payload)
         if occupancy_mode == "derived" and not sources:
-            errors["sources"] = "required"
+            errors["occupancy_sources"] = "required"
         errors.update(
             validate_signal_set_strategy_fields(
                 payload=payload,
@@ -244,23 +247,11 @@ class _RoomsStepsMixin:
         data["display_name"] = str(data.get("display_name", "") or "").strip()
         if data.get("area_id"):
             data["area_id"] = str(data["area_id"])
-        raw_sources = data.get("sources")
-        if isinstance(raw_sources, list) and any(isinstance(item, dict) for item in raw_sources):
-            sources = raw_sources
-        else:
-            sources = self._normalize_multi_value(raw_sources)
-
-        raw_learning_sources = data.get("learning_sources")
-        learning_sources = (
-            self._normalize_multi_value(raw_learning_sources)
-            if raw_learning_sources is not None
-            else None
-        )
-        data["sources"] = normalize_room_sources(
-            sources,
-            learning_enabled_entities=learning_sources,
-        )
-        data.pop("learning_sources", None)
+        if "occupancy_sources" in data:
+            data["occupancy_sources"] = self._normalize_multi_value(data.get("occupancy_sources"))
+        if "learning_sources" in data:
+            data["learning_sources"] = self._normalize_multi_value(data.get("learning_sources"))
+        data = normalize_room_signal_config(data)
         occupancy_mode = str(data.get("occupancy_mode", "") or "").strip()
         if occupancy_mode not in ROOM_OCCUPANCY_MODES:
             occupancy_mode = "derived"

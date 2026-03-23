@@ -57,11 +57,11 @@ Shared learning/runtime substrate:
 - room model as the primary source of room-scoped learnable signals
 
 Signal-selection rule on the target architecture:
-- room-scoped learning should start from `rooms[*].sources`
+- room-scoped learning should start from `rooms[*].learning_sources`
+- room occupancy should remain independently modeled through `rooms[*].occupancy_sources`
 - `learning.context_signal_entities` should remain an additive global extension set
 - the runtime should still filter for stable, normalized signals before treating a source as a
   meaningful learning input
-- the preferred next config step is an explicit per-source room toggle such as `learning_enabled`
 
 Role distinction kept explicit:
 - some room entities explain **when** a behavior happens and should act as trigger/context signals

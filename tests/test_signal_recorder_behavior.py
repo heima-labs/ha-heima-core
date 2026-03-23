@@ -185,7 +185,7 @@ async def test_signal_recorder_maps_room_from_room_sources():
             "rooms": [
                 {
                     "room_id": "bathroom",
-                    "sources": ["sensor.bathroom_humidity"],
+                    "learning_sources": ["sensor.bathroom_humidity"],
                 }
             ],
         },
@@ -198,7 +198,7 @@ async def test_signal_recorder_maps_room_from_room_sources():
     assert store.events[0].room_id == "bathroom"
 
 
-async def test_signal_recorder_tracks_learning_enabled_room_sources_without_global_extra():
+async def test_signal_recorder_tracks_room_learning_sources_without_global_extra():
     hass = _FakeHass()
     store = _FakeStore()
     behavior = _behavior(
@@ -209,10 +209,8 @@ async def test_signal_recorder_tracks_learning_enabled_room_sources_without_glob
             "rooms": [
                 {
                     "room_id": "bathroom",
-                    "sources": [
-                        {"entity_id": "binary_sensor.bathroom_motion", "learning_enabled": False},
-                        {"entity_id": "sensor.bathroom_humidity", "learning_enabled": True},
-                    ],
+                    "occupancy_sources": ["binary_sensor.bathroom_motion"],
+                    "learning_sources": ["sensor.bathroom_humidity"],
                 }
             ],
         },
@@ -256,7 +254,7 @@ async def test_signal_recorder_ignores_recent_heima_script_apply_for_same_room()
         store,
         options={
             "learning": {"context_signal_entities": ["switch.bathroom_fan"]},
-            "rooms": [{"room_id": "bathroom", "sources": ["switch.bathroom_fan"]}],
+            "rooms": [{"room_id": "bathroom", "learning_sources": ["switch.bathroom_fan"]}],
         },
         apply_state={
             "scripts": {
@@ -293,7 +291,7 @@ async def test_signal_recorder_does_not_ignore_recent_heima_script_apply_for_oth
         store,
         options={
             "learning": {"context_signal_entities": ["switch.studio_fan"]},
-            "rooms": [{"room_id": "studio", "sources": ["switch.studio_fan"]}],
+            "rooms": [{"room_id": "studio", "learning_sources": ["switch.studio_fan"]}],
         },
         apply_state={
             "scripts": {
@@ -334,7 +332,7 @@ async def test_signal_recorder_uses_expected_domains_with_room_scope():
             "rooms": [
                 {
                     "room_id": "studio",
-                    "sources": ["switch.studio_fan", "sensor.studio_co2"],
+                    "learning_sources": ["switch.studio_fan", "sensor.studio_co2"],
                 }
             ],
         },

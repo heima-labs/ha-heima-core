@@ -342,10 +342,9 @@ Stato attuale:
 - lighting/heating/presence restano altre famiglie di Learning Pattern Plugins quando servono
   semantiche piu ricche o matching diversi dal contratto composito room-scoped
 - prossimo riallineamento di configurazione:
-  - i segnali room-scoped del learning dovrebbero partire da `rooms[*].sources`
+  - i segnali room-scoped del learning dovrebbero partire da `rooms[*].learning_sources`
+  - `rooms[*].occupancy_sources` dovrebbe restare separato e dedicato all'occupancy
   - `learning.context_signal_entities` dovrebbe restare un set globale additivo
-  - ogni room source dovrebbe poter dichiarare esplicitamente se partecipa al learning
-    (`learning_enabled`)
   - il runtime deve continuare a filtrare verso segnali abbastanza stabili e semanticamente
     normalizzati
   - la documentazione e la UI devono rendere esplicita la differenza tra trigger/context signals e

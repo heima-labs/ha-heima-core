@@ -9,7 +9,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from ...const import OPT_PEOPLE_ANON, OPT_PEOPLE_NAMED
-from ...room_sources import room_source_entity_ids
+from ...room_sources import normalize_entity_id_list
 from ..normalization.config import (
     GROUP_PRESENCE_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -97,7 +97,7 @@ class PeopleDomain:
         anon_weight = 0
 
         if anon_cfg.get("enabled"):
-            anon_sources = room_source_entity_ids(anon_cfg)
+            anon_sources = normalize_entity_id_list(anon_cfg.get("sources", []))
             required = int(anon_cfg.get("required", 1))
             anon_fused, active_count = self._compute_group_presence(
                 anon_sources,
@@ -160,7 +160,7 @@ class PeopleDomain:
             return is_home, "ha_person", 100 if is_home else 0
 
         if method == "quorum":
-            sources = room_source_entity_ids(person_cfg)
+            sources = normalize_entity_id_list(person_cfg.get("sources", []))
             required = int(person_cfg.get("required", 1))
             trace_key = f"person:{slug}" if slug else "person:unknown"
             fused, active_count = self._compute_group_presence(

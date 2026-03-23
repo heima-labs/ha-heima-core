@@ -287,7 +287,7 @@ Meaning:
 - `derived`: room occupancy is computed from sources
 - `none`: room exists for actuation/grouping only, but has no local occupancy sensing
 
-### `sources`
+### `occupancy_sources`
 - Type: multi-entity selector (`binary_sensor`, `sensor`)
 - Required when:
   - `occupancy_mode = derived`
@@ -295,16 +295,26 @@ Meaning:
   - `occupancy_mode = none`
 
 Meaning:
-- room-local source entities used first for occupancy resolution
-- also the primary room-scoped candidate signal set for learning
+- room-local source entities used for occupancy resolution
 
 Important:
-- the learning system should not force the user to duplicate the same room semantics in two places
-- `rooms[*].sources` are therefore the natural default room signal inputs for learning plugins
-- `learning.context_signal_entities` should be treated as an additive global override set, not as
-  the only source of non-temporal learning signals
-- each room source should evolve toward an explicit per-source toggle for learning participation
-  (for example `learning_enabled`)
+- these sources define room occupancy semantics only
+- they are distinct from room-scoped learning signals
+
+### `learning_sources`
+- Type: multi-entity selector (`binary_sensor`, `sensor`)
+- Required when:
+  - never
+
+Meaning:
+- room-local entities that should be available as room-scoped inputs for learning plugins
+- these signals explain **when** a behavior tends to happen, not necessarily whether the room is occupied
+
+Important:
+- the learning system should not force the user to duplicate room-scoped learning semantics in a
+  global-only section
+- `rooms[*].learning_sources` are the primary room-scoped learning inputs
+- `learning.context_signal_entities` is an additive global override set for non-room-specific extras
 
 Practical guidance:
 - put stable, normalized room signals here when they describe the room meaningfully:
@@ -312,12 +322,11 @@ Practical guidance:
   - `sensor.room_co2`
   - `sensor.room_temperature`
   - `switch.room_fan`
-- avoid assuming every raw source is automatically a good learning signal
-- noisy raw motion pulses may still be useful for occupancy, but are not ideal learning inputs by
-  themselves
+- keep noisy occupancy pulses in `occupancy_sources` when they are useful to know if the room is
+  occupied, but not as learning inputs unless they are semantically meaningful for a plugin
 
 Important distinction:
-- room sources are not all used in the same role by learning
+- room entities are not all used in the same role by learning
 - some entities are useful as trigger/context signals:
   - `sensor.room_lux`
   - `sensor.room_co2`

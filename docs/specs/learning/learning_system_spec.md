@@ -319,29 +319,29 @@ learning:
 ```
 
 Normative source-selection rule:
-- the learning system MUST treat room-scoped signals declared in `rooms[*].sources` as the primary
-  source set for room-aware learning
+- the learning system MUST treat room-scoped signals declared in `rooms[*].learning_sources` as the
+  primary source set for room-aware learning
 - `learning.context_signal_entities` MUST be treated as an additive global override set, not as
   the only source of learnable non-temporal signals
 - the effective learning signal set is therefore:
-  - room-scoped entities from `rooms[*].sources` explicitly marked as learning-enabled
+  - room-scoped entities from `rooms[*].learning_sources`
   - union supported entities from `learning.context_signal_entities`
   - de-duplicated by entity id
 
 Normative configuration rule:
-- the room model SHOULD allow a per-source explicit opt-in/out for learning participation
+- the room model SHOULD keep occupancy and learning inputs as separate room-level concepts
 - the intended v1.1+ shape is:
-  - room source membership declares that the entity belongs to the room semantics
-  - a `learning_enabled` flag declares that the entity may be used as a learnable trigger/context
-    signal
-- this is preferred over a purely implicit runtime filter because it keeps user intent explicit and
-  avoids duplicating the same room semantics in multiple config sections
+  - `rooms[*].occupancy_sources` declares which entities participate in occupancy resolution
+  - `rooms[*].learning_sources` declares which entities may be used as learnable trigger/context
+    signals
+- this is preferred over a mixed room-source model because it keeps user intent explicit and avoids
+  coupling occupancy semantics to learning semantics
 
 Normative signal-quality rule:
 - learning plugins MUST prefer stable, normalized signals over raw noisy or semantically ambiguous
   inputs
-- not every entity listed in `rooms[*].sources` is automatically a good learning signal
-- the runtime MAY filter room sources by supported domain / signal semantics before persisting
+- not every entity listed in `rooms[*].learning_sources` is automatically a good learning signal
+- the runtime MAY filter room learning sources by supported domain / signal semantics before persisting
   `state_change` events
 
 Recommended v1 interpretation:

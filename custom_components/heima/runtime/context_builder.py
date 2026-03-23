@@ -27,7 +27,7 @@ class ContextBuilder:
       weather_entity:          entity_id of a weather integration
       context_signal_entities: list of entity_ids (max 10) that are strong
                                context signals for learning (projector, TV, etc.)
-      rooms[*].sources:        room-scoped sources, optionally marked learning_enabled
+      rooms[*].learning_sources: room-scoped signals used as learnable trigger/context inputs
     """
 
     def __init__(self, hass: HomeAssistant, config: dict[str, Any] | None = None) -> None:

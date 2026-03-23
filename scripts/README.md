@@ -31,6 +31,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `030_learning_proposals_diag.py`
 - Diagnostics:
   - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, scheduler). Utile per verificare quanti eventi sono stati registrati e se il learning system sta accumulando dati.
+  - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
@@ -74,6 +75,13 @@ python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section event_store
 ```
 
+- Per un check rapido giornaliero su produzione:
+
+```bash
+source scripts/.env
+python3 scripts/prod_daily_check.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
+```
+
 - Per run della learning seeded-integration path da baseline pulita:
 
 ```bash
@@ -94,7 +102,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - `check_all_live.sh --tier live_e2e` runs setup prerequisites first so the
     Docker lab has the expected baseline fixtures and room/entity wiring
   - current learning examples:
-    - `011_room_source_learning_signals.py`: options-flow room edit -> runtime diagnostics prove `learning_enabled` room sources enter the signal recorder pool
+    - `011_room_source_learning_signals.py`: options-flow room edit -> runtime diagnostics prove `learning_sources` enter the signal recorder pool
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
     - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal

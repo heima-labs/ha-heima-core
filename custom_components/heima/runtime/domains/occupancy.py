@@ -10,7 +10,7 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from ...const import OPT_ROOMS
-from ...room_sources import room_source_entity_ids
+from ...room_sources import room_occupancy_source_entity_ids
 from ..contracts import HeimaEvent
 from ..normalization.config import (
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,
@@ -94,7 +94,7 @@ class OccupancyDomain:
                 f"heima_occ_{room_id}_source",
                 "none"
                 if self._room_occupancy_mode(room) == "none"
-                else ",".join(room_source_entity_ids(room)),
+                else ",".join(room_occupancy_source_entity_ids(room)),
             )
             if prev_value != is_occupied:
                 state.set_sensor(f"heima_occ_{room_id}_last_change", now)
@@ -164,7 +164,7 @@ class OccupancyDomain:
             )
 
         room_sources = {
-            str(room.get("room_id")): room_source_entity_ids(room)
+            str(room.get("room_id")): room_occupancy_source_entity_ids(room)
             for room in options.get(OPT_ROOMS, [])
             if room.get("room_id")
         }
@@ -239,7 +239,7 @@ class OccupancyDomain:
                 "forced_off_by_max_on": False,
             }
 
-        sources = room_source_entity_ids(room_cfg)
+        sources = room_occupancy_source_entity_ids(room_cfg)
         if not sources:
             return False, {
                 "room_id": room_id,

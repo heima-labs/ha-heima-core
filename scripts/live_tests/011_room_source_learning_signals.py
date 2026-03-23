@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live check: room sources marked for learning enter the runtime signal pool."""
+"""Live check: room learning_sources enter the runtime signal pool."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def _wait_for_tracking(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify learning-enabled room sources reach signal recorder")
+    parser = argparse.ArgumentParser(description="Verify room learning_sources reach signal recorder")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=30)
@@ -121,7 +121,7 @@ def main() -> int:
         "display_name": "Studio",
         "area_id": "test_heima_studio",
         "occupancy_mode": "derived",
-        "sources": ["binary_sensor.test_heima_room_studio_motion"],
+        "occupancy_sources": ["binary_sensor.test_heima_room_studio_motion"],
         "learning_sources": ["binary_sensor.test_heima_room_studio_motion"],
         "logic": "any_of",
         "on_dwell_s": 5,
@@ -141,7 +141,7 @@ def main() -> int:
         timeout_s=args.timeout_s,
         poll_s=args.poll_s,
     )
-    print(f"PASS: learning-enabled room source tracked by runtime [{tracked_entity}]")
+    print(f"PASS: room learning source tracked by runtime [{tracked_entity}]")
     print(f"Tracked entities now: {tracked}")
     return 0
 

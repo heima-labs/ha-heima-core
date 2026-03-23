@@ -77,7 +77,13 @@ ROOMS_BASELINE = [
         "display_name": "Studio",
         "area_id": None,  # filled dynamically by recover_rooms() when area_ids provided
         "occupancy_mode": "derived",
-        "sources": ["binary_sensor.test_heima_room_studio_motion"],
+        "occupancy_sources": ["binary_sensor.test_heima_room_studio_motion"],
+        "learning_sources": [
+            "sensor.test_heima_studio_lux",
+            "sensor.test_heima_studio_humidity",
+            "sensor.test_heima_studio_temperature",
+            "sensor.test_heima_studio_co2",
+        ],
         "logic": "any_of",
         "on_dwell_s": 5,
         "off_dwell_s": 120,
@@ -88,7 +94,11 @@ ROOMS_BASELINE = [
         "display_name": "Bagno",
         "area_id": None,
         "occupancy_mode": "derived",
-        "sources": ["binary_sensor.test_heima_room_bathroom_motion"],
+        "occupancy_sources": ["binary_sensor.test_heima_room_bathroom_motion"],
+        "learning_sources": [
+            "sensor.test_heima_bathroom_humidity",
+            "sensor.test_heima_bathroom_temperature",
+        ],
         "logic": "any_of",
         "on_dwell_s": 5,
         "off_dwell_s": 180,
@@ -99,7 +109,8 @@ ROOMS_BASELINE = [
         "display_name": "Soggiorno",
         "area_id": None,  # filled dynamically by recover_rooms() when area_ids provided
         "occupancy_mode": "derived",
-        "sources": ["binary_sensor.test_heima_room_living_motion"],
+        "occupancy_sources": ["binary_sensor.test_heima_room_living_motion"],
+        "learning_sources": [],
         "logic": "any_of",
         "on_dwell_s": 5,
         "off_dwell_s": 120,

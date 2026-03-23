@@ -124,7 +124,7 @@ def test_context_builder_signals():
     assert ctx.signals["binary_sensor.tv"] == "on"
 
 
-def test_context_builder_includes_learning_enabled_room_sources():
+def test_context_builder_includes_room_learning_sources():
     hass = _FakeHass(
         {
             "sensor.studio_lux": _FakeState("120"),
@@ -138,10 +138,8 @@ def test_context_builder_includes_learning_enabled_room_sources():
             "rooms": [
                 {
                     "room_id": "studio",
-                    "sources": [
-                        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
-                        {"entity_id": "binary_sensor.studio_motion", "learning_enabled": False},
-                    ],
+                    "occupancy_sources": ["binary_sensor.studio_motion"],
+                    "learning_sources": ["sensor.studio_lux"],
                 }
             ],
         },

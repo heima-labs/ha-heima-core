@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant
 
-from ...room_sources import room_learning_source_entity_ids, room_source_entity_ids
+from ...room_sources import room_all_source_entity_ids, room_learning_source_entity_ids
 from ..context_builder import ContextBuilder
 from ..event_store import EventStore, HeimaEvent
 from .base import HeimaBehavior
@@ -149,7 +149,7 @@ class SignalRecorderBehavior(HeimaBehavior):
             room_id = str(room.get("room_id", "")).strip()
             if not room_id:
                 continue
-            for source_id in room_source_entity_ids(room):
+            for source_id in room_all_source_entity_ids(room):
                 if source_id:
                     room_sources[source_id] = room_id
             area_id = str(room.get("area_id", "")).strip()

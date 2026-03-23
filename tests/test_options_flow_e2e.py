@@ -34,7 +34,8 @@ async def test_rooms_flow_persists_actuation_only_room_with_save_and_close():
             "display_name": "Soggiorno",
             "area_id": "soggiorno",
             "occupancy_mode": "none",
-            "sources": [],
+            "occupancy_sources": [],
+            "learning_sources": [],
             "logic": "any_of",
             "on_dwell_s": 5,
             "off_dwell_s": 120,
@@ -48,7 +49,8 @@ async def test_rooms_flow_persists_actuation_only_room_with_save_and_close():
     room = saved["data"]["rooms"][0]
     assert room["room_id"] == "soggiorno"
     assert room["occupancy_mode"] == "none"
-    assert room["sources"] == []
+    assert room["occupancy_sources"] == []
+    assert room["learning_sources"] == []
 
 
 @pytest.mark.asyncio
@@ -87,7 +89,8 @@ async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
                     "display_name": "Soggiorno",
                     "area_id": "soggiorno",
                     "occupancy_mode": "none",
-                    "sources": [],
+                    "occupancy_sources": [],
+                    "learning_sources": [],
                     "logic": "any_of",
                 }
             ],
@@ -137,7 +140,8 @@ async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
             "display_name": "Studio",
             "area_id": "studio",
             "occupancy_mode": "derived",
-            "sources": ["binary_sensor.motion", "binary_sensor.mmwave"],
+            "occupancy_sources": ["binary_sensor.motion", "binary_sensor.mmwave"],
+            "learning_sources": [],
             "logic": "weighted_quorum",
             "weight_threshold": 1.2,
             "source_weights": "binary_sensor.motion=0.4\nbinary_sensor.mmwave=0.8",
@@ -160,7 +164,7 @@ async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
 
 
 @pytest.mark.asyncio
-async def test_rooms_flow_persists_learning_enabled_room_sources():
+async def test_rooms_flow_persists_separate_learning_sources():
     flow = _flow()
 
     result = await flow.async_step_rooms_add(
@@ -169,8 +173,8 @@ async def test_rooms_flow_persists_learning_enabled_room_sources():
             "display_name": "Studio",
             "area_id": "studio",
             "occupancy_mode": "derived",
-            "sources": ["binary_sensor.motion", "sensor.studio_lux"],
-            "learning_sources": ["sensor.studio_lux"],
+            "occupancy_sources": ["binary_sensor.motion"],
+            "learning_sources": ["sensor.studio_lux", "switch.studio_fan"],
             "logic": "any_of",
             "on_dwell_s": 5,
             "off_dwell_s": 120,
@@ -181,10 +185,8 @@ async def test_rooms_flow_persists_learning_enabled_room_sources():
 
     saved = await flow.async_step_rooms_save()
     room = saved["data"]["rooms"][0]
-    assert room["sources"] == [
-        {"entity_id": "binary_sensor.motion", "learning_enabled": False},
-        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
-    ]
+    assert room["occupancy_sources"] == ["binary_sensor.motion"]
+    assert room["learning_sources"] == ["sensor.studio_lux", "switch.studio_fan"]
 
 
 @pytest.mark.asyncio
