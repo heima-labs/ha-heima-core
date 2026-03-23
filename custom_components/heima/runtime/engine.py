@@ -34,7 +34,7 @@ from ..const import (
 from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from .behaviors.base import HeimaBehavior
-from .contracts import ApplyPlan, ApplyStep, HeimaEvent
+from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .reactions import builtin_reaction_plugin_builders
 from .reactions.base import HeimaReaction
 from .reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
@@ -106,7 +106,7 @@ class HeimaEngine:
         self._muted_reactions: set[str] = set()
         self._configured_reaction_ids: set[str] = set()
         self._snapshot_buffer = SnapshotBuffer()
-        self._recent_script_applies: dict[str, dict[str, Any]] = {}
+        self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._reaction_plugin_builders = builtin_reaction_plugin_builders()
 
     @property
@@ -140,7 +140,7 @@ class HeimaEngine:
         """Recent lighting apply provenance for recorder attribution."""
         state = self._lighting_domain.recent_apply_state()
         state["scripts"] = {
-            script_id: dict(payload)
+            script_id: payload.as_dict()
             for script_id, payload in self._recent_script_applies.items()
         }
         return state
@@ -1036,16 +1036,18 @@ class HeimaEngine:
                     {"entity_id": script_entity},
                     blocking=False,
                 )
-                self._recent_script_applies[script_entity] = {
-                    "target": script_entity,
-                    "room_id": room_id,
-                    "expected_entity_ids": self._lighting_domain.expected_room_light_entities(room_id)
+                self._recent_script_applies[script_entity] = ScriptApplyBatch(
+                    script_entity=script_entity,
+                    room_id=room_id,
+                    expected_entity_ids=tuple(
+                        self._lighting_domain.expected_room_light_entities(room_id)
+                    )
                     if room_id
-                    else [],
-                    "applied_ts": time.monotonic(),
-                    "correlation_id": f"script-apply:{uuid4()}",
-                    "source": step.source,
-                }
+                    else (),
+                    applied_ts=time.monotonic(),
+                    correlation_id=f"script-apply:{uuid4()}",
+                    source=step.source,
+                )
             except ServiceNotFound:
                 _LOGGER.warning(
                     "Skipping script apply during startup/race: service script.turn_on not available"

@@ -89,6 +89,8 @@ These items are still open by design:
 1. Stronger scene/script provenance
 - scene/script effects are improved, including room-scoped script attribution when a reaction source exposes
   room diagnostics, but not yet expanded into perfectly reliable concrete entity batches in all cases
+- the runtime now has a minimal `ScriptApplyBatch` contract for short-lived script provenance,
+  but it is still intentionally lightweight and in-memory only
 
 2. Composite grouping beyond current heuristics
 - composite matching still relies on room scope, windows, event context, and correlation metadata

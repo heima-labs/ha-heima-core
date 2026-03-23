@@ -48,3 +48,25 @@ class ApplyPlan:
     @classmethod
     def empty(cls) -> "ApplyPlan":
         return cls(steps=[])
+
+
+@dataclass(frozen=True)
+class ScriptApplyBatch:
+    """Short-lived provenance batch for one script.turn_on execution.
+
+    This is not a persisted learning event. It is runtime-local provenance used
+    by recorder behaviors to avoid misclassifying Heima-caused effects as user
+    behavior.
+    """
+
+    script_entity: str
+    applied_ts: float
+    correlation_id: str
+    source: str = ""
+    room_id: str | None = None
+    expected_entity_ids: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        raw = asdict(self)
+        raw["expected_entity_ids"] = list(self.expected_entity_ids)
+        return raw

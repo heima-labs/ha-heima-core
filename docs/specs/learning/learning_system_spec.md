@@ -931,6 +931,27 @@ The recorder resolves:
 In practice, grouped scene/script effects are correlated through recent apply provenance and HA
 context IDs when available.
 
+### P8.4 `ScriptApplyBatch` runtime contract
+
+The runtime maintains a short-lived, in-memory `ScriptApplyBatch` contract for each recent
+`script.turn_on` execution that should influence recorder source attribution.
+
+Normative fields:
+- `script_entity`
+- `applied_ts`
+- `correlation_id`
+- `source`
+- `room_id` (optional)
+- `expected_entity_ids` (optional, best-effort)
+
+Normative rules:
+- this contract is runtime-local provenance, not a persisted learning event
+- recorder behaviors MAY use it to suppress Heima-caused follow-up state changes
+- recorders MUST prefer narrower scopes when available:
+  - exact `expected_entity_ids`
+  - then `room_id`
+  - only then broader short-window fallback behavior
+
 ### P8.3.1 `correlation_id`
 
 `correlation_id` is the runtime field used to connect multiple entity-level events that belong to
