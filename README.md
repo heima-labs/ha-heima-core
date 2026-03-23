@@ -21,7 +21,7 @@ See `docs/specs/heima_spec_v1.md` § 0 for the full design intent.
 
 ## Development status
 
-Active development on branch `feature/reactive-behavior-engine`.
+Active development is tracked on `main`, with feature work landing on short-lived topic branches before merge.
 
 Implemented modules:
 - Runtime engine with full domain DAG (people, occupancy, house state, lighting, heating, security)
