@@ -206,13 +206,26 @@ class LightingRecorderBehavior(HeimaBehavior):
                 applied_ts = payload.get("applied_ts")
                 if not isinstance(applied_ts, (int, float)) or (now - applied_ts) >= _HEIMA_APPLY_TTL_S:
                     continue
+                expected_subject_ids = payload.get("expected_subject_ids")
+                if isinstance(expected_subject_ids, list) and expected_subject_ids:
+                    if entity_id in expected_subject_ids:
+                        return True
+                    continue
                 expected_entity_ids = payload.get("expected_entity_ids")
                 if isinstance(expected_entity_ids, list) and expected_entity_ids:
                     if entity_id in expected_entity_ids:
                         return True
                     continue
+                expected_domains = payload.get("expected_domains")
+                entity_domain = entity_id.split(".", 1)[0]
                 script_room_id = payload.get("room_id")
                 if isinstance(script_room_id, str) and script_room_id:
+                    if (
+                        isinstance(expected_domains, list)
+                        and expected_domains
+                        and entity_domain not in expected_domains
+                    ):
+                        continue
                     if script_room_id == room_id:
                         return True
                     continue

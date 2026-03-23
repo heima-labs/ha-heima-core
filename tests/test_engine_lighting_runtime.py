@@ -427,8 +427,12 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
     recent = engine.lighting_recent_apply_state
     payload = recent["scripts"]["script.cool_living"]
     assert payload["room_id"] == "living"
+    assert payload["expected_domains"] == ["light"]
+    assert payload["expected_subject_ids"] == ["light.living_main", "light.living_spot"]
     assert payload["expected_entity_ids"] == ["light.living_main", "light.living_spot"]
     assert payload["source"] == "reaction:room-assist-1"
+    assert payload["origin_reaction_id"] == "room-assist-1"
+    assert payload["origin_reaction_class"] == "SimpleNamespace"
 
 
 @pytest.mark.asyncio

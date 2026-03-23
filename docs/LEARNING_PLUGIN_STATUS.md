@@ -91,6 +91,8 @@ These items are still open by design:
   room diagnostics, but not yet expanded into perfectly reliable concrete entity batches in all cases
 - the runtime now has a minimal `ScriptApplyBatch` contract for short-lived script provenance,
   but it is still intentionally lightweight and in-memory only
+- current batch metadata are now reaction-aware and usable by both lighting and generic signal recorders,
+  with room scope, expected domains, and expected subjects
 
 2. Composite grouping beyond current heuristics
 - composite matching still relies on room scope, windows, event context, and correlation metadata

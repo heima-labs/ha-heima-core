@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,17 +17,21 @@ from .base import HeimaBehavior
 class SignalRecorderBehavior(HeimaBehavior):
     """Listen for state changes on configured learning signals and persist generic events."""
 
+    _HEIMA_APPLY_TTL_S = 5.0
+
     def __init__(
         self,
         hass: HomeAssistant,
         store: EventStore,
         context_builder: ContextBuilder,
         entry: ConfigEntry,
+        recent_apply_state_fn: Any,
     ) -> None:
         self._hass = hass
         self._store = store
         self._context_builder = context_builder
         self._entry = entry
+        self._recent_apply_state_fn = recent_apply_state_fn
         self._tracked_entities: set[str] = set()
         self._entity_to_room: dict[str, str] = {}
         self._unsub: Any = None
@@ -65,9 +70,11 @@ class SignalRecorderBehavior(HeimaBehavior):
             return
         if old_state is not None and old_state.state == new_state.state:
             return
+        room_id = self._entity_to_room.get(entity_id)
+        if self._is_recent_heima_script_apply(entity_id=entity_id, room_id=room_id):
+            return
 
         context = self._context_builder.build(self._last_snapshot)
-        room_id = self._entity_to_room.get(entity_id)
         domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
         payload = {
             "entity_id": entity_id,
@@ -156,6 +163,49 @@ class SignalRecorderBehavior(HeimaBehavior):
             if entry.entity_id in self._tracked_entities and entity_area and entity_area in area_to_room:
                 entity_to_room.setdefault(entry.entity_id, area_to_room[entity_area])
         return entity_to_room
+
+    def _is_recent_heima_script_apply(self, *, entity_id: str, room_id: str | None) -> bool:
+        apply_state = self._recent_apply_state_fn()
+        if not isinstance(apply_state, dict):
+            return False
+        scripts = apply_state.get("scripts", {})
+        if not isinstance(scripts, dict):
+            return False
+
+        now = time.monotonic()
+        for payload in scripts.values():
+            if not isinstance(payload, dict):
+                continue
+            applied_ts = payload.get("applied_ts")
+            if not isinstance(applied_ts, (int, float)):
+                continue
+            if (now - applied_ts) >= self._HEIMA_APPLY_TTL_S:
+                continue
+            expected_subject_ids = payload.get("expected_subject_ids")
+            if isinstance(expected_subject_ids, list) and expected_subject_ids:
+                if entity_id in expected_subject_ids:
+                    return True
+                continue
+            expected_entity_ids = payload.get("expected_entity_ids")
+            if isinstance(expected_entity_ids, list) and expected_entity_ids:
+                if entity_id in expected_entity_ids:
+                    return True
+                continue
+            expected_domains = payload.get("expected_domains")
+            entity_domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+            script_room_id = payload.get("room_id")
+            if isinstance(script_room_id, str) and script_room_id and room_id:
+                if (
+                    isinstance(expected_domains, list)
+                    and expected_domains
+                    and entity_domain not in expected_domains
+                ):
+                    continue
+                if script_room_id == room_id:
+                    return True
+                continue
+            return True
+        return False
 
     def diagnostics(self) -> dict[str, Any]:
         return {

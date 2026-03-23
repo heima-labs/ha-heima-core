@@ -496,6 +496,39 @@ async def test_lighting_recorder_does_not_ignore_script_batch_for_other_room():
     assert store.events[0].source == "user"
 
 
+async def test_lighting_recorder_uses_expected_domains_with_room_scope():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        entity_to_room={"light.living_main": "living", "switch.living_fan": "living"},
+        apply_state={
+            "rooms": {},
+            "entities": {},
+            "scripts": {
+                "script.living_lights": {
+                    "target": "script.living_lights",
+                    "room_id": "living",
+                    "expected_domains": ["light"],
+                    "expected_subject_ids": [],
+                    "expected_entity_ids": [],
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:3",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 0
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle: async_setup / async_teardown
 # ---------------------------------------------------------------------------

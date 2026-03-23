@@ -55,7 +55,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         self.engine.register_behavior(self._lighting_recorder)
         self.engine.register_behavior(
-            SignalRecorderBehavior(hass, self._event_store, self._context_builder, entry)
+            SignalRecorderBehavior(
+                hass,
+                self._event_store,
+                self._context_builder,
+                entry,
+                lambda: self.engine.lighting_recent_apply_state,
+            )
         )
         self._proposal_engine = ProposalEngine(
             hass,

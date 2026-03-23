@@ -120,12 +120,14 @@ def _behavior(
     store: _FakeStore,
     *,
     options: dict | None = None,
+    apply_state: dict | None = None,
 ) -> SignalRecorderBehavior:
     behavior = SignalRecorderBehavior(
         hass,  # type: ignore[arg-type]
         store,  # type: ignore[arg-type]
         _FakeContextBuilder(),  # type: ignore[arg-type]
         _FakeEntry(options),  # type: ignore[arg-type]
+        lambda: apply_state or {"scripts": {}},
     )
     behavior._last_snapshot = _snapshot()
     return behavior
@@ -212,6 +214,125 @@ async def test_signal_recorder_uses_context_id_as_correlation_id():
     await hass.flush()
 
     assert store.events[0].correlation_id == "ctx-signal-1"
+
+
+async def test_signal_recorder_ignores_recent_heima_script_apply_for_same_room():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = _behavior(
+        hass,
+        store,
+        options={
+            "learning": {"context_signal_entities": ["switch.bathroom_fan"]},
+            "rooms": [{"room_id": "bathroom", "sources": ["switch.bathroom_fan"]}],
+        },
+        apply_state={
+            "scripts": {
+                "script.bathroom_fan": {
+                    "script_entity": "script.bathroom_fan",
+                    "room_id": "bathroom",
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:1",
+                    "source": "reaction:test",
+                    "origin_reaction_id": "test",
+                    "origin_reaction_class": "RoomSignalAssistReaction",
+                    "expected_domains": ["switch"],
+                    "expected_subject_ids": ["switch.bathroom_fan"],
+                    "expected_entity_ids": [],
+                }
+            }
+        },
+    )
+    behavior._refresh_config()
+
+    await behavior._handle_state_changed(_state_event("switch.bathroom_fan", "on", "off"))
+    await hass.flush()
+
+    assert store.events == []
+
+
+async def test_signal_recorder_does_not_ignore_recent_heima_script_apply_for_other_room():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = _behavior(
+        hass,
+        store,
+        options={
+            "learning": {"context_signal_entities": ["switch.studio_fan"]},
+            "rooms": [{"room_id": "studio", "sources": ["switch.studio_fan"]}],
+        },
+        apply_state={
+            "scripts": {
+                "script.bathroom_fan": {
+                    "script_entity": "script.bathroom_fan",
+                    "room_id": "bathroom",
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:2",
+                    "source": "reaction:test",
+                    "origin_reaction_id": "test",
+                    "origin_reaction_class": "RoomSignalAssistReaction",
+                    "expected_domains": ["switch"],
+                    "expected_subject_ids": ["switch.bathroom_fan"],
+                    "expected_entity_ids": [],
+                }
+            }
+        },
+    )
+    behavior._refresh_config()
+
+    await behavior._handle_state_changed(_state_event("switch.studio_fan", "on", "off"))
+    await hass.flush()
+
+    assert len(store.events) == 1
+    assert store.events[0].subject_id == "switch.studio_fan"
+
+
+async def test_signal_recorder_uses_expected_domains_with_room_scope():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = _behavior(
+        hass,
+        store,
+        options={
+            "learning": {"context_signal_entities": ["switch.studio_fan", "sensor.studio_co2"]},
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "sources": ["switch.studio_fan", "sensor.studio_co2"],
+                }
+            ],
+        },
+        apply_state={
+            "scripts": {
+                "script.studio_fan": {
+                    "script_entity": "script.studio_fan",
+                    "room_id": "studio",
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "script-apply:3",
+                    "source": "reaction:test",
+                    "origin_reaction_id": "test",
+                    "origin_reaction_class": "RoomSignalAssistReaction",
+                    "expected_domains": ["switch"],
+                    "expected_subject_ids": [],
+                    "expected_entity_ids": [],
+                }
+            }
+        },
+    )
+    behavior._refresh_config()
+
+    await behavior._handle_state_changed(_state_event("sensor.studio_co2", "940", "700"))
+    await behavior._handle_state_changed(_state_event("switch.studio_fan", "on", "off"))
+    await hass.flush()
+
+    assert len(store.events) == 1
+    assert store.events[0].subject_id == "sensor.studio_co2"
 
 
 async def test_signal_recorder_async_setup_subscribes_when_tracked_entities_exist():

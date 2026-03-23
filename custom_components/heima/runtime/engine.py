@@ -147,13 +147,7 @@ class HeimaEngine:
 
     def _infer_step_room_id(self, step: ApplyStep) -> str | None:
         """Best-effort room scope for a reaction-generated step."""
-        source = str(step.source or "").strip()
-        if not source.startswith("reaction:"):
-            return None
-        reaction_id = source.split(":", 1)[1].strip()
-        if not reaction_id:
-            return None
-        reaction = next((item for item in self._reactions if item.reaction_id == reaction_id), None)
+        reaction = self._reaction_from_step_source(step)
         if reaction is None:
             return None
         try:
@@ -164,6 +158,16 @@ class HeimaEngine:
         if isinstance(room_id, str) and room_id.strip():
             return room_id.strip()
         return None
+
+    def _reaction_from_step_source(self, step: ApplyStep) -> HeimaReaction | None:
+        """Return the originating reaction when a step source is reaction-tagged."""
+        source = str(step.source or "").strip()
+        if not source.startswith("reaction:"):
+            return None
+        reaction_id = source.split(":", 1)[1].strip()
+        if not reaction_id:
+            return None
+        return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
 
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
@@ -1030,23 +1034,37 @@ class HeimaEngine:
                 continue
             try:
                 room_id = self._infer_step_room_id(step)
+                reaction = self._reaction_from_step_source(step)
                 await self._hass.services.async_call(
                     "script",
                     "turn_on",
                     {"entity_id": script_entity},
                     blocking=False,
                 )
+                expected_subject_ids = tuple(
+                    self._lighting_domain.expected_room_light_entities(room_id)
+                ) if room_id else ()
                 self._recent_script_applies[script_entity] = ScriptApplyBatch(
                     script_entity=script_entity,
                     room_id=room_id,
-                    expected_entity_ids=tuple(
-                        self._lighting_domain.expected_room_light_entities(room_id)
-                    )
-                    if room_id
-                    else (),
+                    expected_domains=tuple(
+                        sorted(
+                            {
+                                entity_id.split(".", 1)[0]
+                                for entity_id in expected_subject_ids
+                                if "." in entity_id
+                            }
+                        )
+                    ),
+                    expected_subject_ids=expected_subject_ids,
+                    expected_entity_ids=expected_subject_ids,
                     applied_ts=time.monotonic(),
                     correlation_id=f"script-apply:{uuid4()}",
                     source=step.source,
+                    origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
+                    origin_reaction_class=(
+                        reaction.__class__.__name__ if reaction is not None else None
+                    ),
                 )
             except ServiceNotFound:
                 _LOGGER.warning(

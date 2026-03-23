@@ -941,14 +941,20 @@ Normative fields:
 - `applied_ts`
 - `correlation_id`
 - `source`
+- `origin_reaction_id` (optional)
+- `origin_reaction_class` (optional)
 - `room_id` (optional)
+- `expected_domains` (optional, best-effort)
+- `expected_subject_ids` (optional, best-effort)
 - `expected_entity_ids` (optional, best-effort)
 
 Normative rules:
 - this contract is runtime-local provenance, not a persisted learning event
-- recorder behaviors MAY use it to suppress Heima-caused follow-up state changes
+- recorder behaviors MAY use it to suppress Heima-caused follow-up state changes across domains
 - recorders MUST prefer narrower scopes when available:
+  - exact `expected_subject_ids`
   - exact `expected_entity_ids`
+  - then `room_id + expected_domains`
   - then `room_id`
   - only then broader short-window fallback behavior
 

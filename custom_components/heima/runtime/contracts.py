@@ -63,10 +63,16 @@ class ScriptApplyBatch:
     applied_ts: float
     correlation_id: str
     source: str = ""
+    origin_reaction_id: str | None = None
+    origin_reaction_class: str | None = None
     room_id: str | None = None
+    expected_domains: tuple[str, ...] = ()
+    expected_subject_ids: tuple[str, ...] = ()
     expected_entity_ids: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         raw = asdict(self)
+        raw["expected_domains"] = list(self.expected_domains)
+        raw["expected_subject_ids"] = list(self.expected_subject_ids)
         raw["expected_entity_ids"] = list(self.expected_entity_ids)
         return raw
