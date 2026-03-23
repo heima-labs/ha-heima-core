@@ -767,6 +767,7 @@ class HeimaEngine:
             notes=f"reason={reason}",
             heating_setpoint=self._heating_domain.trace.get("current_setpoint"),
             heating_source=str(self._heating_domain.trace.get("observed_source") or "unknown"),
+            heating_provenance=self._heating_domain.trace.get("observed_provenance"),
         )
 
     def scheduled_runtime_jobs(self) -> dict[str, ScheduledRuntimeJob]:
@@ -1002,6 +1003,7 @@ class HeimaEngine:
                     _LOGGER.warning("Skipping missing climate entity: %s", climate_entity)
                     continue
                 try:
+                    reaction = self._reaction_from_step_source(step)
                     await self._hass.services.async_call(
                         "climate",
                         "set_temperature",
@@ -1014,7 +1016,15 @@ class HeimaEngine:
                         else None
                     )
                     if applied_temp is not None:
-                        self._heating_domain.mark_applied(applied_temp)
+                        self._heating_domain.mark_applied(
+                            applied_temp,
+                            source=step.source,
+                            origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
+                            origin_reaction_class=(
+                                reaction.__class__.__name__ if reaction is not None else None
+                            ),
+                            climate_entity=climate_entity,
+                        )
                     self._state.set_sensor("heima_heating_last_applied_target", applied_temp)
                 except ServiceNotFound:
                     _LOGGER.warning(

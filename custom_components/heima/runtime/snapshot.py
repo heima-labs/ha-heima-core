@@ -22,6 +22,7 @@ class DecisionSnapshot:
     notes: str | None = None
     heating_setpoint: float | None = None
     heating_source: str = "unknown"
+    heating_provenance: dict[str, Any] | None = None
 
     @classmethod
     def empty(cls) -> "DecisionSnapshot":

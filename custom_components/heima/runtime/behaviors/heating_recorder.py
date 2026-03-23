@@ -55,7 +55,10 @@ class HeatingRecorderBehavior(HeimaBehavior):
             event_type="heating",
             context=context,
             source=snapshot.heating_source or "unknown",
-            data={"temperature_set": snapshot.heating_setpoint},
+            data={
+                "temperature_set": snapshot.heating_setpoint,
+                "provenance": dict(snapshot.heating_provenance or {}),
+            },
         )
         self._hass.async_create_task(self._store.async_append(event))
 

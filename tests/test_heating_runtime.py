@@ -172,13 +172,26 @@ def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply(
     )
 
     _ = engine._compute_snapshot(reason="before_apply")
-    engine._heating_domain.mark_applied(20.0)
+    engine._heating_domain.mark_applied(
+        20.0,
+        source="reaction:heat_pref_test",
+        origin_reaction_id="heat_pref_test",
+        origin_reaction_class="HeatingPreferenceReaction",
+        climate_entity="climate.test_thermostat",
+    )
     engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 20.0})
 
     snapshot = engine._compute_snapshot(reason="after_apply")
 
     assert snapshot.heating_setpoint == 20.0
     assert snapshot.heating_source == "heima"
+    assert snapshot.heating_provenance == {
+        "source": "reaction:heat_pref_test",
+        "origin_reaction_id": "heat_pref_test",
+        "origin_reaction_class": "HeatingPreferenceReaction",
+        "expected_domains": ["climate"],
+        "expected_subject_ids": ["climate.test_thermostat"],
+    }
 
 
 def test_heating_snapshot_marks_observed_setpoint_as_user_when_not_matching_last_heima_apply():
@@ -204,13 +217,20 @@ def test_heating_snapshot_marks_observed_setpoint_as_user_when_not_matching_last
     )
 
     _ = engine._compute_snapshot(reason="before_apply")
-    engine._heating_domain.mark_applied(20.0)
+    engine._heating_domain.mark_applied(
+        20.0,
+        source="reaction:heat_pref_test",
+        origin_reaction_id="heat_pref_test",
+        origin_reaction_class="HeatingPreferenceReaction",
+        climate_entity="climate.test_thermostat",
+    )
     engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 21.5})
 
     snapshot = engine._compute_snapshot(reason="manual_change")
 
     assert snapshot.heating_setpoint == 21.5
     assert snapshot.heating_source == "user"
+    assert snapshot.heating_provenance is None
 
 
 def test_fixed_target_branch_skips_small_delta_and_sets_guard():

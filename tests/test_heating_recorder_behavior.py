@@ -65,6 +65,7 @@ def _snapshot(
         security_state="disarmed",
         heating_setpoint=heating_setpoint,
         heating_source=heating_source,
+        heating_provenance=None,
     )
 
 
@@ -173,3 +174,50 @@ async def test_heating_recorder_reads_weather_condition():
     ctx = store.events[0].context
     assert ctx.weather_condition == "sunny"
     assert ctx.outdoor_temp == 15.0
+
+
+async def test_heating_recorder_includes_provenance_when_present():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = HeatingRecorderBehavior(hass, store, _builder(hass))  # type: ignore[arg-type]
+
+    behavior.on_snapshot(
+        _snapshot(
+            heating_setpoint=21.0,
+            heating_source="heima",
+            ts="2026-03-10T08:00:00+00:00",
+        )
+    )
+    behavior._previous_setpoint = None
+    behavior._previous_house_state = None
+    behavior.on_snapshot(
+        DecisionSnapshot(
+            snapshot_id="s2",
+            ts="2026-03-10T09:00:00+00:00",
+            house_state="home",
+            anyone_home=True,
+            people_count=1,
+            occupied_rooms=[],
+            lighting_intents={},
+            security_state="disarmed",
+            heating_setpoint=21.0,
+            heating_source="heima",
+            heating_provenance={
+                "source": "reaction:heat_pref_test",
+                "origin_reaction_id": "heat_pref_test",
+                "origin_reaction_class": "HeatingPreferenceReaction",
+                "expected_domains": ["climate"],
+                "expected_subject_ids": ["climate.test_thermostat"],
+            },
+        )
+    )
+    if hass.tasks:
+        await asyncio.gather(*hass.tasks)
+
+    assert store.events[-1].data["provenance"] == {
+        "source": "reaction:heat_pref_test",
+        "origin_reaction_id": "heat_pref_test",
+        "origin_reaction_class": "HeatingPreferenceReaction",
+        "expected_domains": ["climate"],
+        "expected_subject_ids": ["climate.test_thermostat"],
+    }

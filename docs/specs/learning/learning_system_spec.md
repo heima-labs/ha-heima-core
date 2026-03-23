@@ -931,6 +931,10 @@ The recorder resolves:
 In practice, grouped scene/script effects are correlated through recent apply provenance and HA
 context IDs when available.
 
+Heating remains domain-specific for observed-source discrimination, but when an observed thermostat
+setpoint matches a recent Heima apply, the runtime SHOULD expose provenance using the same common
+metadata language (`source`, reaction origin, expected domains, expected subjects).
+
 ### P8.4 `ScriptApplyBatch` runtime contract
 
 The runtime maintains a short-lived, in-memory `ScriptApplyBatch` contract for each recent

@@ -28,6 +28,7 @@ class HeatingDomain:
         self._heating_vacation_curve_start_temp: float | None = None
         self._heating_last_target_temp: float | None = None
         self._heating_last_apply_ts: float | None = None
+        self._heating_last_apply_provenance: dict[str, Any] | None = None
         self._heating_last_reported_phase: str | None = None
         self._heating_last_reported_target: float | None = None
         self._heating_last_reported_branch: str | None = None
@@ -38,6 +39,7 @@ class HeatingDomain:
         self._heating_vacation_curve_start_temp = None
         self._heating_last_target_temp = None
         self._heating_last_apply_ts = None
+        self._heating_last_apply_provenance = None
         self._heating_last_reported_phase = None
         self._heating_last_reported_target = None
         self._heating_last_reported_branch = None
@@ -46,10 +48,25 @@ class HeatingDomain:
     def trace(self) -> dict[str, Any]:
         return self._heating_trace
 
-    def mark_applied(self, target_temperature: float) -> None:
+    def mark_applied(
+        self,
+        target_temperature: float,
+        *,
+        source: str = "",
+        origin_reaction_id: str | None = None,
+        origin_reaction_class: str | None = None,
+        climate_entity: str | None = None,
+    ) -> None:
         """Called by engine after a successful climate.set_temperature apply."""
         self._heating_last_target_temp = target_temperature
         self._heating_last_apply_ts = time.monotonic()
+        self._heating_last_apply_provenance = {
+            "source": source,
+            "origin_reaction_id": origin_reaction_id,
+            "origin_reaction_class": origin_reaction_class,
+            "expected_domains": ["climate"],
+            "expected_subject_ids": [climate_entity] if climate_entity else [],
+        }
 
     def diagnostics(self) -> dict[str, Any]:
         return dict(self._heating_trace)
@@ -94,6 +111,7 @@ class HeatingDomain:
             current_setpoint=current_setpoint,
             temperature_step=temperature_step,
         )
+        observed_provenance = self._observed_provenance(observed_source=observed_source)
         outdoor_temperature = self._coerce_float_from_entity(heating_cfg.get("outdoor_temperature_entity"))
         climate_preset_mode = self._coerce_text(self._state_attr(climate_entity, "preset_mode"))
         climate_manual_override = self._heating_climate_manual_override_detected(climate_preset_mode)
@@ -206,6 +224,7 @@ class HeatingDomain:
             "selected_branch": branch_type,
             "current_setpoint": current_setpoint,
             "observed_source": observed_source,
+            "observed_provenance": observed_provenance,
             "outdoor_temperature": outdoor_temperature,
             "target_temperature": target_temperature,
             "temperature_step": temperature_step,
@@ -270,6 +289,13 @@ class HeatingDomain:
         if abs(float(current_setpoint) - float(self._heating_last_target_temp)) <= tolerance:
             return "heima"
         return "user"
+
+    def _observed_provenance(self, *, observed_source: str) -> dict[str, Any] | None:
+        if observed_source != "heima":
+            return None
+        if not isinstance(self._heating_last_apply_provenance, dict):
+            return None
+        return dict(self._heating_last_apply_provenance)
 
     # ------------------------------------------------------------------
     # Event queuing

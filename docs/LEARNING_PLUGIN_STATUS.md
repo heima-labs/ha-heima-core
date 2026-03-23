@@ -93,6 +93,8 @@ These items are still open by design:
   but it is still intentionally lightweight and in-memory only
 - current batch metadata are now reaction-aware and usable by both lighting and generic signal recorders,
   with room scope, expected domains, and expected subjects
+- heating now begins to converge on the same provenance vocabulary for matched Heima applies, while
+  still keeping domain-specific observed-setpoint discrimination
 
 2. Composite grouping beyond current heuristics
 - composite matching still relies on room scope, windows, event context, and correlation metadata
