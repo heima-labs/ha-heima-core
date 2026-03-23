@@ -38,6 +38,12 @@ Extensibility is expressed through two built-in plugin concepts:
 The current model is **built-in registry only**.
 It is intentionally not a dynamic third-party plugin system.
 
+Conceptually, learned behaviors can also be read through two semantic axes:
+- `trigger family`
+- `response family`
+
+This is a design tool, not a separate runtime subsystem.
+
 ## Current State
 
 ### Implemented
@@ -128,6 +134,7 @@ The system is **not** trying to support yet:
 - arbitrary unsupervised discovery
 - a universal grouping engine
 - a full metadata-driven runtime container
+- a runtime `Reaction Enhancement` layer for adaptive/maintenance add-ons
 
 ## Recommended Next Steps
 
@@ -144,6 +151,18 @@ Priority order:
 - stronger scene/script provenance
 - next behavior implemented as a new Learning Pattern Plugin
 - refinement of plugin diagnostics and operator tooling
+
+Future direction after those:
+- explore `Reaction Enhancements` as optional add-ons over already accepted reactions, especially
+  for adaptive maintenance behaviors such as constant-brightness or maintained setpoints
+- keep the first darkness-driven lighting behavior discrete and learnable, reproducing observed
+  user lighting actuation (including brightness when available) before adding adaptive maintenance
+- current lighting-triggered composite plugin:
+  - `room_darkness_lighting_assist`
+  - first implementation replays observed discrete lighting behavior, including brightness when
+    available
+  - current runtime target: `RoomLightingAssistReaction`
+  - multi-mode proposal acceptance remains a future extension point
 
 ## Practical Rule Of Thumb
 

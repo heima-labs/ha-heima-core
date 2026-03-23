@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
+from custom_components.heima.const import DOMAIN
+from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
 
 def _fake_hass():
     return SimpleNamespace(
         services=SimpleNamespace(async_services=lambda: {"notify": {}}),
         config=SimpleNamespace(time_zone="Europe/Rome", language="it"),
+        data={},
     )
 
 
 def _flow(options: dict | None = None) -> HeimaOptionsFlowHandler:
-    flow = HeimaOptionsFlowHandler(SimpleNamespace(options=options or {}))
+    flow = HeimaOptionsFlowHandler(SimpleNamespace(options=options or {}, entry_id="entry-1"))
     flow.hass = _fake_hass()
     return flow
 
@@ -268,3 +272,66 @@ async def test_reaction_label_from_room_signal_assist_config_is_readable():
     )
 
     assert label == "Assist bathroom — hum:1 — temp:1 — 5 episodi"
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-darkness",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_darkness_lighting_assist",
+        description="Living darkness lighting replay",
+        confidence=0.91,
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "living",
+            "primary_signal_entities": ["sensor.living_room_lux"],
+            "primary_threshold": 120.0,
+            "primary_threshold_mode": "below",
+            "entity_steps": [
+                {
+                    "entity_id": "light.living_main",
+                    "action": "on",
+                    "brightness": 144,
+                    "color_temp_kelvin": 2900,
+                    "rgb_color": None,
+                }
+            ],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"proposals_accept": ["proposal-darkness"]})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert getattr(flow, "_pending_action_configs", []) == []
+    stored = flow.options["reactions"]["configured"]["proposal-darkness"]
+    assert stored["reaction_class"] == "RoomLightingAssistReaction"
+
+
+@pytest.mark.asyncio
+async def test_reaction_label_from_room_lighting_assist_config_is_readable():
+    flow = _flow()
+
+    label = flow._reaction_label_from_config(
+        "proposal-darkness",
+        {
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "living",
+            "primary_signal_entities": ["sensor.living_room_lux"],
+            "entity_steps": [
+                {"entity_id": "light.living_main", "action": "on", "brightness": 144},
+                {"entity_id": "light.corner", "action": "on", "brightness": 96},
+            ],
+        },
+        {},
+    )
+
+    assert label == "Luce living — lux:1 — 2 entità"

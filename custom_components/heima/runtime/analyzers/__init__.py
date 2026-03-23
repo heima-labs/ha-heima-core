@@ -67,8 +67,9 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
                 "room_signal_assist",
                 "room_cooling_assist",
                 "room_air_quality_assist",
+                "room_darkness_lighting_assist",
             ),
-            reaction_targets=("RoomSignalAssistReaction",),
+            reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
         ),
     )
 

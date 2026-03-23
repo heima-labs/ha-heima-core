@@ -19,6 +19,7 @@ _MIN_WEEKS = 2
 _HUMIDITY_RISE_THRESHOLD = 8.0
 _TEMPERATURE_RISE_THRESHOLD = 0.8
 _CO2_RISE_THRESHOLD = 200.0
+_ROOM_LUX_LOW_THRESHOLD = 120.0
 _CORRELATION_WINDOW_S = 10 * 60
 _FOLLOWUP_WINDOW_S = 15 * 60
 
@@ -95,8 +96,12 @@ async def _analyze_definition(
     matcher: RoomScopedCompositeMatcher,
     definition: CompositeLearningPatternDefinition,
 ) -> list[ReactionProposal]:
-    raw = await event_store.async_query(event_type="state_change")
-    events = [e for e in raw if isinstance(e, HeimaEvent) and e.room_id]
+    state_changes = await event_store.async_query(event_type="state_change")
+    lighting_events = await event_store.async_query(event_type="lighting")
+    events = [
+        e for e in [*state_changes, *lighting_events]
+        if isinstance(e, HeimaEvent) and e.room_id
+    ]
     if not events:
         return []
 
@@ -178,6 +183,24 @@ def _is_co2_event(event: HeimaEvent) -> bool:
         return True
     entity_id = str(event.subject_id or event.data.get("entity_id") or "")
     return "co2" in entity_id.lower() or "carbon_dioxide" in entity_id.lower()
+
+
+def _is_room_lux_event(event: HeimaEvent) -> bool:
+    if event.event_type != "state_change":
+        return False
+    if event.data.get("device_class") == "illuminance":
+        return True
+    unit = str(event.data.get("unit_of_measurement") or "").lower()
+    entity_id = str(event.subject_id or event.data.get("entity_id") or "").lower()
+    return unit in {"lx", "lux"} or "lux" in entity_id or "illuminance" in entity_id
+
+
+def _is_user_lighting_on_event(event: HeimaEvent) -> bool:
+    if event.event_type != "lighting":
+        return False
+    if event.source != "user":
+        return False
+    return str(event.data.get("action") or "") == "on"
 
 
 def _is_cooling_followup_event(event: HeimaEvent) -> bool:
@@ -310,6 +333,29 @@ def _build_air_quality_assist_config(room_id: str, confirmed: list) -> dict[str,
     }
 
 
+def _build_darkness_lighting_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+    lux_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    entity_steps = _aggregate_lighting_followup_steps(confirmed)
+    followup_entities = sorted({step["entity_id"] for step in entity_steps if step.get("entity_id")})
+    return {
+        "reaction_class": "RoomLightingAssistReaction",
+        "room_id": room_id,
+        "primary_signal_entities": lux_entities,
+        "primary_threshold": _ROOM_LUX_LOW_THRESHOLD,
+        "primary_signal_name": "room_lux",
+        "primary_threshold_mode": "below",
+        "corroboration_signal_entities": [],
+        "corroboration_threshold": None,
+        "corroboration_signal_name": "corroboration",
+        "corroboration_threshold_mode": "below",
+        "correlation_window_s": _CORRELATION_WINDOW_S,
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "entity_steps": entity_steps,
+        "episodes_observed": len(confirmed),
+        "observed_followup_entities": followup_entities,
+    }
+
+
 def _build_default_diagnostics(
     *,
     room_id: str,
@@ -398,6 +444,15 @@ def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str
     return (
         f"{room_id}: when occupancy is present and CO2 rises quickly, "
         f"you usually start ventilation within a few minutes "
+        f"({observed} observed episodes)."
+    )
+
+
+def _describe_darkness_lighting(room_id: str, observed: int, corroborated: int) -> str:
+    del corroborated
+    return (
+        f"{room_id}: when the room becomes too dark while occupied, "
+        f"you usually turn on lights with a similar brightness "
         f"({observed} observed episodes)."
     )
 
@@ -518,10 +573,44 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
 )
 
 
+_ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_darkness_lighting_assist",
+    analyzer_id="CompositePatternCatalogAnalyzer",
+    reaction_type="room_darkness_lighting_assist",
+    fingerprint_key="room_lux_low",
+    matcher_spec=CompositePatternSpec(
+        primary=CompositeSignalSpec(
+            name="room_lux",
+            predicate=_is_room_lux_event,
+            min_delta=_ROOM_LUX_LOW_THRESHOLD,
+            threshold_mode="below",
+        ),
+        followup=CompositeSignalSpec(
+            name="lighting_replay",
+            predicate=_is_user_lighting_on_event,
+        ),
+        require_room_occupancy=True,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+    ),
+    min_occurrences=_MIN_OCCURRENCES,
+    min_weeks=_MIN_WEEKS,
+    description_builder=_describe_darkness_lighting,
+    suggested_config_builder=lambda room_id, confirmed: _build_darkness_lighting_assist_config(
+        room_id, confirmed
+    ),
+    confidence_builder=lambda confirmed: min(
+        0.94,
+        0.42 + (0.08 * len(confirmed)),
+    ),
+)
+
+
 DEFAULT_COMPOSITE_PATTERN_CATALOG: tuple[CompositeLearningPatternDefinition, ...] = (
     _ROOM_SIGNAL_ASSIST_PATTERN,
     _ROOM_COOLING_PATTERN,
     _ROOM_AIR_QUALITY_PATTERN,
+    _ROOM_DARKNESS_LIGHTING_PATTERN,
 )
 
 
@@ -544,3 +633,54 @@ def _episode_week_count(episodes: list) -> int:
         iso = episode.ts.isocalendar()
         weeks.add((iso.year, iso.week))
     return len(weeks)
+
+
+def _aggregate_lighting_followup_steps(episodes: list) -> list[dict[str, Any]]:
+    by_entity: dict[str, list[HeimaEvent]] = {}
+    for episode in episodes:
+        for event in getattr(episode, "followup_events", ()):
+            if not isinstance(event, HeimaEvent) or event.event_type != "lighting":
+                continue
+            entity_id = str(event.data.get("entity_id") or event.subject_id or "").strip()
+            if not entity_id:
+                continue
+            by_entity.setdefault(entity_id, []).append(event)
+
+    steps: list[dict[str, Any]] = []
+    for entity_id, group in sorted(by_entity.items()):
+        last = group[-1]
+        action = str(last.data.get("action") or "on")
+        brightness = _median_int([e.data.get("brightness") for e in group]) if action == "on" else None
+        color_temp = _median_int([e.data.get("color_temp_kelvin") for e in group]) if action == "on" else None
+        rgb = _mode_rgb([e.data.get("rgb_color") for e in group]) if action == "on" else None
+        steps.append(
+            {
+                "entity_id": entity_id,
+                "action": action,
+                "brightness": brightness if action == "on" else None,
+                "color_temp_kelvin": color_temp if action == "on" else None,
+                "rgb_color": rgb if action == "on" else None,
+            }
+        )
+    return steps
+
+
+def _median_int(values: list[Any]) -> int | None:
+    nums = [int(v) for v in values if v is not None]
+    if not nums:
+        return None
+    nums.sort()
+    return nums[len(nums) // 2]
+
+
+def _mode_rgb(values: list[Any]) -> list[int] | None:
+    candidates = [
+        tuple(v) for v in values
+        if isinstance(v, (list, tuple)) and len(v) == 3
+    ]
+    if not candidates:
+        return None
+    counts: dict[tuple[int, int, int], int] = {}
+    for candidate in candidates:
+        counts[candidate] = counts.get(candidate, 0) + 1
+    return list(max(counts, key=lambda key: counts[key]))

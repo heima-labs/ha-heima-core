@@ -79,6 +79,15 @@ That learning system consists of:
 - one shared proposal acceptance and reaction rebuild pipeline
 - multiple learning pattern plugins that learn different kinds of recurring behavior
 
+Each learned behavior can also be described along two orthogonal semantic axes:
+- **Trigger family** — what kind of recurring condition or context causes the behavior
+- **Response family** — what kind of user behavior is replayed or proposed after the trigger
+
+Examples:
+- temporal trigger + lighting replay response
+- room-signal threshold trigger + generic steps response
+- room-signal threshold trigger + lighting replay response
+
 Examples of learning pattern plugins:
 - temporal room/light routine plugins
 - room-scoped composite assist plugins
@@ -89,6 +98,8 @@ Normative rule:
   learning system
 - it SHOULD become a separate subsystem only if it truly requires a different storage,
   proposal, or runtime execution model
+- `trigger family` and `response family` are the preferred conceptual tools for deciding whether a
+  new behavior extends an existing plugin family or needs a different one
 
 ### 0.3 Decision: minimum training window before emitting proposals
 
@@ -397,6 +408,13 @@ class IPatternAnalyzer(Protocol):
     def analyzer_id(self) -> str: ...
     async def analyze(self, event_store: "EventStore") -> list[ReactionProposal]: ...
 ```
+
+Future extension point:
+- a `ReactionProposal` MAY eventually expose multiple **acceptance modes**
+- each acceptance mode would describe a different supported way to turn the same learned pattern
+  into an executable reaction
+- this is not yet part of the v1 persisted runtime contract; current proposals still have one
+  effective acceptance path each
 
 ### 3.3 Statistical Algorithm Model
 
@@ -1446,10 +1464,22 @@ Examples:
 - the composite assist family is a better fit for patterns like:
   - occupancy + humidity rise -> ventilation assist
   - occupancy + temperature rise -> cooling assist
+  - occupancy + low room lux / outdoor darkness -> lighting assist with observed discrete brightness
 - the lighting routine family remains a better fit for patterns like:
   - recurring multi-entity light scenes
   - explicit per-entity brightness/color end states
   - schedule-like room routines reconstructed as detailed light steps
+
+Using the two-axis model:
+- `lighting routine` is typically:
+  - trigger family: temporal
+  - response family: lighting replay
+- `room_signal_assist` is typically:
+  - trigger family: room-signal threshold/composite
+  - response family: generic configured steps
+- `room_darkness_lighting_assist` is:
+  - trigger family: room-signal threshold/composite
+  - response family: lighting replay
 
 Normative product rule:
 - new explainable room-scoped assist behaviors SHOULD prefer the composite assist plugin family
@@ -1457,6 +1487,23 @@ Normative product rule:
   semantics, fidelity, or actuation detail than the composite room-assist model
 - the presence of the composite assist family MUST NOT be interpreted as a requirement to remove
   other plugins prematurely
+
+### P10.4.2 Relationship with future Reaction Enhancements
+
+Some future behaviors may need to go beyond a discrete learned reaction and add bounded adaptive or
+maintenance semantics on top of it.
+
+Examples:
+- after learning a darkness-triggered lighting reaction, propose maintaining a room brightness
+  setpoint
+- after learning a heating preference reaction, propose maintaining a temperature setpoint
+
+Normative guidance:
+- such capabilities SHOULD first be modeled as optional enhancements layered on top of an accepted
+  reaction, not as a replacement for the base learned reaction itself
+- the base learned reaction SHOULD remain understandable and executable on its own
+- v1 composite assists MUST remain discrete/reviewable reaction proposals, not closed-loop control
+  systems
 
 ### P10.5 Input requirements
 
@@ -1616,6 +1663,15 @@ The initial v1 catalog contains at least these named patterns:
 - follow-up action class: ventilation-like user activation
 - canonical example: office air-quality ventilation assist
 
+4. `room_darkness_lighting_assist`
+- primary signal: room lux low threshold or rapid lux drop
+- optional corroboration: outdoor darkness / outdoor lux / time-window context
+- follow-up action class: discrete user lighting actuation in the same room
+- canonical example: occupied room becomes too dark and the user turns on lights with a learned
+  brightness level
+- first expected output mode in v1: replay the observed discrete lighting actuation
+- non-goal for the first iteration: adaptive closed-loop brightness maintenance
+
 Normative rule:
 - new v1 patterns SHOULD be added by extending this catalog and reusing the same composite engine,
   unless a pattern truly requires different episode semantics
@@ -1642,6 +1698,66 @@ Backward-compatibility rule:
 - legacy config aliases may remain valid for previously accepted proposals
 - the normalized long-term contract is the generic composite contract, not legacy case-specific
   field names
+
+### P10.11.1 `room_darkness_lighting_assist` execution contract
+
+`room_darkness_lighting_assist` is the first implemented pattern where:
+- trigger family = room-scoped composite threshold/correlation
+- response family = lighting replay
+
+Because of that combination, the first implementation SHOULD NOT be modeled as a pure
+`RoomSignalAssistReaction` fan/switch-style assist.
+
+Preferred v1 execution contract:
+- accepted proposals rebuild into a lighting-focused reaction, tentatively
+  `RoomLightingAssistReaction`
+- the reaction re-detects the room-scoped darkness trigger at runtime
+- when triggered, it replays the observed discrete lighting response for the room
+
+Expected first-step replay scope:
+- `light.turn_on` / `light.turn_off`
+- observed `brightness` when available
+- optional observed `color_temp_kelvin` when available
+
+Non-goals for the first iteration:
+- adaptive brightness maintenance
+- continuous control loops
+- alternative acceptance modes in the same proposal
+
+Normative product rule:
+- the first version of `room_darkness_lighting_assist` MUST reproduce the observed user response,
+  not a generic placeholder action
+- if the observed response includes stable brightness information, the replay contract SHOULD
+  preserve it
+
+### P10.11.2 `room_darkness_lighting_assist` proposal shape
+
+The first proposal shape SHOULD remain reviewable and explicit.
+
+Suggested target config:
+- `reaction_class="RoomLightingAssistReaction"`
+- `room_id`
+- trigger matcher fields:
+  - `primary_signal_entities`
+  - `primary_rise_threshold` or low-threshold equivalent for room lux
+  - `primary_signal_name="room_lux"`
+  - optional corroboration fields for outdoor darkness / outdoor lux
+  - `correlation_window_s`
+  - `followup_window_s`
+- replay payload:
+  - `entity_steps`
+  - each step SHOULD preserve observed lighting actuation fields when available:
+    - `entity_id`
+    - `action`
+    - `brightness`
+    - `color_temp_kelvin`
+    - `rgb_color`
+
+Review diagnostics SHOULD also preserve:
+- matched lux entities
+- matched outdoor corroboration entities when present
+- matched follow-up light entities
+- whether replay brightness was learned from stable observed follow-up samples
 
 ### P10.12 Explainability requirement
 

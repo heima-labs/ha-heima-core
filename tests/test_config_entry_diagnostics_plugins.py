@@ -37,6 +37,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     assert any(item["plugin_id"] == "builtin.lighting_routines" for item in learning)
     assert any(item["plugin_id"] == "builtin.composite_room_assist" for item in learning)
     assert any(item["reaction_class"] == "RoomSignalAssistReaction" for item in reactions)
+    assert any(item["reaction_class"] == "RoomLightingAssistReaction" for item in reactions)
 
 
 async def test_config_entry_diagnostics_exposes_heating_observed_provenance():

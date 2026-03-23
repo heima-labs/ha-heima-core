@@ -146,6 +146,12 @@ Contratto di persistenza:
 - il salvataggio finale deve aggiornare `configured[proposal_id]["pre_condition_min"]`
 - questi campi devono essere sufficienti per ricostruire la reaction senza rileggere la sessione UI
 
+Future extension point:
+- una proposal MAY in futuro esporre più `acceptance modes`
+- ogni mode rappresenterebbe un diverso modo supportato di concretizzare la stessa behavior appresa
+- la UX di v1 non deve assumerlo ancora; oggi il flow gestisce un solo acceptance path effettivo per
+  proposal
+
 ---
 
 ## Invarianti

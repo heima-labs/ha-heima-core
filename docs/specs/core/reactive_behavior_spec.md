@@ -149,6 +149,7 @@ Examples:
 - `PresencePatternReaction`
 - `LightingScheduleReaction`
 - `RoomSignalAssistReaction`
+- future room-scoped lighting replay reactions such as `RoomLightingAssistReaction`
 - heating preference/eco reactions
 
 Normative rule:
@@ -156,6 +157,27 @@ Normative rule:
 - a separate runtime subsystem SHOULD be introduced only if the shared reaction lifecycle and
   constraint-layer execution model are no longer sufficient
 - the initial v1 registry MAY remain built-in only; dynamic third-party loading is not required
+
+### 4.1.1 Future Reaction Enhancement concept
+
+Future versions MAY introduce a **Reaction Enhancement** concept as an optional layer applied on top
+of an already accepted/configured Reaction Plugin.
+
+Intent:
+- keep the base learned behavior simple, reviewable, and discrete
+- allow Heima to later propose bounded improvements to an existing reaction
+- avoid forcing adaptive or closed-loop control semantics into every base reaction family
+
+Examples of future enhancements:
+- maintain a target room brightness after a learned darkness-triggered lighting reaction
+- maintain a learned temperature setpoint after a heating preference reaction
+- add bounded fade-out / restore behavior around an already accepted reaction
+
+Normative boundary for v1:
+- Reaction Enhancements are architectural guidance only
+- they are not yet a runtime feature or persisted contract
+- current proposals MUST still rebuild directly into plain Reaction Plugins without an enhancement
+  layer
 
 The engine:
 1. Calls `reaction.evaluate(history)` for each registered reaction.

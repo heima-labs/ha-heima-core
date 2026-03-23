@@ -38,6 +38,7 @@ from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .reactions import builtin_reaction_plugin_builders
 from .reactions.base import HeimaReaction
 from .reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
+from .reactions.lighting_assist import RoomLightingAssistReaction
 from .reactions.lighting_schedule import LightingScheduleReaction
 from .reactions.presence import _ArrivalRecord, PresencePatternReaction
 from .reactions.signal_assist import RoomSignalAssistReaction
@@ -438,6 +439,57 @@ class HeimaEngine:
             correlation_window_s=correlation_window_s,
             followup_window_s=followup_window_s,
             steps=steps,
+            reaction_id=proposal_id,
+        )
+
+    def _build_room_lighting_assist_reaction(
+        self, proposal_id: str, cfg: dict
+    ) -> RoomLightingAssistReaction | None:
+        """Build a RoomLightingAssistReaction from a stored proposal config."""
+        try:
+            room_id = str(cfg["room_id"]).strip()
+            primary_signal_entities = [
+                str(v).strip()
+                for v in cfg.get("primary_signal_entities", [])
+                if str(v).strip()
+            ]
+            primary_threshold = float(cfg["primary_threshold"])
+            primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
+            primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
+            corroboration_signal_entities = [
+                str(v).strip()
+                for v in cfg.get("corroboration_signal_entities", [])
+                if str(v).strip()
+            ]
+            corroboration_threshold = (
+                float(cfg["corroboration_threshold"])
+                if cfg.get("corroboration_threshold") is not None
+                else None
+            )
+            corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+            corroboration_threshold_mode = str(cfg.get("corroboration_threshold_mode", "below"))
+            correlation_window_s = int(cfg.get("correlation_window_s", 600))
+            followup_window_s = int(cfg.get("followup_window_s", 900))
+            entity_steps = list(cfg.get("entity_steps", []))
+            if not room_id or not primary_signal_entities or not entity_steps:
+                raise ValueError("room_id, primary_signal_entities or entity_steps missing")
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.warning("Malformed RoomLightingAssistReaction config for proposal %s", proposal_id)
+            return None
+        return RoomLightingAssistReaction(
+            hass=self._hass,
+            room_id=room_id,
+            entity_steps=entity_steps,
+            primary_signal_entities=primary_signal_entities,
+            primary_threshold=primary_threshold,
+            primary_signal_name=primary_signal_name,
+            primary_threshold_mode=primary_threshold_mode,
+            corroboration_signal_entities=corroboration_signal_entities,
+            corroboration_threshold=corroboration_threshold,
+            corroboration_signal_name=corroboration_signal_name,
+            corroboration_threshold_mode=corroboration_threshold_mode,
+            correlation_window_s=correlation_window_s,
+            followup_window_s=followup_window_s,
             reaction_id=proposal_id,
         )
 

@@ -286,10 +286,12 @@ Output:
     - room signal assist (`026_room_signal_assist_live.py`)
     - room cooling assist (`027_room_cooling_assist_live.py`)
     - room air quality assist (`028_room_air_quality_assist_live.py`)
+    - room darkness lighting assist (`028b_room_darkness_lighting_assist_live.py`)
     - plugin compositi built-in correnti:
       - `room_signal_assist`
       - `room_cooling_assist`
       - `room_air_quality_assist`
+      - `room_darkness_lighting_assist`
     - presence learning (`029_presence_live.py`)
     - calendar runtime (`050_calendar_domain.py`)
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
@@ -337,6 +339,27 @@ Stato attuale:
 - `RoomSignalAssistReaction` funge da primo Reaction Plugin condiviso da piu learning pattern plugins
 - lighting/heating/presence restano altre famiglie di Learning Pattern Plugins quando servono
   semantiche piu ricche o matching diversi dal contratto composito room-scoped
+
+Nota architetturale futura:
+- comportamenti adattativi continui o di mantenimento (`constant brightness`, `maintain setpoint`,
+  ecc.) non dovrebbero nascere come base behavior separati in questa fase
+- la direzione preferita e trattarli come futuri `Reaction Enhancements`, cioe add-on opzionali
+  sopra reaction gia apprese/accettate
+- una prima behavior `darkness -> lighting` SHOULD restare una reaction discreta che riproduce
+  il comportamento osservato dell'utente, inclusa brightness appresa quando disponibile
+
+Next candidate behavior on this baseline:
+  - `room_darkness_lighting_assist`
+  - pattern family: composite room assist plugin
+  - trigger family: room-signal threshold/composite
+  - response family: lighting replay
+  - signals: room lux as primary, optional outdoor darkness/lux as corroboration
+  - follow-up: observed user `light.turn_on` or discrete brightness increase
+  - output: discrete replay of observed lighting actuation, including learned brightness when
+    available
+  - target reaction: `RoomLightingAssistReaction`
+  - future alternative acceptance modes are a separate architectural step and not part of the first
+    implementation
 
 ### 11.2 Live Test and Docker Lab Remediation
 - Obiettivo:

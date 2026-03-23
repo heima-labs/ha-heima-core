@@ -5,6 +5,7 @@ from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
 from .heating import HeatingEcoReaction, HeatingPreferenceReaction
 from .learning import ILearningBackend, NaiveLearningBackend
+from .lighting_assist import RoomLightingAssistReaction
 from .lighting_schedule import LightingScheduleReaction
 from .patterns import ConsecutiveMatchDetector, IPatternDetector
 from .presence import PresencePatternReaction
@@ -41,6 +42,9 @@ def builtin_reaction_plugin_builders() -> dict[str, ReactionPluginBuilder]:
         "RoomSignalAssistReaction": lambda engine, proposal_id, cfg: engine._build_room_signal_assist_reaction(  # noqa: SLF001
             proposal_id, cfg
         ),
+        "RoomLightingAssistReaction": lambda engine, proposal_id, cfg: engine._build_room_lighting_assist_reaction(  # noqa: SLF001
+            proposal_id, cfg
+        ),
     }
 
 
@@ -74,8 +78,14 @@ def builtin_reaction_plugin_descriptors() -> tuple[ReactionPluginDescriptor, ...
         ReactionPluginDescriptor(
             reaction_class="RoomSignalAssistReaction",
             reaction_id_strategy="proposal_id",
-            supported_config_contracts=("room_signal_assist", "room_cooling_assist"),
+            supported_config_contracts=("room_signal_assist", "room_cooling_assist", "room_air_quality_assist"),
             supports_normalizer=True,
+        ),
+        ReactionPluginDescriptor(
+            reaction_class="RoomLightingAssistReaction",
+            reaction_id_strategy="proposal_id",
+            supported_config_contracts=("room_darkness_lighting_assist",),
+            supports_normalizer=False,
         ),
     )
 
@@ -91,6 +101,7 @@ __all__ = [
     "HeatingPreferenceReaction",
     "IPatternDetector",
     "ILearningBackend",
+    "RoomLightingAssistReaction",
     "LightingScheduleReaction",
     "NaiveLearningBackend",
     "PresencePatternReaction",

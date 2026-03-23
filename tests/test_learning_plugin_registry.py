@@ -38,5 +38,9 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_darkness_lighting_assist",
     )
-    assert descriptors[-1].reaction_targets == ("RoomSignalAssistReaction",)
+    assert descriptors[-1].reaction_targets == (
+        "RoomSignalAssistReaction",
+        "RoomLightingAssistReaction",
+    )

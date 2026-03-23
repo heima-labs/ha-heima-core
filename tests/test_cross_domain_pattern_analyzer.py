@@ -65,6 +65,36 @@ def _state_change(
     )
 
 
+def _lighting_event(
+    *,
+    entity_id: str,
+    room: str,
+    ts: str,
+    action: str = "on",
+    brightness: int | None = 128,
+    color_temp_kelvin: int | None = 3000,
+    rgb_color: list[int] | None = None,
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="lighting",
+        context=_ctx(room=room),
+        source="user",
+        domain="light",
+        subject_type="entity",
+        subject_id=entity_id,
+        room_id=room,
+        data={
+            "entity_id": entity_id,
+            "room_id": room,
+            "action": action,
+            "brightness": brightness,
+            "color_temp_kelvin": color_temp_kelvin,
+            "rgb_color": rgb_color,
+        },
+    )
+
+
 async def test_cross_domain_analyzer_requires_min_confirmed_episodes():
     analyzer = CrossDomainPatternAnalyzer()
     base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
@@ -266,6 +296,61 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert diagnostics["observed_followup_entities"] == ["fan.office_ventilation"]
 
 
+async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base = datetime(2026, 3, 1, 18, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        lux_ts = (base + timedelta(days=i * 7)).isoformat()
+        light_ts = (base + timedelta(days=i * 7, minutes=2)).isoformat()
+        events.extend(
+            [
+                _state_change(
+                    entity_id="sensor.living_room_lux",
+                    room="living",
+                    ts=lux_ts,
+                    old_state="180",
+                    new_state="95",
+                    device_class="illuminance",
+                ),
+                _lighting_event(
+                    entity_id="light.living_main",
+                    room="living",
+                    ts=light_ts,
+                    action="on",
+                    brightness=144,
+                    color_temp_kelvin=2900,
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    darkness = [p for p in proposals if p.reaction_type == "room_darkness_lighting_assist"]
+    assert len(darkness) == 1
+    proposal = darkness[0]
+    assert proposal.suggested_reaction_config["reaction_class"] == "RoomLightingAssistReaction"
+    assert proposal.suggested_reaction_config["room_id"] == "living"
+    assert proposal.suggested_reaction_config["primary_signal_entities"] == [
+        "sensor.living_room_lux"
+    ]
+    assert proposal.suggested_reaction_config["primary_threshold_mode"] == "below"
+    assert proposal.suggested_reaction_config["entity_steps"] == [
+        {
+            "entity_id": "light.living_main",
+            "action": "on",
+            "brightness": 144,
+            "color_temp_kelvin": 2900,
+            "rgb_color": None,
+        }
+    ]
+    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "room_darkness_lighting_assist"
+    assert diagnostics["primary_signal"] == "room_lux"
+    assert diagnostics["followup_signal"] == "lighting_replay"
+    assert diagnostics["matched_primary_entities"] == ["sensor.living_room_lux"]
+    assert diagnostics["observed_followup_entities"] == ["light.living_main"]
+
+
 def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
     pattern_ids = {definition.pattern_id for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
     reaction_types = {definition.reaction_type for definition in DEFAULT_COMPOSITE_PATTERN_CATALOG}
@@ -274,11 +359,13 @@ def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_darkness_lighting_assist",
     }
     assert reaction_types == {
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_darkness_lighting_assist",
     }
 
 
@@ -351,6 +438,22 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
                     old_state="off",
                     new_state="on",
                 ),
+                _state_change(
+                    entity_id="sensor.living_room_lux",
+                    room="living",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=40)).isoformat(),
+                    old_state="180",
+                    new_state="90",
+                    device_class="illuminance",
+                ),
+                _lighting_event(
+                    entity_id="light.living_main",
+                    room="living",
+                    ts=(base_studio + timedelta(days=i * 7, minutes=42)).isoformat(),
+                    action="on",
+                    brightness=144,
+                    color_temp_kelvin=2900,
+                ),
             ]
         )
 
@@ -360,6 +463,7 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_darkness_lighting_assist",
     }
     diagnostics_by_type = {
         proposal.reaction_type: proposal.suggested_reaction_config["learning_diagnostics"]
@@ -368,3 +472,4 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
     assert diagnostics_by_type["room_signal_assist"]["room_id"] == "bathroom"
     assert diagnostics_by_type["room_cooling_assist"]["room_id"] == "studio"
     assert diagnostics_by_type["room_air_quality_assist"]["room_id"] == "office"
+    assert diagnostics_by_type["room_darkness_lighting_assist"]["room_id"] == "living"

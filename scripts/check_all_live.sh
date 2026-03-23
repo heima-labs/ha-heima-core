@@ -24,6 +24,7 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/026_room_signal_assist_live.py"
   "scripts/live_tests/027_room_cooling_assist_live.py"
   "scripts/live_tests/028_room_air_quality_assist_live.py"
+  "scripts/live_tests/028b_room_darkness_lighting_assist_live.py"
   "scripts/live_tests/029_presence_live.py"
   "scripts/live_tests/040_security_mismatch_runtime.py"
   "scripts/live_tests/050_calendar_domain.py"

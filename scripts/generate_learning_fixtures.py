@@ -306,6 +306,50 @@ def build_air_quality_events(today_local: date) -> list[dict[str, object]]:
     return events
 
 
+def build_darkness_lighting_events(today_local: date) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    base_days = _recent_past_weekday_dates(today_local, today_local.weekday(), count=4)
+    for day in base_days:
+        correlation_id = f"fixture-studio-darkness-{day.isoformat()}"
+        events.extend(
+            [
+                _state_change_event(
+                    day=day,
+                    at=time(18, 0),
+                    entity_id="sensor.test_heima_studio_lux",
+                    room_id="studio",
+                    context_at=time(18, 0),
+                    old_state="180",
+                    new_state="90",
+                    unit_of_measurement="lx",
+                    device_class="illuminance",
+                    correlation_id=correlation_id,
+                ),
+                {
+                    "ts": datetime.combine(day, time(18, 2), tzinfo=LOCAL_TZ).astimezone(UTC).isoformat(),
+                    "event_type": "lighting",
+                    "context": _room_event_context(day=day, room_id="studio", at=time(18, 0)),
+                    "source": "user",
+                    "data": {
+                        "entity_id": "light.test_heima_studio_main",
+                        "room_id": "studio",
+                        "action": "on",
+                        "scene": None,
+                        "brightness": 144,
+                        "color_temp_kelvin": 2900,
+                        "rgb_color": None,
+                    },
+                    "domain": "lighting",
+                    "subject_type": "entity",
+                    "subject_id": "light.test_heima_studio_main",
+                    "room_id": "studio",
+                    "correlation_id": correlation_id,
+                },
+            ]
+        )
+    return events
+
+
 def build_proposals_fixture() -> dict[str, object]:
     return {
         "version": 1,
@@ -333,6 +377,7 @@ def main() -> int:
     combined_events.extend(build_cross_domain_events(today_local))
     combined_events.extend(build_cooling_events(today_local))
     combined_events.extend(build_air_quality_events(today_local))
+    combined_events.extend(build_darkness_lighting_events(today_local))
     events_fixture["data"]["data"]["events"] = combined_events
     proposals_fixture = build_proposals_fixture()
 
@@ -348,7 +393,8 @@ def main() -> int:
         f"{len(events_fixture['data']['data']['events'])} events "
         "("
         "lighting history + 4 bathroom humidity/ventilation episodes + "
-        "4 studio cooling episodes + 4 studio CO2/ventilation episodes"
+        "4 studio cooling episodes + 4 studio CO2/ventilation episodes + "
+        "4 studio darkness/lighting episodes"
         ")"
     )
     return 0

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable
+from typing import Callable, Literal
 
 from homeassistant.core import HomeAssistant
 
 
 StateReader = Callable[[str], float | None]
+ThresholdMode = Literal["rise", "drop", "below"]
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class RuntimeCompositeSignalSpec:
     name: str
     entity_ids: tuple[str, ...]
     threshold: float
+    threshold_mode: ThresholdMode = "rise"
     required: bool = False
 
 
@@ -118,7 +120,12 @@ class RuntimeCompositeMatcher:
             previous_value, previous_ts = previous
             if (now - previous_ts).total_seconds() > window_s:
                 continue
-            if current - previous_value >= spec.threshold:
+            if _matches_threshold(
+                previous_value=previous_value,
+                current_value=current,
+                threshold=spec.threshold,
+                mode=spec.threshold_mode,
+            ):
                 triggered = True
         return triggered
 
@@ -137,3 +144,19 @@ def parse_snapshot_ts(raw: str) -> datetime | None:
         return datetime.fromisoformat(raw).astimezone(UTC)
     except (TypeError, ValueError):
         return None
+
+
+def _matches_threshold(
+    *,
+    previous_value: float,
+    current_value: float,
+    threshold: float,
+    mode: ThresholdMode,
+) -> bool:
+    if mode == "rise":
+        return (current_value - previous_value) >= threshold
+    if mode == "drop":
+        return (previous_value - current_value) >= threshold
+    if mode == "below":
+        return previous_value > threshold and current_value <= threshold
+    return False

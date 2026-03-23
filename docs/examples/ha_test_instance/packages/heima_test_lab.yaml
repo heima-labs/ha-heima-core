@@ -263,6 +263,14 @@ input_number:
     mode: box
     unit_of_measurement: "ppm"
     initial: 700
+  test_heima_studio_lux:
+    name: "Test Heima Studio Lux"
+    min: 0
+    max: 2000
+    step: 1
+    mode: box
+    unit_of_measurement: "lx"
+    initial: 180
   test_heima_vacation_min_temp:
     name: "Test Heima Vacation Min Temp"
     min: 12
@@ -473,6 +481,12 @@ template:
         device_class: carbon_dioxide
         state_class: measurement
         state: "{{ states('input_number.test_heima_studio_co2') }}"
+      - name: "test_heima_studio_lux"
+        unique_id: "test_heima_studio_lux"
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        state: "{{ states('input_number.test_heima_studio_lux') }}"
     switch:
       - name: "test_heima_heater_relay"
         unique_id: "test_heima_heater_relay"
@@ -699,6 +713,11 @@ script:
           value: 700
       - action: input_number.set_value
         target:
+          entity_id: input_number.test_heima_studio_lux
+        data:
+          value: 180
+      - action: input_number.set_value
+        target:
           entity_id:
             - input_number.test_heima_light_living_main_brightness
             - input_number.test_heima_light_living_spot_brightness
@@ -922,6 +941,27 @@ script:
       - action: switch.turn_on
         target:
           entity_id: switch.test_heima_studio_fan
+
+  test_heima_run_studio_darkness_pattern:
+    alias: "Test Heima Run Studio Darkness Pattern"
+    icon: mdi:brightness-4
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.test_heima_room_studio_motion_raw
+      - delay: "00:00:01"
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.test_heima_studio_lux
+        data:
+          value: 90
+      - delay: "00:00:01"
+      - action: light.turn_on
+        target:
+          entity_id: light.test_heima_studio_main
+        data:
+          brightness: 144
+          color_temp_kelvin: 2900
 
   test_heima_alarm_arm_away:
     alias: "Test Heima Alarm Arm Away"

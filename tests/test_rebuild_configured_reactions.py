@@ -13,6 +13,7 @@ from custom_components.heima.runtime.reactions import (
     builtin_reaction_plugin_descriptors,
 )
 from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
+from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
 from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
 
@@ -83,6 +84,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "HeatingPreferenceReaction",
         "HeatingEcoReaction",
         "RoomSignalAssistReaction",
+        "RoomLightingAssistReaction",
     }
 
 
@@ -95,12 +97,18 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "HeatingPreferenceReaction",
         "HeatingEcoReaction",
         "RoomSignalAssistReaction",
+        "RoomLightingAssistReaction",
     ]
     assert descriptors[-1].supported_config_contracts == (
+        "room_darkness_lighting_assist",
+    )
+    assert descriptors[-1].supports_normalizer is False
+    assert descriptors[-2].supported_config_contracts == (
         "room_signal_assist",
         "room_cooling_assist",
+        "room_air_quality_assist",
     )
-    assert descriptors[-1].supports_normalizer is True
+    assert descriptors[-2].supports_normalizer is True
 
 
 def test_presence_reaction_built_and_registered():
@@ -326,6 +334,39 @@ def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_lega
     assert normalized["primary_rise_threshold"] == 1.5
     assert normalized["corroboration_signal_entities"] == ["sensor.generic_humidity"]
     assert normalized["corroboration_rise_threshold"] == 5.0
+
+
+def test_room_lighting_assist_reaction_built_and_registered():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "la1": {
+                    "reaction_class": "RoomLightingAssistReaction",
+                    "room_id": "living",
+                    "primary_signal_entities": ["sensor.living_room_lux"],
+                    "primary_threshold": 120.0,
+                    "primary_signal_name": "room_lux",
+                    "primary_threshold_mode": "below",
+                    "entity_steps": [
+                        {
+                            "entity_id": "light.living_main",
+                            "action": "on",
+                            "brightness": 144,
+                            "color_temp_kelvin": 2900,
+                            "rgb_color": None,
+                        }
+                    ],
+                }
+            }
+        }
+    })
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    reaction = engine._reactions[0]
+    assert isinstance(reaction, RoomLightingAssistReaction)
+    assert reaction.reaction_id == "la1"
 
 
 def test_rebuild_clears_removed_proposals():

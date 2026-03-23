@@ -181,7 +181,7 @@ class _ReactionsStepsMixin:
             pid for pid in accepted_ids
             if proposal_map.get(pid) is not None
             and proposal_map[pid].suggested_reaction_config.get("reaction_class")
-            != "LightingScheduleReaction"
+            not in {"LightingScheduleReaction", "RoomLightingAssistReaction"}
         ]
         if needs_action_config:
             self._pending_action_configs = needs_action_config
@@ -360,6 +360,20 @@ class _ReactionsStepsMixin:
                     parts.append(f"temp:{len(temperature_entities)}")
                 if observed > 0:
                     parts.append(f"{observed} episodi")
+                return " — ".join(parts)
+            except (TypeError, ValueError):
+                pass
+
+        if cfg.get("reaction_class") == "RoomLightingAssistReaction":
+            try:
+                room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+                primary_entities = list(cfg.get("primary_signal_entities", []))
+                entity_steps = list(cfg.get("entity_steps", []))
+                parts = [f"Luce {room_id}"]
+                if primary_entities:
+                    parts.append(f"lux:{len(primary_entities)}")
+                if entity_steps:
+                    parts.append(f"{len(entity_steps)} entità")
                 return " — ".join(parts)
             except (TypeError, ValueError):
                 pass

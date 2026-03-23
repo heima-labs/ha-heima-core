@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable
+from typing import Callable, Literal
 
 from ..event_store import HeimaEvent
 
 
 EventPredicate = Callable[[HeimaEvent], bool]
+ThresholdMode = Literal["rise", "drop", "below"]
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class CompositeSignalSpec:
     name: str
     predicate: EventPredicate
     min_delta: float | None = None
+    threshold_mode: ThresholdMode = "rise"
     required: bool = False
 
 
@@ -44,6 +46,7 @@ class CompositeEpisode:
     primary_delta: float
     corroboration_matches: dict[str, tuple[str, ...]]
     followup_entities: tuple[str, ...]
+    followup_events: tuple[HeimaEvent, ...] = ()
 
 
 class RoomScopedCompositeMatcher:
@@ -70,7 +73,7 @@ class RoomScopedCompositeMatcher:
             delta = numeric_delta(event)
             if delta is None:
                 continue
-            if spec.primary.min_delta is not None and delta < spec.primary.min_delta:
+            if not _signal_matches_event(event, spec.primary):
                 continue
 
             corroboration_matches: dict[str, tuple[str, ...]] = {}
@@ -82,7 +85,7 @@ class RoomScopedCompositeMatcher:
                             subject_entity_id(candidate)
                             for candidate in corroboration_buckets.get(signal.name, [])
                             if within_window(ts, parse_event_ts(candidate), spec.correlation_window_s)
-                            and _delta_satisfies(candidate, signal.min_delta)
+                            and _signal_matches_event(candidate, signal)
                             and subject_entity_id(candidate)
                         }
                     )
@@ -93,14 +96,18 @@ class RoomScopedCompositeMatcher:
             if missing_required:
                 continue
 
+            matched_followups = tuple(
+                candidate
+                for candidate in followup_events
+                if within_followup(ts, parse_event_ts(candidate), spec.followup_window_s)
+                and _signal_matches_event(candidate, spec.followup if spec.followup else None)
+                and subject_entity_id(candidate)
+            )
             followup_entities = tuple(
                 sorted(
                     {
                         subject_entity_id(candidate)
-                        for candidate in followup_events
-                        if within_followup(ts, parse_event_ts(candidate), spec.followup_window_s)
-                        and _delta_satisfies(candidate, spec.followup.min_delta if spec.followup else None)
-                        and subject_entity_id(candidate)
+                        for candidate in matched_followups
                     }
                 )
             )
@@ -113,6 +120,7 @@ class RoomScopedCompositeMatcher:
                     primary_delta=delta,
                     corroboration_matches=corroboration_matches,
                     followup_entities=followup_entities,
+                    followup_events=matched_followups,
                 )
             )
 
@@ -155,8 +163,23 @@ def within_followup(origin: datetime, candidate: datetime | None, seconds: int) 
     return 0 <= delta <= seconds
 
 
-def _delta_satisfies(event: HeimaEvent, min_delta: float | None) -> bool:
-    if min_delta is None:
+def _signal_matches_event(event: HeimaEvent, spec: CompositeSignalSpec | None) -> bool:
+    if spec is None:
+        return True
+    if spec.min_delta is None:
         return True
     delta = numeric_delta(event)
-    return delta is not None and delta >= min_delta
+    if delta is None:
+        return False
+    if spec.threshold_mode == "rise":
+        return delta >= spec.min_delta
+    if spec.threshold_mode == "drop":
+        return (-delta) >= spec.min_delta
+    if spec.threshold_mode == "below":
+        try:
+            new_value = float(event.data.get("new_state"))
+            old_value = float(event.data.get("old_state"))
+        except (TypeError, ValueError):
+            return False
+        return old_value > spec.min_delta and new_value <= spec.min_delta
+    return False

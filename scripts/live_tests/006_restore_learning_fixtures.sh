@@ -53,6 +53,12 @@ if [[ -n "$HA_TOKEN" ]]; then
     --ha-token "$HA_TOKEN" \
     --section rooms
 
+  echo "Refreshing learning signal config after restart..."
+  python3 "$REPO_ROOT/scripts/recover_test_lab_config.py" \
+    --ha-url "$HA_URL" \
+    --ha-token "$HA_TOKEN" \
+    --section learning
+
   echo "Waiting for restored learning baseline to load into diagnostics..."
   deadline=$((SECONDS + 180))
   until python3 - "$HA_URL" "$HA_TOKEN" <<'PY'
