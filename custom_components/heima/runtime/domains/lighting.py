@@ -32,6 +32,7 @@ class LightingDomain:
         self._lighting_last_scene: dict[str, str] = {}
         self._lighting_last_ts: dict[str, float] = {}
         self._lighting_recent_entity_applies: dict[str, dict[str, Any]] = {}
+        self._lighting_recent_scene_applies: dict[str, dict[str, Any]] = {}
         self._lighting_hold_seen_state: dict[str, bool] = {}
         self._lighting_zone_trace: dict[str, dict[str, Any]] = {}
         self._lighting_room_trace: dict[str, list[dict[str, Any]]] = {}
@@ -43,6 +44,7 @@ class LightingDomain:
         self._lighting_last_scene = {}
         self._lighting_last_ts = {}
         self._lighting_recent_entity_applies = {}
+        self._lighting_recent_scene_applies = {}
         self._lighting_hold_seen_state = {}
         self._lighting_zone_trace = {}
         self._lighting_room_trace = {}
@@ -87,6 +89,10 @@ class LightingDomain:
         return {
             "rooms": dict(self._lighting_last_ts),
             "entities": self.recent_entity_applies,
+            "scenes": {
+                scene_entity: dict(payload)
+                for scene_entity, payload in self._lighting_recent_scene_applies.items()
+            },
         }
 
     def diagnostics(self) -> dict[str, Any]:
@@ -100,6 +106,10 @@ class LightingDomain:
             "last_scene_by_room": dict(self._lighting_last_scene),
             "last_apply_ts_by_room": dict(self._lighting_last_ts),
             "recent_entity_applies": self.recent_entity_applies,
+            "recent_scene_applies": {
+                scene_entity: dict(payload)
+                for scene_entity, payload in self._lighting_recent_scene_applies.items()
+            },
             "hold_seen_state_by_room": dict(self._lighting_hold_seen_state),
         }
 
@@ -391,8 +401,18 @@ class LightingDomain:
                         {"entity_id": scene_entity},
                         blocking=False,
                     )
+                    expected_subject_ids = self._expected_scene_entities(
+                        step.target,
+                        scene_entity,
+                    )
                     self._mark_room_applied(step.target, scene_entity)
-                    for entity_id in self._expected_scene_entities(step):
+                    self._mark_scene_applied(
+                        room_id=step.target,
+                        scene_entity=scene_entity,
+                        expected_subject_ids=expected_subject_ids,
+                        correlation_id=apply_batch_id,
+                    )
+                    for entity_id in expected_subject_ids:
                         self._mark_entity_applied(
                             room_id=step.target,
                             entity_id=entity_id,
@@ -556,9 +576,43 @@ class LightingDomain:
             "correlation_id": correlation_id,
         }
 
-    def _expected_scene_entities(self, step: ApplyStep) -> list[str]:
-        """Best-effort expansion of a room scene to concrete light entities in that room area."""
-        room_id = str(step.target or "").strip()
+    def _mark_scene_applied(
+        self,
+        *,
+        room_id: str,
+        scene_entity: str,
+        expected_subject_ids: list[str],
+        correlation_id: str | None = None,
+    ) -> None:
+        applied_ts = time.monotonic()
+        self._lighting_recent_scene_applies[scene_entity] = {
+            "room_id": room_id,
+            "scene_entity": scene_entity,
+            "action": "scene.turn_on",
+            "expected_domains": ["light"],
+            "expected_subject_ids": list(expected_subject_ids),
+            "expected_entity_ids": list(expected_subject_ids),
+            "applied_ts": applied_ts,
+            "correlation_id": correlation_id,
+        }
+
+    def _expected_scene_entities(self, room_id: str, scene_entity: str) -> list[str]:
+        """Best-effort expansion of a scene to concrete light entities.
+
+        Prefer scene-declared members when available on the HA scene state; fall back
+        to room-scoped light entities otherwise.
+        """
+        scene_state = self._hass.states.get(scene_entity)
+        if scene_state is not None:
+            raw_entities = getattr(scene_state, "attributes", {}).get("entity_id")
+            if isinstance(raw_entities, (list, tuple)):
+                scene_lights = [
+                    str(entity_id).strip()
+                    for entity_id in raw_entities
+                    if isinstance(entity_id, str) and str(entity_id).startswith("light.")
+                ]
+                if scene_lights:
+                    return sorted(set(scene_lights))
         return self.expected_room_light_entities(room_id)
 
     def expected_room_light_entities(self, room_id: str) -> list[str]:

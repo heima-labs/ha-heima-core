@@ -931,6 +931,10 @@ The recorder resolves:
 In practice, grouped scene/script effects are correlated through recent apply provenance and HA
 context IDs when available.
 
+For `scene.turn_on`, the runtime SHOULD expose a short-lived scene batch. When the HA scene state
+declares concrete member entities, those members SHOULD be preferred as the expected subjects; room
+light scope remains the normative fallback when scene membership is not introspectable.
+
 Heating remains domain-specific for observed-source discrimination, but when an observed thermostat
 setpoint matches a recent Heima apply, the runtime SHOULD expose provenance using the same common
 metadata language (`source`, reaction origin, expected domains, expected subjects).

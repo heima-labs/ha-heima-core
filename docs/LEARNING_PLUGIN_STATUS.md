@@ -89,6 +89,8 @@ These items are still open by design:
 1. Stronger scene/script provenance
 - scene/script effects are improved, including room-scoped script attribution when a reaction source exposes
   room diagnostics, but not yet expanded into perfectly reliable concrete entity batches in all cases
+- scene applies now produce an explicit short-lived scene batch, preferring scene-declared light
+  members when HA exposes them and falling back to room-scoped light entities otherwise
 - the runtime now has a minimal `ScriptApplyBatch` contract for short-lived script provenance,
   but it is still intentionally lightweight and in-memory only
 - current batch metadata are now reaction-aware and usable by both lighting and generic signal recorders,

@@ -11,8 +11,9 @@ from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
 class _FakeStateObj:
-    def __init__(self, state: str):
+    def __init__(self, state: str, attributes: dict | None = None):
         self.state = state
+        self.attributes = dict(attributes or {})
 
 
 class _FakeStates:
@@ -23,6 +24,8 @@ class _FakeStates:
         value = self._values.get(entity_id)
         if value is None:
             return None
+        if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], dict):
+            return _FakeStateObj(str(value[0]), value[1])
         return _FakeStateObj(value)
 
 
@@ -334,10 +337,77 @@ async def test_scene_apply_tracks_expected_room_light_entities(monkeypatch):
     await engine._execute_apply_plan(plan)
 
     recent = engine.lighting_recent_apply_state
+    assert "scene.living_evening" in recent["scenes"]
+    assert recent["scenes"]["scene.living_evening"]["expected_subject_ids"] == [
+        "light.living_main",
+        "light.living_spot",
+    ]
     assert "light.living_main" in recent["entities"]
     assert "light.living_spot" in recent["entities"]
     assert recent["entities"]["light.living_main"]["action"] == "scene.turn_on"
     assert recent["entities"]["light.living_spot"]["action"] == "scene.turn_on"
+
+
+@pytest.mark.asyncio
+async def test_scene_apply_prefers_scene_declared_light_members_over_room_fallback(monkeypatch):
+    options = {
+        "rooms": [
+            {
+                "room_id": "living",
+                "area_id": "living",
+                "occupancy_mode": "none",
+                "sources": [],
+                "logic": "any_of",
+            }
+        ],
+        "lighting_zones": [{"zone_id": "living_zone", "rooms": ["living"]}],
+        "lighting_rooms": [
+            {
+                "room_id": "living",
+                "enable_manual_hold": True,
+                "scene_evening": "scene.living_evening",
+            }
+        ],
+    }
+    engine = _build_engine(
+        options,
+        {
+            "scene.living_evening": ("scening", {"entity_id": ["light.living_spot"]}),
+            "light.living_main": "off",
+            "light.living_spot": "off",
+        },
+    )
+
+    fake_registry = SimpleNamespace(
+        entities={
+            "a": _RegistryEntry("light.living_main", "living"),
+            "b": _RegistryEntry("light.living_spot", "living"),
+        }
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda hass: fake_registry,
+    )
+
+    snapshot = DecisionSnapshot(
+        snapshot_id="x",
+        ts="2026-01-01T00:00:00+00:00",
+        house_state="home",
+        anyone_home=True,
+        people_count=1,
+        occupied_rooms=[],
+        lighting_intents={"living_zone": "scene_evening"},
+        security_state="unknown",
+        notes="test",
+    )
+    plan = engine._build_apply_plan(snapshot)
+
+    await engine._execute_apply_plan(plan)
+
+    recent = engine.lighting_recent_apply_state
+    assert recent["scenes"]["scene.living_evening"]["expected_subject_ids"] == ["light.living_spot"]
+    assert "light.living_spot" in recent["entities"]
+    assert "light.living_main" not in recent["entities"]
 
 
 @pytest.mark.asyncio

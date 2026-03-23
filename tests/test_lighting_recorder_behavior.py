@@ -437,6 +437,39 @@ async def test_lighting_recorder_ignores_recent_scene_entity_apply():
     assert len(store.events) == 0
 
 
+async def test_lighting_recorder_ignores_recent_scene_batch_apply():
+    import time
+
+    hass = _FakeHass()
+    store = _FakeStore()
+    b = _behavior(
+        hass,
+        store,
+        apply_state={
+            "rooms": {"living": time.monotonic() - 1.0},
+            "entities": {},
+            "scenes": {
+                "scene.living_evening": {
+                    "scene_entity": "scene.living_evening",
+                    "room_id": "living",
+                    "action": "scene.turn_on",
+                    "expected_domains": ["light"],
+                    "expected_subject_ids": ["light.living_main"],
+                    "expected_entity_ids": ["light.living_main"],
+                    "applied_ts": time.monotonic() - 1.0,
+                    "correlation_id": "lighting-apply:scene-2",
+                }
+            },
+        },
+    )
+
+    event_data = _state_event("light.living_main", "on", old_state="off")
+    await b._handle_state_changed(_FakeEvent(event_data))
+    await hass.flush()
+
+    assert len(store.events) == 0
+
+
 async def test_lighting_recorder_ignores_recent_script_batch_apply():
     import time
 
