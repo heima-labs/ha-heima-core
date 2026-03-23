@@ -125,6 +125,32 @@ La descrizione della proposal è mostrata via `description_placeholders: {propos
 L'Options Flow non registra direttamente eventi di learning, ma deve produrre configurazioni che
 non rompano i contratti del learning runtime.
 
+Regola di configurazione:
+- il flow `Rooms` definisce la semantica primaria delle entità room-scoped
+- il flow `Learning` aggiunge solo segnali globali extra e binding ambientali (`outdoor_*`,
+  `weather_entity`, `context_signal_entities`)
+- il runtime di learning SHOULD therefore treat `rooms[*].sources` as the base room-scoped learning
+  source set, with `learning.context_signal_entities` as additive extras
+- l'evoluzione preferita della UI è un toggle per-source nel flow `Rooms` che renda esplicito se
+  una source deve partecipare al learning (`learning_enabled`)
+- questa separazione evita di costringere l'utente a duplicare la stessa modellazione stanza in più
+  punti della UI
+
+Regola di qualità del segnale:
+- il fatto che un'entità compaia in `rooms[*].sources` non implica che debba essere imparata in modo
+  cieco
+- il learning runtime SHOULD preferire solo segnali stabili e già semanticamente normalizzati
+- entità molto rumorose o puramente impulsive possono restare utili per occupancy senza diventare
+  automaticamente buoni input per inferenze più ricche
+
+Regola di semantica UX:
+- la UI SHOULD rendere comprensibile la differenza tra:
+  - entità usate per capire **quando** avviene un comportamento
+  - entità osservate per capire **cosa** ha fatto l'utente
+- esempio canonico:
+  - `sensor.studio_lux` può essere un trigger signal del learning
+  - `light.studio_main` può essere una response osservata dal learner lighting
+
 - **Provenance**: il runtime deve poter distinguere tra effetti generati dall'utente ed effetti
   generati da Heima, per evitare di apprendere dai propri output.
 - **Correlation**: il runtime deve poter collegare più cambi entità che appartengono alla stessa

@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ..room_sources import room_learning_source_entity_ids
 from .event_store import EventContext
 from .snapshot import DecisionSnapshot
 
@@ -20,12 +21,13 @@ class ContextBuilder:
     A single ContextBuilder instance is shared across all recorder behaviors.
     The coordinator owns it and calls update_config() on options reload.
 
-    Config keys (from options["learning"]):
+    Config keys (from options snapshot):
       outdoor_lux_entity:      entity_id of an illuminance sensor (lx)
       outdoor_temp_entity:     entity_id of a temperature sensor (°C)
       weather_entity:          entity_id of a weather integration
       context_signal_entities: list of entity_ids (max 10) that are strong
                                context signals for learning (projector, TV, etc.)
+      rooms[*].sources:        room-scoped sources, optionally marked learning_enabled
     """
 
     def __init__(self, hass: HomeAssistant, config: dict[str, Any] | None = None) -> None:
@@ -38,12 +40,28 @@ class ContextBuilder:
             self.update_config(config)
 
     def update_config(self, config: dict[str, Any]) -> None:
-        """Update builder from a learning config dict (called on options reload)."""
-        self._outdoor_lux_entity = config.get("outdoor_lux_entity") or None
-        self._outdoor_temp_entity = config.get("outdoor_temp_entity") or None
-        self._weather_entity = config.get("weather_entity") or None
-        raw_signals = config.get("context_signal_entities", [])
-        self._signal_entities = list(raw_signals)[:_MAX_SIGNALS] if isinstance(raw_signals, list) else []
+        """Update builder from options or learning config (called on options reload)."""
+        learning = dict(config.get("learning", {})) if "learning" in config else dict(config)
+        self._outdoor_lux_entity = learning.get("outdoor_lux_entity") or None
+        self._outdoor_temp_entity = learning.get("outdoor_temp_entity") or None
+        self._weather_entity = learning.get("weather_entity") or None
+        raw_signals = learning.get("context_signal_entities", [])
+        merged_signals: list[str] = []
+        if isinstance(config.get("rooms"), list):
+            for room in config.get("rooms", []):
+                merged_signals.extend(room_learning_source_entity_ids(room))
+        if isinstance(raw_signals, list):
+            merged_signals.extend(str(entity_id) for entity_id in raw_signals)
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for entity_id in merged_signals:
+            clean = str(entity_id).strip()
+            if not clean or clean in seen:
+                continue
+            seen.add(clean)
+            deduped.append(clean)
+        self._signal_entities = deduped[:_MAX_SIGNALS]
 
     def build(self, snapshot: DecisionSnapshot) -> EventContext:
         """Build an EventContext from snapshot + current HA state."""

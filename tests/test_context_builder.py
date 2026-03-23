@@ -124,6 +124,32 @@ def test_context_builder_signals():
     assert ctx.signals["binary_sensor.tv"] == "on"
 
 
+def test_context_builder_includes_learning_enabled_room_sources():
+    hass = _FakeHass(
+        {
+            "sensor.studio_lux": _FakeState("120"),
+            "binary_sensor.studio_motion": _FakeState("on"),
+        }
+    )
+    builder = ContextBuilder(
+        hass,
+        {
+            "learning": {"context_signal_entities": []},
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "sources": [
+                        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
+                        {"entity_id": "binary_sensor.studio_motion", "learning_enabled": False},
+                    ],
+                }
+            ],
+        },
+    )
+    ctx = builder.build(_snapshot())
+    assert ctx.signals == {"sensor.studio_lux": "120"}
+
+
 def test_context_builder_signals_max_10():
     entities = [f"sensor.s{i}" for i in range(15)]
     hass = _FakeHass({e: _FakeState("on") for e in entities})

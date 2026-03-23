@@ -160,6 +160,34 @@ async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
 
 
 @pytest.mark.asyncio
+async def test_rooms_flow_persists_learning_enabled_room_sources():
+    flow = _flow()
+
+    result = await flow.async_step_rooms_add(
+        {
+            "room_id": "studio",
+            "display_name": "Studio",
+            "area_id": "studio",
+            "occupancy_mode": "derived",
+            "sources": ["binary_sensor.motion", "sensor.studio_lux"],
+            "learning_sources": ["sensor.studio_lux"],
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+    assert result["type"] == "menu"
+
+    saved = await flow.async_step_rooms_save()
+    room = saved["data"]["rooms"][0]
+    assert room["sources"] == [
+        {"entity_id": "binary_sensor.motion", "learning_enabled": False},
+        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_heating_flow_persists_general_config_and_branch_mapping():
     flow = _flow()
 

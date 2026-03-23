@@ -123,7 +123,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self.async_refresh()
 
     def _get_learning_config(self, entry: ConfigEntry) -> dict:
-        return dict(entry.options.get("learning", {}))
+        return {
+            "learning": dict(entry.options.get("learning", {})),
+            "rooms": list(entry.options.get("rooms", [])),
+        }
 
     async def async_reload_options(self) -> None:
         """Reload options and refresh state."""

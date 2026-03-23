@@ -54,7 +54,7 @@ Fields:
 
 Guide:
 - for practical guidance on when to prefer `scene.*` vs `script.*`, see
-  [`docs/guides/scene_and_script_usage.md`](/docs/guides/scene_and_script_usage.md)
+  [`docs/guides/scene_and_script_usage.md`](guides/scene_and_script_usage.md)
 
 ### `vacation_mode_entity`
 - Type: entity selector (`input_boolean`, `binary_sensor`, `sensor`)
@@ -249,6 +249,7 @@ Purpose:
 - define canonical rooms
 - define occupancy detection for rooms
 - provide the base input for occupancy, lighting, and other domains
+- provide the primary room-scoped source set for the learning system
 
 This section is menu-based:
 - add
@@ -292,6 +293,44 @@ Meaning:
   - `occupancy_mode = derived`
 - Not required when:
   - `occupancy_mode = none`
+
+Meaning:
+- room-local source entities used first for occupancy resolution
+- also the primary room-scoped candidate signal set for learning
+
+Important:
+- the learning system should not force the user to duplicate the same room semantics in two places
+- `rooms[*].sources` are therefore the natural default room signal inputs for learning plugins
+- `learning.context_signal_entities` should be treated as an additive global override set, not as
+  the only source of non-temporal learning signals
+- each room source should evolve toward an explicit per-source toggle for learning participation
+  (for example `learning_enabled`)
+
+Practical guidance:
+- put stable, normalized room signals here when they describe the room meaningfully:
+  - `sensor.room_lux`
+  - `sensor.room_co2`
+  - `sensor.room_temperature`
+  - `switch.room_fan`
+- avoid assuming every raw source is automatically a good learning signal
+- noisy raw motion pulses may still be useful for occupancy, but are not ideal learning inputs by
+  themselves
+
+Important distinction:
+- room sources are not all used in the same role by learning
+- some entities are useful as trigger/context signals:
+  - `sensor.room_lux`
+  - `sensor.room_co2`
+  - `sensor.room_temperature`
+- other entities are more naturally observed as user responses:
+  - `light.room_main`
+  - `light.room_spot`
+
+Example:
+- for darkness-driven lighting learning, the lux sensor explains **when** the user reacts
+- the lighting events explain **what** the user did
+- this means lights do not need to be treated as generic trigger signals in order for Heima to
+  learn lighting behavior correctly
 
 ### `logic`
 - Type: choice

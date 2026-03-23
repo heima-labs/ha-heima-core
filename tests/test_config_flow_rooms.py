@@ -78,6 +78,46 @@ def test_room_normalization_parses_weighted_quorum_source_weights():
     assert flow._validate_room_payload(payload, is_edit=False) == {}
 
 
+def test_room_normalization_persists_learning_enabled_subset():
+    flow = _flow()
+
+    payload = flow._normalize_room_payload(
+        {
+            "room_id": "studio",
+            "occupancy_mode": "derived",
+            "sources": ["binary_sensor.motion", "sensor.studio_lux"],
+            "learning_sources": ["sensor.studio_lux"],
+            "logic": "any_of",
+        }
+    )
+
+    assert payload["sources"] == [
+        {"entity_id": "binary_sensor.motion", "learning_enabled": False},
+        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
+    ]
+
+
+def test_room_normalization_keeps_structured_sources_on_finalize():
+    flow = _flow()
+
+    payload = flow._normalize_room_payload(
+        {
+            "room_id": "studio",
+            "occupancy_mode": "derived",
+            "sources": [
+                {"entity_id": "binary_sensor.motion", "learning_enabled": False},
+                {"entity_id": "sensor.studio_lux", "learning_enabled": True},
+            ],
+            "logic": "any_of",
+        }
+    )
+
+    assert payload["sources"] == [
+        {"entity_id": "binary_sensor.motion", "learning_enabled": False},
+        {"entity_id": "sensor.studio_lux", "learning_enabled": True},
+    ]
+
+
 def test_room_normalization_drops_weighted_quorum_fields_for_other_logic():
     flow = _flow()
 

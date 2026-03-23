@@ -5,7 +5,7 @@
 This document is the current-state reference for the plugin-oriented learning and reaction model.
 
 For practical authoring guidance, see:
-- [`docs/guides/plugin_authoring.md`](/docs/guides/plugin_authoring.md)
+- [`docs/guides/plugin_authoring.md`](guides/plugin_authoring.md)
 
 It answers four questions:
 - what the target architecture is
@@ -54,6 +54,19 @@ Shared learning/runtime substrate:
 - proposal persistence and dedup
 - proposal acceptance -> configured reaction rebuild path
 - runtime constraint-layer execution shared by domain steps and reaction steps
+- room model as the primary source of room-scoped learnable signals
+
+Signal-selection rule on the target architecture:
+- room-scoped learning should start from `rooms[*].sources`
+- `learning.context_signal_entities` should remain an additive global extension set
+- the runtime should still filter for stable, normalized signals before treating a source as a
+  meaningful learning input
+- the preferred next config step is an explicit per-source room toggle such as `learning_enabled`
+
+Role distinction kept explicit:
+- some room entities explain **when** a behavior happens and should act as trigger/context signals
+- other entities explain **what** the user did and should be observed as responses
+- lights are the clearest example of the second category for lighting-oriented learners
 
 Built-in Learning Pattern Plugins:
 - `builtin.presence_preheat`

@@ -4,7 +4,7 @@ This document explains which APIs are available today for plugin-style integrati
 
 For practical authoring guidance on the current learning/reaction plugin model, prefer the guide
 documents:
-- [`docs/guides/plugin_authoring.md`](/docs/guides/plugin_authoring.md) once present
+- [`docs/guides/plugin_authoring.md`](guides/plugin_authoring.md)
 
 This file should remain a reference/API-oriented document.
 

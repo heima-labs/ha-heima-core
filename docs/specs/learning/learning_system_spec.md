@@ -318,6 +318,74 @@ learning:
     - binary_sensor.tv_power
 ```
 
+Normative source-selection rule:
+- the learning system MUST treat room-scoped signals declared in `rooms[*].sources` as the primary
+  source set for room-aware learning
+- `learning.context_signal_entities` MUST be treated as an additive global override set, not as
+  the only source of learnable non-temporal signals
+- the effective learning signal set is therefore:
+  - room-scoped entities from `rooms[*].sources` explicitly marked as learning-enabled
+  - union supported entities from `learning.context_signal_entities`
+  - de-duplicated by entity id
+
+Normative configuration rule:
+- the room model SHOULD allow a per-source explicit opt-in/out for learning participation
+- the intended v1.1+ shape is:
+  - room source membership declares that the entity belongs to the room semantics
+  - a `learning_enabled` flag declares that the entity may be used as a learnable trigger/context
+    signal
+- this is preferred over a purely implicit runtime filter because it keeps user intent explicit and
+  avoids duplicating the same room semantics in multiple config sections
+
+Normative signal-quality rule:
+- learning plugins MUST prefer stable, normalized signals over raw noisy or semantically ambiguous
+  inputs
+- not every entity listed in `rooms[*].sources` is automatically a good learning signal
+- the runtime MAY filter room sources by supported domain / signal semantics before persisting
+  `state_change` events
+
+Recommended v1 interpretation:
+- good default learning signals:
+  - normalized `sensor.*` entities with stable numeric semantics
+  - room-scoped `switch.*` entities that represent meaningful user follow-up actions
+  - selected `binary_sensor.*` entities only when their semantics are explicit and stable
+- poor default learning signals:
+  - highly noisy raw motion pulses
+  - redundant low-level transport entities
+  - entities whose semantics are not normalized enough for repeatable inference
+
+### 3.0.1 Trigger signals vs observed responses
+
+Not every entity relevant to a room should be treated in the same way by the learning system.
+
+The learning system distinguishes at least these roles:
+- **trigger/context signal**
+  - an entity observed to understand *when* a behavior tends to happen
+  - examples:
+    - room lux
+    - room humidity
+    - room temperature
+    - room CO2
+- **observed response**
+  - an entity observed to understand *what the user did*
+  - examples:
+    - lights the user turned on
+    - thermostat target the user changed
+    - fan/switch the user activated
+
+Normative rule:
+- an entity MAY belong to the room model without automatically becoming a learnable trigger signal
+- lights are the canonical example:
+  - they are often a response family observed by lighting-oriented learners
+  - they are not, by default, room trigger signals for composite sensor-based plugins
+
+Product consequence:
+- Heima can learn:
+  - *when* the room became dark from lux-like trigger signals
+  - *what* the user did from lighting response events
+- this is not a contradiction; it is an intentional separation between trigger semantics and
+  response semantics
+
 **Migration from v1 events:**
 Existing `PresenceEvent`, `HeatingEvent`, `HouseStateEvent` records on disk do not have an
 `EventContext`. Deserialization handles this gracefully: if `"context"` key is absent, a minimal

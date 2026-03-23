@@ -268,7 +268,7 @@ Output:
 
 ### 11. Learning System + Live Lab (current status)
 - Reference status note:
-  - see [`docs/LEARNING_PLUGIN_STATUS.md`](/docs/LEARNING_PLUGIN_STATUS.md)
+  - see [`docs/LEARNING_PLUGIN_STATUS.md`](LEARNING_PLUGIN_STATUS.md)
     for the compact current-state summary of the plugin-oriented learning/reaction model
 - Stato attuale:
   - generic persisted learning-event envelope implementato
@@ -337,8 +337,19 @@ Stato attuale:
 - S1-S4 implementate
 - il motore composito v1.1 e ora una famiglia di Learning Pattern Plugins riusabile nel learning system
 - `RoomSignalAssistReaction` funge da primo Reaction Plugin condiviso da piu learning pattern plugins
+- `RoomLightingAssistReaction` introduce la prima response family lighting-replay riusata fuori
+  dal learner temporale
 - lighting/heating/presence restano altre famiglie di Learning Pattern Plugins quando servono
   semantiche piu ricche o matching diversi dal contratto composito room-scoped
+- prossimo riallineamento di configurazione:
+  - i segnali room-scoped del learning dovrebbero partire da `rooms[*].sources`
+  - `learning.context_signal_entities` dovrebbe restare un set globale additivo
+  - ogni room source dovrebbe poter dichiarare esplicitamente se partecipa al learning
+    (`learning_enabled`)
+  - il runtime deve continuare a filtrare verso segnali abbastanza stabili e semanticamente
+    normalizzati
+  - la documentazione e la UI devono rendere esplicita la differenza tra trigger/context signals e
+    observed responses
 
 Nota architetturale futura:
 - comportamenti adattativi continui o di mantenimento (`constant brightness`, `maintain setpoint`,

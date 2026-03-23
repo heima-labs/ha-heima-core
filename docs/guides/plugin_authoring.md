@@ -5,9 +5,9 @@ This guide explains how to add new behavior to Heima using the current plugin-or
 This is a practical guide, not a normative spec.
 
 For the normative contracts, see:
-- [`docs/specs/learning/learning_system_spec.md`](/docs/specs/learning/learning_system_spec.md)
-- [`docs/specs/core/reactive_behavior_spec.md`](/docs/specs/core/reactive_behavior_spec.md)
-- [`docs/LEARNING_PLUGIN_STATUS.md`](/docs/LEARNING_PLUGIN_STATUS.md)
+- [`docs/specs/learning/learning_system_spec.md`](../specs/learning/learning_system_spec.md)
+- [`docs/specs/core/reactive_behavior_spec.md`](../specs/core/reactive_behavior_spec.md)
+- [`docs/LEARNING_PLUGIN_STATUS.md`](../LEARNING_PLUGIN_STATUS.md)
 
 ## 1. The model
 
@@ -69,7 +69,7 @@ Examples:
 
 Usually this means:
 - add or extend an analyzer under
-  [`custom_components/heima/runtime/analyzers/`](/custom_components/heima/runtime/analyzers)
+  [`custom_components/heima/runtime/analyzers/`](../../custom_components/heima/runtime/analyzers)
 - implement the `IPatternAnalyzer` contract
 - return `list[ReactionProposal]`
 
@@ -81,7 +81,7 @@ Good rules:
 ### 5.2 Register the plugin
 
 Update the built-in registry in:
-- [`custom_components/heima/runtime/analyzers/__init__.py`](/custom_components/heima/runtime/analyzers/__init__.py)
+- [`custom_components/heima/runtime/analyzers/__init__.py`](../../custom_components/heima/runtime/analyzers/__init__.py)
 
 You usually need:
 - a concrete analyzer in `builtin_learning_pattern_plugins()`
@@ -119,7 +119,7 @@ Often also:
 ### 6.1 Implement the reaction class
 
 Usually under:
-- [`custom_components/heima/runtime/reactions/`](/custom_components/heima/runtime/reactions)
+- [`custom_components/heima/runtime/reactions/`](../../custom_components/heima/runtime/reactions)
 
 Your reaction should define:
 - accepted config contract
@@ -135,7 +135,7 @@ Rules:
 ### 6.2 Register the builder
 
 Update:
-- [`custom_components/heima/runtime/reactions/__init__.py`](/custom_components/heima/runtime/reactions/__init__.py)
+- [`custom_components/heima/runtime/reactions/__init__.py`](../../custom_components/heima/runtime/reactions/__init__.py)
 
 You usually need:
 - a builder in `builtin_reaction_plugin_builders()`
@@ -179,16 +179,16 @@ Create a new plugin when:
 Useful examples to copy from:
 
 Learning plugins:
-- [`PresencePatternAnalyzer`](/custom_components/heima/runtime/analyzers/presence.py)
-- [`LightingPatternAnalyzer`](/custom_components/heima/runtime/analyzers/lighting.py)
-- [`HeatingPatternAnalyzer`](/custom_components/heima/runtime/analyzers/heating.py)
-- [`CompositePatternCatalogAnalyzer`](/custom_components/heima/runtime/analyzers/cross_domain.py)
+- [`PresencePatternAnalyzer`](../../custom_components/heima/runtime/analyzers/presence.py)
+- [`LightingPatternAnalyzer`](../../custom_components/heima/runtime/analyzers/lighting.py)
+- [`HeatingPatternAnalyzer`](../../custom_components/heima/runtime/analyzers/heating.py)
+- [`CompositePatternCatalogAnalyzer`](../../custom_components/heima/runtime/analyzers/cross_domain.py)
 
 Reaction plugins:
-- [`PresencePatternReaction`](/custom_components/heima/runtime/reactions/presence.py)
-- [`LightingScheduleReaction`](/custom_components/heima/runtime/reactions/lighting_schedule.py)
-- [`RoomSignalAssistReaction`](/custom_components/heima/runtime/reactions/signal_assist.py)
-- [`HeatingPreferenceReaction`](/custom_components/heima/runtime/reactions/heating.py)
+- [`PresencePatternReaction`](../../custom_components/heima/runtime/reactions/presence.py)
+- [`LightingScheduleReaction`](../../custom_components/heima/runtime/reactions/lighting_schedule.py)
+- [`RoomSignalAssistReaction`](../../custom_components/heima/runtime/reactions/signal_assist.py)
+- [`HeatingPreferenceReaction`](../../custom_components/heima/runtime/reactions/heating.py)
 
 ## 9. Recommended workflow
 

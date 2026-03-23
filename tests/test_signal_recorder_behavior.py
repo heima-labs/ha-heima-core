@@ -198,6 +198,36 @@ async def test_signal_recorder_maps_room_from_room_sources():
     assert store.events[0].room_id == "bathroom"
 
 
+async def test_signal_recorder_tracks_learning_enabled_room_sources_without_global_extra():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = _behavior(
+        hass,
+        store,
+        options={
+            "learning": {"context_signal_entities": []},
+            "rooms": [
+                {
+                    "room_id": "bathroom",
+                    "sources": [
+                        {"entity_id": "binary_sensor.bathroom_motion", "learning_enabled": False},
+                        {"entity_id": "sensor.bathroom_humidity", "learning_enabled": True},
+                    ],
+                }
+            ],
+        },
+    )
+    behavior._refresh_config()
+
+    assert behavior.diagnostics()["tracked_entities"] == ["sensor.bathroom_humidity"]
+
+    await behavior._handle_state_changed(_state_event("sensor.bathroom_humidity", "68", "55"))
+    await hass.flush()
+
+    assert len(store.events) == 1
+    assert store.events[0].room_id == "bathroom"
+
+
 async def test_signal_recorder_uses_context_id_as_correlation_id():
     hass = _FakeHass()
     store = _FakeStore()

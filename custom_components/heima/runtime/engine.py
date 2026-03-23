@@ -33,6 +33,7 @@ from ..const import (
 )
 from ..entities.registry import build_registry
 from ..models import HeimaOptions
+from ..room_sources import room_source_entity_ids
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .reactions import builtin_reaction_plugin_builders
@@ -623,7 +624,7 @@ class HeimaEngine:
             tracked.add(str(source))
 
         for room in options.get(OPT_ROOMS, []):
-            for source in room.get("sources", []):
+            for source in room_source_entity_ids(room):
                 tracked.add(str(source))
 
         security = options.get(OPT_SECURITY, {})
