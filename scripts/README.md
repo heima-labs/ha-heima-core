@@ -16,6 +16,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
     - `live_e2e`
       - `000_live_smoke.py`
       - `010_config_flow.py`
+      - `011_room_source_learning_signals.py`
       - `025_lighting_learning_live.py`
       - `026_room_signal_assist_live.py`
       - `027_room_cooling_assist_live.py`
@@ -93,6 +94,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - `check_all_live.sh --tier live_e2e` runs setup prerequisites first so the
     Docker lab has the expected baseline fixtures and room/entity wiring
   - current learning examples:
+    - `011_room_source_learning_signals.py`: options-flow room edit -> runtime diagnostics prove `learning_enabled` room sources enter the signal recorder pool
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
     - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal
