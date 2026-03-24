@@ -39,6 +39,24 @@ def _proposal_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return proposals if isinstance(proposals, dict) else {}
 
 
+def _resolve_entity_id(client: HAClient, *, exact: str, prefix: str) -> str:
+    if client.entity_exists(exact):
+        state = str(client.get_state(exact).get("state") or "").strip().lower()
+        if state not in {"unavailable", "unknown"}:
+            return exact
+    matches: list[tuple[str, str]] = []
+    for item in client.all_states():
+        entity_id = str(item.get("entity_id") or "")
+        if entity_id == exact or entity_id.startswith(prefix):
+            matches.append((entity_id, str(item.get("state") or "").strip().lower()))
+    if not matches:
+        raise RuntimeError(f"no entity found for exact={exact!r} prefix={prefix!r}")
+    for entity_id, state in matches:
+        if state not in {"unavailable", "unknown"}:
+            return entity_id
+    return matches[0][0]
+
+
 def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
     if not isinstance(raw, dict):
@@ -166,7 +184,6 @@ def main() -> int:
     required = [
         "script.test_heima_reset",
         "binary_sensor.test_heima_room_bathroom_motion",
-        "binary_sensor.heima_occupancy_bagno",
         "sensor.test_heima_bathroom_humidity",
         "sensor.test_heima_bathroom_temperature",
         "switch.test_heima_bathroom_fan",
@@ -176,6 +193,11 @@ def main() -> int:
         raise RuntimeError("Missing required entities:\n- " + "\n- ".join(missing))
 
     entry_id = client.find_heima_entry_id()
+    occupancy_entity = _resolve_entity_id(
+        client,
+        exact="binary_sensor.heima_occupancy_bagno",
+        prefix="binary_sensor.heima_occupancy_bagno",
+    )
     baseline = _wait_for_fixture_baseline(
         client,
         entry_id,
@@ -225,8 +247,9 @@ def main() -> int:
     )
     client.wait_state("binary_sensor.test_heima_room_bathroom_motion", "on", args.timeout_s, args.poll_s)
     _recompute(client)
-    client.wait_state("binary_sensor.heima_occupancy_bagno", "on", args.timeout_s, args.poll_s)
+    client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
 
+    before_events = _to_int((_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("state_change"))
     print("Executing real bathroom humidity + temperature + fan sequence...")
     client.call_service(
         "input_number",
@@ -257,7 +280,7 @@ def main() -> int:
     client.call_service("switch", "turn_on", {"entity_id": "switch.test_heima_bathroom_fan"})
     client.wait_state("switch.test_heima_bathroom_fan", "on", args.timeout_s, args.poll_s)
 
-    after = _wait_for_state_change_growth(client, entry_id, baseline, args.timeout_s, args.poll_s)
+    after = _wait_for_state_change_growth(client, entry_id, before_events, args.timeout_s, args.poll_s)
     print(f"state_change events after live bathroom sequence: {after}")
 
     print("Reloading Heima config entry to trigger proposal run...")

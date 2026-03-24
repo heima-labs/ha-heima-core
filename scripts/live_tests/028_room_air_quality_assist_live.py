@@ -39,6 +39,24 @@ def _proposal_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return proposals if isinstance(proposals, dict) else {}
 
 
+def _resolve_entity_id(client: HAClient, *, exact: str, prefix: str) -> str:
+    if client.entity_exists(exact):
+        state = str(client.get_state(exact).get("state") or "").strip().lower()
+        if state not in {"unavailable", "unknown"}:
+            return exact
+    matches: list[tuple[str, str]] = []
+    for item in client.all_states():
+        entity_id = str(item.get("entity_id") or "")
+        if entity_id == exact or entity_id.startswith(prefix):
+            matches.append((entity_id, str(item.get("state") or "").strip().lower()))
+    if not matches:
+        raise RuntimeError(f"no entity found for exact={exact!r} prefix={prefix!r}")
+    for entity_id, state in matches:
+        if state not in {"unavailable", "unknown"}:
+            return entity_id
+    return matches[0][0]
+
+
 def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
     if not isinstance(raw, dict):
@@ -166,7 +184,6 @@ def main() -> int:
     required = [
         "script.test_heima_reset",
         "binary_sensor.test_heima_room_studio_motion",
-        "binary_sensor.heima_occupancy_studio",
         "sensor.test_heima_studio_co2",
         "switch.test_heima_studio_fan",
     ]
@@ -175,6 +192,11 @@ def main() -> int:
         raise RuntimeError("Missing required entities:\n- " + "\n- ".join(missing))
 
     entry_id = client.find_heima_entry_id()
+    occupancy_entity = _resolve_entity_id(
+        client,
+        exact="binary_sensor.heima_occupancy_studio",
+        prefix="binary_sensor.heima_occupancy_studio",
+    )
     baseline = _wait_for_fixture_baseline(
         client,
         entry_id,
@@ -217,7 +239,7 @@ def main() -> int:
     )
     client.wait_state("binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s)
     _recompute(client)
-    client.wait_state("binary_sensor.heima_occupancy_studio", "on", args.timeout_s, args.poll_s)
+    client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
 
     before_events = _to_int((_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("state_change"))
     print("Generating real studio CO2 + ventilation sequence...")

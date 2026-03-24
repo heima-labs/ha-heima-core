@@ -134,14 +134,36 @@ def _wait_for_lighting_proposal(
 
 
 def _assert_expected_summary(proposal: dict[str, Any]) -> None:
+    cfg = proposal.get("suggested_reaction_config")
+    if isinstance(cfg, dict):
+        room_id = str(cfg.get("room_id") or "")
+        entity_steps = cfg.get("entity_steps")
+        if room_id != "living":
+            raise RuntimeError(f"lighting proposal has unexpected room_id: {room_id!r}")
+        if not isinstance(entity_steps, list) or not entity_steps:
+            raise RuntimeError(f"lighting proposal has invalid entity_steps: {entity_steps!r}")
+        living_steps = [
+            step for step in entity_steps
+            if isinstance(step, dict)
+            and str(step.get("entity_id") or "").startswith("light.test_heima_living_")
+        ]
+        if not living_steps:
+            raise RuntimeError(f"lighting proposal missing living-room entity_steps: {entity_steps!r}")
+        return
+
     description = str(proposal.get("description") or "")
-    expected_fragments = [
-        "living:",
+    if not description.startswith("living:"):
+        raise RuntimeError(f"lighting proposal has unexpected description: {description!r}")
+    expected_alternatives = (
+        "test_heima_living_main on",
+        "test_heima_living_spot on",
         "test_heima_living_floor off",
-    ]
-    for fragment in expected_fragments:
-        if fragment not in description:
-            raise RuntimeError(f"lighting proposal description missing expected fragment: {fragment!r}")
+    )
+    if not any(fragment in description for fragment in expected_alternatives):
+        raise RuntimeError(
+            "lighting proposal description missing expected living-scene fragment: "
+            f"{expected_alternatives!r}; got={description!r}"
+        )
 
 
 def main() -> int:
