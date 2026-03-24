@@ -751,6 +751,7 @@ class HeimaEngine:
             events=self._events_domain,
             state=self._state,
             calendar_result=calendar_result,
+            schedule_recheck=self._schedule_timed_recheck_deadline,
         )
         house_state = hs_result.house_state
         house_reason = hs_result.house_reason

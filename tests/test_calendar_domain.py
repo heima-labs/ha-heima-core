@@ -428,7 +428,7 @@ async def test_async_maybe_refresh_handles_service_error_gracefully():
 # HouseStateDomain integration
 # ---------------------------------------------------------------------------
 
-def test_house_state_wfh_sets_working():
+def test_house_state_wfh_sets_working_after_persistence(monkeypatch: pytest.MonkeyPatch):
     from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.domains.calendar import CalendarResult
     from custom_components.heima.runtime.normalization.service import InputNormalizer
@@ -441,6 +441,11 @@ def test_house_state_wfh_sets_working():
     normalizer = InputNormalizer(hass)
     domain = HouseStateDomain(hass, normalizer)
     cal = CalendarResult(is_wfh_today=True)
+    monotonic = 1000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
 
     from custom_components.heima.runtime.domains.events import EventsDomain
     events = EventsDomain(hass)
@@ -450,6 +455,17 @@ def test_house_state_wfh_sets_working():
         anyone_home=True,
         events=events,
         state=SimpleNamespace(get_sensor=lambda _: None, get_binary=lambda _: None),
+        calendar_result=cal,
+    )
+    assert result.house_state == "home"
+
+    monotonic += (5 * 60) + 1
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: "home", get_binary=lambda _: None),
         calendar_result=cal,
     )
     assert result.house_state == "working"
@@ -586,10 +602,43 @@ def test_pipeline_vacation_active_drives_vacation():
     assert result.house_state == "vacation"
 
 
-def test_pipeline_wfh_drives_working():
-    """Entity 'on' with WFH summary + anyone_home=True → house_state = working."""
+def test_pipeline_wfh_drives_working_after_persistence(monkeypatch: pytest.MonkeyPatch):
+    """Entity 'on' with WFH summary + anyone_home=True → working after persistence."""
     hass = _make_hass_with_calendar_state("calendar.work", "Smart working oggi")
+    monotonic = 2000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
     result = _run_pipeline(hass, "calendar.work", anyone_home=True)
+    assert result.house_state == "home"
+
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
+    from custom_components.heima.runtime.normalization.service import InputNormalizer
+    from custom_components.heima.runtime.domains.events import EventsDomain
+
+    calendar = CalendarDomain(hass)
+    cal_result = calendar.compute({"calendar_entities": ["calendar.work"]})
+    normalizer = InputNormalizer(hass)
+    hs_domain = HouseStateDomain(hass, normalizer)
+    events = EventsDomain(hass)
+    hs_domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: None, get_binary=lambda _: None),
+        calendar_result=cal_result,
+    )
+    monotonic += (5 * 60) + 1
+    result = hs_domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=events,
+        state=SimpleNamespace(get_sensor=lambda _: "home", get_binary=lambda _: None),
+        calendar_result=cal_result,
+    )
     assert result.house_state == "working"
 
 
