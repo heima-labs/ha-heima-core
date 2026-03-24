@@ -264,6 +264,7 @@ class HouseStateDomain:
         self._candidate_summary = self._build_candidate_summary(
             now_monotonic=now_monotonic,
             house_state_cfg=house_state_cfg,
+            current_house_state=house_state,
         )
 
         self._resolution_trace = {
@@ -573,6 +574,7 @@ class HouseStateDomain:
         *,
         now_monotonic: float,
         house_state_cfg: dict[str, Any],
+        current_house_state: str,
     ) -> dict[str, dict[str, Any]]:
         timers = self._timer_config(house_state_cfg)
         threshold_map = {
@@ -601,7 +603,13 @@ class HouseStateDomain:
             else:
                 if exit_s is None:
                     status = "inactive"
-                elif inactive_for < float(exit_s):
+                elif (
+                    inactive_for < float(exit_s)
+                    and (
+                        (candidate == "wake_candidate" and current_house_state == "sleeping")
+                        or (candidate == "relax_candidate" and current_house_state == "relax")
+                    )
+                ):
                     status = "pending_exit_guard"
                 else:
                     status = "inactive"

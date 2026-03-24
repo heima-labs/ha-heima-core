@@ -55,6 +55,7 @@ def test_house_state_diagnostics_expose_candidate_and_resolution_trace(monkeypat
     assert diagnostics["resolution_trace"]["winning_reason"] == "default"
     assert diagnostics["resolution_trace"]["decision"]["action"] == "pending"
     assert diagnostics["candidate_summary"]["work_candidate"]["status"] == "pending_enter"
+    assert diagnostics["candidate_summary"]["relax_candidate"]["status"] == "inactive"
 
     monotonic = 1000.0 + (5 * 60) + 1
     result = domain.compute(
