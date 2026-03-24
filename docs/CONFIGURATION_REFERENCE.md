@@ -92,8 +92,14 @@ Target evolution:
   - `media_active_entities`
   - `workday_entity`
   - house-state enter/exit timer settings
-- see [house_state_spec.md](./docs/specs/domains/house_state_spec.md)
+  - `sleep_requires_media_off`
+  - `sleep_charging_min_count`
+- see `docs/specs/domains/house_state_spec.md`
   for the target model
+
+Planned location in config flow:
+- all house-state bindings and house-state timing/tuning fields belong in the `General` step
+- no house-specific media player, charging threshold, or timing value should be hardcoded in runtime
 
 ---
 

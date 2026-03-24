@@ -268,7 +268,7 @@ Output:
 ## House State vNext - Candidate + Hysteresis Track
 
 Reference spec:
-- [house_state_spec.md](./docs/specs/domains/house_state_spec.md)
+- `docs/specs/domains/house_state_spec.md`
 
 Goal:
 - evolve `house_state` from direct helper-to-state mapping into a stable candidate-based resolver
@@ -305,17 +305,20 @@ Goal:
   - `relax_candidate`
   - `wake_candidate`
 - optionally block `sleep_candidate` while media is active
+- expose all bindings through the `General` options step; no media entity may be hardcoded
 
 ### HS5. Calendar/workday-aware working inference
 - add `workday_entity`
 - integrate calendar semantics:
   - office day suppresses work-from-home candidate
   - wfh day enables it
+- expose workday evidence as explicit config, not hardcoded helper logic
 
 ### HS6. Optional sleep corroboration
 - optional `sleep_charging_min_count`
 - optional stronger sleep corroboration from charging-home evidence
 - keep feature optional and conservative
+- expose thresholds and toggles in the `General` options step
 
 ### HS7. Tests
 - unit tests for candidate derivation
