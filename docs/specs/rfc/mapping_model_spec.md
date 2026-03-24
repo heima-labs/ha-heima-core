@@ -136,7 +136,7 @@ If no usable scene exists:
 ## 5. Manual Hold Semantics (Per Room)
 
 Canonical entity:
-- `binary_sensor.heima_lighting_manual_hold_<room_id>`
+- `binary_sensor.heima_lighting_hold_<room_id>`
 
 Rules:
 - When hold is ON:

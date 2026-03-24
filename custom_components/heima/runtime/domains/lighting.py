@@ -543,7 +543,7 @@ class LightingDomain:
     # ------------------------------------------------------------------
 
     def _is_lighting_room_hold_on(self, room_id: str, state: CanonicalState) -> bool:
-        key = f"heima_lighting_manual_hold_{room_id}"
+        key = f"heima_lighting_hold_{room_id}"
         return bool(state.get_binary(key))
 
     def _should_apply_scene(self, room_id: str, scene_entity: str) -> bool:

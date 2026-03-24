@@ -73,8 +73,8 @@ cards:
       - entity: select.heima_lighting_intent_living_zone
       - entity: select.heima_lighting_intent_bedroom_zone
       # Replace with your real room ids
-      - entity: binary_sensor.heima_lighting_manual_hold_living_room
-      - entity: binary_sensor.heima_lighting_manual_hold_bedroom
+      - entity: binary_sensor.heima_lighting_hold_living_room
+      - entity: binary_sensor.heima_lighting_hold_bedroom
 
   - type: history-graph
     title: Heima History (Quick Signals)

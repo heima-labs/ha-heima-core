@@ -177,7 +177,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 raise ServiceValidationError("Missing hold state ('state')")
             await _set_binary_and_evaluate(
                 coordinators,
-                binary_key=f"heima_lighting_manual_hold_{room_id}",
+                binary_key=f"heima_lighting_hold_{room_id}",
                 state=bool(state),
                 reason=f"service:set_room_lighting_hold:{room_id}:{bool(state)}",
             )
@@ -279,7 +279,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if scope == "lighting_room_hold":
             await _set_binary_and_evaluate(
                 coordinators,
-                binary_key=f"heima_lighting_manual_hold_{item_id}",
+                binary_key=f"heima_lighting_hold_{item_id}",
                 state=bool(override),
                 reason=f"service:set_override:lighting_room_hold:{item_id}:{bool(override)}",
             )

@@ -125,7 +125,7 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
             continue
         if room.get("enable_manual_hold", True):
             binaries.append(
-                _b(_k(f"heima_lighting_manual_hold_{room_id}"), f"Heima Lighting Hold {label}")
+                _b(_k(f"heima_lighting_hold_{room_id}"), f"Heima Lighting Hold {label}")
             )
 
     # Heating

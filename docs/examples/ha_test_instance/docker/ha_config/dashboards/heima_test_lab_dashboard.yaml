@@ -144,7 +144,7 @@ views:
         entities:
           - entity: sensor.heima_lighting_apply_mode
           - entity: select.heima_lighting_intent_living_zone
-          - entity: binary_sensor.heima_lighting_manual_hold_living_room
+          - entity: binary_sensor.heima_lighting_hold_living_room
 
       - type: entities
         title: Heating

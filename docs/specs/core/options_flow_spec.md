@@ -193,7 +193,7 @@ Validation:
 
 Runtime Effect:
 - used by orchestrator for per-room apply
-- creates `binary_sensor.heima_lighting_manual_hold_<room>`
+- creates `binary_sensor.heima_lighting_hold_<room>`
 - when intent is `off` and `scene_off` is empty, runtime may fallback to `light.turn_off` using the room `area_id`
 
 ---

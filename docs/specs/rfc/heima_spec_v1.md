@@ -200,7 +200,7 @@ If a binding is omitted, that signal is treated as inactive (`off`).
 
 Entities:
 - `select.heima_lighting_intent_<zone>`
-- `binary_sensor.heima_lighting_manual_hold_<room>` (per room)
+- `binary_sensor.heima_lighting_hold_<room>` (per room)
 
 Intents:
 `auto | off | scene_evening | scene_relax | scene_night`

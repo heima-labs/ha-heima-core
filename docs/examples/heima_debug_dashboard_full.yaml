@@ -108,8 +108,8 @@ cards:
     entities:
       - entity: select.heima_lighting_intent_living_zone
       - entity: select.heima_lighting_intent_work_zone
-      - entity: binary_sensor.heima_lighting_manual_hold_living_room
-      - entity: binary_sensor.heima_lighting_manual_hold_studio
+      - entity: binary_sensor.heima_lighting_hold_living_room
+      - entity: binary_sensor.heima_lighting_hold_studio
 
   - type: grid
     title: Lighting Controls
