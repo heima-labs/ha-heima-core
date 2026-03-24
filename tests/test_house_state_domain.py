@@ -49,9 +49,12 @@ def test_house_state_diagnostics_expose_candidate_and_resolution_trace(monkeypat
     assert diagnostics["candidate_trace"]["relax_candidate"]["state"] is False
     assert diagnostics["candidate_trace"]["sleep_candidate"]["state_since"] is not None
     assert diagnostics["resolution_trace"]["current_state_before"] == "home"
+    assert diagnostics["resolution_trace"]["current_home_state_before"] == "home"
     assert diagnostics["resolution_trace"]["derived_state_direct"] == "working"
     assert diagnostics["resolution_trace"]["resolved_state_after"] == "home"
     assert diagnostics["resolution_trace"]["winning_reason"] == "default"
+    assert diagnostics["resolution_trace"]["decision"]["action"] == "pending"
+    assert diagnostics["candidate_summary"]["work_candidate"]["status"] == "pending_enter"
 
     monotonic = 1000.0 + (5 * 60) + 1
     result = domain.compute(
@@ -66,6 +69,8 @@ def test_house_state_diagnostics_expose_candidate_and_resolution_trace(monkeypat
     diagnostics = domain.diagnostics()
     assert diagnostics["resolution_trace"]["resolved_state_after"] == "working"
     assert diagnostics["resolution_trace"]["winning_reason"] == "work_candidate_confirmed"
+    assert diagnostics["resolution_trace"]["decision"]["action"] == "enter"
+    assert diagnostics["candidate_summary"]["work_candidate"]["status"] == "confirmed"
     assert diagnostics["config"]["sleep_enter_min"] == 10
     assert diagnostics["config"]["media_active_entities"] == []
 
@@ -273,6 +278,9 @@ def test_house_state_media_activity_enters_relax_after_timer(monkeypatch: pytest
     )
     assert result.house_state == "relax"
     assert result.house_reason == "relax_candidate_confirmed"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["resolution_trace"]["decision"]["action"] == "enter"
+    assert diagnostics["candidate_summary"]["relax_candidate"]["status"] == "confirmed"
 
 
 def test_house_state_sleep_candidate_blocked_when_media_active(monkeypatch: pytest.MonkeyPatch):
