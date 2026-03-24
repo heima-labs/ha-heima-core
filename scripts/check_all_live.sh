@@ -22,6 +22,7 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/010_config_flow.py"
   "scripts/live_tests/011_room_source_learning_signals.py"
   "scripts/live_tests/012_house_state_general_config.py"
+  "scripts/live_tests/014_house_state_workday_working.py"
   "scripts/live_tests/025_lighting_learning_live.py"
   "scripts/live_tests/026_room_signal_assist_live.py"
   "scripts/live_tests/027_room_cooling_assist_live.py"

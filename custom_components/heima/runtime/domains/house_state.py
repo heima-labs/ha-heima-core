@@ -167,8 +167,14 @@ class HouseStateDomain:
         media_active, media_inputs = self._compute_media_active(
             list(house_state_cfg.get("media_active_entities", []))
         )
+        workday_evidence = self._compute_workday_evidence(
+            workday_entity=str(house_state_cfg.get("workday_entity", "") or ""),
+            calendar_result=calendar_result,
+        )
 
-        # Calendar overrides: calendar signals take precedence over entity-based signals
+        # Calendar overrides: hard-state signals still take precedence over entity-based signals.
+        # Keep legacy WFH/office behavior on work_window for backward compatibility,
+        # then refine work_candidate through workday_evidence below.
         if calendar_result is not None:
             if calendar_result.is_vacation_active:
                 vacation_mode = True
@@ -187,6 +193,7 @@ class HouseStateDomain:
             work_window=work_window,
             media_active=media_active,
             media_inputs=media_inputs,
+            workday_evidence=workday_evidence,
             calendar_result=calendar_result,
             house_state_cfg=house_state_cfg,
         )
@@ -293,6 +300,7 @@ class HouseStateDomain:
         work_window: bool,
         media_active: bool,
         media_inputs: dict[str, Any],
+        workday_evidence: dict[str, Any],
         calendar_result: CalendarResult | None,
         house_state_cfg: dict[str, Any],
     ) -> dict[str, dict[str, Any]]:
@@ -349,12 +357,21 @@ class HouseStateDomain:
                 },
             },
             "work_candidate": {
-                "state": bool(anyone_home and work_window),
-                "reason": "anyone_home+work_window",
+                "state": bool(
+                    anyone_home
+                    and work_window
+                    and bool(workday_evidence.get("is_workday", True))
+                ),
+                "reason": (
+                    "anyone_home+work_window+workday"
+                    if bool(workday_evidence.get("is_workday", True))
+                    else "anyone_home+work_window+not_workday"
+                ),
                 "inputs": {
                     "anyone_home": anyone_home,
                     "work_window": work_window,
                     "workday_entity": str(house_state_cfg.get("workday_entity", "") or ""),
+                    "workday_evidence": dict(workday_evidence),
                     **calendar_flags,
                 },
             },
@@ -385,6 +402,43 @@ class HouseStateDomain:
             "configured_entities": list(entity_ids),
             "entity_states": states,
             "active_entities": active_entities,
+        }
+
+    def _compute_workday_evidence(
+        self,
+        *,
+        workday_entity: str,
+        calendar_result: CalendarResult | None,
+    ) -> dict[str, Any]:
+        if calendar_result is not None and calendar_result.is_office_today:
+            return {
+                "is_workday": False,
+                "source": "calendar_office",
+                "entity_id": workday_entity or None,
+                "raw_state": None,
+            }
+        if calendar_result is not None and calendar_result.is_wfh_today:
+            return {
+                "is_workday": True,
+                "source": "calendar_wfh",
+                "entity_id": workday_entity or None,
+                "raw_state": None,
+            }
+        if workday_entity:
+            observation = self._normalizer.boolean_signal(workday_entity)
+            return {
+                "is_workday": observation.state == "on",
+                "source": "workday_entity",
+                "entity_id": workday_entity,
+                "raw_state": observation.raw_state,
+                "normalized_state": observation.state,
+                "reason": observation.reason,
+            }
+        return {
+            "is_workday": True,
+            "source": "default_true",
+            "entity_id": None,
+            "raw_state": None,
         }
 
     @staticmethod

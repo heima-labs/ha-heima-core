@@ -18,6 +18,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `010_config_flow.py`
       - `011_room_source_learning_signals.py`
       - `012_house_state_general_config.py`
+      - `014_house_state_workday_working.py`
       - `025_lighting_learning_live.py`
       - `026_room_signal_assist_live.py`
       - `027_room_cooling_assist_live.py`
@@ -105,6 +106,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - current learning examples:
     - `011_room_source_learning_signals.py`: options-flow room edit -> config-entry diagnostics confirm persisted `occupancy_sources` / `learning_sources`, then runtime diagnostics prove the learning signals enter the signal recorder pool
     - `012_house_state_general_config.py`: options-flow general edit -> config-entry diagnostics confirm persisted `house_state_config`, then runtime diagnostics prove the HouseStateDomain sees the same config and timer values
+    - `014_house_state_workday_working.py`: options-flow general edit -> configured `workday_entity` and `work_window_entity` drive `house_state: home -> working -> home` in the live lab, while temporarily neutralizing live calendar inputs that would otherwise force `vacation`/`office`
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
     - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal

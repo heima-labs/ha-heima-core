@@ -221,3 +221,116 @@ def test_house_state_sleep_candidate_blocked_when_media_active(monkeypatch: pyte
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_media_requirement_met"] is False
     assert diagnostics["candidate_trace"]["wake_candidate"]["state"] is True
     assert diagnostics["candidate_trace"]["wake_candidate"]["reason"] == "anyone_home+media_active"
+
+
+def test_house_state_work_candidate_blocked_by_calendar_office(monkeypatch: pytest.MonkeyPatch):
+    workday_state = SimpleNamespace(state="on", attributes={})
+    hass = SimpleNamespace(
+        states=SimpleNamespace(
+            get=lambda entity_id: workday_state if entity_id == "binary_sensor.workday" else None
+        ),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 6000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+    options = {"house_state_config": {"workday_entity": "binary_sensor.workday"}}
+
+    result = domain.compute(
+        options=options,
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_office_today=True),
+    )
+    assert result.house_state == "home"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["work_candidate"]["state"] is False
+    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "calendar_office"
+
+
+def test_house_state_work_candidate_uses_workday_entity_when_calendar_neutral(monkeypatch: pytest.MonkeyPatch):
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.work_window":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id == "binary_sensor.workday":
+            return SimpleNamespace(state="off", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 7000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+
+    domain.compute(
+        options={"house_state_config": {"workday_entity": "binary_sensor.workday"}},
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["work_candidate"]["state"] is False
+    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "workday_entity"
+    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["is_workday"] is False
+
+
+def test_house_state_work_candidate_calendar_wfh_overrides_workday_entity(monkeypatch: pytest.MonkeyPatch):
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.work_window":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id == "binary_sensor.workday":
+            return SimpleNamespace(state="off", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 8000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+    options = {"house_state_config": {"workday_entity": "binary_sensor.workday"}}
+
+    domain.compute(
+        options=options,
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["work_candidate"]["state"] is True
+    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "calendar_wfh"
+
+    monotonic += (5 * 60) + 1
+    result = domain.compute(
+        options=options,
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    assert result.house_state == "working"
