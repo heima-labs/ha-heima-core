@@ -57,6 +57,8 @@ Ordine di valutazione nel ciclo (DAG):
 - Learning / live-lab track: sostanzialmente completato per v1 runtime. Restano aperti solo:
   - provenance ancora piu forte per scene/script multi-entita
   - primi analyzer cross-domain sopra `state_change`
+- House-state vNext track: da definire e implementare come evoluzione candidate/hysteresis
+  sopra l'attuale resolver deterministico diretto
 
 ## Milestone 0 - Scaffolding e Contratto Entita
 - Inizializzare struttura integrazione.
@@ -141,6 +143,10 @@ Output:
     - `fixed_target`
     - `vacation_curve`
     - `heima.set_mode` come final house-state override
+  - prossimo upgrade raccomandato per `house_state`:
+    - candidate signals (`sleep`, `wake`, `work`, `relax`)
+    - enter/exit hysteresis
+    - maggiore uso di segnali comportamentali (`media_active`, calendar/workday)
 
 ### 4. Orchestratore e Apply
 - Orchestratore unico per apply.
@@ -258,6 +264,69 @@ Output:
     - `heating.manual_override_blocked`
     - `heating.apply_rate_limited`
     - `heating.vacation_bindings_unavailable`
+
+## House State vNext - Candidate + Hysteresis Track
+
+Reference spec:
+- [house_state_spec.md](./docs/specs/domains/house_state_spec.md)
+
+Goal:
+- evolve `house_state` from direct helper-to-state mapping into a stable candidate-based resolver
+- preserve explicit overrides and hard states (`vacation`, `guest`, `away`)
+- improve `sleeping`, `relax`, and `working` detection using persistence and richer evidence
+
+### HS1. Dedicated domain spec
+- write and freeze the target contract
+- define:
+  - hard-state layer
+  - home-substate layer
+  - candidate semantics
+  - timers
+  - diagnostics
+
+### HS2. Runtime state machine foundation
+- keep existing canonical outputs unchanged
+- introduce internal candidate evaluation and candidate duration tracking
+- add structured diagnostics for:
+  - candidate states
+  - enter/exit timers
+  - sticky retention
+
+### HS3. Minimal hysteresis rollout
+- implement hysteresis using existing configured bindings only:
+  - `sleep_window`
+  - `relax_mode`
+  - `work_window`
+- no new config required in the first runtime slice
+
+### HS4. Media-aware relax/sleep enrichment
+- add configurable `media_active_entities`
+- derive:
+  - `relax_candidate`
+  - `wake_candidate`
+- optionally block `sleep_candidate` while media is active
+
+### HS5. Calendar/workday-aware working inference
+- add `workday_entity`
+- integrate calendar semantics:
+  - office day suppresses work-from-home candidate
+  - wfh day enables it
+
+### HS6. Optional sleep corroboration
+- optional `sleep_charging_min_count`
+- optional stronger sleep corroboration from charging-home evidence
+- keep feature optional and conservative
+
+### HS7. Tests
+- unit tests for candidate derivation
+- unit tests for hysteresis enter/exit behavior
+- integration tests for state transitions across cycles
+- diagnostics tests for candidate trace and reasons
+
+### HS8. Production rollout
+- deploy initially in diagnostics-first mode
+- compare old and new resolver outcomes in production
+- switch final effective resolver only after validation
 - Future enhancement:
   - `heating.apply_drift_detected`: emettere se dopo N cicli il setpoint letto da HA differisce ancora dal target di piu di `temperature_step`, segnalando che il cloud o il device non ha recepito il comando. La verifica e naturale (next-cycle read-back da CanonicalState), nessun verify esplicito necessario.
 

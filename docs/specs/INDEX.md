@@ -25,6 +25,7 @@ Related practical guides live outside this tree:
 
 ## Domains
 
+- `domains/house_state_spec.md` — target house-state candidate/hysteresis model
 - `domains/heating_spec.md` — heating domain (implemented/partial)
 - `domains/watering_spec.md` — watering domain (planned)
 

@@ -85,6 +85,16 @@ Important:
 - all house-state signals are now configurable
 - if a binding is omitted, that signal is treated as `off`
 
+Target evolution:
+- these bindings remain valid, but future `house_state` resolution will treat them as
+  candidate inputs rather than direct one-to-one final states
+- planned additive bindings:
+  - `media_active_entities`
+  - `workday_entity`
+  - house-state enter/exit timer settings
+- see [house_state_spec.md](./docs/specs/domains/house_state_spec.md)
+  for the target model
+
 ---
 
 ## 2. People (Named People)
