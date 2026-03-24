@@ -84,6 +84,9 @@ fi
 rsync_base_args=(
   -av
   --delete
+  --exclude='__pycache__/'
+  --exclude='*.pyc'
+  --exclude='*.pyo'
 )
 
 if [[ "$DRY_RUN" == "true" ]]; then
@@ -102,7 +105,15 @@ deploy_to_tar() {
   local remote_base="$1"
   local remote_dir="${remote_base}/custom_components/heima"
   local -a tar_args
-  tar_args=(-C "$SOURCE_DIR" -cf - .)
+  tar_args=(
+    --exclude='./__pycache__'
+    --exclude='./*/__pycache__'
+    --exclude='*.pyc'
+    --exclude='*.pyo'
+    -C "$SOURCE_DIR"
+    -cf -
+    .
+  )
 
   # macOS/BSD tar metadata can generate noisy warnings on Linux extraction.
   # Prefer explicit flags when available; always disable copyfile metadata.
