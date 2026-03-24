@@ -137,3 +137,87 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
     }
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_requires_media_off"] is False
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2
+
+
+def test_house_state_media_activity_enters_relax_after_timer(monkeypatch: pytest.MonkeyPatch):
+    media_state = SimpleNamespace(state="playing", attributes={})
+    hass = SimpleNamespace(
+        states=SimpleNamespace(
+            get=lambda entity_id: media_state if entity_id == "media_player.cineforum" else None
+        ),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 4000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+    options = {"house_state_config": {"media_active_entities": ["media_player.cineforum"]}}
+
+    result = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    assert result.house_state == "home"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["relax_candidate"]["state"] is True
+    assert diagnostics["candidate_trace"]["relax_candidate"]["reason"] == "anyone_home+media_active"
+    assert diagnostics["candidate_trace"]["relax_candidate"]["inputs"]["media_active"] is True
+
+    monotonic += (2 * 60) + 1
+    result = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    assert result.house_state == "relax"
+    assert result.house_reason == "relax_candidate_confirmed"
+
+
+def test_house_state_sleep_candidate_blocked_when_media_active(monkeypatch: pytest.MonkeyPatch):
+    sleep_state = SimpleNamespace(state="on", attributes={})
+    media_state = SimpleNamespace(state="paused", attributes={})
+
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.sleep_window":
+            return sleep_state
+        if entity_id == "media_player.cineforum":
+            return media_state
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 5000.0,
+    )
+
+    domain.compute(
+        options={"house_state_config": {"media_active_entities": ["media_player.cineforum"]}},
+        house_signal_entities={"sleep_window": "binary_sensor.sleep_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["sleep_candidate"]["state"] is False
+    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["media_active"] is True
+    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_media_requirement_met"] is False
+    assert diagnostics["candidate_trace"]["wake_candidate"]["state"] is True
+    assert diagnostics["candidate_trace"]["wake_candidate"]["reason"] == "anyone_home+media_active"

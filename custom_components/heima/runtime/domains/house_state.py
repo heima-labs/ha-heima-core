@@ -21,6 +21,7 @@ from ..policy import resolve_house_state
 from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)
+_MEDIA_ACTIVE_STATES = {"on", "playing", "paused", "buffering"}
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,9 @@ class HouseStateDomain:
             if "work_window" in house_signal_entities
             else [],
         )
+        media_active, media_inputs = self._compute_media_active(
+            list(house_state_cfg.get("media_active_entities", []))
+        )
 
         # Calendar overrides: calendar signals take precedence over entity-based signals
         if calendar_result is not None:
@@ -181,6 +185,8 @@ class HouseStateDomain:
             sleep_window=sleep_window,
             relax_mode=relax_mode,
             work_window=work_window,
+            media_active=media_active,
+            media_inputs=media_inputs,
             calendar_result=calendar_result,
             house_state_cfg=house_state_cfg,
         )
@@ -285,6 +291,8 @@ class HouseStateDomain:
         sleep_window: bool,
         relax_mode: bool,
         work_window: bool,
+        media_active: bool,
+        media_inputs: dict[str, Any],
         calendar_result: CalendarResult | None,
         house_state_cfg: dict[str, Any],
     ) -> dict[str, dict[str, Any]]:
@@ -299,25 +307,45 @@ class HouseStateDomain:
             if calendar_result is not None
             else False,
         }
+        sleep_requires_media_off = bool(house_state_cfg.get("sleep_requires_media_off", True))
+        sleep_allowed_by_media = (not sleep_requires_media_off) or (not media_active)
+        relax_reason = (
+            "anyone_home+relax_mode"
+            if bool(anyone_home and relax_mode)
+            else "anyone_home+media_active"
+            if bool(anyone_home and media_active)
+            else "anyone_home+relax_mode_or_media_active"
+        )
         return {
             "sleep_candidate": {
-                "state": bool(anyone_home and sleep_window),
-                "reason": "anyone_home+sleep_window",
+                "state": bool(anyone_home and sleep_window and sleep_allowed_by_media),
+                "reason": (
+                    "anyone_home+sleep_window+media_off"
+                    if sleep_requires_media_off
+                    else "anyone_home+sleep_window"
+                ),
                 "inputs": {
                     "anyone_home": anyone_home,
                     "sleep_window": sleep_window,
-                    "sleep_requires_media_off": bool(
-                        house_state_cfg.get("sleep_requires_media_off", True)
-                    ),
+                    "media_active": media_active,
+                    "media": media_inputs,
+                    "sleep_requires_media_off": sleep_requires_media_off,
+                    "sleep_media_requirement_met": sleep_allowed_by_media,
                     "sleep_charging_min_count": house_state_cfg.get("sleep_charging_min_count"),
                 },
             },
             "wake_candidate": {
-                "state": bool(anyone_home and (not sleep_window)),
-                "reason": "anyone_home+sleep_window_off",
+                "state": bool(anyone_home and ((not sleep_window) or media_active)),
+                "reason": (
+                    "anyone_home+media_active"
+                    if media_active
+                    else "anyone_home+sleep_window_off"
+                ),
                 "inputs": {
                     "anyone_home": anyone_home,
                     "sleep_window": sleep_window,
+                    "media_active": media_active,
+                    "media": media_inputs,
                 },
             },
             "work_candidate": {
@@ -331,15 +359,42 @@ class HouseStateDomain:
                 },
             },
             "relax_candidate": {
-                "state": bool(anyone_home and relax_mode),
-                "reason": "anyone_home+relax_mode",
+                "state": bool(anyone_home and (relax_mode or media_active)),
+                "reason": relax_reason,
                 "inputs": {
                     "anyone_home": anyone_home,
                     "relax_mode": relax_mode,
+                    "media_active": media_active,
+                    "media": media_inputs,
                     "media_active_entities": list(house_state_cfg.get("media_active_entities", [])),
                 },
             },
         }
+
+    def _compute_media_active(self, entity_ids: list[str]) -> tuple[bool, dict[str, Any]]:
+        states: dict[str, str | None] = {}
+        active_entities: list[str] = []
+        for entity_id in entity_ids:
+            state_obj = self._hass.states.get(entity_id)
+            raw_state = getattr(state_obj, "state", None) if state_obj is not None else None
+            raw = str(raw_state).strip() if raw_state is not None else None
+            states[entity_id] = raw
+            if self._is_media_entity_active(entity_id, raw):
+                active_entities.append(entity_id)
+        return bool(active_entities), {
+            "configured_entities": list(entity_ids),
+            "entity_states": states,
+            "active_entities": active_entities,
+        }
+
+    @staticmethod
+    def _is_media_entity_active(entity_id: str, raw_state: str | None) -> bool:
+        lowered = str(raw_state or "").strip().lower()
+        if lowered in {"", "unknown", "unavailable", "none"}:
+            return False
+        if str(entity_id).startswith("media_player."):
+            return lowered in _MEDIA_ACTIVE_STATES
+        return lowered in _MEDIA_ACTIVE_STATES or lowered in {"open", "occupied", "detected", "true", "1"}
 
     def _update_candidate_trace(
         self,
@@ -460,7 +515,10 @@ class HouseStateDomain:
 
         if current == "relax":
             if relax_on:
-                return "relax", "relax_explicit_signal", True
+                relax_reason = str(self._candidate_trace.get("relax_candidate", {}).get("reason", ""))
+                if relax_reason == "anyone_home+relax_mode":
+                    return "relax", "relax_explicit_signal", True
+                return "relax", "relax_candidate_active", True
             relax_off_for = self._candidate_inactive_for("relax_candidate", now_monotonic)
             if relax_off_for < relax_exit_s:
                 self._schedule_candidate_recheck(
