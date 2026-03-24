@@ -66,6 +66,8 @@ def test_house_state_diagnostics_expose_candidate_and_resolution_trace(monkeypat
     diagnostics = domain.diagnostics()
     assert diagnostics["resolution_trace"]["resolved_state_after"] == "working"
     assert diagnostics["resolution_trace"]["winning_reason"] == "work_candidate_confirmed"
+    assert diagnostics["config"]["sleep_enter_min"] == 10
+    assert diagnostics["config"]["media_active_entities"] == []
 
 
 def test_house_state_relax_mode_is_immediate(monkeypatch: pytest.MonkeyPatch):
@@ -93,3 +95,45 @@ def test_house_state_relax_mode_is_immediate(monkeypatch: pytest.MonkeyPatch):
     )
     assert result.house_state == "relax"
     assert result.house_reason == "relax_explicit_signal"
+
+
+def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pytest.MonkeyPatch):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3000.0,
+    )
+    domain.compute(
+        options={
+            "house_state_config": {
+                "media_active_entities": ["media_player.cineforum"],
+                "workday_entity": "binary_sensor.workday_sensor",
+                "sleep_enter_min": 12,
+                "sleep_exit_min": 4,
+                "work_enter_min": 7,
+                "relax_enter_min": 3,
+                "relax_exit_min": 11,
+                "sleep_requires_media_off": False,
+                "sleep_charging_min_count": 2,
+            }
+        },
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    diagnostics = domain.diagnostics()
+    assert diagnostics["config"]["media_active_entities"] == ["media_player.cineforum"]
+    assert diagnostics["config"]["workday_entity"] == "binary_sensor.workday_sensor"
+    assert diagnostics["timers"] == {
+        "sleep_enter_min": 12,
+        "sleep_exit_min": 4,
+        "work_enter_min": 7,
+        "relax_enter_min": 3,
+        "relax_exit_min": 11,
+    }
+    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_requires_media_off"] is False
+    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2

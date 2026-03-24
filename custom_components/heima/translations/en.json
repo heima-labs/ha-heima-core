@@ -42,7 +42,16 @@
           "guest_mode_entity": "Guest mode entity",
           "sleep_window_entity": "Sleep window entity",
           "relax_mode_entity": "Relax mode entity",
-          "work_window_entity": "Work window entity"
+          "work_window_entity": "Work window entity",
+          "media_active_entities": "Media active entities",
+          "workday_entity": "Workday entity",
+          "sleep_enter_min": "Sleep enter (min)",
+          "sleep_exit_min": "Sleep exit (min)",
+          "work_enter_min": "Work enter (min)",
+          "relax_enter_min": "Relax enter (min)",
+          "relax_exit_min": "Relax exit (min)",
+          "sleep_requires_media_off": "Require media off for sleep",
+          "sleep_charging_min_count": "Sleep charging min count"
         },
         "submit": "OK"
       },

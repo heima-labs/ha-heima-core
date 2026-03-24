@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
 
+from ...const import DEFAULT_HOUSE_STATE_CONFIG, OPT_HOUSE_STATE_CONFIG
 from .calendar import CalendarResult
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
@@ -20,14 +21,6 @@ from ..policy import resolve_house_state
 from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)
-
-_HOUSE_STATE_TIMER_DEFAULTS = {
-    "sleep_enter_min": 10,
-    "sleep_exit_min": 2,
-    "work_enter_min": 5,
-    "relax_enter_min": 2,
-    "relax_exit_min": 10,
-}
 
 
 @dataclass(frozen=True)
@@ -51,6 +44,7 @@ class HouseStateDomain:
         self._candidate_since: dict[str, str | None] = {}
         self._candidate_since_monotonic: dict[str, float] = {}
         self._resolution_trace: dict[str, Any] = {}
+        self._current_config: dict[str, Any] = dict(DEFAULT_HOUSE_STATE_CONFIG)
         self._house_state_override: str | None = None
         self._house_state_override_set_by: str | None = None
         self._house_state_override_last_change_ts: str | None = None
@@ -66,6 +60,7 @@ class HouseStateDomain:
         self._candidate_since = {}
         self._candidate_since_monotonic = {}
         self._resolution_trace = {}
+        self._current_config = dict(DEFAULT_HOUSE_STATE_CONFIG)
 
     @property
     def house_signals_trace(self) -> dict[str, dict[str, Any]]:
@@ -84,7 +79,8 @@ class HouseStateDomain:
         return {
             "house_signals_trace": dict(self._house_signals_trace),
             "candidate_trace": dict(self._candidate_trace),
-            "timers": dict(_HOUSE_STATE_TIMER_DEFAULTS),
+            "config": dict(self._current_config),
+            "timers": self._timer_config(self._current_config),
             "resolution_trace": dict(self._resolution_trace),
             "override": self.override_info,
         }
@@ -135,6 +131,8 @@ class HouseStateDomain:
         calendar_result: CalendarResult | None = None,
         schedule_recheck: Callable[..., None] | None = None,
     ) -> HouseStateResult:
+        house_state_cfg = self._normalized_config(options)
+        self._current_config = dict(house_state_cfg)
         vacation_mode = self._compute_house_signal(
             "vacation_mode",
             [house_signal_entities["vacation_mode"]]
@@ -184,6 +182,7 @@ class HouseStateDomain:
             relax_mode=relax_mode,
             work_window=work_window,
             calendar_result=calendar_result,
+            house_state_cfg=house_state_cfg,
         )
         self._update_candidate_trace(
             candidate_inputs=candidate_inputs,
@@ -218,6 +217,7 @@ class HouseStateDomain:
                 current_state_before=str(current_state_before or "home"),
                 now_monotonic=now_monotonic,
                 schedule_recheck=schedule_recheck,
+                house_state_cfg=house_state_cfg,
             )
 
         self._resolution_trace = {
@@ -245,6 +245,39 @@ class HouseStateDomain:
     # Internals
     # ------------------------------------------------------------------
 
+    def _normalized_config(self, options: dict[str, Any]) -> dict[str, Any]:
+        current = options.get(OPT_HOUSE_STATE_CONFIG, {})
+        merged = dict(DEFAULT_HOUSE_STATE_CONFIG)
+        if isinstance(current, dict):
+            merged.update(current)
+        merged["media_active_entities"] = [
+            str(entity_id).strip()
+            for entity_id in list(merged.get("media_active_entities", []) or [])
+            if str(entity_id).strip()
+        ]
+        merged["workday_entity"] = str(merged.get("workday_entity", "") or "").strip()
+        merged["sleep_enter_min"] = int(merged.get("sleep_enter_min", 10))
+        merged["sleep_exit_min"] = int(merged.get("sleep_exit_min", 2))
+        merged["work_enter_min"] = int(merged.get("work_enter_min", 5))
+        merged["relax_enter_min"] = int(merged.get("relax_enter_min", 2))
+        merged["relax_exit_min"] = int(merged.get("relax_exit_min", 10))
+        merged["sleep_requires_media_off"] = bool(merged.get("sleep_requires_media_off", True))
+        raw_charging = merged.get("sleep_charging_min_count")
+        merged["sleep_charging_min_count"] = (
+            int(raw_charging) if raw_charging not in (None, "") else None
+        )
+        return merged
+
+    @staticmethod
+    def _timer_config(cfg: dict[str, Any]) -> dict[str, int]:
+        return {
+            "sleep_enter_min": int(cfg["sleep_enter_min"]),
+            "sleep_exit_min": int(cfg["sleep_exit_min"]),
+            "work_enter_min": int(cfg["work_enter_min"]),
+            "relax_enter_min": int(cfg["relax_enter_min"]),
+            "relax_exit_min": int(cfg["relax_exit_min"]),
+        }
+
     def _build_candidate_inputs(
         self,
         *,
@@ -253,6 +286,7 @@ class HouseStateDomain:
         relax_mode: bool,
         work_window: bool,
         calendar_result: CalendarResult | None,
+        house_state_cfg: dict[str, Any],
     ) -> dict[str, dict[str, Any]]:
         calendar_flags = {
             "is_vacation_active": bool(calendar_result.is_vacation_active)
@@ -272,6 +306,10 @@ class HouseStateDomain:
                 "inputs": {
                     "anyone_home": anyone_home,
                     "sleep_window": sleep_window,
+                    "sleep_requires_media_off": bool(
+                        house_state_cfg.get("sleep_requires_media_off", True)
+                    ),
+                    "sleep_charging_min_count": house_state_cfg.get("sleep_charging_min_count"),
                 },
             },
             "wake_candidate": {
@@ -288,6 +326,7 @@ class HouseStateDomain:
                 "inputs": {
                     "anyone_home": anyone_home,
                     "work_window": work_window,
+                    "workday_entity": str(house_state_cfg.get("workday_entity", "") or ""),
                     **calendar_flags,
                 },
             },
@@ -297,6 +336,7 @@ class HouseStateDomain:
                 "inputs": {
                     "anyone_home": anyone_home,
                     "relax_mode": relax_mode,
+                    "media_active_entities": list(house_state_cfg.get("media_active_entities", [])),
                 },
             },
         }
@@ -375,6 +415,7 @@ class HouseStateDomain:
         current_state_before: str,
         now_monotonic: float,
         schedule_recheck: Callable[..., None] | None,
+        house_state_cfg: dict[str, Any],
     ) -> tuple[str, str, bool]:
         current = (
             current_state_before
@@ -386,11 +427,12 @@ class HouseStateDomain:
         relax_on = bool(self._candidate_state.get("relax_candidate", False))
         work_on = bool(self._candidate_state.get("work_candidate", False))
 
-        sleep_enter_s = _HOUSE_STATE_TIMER_DEFAULTS["sleep_enter_min"] * 60
-        sleep_exit_s = _HOUSE_STATE_TIMER_DEFAULTS["sleep_exit_min"] * 60
-        work_enter_s = _HOUSE_STATE_TIMER_DEFAULTS["work_enter_min"] * 60
-        relax_enter_s = _HOUSE_STATE_TIMER_DEFAULTS["relax_enter_min"] * 60
-        relax_exit_s = _HOUSE_STATE_TIMER_DEFAULTS["relax_exit_min"] * 60
+        timers = self._timer_config(house_state_cfg)
+        sleep_enter_s = timers["sleep_enter_min"] * 60
+        sleep_exit_s = timers["sleep_exit_min"] * 60
+        work_enter_s = timers["work_enter_min"] * 60
+        relax_enter_s = timers["relax_enter_min"] * 60
+        relax_exit_s = timers["relax_exit_min"] * 60
 
         wake_for = self._candidate_active_for("wake_candidate", now_monotonic)
         if current == "sleeping":

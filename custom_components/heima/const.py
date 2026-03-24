@@ -23,6 +23,7 @@ OPT_LIGHTING_ROOMS = "lighting_rooms"
 OPT_LIGHTING_ZONES = "lighting_zones"
 OPT_LIGHTING_APPLY_MODE = "lighting_apply_mode"
 OPT_HOUSE_SIGNALS = "house_signals"
+OPT_HOUSE_STATE_CONFIG = "house_state_config"
 OPT_HEATING = "heating"
 OPT_SECURITY = "security"
 OPT_NOTIFICATIONS = "notifications"
@@ -47,6 +48,18 @@ HOUSE_SIGNAL_NAMES = [
     "relax_mode",
     "work_window",
 ]
+
+DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
+    "media_active_entities": [],
+    "workday_entity": "",
+    "sleep_enter_min": 10,
+    "sleep_exit_min": 2,
+    "work_enter_min": 5,
+    "relax_enter_min": 2,
+    "relax_exit_min": 10,
+    "sleep_requires_media_off": True,
+    "sleep_charging_min_count": None,
+}
 
 # Keys whose change requires a full HA entry reload (entity sets are rebuilt from them).
 # All other keys are "runtime" — handled by coordinator.async_reload_options().

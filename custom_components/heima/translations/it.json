@@ -42,7 +42,16 @@
           "guest_mode_entity": "Entita modalita ospiti",
           "sleep_window_entity": "Entita finestra sonno",
           "relax_mode_entity": "Entita modalita relax",
-          "work_window_entity": "Entita finestra lavoro"
+          "work_window_entity": "Entita finestra lavoro",
+          "media_active_entities": "Entita media attivi",
+          "workday_entity": "Entita giorno lavorativo",
+          "sleep_enter_min": "Ingresso sonno (min)",
+          "sleep_exit_min": "Uscita sonno (min)",
+          "work_enter_min": "Ingresso lavoro (min)",
+          "relax_enter_min": "Ingresso relax (min)",
+          "relax_exit_min": "Uscita relax (min)",
+          "sleep_requires_media_off": "Richiede media spenti per sonno",
+          "sleep_charging_min_count": "Numero minimo device in carica per sonno"
         },
         "submit": "OK"
       },

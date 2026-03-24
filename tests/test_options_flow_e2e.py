@@ -68,6 +68,15 @@ async def test_general_flow_persists_house_signal_bindings():
             "sleep_window_entity": "binary_sensor.sleep_window",
             "relax_mode_entity": "binary_sensor.relax_mode",
             "work_window_entity": "binary_sensor.work_window",
+            "media_active_entities": ["media_player.cineforum"],
+            "workday_entity": "binary_sensor.workday_sensor",
+            "sleep_enter_min": 12,
+            "sleep_exit_min": 3,
+            "work_enter_min": 6,
+            "relax_enter_min": 1,
+            "relax_exit_min": 15,
+            "sleep_requires_media_off": True,
+            "sleep_charging_min_count": 2,
         }
     )
     assert result["type"] == "menu"
@@ -76,6 +85,17 @@ async def test_general_flow_persists_house_signal_bindings():
         "sleep_window": "binary_sensor.sleep_window",
         "relax_mode": "binary_sensor.relax_mode",
         "work_window": "binary_sensor.work_window",
+    }
+    assert flow.options["house_state_config"] == {
+        "media_active_entities": ["media_player.cineforum"],
+        "workday_entity": "binary_sensor.workday_sensor",
+        "sleep_enter_min": 12,
+        "sleep_exit_min": 3,
+        "work_enter_min": 6,
+        "relax_enter_min": 1,
+        "relax_exit_min": 15,
+        "sleep_requires_media_off": True,
+        "sleep_charging_min_count": 2,
     }
 
 

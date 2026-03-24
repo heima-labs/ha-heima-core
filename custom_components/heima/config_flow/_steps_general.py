@@ -13,7 +13,9 @@ from ..const import (
     CONF_LANGUAGE,
     CONF_TIMEZONE,
     DEFAULT_ENGINE_ENABLED,
+    DEFAULT_HOUSE_STATE_CONFIG,
     OPT_HOUSE_SIGNALS,
+    OPT_HOUSE_STATE_CONFIG,
     OPT_LIGHTING_APPLY_MODE,
     DEFAULT_LIGHTING_APPLY_MODE,
 )
@@ -51,6 +53,7 @@ class _GeneralStepsMixin:
             CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, _default_language(self.hass)),
             OPT_LIGHTING_APPLY_MODE: user_input.get(OPT_LIGHTING_APPLY_MODE, DEFAULT_LIGHTING_APPLY_MODE),
             OPT_HOUSE_SIGNALS: self._normalize_general_house_signals(user_input),
+            OPT_HOUSE_STATE_CONFIG: self._normalize_house_state_config(user_input),
         })
         return await self.async_step_init()
 
@@ -74,6 +77,7 @@ class _GeneralStepsMixin:
             ): vol.In(LIGHTING_APPLY_MODES),
         }
         house_signals = self._house_signal_bindings()
+        house_state_cfg = self._house_state_config()
         for signal_name, label_key in (
             ("vacation_mode", "vacation_mode_entity"),
             ("guest_mode", "guest_mode_entity"),
@@ -84,6 +88,42 @@ class _GeneralStepsMixin:
             schema_map[
                 vol.Optional(label_key, default=house_signals.get(signal_name))
             ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"])
+        schema_map[
+            vol.Optional(
+                "media_active_entities",
+                default=list(house_state_cfg.get("media_active_entities", [])),
+            )
+        ] = _entity_selector(["media_player", "binary_sensor", "sensor"], multiple=True)
+        schema_map[
+            vol.Optional("workday_entity", default=house_state_cfg.get("workday_entity"))
+        ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"])
+        schema_map[
+            vol.Optional("sleep_enter_min", default=house_state_cfg.get("sleep_enter_min", 10))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional("sleep_exit_min", default=house_state_cfg.get("sleep_exit_min", 2))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional("work_enter_min", default=house_state_cfg.get("work_enter_min", 5))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional("relax_enter_min", default=house_state_cfg.get("relax_enter_min", 2))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional("relax_exit_min", default=house_state_cfg.get("relax_exit_min", 10))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional(
+                "sleep_requires_media_off",
+                default=house_state_cfg.get("sleep_requires_media_off", True),
+            )
+        ] = bool
+        schema_map[
+            vol.Optional(
+                "sleep_charging_min_count",
+                default=house_state_cfg.get("sleep_charging_min_count"),
+            )
+        ] = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0)))
         return vol.Schema(schema_map)
 
     def _house_signal_bindings(self) -> dict[str, str]:
@@ -98,3 +138,31 @@ class _GeneralStepsMixin:
             "work_window": user_input.get("work_window_entity"),
         }
         return _normalize_house_signal_bindings(raw)
+
+    def _house_state_config(self) -> dict[str, Any]:
+        current = self.options.get(OPT_HOUSE_STATE_CONFIG, {})
+        merged = dict(DEFAULT_HOUSE_STATE_CONFIG)
+        if isinstance(current, dict):
+            merged.update(current)
+        return merged
+
+    def _normalize_house_state_config(self, user_input: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "media_active_entities": [
+                str(entity_id).strip()
+                for entity_id in list(user_input.get("media_active_entities", []) or [])
+                if str(entity_id).strip()
+            ],
+            "workday_entity": str(user_input.get("workday_entity", "") or "").strip(),
+            "sleep_enter_min": int(user_input.get("sleep_enter_min", 10)),
+            "sleep_exit_min": int(user_input.get("sleep_exit_min", 2)),
+            "work_enter_min": int(user_input.get("work_enter_min", 5)),
+            "relax_enter_min": int(user_input.get("relax_enter_min", 2)),
+            "relax_exit_min": int(user_input.get("relax_exit_min", 10)),
+            "sleep_requires_media_off": bool(user_input.get("sleep_requires_media_off", True)),
+            "sleep_charging_min_count": (
+                int(user_input["sleep_charging_min_count"])
+                if user_input.get("sleep_charging_min_count") not in (None, "")
+                else None
+            ),
+        }

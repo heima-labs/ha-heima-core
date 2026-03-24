@@ -17,6 +17,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `000_live_smoke.py`
       - `010_config_flow.py`
       - `011_room_source_learning_signals.py`
+      - `012_house_state_general_config.py`
       - `025_lighting_learning_live.py`
       - `026_room_signal_assist_live.py`
       - `027_room_cooling_assist_live.py`
@@ -103,6 +104,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
     Docker lab has the expected baseline fixtures and room/entity wiring
   - current learning examples:
     - `011_room_source_learning_signals.py`: options-flow room edit -> config-entry diagnostics confirm persisted `occupancy_sources` / `learning_sources`, then runtime diagnostics prove the learning signals enter the signal recorder pool
+    - `012_house_state_general_config.py`: options-flow general edit -> config-entry diagnostics confirm persisted `house_state_config`, then runtime diagnostics prove the HouseStateDomain sees the same config and timer values
     - `025_lighting_learning_live.py`: fixture history + real living scene activation -> proposal
     - `026_room_signal_assist_live.py`: fixture history + real bathroom humidity/temperature/fan sequence -> proposal
     - `027_room_cooling_assist_live.py`: fixture history + real studio temperature/humidity/fan sequence -> proposal
