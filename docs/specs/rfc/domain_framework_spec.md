@@ -129,7 +129,7 @@ It serves two purposes:
 2. **Cross-domain inference input**: allows any domain to reason about what other domains reported in the previous cycle.
 
 Example:
-- `house_state` inference can read `heima_occ_<room>`, `heima_lighting_manual_hold_<room>`, `heima_heating_phase` from `CanonicalState` — all values from the previous cycle — without depending on the current-cycle outputs of those domains.
+- `house_state` inference can read `heima_occupancy_<room>`, `heima_lighting_manual_hold_<room>`, `heima_heating_phase` from `CanonicalState` — all values from the previous cycle — without depending on the current-cycle outputs of those domains.
 
 ### 5.3 house_state as a convergent inference layer
 

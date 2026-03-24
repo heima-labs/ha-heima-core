@@ -12,6 +12,7 @@ __pycache__/
 config_entry-*.json
 heima_specs_index.md
 HA-COMMUNITY-POST.txt
+docs/examples/heima_prod_debug_dashboard.yaml
 
 # Claude Code
 .claude/settings.json

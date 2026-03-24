@@ -104,8 +104,8 @@ def test_room_with_occupancy_mode_none_is_off_and_does_not_contribute():
 
     assert snapshot.house_state == "home"
     assert "soggiorno" not in snapshot.occupied_rooms
-    assert engine.state.get_binary("heima_occ_soggiorno") is False
-    assert engine.state.get_sensor("heima_occ_soggiorno_source") == "none"
+    assert engine.state.get_binary("heima_occupancy_soggiorno") is False
+    assert engine.state.get_sensor("heima_occupancy_soggiorno_source") == "none"
 
 
 def test_zone_auto_with_only_non_sensorized_rooms_resolves_off():

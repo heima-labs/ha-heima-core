@@ -121,9 +121,9 @@ Aggregation rules:
 ## 3. Occupancy Model (Per Room / Zone)
 
 For each room `<r>`:
-- `binary_sensor.heima_occ_<r>` (stabilized)
-- `sensor.heima_occ_<r>_source`
-- `sensor.heima_occ_<r>_last_change` (optional)
+- `binary_sensor.heima_occupancy_<r>` (stabilized)
+- `sensor.heima_occupancy_<r>_source`
+- `sensor.heima_occupancy_<r>_last_change` (optional)
 
 For each zone `<z>`:
 - `binary_sensor.heima_occ_zone_<z>`
@@ -139,8 +139,8 @@ Each room may operate in one of two occupancy modes:
 
 Rules:
 - Rooms with `occupancy_mode = none` are still valid for lighting/heating mappings.
-- `binary_sensor.heima_occ_<r>` remains created and is reported as `off` for `occupancy_mode = none`.
-- `sensor.heima_occ_<r>_source` should indicate `none` (or equivalent diagnostic marker).
+- `binary_sensor.heima_occupancy_<r>` remains created and is reported as `off` for `occupancy_mode = none`.
+- `sensor.heima_occupancy_<r>_source` should indicate `none` (or equivalent diagnostic marker).
 - Rooms with `occupancy_mode = none` do **not** contribute to `occupied_rooms`.
 
 ### 3.2 Zone Occupancy Computation (v1.x clarification)

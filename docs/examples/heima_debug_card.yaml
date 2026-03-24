@@ -55,12 +55,12 @@ cards:
     show_header_toggle: false
     entities:
       # Replace with your real room ids
-      - entity: binary_sensor.heima_occ_living_room
-      - entity: sensor.heima_occ_living_room_source
-      - entity: sensor.heima_occ_living_room_last_change
-      - entity: binary_sensor.heima_occ_bedroom
-      - entity: sensor.heima_occ_bedroom_source
-      - entity: sensor.heima_occ_bedroom_last_change
+      - entity: binary_sensor.heima_occupancy_living_room
+      - entity: sensor.heima_occupancy_living_room_source
+      - entity: sensor.heima_occupancy_living_room_last_change
+      - entity: binary_sensor.heima_occupancy_bedroom
+      - entity: sensor.heima_occupancy_bedroom_source
+      - entity: sensor.heima_occupancy_bedroom_last_change
       # Replace with your real zone ids
       - entity: binary_sensor.heima_occ_zone_living_zone
       - entity: binary_sensor.heima_occ_zone_bedroom_zone
@@ -83,7 +83,7 @@ cards:
     entities:
       - entity: sensor.heima_house_state
       - entity: binary_sensor.heima_anyone_home
-      - entity: binary_sensor.heima_occ_living_room
+      - entity: binary_sensor.heima_occupancy_living_room
       - entity: binary_sensor.heima_occ_zone_living_zone
 
   - type: grid

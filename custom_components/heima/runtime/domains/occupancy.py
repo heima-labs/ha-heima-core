@@ -88,16 +88,16 @@ class OccupancyDomain:
             is_occupied, occ_trace = self._compute_room_occupancy(
                 room, schedule_recheck, events
             )
-            prev_value = state.get_binary(f"heima_occ_{room_id}")
-            state.set_binary(f"heima_occ_{room_id}", is_occupied)
+            prev_value = state.get_binary(f"heima_occupancy_{room_id}")
+            state.set_binary(f"heima_occupancy_{room_id}", is_occupied)
             state.set_sensor(
-                f"heima_occ_{room_id}_source",
+                f"heima_occupancy_{room_id}_source",
                 "none"
                 if self._room_occupancy_mode(room) == "none"
                 else ",".join(room_occupancy_source_entity_ids(room)),
             )
             if prev_value != is_occupied:
-                state.set_sensor(f"heima_occ_{room_id}_last_change", now)
+                state.set_sensor(f"heima_occupancy_{room_id}_last_change", now)
             self._occupancy_room_trace[str(room_id)] = occ_trace
             if is_occupied:
                 occupied_rooms.append(room_id)

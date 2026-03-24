@@ -81,9 +81,16 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
         label = _label(room.get("display_name") or room_id)
         if not room_id:
             continue
-        binaries.append(_b(_k(f"heima_occ_{room_id}"), f"Heima Occupancy {label}"))
-        sensors.append(_s(_k(f"heima_occ_{room_id}_source"), f"Heima Occupancy {label} Source"))
-        sensors.append(_s(_k(f"heima_occ_{room_id}_last_change"), f"Heima Occupancy {label} Last Change"))
+        binaries.append(_b(_k(f"heima_occupancy_{room_id}"), f"Heima Occupancy {label}"))
+        sensors.append(
+            _s(_k(f"heima_occupancy_{room_id}_source"), f"Heima Occupancy {label} Source")
+        )
+        sensors.append(
+            _s(
+                _k(f"heima_occupancy_{room_id}_last_change"),
+                f"Heima Occupancy {label} Last Change",
+            )
+        )
 
     # Occupancy (zones) - derived from lighting zones
     for zone in options.get(OPT_LIGHTING_ZONES, []):

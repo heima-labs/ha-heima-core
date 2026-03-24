@@ -281,6 +281,6 @@ cards:
   - type: markdown
     content: |
       ### Notes
-      - Some existing HA installations may still use legacy entity ids such as `binary_sensor.heima_occupancy_<room>` instead of `binary_sensor.heima_occ_<room>`.
+      - Room occupancy entities use the `binary_sensor.heima_occupancy_<room>` form on the current runtime.
       - If a button does not match your config, update the placeholder ids.
       - `heima.set_mode` now forces the final `house_state` until you clear the same override.
