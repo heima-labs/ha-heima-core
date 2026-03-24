@@ -109,6 +109,7 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
         options={
             "house_state_config": {
                 "media_active_entities": ["media_player.cineforum"],
+                "sleep_charging_entities": ["binary_sensor.phone_charging"],
                 "workday_entity": "binary_sensor.workday_sensor",
                 "sleep_enter_min": 12,
                 "sleep_exit_min": 4,
@@ -127,6 +128,7 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
     )
     diagnostics = domain.diagnostics()
     assert diagnostics["config"]["media_active_entities"] == ["media_player.cineforum"]
+    assert diagnostics["config"]["sleep_charging_entities"] == ["binary_sensor.phone_charging"]
     assert diagnostics["config"]["workday_entity"] == "binary_sensor.workday_sensor"
     assert diagnostics["timers"] == {
         "sleep_enter_min": 12,
@@ -137,6 +139,95 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
     }
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_requires_media_off"] is False
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2
+
+
+def test_house_state_sleep_candidate_requires_charging_threshold(monkeypatch: pytest.MonkeyPatch):
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.sleep_window":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id == "binary_sensor.phone_a_charging":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id == "binary_sensor.phone_b_charging":
+            return SimpleNamespace(state="off", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3500.0,
+    )
+
+    domain.compute(
+        options={
+            "house_state_config": {
+                "sleep_charging_entities": [
+                    "binary_sensor.phone_a_charging",
+                    "binary_sensor.phone_b_charging",
+                ],
+                "sleep_charging_min_count": 2,
+            }
+        },
+        house_signal_entities={"sleep_window": "binary_sensor.sleep_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    diagnostics = domain.diagnostics()
+    sleep_trace = diagnostics["candidate_trace"]["sleep_candidate"]
+    assert sleep_trace["state"] is False
+    assert sleep_trace["inputs"]["charging"]["active_count"] == 1
+    assert sleep_trace["inputs"]["sleep_charging_requirement_met"] is False
+
+
+def test_house_state_sleep_candidate_enters_when_charging_threshold_met(monkeypatch: pytest.MonkeyPatch):
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.sleep_window":
+            return SimpleNamespace(state="on", attributes={})
+        if entity_id in {
+            "binary_sensor.phone_a_charging",
+            "binary_sensor.phone_b_charging",
+        }:
+            return SimpleNamespace(state="on", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3600.0,
+    )
+
+    result = domain.compute(
+        options={
+            "house_state_config": {
+                "sleep_charging_entities": [
+                    "binary_sensor.phone_a_charging",
+                    "binary_sensor.phone_b_charging",
+                ],
+                "sleep_charging_min_count": 2,
+                "sleep_enter_min": 0,
+            }
+        },
+        house_signal_entities={"sleep_window": "binary_sensor.sleep_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+    assert result.house_state == "sleeping"
+    assert result.house_reason == "sleep_candidate_confirmed"
 
 
 def test_house_state_media_activity_enters_relax_after_timer(monkeypatch: pytest.MonkeyPatch):

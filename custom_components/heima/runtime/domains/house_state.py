@@ -167,6 +167,9 @@ class HouseStateDomain:
         media_active, media_inputs = self._compute_media_active(
             list(house_state_cfg.get("media_active_entities", []))
         )
+        charging_evidence = self._compute_boolean_count_evidence(
+            list(house_state_cfg.get("sleep_charging_entities", []))
+        )
         workday_evidence = self._compute_workday_evidence(
             workday_entity=str(house_state_cfg.get("workday_entity", "") or ""),
             calendar_result=calendar_result,
@@ -193,6 +196,7 @@ class HouseStateDomain:
             work_window=work_window,
             media_active=media_active,
             media_inputs=media_inputs,
+            charging_evidence=charging_evidence,
             workday_evidence=workday_evidence,
             calendar_result=calendar_result,
             house_state_cfg=house_state_cfg,
@@ -268,6 +272,11 @@ class HouseStateDomain:
             for entity_id in list(merged.get("media_active_entities", []) or [])
             if str(entity_id).strip()
         ]
+        merged["sleep_charging_entities"] = [
+            str(entity_id).strip()
+            for entity_id in list(merged.get("sleep_charging_entities", []) or [])
+            if str(entity_id).strip()
+        ]
         merged["workday_entity"] = str(merged.get("workday_entity", "") or "").strip()
         merged["sleep_enter_min"] = int(merged.get("sleep_enter_min", 10))
         merged["sleep_exit_min"] = int(merged.get("sleep_exit_min", 2))
@@ -300,6 +309,7 @@ class HouseStateDomain:
         work_window: bool,
         media_active: bool,
         media_inputs: dict[str, Any],
+        charging_evidence: dict[str, Any],
         workday_evidence: dict[str, Any],
         calendar_result: CalendarResult | None,
         house_state_cfg: dict[str, Any],
@@ -317,6 +327,11 @@ class HouseStateDomain:
         }
         sleep_requires_media_off = bool(house_state_cfg.get("sleep_requires_media_off", True))
         sleep_allowed_by_media = (not sleep_requires_media_off) or (not media_active)
+        sleep_charging_min_count = house_state_cfg.get("sleep_charging_min_count")
+        sleep_allowed_by_charging = (
+            sleep_charging_min_count is None
+            or int(charging_evidence.get("active_count", 0)) >= int(sleep_charging_min_count)
+        )
         relax_reason = (
             "anyone_home+relax_mode"
             if bool(anyone_home and relax_mode)
@@ -326,10 +341,19 @@ class HouseStateDomain:
         )
         return {
             "sleep_candidate": {
-                "state": bool(anyone_home and sleep_window and sleep_allowed_by_media),
+                "state": bool(
+                    anyone_home
+                    and sleep_window
+                    and sleep_allowed_by_media
+                    and sleep_allowed_by_charging
+                ),
                 "reason": (
-                    "anyone_home+sleep_window+media_off"
+                    "anyone_home+sleep_window+media_off+charging"
+                    if sleep_requires_media_off and sleep_charging_min_count is not None
+                    else "anyone_home+sleep_window+media_off"
                     if sleep_requires_media_off
+                    else "anyone_home+sleep_window+charging"
+                    if sleep_charging_min_count is not None
                     else "anyone_home+sleep_window"
                 ),
                 "inputs": {
@@ -339,7 +363,9 @@ class HouseStateDomain:
                     "media": media_inputs,
                     "sleep_requires_media_off": sleep_requires_media_off,
                     "sleep_media_requirement_met": sleep_allowed_by_media,
-                    "sleep_charging_min_count": house_state_cfg.get("sleep_charging_min_count"),
+                    "sleep_charging_min_count": sleep_charging_min_count,
+                    "charging": charging_evidence,
+                    "sleep_charging_requirement_met": sleep_allowed_by_charging,
                 },
             },
             "wake_candidate": {
@@ -402,6 +428,24 @@ class HouseStateDomain:
             "configured_entities": list(entity_ids),
             "entity_states": states,
             "active_entities": active_entities,
+        }
+
+    def _compute_boolean_count_evidence(self, entity_ids: list[str]) -> dict[str, Any]:
+        entity_states: dict[str, str | None] = {}
+        active_entities: list[str] = []
+        observations: dict[str, dict[str, Any]] = {}
+        for entity_id in entity_ids:
+            observation = self._normalizer.boolean_signal(entity_id)
+            entity_states[entity_id] = observation.raw_state
+            observations[entity_id] = observation.as_dict()
+            if observation.state == "on":
+                active_entities.append(entity_id)
+        return {
+            "configured_entities": list(entity_ids),
+            "entity_states": entity_states,
+            "active_entities": active_entities,
+            "active_count": len(active_entities),
+            "observations": observations,
         }
 
     def _compute_workday_evidence(

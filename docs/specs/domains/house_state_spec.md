@@ -129,6 +129,9 @@ This spec introduces the following planned additions:
 - `media_active_entities`
   - one or more entities that indicate active media usage
   - normalized as a boolean set
+- `sleep_charging_entities`
+  - zero or more boolean-like entities that indicate "device charging" evidence
+  - counted as corroboration inputs for `sleep_candidate`
 - `workday_entity`
   - optional explicit workday indicator when calendar is not sufficient
 - `sleep_requires_media_off`
@@ -151,7 +154,7 @@ Default built-in rule:
 - `anyone_home == on`
 - `sleep_window == on`
 - if `sleep_requires_media_off == true`, `media_active == off`
-- if `sleep_charging_min_count` is configured, charging-home count must be `>= threshold`
+- if `sleep_charging_min_count` is configured, active count over `sleep_charging_entities` must be `>= threshold`
 
 Default interpretation:
 - `sleep_charging_min_count = None`

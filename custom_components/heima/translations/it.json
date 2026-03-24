@@ -44,6 +44,7 @@
           "relax_mode_entity": "Entita modalita relax",
           "work_window_entity": "Entita finestra lavoro",
           "media_active_entities": "Entita media attivi",
+          "sleep_charging_entities": "Entita ricarica per sonno",
           "workday_entity": "Entita giorno lavorativo",
           "sleep_enter_min": "Ingresso sonno (min)",
           "sleep_exit_min": "Uscita sonno (min)",

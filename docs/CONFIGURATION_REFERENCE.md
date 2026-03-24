@@ -90,6 +90,7 @@ Target evolution:
   candidate inputs rather than direct one-to-one final states
 - planned additive bindings:
   - `media_active_entities`
+  - `sleep_charging_entities`
   - `workday_entity`
   - house-state enter/exit timer settings
   - `sleep_requires_media_off`
@@ -99,7 +100,7 @@ Target evolution:
 
 Planned location in config flow:
 - all house-state bindings and house-state timing/tuning fields belong in the `General` step
-- no house-specific media player, charging threshold, or timing value should be hardcoded in runtime
+- no house-specific media player, charging entities, charging threshold, or timing value should be hardcoded in runtime
 
 ---
 

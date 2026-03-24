@@ -69,6 +69,7 @@ async def test_general_flow_persists_house_signal_bindings():
             "relax_mode_entity": "binary_sensor.relax_mode",
             "work_window_entity": "binary_sensor.work_window",
             "media_active_entities": ["media_player.cineforum"],
+            "sleep_charging_entities": ["binary_sensor.phone_charging"],
             "workday_entity": "binary_sensor.workday_sensor",
             "sleep_enter_min": 12,
             "sleep_exit_min": 3,
@@ -88,6 +89,7 @@ async def test_general_flow_persists_house_signal_bindings():
     }
     assert flow.options["house_state_config"] == {
         "media_active_entities": ["media_player.cineforum"],
+        "sleep_charging_entities": ["binary_sensor.phone_charging"],
         "workday_entity": "binary_sensor.workday_sensor",
         "sleep_enter_min": 12,
         "sleep_exit_min": 3,

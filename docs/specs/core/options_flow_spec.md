@@ -84,6 +84,18 @@ Optional house-signal bindings:
 - `relax_mode_entity` (entity picker: `input_boolean|binary_sensor|sensor`)
 - `work_window_entity` (entity picker: `input_boolean|binary_sensor|sensor`)
 
+Optional house-state tuning/config:
+- `media_active_entities` (entity picker: `media_player|binary_sensor|sensor`, multiple)
+- `sleep_charging_entities` (entity picker: `input_boolean|binary_sensor|sensor`, multiple)
+- `workday_entity` (entity picker: `input_boolean|binary_sensor|sensor`)
+- `sleep_enter_min` (int, min `0`)
+- `sleep_exit_min` (int, min `0`)
+- `work_enter_min` (int, min `0`)
+- `relax_enter_min` (int, min `0`)
+- `relax_exit_min` (int, min `0`)
+- `sleep_requires_media_off` (bool)
+- `sleep_charging_min_count` (int or null, min `0`)
+
 ### Validation
 - timezone must be valid IANA TZ
 - language must be supported by HA

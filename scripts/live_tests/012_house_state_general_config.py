@@ -84,6 +84,11 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
             for entity_id in list(house_state_cfg.get("media_active_entities", []) or [])
             if str(entity_id).strip()
         ],
+        "sleep_charging_entities": [
+            str(entity_id).strip()
+            for entity_id in list(house_state_cfg.get("sleep_charging_entities", []) or [])
+            if str(entity_id).strip()
+        ],
         "sleep_enter_min": int(house_state_cfg.get("sleep_enter_min", 10)),
         "sleep_exit_min": int(house_state_cfg.get("sleep_exit_min", 2)),
         "work_enter_min": int(house_state_cfg.get("work_enter_min", 5)),
@@ -172,6 +177,7 @@ def main() -> int:
     test_payload.update(
         {
             "media_active_entities": ["media_player.cineforum"],
+            "sleep_charging_entities": ["binary_sensor.house_work_window"],
             "workday_entity": "binary_sensor.house_work_window",
             "sleep_enter_min": 13,
             "sleep_exit_min": 4,
@@ -184,6 +190,7 @@ def main() -> int:
     )
     expected_config = {
         "media_active_entities": ["media_player.cineforum"],
+        "sleep_charging_entities": ["binary_sensor.house_work_window"],
         "workday_entity": "binary_sensor.house_work_window",
         "sleep_enter_min": 13,
         "sleep_exit_min": 4,

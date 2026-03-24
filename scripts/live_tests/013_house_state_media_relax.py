@@ -96,6 +96,11 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
             for entity_id in list(house_state_cfg.get("media_active_entities", []) or [])
             if str(entity_id).strip()
         ],
+        "sleep_charging_entities": [
+            str(entity_id).strip()
+            for entity_id in list(house_state_cfg.get("sleep_charging_entities", []) or [])
+            if str(entity_id).strip()
+        ],
         "sleep_enter_min": int(house_state_cfg.get("sleep_enter_min", 10)),
         "sleep_exit_min": int(house_state_cfg.get("sleep_exit_min", 2)),
         "work_enter_min": int(house_state_cfg.get("work_enter_min", 5)),

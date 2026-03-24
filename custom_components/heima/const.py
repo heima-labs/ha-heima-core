@@ -51,6 +51,7 @@ HOUSE_SIGNAL_NAMES = [
 
 DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
     "media_active_entities": [],
+    "sleep_charging_entities": [],
     "workday_entity": "",
     "sleep_enter_min": 10,
     "sleep_exit_min": 2,

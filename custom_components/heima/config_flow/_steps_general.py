@@ -95,6 +95,12 @@ class _GeneralStepsMixin:
             )
         ] = _entity_selector(["media_player", "binary_sensor", "sensor"], multiple=True)
         schema_map[
+            vol.Optional(
+                "sleep_charging_entities",
+                default=list(house_state_cfg.get("sleep_charging_entities", [])),
+            )
+        ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"], multiple=True)
+        schema_map[
             vol.Optional("workday_entity", default=house_state_cfg.get("workday_entity"))
         ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"])
         schema_map[
@@ -151,6 +157,11 @@ class _GeneralStepsMixin:
             "media_active_entities": [
                 str(entity_id).strip()
                 for entity_id in list(user_input.get("media_active_entities", []) or [])
+                if str(entity_id).strip()
+            ],
+            "sleep_charging_entities": [
+                str(entity_id).strip()
+                for entity_id in list(user_input.get("sleep_charging_entities", []) or [])
                 if str(entity_id).strip()
             ],
             "workday_entity": str(user_input.get("workday_entity", "") or "").strip(),

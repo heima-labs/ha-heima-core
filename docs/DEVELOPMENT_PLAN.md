@@ -315,8 +315,9 @@ Goal:
 - expose workday evidence as explicit config, not hardcoded helper logic
 
 ### HS6. Optional sleep corroboration
+- add configurable `sleep_charging_entities`
 - optional `sleep_charging_min_count`
-- optional stronger sleep corroboration from charging-home evidence
+- optional stronger sleep corroboration from configured charging evidence
 - keep feature optional and conservative
 - expose thresholds and toggles in the `General` options step
 
