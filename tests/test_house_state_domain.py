@@ -147,6 +147,43 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2
 
 
+def test_house_state_signal_trace_marks_unknown_as_treated_false(monkeypatch: pytest.MonkeyPatch):
+    def _get(entity_id: str):
+        if entity_id == "binary_sensor.work_window":
+            return SimpleNamespace(state="unavailable", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3200.0,
+    )
+
+    domain.compute(
+        options={},
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+    )
+
+    trace = domain.diagnostics()["house_signals_trace"]["work_window"]
+    assert trace["fused_state"] == "unknown"
+    assert trace["resolved_bool"] is False
+    assert trace["resolved_reason"] == "derived_unknown_treated_as_false"
+    assert trace["has_unknown_inputs"] is True
+    assert trace["has_unavailable_inputs"] is True
+    assert trace["unknown_inputs"] == ["binary_sensor.work_window"]
+    assert trace["unavailable_inputs"] == ["binary_sensor.work_window"]
+
+
 def test_house_state_sleep_candidate_requires_charging_threshold(monkeypatch: pytest.MonkeyPatch):
     def _get(entity_id: str):
         if entity_id == "binary_sensor.sleep_window":

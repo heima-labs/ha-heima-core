@@ -841,11 +841,35 @@ class HouseStateDomain:
             ),
             context={"source": "house_signal", "signal": trace_key},
         )
+        unavailable_inputs = [
+            obs.source_entity_id
+            for obs in observations
+            if (obs.source_entity_id and not bool(obs.available))
+        ]
+        unknown_inputs = [
+            obs.source_entity_id
+            for obs in observations
+            if (obs.source_entity_id and obs.state == "unknown")
+        ]
+        resolved_bool = fused.state == "on"
         self._house_signals_trace[trace_key] = {
             "configured_entities": list(entity_ids),
             "source_observations": [obs.as_dict() for obs in observations],
             "fused_observation": fused.as_dict(),
+            "fused_state": fused.state,
+            "resolved_bool": resolved_bool,
+            "resolved_reason": (
+                "derived_on"
+                if fused.state == "on"
+                else "derived_off"
+                if fused.state == "off"
+                else "derived_unknown_treated_as_false"
+            ),
             "plugin_id": fused.plugin_id,
             "used_plugin_fallback": fused.reason == "plugin_error_fallback",
+            "has_unknown_inputs": bool(unknown_inputs),
+            "unknown_inputs": unknown_inputs,
+            "has_unavailable_inputs": bool(unavailable_inputs),
+            "unavailable_inputs": unavailable_inputs,
         }
-        return fused.state == "on"
+        return resolved_bool
