@@ -103,6 +103,10 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
     # House state
     sensors.append(_s(_k("heima_house_state"), "Heima House State"))
     sensors.append(_s(_k("heima_house_state_reason"), "Heima House State Reason"))
+    sensors.append(_s(_k("heima_house_state_path"), "Heima House State Path"))
+    sensors.append(_s(_k("heima_house_state_active_candidates"), "Heima House State Active Candidates"))
+    sensors.append(_s(_k("heima_house_state_pending_candidate"), "Heima House State Pending Candidate"))
+    sensors.append(_s(_k("heima_house_state_pending_remaining_s"), "Heima House State Pending Remaining S"))
 
     # Lighting
     for zone in options.get(OPT_LIGHTING_ZONES, []):

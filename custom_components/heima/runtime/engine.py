@@ -773,8 +773,41 @@ class HeimaEngine:
         self._state.set_sensor("heima_people_count", people_count)
         self._state.set_sensor("heima_people_home_list", ",".join(people_home_list))
         prev_house_state = self._state.get_sensor("heima_house_state")
+        house_state_diag = self._house_state_domain.diagnostics()
+        resolution_trace = dict(house_state_diag.get("resolution_trace", {}))
+        candidate_summary = dict(house_state_diag.get("candidate_summary", {}))
+        pending_candidate = str(resolution_trace.get("decision", {}).get("source_candidate") or "")
+        pending_remaining = resolution_trace.get("decision", {}).get("pending_remaining_s")
+        active_candidates = list(resolution_trace.get("active_candidates", []) or [])
         self._state.set_sensor("heima_house_state", house_state)
         self._state.set_sensor("heima_house_state_reason", house_reason)
+        self._state.set_sensor("heima_house_state_path", resolution_trace.get("resolution_path") or "")
+        self._state.set_sensor("heima_house_state_active_candidates", ",".join(active_candidates))
+        self._state.set_sensor(
+            "heima_house_state_pending_candidate",
+            pending_candidate if resolution_trace.get("decision", {}).get("action") == "pending" else "",
+        )
+        self._state.set_sensor(
+            "heima_house_state_pending_remaining_s",
+            round(float(pending_remaining), 3)
+            if resolution_trace.get("decision", {}).get("action") == "pending"
+            and pending_remaining is not None
+            else None,
+        )
+        self._state.set_sensor_attributes(
+            "heima_house_state",
+            {
+                "resolution_trace": resolution_trace,
+                "candidate_summary": candidate_summary,
+            },
+        )
+        self._state.set_sensor_attributes(
+            "heima_house_state_reason",
+            {
+                "resolution_trace": resolution_trace,
+                "candidate_summary": candidate_summary,
+            },
+        )
         self._queue_house_state_changed_event(
             previous=str(prev_house_state) if prev_house_state not in (None, "") else None,
             current=house_state,

@@ -149,6 +149,47 @@ def test_heating_snapshot_uses_observed_current_setpoint_not_target():
     assert engine.diagnostics()["heating"]["target_temperature"] == 20.0
 
 
+def test_house_state_diagnostics_are_exposed_as_state_entities_and_attributes():
+    options = _with_house_signal_binding(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                }
+            ],
+            "house_state_config": {
+                "work_enter_min": 5,
+            },
+        },
+        work_window="binary_sensor.work_window",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "person.stefano": "home",
+            "binary_sensor.work_window": "on",
+        },
+    )
+
+    snapshot = engine._compute_snapshot(reason="test")
+
+    assert snapshot.house_state == "home"
+    assert engine.state.get_sensor("heima_house_state") == "home"
+    assert engine.state.get_sensor("heima_house_state_reason") == "default"
+    assert engine.state.get_sensor("heima_house_state_path") == "home_substate"
+    assert engine.state.get_sensor("heima_house_state_active_candidates") == "wake_candidate,work_candidate"
+    assert engine.state.get_sensor("heima_house_state_pending_candidate") == "work_candidate"
+    pending_remaining = engine.state.get_sensor("heima_house_state_pending_remaining_s")
+    assert isinstance(pending_remaining, float)
+    assert pending_remaining > 0
+    attrs = engine.state.get_sensor_attributes("heima_house_state") or {}
+    assert attrs["resolution_trace"]["decision"]["action"] == "pending"
+    assert attrs["candidate_summary"]["work_candidate"]["status"] == "pending_enter"
+
+
 def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply():
     options = {
         "heating": {
