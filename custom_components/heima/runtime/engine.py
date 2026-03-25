@@ -20,6 +20,7 @@ from ..const import (
     DEFAULT_OCCUPANCY_MISMATCH_POLICY,
     OPT_CALENDAR,
     OPT_HEATING,
+    OPT_HOUSE_STATE_CONFIG,
     OPT_HOUSE_SIGNALS,
     OPT_LIGHTING_APPLY_MODE,
     OPT_LIGHTING_ROOMS,
@@ -193,17 +194,16 @@ class HeimaEngine:
             except Exception:
                 _LOGGER.exception("Behavior %s raised in async_teardown", behavior.behavior_id)
 
-    async def async_reload_options(self, entry: ConfigEntry) -> None:
+    async def async_reload_options(
+        self,
+        entry: ConfigEntry,
+        *,
+        changed_keys: set[str] | None = None,
+    ) -> None:
         _LOGGER.debug("Heima engine reload options")
         self._entry = entry
         self._options = HeimaOptions.from_entry(entry)
-        self._people_domain.reset()
-        self._occupancy_domain.reset()
-        self._calendar_domain.reset()
-        self._house_state_domain.reset()
-        self._lighting_domain.reset()
-        self._heating_domain.reset()
-        self._security_domain.reset()
+        self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
         options = dict(entry.options)
@@ -235,8 +235,34 @@ class HeimaEngine:
         persisted_muted = set(options.get("reactions", {}).get("muted", []))
         known_ids = {r.reaction_id for r in self._reactions}
         self._muted_reactions = persisted_muted & known_ids
-        self._build_default_state()
+        if changed_keys is None:
+            self._build_default_state()
         await self.async_evaluate(reason="options_reloaded")
+
+    def _reset_domains_for_reload(self, changed_keys: set[str] | None) -> None:
+        if changed_keys is None:
+            self._people_domain.reset()
+            self._occupancy_domain.reset()
+            self._calendar_domain.reset()
+            self._house_state_domain.reset()
+            self._lighting_domain.reset()
+            self._heating_domain.reset()
+            self._security_domain.reset()
+            return
+
+        changed = set(changed_keys)
+        if OPT_PEOPLE_ANON in changed:
+            self._people_domain.reset()
+        if OPT_CALENDAR in changed:
+            self._calendar_domain.reset()
+        if changed & {OPT_HOUSE_SIGNALS, OPT_HOUSE_STATE_CONFIG, OPT_CALENDAR}:
+            self._house_state_domain.reset()
+        if changed & {OPT_LIGHTING_ROOMS, OPT_LIGHTING_APPLY_MODE}:
+            self._lighting_domain.reset()
+        if OPT_HEATING in changed:
+            self._heating_domain.reset()
+        if OPT_SECURITY in changed:
+            self._security_domain.reset()
 
     # ------------------------------------------------------------------
     # Behavior registration
@@ -671,6 +697,7 @@ class HeimaEngine:
         registry = build_registry(self._entry)
         self._state.binary_sensors = {desc.key: False for desc in registry.binary_sensors}
         self._state.sensors = {desc.key: None for desc in registry.sensors}
+        self._state.sensor_attributes = {}
         self._state.selects = {
             desc.key: self._state.selects.get(desc.key, desc.options[0]) for desc in registry.selects
         }

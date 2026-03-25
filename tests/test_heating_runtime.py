@@ -121,6 +121,64 @@ async def test_fixed_target_branch_builds_and_executes_heating_apply_step():
     assert engine.state.get_sensor("heima_heating_last_applied_target") == 20.0
 
 
+@pytest.mark.asyncio
+async def test_runtime_reload_preserves_house_state_progress_for_unrelated_option_change(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    options = _with_house_signal_binding(
+        {
+            "language": "en",
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                }
+            ],
+            "house_state_config": {
+                "work_enter_min": 5,
+            },
+        },
+        work_window="binary_sensor.work_window",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "person.stefano": "home",
+            "binary_sensor.work_window": "on",
+        },
+    )
+
+    monotonic = 1000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+
+    first = engine._compute_snapshot(reason="before_reload")
+    assert first.house_state == "home"
+    initial_pending = engine.state.get_sensor("heima_house_state_pending_remaining_s")
+    assert isinstance(initial_pending, float)
+    assert initial_pending > 290
+
+    monotonic = 1000.0 + (5 * 60) - 1
+    updated_options = dict(options)
+    updated_options["language"] = "it"
+    await engine.async_reload_options(
+        _entry_with_options(updated_options),
+        changed_keys={"language"},
+    )
+
+    pending_after_reload = engine.state.get_sensor("heima_house_state_pending_remaining_s")
+    assert isinstance(pending_after_reload, float)
+    assert pending_after_reload < 2
+
+    monotonic = 1000.0 + (5 * 60) + 1
+    second = engine._compute_snapshot(reason="after_reload")
+    assert second.house_state == "working"
+
+
 def test_heating_snapshot_uses_observed_current_setpoint_not_target():
     options = {
         "heating": {
@@ -188,6 +246,38 @@ def test_house_state_diagnostics_are_exposed_as_state_entities_and_attributes():
     attrs = engine.state.get_sensor_attributes("heima_house_state") or {}
     assert attrs["resolution_trace"]["decision"]["action"] == "pending"
     assert attrs["candidate_summary"]["work_candidate"]["status"] == "pending_enter"
+
+
+def test_build_default_state_clears_stale_sensor_attributes():
+    options = _with_house_signal_binding(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                }
+            ]
+        },
+        work_window="binary_sensor.work_window",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "person.stefano": "home",
+            "binary_sensor.work_window": "on",
+        },
+    )
+
+    engine._compute_snapshot(reason="test")
+    assert engine.state.get_sensor_attributes("heima_house_state") is not None
+    assert engine.state.get_sensor_attributes("heima_house_state_reason") is not None
+
+    engine._build_default_state()
+
+    assert engine.state.get_sensor_attributes("heima_house_state") is None
+    assert engine.state.get_sensor_attributes("heima_house_state_reason") is None
 
 
 def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply():

@@ -65,7 +65,7 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await hass.config_entries.async_reload(entry.entry_id)
     else:
         _LOGGER.debug("Runtime options changed (%s), reloading coordinator %s", changed, entry.entry_id)
-        await coordinator.async_reload_options()
+        await coordinator.async_reload_options(changed_keys=changed)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

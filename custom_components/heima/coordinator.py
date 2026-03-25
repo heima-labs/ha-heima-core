@@ -128,9 +128,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "rooms": list(entry.options.get("rooms", [])),
         }
 
-    async def async_reload_options(self) -> None:
+    async def async_reload_options(self, *, changed_keys: set[str] | None = None) -> None:
         """Reload options and refresh state."""
-        await self.engine.async_reload_options(self.entry)
+        await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
         self._resubscribe_state_changes()
         self._sync_scheduler()
