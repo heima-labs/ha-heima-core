@@ -32,7 +32,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
     - `diagnostic`
       - `030_learning_proposals_diag.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, scheduler). Utile per verificare quanti eventi sono stati registrati e se il learning system sta accumulando dati.
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, scheduler). Utile per verificare quanti eventi sono stati registrati, lo stato del resolver `house_state`, e se il learning system sta accumulando dati.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
@@ -73,8 +73,11 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 source scripts/.env
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 
-# Solo una sezione: event_store | proposals | calendar | engine | scheduler
+# Solo una sezione: event_store | proposals | calendar | house_state | engine | scheduler
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section event_store
+
+# Solo il resolver house_state
+python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section house_state
 ```
 
 - Per un check rapido giornaliero su produzione:
