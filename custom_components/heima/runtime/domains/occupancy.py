@@ -152,7 +152,9 @@ class OccupancyDomain:
                     key="occupancy.inconsistency_home_no_room",
                     severity="info",
                     title="Occupancy inconsistency",
-                    message="Someone is home but no room occupancy is active.",
+                    message=(
+                        "Presence says someone is home, but no derived room is currently occupied."
+                    ),
                     context={
                         "anyone_home": anyone_home,
                         "occupied_rooms": list(occupied_rooms),
@@ -195,7 +197,9 @@ class OccupancyDomain:
                         key=f"occupancy.inconsistency_room_no_home.{room_id}",
                         severity="info",
                         title="Occupancy inconsistency",
-                        message=f"Room '{room_id}' is occupied but nobody is home.",
+                        message=(
+                            f"Room '{room_id}' is occupied by room logic, but global presence says nobody is home."
+                        ),
                         context={
                             "room": room_id,
                             "anyone_home": anyone_home,

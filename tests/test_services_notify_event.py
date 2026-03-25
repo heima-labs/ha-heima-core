@@ -167,6 +167,12 @@ async def test_heima_command_notify_event_uses_pipeline_and_updates_sensors(monk
 
     # Canonical sensors updated by the same pipeline
     assert engine.state.get_sensor("heima_last_event") == "debug.manual_test"
+    last_event_attrs = engine.state.get_sensor_attributes("heima_last_event") or {}
+    assert last_event_attrs["type"] == "debug.manual_test"
+    assert last_event_attrs["severity"] == "info"
+    assert last_event_attrs["title"] == "Test"
+    assert last_event_attrs["message"] == "hello"
+    assert last_event_attrs["context"] == {"source": "test"}
     stats_state = engine.state.get_sensor("heima_event_stats")
     assert isinstance(stats_state, str)
     assert "emitted=1" in stats_state

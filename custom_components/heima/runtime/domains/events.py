@@ -114,7 +114,9 @@ class EventsDomain:
                 key="house_state.changed",
                 severity="info",
                 title="House state changed",
-                message=f"House state changed from '{previous}' to '{current}'.",
+                message=(
+                    f"House state changed from '{previous}' to '{current}' (reason: {reason})."
+                ),
                 context={"from": previous, "to": current, "reason": reason},
             )
         )
@@ -232,6 +234,19 @@ class EventsDomain:
         if "heima_last_event" in state.sensors:
             last_event = stats.get("last_event") or {}
             state.set_sensor("heima_last_event", str(last_event.get("type", "")))
+            state.set_sensor_attributes(
+                "heima_last_event",
+                {
+                    "type": last_event.get("type", ""),
+                    "key": last_event.get("key", ""),
+                    "severity": last_event.get("severity", ""),
+                    "title": last_event.get("title", ""),
+                    "message": last_event.get("message", ""),
+                    "context": last_event.get("context") or {},
+                    "event_id": last_event.get("event_id", ""),
+                    "ts": last_event.get("ts", ""),
+                },
+            )
         if "heima_event_stats" in state.sensors:
             last_event = stats.get("last_event") or {}
             summary = (
