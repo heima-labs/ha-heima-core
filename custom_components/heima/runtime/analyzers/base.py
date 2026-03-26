@@ -23,6 +23,8 @@ class ReactionProposal:
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    last_observed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    identity_key: str = ""
     fingerprint: str = ""  # if set, used by ProposalEngine instead of the computed fingerprint
 
     def as_dict(self) -> dict[str, Any]:
@@ -36,6 +38,8 @@ class ReactionProposal:
             "suggested_reaction_config": dict(self.suggested_reaction_config),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "last_observed_at": self.last_observed_at,
+            "identity_key": self.identity_key,
             "fingerprint": self.fingerprint,
         }
 
@@ -51,6 +55,13 @@ class ReactionProposal:
             suggested_reaction_config=dict(raw.get("suggested_reaction_config") or {}),
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
             updated_at=str(raw.get("updated_at") or datetime.now(UTC).isoformat()),
+            last_observed_at=str(
+                raw.get("last_observed_at")
+                or raw.get("updated_at")
+                or raw.get("created_at")
+                or datetime.now(UTC).isoformat()
+            ),
+            identity_key=str(raw.get("identity_key") or ""),
             fingerprint=str(raw.get("fingerprint") or ""),
         )
 

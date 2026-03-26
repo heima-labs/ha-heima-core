@@ -144,8 +144,8 @@ class LightingPatternAnalyzer:
                 confidence = sum(p.confidence for p in cluster) / n
                 entity_steps = [p.as_entity_step() for p in cluster]
 
-                # Fingerprint: round scheduled_min to nearest 5 min
-                fp_min = (scheduled_min // 5) * 5
+                # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
+                fp_min = (scheduled_min // 30) * 30
                 fingerprint = f"{self.analyzer_id}|lighting_scene_schedule|{room_id}|{weekday}|{fp_min}"
 
                 proposals.append(ReactionProposal(
