@@ -14,7 +14,7 @@
     "step": {
       "init": {
         "title": "Configurazione Heima",
-        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}",
+        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte pendenti: {pending_proposals_summary}",
         "menu_options": {
           "general": "Generale",
           "people_menu": "Persone",
@@ -332,10 +332,9 @@
       },
       "proposals": {
         "title": "Revisione Proposte",
-        "description": "Heima ha rilevato pattern ricorrenti. Seleziona le proposte da accettare o rifiutare. Le proposte accettate diventano reazioni configurate.",
+        "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
         "data": {
-          "proposals_accept": "Accetta proposte",
-          "proposals_reject": "Rifiuta proposte"
+          "review_action": "Decisione"
         },
         "submit": "OK"
       },

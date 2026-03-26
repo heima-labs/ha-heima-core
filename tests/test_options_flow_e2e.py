@@ -364,7 +364,7 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     )
     flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
 
-    result = await flow.async_step_proposals({"proposals_accept": ["proposal-darkness"]})
+    result = await flow.async_step_proposals({"review_action": "accept"})
 
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
@@ -392,3 +392,172 @@ async def test_reaction_label_from_room_lighting_assist_config_is_readable():
     )
 
     assert label == "Luce living — lux:1 — 2 entità"
+
+
+def test_proposal_review_label_includes_context_confidence_and_last_seen():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-1",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="living: Monday ~20:00 — test_heima_living_main on",
+        confidence=0.92,
+        last_observed_at="2026-03-26T10:27:51.561727+00:00",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "reaction_class": "LightingScheduleReaction",
+        },
+    )
+
+    label = flow._proposal_review_label(proposal)
+
+    assert "living: Monday ~20:00" in label
+    assert "(room:living)" in label
+    assert "[92% | seen 2026-03-26]" in label
+
+
+def test_proposals_step_summary_includes_pending_count_and_top_labels():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-1",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="Wednesday: typical arrival around 12:38.",
+        confidence=1.0,
+        last_observed_at="2026-03-26T10:27:51.561727+00:00",
+        suggested_reaction_config={"weekday": 2},
+    )
+
+    summary = flow._proposals_step_summary([proposal])
+
+    assert summary == "1 proposta pendente"
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_shows_guided_review_placeholders():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-1",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="Wednesday: typical arrival around 12:38.",
+        confidence=1.0,
+        identity_key="presence_preheat|weekday=2",
+        last_observed_at="2026-03-26T10:27:51.561727+00:00",
+        suggested_reaction_config={
+            "weekday": 2,
+            "learning_diagnostics": {"observations_count": 5, "weeks_observed": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    placeholders = result["description_placeholders"]
+    assert placeholders["current_position"] == "1/1"
+    assert "Mercoledì: arrivo tipico" in placeholders["proposal_label"]
+    assert "Pattern osservato: Wednesday: typical arrival around 12:38." in placeholders["proposal_details"]
+    assert "Evidenza: 5 osservazioni, 2 settimane" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_skip_advances_to_next_proposal():
+    flow = _flow()
+    proposal_1 = ReactionProposal(
+        proposal_id="proposal-1",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="First",
+        confidence=1.0,
+        suggested_reaction_config={"weekday": 2},
+    )
+    proposal_2 = ReactionProposal(
+        proposal_id="proposal-2",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Second",
+        confidence=0.9,
+        suggested_reaction_config={"room_id": "living", "reaction_class": "LightingScheduleReaction"},
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal_1, proposal_2],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "skip"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert "Luci living" in result["description_placeholders"]["proposal_label"]
+
+
+@pytest.mark.asyncio
+async def test_proposal_configure_action_resumes_guided_review():
+    flow = _flow()
+    proposal_1 = ReactionProposal(
+        proposal_id="proposal-1",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="Arrival proposal",
+        confidence=1.0,
+        suggested_reaction_config={
+            "reaction_class": "PresencePatternReaction",
+            "weekday": 0,
+            "median_arrival_min": 480,
+            "steps": [],
+        },
+    )
+    proposal_2 = ReactionProposal(
+        proposal_id="proposal-2",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Living lights",
+        confidence=0.9,
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal_1, proposal_2],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow._proposal_review_queue = ["proposal-1", "proposal-2"]
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposal_configure_action"
+
+    resumed = await flow.async_step_proposal_configure_action(
+        {
+            "action_entities": ["scene.arrival"],
+            "pre_condition_min": 15,
+        }
+    )
+
+    assert resumed["type"] == "form"
+    assert resumed["step_id"] == "proposals"
+    assert "Luci living" in resumed["description_placeholders"]["proposal_label"]
+
+
+def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
+    flow = _flow()
+    monkeypatch.setattr(flow, "_pending_proposals_summary", lambda: "1")
+
+    placeholders = flow._init_status_block()
+
+    assert placeholders["pending_proposals_summary"] == "1"
