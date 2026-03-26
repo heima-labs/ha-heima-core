@@ -175,6 +175,7 @@ class HeimaOptionsFlowHandler(
             "heating_summary": self._heating_menu_summary(),
             "security_summary": self._security_menu_summary(),
             "calendar_summary": self._calendar_menu_summary(),
+            "pending_proposals_summary": self._pending_proposals_summary(),
         }
 
     def _people_menu_summary(self) -> str:
@@ -200,6 +201,23 @@ class HeimaOptionsFlowHandler(
         branches = self._heating_override_branches()
         configured = len([v for v in branches.values() if v.get("branch")])
         return f"{thermostat} | {configured}"
+
+    def _pending_proposals_summary(self) -> str:
+        coordinator = None
+        try:
+            domain_data = getattr(getattr(self, "hass", None), "data", {}).get(DOMAIN, {})
+            if isinstance(domain_data, dict):
+                entry_data = domain_data.get(getattr(self._config_entry, "entry_id", None), {})
+                if isinstance(entry_data, dict):
+                    coordinator = entry_data.get("coordinator")
+        except Exception:
+            coordinator = None
+        proposal_engine = getattr(coordinator, "proposal_engine", None)
+        pending_fn = getattr(proposal_engine, "pending_proposals", None)
+        pending = pending_fn() if callable(pending_fn) else []
+        if not pending:
+            return "—"
+        return str(len(pending))
 
     def _room_ids(self) -> list[str]:
         return [room["room_id"] for room in self._rooms()]

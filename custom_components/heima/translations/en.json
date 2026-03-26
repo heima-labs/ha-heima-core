@@ -14,7 +14,7 @@
     "step": {
       "init": {
         "title": "Heima Configuration",
-        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}",
+        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nPending proposals: {pending_proposals_summary}",
         "menu_options": {
           "general": "General",
           "people_menu": "People",
@@ -332,10 +332,9 @@
       },
       "proposals": {
         "title": "Review Proposals",
-        "description": "Heima detected recurring patterns. Select proposals to accept or reject. Accepted proposals become configured reactions.",
+        "description": "Heima detected recurring patterns. Review one proposal at a time and decide whether to accept, reject, or skip it.\n\nQueue: {current_position}\n\nCurrent proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",
         "data": {
-          "proposals_accept": "Accept proposals",
-          "proposals_reject": "Reject proposals"
+          "review_action": "Decision"
         },
         "submit": "OK"
       },
