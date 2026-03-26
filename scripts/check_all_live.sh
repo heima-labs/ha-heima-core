@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 HA_URL="${HA_URL:-http://127.0.0.1:8123}"
 HA_TOKEN="${HA_TOKEN:-}"
+HA_NON_ADMIN_TOKEN="${HA_NON_ADMIN_TOKEN:-}"
 PERSON_SLUG="${PERSON_SLUG:-}"
 SUITE_TIER="${SUITE_TIER:-live_e2e}"
 SKIP_PREFIXES=()
@@ -23,6 +24,7 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/011_room_source_learning_signals.py"
   "scripts/live_tests/012_house_state_general_config.py"
   "scripts/live_tests/014_house_state_workday_working.py"
+  "scripts/live_tests/016_admin_only_options_flow.py"
   "scripts/live_tests/025_lighting_learning_live.py"
   "scripts/live_tests/026_room_signal_assist_live.py"
   "scripts/live_tests/027_room_cooling_assist_live.py"
@@ -46,7 +48,7 @@ DIAGNOSTIC_SCRIPTS=(
 usage() {
   cat <<'EOF'
 Usage:
-  HA_TOKEN=<token> [PERSON_SLUG=<slug>] ./scripts/check_all_live.sh [--ha-url URL] [--tier live_e2e] [--skip 015]
+  HA_TOKEN=<token> [HA_NON_ADMIN_TOKEN=<token>] [PERSON_SLUG=<slug>] ./scripts/check_all_live.sh [--ha-url URL] [--tier live_e2e] [--skip 015]
 
 Execution model:
 - runs an explicit ordered manifest for the selected tier
@@ -130,6 +132,9 @@ for file in "${files[@]}"; do
   case "$base" in
     *.py)
       args=(--ha-url "$HA_URL" --ha-token "$HA_TOKEN")
+      if [[ "$base" == 016_* && -n "$HA_NON_ADMIN_TOKEN" ]]; then
+        args+=(--ha-non-admin-token "$HA_NON_ADMIN_TOKEN")
+      fi
       if [[ "$base" == 020_* ]]; then
         if [[ -z "$PERSON_SLUG" ]]; then
           echo "PERSON_SLUG is required for $base" >&2

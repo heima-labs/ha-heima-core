@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.heima.config_flow import HeimaConfigFlow, HeimaOptionsFlowHandler
+from custom_components.heima.config_flow import HeimaOptionsFlowHandler
 from custom_components.heima.const import DOMAIN
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
@@ -29,26 +29,6 @@ def _flow(options: dict | None = None, *, is_admin: bool = True) -> HeimaOptions
     return flow
 
 
-@pytest.mark.asyncio
-async def test_config_flow_user_step_requires_admin():
-    flow = HeimaConfigFlow()
-    flow.hass = _fake_hass(is_admin=False)
-    flow.context = {"user_id": "user-1"}
-
-    result = await flow.async_step_user()
-
-    assert result["type"] == "abort"
-    assert result["reason"] == "admin_required"
-
-
-@pytest.mark.asyncio
-async def test_options_flow_init_requires_admin():
-    flow = _flow(is_admin=False)
-
-    result = await flow.async_step_init()
-
-    assert result["type"] == "abort"
-    assert result["reason"] == "admin_required"
 
 
 @pytest.mark.asyncio
