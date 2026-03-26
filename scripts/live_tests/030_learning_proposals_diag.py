@@ -28,6 +28,9 @@ def main() -> int:
     parser.add_argument("--min-count", type=int, default=1)
     parser.add_argument("--require-type", default="", help="e.g. presence_preheat")
     parser.add_argument("--require-status", default="pending", help="e.g. pending/accepted/rejected")
+    parser.add_argument("--require-identity", action="store_true")
+    parser.add_argument("--require-last-observed", action="store_true")
+    parser.add_argument("--require-not-stale", action="store_true")
     args = parser.parse_args()
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token)
@@ -71,11 +74,33 @@ def main() -> int:
             if str(proposal.get("type", "")) != args.require_type:
                 continue
             matched = True
+            if args.require_identity and not str(proposal.get("identity_key", "")).strip():
+                raise RuntimeError(
+                    f"Proposal type='{args.require_type}' is missing identity_key"
+                )
+            if args.require_last_observed and not str(proposal.get("last_observed_at", "")).strip():
+                raise RuntimeError(
+                    f"Proposal type='{args.require_type}' is missing last_observed_at"
+                )
+            if args.require_not_stale and proposal.get("is_stale") is not False:
+                raise RuntimeError(
+                    f"Proposal type='{args.require_type}' expected is_stale=false, got {proposal.get('is_stale')!r}"
+                )
             break
         if not matched:
             raise RuntimeError(
                 f"No proposal found with type='{args.require_type}' status='{args.require_status}'"
             )
+    elif matching and (args.require_identity or args.require_last_observed or args.require_not_stale):
+        for proposal in matching:
+            if args.require_identity and not str(proposal.get("identity_key", "")).strip():
+                raise RuntimeError("At least one matching proposal is missing identity_key")
+            if args.require_last_observed and not str(proposal.get("last_observed_at", "")).strip():
+                raise RuntimeError("At least one matching proposal is missing last_observed_at")
+            if args.require_not_stale and proposal.get("is_stale") is not False:
+                raise RuntimeError(
+                    f"Expected matching proposals to have is_stale=false, got {proposal.get('is_stale')!r}"
+                )
 
     print("PASS: learning proposals diagnostic checks passed")
     return 0
