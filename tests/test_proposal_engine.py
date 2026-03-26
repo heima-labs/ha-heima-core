@@ -81,6 +81,8 @@ async def test_proposal_engine_run_and_pending(monkeypatch):
     proposal_attrs = sensor_updates[-1][1][pending[0].proposal_id]
     assert "created_at" in proposal_attrs
     assert "updated_at" in proposal_attrs
+    assert "last_observed_at" in proposal_attrs
+    assert "identity_key" in proposal_attrs
     assert "config_summary" in proposal_attrs
     assert "explainability" in proposal_attrs
 
@@ -152,6 +154,60 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
 
     assert len(engine2._proposals) == 1
     assert engine2._proposals[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+
+
+async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine.register_analyzer(_AnalyzerStub([_proposal(conf=0.9, weekday=2)]))
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].identity_key == "presence_preheat|weekday=2"
+    assert pending[0].last_observed_at
+
+
+async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    first = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.8,
+        description="living:1205",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1205,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+    second = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.9,
+        description="living:1225",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1225,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+    analyzer = _AnalyzerStub([first])
+    engine.register_analyzer(analyzer)
+    await engine.async_initialize()
+    await engine.async_run()
+
+    analyzer._proposals = [second]
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].identity_key == "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+    assert pending[0].confidence == 0.9
 
 
 async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypatch):
@@ -228,9 +284,82 @@ async def test_proposal_engine_diagnostics_include_summary_and_explainability(mo
     engine._proposals = [proposal]
 
     diagnostics = engine.diagnostics()
+    assert diagnostics["pending_stale"] == 0
+    assert diagnostics["stale_after_s"] == 14 * 24 * 60 * 60
+    assert diagnostics["prune_pending_stale_after_s"] == 45 * 24 * 60 * 60
     item = diagnostics["proposals"][0]
+    assert item["identity_key"] == "presence_preheat|weekday=0"
+    assert item["last_observed_at"]
+    assert item["is_stale"] is False
+    assert item["stale_reason"] is None
     assert item["config_summary"]["reaction_class"] == "PresencePatternReaction"
     assert item["config_summary"]["weekday"] == 0
     assert item["config_summary"]["steps_count"] == 0
     assert item["explainability"]["pattern_id"] == "presence_preheat"
     assert item["explainability"]["observations_count"] == 6
+
+
+async def test_proposal_engine_marks_old_pending_proposal_as_stale(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub(), stale_after=timedelta(days=7))  # type: ignore[arg-type]
+    proposal = _proposal(conf=0.75, weekday=1)
+    old_ts = datetime(2026, 3, 1, tzinfo=UTC).isoformat()
+    proposal.created_at = old_ts
+    proposal.updated_at = old_ts
+    proposal.last_observed_at = old_ts
+    engine._proposals = [proposal]
+
+    diagnostics = engine.diagnostics()
+
+    assert diagnostics["pending_stale"] == 1
+    item = diagnostics["proposals"][0]
+    assert item["is_stale"] is True
+    assert item["stale_reason"].startswith("not_observed_recently:")
+
+
+async def test_proposal_engine_never_marks_accepted_proposal_as_stale(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub(), stale_after=timedelta(days=1))  # type: ignore[arg-type]
+    proposal = _proposal(conf=0.75, weekday=1, status="accepted")
+    proposal.last_observed_at = datetime(2026, 3, 1, tzinfo=UTC).isoformat()
+    engine._proposals = [proposal]
+
+    diagnostics = engine.diagnostics()
+
+    assert diagnostics["pending_stale"] == 0
+    item = diagnostics["proposals"][0]
+    assert item["is_stale"] is False
+    assert item["stale_reason"] is None
+
+
+async def test_proposal_engine_prunes_very_old_stale_pending_proposals(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(
+        object(),
+        _EventStoreStub(),
+        stale_after=timedelta(days=7),
+        prune_pending_stale_after=timedelta(days=30),
+    )  # type: ignore[arg-type]
+    old_pending = _proposal(conf=0.7, weekday=0)
+    old_pending.last_observed_at = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+    recent_pending = _proposal(conf=0.8, weekday=1)
+    recent_pending.last_observed_at = datetime.now(UTC).isoformat()
+    accepted = _proposal(conf=0.9, weekday=2, status="accepted")
+    accepted.last_observed_at = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+
+    analyzer = _AnalyzerStub([recent_pending])
+    engine.register_analyzer(analyzer)
+    await engine.async_initialize()
+    engine._proposals = [old_pending, recent_pending, accepted]
+
+    await engine.async_run()
+
+    assert len(engine._proposals) == 2
+    assert all(
+        not (
+            proposal.status == "pending"
+            and proposal.last_observed_at == datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+        )
+        for proposal in engine._proposals
+    )
+    assert any(proposal.status == "accepted" for proposal in engine._proposals)

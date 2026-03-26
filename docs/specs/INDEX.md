@@ -32,6 +32,7 @@ Related practical guides live outside this tree:
 ## Learning
 
 - `learning/learning_system_spec.md` — event store, analyzers, proposals
+- `learning/proposal_lifecycle_spec.md` — v1 proposal identity, refresh, and staleness
 - `learning/inference_engine_spec.md` — inference v2 draft
 
 ## RFC / Historical

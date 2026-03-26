@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
@@ -18,6 +18,8 @@ class ProposalEngine:
 
     STORAGE_KEY = "heima_proposals"
     STORAGE_VERSION = 1
+    DEFAULT_STALE_AFTER = timedelta(days=14)
+    DEFAULT_PRUNE_PENDING_STALE_AFTER = timedelta(days=45)
 
     def __init__(
         self,
@@ -25,11 +27,17 @@ class ProposalEngine:
         event_store: EventStore,
         *,
         min_confidence: float = 0.4,
+        stale_after: timedelta | None = None,
+        prune_pending_stale_after: timedelta | None = None,
         sensor_writer: Callable[[int, dict[str, Any]], None] | None = None,
     ) -> None:
         self._hass = hass
         self._event_store = event_store
         self._min_confidence = min_confidence
+        self._stale_after = stale_after or self.DEFAULT_STALE_AFTER
+        self._prune_pending_stale_after = (
+            prune_pending_stale_after or self.DEFAULT_PRUNE_PENDING_STALE_AFTER
+        )
         self._sensor_writer = sensor_writer
         self._store: Store[dict[str, Any]] = Store(
             hass,
@@ -64,17 +72,24 @@ class ProposalEngine:
 
         merged = list(self._proposals)
         for candidate in generated:
-            fingerprint = self._fingerprint(candidate)
+            now = datetime.now(UTC).isoformat()
+            identity_key = self._identity_key(candidate)
             existing_idx = next(
                 (
                     idx
                     for idx, current in enumerate(merged)
-                    if self._fingerprint(current) == fingerprint
+                    if self._identity_key(current) == identity_key
                 ),
                 None,
             )
             if existing_idx is None:
-                merged.append(candidate)
+                merged.append(
+                    replace(
+                        candidate,
+                        identity_key=identity_key,
+                        last_observed_at=now,
+                    )
+                )
                 continue
 
             existing = merged[existing_idx]
@@ -85,10 +100,13 @@ class ProposalEngine:
                 confidence=candidate.confidence,
                 description=candidate.description,
                 suggested_reaction_config=dict(candidate.suggested_reaction_config),
-                updated_at=datetime.now(UTC).isoformat(),
+                updated_at=now,
+                last_observed_at=now,
+                identity_key=identity_key,
             )
 
-        self._proposals = merged
+        pruned = self._prune_stale_pending(merged)
+        self._proposals = pruned
         await self._store.async_save(self._serialize())
         self._write_sensor()
 
@@ -131,6 +149,11 @@ class ProposalEngine:
         return {
             "total": len(ordered),
             "pending": len(self.pending_proposals()),
+            "pending_stale": sum(
+                1 for proposal in ordered if proposal.status == "pending" and self._is_stale(proposal)
+            ),
+            "stale_after_s": int(self._stale_after.total_seconds()),
+            "prune_pending_stale_after_s": int(self._prune_pending_stale_after.total_seconds()),
             "proposals": [
                 {
                     "id": p.proposal_id,
@@ -141,7 +164,11 @@ class ProposalEngine:
                     "status": p.status,
                     "created_at": p.created_at,
                     "updated_at": p.updated_at,
+                    "last_observed_at": p.last_observed_at,
+                    "identity_key": self._identity_key(p),
                     "fingerprint": self._fingerprint(p),
+                    "is_stale": self._is_stale(p),
+                    "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p),
                     "explainability": self._proposal_explainability(p),
                 }
@@ -166,7 +193,11 @@ class ProposalEngine:
                 "analyzer_id": p.analyzer_id,
                 "created_at": p.created_at,
                 "updated_at": p.updated_at,
+                "last_observed_at": p.last_observed_at,
+                "identity_key": self._identity_key(p),
                 "fingerprint": self._fingerprint(p),
+                "is_stale": self._is_stale(p),
+                "stale_reason": self._stale_reason(p),
                 "config_summary": self._proposal_config_summary(p),
                 "explainability": self._proposal_explainability(p),
             }
@@ -182,6 +213,39 @@ class ProposalEngine:
         weekday = cfg.get("weekday")
         house_state = cfg.get("house_state")
         return f"{proposal.analyzer_id}|{proposal.reaction_type}|{weekday}|{house_state}"
+
+    @classmethod
+    def _identity_key(cls, proposal: ReactionProposal) -> str:
+        if proposal.identity_key:
+            return proposal.identity_key
+        if proposal.fingerprint:
+            return proposal.fingerprint
+
+        cfg = dict(proposal.suggested_reaction_config or {})
+        reaction_type = proposal.reaction_type
+        if reaction_type == "presence_preheat":
+            return f"{reaction_type}|weekday={cfg.get('weekday')}"
+        if reaction_type == "heating_preference":
+            return f"{reaction_type}|house_state={cfg.get('house_state')}"
+        if reaction_type == "heating_eco":
+            return reaction_type
+        if reaction_type == "lighting_scene_schedule":
+            scheduled_min = cfg.get("scheduled_min")
+            bucket = None
+            if isinstance(scheduled_min, (int, float)):
+                bucket = (int(scheduled_min) // 30) * 30
+            return (
+                f"{reaction_type}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+                f"|bucket={bucket}"
+            )
+        if reaction_type in {
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
+            "room_darkness_lighting_assist",
+        }:
+            return f"{reaction_type}|room={cfg.get('room_id')}"
+        return cls._fingerprint(proposal)
 
     @staticmethod
     def _sort_proposals(proposals: list[ReactionProposal]) -> list[ReactionProposal]:
@@ -205,6 +269,53 @@ class ProposalEngine:
                 p.proposal_id,
             ),
         )
+
+    def _is_stale(self, proposal: ReactionProposal) -> bool:
+        if proposal.status != "pending":
+            return False
+        last_observed_at = self._parse_ts(proposal.last_observed_at)
+        if last_observed_at is None:
+            return True
+        return (datetime.now(UTC) - last_observed_at) > self._stale_after
+
+    def _stale_reason(self, proposal: ReactionProposal) -> str | None:
+        if proposal.status != "pending":
+            return None
+        last_observed_at = self._parse_ts(proposal.last_observed_at)
+        if last_observed_at is None:
+            return "missing_last_observed_at"
+        age = datetime.now(UTC) - last_observed_at
+        if age > self._stale_after:
+            return (
+                "not_observed_recently:"
+                f"age_s={int(age.total_seconds())}:"
+                f"threshold_s={int(self._stale_after.total_seconds())}"
+            )
+        return None
+
+    def _prune_stale_pending(self, proposals: list[ReactionProposal]) -> list[ReactionProposal]:
+        retained: list[ReactionProposal] = []
+        now = datetime.now(UTC)
+        for proposal in proposals:
+            if proposal.status != "pending":
+                retained.append(proposal)
+                continue
+            last_observed_at = self._parse_ts(proposal.last_observed_at)
+            if last_observed_at is None:
+                retained.append(proposal)
+                continue
+            age = now - last_observed_at
+            if age > self._prune_pending_stale_after:
+                continue
+            retained.append(proposal)
+        return retained
+
+    @staticmethod
+    def _parse_ts(value: str) -> datetime | None:
+        try:
+            return datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _proposal_config_summary(proposal: ReactionProposal) -> dict[str, Any]:
