@@ -45,6 +45,7 @@ Related practical guides live outside this tree:
 - `rfc/event_catalog_spec.md`
 - `rfc/security_mismatch_generalization_spec.md`
 - `rfc/notification_recipients_spec.md`
+- `rfc/heima_v2_emotion_ieq_research_note.md`
 - `rfc/heima_spec_v1.md`
 - `rfc/heima_spec_v1_1_behavior_framework.md`
 
