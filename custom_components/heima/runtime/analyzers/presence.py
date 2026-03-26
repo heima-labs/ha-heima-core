@@ -56,6 +56,16 @@ class PresencePatternAnalyzer:
                         "median_arrival_min": median,
                         "window_half_min": self.window_half_min,
                         "pre_condition_min": self.pre_condition_min,
+                        "learning_diagnostics": {
+                            "pattern_id": "presence_preheat",
+                            "weekday": weekday,
+                            "observations_count": len(day_samples),
+                            "weeks_observed": _weeks_observed(
+                                [e for e in arrivals if e.context.weekday == weekday]
+                            ),
+                            "median_arrival_min": median,
+                            "iqr_min": iqr,
+                        },
                         "steps": [],
                     },
                 )
@@ -68,3 +78,15 @@ class PresencePatternAnalyzer:
         hour = minute_of_day // 60
         minute = minute_of_day % 60
         return f"{hour:02d}:{minute:02d}"
+
+
+def _weeks_observed(events: list[HeimaEvent]) -> int:
+    weeks: set[tuple[int, int]] = set()
+    for event in events:
+        try:
+            dt = __import__("datetime").datetime.fromisoformat(event.ts)
+            iso = dt.isocalendar()
+            weeks.add((iso.year, iso.week))
+        except (ValueError, TypeError):
+            continue
+    return len(weeks)

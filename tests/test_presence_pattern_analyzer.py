@@ -54,6 +54,11 @@ async def test_presence_analyzer_emits_proposal():
     assert p.reaction_type == "presence_preheat"
     assert p.suggested_reaction_config["weekday"] == 0
     assert p.suggested_reaction_config["median_arrival_min"] == 480
+    diagnostics = p.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "presence_preheat"
+    assert diagnostics["observations_count"] == 5
+    assert diagnostics["median_arrival_min"] == 480
+    assert diagnostics["iqr_min"] >= 0
 
 
 async def test_presence_analyzer_confidence_tight_vs_spread():

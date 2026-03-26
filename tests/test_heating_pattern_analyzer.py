@@ -75,7 +75,11 @@ async def test_heating_analyzer_pattern_b_emits():
     events = [_heating_event(temperature_set=21.5) for _ in range(10)]
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) >= 1
-    assert any(p.reaction_type == "heating_preference" for p in proposals)
+    pref = next(p for p in proposals if p.reaction_type == "heating_preference")
+    diagnostics = pref.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "heating_preference"
+    assert diagnostics["observations_count"] == 10
+    assert diagnostics["median_target_temperature"] == 21.5
 
 
 async def test_heating_analyzer_confidence_consistent():
@@ -130,6 +134,9 @@ async def test_heating_analyzer_eco_pattern():
     assert eco_proposals
     assert eco_proposals[0].suggested_reaction_config["eco_sessions_observed"] >= 3
     assert eco_proposals[0].suggested_reaction_config["eco_target_temperature"] == 16.0
+    diagnostics = eco_proposals[0].suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "heating_eco"
+    assert diagnostics["eco_sessions_observed"] >= 3
 
 
 async def test_heating_analyzer_no_eco_without_house_state_sessions():

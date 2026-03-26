@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.proposal_engine import ProposalEngine
 
@@ -76,6 +78,11 @@ async def test_proposal_engine_run_and_pending(monkeypatch):
     pending = engine.pending_proposals()
     assert len(pending) == 1
     assert sensor_updates[-1][0] == 1
+    proposal_attrs = sensor_updates[-1][1][pending[0].proposal_id]
+    assert "created_at" in proposal_attrs
+    assert "updated_at" in proposal_attrs
+    assert "config_summary" in proposal_attrs
+    assert "explainability" in proposal_attrs
 
 
 async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
@@ -182,3 +189,48 @@ async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypa
     by_room = {p.suggested_reaction_config["room_id"]: p for p in pending}
     assert by_room["living"].confidence == 0.9
     assert by_room["bedroom"].confidence == 0.95
+
+
+async def test_pending_proposals_sorted_by_confidence_then_updated_at(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    base = datetime(2026, 3, 26, tzinfo=UTC)
+    older = _proposal(conf=0.7, weekday=0)
+    older.proposal_id = "older"
+    older.updated_at = (base).isoformat()
+    newer = _proposal(conf=0.7, weekday=1)
+    newer.proposal_id = "newer"
+    newer.updated_at = (base + timedelta(minutes=5)).isoformat()
+    strongest = _proposal(conf=0.9, weekday=2)
+    strongest.proposal_id = "strongest"
+    strongest.updated_at = (base - timedelta(minutes=5)).isoformat()
+    engine._proposals = [older, strongest, newer]
+
+    ordered = engine.pending_proposals()
+    assert [p.proposal_id for p in ordered] == ["strongest", "newer", "older"]
+
+
+async def test_proposal_engine_diagnostics_include_summary_and_explainability(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    proposal = _proposal(conf=0.85, weekday=0)
+    proposal.suggested_reaction_config = {
+        "reaction_class": "PresencePatternReaction",
+        "weekday": 0,
+        "steps": [],
+        "learning_diagnostics": {
+            "pattern_id": "presence_preheat",
+            "observations_count": 6,
+            "weeks_observed": 2,
+            "iqr_min": 8,
+        },
+    }
+    engine._proposals = [proposal]
+
+    diagnostics = engine.diagnostics()
+    item = diagnostics["proposals"][0]
+    assert item["config_summary"]["reaction_class"] == "PresencePatternReaction"
+    assert item["config_summary"]["weekday"] == 0
+    assert item["config_summary"]["steps_count"] == 0
+    assert item["explainability"]["pattern_id"] == "presence_preheat"
+    assert item["explainability"]["observations_count"] == 6

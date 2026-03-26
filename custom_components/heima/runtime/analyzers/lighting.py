@@ -24,6 +24,9 @@ class _EntityPattern:
     room_id: str
     scheduled_min: int
     confidence: float
+    observations_count: int
+    weeks_observed: int
+    iqr_min: int
     brightness: int | None
     color_temp_kelvin: int | None
     rgb_color: list[int] | None
@@ -100,6 +103,9 @@ class LightingPatternAnalyzer:
                 room_id=room_id,
                 scheduled_min=median,
                 confidence=float(confidence),
+                observations_count=len(group),
+                weeks_observed=_weeks_observed(group),
+                iqr_min=iqr,
                 brightness=brightness if action == "on" else None,
                 color_temp_kelvin=color_temp if action == "on" else None,
                 rgb_color=rgb if action == "on" else None,
@@ -154,6 +160,25 @@ class LightingPatternAnalyzer:
                         "window_half_min": 10,
                         "house_state_filter": None,
                         "entity_steps": entity_steps,
+                        "learning_diagnostics": {
+                            "pattern_id": "lighting_scene_schedule",
+                            "room_id": room_id,
+                            "weekday": weekday,
+                            "cluster_entities": sorted(
+                                step.get("entity_id", "")
+                                for step in entity_steps
+                                if step.get("entity_id")
+                            ),
+                            "observations_count": sum(
+                                pattern.observations_count for pattern in cluster
+                            ),
+                            "weeks_observed": min(
+                                pattern.weeks_observed for pattern in cluster
+                            ),
+                            "iqr_min": max(pattern.iqr_min for pattern in cluster),
+                            "scheduled_min": scheduled_min,
+                            "entity_steps_count": len(entity_steps),
+                        },
                     },
                     fingerprint=fingerprint,
                 ))
@@ -166,6 +191,10 @@ class LightingPatternAnalyzer:
 # ---------------------------------------------------------------------------
 
 def _spans_min_weeks(events: list[HeimaEvent]) -> bool:
+    return _weeks_observed(events) >= _MIN_WEEKS
+
+
+def _weeks_observed(events: list[HeimaEvent]) -> int:
     weeks: set[tuple[int, int]] = set()
     for e in events:
         try:
@@ -174,7 +203,7 @@ def _spans_min_weeks(events: list[HeimaEvent]) -> bool:
             weeks.add((iso.year, iso.week))
         except (ValueError, TypeError):
             pass
-    return len(weeks) >= _MIN_WEEKS
+    return len(weeks)
 
 
 def _median_int(values: list) -> int | None:

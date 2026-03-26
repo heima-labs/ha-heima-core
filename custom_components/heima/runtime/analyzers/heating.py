@@ -76,6 +76,14 @@ class HeatingPatternAnalyzer:
                         "house_state": hs,
                         "target_temperature": median,
                         "env_correlations": signal_correlations,
+                        "learning_diagnostics": {
+                            "pattern_id": "heating_preference",
+                            "house_state": hs,
+                            "observations_count": len(temps),
+                            "median_target_temperature": median,
+                            "spread_c": round(spread, 2),
+                            "correlated_signal_keys": sorted(signal_correlations.keys()),
+                        },
                         "steps": [],
                     },
                 )
@@ -135,6 +143,11 @@ class HeatingPatternAnalyzer:
                     "reaction_class": "HeatingEcoReaction",
                     "eco_sessions_observed": eco_sessions,
                     "eco_target_temperature": eco_target_temperature,
+                    "learning_diagnostics": {
+                        "pattern_id": "heating_eco",
+                        "eco_sessions_observed": eco_sessions,
+                        "eco_target_temperature": eco_target_temperature,
+                    },
                     "steps": [],
                 },
             )

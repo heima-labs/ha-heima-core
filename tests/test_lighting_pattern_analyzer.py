@@ -147,6 +147,13 @@ async def test_lighting_analyzer_proposal_config_fields():
     step = cfg["entity_steps"][0]
     assert step["entity_id"] == "light.kitchen_spot"
     assert step["action"] == "off"
+    diagnostics = cfg["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "lighting_scene_schedule"
+    assert diagnostics["room_id"] == "kitchen"
+    assert diagnostics["weekday"] == 2
+    assert diagnostics["observations_count"] == 5
+    assert diagnostics["weeks_observed"] >= 2
+    assert diagnostics["entity_steps_count"] == 1
 
 
 async def test_lighting_analyzer_entity_steps_contain_attributes():

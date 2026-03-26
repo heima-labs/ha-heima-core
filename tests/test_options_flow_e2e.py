@@ -350,6 +350,11 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
                     "rgb_color": None,
                 }
             ],
+            "learning_diagnostics": {
+                "pattern_id": "room_darkness_lighting_assist",
+                "episodes_observed": 5,
+                "weeks_observed": 2,
+            },
         },
     )
     proposal_engine = SimpleNamespace(
