@@ -33,6 +33,19 @@ Heima provides a policy-driven home control plane on top of Home Assistant, base
 - safe apply orchestration
 - explicit override and observability surfaces
 
+## Administrative Boundary
+
+Heima configuration is part of the administrative control plane of the home.
+
+Normative rule:
+- creating or modifying Heima configuration MUST be restricted to Home Assistant administrators
+
+This includes:
+- initial setup
+- options flow edits
+- proposal review and proposal acceptance/rejection
+- reaction editing and other persisted behavior changes
+
 ## Implemented Core Pillars
 
 - Canonical state evaluation (people, occupancy, house_state, lighting, security, heating)
