@@ -43,6 +43,22 @@ Not a goal of this document:
 - Deterministic effects (no hidden side effects)
 - Restart-safe and non-destructive
 - Backward compatible with config entry migrations
+- Administrative safety for high-impact decisions
+
+## Access Control
+
+Heima configuration is **admin-only**.
+
+Normative rules:
+- the initial config flow MUST only be executable by a Home Assistant administrator
+- the options flow MUST only be executable by a Home Assistant administrator
+- non-admin household users MUST NOT be allowed to create, edit, accept, reject, or save Heima configuration
+- this restriction applies to all high-impact configuration surfaces, including proposal review and reaction editing
+
+Rationale:
+- Heima configuration can change home behavior, automation policy, notifications, and reaction execution
+- proposal acceptance can materialize new configured reactions with real runtime effects
+- these decisions are part of system administration, not day-to-day household interaction
 
 ---
 
