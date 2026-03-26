@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
+from .learning_diagnostics import build_learning_diagnostics
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -56,16 +57,19 @@ class PresencePatternAnalyzer:
                         "median_arrival_min": median,
                         "window_half_min": self.window_half_min,
                         "pre_condition_min": self.pre_condition_min,
-                        "learning_diagnostics": {
-                            "pattern_id": "presence_preheat",
-                            "weekday": weekday,
-                            "observations_count": len(day_samples),
-                            "weeks_observed": _weeks_observed(
+                        "learning_diagnostics": build_learning_diagnostics(
+                            pattern_id="presence_preheat",
+                            analyzer_id=self.analyzer_id,
+                            reaction_type="presence_preheat",
+                            plugin_family="presence",
+                            weekday=weekday,
+                            observations_count=len(day_samples),
+                            weeks_observed=_weeks_observed(
                                 [e for e in arrivals if e.context.weekday == weekday]
                             ),
-                            "median_arrival_min": median,
-                            "iqr_min": iqr,
-                        },
+                            median_arrival_min=median,
+                            iqr_min=iqr,
+                        ),
                         "steps": [],
                     },
                 )

@@ -12,7 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN
 from .models import HeimaRuntimeState
 from .runtime.analyzers import (
-    builtin_learning_pattern_plugins,
+    create_builtin_learning_plugin_registry,
 )
 from .runtime.behaviors import (
     EventRecorderBehavior,
@@ -68,7 +68,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._event_store,
             sensor_writer=self._write_proposals_sensor,
         )
-        for plugin in builtin_learning_pattern_plugins():
+        self._learning_plugin_registry = create_builtin_learning_plugin_registry()
+        for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
@@ -94,6 +95,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     @property
     def proposal_engine(self) -> ProposalEngine:
         return self._proposal_engine
+
+    @property
+    def learning_plugin_registry(self):
+        return self._learning_plugin_registry
 
     async def _async_update_data(self) -> HeimaRuntimeState:
         """Return current runtime state for coordinator refreshes.

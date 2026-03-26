@@ -78,6 +78,9 @@ async def test_heating_analyzer_pattern_b_emits():
     pref = next(p for p in proposals if p.reaction_type == "heating_preference")
     diagnostics = pref.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "heating_preference"
+    assert diagnostics["analyzer_id"] == "HeatingPatternAnalyzer"
+    assert diagnostics["reaction_type"] == "heating_preference"
+    assert diagnostics["plugin_family"] == "heating"
     assert diagnostics["observations_count"] == 10
     assert diagnostics["median_target_temperature"] == 21.5
 
@@ -136,6 +139,9 @@ async def test_heating_analyzer_eco_pattern():
     assert eco_proposals[0].suggested_reaction_config["eco_target_temperature"] == 16.0
     diagnostics = eco_proposals[0].suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "heating_eco"
+    assert diagnostics["analyzer_id"] == "HeatingPatternAnalyzer"
+    assert diagnostics["reaction_type"] == "heating_eco"
+    assert diagnostics["plugin_family"] == "heating"
     assert diagnostics["eco_sessions_observed"] >= 3
 
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
+from .learning_diagnostics import build_learning_diagnostics
 from .composite import (
     CompositePatternSpec,
     CompositeSignalSpec,
@@ -384,31 +385,32 @@ def _build_default_diagnostics(
             if entity_id
         }
     )
-    return {
-        "pattern_id": definition.pattern_id,
-        "room_id": room_id,
-        "analyzer_id": definition.analyzer_id,
-        "reaction_type": definition.reaction_type,
-        "primary_signal": definition.matcher_spec.primary.name,
-        "corroboration_signals": corroboration_signal_names,
-        "followup_signal": (
+    return build_learning_diagnostics(
+        pattern_id=definition.pattern_id,
+        analyzer_id=definition.analyzer_id,
+        reaction_type=definition.reaction_type,
+        plugin_family="composite_room_assist",
+        room_id=room_id,
+        primary_signal=definition.matcher_spec.primary.name,
+        corroboration_signals=corroboration_signal_names,
+        followup_signal=(
             definition.matcher_spec.followup.name
             if definition.matcher_spec.followup is not None
             else None
         ),
-        "require_room_occupancy": definition.matcher_spec.require_room_occupancy,
-        "correlation_window_s": definition.matcher_spec.correlation_window_s,
-        "followup_window_s": definition.matcher_spec.followup_window_s,
-        "episodes_detected": len(episodes),
-        "episodes_confirmed": len(confirmed),
-        "weeks_observed": _episode_week_count(episodes),
-        "corroborated_episodes": sum(
+        require_room_occupancy=definition.matcher_spec.require_room_occupancy,
+        correlation_window_s=definition.matcher_spec.correlation_window_s,
+        followup_window_s=definition.matcher_spec.followup_window_s,
+        episodes_detected=len(episodes),
+        episodes_confirmed=len(confirmed),
+        weeks_observed=_episode_week_count(episodes),
+        corroborated_episodes=sum(
             1 for ep in confirmed if any(ep.corroboration_matches.values())
         ),
-        "matched_primary_entities": primary_entities,
-        "matched_corroboration_entities": corroboration_entities,
-        "observed_followup_entities": followup_entities,
-    }
+        matched_primary_entities=primary_entities,
+        matched_corroboration_entities=corroboration_entities,
+        observed_followup_entities=followup_entities,
+    )
 
 
 def _describe(room_id: str, observed: int, corroborated: int) -> str:

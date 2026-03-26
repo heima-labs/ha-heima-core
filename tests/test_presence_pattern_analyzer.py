@@ -56,6 +56,9 @@ async def test_presence_analyzer_emits_proposal():
     assert p.suggested_reaction_config["median_arrival_min"] == 480
     diagnostics = p.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "presence_preheat"
+    assert diagnostics["analyzer_id"] == "PresencePatternAnalyzer"
+    assert diagnostics["reaction_type"] == "presence_preheat"
+    assert diagnostics["plugin_family"] == "presence"
     assert diagnostics["observations_count"] == 5
     assert diagnostics["median_arrival_min"] == 480
     assert diagnostics["iqr_min"] >= 0

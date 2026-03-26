@@ -8,6 +8,7 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
+from .learning_diagnostics import build_learning_diagnostics
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 _MIN_OCCURRENCES = 5
@@ -160,25 +161,28 @@ class LightingPatternAnalyzer:
                         "window_half_min": 10,
                         "house_state_filter": None,
                         "entity_steps": entity_steps,
-                        "learning_diagnostics": {
-                            "pattern_id": "lighting_scene_schedule",
-                            "room_id": room_id,
-                            "weekday": weekday,
-                            "cluster_entities": sorted(
+                        "learning_diagnostics": build_learning_diagnostics(
+                            pattern_id="lighting_scene_schedule",
+                            analyzer_id=self.analyzer_id,
+                            reaction_type="lighting_scene_schedule",
+                            plugin_family="lighting",
+                            room_id=room_id,
+                            weekday=weekday,
+                            cluster_entities=sorted(
                                 step.get("entity_id", "")
                                 for step in entity_steps
                                 if step.get("entity_id")
                             ),
-                            "observations_count": sum(
+                            observations_count=sum(
                                 pattern.observations_count for pattern in cluster
                             ),
-                            "weeks_observed": min(
+                            weeks_observed=min(
                                 pattern.weeks_observed for pattern in cluster
                             ),
-                            "iqr_min": max(pattern.iqr_min for pattern in cluster),
-                            "scheduled_min": scheduled_min,
-                            "entity_steps_count": len(entity_steps),
-                        },
+                            iqr_min=max(pattern.iqr_min for pattern in cluster),
+                            scheduled_min=scheduled_min,
+                            entity_steps_count=len(entity_steps),
+                        ),
                     },
                     fingerprint=fingerprint,
                 ))

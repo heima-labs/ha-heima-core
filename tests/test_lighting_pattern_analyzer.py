@@ -149,6 +149,9 @@ async def test_lighting_analyzer_proposal_config_fields():
     assert step["action"] == "off"
     diagnostics = cfg["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "lighting_scene_schedule"
+    assert diagnostics["analyzer_id"] == "LightingPatternAnalyzer"
+    assert diagnostics["reaction_type"] == "lighting_scene_schedule"
+    assert diagnostics["plugin_family"] == "lighting"
     assert diagnostics["room_id"] == "kitchen"
     assert diagnostics["weekday"] == 2
     assert diagnostics["observations_count"] == 5

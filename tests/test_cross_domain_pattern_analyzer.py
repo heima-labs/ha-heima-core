@@ -177,6 +177,9 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "room_signal_assist"
+    assert diagnostics["analyzer_id"] == "CrossDomainPatternAnalyzer"
+    assert diagnostics["reaction_type"] == "room_signal_assist"
+    assert diagnostics["plugin_family"] == "composite_room_assist"
     assert diagnostics["primary_signal"] == "humidity"
     assert diagnostics["corroboration_signals"] == ["temperature"]
     assert diagnostics["followup_signal"] == "ventilation"
@@ -241,6 +244,9 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     ]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "room_cooling_assist"
+    assert diagnostics["analyzer_id"] == "RoomCoolingPatternAnalyzer"
+    assert diagnostics["reaction_type"] == "room_cooling_assist"
+    assert diagnostics["plugin_family"] == "composite_room_assist"
     assert diagnostics["primary_signal"] == "temperature"
     assert diagnostics["corroboration_signals"] == ["humidity"]
     assert diagnostics["followup_signal"] == "cooling"
@@ -290,7 +296,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "room_air_quality_assist"
     assert diagnostics["primary_signal"] == "co2"
-    assert diagnostics["corroboration_signals"] == []
+    assert diagnostics.get("corroboration_signals", []) == []
     assert diagnostics["followup_signal"] == "ventilation"
     assert diagnostics["matched_primary_entities"] == ["sensor.office_co2"]
     assert diagnostics["observed_followup_entities"] == ["fan.office_ventilation"]

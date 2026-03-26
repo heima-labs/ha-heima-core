@@ -8,6 +8,7 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
+from .learning_diagnostics import build_learning_diagnostics
 
 _MIN_EVENTS = 10
 _MIN_ECO_SESSIONS = 3
@@ -76,14 +77,18 @@ class HeatingPatternAnalyzer:
                         "house_state": hs,
                         "target_temperature": median,
                         "env_correlations": signal_correlations,
-                        "learning_diagnostics": {
-                            "pattern_id": "heating_preference",
-                            "house_state": hs,
-                            "observations_count": len(temps),
-                            "median_target_temperature": median,
-                            "spread_c": round(spread, 2),
-                            "correlated_signal_keys": sorted(signal_correlations.keys()),
-                        },
+                        "learning_diagnostics": build_learning_diagnostics(
+                            pattern_id="heating_preference",
+                            analyzer_id=self.analyzer_id,
+                            reaction_type="heating_preference",
+                            plugin_family="heating",
+                            house_state=hs,
+                            observations_count=len(temps),
+                            weeks_observed=_weeks_observed(by_state_events[hs]),
+                            median_target_temperature=median,
+                            spread_c=round(spread, 2),
+                            correlated_signal_keys=sorted(signal_correlations.keys()),
+                        ),
                         "steps": [],
                     },
                 )
@@ -143,11 +148,15 @@ class HeatingPatternAnalyzer:
                     "reaction_class": "HeatingEcoReaction",
                     "eco_sessions_observed": eco_sessions,
                     "eco_target_temperature": eco_target_temperature,
-                    "learning_diagnostics": {
-                        "pattern_id": "heating_eco",
-                        "eco_sessions_observed": eco_sessions,
-                        "eco_target_temperature": eco_target_temperature,
-                    },
+                    "learning_diagnostics": build_learning_diagnostics(
+                        pattern_id="heating_eco",
+                        analyzer_id=self.analyzer_id,
+                        reaction_type="heating_eco",
+                        plugin_family="heating",
+                        eco_sessions_observed=eco_sessions,
+                        eco_target_temperature=eco_target_temperature,
+                        weeks_observed=_eco_weeks_observed(house_state_events),
+                    ),
                     "steps": [],
                 },
             )
@@ -272,3 +281,24 @@ class HeatingPatternAnalyzer:
             return datetime.fromisoformat(ts).astimezone(UTC)
         except (ValueError, TypeError):
             return None
+
+
+def _weeks_observed(events: list[HeimaEvent]) -> int:
+    weeks: set[tuple[int, int]] = set()
+    for event in events:
+        ts = HeatingPatternAnalyzer._parse_ts(event.ts)
+        if ts is None:
+            continue
+        iso = ts.isocalendar()
+        weeks.add((iso.year, iso.week))
+    return len(weeks)
+
+
+def _eco_weeks_observed(events: list[HeimaEvent]) -> int:
+    away_related = [
+        event
+        for event in events
+        if str(event.data.get("from_state", "")) == "away"
+        or str(event.data.get("to_state", "")) == "away"
+    ]
+    return _weeks_observed(away_related)

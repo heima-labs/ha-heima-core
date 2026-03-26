@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from custom_components.heima.const import DOMAIN
 from custom_components.heima.diagnostics import async_get_config_entry_diagnostics
+from custom_components.heima.runtime.analyzers import create_builtin_learning_plugin_registry
 
 
 class _CoordinatorStub:
@@ -15,6 +16,7 @@ class _CoordinatorStub:
         self.scheduler = SimpleNamespace(diagnostics=lambda: {"scheduler": "ok"})
         self._event_store = SimpleNamespace(diagnostics=lambda: {"total_events": 1})
         self._proposal_engine = SimpleNamespace(diagnostics=lambda: {"total": 0})
+        self.learning_plugin_registry = create_builtin_learning_plugin_registry()
 
 
 async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins():
