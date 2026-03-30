@@ -264,6 +264,31 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
     assert pending[0].confidence == 0.9
 
 
+async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fingerprint(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    analyzer = _AnalyzerStub(
+        [
+            _lighting_proposal(
+                conf=0.9,
+                room_id="living",
+                weekday=0,
+                scheduled_min=1360,
+                fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1350",
+            )
+        ]
+    )
+    engine.register_analyzer(analyzer)
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1350"
+    assert pending[0].identity_key == "lighting_scene_schedule|room=living|weekday=0|bucket=1350"
+
+
 async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     fp1 = "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"

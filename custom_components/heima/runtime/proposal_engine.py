@@ -345,8 +345,6 @@ class ProposalEngine:
     def _identity_key(cls, proposal: ReactionProposal) -> str:
         if proposal.identity_key:
             return proposal.identity_key
-        if proposal.fingerprint:
-            return proposal.fingerprint
 
         cfg = _safe_dict(proposal.suggested_reaction_config)
         reaction_type = proposal.reaction_type
@@ -372,6 +370,8 @@ class ProposalEngine:
             "room_darkness_lighting_assist",
         }:
             return f"{reaction_type}|room={cfg.get('room_id')}"
+        if proposal.fingerprint:
+            return proposal.fingerprint
         return cls._fingerprint(proposal)
 
     @staticmethod

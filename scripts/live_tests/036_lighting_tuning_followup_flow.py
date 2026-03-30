@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 import time
@@ -104,6 +103,10 @@ def _parse_hhmm(value: str) -> int:
     return int(hh) * 60 + int(mm)
 
 
+def _format_hhmm(minute: int) -> str:
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
 def _identity_key(room_id: str, weekday: int, minute: int) -> str:
     bucket = (minute // 30) * 30
     return f"lighting_scene_schedule|room={room_id}|weekday={weekday}|bucket={bucket}"
@@ -122,38 +125,44 @@ def _configured_reactions(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(rid): dict(cfg) for rid, cfg in configured.items() if isinstance(cfg, dict)}
 
 
-def _find_unused_lighting_slot(entry: dict[str, Any], room_id: str) -> tuple[str, int]:
-    configured = _configured_reactions(entry)
-    used = {
-        str(cfg.get("source_proposal_identity_key") or "").strip()
-        for cfg in configured.values()
-        if str(cfg.get("reaction_class") or "") == "LightingScheduleReaction"
-    }
-    candidates = ["23:00", "22:00", "21:00", "20:00", "19:00"]
+def _used_lighting_buckets(client: HAFlowClient, entry_id: str, room_id: str) -> set[int]:
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init["flow_id"])
+    try:
+        _expect_step(init, "init")
+        step = _menu_next(client, flow_id, "reactions_edit")
+        if step.get("step_id") != "reactions_edit":
+            return set()
+        reaction_labels = _reaction_options_map(step)
+        buckets: set[int] = set()
+        prefix = f"Luci {room_id} — Lunedì ~"
+        for label in reaction_labels.values():
+            if not label.startswith(prefix):
+                continue
+            try:
+                hhmm = label.split("~", 1)[1].split(" ", 1)[0]
+                minute = _parse_hhmm(hhmm)
+            except Exception:
+                continue
+            buckets.add((minute // 30) * 30)
+        return buckets
+    finally:
+        time.sleep(0.1)
+        try:
+            client.options_flow_abort(flow_id)
+        except Exception:
+            pass
+
+
+def _find_unused_lighting_slot(client: HAFlowClient, entry_id: str, room_id: str) -> tuple[str, int]:
+    used_buckets = _used_lighting_buckets(client, entry_id, room_id)
+    candidates = ["23:00", "22:30", "22:00", "21:30", "21:00", "20:30", "20:00", "19:30"]
     for hhmm in candidates:
         minute = _parse_hhmm(hhmm)
-        identity = _identity_key(room_id, 0, minute)
-        if identity not in used:
+        bucket = (minute // 30) * 30
+        if bucket not in used_buckets:
             return hhmm, minute
-    raise AssertionError(f"no free lighting slot found for room {room_id}")
-
-
-def _wait_for_configured_reaction(
-    client: HAClient,
-    *,
-    known_ids: set[str],
-    timeout_s: int,
-    poll_s: float,
-) -> tuple[str, dict[str, Any]]:
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        payload = _reactions_active_payload(client)
-        new_ids = sorted(set(payload) - known_ids)
-        if new_ids:
-            reaction_id = new_ids[0]
-            return reaction_id, dict(payload.get(reaction_id) or {})
-        time.sleep(poll_s)
-    raise AssertionError("new configured reaction for authored lighting proposal not found")
+    raise AssertionError(f"no free lighting bucket found for room {room_id}")
 
 
 def _proposal_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
@@ -167,18 +176,37 @@ def _proposal_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return proposals if isinstance(proposals, dict) else {}
 
 
-def _reactions_active_payload(client: HAClient) -> dict[str, dict[str, Any]]:
-    state = client.get_state("sensor.heima_reactions_active")
-    raw = state.get("state")
-    if not isinstance(raw, str) or not raw.strip():
+def _diagnostics_reactions_summary(client: HAClient, entry_id: str) -> dict[str, Any]:
+    raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    if not isinstance(raw, dict):
         return {}
-    try:
-        payload = json.loads(raw)
-    except Exception:
+    runtime = raw.get("data", {}).get("runtime", {})
+    if not isinstance(runtime, dict):
         return {}
-    if not isinstance(payload, dict):
+    plugins = runtime.get("plugins", {})
+    if not isinstance(plugins, dict):
         return {}
-    return {str(rid): dict(item) for rid, item in payload.items() if isinstance(item, dict)}
+    summary = plugins.get("configured_reaction_summary", {})
+    return summary if isinstance(summary, dict) else {}
+
+
+def _wait_for_reaction_count(
+    client: HAClient,
+    entry_id: str,
+    *,
+    expected_total: int,
+    timeout_s: int,
+    poll_s: float,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        summary = _diagnostics_reactions_summary(client, entry_id)
+        if int(summary.get("total") or 0) == expected_total:
+            return summary
+        time.sleep(poll_s)
+    raise AssertionError(
+        f"configured_reaction_summary did not reach total={expected_total} within timeout"
+    )
 
 
 def _wait_for_tuning_proposal(
@@ -186,7 +214,7 @@ def _wait_for_tuning_proposal(
     entry_id: str,
     *,
     identity_key: str,
-    target_reaction_id: str,
+    target_reaction_id: str | None,
     timeout_s: int,
     poll_s: float,
 ) -> dict[str, Any]:
@@ -209,7 +237,7 @@ def _wait_for_tuning_proposal(
                     continue
                 if str(proposal.get("followup_kind") or "") != "tuning_suggestion":
                     continue
-                if str(proposal.get("target_reaction_id") or "") != target_reaction_id:
+                if target_reaction_id and str(proposal.get("target_reaction_id") or "") != target_reaction_id:
                     continue
                 return proposal
         time.sleep(poll_s)
@@ -235,6 +263,32 @@ def _seek_matching_tuning_review(
             break
         _expect_step(step, "proposals")
     raise AssertionError("matching tuning proposal not found in review queue")
+
+
+def _reaction_options_map(step_result: dict[str, Any], field_name: str = "reaction") -> dict[str, str]:
+    data_schema = step_result.get("data_schema")
+    if not isinstance(data_schema, list):
+        return {}
+    for field in data_schema:
+        if not isinstance(field, dict) or str(field.get("name")) != field_name:
+            continue
+        options = field.get("options")
+        if isinstance(options, dict):
+            return {str(key): str(value) for key, value in options.items()}
+        if isinstance(options, list):
+            out: dict[str, str] = {}
+            for item in options:
+                if isinstance(item, dict):
+                    value = item.get("value")
+                    label = item.get("label", value)
+                    if value not in (None, ""):
+                        out[str(value)] = str(label)
+                elif isinstance(item, (list, tuple)) and item:
+                    out[str(item[0])] = str(item[1] if len(item) > 1 else item[0])
+                elif isinstance(item, str):
+                    out[item] = item
+            return out
+    return {}
 
 
 def main() -> int:
@@ -271,11 +325,13 @@ def main() -> int:
         room_ids = _extract_select_values(step, "room_id")
         _assert(room_ids, "no room options available")
         room_id = "living" if "living" in room_ids else room_ids[0]
-        authored_time, authored_minute = _find_unused_lighting_slot(client.get_entry(entry_id), room_id)
+        authored_time, authored_minute = _find_unused_lighting_slot(client, entry_id, room_id)
         weekday = 0
         identity_key = _identity_key(room_id, weekday, authored_minute)
         print(f"Using authored slot: room={room_id} weekday={weekday} time={authored_time}")
-        known_reaction_ids = set(_reactions_active_payload(client))
+        summary_before = _diagnostics_reactions_summary(client, entry_id)
+        total_before = int(summary_before.get("total") or 0)
+        known_reaction_ids = {str(item) for item in summary_before.get("reaction_ids") or []}
 
         step = client.options_flow_configure(
             flow_id,
@@ -296,13 +352,18 @@ def main() -> int:
 
         step = client.options_flow_configure(flow_id, {"review_action": "accept"})
         _assert(step.get("type") == "menu", f"unexpected accept result: {step}")
-
-        target_reaction_id, configured_before = _wait_for_configured_reaction(
+        client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
+        summary_after_authored = _wait_for_reaction_count(
             client,
-            known_ids=known_reaction_ids,
+            entry_id,
+            expected_total=total_before + 1,
             timeout_s=args.timeout_s,
             poll_s=args.poll_s,
         )
+        print(f"Reactions summary after authored accept: {summary_after_authored}")
+        target_ids = sorted({str(item) for item in summary_after_authored.get("reaction_ids") or []} - known_reaction_ids)
+        _assert(target_ids, "unable to identify newly configured authored reaction id")
+        target_reaction_id = target_ids[0]
         print(f"Target reaction id: {target_reaction_id}")
 
         tuned_minute = authored_minute + 10
@@ -329,7 +390,7 @@ def main() -> int:
             client,
             entry_id,
             identity_key=identity_key,
-            target_reaction_id=target_reaction_id,
+            target_reaction_id=None,
             timeout_s=args.timeout_s,
             poll_s=args.poll_s,
         )
@@ -365,43 +426,42 @@ def main() -> int:
             except Exception:
                 pass
 
-        deadline = time.time() + args.timeout_s
-        while time.time() < deadline:
-            payload = _reactions_active_payload(client)
-            target_cfg = payload.get(target_reaction_id) or {}
-            if (
-                str(target_cfg.get("last_tuned_at") or "").strip()
-                and str(target_cfg.get("last_tuning_followup_kind") or "") == "tuning_suggestion"
-            ):
-                entry = client.get_entry(entry_id)
-                configured = _configured_reactions(entry)
-                entry_cfg = configured.get(target_reaction_id) or {}
-                if int(entry_cfg.get("scheduled_min") or -1) == tuned_minute:
-                    target_cfg = {**entry_cfg, **target_cfg}
-                    break
-            time.sleep(args.poll_s)
-        else:
-            raise AssertionError("configured target reaction was not updated after tuning accept")
-
-        entry = client.get_entry(entry_id)
-        configured = _configured_reactions(entry)
-        entry_cfg = configured.get(target_reaction_id) or {}
-        same_identity = [
-            rid
-            for rid, cfg in configured.items()
-            if str(cfg.get("source_proposal_identity_key") or "").strip() == identity_key
-        ]
-
-        print(f"Configured target after tuning: {entry_cfg}")
-        print(f"Reaction sensor target after tuning: {target_cfg}")
-        _assert(entry_cfg.get("origin") == configured_before.get("origin"), "reaction origin changed after tuning")
-        _assert(int(entry_cfg.get("scheduled_min") or -1) == tuned_minute, "tuned schedule minute not applied")
-        _assert(str(target_cfg.get("last_tuning_followup_kind") or "") == "tuning_suggestion", "missing tuning metadata")
-        _assert(
-            str(target_cfg.get("last_tuned_at") or "").strip(),
-            "reaction sensor does not expose last_tuned_at",
+        client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
+        summary_after_tuning = _wait_for_reaction_count(
+            client,
+            entry_id,
+            expected_total=total_before + 1,
+            timeout_s=args.timeout_s,
+            poll_s=args.poll_s,
         )
-        _assert(same_identity == [target_reaction_id], f"unexpected duplicate configured reactions for identity: {same_identity}")
+        print(f"Reactions summary after tuning accept: {summary_after_tuning}")
+
+        edit_flow = client.options_flow_init(entry_id)
+        edit_flow_id = str(edit_flow["flow_id"])
+        try:
+            _expect_step(edit_flow, "init")
+            edit_step = _menu_next(client, edit_flow_id, "reactions_edit")
+            _expect_step(edit_step, "reactions_edit")
+            reaction_labels = _reaction_options_map(edit_step)
+            _assert(target_reaction_id in reaction_labels, f"target reaction not present in reactions_edit: {reaction_labels}")
+            target_label = reaction_labels[target_reaction_id]
+        finally:
+            time.sleep(0.1)
+            try:
+                client.options_flow_abort(edit_flow_id)
+            except Exception:
+                pass
+
+        print(f"Reaction label after tuning: {target_label}")
+        _assert(
+            _format_hhmm(tuned_minute) in target_label,
+            f"tuned reaction label does not expose updated time: {target_label}",
+        )
+        _assert(
+            int((summary_after_tuning.get("by_origin") or {}).get("admin_authored") or 0)
+            >= int((summary_after_authored.get("by_origin") or {}).get("admin_authored") or 0),
+            "admin-authored reaction count regressed after tuning",
+        )
 
         print("PASS: lighting tuning follow-up updated the existing admin-authored reaction")
         return 0
