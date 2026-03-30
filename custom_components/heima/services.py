@@ -48,6 +48,7 @@ SET_OVERRIDE_SCHEMA = vol.Schema(
 
 SUPPORTED_COMMANDS = {
     "recompute_now",
+    "learning_run",
     "set_lighting_intent",
     "set_security_intent",
     "set_room_lighting_hold",
@@ -228,6 +229,11 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if command == "learning_reset":
             for coordinator in coordinators:
                 await coordinator.async_reset_learning_data()
+            return
+
+        if command == "learning_run":
+            for coordinator in coordinators:
+                await coordinator.async_run_learning_now()
             return
 
         if command == "seed_lighting_events":

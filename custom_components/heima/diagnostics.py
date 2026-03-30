@@ -20,6 +20,7 @@ async def async_get_config_entry_diagnostics(
     coordinator = data.get("coordinator")
 
     learning_plugins = _learning_plugin_diagnostics(coordinator)
+    proposal_diagnostics = coordinator._proposal_engine.diagnostics() if coordinator else {}
 
     payload = {
         "entry": {
@@ -33,9 +34,13 @@ async def async_get_config_entry_diagnostics(
             "engine": coordinator.engine.diagnostics() if coordinator else {},
             "scheduler": coordinator.scheduler.diagnostics() if coordinator else {},
             "event_store": coordinator._event_store.diagnostics() if coordinator else {},
-            "proposals": coordinator._proposal_engine.diagnostics() if coordinator else {},
+            "proposals": proposal_diagnostics,
             "plugins": {
                 "learning_pattern_plugins": learning_plugins,
+                "learning_summary": _learning_summary_diagnostics(
+                    learning_plugins,
+                    proposal_diagnostics,
+                ),
                 "reaction_plugins": [
                     {
                         "reaction_class": descriptor.reaction_class,
@@ -68,3 +73,132 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
         }
         for descriptor in builtin_learning_pattern_plugin_descriptors()
     ]
+
+
+def _learning_summary_diagnostics(
+    learning_plugins: list[dict[str, Any]],
+    proposal_diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    proposals = list(proposal_diagnostics.get("proposals") or [])
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            continue
+        proposal_type = str(proposal.get("type") or "").strip()
+        if not proposal_type:
+            continue
+        by_type.setdefault(proposal_type, []).append(proposal)
+
+    family_summary: dict[str, dict[str, Any]] = {}
+    plugin_summary: dict[str, dict[str, Any]] = {}
+    unclaimed_types: set[str] = set(by_type)
+
+    for plugin in learning_plugins:
+        if not isinstance(plugin, dict):
+            continue
+        plugin_id = str(plugin.get("plugin_id") or "")
+        family = str(plugin.get("plugin_family") or "unknown")
+        proposal_types = [str(item) for item in plugin.get("proposal_types") or [] if str(item)]
+        plugin_proposals = [
+            proposal
+            for proposal_type in proposal_types
+            for proposal in by_type.get(proposal_type, [])
+        ]
+        for proposal_type in proposal_types:
+            unclaimed_types.discard(proposal_type)
+
+        plugin_stats = _proposal_status_counts(plugin_proposals)
+        plugin_stats.update(
+            {
+                "plugin_family": family,
+                "proposal_types": proposal_types,
+                "top_examples": _top_proposal_examples(plugin_proposals),
+            }
+        )
+        plugin_summary[plugin_id] = plugin_stats
+
+        family_entry = family_summary.setdefault(
+            family,
+            {
+                "plugins": [],
+                "proposal_types": set(),
+                "total": 0,
+                "pending": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "stale_pending": 0,
+                "top_examples": [],
+            },
+        )
+        family_entry["plugins"].append(plugin_id)
+        family_entry["proposal_types"].update(proposal_types)
+        family_entry["total"] += plugin_stats["total"]
+        family_entry["pending"] += plugin_stats["pending"]
+        family_entry["accepted"] += plugin_stats["accepted"]
+        family_entry["rejected"] += plugin_stats["rejected"]
+        family_entry["stale_pending"] += plugin_stats["stale_pending"]
+        family_entry["top_examples"].extend(plugin_stats["top_examples"])
+
+    for family, stats in family_summary.items():
+        stats["plugins"] = sorted(stats["plugins"])
+        stats["proposal_types"] = sorted(stats["proposal_types"])
+        stats["top_examples"] = stats["top_examples"][:3]
+
+    return {
+        "plugin_count": len(plugin_summary),
+        "family_count": len(family_summary),
+        "proposal_total": int(proposal_diagnostics.get("total") or 0),
+        "pending_total": int(proposal_diagnostics.get("pending") or 0),
+        "pending_stale_total": int(proposal_diagnostics.get("pending_stale") or 0),
+        "families": family_summary,
+        "plugins": plugin_summary,
+        "unclaimed_proposal_types": sorted(unclaimed_types),
+    }
+
+
+def _proposal_status_counts(proposals: list[dict[str, Any]]) -> dict[str, int]:
+    pending = 0
+    accepted = 0
+    rejected = 0
+    stale_pending = 0
+    for proposal in proposals:
+        status = str(proposal.get("status") or "")
+        if status == "pending":
+            pending += 1
+            if proposal.get("is_stale") is True:
+                stale_pending += 1
+        elif status == "accepted":
+            accepted += 1
+        elif status == "rejected":
+            rejected += 1
+    return {
+        "total": len(proposals),
+        "pending": pending,
+        "accepted": accepted,
+        "rejected": rejected,
+        "stale_pending": stale_pending,
+    }
+
+
+def _top_proposal_examples(proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked = sorted(
+        proposals,
+        key=lambda item: (
+            0 if str(item.get("status") or "") == "pending" else 1,
+            -(float(item.get("confidence") or 0.0)),
+            str(item.get("updated_at") or ""),
+        ),
+    )
+    examples: list[dict[str, Any]] = []
+    for proposal in ranked[:3]:
+        examples.append(
+            {
+                "id": proposal.get("id"),
+                "type": proposal.get("type"),
+                "status": proposal.get("status"),
+                "confidence": proposal.get("confidence"),
+                "description": proposal.get("description"),
+                "is_stale": proposal.get("is_stale"),
+            }
+        )
+    return examples

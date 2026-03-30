@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 DEFAULT_STORAGE_DIR = Path(
     "docs/examples/ha_test_instance/docker/ha_config/.storage"
 )
+UTC = timezone.utc
 LOCAL_TZ = ZoneInfo("Europe/Rome")
 SCENE_MINUTE_OF_DAY = 19 * 60 + 30
 

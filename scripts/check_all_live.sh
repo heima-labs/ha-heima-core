@@ -11,7 +11,7 @@ HA_TOKEN="${HA_TOKEN:-}"
 HA_NON_ADMIN_TOKEN="${HA_NON_ADMIN_TOKEN:-}"
 PERSON_SLUG="${PERSON_SLUG:-}"
 SUITE_TIER="${SUITE_TIER:-live_e2e}"
-SKIP_PREFIXES=()
+declare -a SKIP_PREFIXES=()
 
 SETUP_SCRIPTS=(
   "scripts/recover_test_lab_config.py"
@@ -37,12 +37,13 @@ LIVE_E2E_SCRIPTS=(
 
 SEEDED_INTEGRATION_SCRIPTS=(
   "scripts/live_tests/015_learning_reset.sh"
-  "scripts/live_tests/020_learning_pipeline.py"
   "scripts/live_tests/060_lighting_schedule.py"
+  "scripts/live_tests/020_learning_pipeline.py"
 )
 
 DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/030_learning_proposals_diag.py"
+  "scripts/live_tests/031_learning_summary_diag.py"
 )
 
 usage() {
@@ -121,9 +122,14 @@ for file in "${files[@]}"; do
   fi
   base="$(basename "$file")"
   should_skip=false
-  for prefix in "${SKIP_PREFIXES[@]}"; do
-    if [[ "$base" == "${prefix}"* ]]; then should_skip=true; break; fi
-  done
+  if ((${#SKIP_PREFIXES[@]} > 0)); then
+    for prefix in "${SKIP_PREFIXES[@]}"; do
+      if [[ -n "$prefix" && "$base" == "${prefix}"* ]]; then
+        should_skip=true
+        break
+      fi
+    done
+  fi
   if $should_skip; then
     echo "== Skipping ${base} (--skip) =="
     continue

@@ -50,12 +50,20 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
 
     async def _async_ensure_admin_access(self) -> FlowResult | None:
         """Abort when the current flow user is not a Home Assistant admin."""
+        cached = getattr(self, "_admin_access_granted", None)
+        if cached is True:
+            return None
+        if cached is False:
+            return self.async_abort(reason="admin_required")
         user_id = str(self.context.get("user_id") or "").strip()
         if not user_id:
+            self._admin_access_granted = False
             return self.async_abort(reason="admin_required")
         user = await self.hass.auth.async_get_user(user_id)
         if user is None or not getattr(user, "is_admin", False):
+            self._admin_access_granted = False
             return self.async_abort(reason="admin_required")
+        self._admin_access_granted = True
         return None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -107,21 +115,9 @@ class HeimaOptionsFlowHandler(
         self._editing_heating_house_state: str | None = None
         self._editing_heating_branch: str | None = None
 
-    async def _async_ensure_admin_access(self) -> FlowResult | None:
-        """Abort when the current flow user is not a Home Assistant admin."""
-        user_id = str(self.context.get("user_id") or "").strip()
-        if not user_id:
-            return self.async_abort(reason="admin_required")
-        user = await self.hass.auth.async_get_user(user_id)
-        if user is None or not getattr(user, "is_admin", False):
-            return self.async_abort(reason="admin_required")
-        return None
-
     # ---- Toplevel menu (CF2) ----
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if (abort_result := await self._async_ensure_admin_access()) is not None:
-            return abort_result
         return self.async_show_menu(
             step_id="init",
             menu_options=[

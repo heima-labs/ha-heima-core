@@ -31,9 +31,11 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `020_learning_pipeline.py`
       - `060_lighting_schedule.py`
     - `diagnostic`
-      - `030_learning_proposals_diag.py`
+    - `030_learning_proposals_diag.py`
+      - `031_learning_summary_diag.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler). Utile per verificare quanti eventi sono stati registrati, lo stato del resolver `house_state`, gli ultimi eventi emessi, e se il learning system sta accumulando dati.
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Utile per verificare quanti eventi sono stati registrati, lo stato del resolver `house_state`, gli ultimi eventi emessi, e se il learning system sta accumulando dati.
+  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
@@ -75,7 +77,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 source scripts/.env
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 
-# Solo una sezione: event_store | proposals | calendar | house_state | events | engine | scheduler
+# Solo una sezione: event_store | proposals | calendar | house_state | events | engine | scheduler | plugins | learning
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section event_store
 
 # Solo il resolver house_state
@@ -83,6 +85,10 @@ python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --secti
 
 # Solo gli ultimi eventi e i contatori della pipeline
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section events
+
+# Solo il summary learning plugin-centric
+python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section learning
+python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 ```
 
 - Per un check rapido giornaliero su produzione:
@@ -124,6 +130,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
     - `029_presence_live.py`: real presence source -> Heima person -> proposal
 - `diagnostic`
   - `030_learning_proposals_diag.py`: read-only check for proposal sensor payloads, including lifecycle fields such as `identity_key`, `last_observed_at`, and `is_stale`
+  - `031_learning_summary_diag.py`: read-only check for plugin-centric `learning_summary` diagnostics payloads
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

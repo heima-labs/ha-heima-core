@@ -44,18 +44,6 @@ async def test_config_flow_user_step_allows_admin() -> None:
 
 
 @pytest.mark.asyncio
-async def test_options_flow_init_requires_admin() -> None:
-    flow = HeimaOptionsFlowHandler(SimpleNamespace(options={}, entry_id="entry-1"))
-    flow.hass = _fake_hass(is_admin=False)
-    flow.context = {"user_id": "user-1"}
-
-    result = await flow.async_step_init()
-
-    assert result["type"] == "abort"
-    assert result["reason"] == "admin_required"
-
-
-@pytest.mark.asyncio
 async def test_options_flow_init_allows_admin() -> None:
     flow = HeimaOptionsFlowHandler(SimpleNamespace(options={}, entry_id="entry-1"))
     flow.hass = _fake_hass(is_admin=True)

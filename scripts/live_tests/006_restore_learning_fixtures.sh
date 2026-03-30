@@ -10,19 +10,30 @@ HA_URL="${HA_URL:-http://127.0.0.1:8823}"
 HA_TOKEN="${HA_TOKEN:-}"
 DEV_CONTAINER_NAME="${DEV_CONTAINER_NAME:-homeassistant-test}"
 STORAGE_DIR="$REPO_ROOT/docs/examples/ha_test_instance/docker/ha_config/.storage"
+DOCKER_BIN="${DOCKER_BIN:-}"
+
+if [[ -z "$DOCKER_BIN" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    DOCKER_BIN="$(command -v docker)"
+  elif [[ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]]; then
+    DOCKER_BIN="/Applications/Docker.app/Contents/Resources/bin/docker"
+  else
+    echo "FAIL: docker binary not found; set DOCKER_BIN or ensure docker is on PATH" >&2
+    exit 1
+  fi
+fi
+
+echo "Stopping Home Assistant lab container '$DEV_CONTAINER_NAME' before fixture restore..."
+"$DOCKER_BIN" stop "$DEV_CONTAINER_NAME" >/dev/null
 
 echo "Generating learning fixture storage..."
 python3 "$REPO_ROOT/scripts/generate_learning_fixtures.py" --storage-dir "$STORAGE_DIR"
 
-echo "Stopping Home Assistant lab container '$DEV_CONTAINER_NAME' before fixture restore..."
-docker stop "$DEV_CONTAINER_NAME" >/dev/null
-
-echo "Copying fixture storage into stopped container '$DEV_CONTAINER_NAME'..."
-docker cp "$STORAGE_DIR/heima_pattern_events" "$DEV_CONTAINER_NAME:/config/.storage/heima_pattern_events"
-docker cp "$STORAGE_DIR/heima_proposals" "$DEV_CONTAINER_NAME:/config/.storage/heima_proposals"
+echo "Using host-mounted fixture storage at '$STORAGE_DIR'..."
+echo "Skipping docker cp because /config is bind-mounted from the host in the test lab."
 
 echo "Starting Home Assistant lab container..."
-docker start "$DEV_CONTAINER_NAME" >/dev/null
+"$DOCKER_BIN" start "$DEV_CONTAINER_NAME" >/dev/null
 
 echo "Waiting for Home Assistant to come back on $HA_URL ..."
 deadline=$((SECONDS + 180))

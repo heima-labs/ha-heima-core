@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,14 +20,29 @@ from lib.ha_client import HAApiError, HAClient
 
 
 class HAFlowClient(HAClient):
+    def _post_with_retry(self, path: str, payload: dict[str, Any]) -> Any:
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                return self.post(path, payload)
+            except HAApiError as err:
+                last = err
+                text = str(err).lower()
+                if "connection reset by peer" not in text:
+                    raise
+                if attempt == 2:
+                    raise
+                time.sleep(1.0 * (attempt + 1))
+        raise last or HAApiError(f"POST failed for {path}")
+
     def options_flow_init(self, entry_id: str) -> dict[str, Any]:
-        data = self.post("/api/config/config_entries/options/flow", {"handler": entry_id})
+        data = self._post_with_retry("/api/config/config_entries/options/flow", {"handler": entry_id})
         if not isinstance(data, dict):
             raise HAApiError(f"invalid options flow init response: {type(data)}")
         return data
 
     def options_flow_configure(self, flow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        data = self.post(f"/api/config/config_entries/options/flow/{flow_id}", payload)
+        data = self._post_with_retry(f"/api/config/config_entries/options/flow/{flow_id}", payload)
         if not isinstance(data, dict):
             raise HAApiError(f"invalid options flow response: {type(data)}")
         return data
