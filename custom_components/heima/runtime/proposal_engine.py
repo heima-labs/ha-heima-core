@@ -150,10 +150,63 @@ class ProposalEngine:
     async def async_reject_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "rejected")
 
+    async def async_submit_proposal(self, proposal: ReactionProposal) -> str:
+        """Insert or refresh one externally-authored proposal into the shared store."""
+        now = datetime.now(UTC).isoformat()
+        identity_key = self._identity_key(proposal)
+        existing_idx = next(
+            (
+                idx
+                for idx, current in enumerate(self._proposals)
+                if self._identity_key(current) == identity_key
+            ),
+            None,
+        )
+        if existing_idx is None:
+            submitted = replace(
+                proposal,
+                identity_key=identity_key,
+                last_observed_at=proposal.last_observed_at or now,
+            )
+            self._proposals.append(submitted)
+            await self._store.async_save(self._serialize())
+            self._write_sensor()
+            return submitted.proposal_id
+
+        existing = self._proposals[existing_idx]
+        if existing.status != "pending":
+            return existing.proposal_id
+
+        updated = replace(
+            existing,
+            analyzer_id=proposal.analyzer_id,
+            reaction_type=proposal.reaction_type,
+            description=proposal.description,
+            confidence=proposal.confidence,
+            origin=proposal.origin,
+            suggested_reaction_config=dict(proposal.suggested_reaction_config),
+            updated_at=now,
+            last_observed_at=proposal.last_observed_at or now,
+            identity_key=identity_key,
+        )
+        self._proposals[existing_idx] = updated
+        await self._store.async_save(self._serialize())
+        self._write_sensor()
+        return updated.proposal_id
+
     def pending_proposals(self) -> list[ReactionProposal]:
         return self._sort_proposals(
             [p for p in self._proposals if p.status == "pending"]
         )
+
+    def proposal_by_identity_key(self, identity_key: str) -> ReactionProposal | None:
+        target = identity_key.strip()
+        if not target:
+            return None
+        for proposal in self._proposals:
+            if self._identity_key(proposal) == target:
+                return proposal
+        return None
 
     async def async_shutdown(self) -> None:
         await self._store.async_save(self._serialize())

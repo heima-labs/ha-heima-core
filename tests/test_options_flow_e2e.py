@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
 from custom_components.heima.const import DOMAIN
+from custom_components.heima.runtime.analyzers import create_builtin_learning_plugin_registry
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
 
@@ -556,6 +557,97 @@ async def test_proposals_step_skip_advances_to_next_proposal():
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
     assert "Luci living" in result["description_placeholders"]["proposal_label"]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_create_lists_supported_templates():
+    flow = _flow({"rooms": [{"room_id": "living", "display_name": "Living", "area_id": "living"}]})
+
+    result = await flow.async_step_admin_authored_create()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_create"
+    assert "template_id" in result["data_schema"].schema
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_opens_review():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "area_id": "living"},
+            ],
+            "learning": {"enabled_plugin_families": ["lighting", "presence"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"lighting", "presence"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_lighting_schedule(
+        {
+            "room_id": "living",
+            "weekday": "0",
+            "scheduled_time": "20:00",
+            "light_entities": ["light.living_main", "light.living_spot"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    created = pending[0]
+    assert created.origin == "admin_authored"
+    assert created.reaction_type == "lighting_scene_schedule"
+    assert created.suggested_reaction_config["admin_authored_template_id"] == "lighting.scene_schedule.basic"
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert "Luci living" in result["description_placeholders"]["proposal_label"]
+    assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
+    assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
+    assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
+
+
+def test_proposal_review_label_marks_admin_authored_origin():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-admin",
+        analyzer_id="AdminAuthoredLightingTemplate",
+        reaction_type="lighting_scene_schedule",
+        description="living: Monday ~20:00 — 2 entities",
+        confidence=1.0,
+        origin="admin_authored",
+        last_observed_at="2026-03-26T10:27:51.561727+00:00",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "reaction_class": "LightingScheduleReaction",
+            "admin_authored_template_id": "lighting.scene_schedule.basic",
+        },
+    )
+
+    label = flow._proposal_review_label(proposal)
+
+    assert "[admin | 100% | seen 2026-03-26]" in label
 
 
 @pytest.mark.asyncio

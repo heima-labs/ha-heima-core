@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN, OPT_REACTIONS
+from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
 from ._common import _entity_selector
 
@@ -17,10 +18,167 @@ if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
+_IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES = {"lighting.scene_schedule.basic"}
 
 
 class _ReactionsStepsMixin:
     """Mixin for reactions step."""
+
+    async def async_step_admin_authored_create(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Start an admin-authored automation request from plugin-declared templates."""
+        template_options = self._admin_authored_template_options()
+        if not template_options:
+            return await self.async_step_init()
+
+        if user_input is None:
+            schema = vol.Schema({vol.Required("template_id"): vol.In(template_options)})
+            return self.async_show_form(
+                step_id="admin_authored_create",
+                data_schema=schema,
+            )
+
+        template_id = str(user_input.get("template_id") or "").strip()
+        if template_id == "lighting.scene_schedule.basic":
+            self._selected_admin_authored_template_id = template_id
+            return await self.async_step_admin_authored_lighting_schedule()
+        return await self.async_step_init()
+
+    async def async_step_admin_authored_lighting_schedule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored lighting schedule proposal."""
+        template = self._admin_authored_template("lighting.scene_schedule.basic")
+        room_ids = self._room_ids()
+        if template is None or not room_ids:
+            return await self.async_step_init()
+
+        defaults = {
+            "room_id": room_ids[0],
+            "weekday": "0",
+            "scheduled_time": "20:00",
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_lighting_schedule",
+                data_schema=self._admin_authored_lighting_schedule_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        room_id = str(user_input.get("room_id") or "").strip()
+        action = str(user_input.get("action") or "on").strip()
+        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
+        weekday_raw = user_input.get("weekday")
+        scheduled_time = str(user_input.get("scheduled_time") or "").strip()
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not entity_ids:
+            errors["light_entities"] = "required"
+
+        weekday: int | None = None
+        try:
+            weekday = int(weekday_raw)
+            if weekday < 0 or weekday > 6:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["weekday"] = "invalid_number"
+
+        scheduled_min = _parse_hhmm_to_min(scheduled_time)
+        if scheduled_min is None:
+            errors["scheduled_time"] = "invalid_hhmm"
+
+        brightness = None
+        color_temp_kelvin = None
+        if action == "on":
+            try:
+                brightness = int(user_input.get("brightness") or 0)
+                if brightness < 1 or brightness > 255:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["brightness"] = "invalid_number"
+            try:
+                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
+                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["color_temp_kelvin"] = "invalid_number"
+
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_lighting_schedule",
+                data_schema=self._admin_authored_lighting_schedule_schema(
+                    {
+                        "room_id": room_id or defaults["room_id"],
+                        "weekday": str(weekday_raw or defaults["weekday"]),
+                        "scheduled_time": scheduled_time or defaults["scheduled_time"],
+                        "light_entities": entity_ids,
+                        "action": action or defaults["action"],
+                        "brightness": user_input.get("brightness", defaults["brightness"]),
+                        "color_temp_kelvin": user_input.get(
+                            "color_temp_kelvin", defaults["color_temp_kelvin"]
+                        ),
+                    }
+                ),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        assert weekday is not None
+        assert scheduled_min is not None
+
+        proposal = self._build_admin_authored_lighting_schedule_proposal(
+            room_id=room_id,
+            weekday=weekday,
+            scheduled_min=scheduled_min,
+            entity_ids=entity_ids,
+            action=action,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+        )
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        if proposal_engine is None:
+            return await self.async_step_init()
+
+        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
+        if existing is not None and existing.status != "pending":
+            return self.async_show_form(
+                step_id="admin_authored_lighting_schedule",
+                data_schema=self._admin_authored_lighting_schedule_schema(
+                    {
+                        "room_id": room_id,
+                        "weekday": str(weekday),
+                        "scheduled_time": scheduled_time,
+                        "light_entities": entity_ids,
+                        "action": action,
+                        "brightness": brightness or defaults["brightness"],
+                        "color_temp_kelvin": color_temp_kelvin
+                        or defaults["color_temp_kelvin"],
+                    }
+                ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal_id = await proposal_engine.async_submit_proposal(proposal)
+        self._proposal_review_queue = [proposal_id]
+        return await self.async_step_proposals()
 
     async def async_step_reactions(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         """Show registered reactions and allow toggling persisted mute state."""
@@ -259,6 +417,127 @@ class _ReactionsStepsMixin:
     def _reactions_options(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_REACTIONS, {}))
 
+    def _admin_authored_template_options(self) -> dict[str, str]:
+        registry = self._learning_plugin_registry()
+        if registry is None:
+            return {}
+        options: dict[str, str] = {}
+        for template in registry.admin_authored_templates():
+            if template.template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
+                continue
+            options[template.template_id] = template.title
+        return options
+
+    def _admin_authored_template(self, template_id: str) -> Any | None:
+        registry = self._learning_plugin_registry()
+        if registry is None:
+            return None
+        if template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
+            return None
+        return registry.get_admin_authored_template(template_id)
+
+    def _learning_plugin_registry(self) -> Any | None:
+        coordinator = self._get_coordinator()
+        registry = getattr(coordinator, "learning_plugin_registry", None) if coordinator else None
+        if registry is not None:
+            return registry
+        learning_cfg = dict(self.options.get("learning", {}))
+        enabled_families = {
+            str(item).strip()
+            for item in learning_cfg.get("enabled_plugin_families") or []
+            if str(item).strip()
+        }
+        return create_builtin_learning_plugin_registry(
+            enabled_families=enabled_families or None
+        )
+
+    def _admin_authored_lighting_schedule_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        action_options = self._admin_authored_lighting_action_options()
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("room_id"): vol.In(room_options),
+                    vol.Required("weekday"): vol.In(self._weekday_options()),
+                    vol.Required("scheduled_time"): str,
+                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
+                    vol.Required("action", default="on"): vol.In(action_options),
+                    vol.Optional("brightness", default=190): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=255)
+                    ),
+                    vol.Optional("color_temp_kelvin", default=2850): vol.All(
+                        vol.Coerce(int), vol.Range(min=1500, max=9000)
+                    ),
+                }
+            ),
+            defaults,
+        )
+
+    def _admin_authored_lighting_action_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        if language.startswith("it"):
+            return {"on": "Accendi", "off": "Spegni"}
+        return {"on": "Turn on", "off": "Turn off"}
+
+    def _weekday_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        return {
+            str(index): self._weekday_label(index, language)
+            for index in range(7)
+        }
+
+    def _build_admin_authored_lighting_schedule_proposal(
+        self,
+        *,
+        room_id: str,
+        weekday: int,
+        scheduled_min: int,
+        entity_ids: list[str],
+        action: str,
+        brightness: int | None,
+        color_temp_kelvin: int | None,
+    ) -> ReactionProposal:
+        template_id = "lighting.scene_schedule.basic"
+        fingerprint = (
+            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
+            f"|bucket={(scheduled_min // 30) * 30}"
+        )
+        entity_steps = [
+            {
+                "entity_id": entity_id,
+                "action": action,
+                "brightness": brightness if action == "on" else None,
+                "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
+                "rgb_color": None,
+            }
+            for entity_id in entity_ids
+        ]
+        hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
+        day = self._weekday_label(weekday, "en")
+        description = f"{room_id}: {day} ~{hhmm} — {len(entity_steps)} entities"
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredLightingTemplate",
+            reaction_type="lighting_scene_schedule",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=fingerprint,
+            fingerprint=fingerprint,
+            suggested_reaction_config={
+                "reaction_class": "LightingScheduleReaction",
+                "room_id": room_id,
+                "weekday": weekday,
+                "scheduled_min": scheduled_min,
+                "window_half_min": 10,
+                "entity_steps": entity_steps,
+                "plugin_family": "lighting",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
     @staticmethod
     def _action_entities_to_steps(entities: list[str]) -> list[dict[str, Any]]:
         """Normalize selected action entities into executable ApplyStep-like dicts."""
@@ -308,6 +587,8 @@ class _ReactionsStepsMixin:
             context_parts.append(f"type:{proposal.reaction_type}")
 
         badges = [f"{proposal.confidence:.0%}"]
+        if proposal.origin == "admin_authored":
+            badges.insert(0, "admin")
         last_seen = _format_last_seen(proposal.last_observed_at)
         if last_seen:
             badges.append(f"seen {last_seen}")
@@ -360,6 +641,9 @@ class _ReactionsStepsMixin:
         is_it = language.startswith("it")
 
         details: list[str] = []
+        if proposal.origin == "admin_authored":
+            details.extend(self._admin_authored_review_details(proposal, cfg, language))
+            return "\n".join(details)
 
         pattern_description = str(proposal.description or "").strip()
         title = self._proposal_human_label(proposal, cfg)
@@ -425,6 +709,67 @@ class _ReactionsStepsMixin:
             )
 
         return "\n".join(details)
+
+    def _admin_authored_review_details(
+        self,
+        proposal: ReactionProposal,
+        cfg: dict[str, Any],
+        language: str,
+    ) -> list[str]:
+        is_it = language.startswith("it")
+        details: list[str] = []
+
+        template_id = str(cfg.get("admin_authored_template_id") or "").strip()
+        if is_it:
+            details.append("Origine: bozza richiesta dall'amministratore")
+        else:
+            details.append("Origin: draft requested by the administrator")
+
+        if template_id:
+            details.append(
+                f"Template: {template_id}"
+            )
+
+        details.append(
+            f"Stato UX: bozza" if is_it else "UX state: draft"
+        )
+        details.append(
+            f"Affidabilità: {proposal.confidence:.0%}"
+            if is_it
+            else f"Confidence: {proposal.confidence:.0%}"
+        )
+
+        room_id = str(cfg.get("room_id") or "").strip()
+        if room_id:
+            details.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
+
+        weekday = cfg.get("weekday")
+        if weekday not in (None, ""):
+            weekday_label = self._weekday_label(weekday, language)
+            details.append(
+                f"Giorno pianificato: {weekday_label}"
+                if is_it
+                else f"Scheduled day: {weekday_label}"
+            )
+
+        scheduled_min = cfg.get("scheduled_min")
+        if isinstance(scheduled_min, (int, float)):
+            hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
+            details.append(
+                f"Orario pianificato: {hhmm}"
+                if is_it
+                else f"Scheduled time: {hhmm}"
+            )
+
+        entity_steps = cfg.get("entity_steps")
+        if isinstance(entity_steps, list) and entity_steps:
+            details.append(
+                f"Luci coinvolte: {len(entity_steps)}"
+                if is_it
+                else f"Lights involved: {len(entity_steps)}"
+            )
+
+        return details
 
     def _proposal_human_label(
         self,
@@ -622,3 +967,18 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _parse_hhmm_to_min(value: str) -> int | None:
+    raw = value.strip()
+    if not raw or ":" not in raw:
+        return None
+    hour_str, minute_str = raw.split(":", 1)
+    try:
+        hour = int(hour_str)
+        minute = int(minute_str)
+    except ValueError:
+        return None
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+    return hour * 60 + minute
