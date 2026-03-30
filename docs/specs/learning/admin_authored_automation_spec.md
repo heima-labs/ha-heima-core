@@ -8,61 +8,67 @@
 
 Heima v1 currently learns automations from observed behavior and presents them as proposals for review.
 
-This spec defines a second, parallel channel:
+This spec defines a second, parallel channel that stays inside the same proposal/reaction system:
 
 - the HA admin can request an automation directly
-- Heima helps author it
+- Heima helps instantiate a precompiled proposal template
 - Heima can later propose tuning or follow-up on the authored automation
 
-The goal is not to replace learned proposals, but to extend the system with an explicit admin-authored path.
+The goal is not to replace learned proposals, but to extend the system with an explicit
+admin-authored path whose capabilities are declared by the relevant plugin family.
 
 ## 2. Core Model
 
-Heima should treat automations as having an `origin`:
+Heima should treat proposal/reaction artifacts as having an `origin`:
 
 - `learned`
 - `admin_authored`
 - `hybrid` for future combined cases
 
-An automation is still a reaction configuration at runtime, but its origin matters for:
+An authored automation is still a normal reaction configuration at runtime, but its origin matters for:
 
 - UI wording
 - review and ownership
 - tuning suggestions
 - lifecycle tracking
 
+The authoring capability is not universal. It is declared by the plugin family that owns the
+proposal/reaction shape:
+
+- `supports_admin_authored = true` means the plugin family MAY expose admin-authored templates
+- `supports_admin_authored = false` means the family is learned-only unless the spec explicitly says otherwise
+- template IDs, display labels, and schema fragments SHOULD come from the plugin declaration, not from a
+  standalone automation builder
+
 ## 3. Admin-Authored Flow
 
-The admin-authored flow is a request-driven path:
+The admin-authored flow is a request-driven path that still materializes a proposal inside the shared
+proposal/reaction pipeline:
 
 1. the HA admin states the intent
-2. Heima translates that intent into a candidate automation
+2. Heima selects a plugin-declared template and instantiates a candidate proposal
 3. the admin reviews and confirms the generated configuration
 4. the confirmed automation is stored as an authored reaction configuration
 
-This path is distinct from learned proposals because it starts from a human request, not from an observed pattern.
+This path is distinct from learned proposals because it starts from a human request, not from an
+observed pattern, but it is not a separate automation engine.
 
 ## 4. Lifecycle
 
-Admin-authored automations should keep a small lifecycle, separate from learned proposal lifecycle.
+Admin-authored automations do **not** introduce a separate runtime engine or a second state machine.
+They share the same proposal lifecycle as learned proposals, with `origin = "admin_authored"` and
+plugin provenance preserved in diagnostics.
 
-Recommended states:
+In v1, the following conceptual labels are sufficient:
 
-- `draft`
-- `confirmed`
-- `active`
-- `tuning_requested`
-- `retired`
+- `draft` for a plugin-instantiated proposal awaiting admin confirmation
+- `confirmed` for an accepted authored proposal
+- `active` for the resulting reaction configuration at runtime
+- `tuning_requested` for follow-up suggestions emitted later by Heima
+- `retired` for an authored automation that should no longer be considered active
 
-Meaning:
-
-- `draft`: Heima has prepared a candidate automation, but it has not been confirmed yet
-- `confirmed`: the admin approved the authored automation
-- `active`: the automation is in use at runtime
-- `tuning_requested`: Heima has detected a possible refinement and is asking for a human decision
-- `retired`: the automation should no longer be considered active
-
-In v1, these states can remain conceptual or diagnostic as long as the runtime still stores a simple reaction configuration plus origin metadata.
+These labels are primarily UX/diagnostic labels. The runtime artifact remains a standard
+`ReactionProposal` plus the accepted reaction configuration.
 
 ## 5. Relation to Learned Proposals
 
@@ -71,14 +77,15 @@ Learned proposals and admin-authored automations should share the same runtime r
 Shared:
 
 - `ReactionProposal` shape or a closely related review artifact
+- `origin` metadata
 - reaction configuration persistence
 - acceptance/rejection workflow
 - diagnostics and explanation payloads
 
 Different:
 
-- learned proposals come from observed behavior
-- admin-authored automations come from explicit human intent
+- learned proposals come from observed behavior and plugin analysis
+- admin-authored automations come from explicit human intent and a plugin-declared template
 - tuning proposals for authored automations should be labeled as follow-up, not as a fresh learned pattern
 
 ## 6. Reaction Integration
@@ -107,7 +114,8 @@ Heima may then propose:
 - split or merge suggestions
 - disable/retire suggestions
 
-These are not learned proposals in the strict sense. They are follow-up recommendations attached to an existing authored automation.
+These are not learned proposals in the strict sense. They are follow-up recommendations attached to
+an existing authored automation and should still flow through the same proposal/reaction substrate.
 
 Recommended follow-up labels:
 
@@ -145,9 +153,10 @@ The user should always be able to tell:
 The smallest useful v1 step is:
 
 - keep learned proposals as they are
-- add an admin-authored request path
+- add an admin-authored request path that instantiates plugin-declared templates
 - reuse the existing reaction configuration machinery
-- expose the `origin` concept in diagnostics and UI wording
+- expose the `origin` concept and plugin provenance in diagnostics and UI wording
+- keep the authoring surface bounded to a small set of plugin-defined templates
 
 No new behavior graph is required.
 No new runtime engine is required.
@@ -160,4 +169,3 @@ Questions that should be answered before a larger implementation:
 - should tuning suggestions be surfaced in the config flow or elsewhere?
 - should `hybrid` be introduced only when both user intent and learning evidence materially contribute?
 - should authored automations be allowed to spawn learned follow-ups automatically, or only after an explicit admin approval?
-

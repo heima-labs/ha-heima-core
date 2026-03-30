@@ -144,12 +144,32 @@ def _learning_summary_diagnostics(
         stats["proposal_types"] = sorted(stats["proposal_types"])
         stats["top_examples"] = stats["top_examples"][:3]
 
+    enabled_families = sorted(
+        family
+        for family, stats in family_summary.items()
+        if any(
+            plugin.get("enabled") is True
+            for plugin in learning_plugins
+            if isinstance(plugin, dict) and str(plugin.get("plugin_family") or "") == family
+        )
+    )
+    disabled_families = sorted(
+        {
+            str(plugin.get("plugin_family") or "unknown")
+            for plugin in learning_plugins
+            if isinstance(plugin, dict) and plugin.get("enabled") is False
+        }
+    )
+
     return {
         "plugin_count": len(plugin_summary),
         "family_count": len(family_summary),
         "proposal_total": int(proposal_diagnostics.get("total") or 0),
         "pending_total": int(proposal_diagnostics.get("pending") or 0),
         "pending_stale_total": int(proposal_diagnostics.get("pending_stale") or 0),
+        "config_source": "learning.enabled_plugin_families",
+        "enabled_plugin_families": enabled_families,
+        "disabled_plugin_families": disabled_families,
         "families": family_summary,
         "plugins": plugin_summary,
         "unclaimed_proposal_types": sorted(unclaimed_types),

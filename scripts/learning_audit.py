@@ -44,6 +44,14 @@ def main() -> int:
     print(f"proposals total: {summary.get('proposal_total', 0)}")
     print(f"pending: {summary.get('pending_total', 0)}")
     print(f"stale pending: {summary.get('pending_stale_total', 0)}")
+    print(f"config source: {summary.get('config_source', 'n/a')}")
+
+    enabled_families = list(summary.get("enabled_plugin_families") or [])
+    disabled_families = list(summary.get("disabled_plugin_families") or [])
+    if enabled_families:
+        print("enabled families: " + ", ".join(enabled_families))
+    if disabled_families:
+        print("disabled families: " + ", ".join(disabled_families))
 
     families = dict(summary.get("families") or {})
     if families:

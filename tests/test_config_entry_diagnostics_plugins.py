@@ -134,6 +134,9 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert summary["proposal_total"] == 3
     assert summary["pending_total"] == 2
     assert summary["pending_stale_total"] == 1
+    assert summary["config_source"] == "learning.enabled_plugin_families"
+    assert "lighting" in summary["enabled_plugin_families"]
+    assert summary["disabled_plugin_families"] == []
 
     lighting = summary["families"]["lighting"]
     assert lighting["pending"] == 1
@@ -145,3 +148,24 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
 
     heating = summary["plugins"]["builtin.heating_preferences"]
     assert heating["accepted"] == 1
+
+
+async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.learning_plugin_registry = create_builtin_learning_plugin_registry(
+        enabled_families={"presence", "lighting"}
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["learning_summary"]
+
+    assert summary["enabled_plugin_families"] == ["lighting", "presence"]
+    assert summary["disabled_plugin_families"] == ["composite_room_assist", "heating"]

@@ -78,6 +78,7 @@ That learning system consists of:
 - one shared proposal model
 - one shared proposal acceptance and reaction rebuild pipeline
 - multiple learning pattern plugins that learn different kinds of recurring behavior
+- an explicit built-in registry that can enable or disable plugin families through configuration
 
 Each learned behavior can also be described along two orthogonal semantic axes:
 - **Trigger family** — what kind of recurring condition or context causes the behavior
@@ -98,6 +99,8 @@ Normative rule:
   learning system
 - it SHOULD become a separate subsystem only if it truly requires a different storage,
   proposal, or runtime execution model
+- if a plugin family is admin-authorable, that capability SHOULD be declared by the plugin itself
+  rather than by a separate universal builder
 - `trigger family` and `response family` are the preferred conceptual tools for deciding whether a
   new behavior extends an existing plugin family or needs a different one
 
@@ -461,6 +464,7 @@ PatternEvent = PresenceEvent | HeatingEvent | HouseStateEvent | LightingEvent
 class ReactionProposal:
     proposal_id: str = field(default_factory=lambda: str(uuid4()))
     analyzer_id: str = ""
+    origin: Literal["learned", "admin_authored"] = "learned"
     reaction_type: str = ""          # e.g. "presence_preheat", "heating_eco"
     description: str = ""
     confidence: float = 0.0          # 0.0–1.0
@@ -841,6 +845,8 @@ Minimum plugin metadata:
 - `plugin_family`
 - emitted `proposal_types`
 - supported `reaction_targets`
+- `supports_admin_authored` (bool, default false)
+- `admin_authored_templates` (optional, empty unless the family is authorable)
 
 Where a `reaction_target` may be:
 - a concrete `reaction_class`, or
@@ -874,6 +880,31 @@ Normative product rule:
 - multiple plugins may share helper matchers, confidence shaping logic, or proposal builders
 - plugin identity MUST remain stable enough that proposals and diagnostics stay understandable
 - the initial v1 registry MAY remain built-in only; dynamic third-party loading is not required
+- the registry MAY be filtered by enabled plugin families from configuration; disabled families MUST
+  not emit proposals in that runtime session
+
+### 10.5 Admin-authored proposals
+
+Admin-authored automations are not a separate execution model.
+They are precompiled `ReactionProposal` artifacts emitted by plugins that explicitly declare
+admin-authoring support.
+
+The admin-authored path uses the same shared proposal/reaction substrate as learned proposals:
+- same persisted proposal store
+- same acceptance/rejection workflow
+- same rebuild pipeline into executable reactions
+- same diagnostics surface, with `origin = "admin_authored"`
+
+What differs is provenance:
+- learned proposals originate from observed behavior and batch analysis
+- admin-authored proposals originate from a human request and a plugin-declared template
+
+Normative rules:
+- only plugins that declare `supports_admin_authored = true` MAY expose admin-authored templates
+- admin-authored templates SHOULD be precompiled and bounded, not a universal free-form builder
+- the `origin` field MUST remain visible in diagnostics and review UX
+- follow-up tuning proposals for authored automations MUST preserve the same shared substrate and
+  SHOULD keep enough provenance to relate the tuning proposal back to the authored origin
 
 ---
 

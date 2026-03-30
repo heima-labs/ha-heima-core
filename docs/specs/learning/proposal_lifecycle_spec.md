@@ -35,6 +35,10 @@ Pattern analyzers:
 
 This keeps lifecycle policy consistent across learning plugins.
 
+Lifecycle applies equally to learned and admin-authored proposals. The `origin` of a proposal is
+orthogonal to its review `status`; the same lifecycle rules should work for both unless a specific
+plugin family documents a stricter exception.
+
 ## 3. Persisted States
 
 Persisted proposal `status` remains:
@@ -86,6 +90,10 @@ Fields that must remain evidence, not identity:
 - `color_temp_kelvin`
 - `entity_steps`
 - exact matched entity lists
+
+For admin-authored proposals, template identifiers and plugin provenance belong with identity or
+diagnostics only if they define the authored slot itself. Human-authored details that change over
+time should remain evidence.
 
 ### 4.3 Built-in identity strategy
 

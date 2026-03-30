@@ -67,6 +67,7 @@ Rationale:
 ```
 Heima Options
  ├─ General
+ ├─ Learning
  ├─ People
  │   ├─ Named persons
  │   └─ Anonymous presence
@@ -119,6 +120,22 @@ Optional house-state tuning/config:
 ### Runtime Effect
 - disabling engine blocks all apply phases but keeps canonical state updates
 - stores the configurable house-signal bindings used by canonical house-state resolution
+
+---
+
+## Learning
+
+### Fields
+- `enabled_plugin_families` (multi-select of learning plugin families, default: all enabled)
+
+### Validation
+- every selected family MUST exist in the built-in learning registry
+- empty selection is allowed only if the implementation interprets it as "all enabled"
+
+### Runtime Effect
+- filters the built-in learning registry to the configured families
+- disabled families MUST not emit proposals in that runtime session
+- proposal diagnostics MUST reflect which families were enabled and which were not
 
 ---
 

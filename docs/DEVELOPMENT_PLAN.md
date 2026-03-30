@@ -345,6 +345,7 @@ Goal:
     for the compact current-state summary of the plugin-oriented learning/reaction model
 - Stato attuale:
   - generic persisted learning-event envelope implementato
+  - built-in learning registry explicitly family-based and config-filterable
   - `LightingRecorderBehavior`, `HeatingRecorderBehavior`, `SignalRecorderBehavior` operativi
   - proposal acceptance normalizzata su runtime steps eseguibili (`scene.turn_on`, `script.turn_on`)
   - `LightingScheduleReaction` completata con hardening midnight-wrap
@@ -368,11 +369,14 @@ Goal:
     - presence learning (`029_presence_live.py`)
     - calendar runtime (`050_calendar_domain.py`)
   - `040_security_mismatch_runtime.py` stabilizzato anche per `dual_emit`
+  - `L2.8` completato: plugin-family enable/disable controls in options flow and runtime registry
+  - `L2.9` planned: admin-authored automations as plugin-declared precompiled proposals in the same proposal/reaction system
 - Gap residui:
   - stronger scene/script provenance expansion to concrete entity batches beyond current room-scoped script attribution
   - definire i next step dopo la chiusura del Composite Pattern Engine v1.1
   - far usare i metadata plugin in diagnostics/dev tooling in modo stabile
   - migliorare il grouping composito oltre il solo HA context / correlation id
+  - formalizzare in UX/spec il perimetro dei plugin authorable e dei template admin-authored precompilati
 
 ### 11.1 Next Step — Composite Pattern Engine v1.1
 - Obiettivo:
