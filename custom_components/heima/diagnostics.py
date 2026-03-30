@@ -41,6 +41,9 @@ async def async_get_config_entry_diagnostics(
                     learning_plugins,
                     proposal_diagnostics,
                 ),
+                "configured_reaction_summary": _configured_reaction_summary_diagnostics(
+                    coordinator
+                ),
                 "reaction_plugins": [
                     {
                         "reaction_class": descriptor.reaction_class,
@@ -69,6 +72,17 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
             "plugin_family": descriptor.plugin_family,
             "proposal_types": list(descriptor.proposal_types),
             "reaction_targets": list(descriptor.reaction_targets),
+            "supports_admin_authored": descriptor.supports_admin_authored,
+            "admin_authored_templates": [
+                {
+                    "template_id": item.template_id,
+                    "reaction_type": item.reaction_type,
+                    "title": item.title,
+                    "description": item.description,
+                    "config_schema_id": item.config_schema_id,
+                }
+                for item in descriptor.admin_authored_templates
+            ],
             "enabled": True,
         }
         for descriptor in builtin_learning_pattern_plugin_descriptors()
@@ -112,6 +126,12 @@ def _learning_summary_diagnostics(
             {
                 "plugin_family": family,
                 "proposal_types": proposal_types,
+                "supports_admin_authored": bool(
+                    plugin.get("supports_admin_authored") is True
+                ),
+                "admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or []
+                ),
                 "top_examples": _top_proposal_examples(plugin_proposals),
             }
         )
@@ -122,6 +142,8 @@ def _learning_summary_diagnostics(
             {
                 "plugins": [],
                 "proposal_types": set(),
+                "admin_authored_templates": set(),
+                "admin_authorable": False,
                 "total": 0,
                 "pending": 0,
                 "accepted": 0,
@@ -132,6 +154,12 @@ def _learning_summary_diagnostics(
         )
         family_entry["plugins"].append(plugin_id)
         family_entry["proposal_types"].update(proposal_types)
+        family_entry["admin_authorable"] = family_entry["admin_authorable"] or bool(
+            plugin.get("supports_admin_authored") is True
+        )
+        family_entry["admin_authored_templates"].update(
+            plugin_summary[plugin_id]["admin_authored_templates"]
+        )
         family_entry["total"] += plugin_stats["total"]
         family_entry["pending"] += plugin_stats["pending"]
         family_entry["accepted"] += plugin_stats["accepted"]
@@ -142,6 +170,7 @@ def _learning_summary_diagnostics(
     for family, stats in family_summary.items():
         stats["plugins"] = sorted(stats["plugins"])
         stats["proposal_types"] = sorted(stats["proposal_types"])
+        stats["admin_authored_templates"] = sorted(stats["admin_authored_templates"])
         stats["top_examples"] = stats["top_examples"][:3]
 
     enabled_families = sorted(
@@ -173,6 +202,44 @@ def _learning_summary_diagnostics(
         "families": family_summary,
         "plugins": plugin_summary,
         "unclaimed_proposal_types": sorted(unclaimed_types),
+    }
+
+
+def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    engine = getattr(coordinator, "engine", None)
+    if engine is None:
+        return {}
+    payload = engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None  # noqa: SLF001
+    if not isinstance(payload, str) or not payload.strip():
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+    import json
+
+    try:
+        reactions = json.loads(payload)
+    except Exception:  # noqa: BLE001
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+    if not isinstance(reactions, dict):
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+
+    by_origin: dict[str, int] = {}
+    by_author_kind: dict[str, int] = {}
+    reaction_ids: list[str] = []
+    for reaction_id, raw in reactions.items():
+        if not isinstance(raw, dict):
+            continue
+        reaction_ids.append(str(reaction_id))
+        origin = str(raw.get("origin") or "unspecified")
+        by_origin[origin] = by_origin.get(origin, 0) + 1
+        author_kind = str(raw.get("author_kind") or "unspecified")
+        by_author_kind[author_kind] = by_author_kind.get(author_kind, 0) + 1
+
+    return {
+        "total": len(reaction_ids),
+        "by_origin": dict(sorted(by_origin.items())),
+        "by_author_kind": dict(sorted(by_author_kind.items())),
+        "reaction_ids": sorted(reaction_ids),
     }
 
 
@@ -222,3 +289,17 @@ def _top_proposal_examples(proposals: list[dict[str, Any]]) -> list[dict[str, An
             }
         )
     return examples
+
+
+def _template_ids(templates: list[Any]) -> list[str]:
+    ids: list[str] = []
+    for item in templates:
+        if isinstance(item, dict):
+            template_id = str(item.get("template_id") or "").strip()
+            if template_id:
+                ids.append(template_id)
+        else:
+            template_id = str(item).strip()
+            if template_id:
+                ids.append(template_id)
+    return ids

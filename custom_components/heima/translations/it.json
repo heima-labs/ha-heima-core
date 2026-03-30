@@ -32,6 +32,7 @@
           "calendar": "Calendario",
           "learning": "Contesto learning",
           "reactions": "Reazioni",
+          "admin_authored_create": "Crea automazione",
           "proposals": "Revisione proposte",
           "save": "Salva e chiudi",
           "reactions_edit": "Modifica reazione"
@@ -338,6 +339,28 @@
         },
         "submit": "OK"
       },
+      "admin_authored_create": {
+        "title": "Crea automazione",
+        "description": "Seleziona un template di automazione predefinito. Heima creerà una proposta admin-authored dentro il normale flusso di revisione.",
+        "data": {
+          "template_id": "Template"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_lighting_schedule": {
+        "title": "Nuova schedulazione luci",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "weekday": "Giorno",
+          "scheduled_time": "Orario (HH:MM)",
+          "light_entities": "Luci da controllare",
+          "action": "Azione",
+          "brightness": "Luminosità",
+          "color_temp_kelvin": "Temperatura colore (K)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Revisione Proposte",
         "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
@@ -412,6 +435,7 @@
       "invalid_time_zone": "Fuso orario non valido",
       "invalid_slug": "Slug non valido",
       "invalid_number": "Inserisci un numero positivo valido",
+      "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
       "missing_vacation_bindings": "La configurazione generale del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna"
     }
   }

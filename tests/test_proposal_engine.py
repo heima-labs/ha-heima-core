@@ -82,6 +82,22 @@ def _lighting_proposal(*, conf: float, room_id: str, weekday: int, scheduled_min
     )
 
 
+def _admin_authored_proposal() -> ReactionProposal:
+    return ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="admin-authored lighting",
+        confidence=1.0,
+        origin="admin_authored",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1200,
+        },
+    )
+
+
 async def test_proposal_engine_run_and_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     sensor_updates = []
@@ -100,6 +116,7 @@ async def test_proposal_engine_run_and_pending(monkeypatch):
     assert "created_at" in proposal_attrs
     assert "updated_at" in proposal_attrs
     assert "last_observed_at" in proposal_attrs
+    assert proposal_attrs["origin"] == "learned"
     assert "identity_key" in proposal_attrs
     assert "config_summary" in proposal_attrs
     assert "explainability" in proposal_attrs
@@ -172,6 +189,7 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
 
     assert len(engine2._proposals) == 1
     assert engine2._proposals[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    assert engine2._proposals[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
 
 
@@ -443,7 +461,34 @@ async def test_reaction_proposal_from_dict_sanitizes_invalid_status_and_confiden
     assert len(engine._proposals) == 1
     proposal = engine._proposals[0]
     assert proposal.confidence == 0.0
+    assert proposal.origin == "learned"
     assert proposal.status == "pending"
+
+
+async def test_reaction_proposal_from_dict_preserves_admin_authored_origin(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "admin-1",
+                    "analyzer_id": "LightingPatternAnalyzer",
+                    "reaction_type": "lighting_scene_schedule",
+                    "description": "admin",
+                    "confidence": 1.0,
+                    "origin": "admin_authored",
+                    "status": "pending",
+                    "suggested_reaction_config": {"room_id": "living", "weekday": 0, "scheduled_min": 1200},
+                }
+            ]
+        }
+    }
+
+    await engine.async_initialize()
+
+    assert len(engine._proposals) == 1
+    assert engine._proposals[0].origin == "admin_authored"
 
 
 async def test_reaction_proposal_from_dict_sanitizes_non_dict_config(monkeypatch):
@@ -556,10 +601,62 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
     engine._write_sensor()
 
     item = diagnostics["proposals"][0]
+    assert item["origin"] == "learned"
     assert item["config_summary"] == {}
     assert item["explainability"] == {}
+    assert sensor_updates[-1][1]["legacy"]["origin"] == "learned"
     assert sensor_updates[-1][1]["legacy"]["config_summary"] == {}
     assert sensor_updates[-1][1]["legacy"]["explainability"] == {}
+
+
+async def test_proposal_engine_diagnostics_expose_admin_authored_origin(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    engine._proposals = [_admin_authored_proposal()]
+
+    diagnostics = engine.diagnostics()
+    engine._write_sensor()
+
+    item = diagnostics["proposals"][0]
+    assert item["origin"] == "admin_authored"
+    assert sensor_updates[-1][1][engine._proposals[0].proposal_id]["origin"] == "admin_authored"
+
+
+async def test_proposal_engine_async_submit_proposal_creates_pending_admin_authored(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal_id = await engine.async_submit_proposal(proposal)
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].proposal_id == proposal_id
+    assert pending[0].origin == "admin_authored"
+
+
+async def test_proposal_engine_async_submit_proposal_updates_existing_pending_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    first = _admin_authored_proposal()
+    proposal_id = await engine.async_submit_proposal(first)
+
+    second = _admin_authored_proposal()
+    second.description = "Updated draft"
+    updated_id = await engine.async_submit_proposal(second)
+
+    pending = engine.pending_proposals()
+    assert updated_id == proposal_id
+    assert len(pending) == 1
+    assert pending[0].description == "Updated draft"
 
 
 async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):

@@ -32,6 +32,7 @@
           "calendar": "Calendar",
           "learning": "Learning context",
           "reactions": "Reactions",
+          "admin_authored_create": "Create automation",
           "proposals": "Review proposals",
           "save": "Save and close",
           "reactions_edit": "Edit reaction"
@@ -338,6 +339,28 @@
         },
         "submit": "OK"
       },
+      "admin_authored_create": {
+        "title": "Create automation",
+        "description": "Select a predefined automation template. Heima will create an admin-authored proposal inside the normal review flow.",
+        "data": {
+          "template_id": "Template"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_lighting_schedule": {
+        "title": "New lighting schedule",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Room",
+          "weekday": "Day",
+          "scheduled_time": "Time (HH:MM)",
+          "light_entities": "Lights to control",
+          "action": "Action",
+          "brightness": "Brightness",
+          "color_temp_kelvin": "Color temperature (K)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Review Proposals",
         "description": "Heima detected recurring patterns. Review one proposal at a time and decide whether to accept, reject, or skip it.\n\nQueue: {current_position}\n\nCurrent proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",
@@ -412,6 +435,7 @@
       "invalid_time_zone": "Invalid timezone",
       "invalid_slug": "Invalid slug",
       "invalid_number": "Enter a valid positive number",
+      "invalid_hhmm": "Enter a valid time in HH:MM format",
       "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings"
     }
   }

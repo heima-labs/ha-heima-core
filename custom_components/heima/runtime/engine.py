@@ -1235,13 +1235,36 @@ class HeimaEngine:
         for reaction in self._reactions:
             rid = reaction.reaction_id
             diag = reaction.diagnostics()
+            provenance = self._configured_reaction_metadata(rid)
             payload[rid] = {
                 "muted": rid in self._muted_reactions,
                 "fire_count": diag.get("fire_count", 0),
                 "suppressed_count": diag.get("suppressed_count", 0),
                 "last_fired_ts": diag.get("last_fired_ts"),
+                **provenance,
             }
         self._state.set_sensor("heima_reactions_active", json.dumps(payload))
+
+    def _configured_reaction_metadata(self, reaction_id: str) -> dict[str, Any]:
+        configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))
+        cfg = configured.get(reaction_id)
+        if not isinstance(cfg, dict):
+            return {}
+        keys = (
+            "origin",
+            "author_kind",
+            "source_request",
+            "source_template_id",
+            "source_proposal_id",
+            "source_proposal_identity_key",
+            "created_at",
+            "last_tuned_at",
+        )
+        return {
+            key: cfg[key]
+            for key in keys
+            if key in cfg and cfg[key] not in ("", [])
+        }
 
     def _lighting_apply_mode(self) -> str:
         mode = str(

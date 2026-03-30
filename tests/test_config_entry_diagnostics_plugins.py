@@ -38,6 +38,13 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
 
     assert any(item["plugin_id"] == "builtin.lighting_routines" for item in learning)
     assert any(item["plugin_id"] == "builtin.composite_room_assist" for item in learning)
+    assert any(
+        item["plugin_id"] == "builtin.lighting_routines"
+        and item["supports_admin_authored"] is True
+        and item["admin_authored_templates"][0]["template_id"]
+        == "lighting.scene_schedule.basic"
+        for item in learning
+    )
     assert any(item["reaction_class"] == "RoomSignalAssistReaction" for item in reactions)
     assert any(item["reaction_class"] == "RoomLightingAssistReaction" for item in reactions)
 
@@ -141,13 +148,21 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     lighting = summary["families"]["lighting"]
     assert lighting["pending"] == 1
     assert "lighting_scene_schedule" in lighting["proposal_types"]
+    assert lighting["admin_authorable"] is True
+    assert lighting["admin_authored_templates"] == ["lighting.scene_schedule.basic"]
 
     composite = summary["plugins"]["builtin.composite_room_assist"]
     assert composite["pending"] == 1
     assert composite["stale_pending"] == 1
+    assert composite["supports_admin_authored"] is True
+    assert composite["admin_authored_templates"] == [
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    ]
 
     heating = summary["plugins"]["builtin.heating_preferences"]
     assert heating["accepted"] == 1
+    assert heating["supports_admin_authored"] is False
 
 
 async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> None:
@@ -169,3 +184,34 @@ async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> 
 
     assert summary["enabled_plugin_families"] == ["lighting", "presence"]
     assert summary["disabled_plugin_families"] == ["composite_room_assist", "heating"]
+
+
+async def test_config_entry_diagnostics_exposes_configured_reaction_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"r1":{"origin":"learned","author_kind":"heima"},'
+                '"r2":{"origin":"admin_authored","author_kind":"admin"}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+
+    assert summary["total"] == 2
+    assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
+    assert summary["by_author_kind"] == {"admin": 1, "heima": 1}
+    assert summary["reaction_ids"] == ["r1", "r2"]

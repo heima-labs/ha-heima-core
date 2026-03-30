@@ -10,6 +10,7 @@ from .heating import HeatingPatternAnalyzer
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
 from .registry import (
+    AdminAuthoredTemplateDescriptor,
     LearningPatternPluginDescriptor,
     LearningPluginRegistry,
     create_builtin_learning_plugin_registry,
@@ -28,6 +29,7 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
 __all__ = [
     "IPatternAnalyzer",
     "ReactionProposal",
+    "AdminAuthoredTemplateDescriptor",
     "LearningPatternPluginDescriptor",
     "LearningPluginRegistry",
     "create_builtin_learning_plugin_registry",

@@ -59,7 +59,17 @@ Admin-authored automations do **not** introduce a separate runtime engine or a s
 They share the same proposal lifecycle as learned proposals, with `origin = "admin_authored"` and
 plugin provenance preserved in diagnostics.
 
-In v1, the following conceptual labels are sufficient:
+Normative clarification:
+
+- proposal system persisted status remains the standard v1 set:
+  - `pending`
+  - `accepted`
+  - `rejected`
+- admin-authored automations do **not** add a second persisted proposal status machine
+- the labels below are UX/diagnostic labels only
+- they MUST NOT replace or overload the persisted proposal `status` field
+
+In v1, the following conceptual UX labels are sufficient:
 
 - `draft` for a plugin-instantiated proposal awaiting admin confirmation
 - `confirmed` for an accepted authored proposal
@@ -69,6 +79,16 @@ In v1, the following conceptual labels are sufficient:
 
 These labels are primarily UX/diagnostic labels. The runtime artifact remains a standard
 `ReactionProposal` plus the accepted reaction configuration.
+
+Recommended mapping:
+
+- proposal `status = pending`, `origin = admin_authored` -> UX label `draft`
+- proposal `status = accepted`, `origin = admin_authored` -> UX label `confirmed`
+- configured reaction rebuilt from an accepted admin-authored proposal -> UX label `active`
+
+`tuning_requested` and `retired` describe follow-up product states around the authored automation.
+They are not proposal `status` values and should be modeled through diagnostics or linked
+follow-up proposals rather than by extending the base persisted status enum in v1.
 
 ## 5. Relation to Learned Proposals
 

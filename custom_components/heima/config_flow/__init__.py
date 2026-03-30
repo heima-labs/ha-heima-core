@@ -132,6 +132,7 @@ class HeimaOptionsFlowHandler(
                 "learning",
                 "reactions",
                 "reactions_edit",
+                "admin_authored_create",
                 "proposals",
                 "save",
             ],

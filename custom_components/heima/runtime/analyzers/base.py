@@ -19,6 +19,7 @@ class ReactionProposal:
     reaction_type: str = ""
     description: str = ""
     confidence: float = 0.0
+    origin: Literal["learned", "admin_authored"] = "learned"
     status: Literal["pending", "accepted", "rejected"] = "pending"
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -34,6 +35,7 @@ class ReactionProposal:
             "reaction_type": self.reaction_type,
             "description": self.description,
             "confidence": self.confidence,
+            "origin": self.origin,
             "status": self.status,
             "suggested_reaction_config": dict(self.suggested_reaction_config),
             "created_at": self.created_at,
@@ -45,6 +47,9 @@ class ReactionProposal:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ReactionProposal":
+        origin = str(raw.get("origin") or "learned")
+        if origin not in {"learned", "admin_authored"}:
+            origin = "learned"
         status = str(raw.get("status") or "pending")
         if status not in {"pending", "accepted", "rejected"}:
             status = "pending"
@@ -54,6 +59,7 @@ class ReactionProposal:
             reaction_type=str(raw.get("reaction_type") or ""),
             description=str(raw.get("description") or ""),
             confidence=_safe_float(raw.get("confidence"), default=0.0),
+            origin=origin,  # type: ignore[arg-type]
             status=status,  # type: ignore[arg-type]
             suggested_reaction_config=_safe_dict(raw.get("suggested_reaction_config")),
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),

@@ -36,6 +36,7 @@ def main() -> int:
     diag = client.get(f"/api/diagnostics/config_entry/{entry_id}")
     runtime = dict(diag.get("data", {}).get("runtime", {}) or {})
     summary = dict(runtime.get("plugins", {}).get("learning_summary", {}) or {})
+    reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -52,6 +53,24 @@ def main() -> int:
         print("enabled families: " + ", ".join(enabled_families))
     if disabled_families:
         print("disabled families: " + ", ".join(disabled_families))
+
+    if reaction_summary:
+        _print_header("Configured Reactions")
+        print(f"total: {reaction_summary.get('total', 0)}")
+        by_origin = dict(reaction_summary.get("by_origin") or {})
+        if by_origin:
+            print(
+                "by origin: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(by_origin.items()))
+            )
+        by_author_kind = dict(reaction_summary.get("by_author_kind") or {})
+        if by_author_kind:
+            print(
+                "by author_kind: "
+                + ", ".join(
+                    f"{key}={value}" for key, value in sorted(by_author_kind.items())
+                )
+            )
 
     families = dict(summary.get("families") or {})
     if families:

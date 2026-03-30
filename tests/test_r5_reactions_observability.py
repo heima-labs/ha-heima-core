@@ -101,6 +101,39 @@ def test_sync_reactions_sensor_shows_muted_true():
     assert val["my_reaction"]["muted"] is True
 
 
+def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
+    engine = _make_engine()
+    engine._entry.options = {
+        "reactions": {
+            "configured": {
+                "my_reaction": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_request": "template:lighting.scene_schedule.basic",
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "source_proposal_id": "proposal-admin",
+                    "source_proposal_identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+                    "created_at": "2026-03-30T10:00:00+00:00",
+                    "last_tuned_at": None,
+                }
+            }
+        }
+    }
+    r = ConsecutiveStateReaction(
+        predicate=lambda s: True, consecutive_n=1, steps=[], reaction_id="my_reaction"
+    )
+    engine._reactions.append(r)
+
+    engine._sync_reactions_sensor()
+    val = json.loads(engine._state.get_sensor("heima_reactions_active"))
+    assert val["my_reaction"]["origin"] == "admin_authored"
+    assert val["my_reaction"]["author_kind"] == "admin"
+    assert val["my_reaction"]["source_request"] == "template:lighting.scene_schedule.basic"
+    assert val["my_reaction"]["source_template_id"] == "lighting.scene_schedule.basic"
+    assert val["my_reaction"]["source_proposal_id"] == "proposal-admin"
+
+
 # ---------------------------------------------------------------------------
 # mute_reaction / unmute_reaction
 # ---------------------------------------------------------------------------
