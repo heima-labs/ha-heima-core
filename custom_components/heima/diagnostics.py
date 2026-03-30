@@ -41,6 +41,9 @@ async def async_get_config_entry_diagnostics(
                     learning_plugins,
                     proposal_diagnostics,
                 ),
+                "configured_reaction_summary": _configured_reaction_summary_diagnostics(
+                    coordinator
+                ),
                 "reaction_plugins": [
                     {
                         "reaction_class": descriptor.reaction_class,
@@ -199,6 +202,44 @@ def _learning_summary_diagnostics(
         "families": family_summary,
         "plugins": plugin_summary,
         "unclaimed_proposal_types": sorted(unclaimed_types),
+    }
+
+
+def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    engine = getattr(coordinator, "engine", None)
+    if engine is None:
+        return {}
+    payload = engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None  # noqa: SLF001
+    if not isinstance(payload, str) or not payload.strip():
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+    import json
+
+    try:
+        reactions = json.loads(payload)
+    except Exception:  # noqa: BLE001
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+    if not isinstance(reactions, dict):
+        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+
+    by_origin: dict[str, int] = {}
+    by_author_kind: dict[str, int] = {}
+    reaction_ids: list[str] = []
+    for reaction_id, raw in reactions.items():
+        if not isinstance(raw, dict):
+            continue
+        reaction_ids.append(str(reaction_id))
+        origin = str(raw.get("origin") or "unspecified")
+        by_origin[origin] = by_origin.get(origin, 0) + 1
+        author_kind = str(raw.get("author_kind") or "unspecified")
+        by_author_kind[author_kind] = by_author_kind.get(author_kind, 0) + 1
+
+    return {
+        "total": len(reaction_ids),
+        "by_origin": dict(sorted(by_origin.items())),
+        "by_author_kind": dict(sorted(by_author_kind.items())),
+        "reaction_ids": sorted(reaction_ids),
     }
 
 

@@ -184,3 +184,34 @@ async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> 
 
     assert summary["enabled_plugin_families"] == ["lighting", "presence"]
     assert summary["disabled_plugin_families"] == ["composite_room_assist", "heating"]
+
+
+async def test_config_entry_diagnostics_exposes_configured_reaction_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"r1":{"origin":"learned","author_kind":"heima"},'
+                '"r2":{"origin":"admin_authored","author_kind":"admin"}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+
+    assert summary["total"] == 2
+    assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
+    assert summary["by_author_kind"] == {"admin": 1, "heima": 1}
+    assert summary["reaction_ids"] == ["r1", "r2"]
