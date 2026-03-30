@@ -621,7 +621,7 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     assert created.suggested_reaction_config["admin_authored_template_id"] == "lighting.scene_schedule.basic"
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Luci living" in result["description_placeholders"]["proposal_label"]
+    assert "Bozza admin: Luci living" in result["description_placeholders"]["proposal_label"]
     assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
     assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
     assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]

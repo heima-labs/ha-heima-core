@@ -631,7 +631,13 @@ class _ReactionsStepsMixin:
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        return self._proposal_human_label(proposal, cfg)
+        title = self._proposal_human_label(proposal, cfg)
+        if proposal.origin != "admin_authored":
+            return title
+        language = self._flow_language()
+        if language.startswith("it"):
+            return f"Bozza admin: {title}"
+        return f"Admin draft: {title}"
 
     def _proposal_review_details(self, proposal: ReactionProposal) -> str:
         """Build a human-readable review body for one proposal."""
