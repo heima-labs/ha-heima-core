@@ -88,31 +88,26 @@ def _extract_select_values(step_result: dict[str, Any], field_name: str) -> list
     return []
 
 
-def _extract_entity_selector_values(step_result: dict[str, Any], field_name: str) -> list[str]:
+def _has_entity_selector(
+    step_result: dict[str, Any], field_name: str, *, expected_domain: str
+) -> bool:
     data_schema = step_result.get("data_schema")
     if not isinstance(data_schema, list):
-        return []
+        return False
     for field in data_schema:
         if not isinstance(field, dict) or str(field.get("name")) != field_name:
             continue
         selector_cfg = field.get("selector")
         if not isinstance(selector_cfg, dict):
-            continue
+            return False
         entity_cfg = selector_cfg.get("entity")
         if not isinstance(entity_cfg, dict):
-            continue
-        options = entity_cfg.get("options")
-        if isinstance(options, list):
-            values: list[str] = []
-            for item in options:
-                if isinstance(item, str):
-                    values.append(item)
-                elif isinstance(item, dict):
-                    value = item.get("value")
-                    if value not in (None, ""):
-                        values.append(str(value))
-            return values
-    return []
+            return False
+        domains = entity_cfg.get("domain") or []
+        if isinstance(domains, str):
+            domains = [domains]
+        return expected_domain in {str(item) for item in domains}
+    return False
 
 
 def main() -> int:
@@ -147,19 +142,22 @@ def main() -> int:
 
         room_ids = _extract_select_values(step, "room_id")
         weekday_values = _extract_select_values(step, "weekday")
-        light_entities = _extract_entity_selector_values(step, "light_entities")
         print(f"Rooms: {room_ids}")
         print(f"Weekdays: {weekday_values}")
-        print(f"Light entity options: {light_entities}")
+        has_light_selector = _has_entity_selector(
+            step, "light_entities", expected_domain="light"
+        )
+        print(f"Light entity selector present: {has_light_selector}")
 
         _assert(room_ids, "no room options available")
         _assert(weekday_values, "no weekday options available")
+        _assert(has_light_selector, "light_entities is not exposed as a light entity selector")
 
         payload = {
             "room_id": room_ids[0],
             "weekday": "0" if "0" in weekday_values else weekday_values[0],
             "scheduled_time": "20:00",
-            "light_entities": light_entities[:1] or ["light.test_heima_living_main"],
+            "light_entities": ["light.test_heima_living_main"],
             "action": "on",
             "brightness": 190,
             "color_temp_kelvin": 2850,
