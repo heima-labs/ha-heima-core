@@ -255,10 +255,14 @@ def _enrich_proposals_with_followups(
         reaction_id, cfg = target
         if str(item.get("followup_kind") or "discovery") == "discovery":
             item["followup_kind"] = "tuning_suggestion"
-        item.setdefault("target_reaction_id", reaction_id)
-        item.setdefault("target_reaction_class", str(cfg.get("reaction_class") or ""))
-        item.setdefault("target_reaction_origin", str(cfg.get("origin") or ""))
-        item.setdefault("target_template_id", str(cfg.get("source_template_id") or ""))
+        if not str(item.get("target_reaction_id") or "").strip():
+            item["target_reaction_id"] = reaction_id
+        if not str(item.get("target_reaction_class") or "").strip():
+            item["target_reaction_class"] = str(cfg.get("reaction_class") or "")
+        if not str(item.get("target_reaction_origin") or "").strip():
+            item["target_reaction_origin"] = str(cfg.get("origin") or "")
+        if not str(item.get("target_template_id") or "").strip():
+            item["target_template_id"] = str(cfg.get("source_template_id") or "")
         enriched.append(item)
 
     updated = dict(proposal_diagnostics)
