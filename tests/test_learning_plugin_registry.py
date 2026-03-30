@@ -45,6 +45,17 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
     )
+    assert descriptors[0].supports_admin_authored is False
+    assert descriptors[0].admin_authored_templates == ()
+    assert descriptors[2].supports_admin_authored is True
+    assert tuple(item.template_id for item in descriptors[2].admin_authored_templates) == (
+        "lighting.scene_schedule.basic",
+    )
+    assert descriptors[3].supports_admin_authored is True
+    assert tuple(item.template_id for item in descriptors[3].admin_authored_templates) == (
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    )
 
 
 def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata():
@@ -77,6 +88,23 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             "RoomSignalAssistReaction",
             "RoomLightingAssistReaction",
         ],
+        "supports_admin_authored": True,
+        "admin_authored_templates": [
+            {
+                "template_id": "room.signal_assist.basic",
+                "reaction_type": "room_signal_assist",
+                "title": "Room Signal Assist",
+                "description": "Create a room assist automation driven by a primary room signal.",
+                "config_schema_id": "room_signal_assist.basic.v1",
+            },
+            {
+                "template_id": "room.darkness_lighting_assist.basic",
+                "reaction_type": "room_darkness_lighting_assist",
+                "title": "Darkness Lighting Assist",
+                "description": "Create a room lighting assist that reacts to darkness conditions.",
+                "config_schema_id": "room_darkness_lighting_assist.basic.v1",
+            },
+        ],
         "enabled": True,
     }
 
@@ -95,3 +123,37 @@ def test_builtin_learning_plugin_registry_can_disable_families():
     disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
     assert enabled == {"presence", "lighting"}
     assert disabled == {"heating", "composite_room_assist"}
+
+
+def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
+    registry = create_builtin_learning_plugin_registry()
+
+    assert [d.plugin_family for d in registry.admin_authored_descriptors()] == [
+        "lighting",
+        "composite_room_assist",
+    ]
+    assert [t.template_id for t in registry.admin_authored_templates()] == [
+        "lighting.scene_schedule.basic",
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    ]
+    assert (
+        registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
+        == "room_signal_assist"
+    )
+    assert registry.get_admin_authored_template("missing.template") is None
+
+
+def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
+    registry = create_builtin_learning_plugin_registry(enabled_families={"lighting"})
+
+    assert [t.template_id for t in registry.admin_authored_templates()] == [
+        "lighting.scene_schedule.basic"
+    ]
+    assert registry.get_admin_authored_template("room.signal_assist.basic") is None
+    assert (
+        registry.get_admin_authored_template(
+            "room.signal_assist.basic", enabled_only=False
+        ).reaction_type
+        == "room_signal_assist"
+    )

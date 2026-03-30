@@ -69,6 +69,17 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
             "plugin_family": descriptor.plugin_family,
             "proposal_types": list(descriptor.proposal_types),
             "reaction_targets": list(descriptor.reaction_targets),
+            "supports_admin_authored": descriptor.supports_admin_authored,
+            "admin_authored_templates": [
+                {
+                    "template_id": item.template_id,
+                    "reaction_type": item.reaction_type,
+                    "title": item.title,
+                    "description": item.description,
+                    "config_schema_id": item.config_schema_id,
+                }
+                for item in descriptor.admin_authored_templates
+            ],
             "enabled": True,
         }
         for descriptor in builtin_learning_pattern_plugin_descriptors()
@@ -112,6 +123,12 @@ def _learning_summary_diagnostics(
             {
                 "plugin_family": family,
                 "proposal_types": proposal_types,
+                "supports_admin_authored": bool(
+                    plugin.get("supports_admin_authored") is True
+                ),
+                "admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or []
+                ),
                 "top_examples": _top_proposal_examples(plugin_proposals),
             }
         )
@@ -122,6 +139,8 @@ def _learning_summary_diagnostics(
             {
                 "plugins": [],
                 "proposal_types": set(),
+                "admin_authored_templates": set(),
+                "admin_authorable": False,
                 "total": 0,
                 "pending": 0,
                 "accepted": 0,
@@ -132,6 +151,12 @@ def _learning_summary_diagnostics(
         )
         family_entry["plugins"].append(plugin_id)
         family_entry["proposal_types"].update(proposal_types)
+        family_entry["admin_authorable"] = family_entry["admin_authorable"] or bool(
+            plugin.get("supports_admin_authored") is True
+        )
+        family_entry["admin_authored_templates"].update(
+            plugin_summary[plugin_id]["admin_authored_templates"]
+        )
         family_entry["total"] += plugin_stats["total"]
         family_entry["pending"] += plugin_stats["pending"]
         family_entry["accepted"] += plugin_stats["accepted"]
@@ -142,6 +167,7 @@ def _learning_summary_diagnostics(
     for family, stats in family_summary.items():
         stats["plugins"] = sorted(stats["plugins"])
         stats["proposal_types"] = sorted(stats["proposal_types"])
+        stats["admin_authored_templates"] = sorted(stats["admin_authored_templates"])
         stats["top_examples"] = stats["top_examples"][:3]
 
     enabled_families = sorted(
@@ -222,3 +248,17 @@ def _top_proposal_examples(proposals: list[dict[str, Any]]) -> list[dict[str, An
             }
         )
     return examples
+
+
+def _template_ids(templates: list[Any]) -> list[str]:
+    ids: list[str] = []
+    for item in templates:
+        if isinstance(item, dict):
+            template_id = str(item.get("template_id") or "").strip()
+            if template_id:
+                ids.append(template_id)
+        else:
+            template_id = str(item).strip()
+            if template_id:
+                ids.append(template_id)
+    return ids
