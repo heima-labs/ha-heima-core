@@ -1,8 +1,8 @@
 # House State Domain Spec
 
 **Status:** Target vNext for v1.x evolution  
-**Implementation status:** Not yet implemented as specified here  
-**Last reviewed:** 2026-03-24
+**Implementation status:** Partially implemented in v1.x  
+**Last reviewed:** 2026-03-30
 
 ---
 
@@ -26,6 +26,12 @@ direct-signal v1 implementation.
 Canonical entities remain:
 - `sensor.heima_house_state`
 - `sensor.heima_house_state_reason`
+
+Additional diagnostic entities currently implemented:
+- `sensor.heima_house_state_path`
+- `sensor.heima_house_state_active_candidates`
+- `sensor.heima_house_state_pending_candidate`
+- `sensor.heima_house_state_pending_remaining_s`
 
 Allowed values remain:
 - `vacation`
@@ -359,6 +365,30 @@ Suggested shape:
   "override": {...}
 }
 ```
+
+Current v1.x implementation already exposes most of this contract through two surfaces:
+
+1. diagnostics payload
+- `house_signals_trace`
+- `candidate_trace`
+- `candidate_summary`
+- `timers`
+- `resolution_trace`
+- `override`
+
+2. canonical sensor attributes and helper sensors
+- `sensor.heima_house_state.attributes["resolution_trace"]`
+- `sensor.heima_house_state.attributes["candidate_summary"]`
+- `sensor.heima_house_state_reason.attributes["resolution_trace"]`
+- `sensor.heima_house_state_reason.attributes["candidate_summary"]`
+- `sensor.heima_house_state_path`
+- `sensor.heima_house_state_active_candidates`
+- `sensor.heima_house_state_pending_candidate`
+- `sensor.heima_house_state_pending_remaining_s`
+
+Interpretation rule:
+- the helper sensors are an operability surface for dashboards and quick inspection
+- the diagnostics payload remains the deeper source of truth for candidate and signal traces
 
 ---
 

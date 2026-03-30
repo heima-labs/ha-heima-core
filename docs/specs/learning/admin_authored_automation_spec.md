@@ -126,6 +126,45 @@ This keeps the runtime consistent and avoids forking the execution model.
 
 After an admin-authored automation is active, Heima can observe whether it matches reality well.
 
+Normative distinction:
+
+- a new learned proposal is a **discovery** artifact
+- a tuning proposal is a **refinement** artifact
+
+The difference is whether Heima is proposing a new automation slot or an update to an already active one.
+
+Discovery:
+
+- Heima observes a recurring behavior
+- no active reaction is already the semantic owner of that behavior
+- Heima proposes a new automation
+
+Refinement / tuning:
+
+- an active reaction already exists
+- Heima observes recurring behavior that suggests the reaction should be adjusted
+- Heima proposes a follow-up change to that existing reaction instead of proposing a second near-duplicate automation
+
+In other words:
+
+- if no matching reaction exists, Heima SHOULD emit a fresh learned proposal
+- if a matching reaction already exists, Heima SHOULD prefer a tuning-style follow-up proposal linked to that reaction
+
+This distinction is especially important for admin-authored automations, because the admin has already expressed explicit intent.
+Heima should therefore prefer improving that intent rather than rediscovering it as if it were unrelated.
+
+Example:
+
+- the admin authors a composite-style automation for projector mode:
+  - when the projector is on, turn off two lights and turn on two other lights
+- if no such reaction existed before observation, Heima could legitimately discover a new proposal from observed behavior
+- if that authored reaction already exists, Heima SHOULD NOT propose the same scene again as a fresh automation
+- instead, Heima SHOULD propose tuning such as:
+  - remove one light from the scene
+  - add another light
+  - shift timing
+  - adjust brightness or preconditions
+
 Heima may then propose:
 
 - threshold adjustments
@@ -136,6 +175,13 @@ Heima may then propose:
 
 These are not learned proposals in the strict sense. They are follow-up recommendations attached to
 an existing authored automation and should still flow through the same proposal/reaction substrate.
+
+In v1, tuning proposals do not need a separate execution engine or a second reaction model.
+They only need:
+
+- a clear link to the target active reaction
+- wording that makes it clear this is a modification of an existing automation
+- diagnostics that preserve both the original authored provenance and the follow-up relationship
 
 Recommended follow-up labels:
 

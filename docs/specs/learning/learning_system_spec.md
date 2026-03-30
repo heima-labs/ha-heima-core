@@ -1,8 +1,8 @@
 # Heima Learning System — Specification v1
 
 **Status:** Active v1 learning contract
-**Date:** 2026-03-20
-**Last Verified Against Code:** 2026-03-20
+**Date:** 2026-03-30
+**Last Verified Against Code:** 2026-03-30
 
 ---
 
@@ -185,6 +185,8 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P9 LightingPatternAnalyzer | Implemented | `runtime/analyzers/lighting.py` |
 | P10 Learning Config Flow | Implemented | `config_flow/_steps_learning.py` — outdoor_lux, temp, weather, signals |
 | P11 Generic Signal Recorder | Implemented | `runtime/behaviors/signal_recorder.py` records `state_change` events for configured context entities |
+| P12 Learning registry & family controls | Implemented | built-in `LearningPluginRegistry`, `enabled_plugin_families`, diagnostics reflect enabled/disabled families |
+| P13 Admin-authored proposal path | Implemented/Partial | origin-aware proposal model, plugin-declared templates, first end-to-end flow for `lighting.scene_schedule.basic`, reaction provenance + diagnostics implemented |
 
 ---
 
@@ -905,6 +907,45 @@ Normative rules:
 - the `origin` field MUST remain visible in diagnostics and review UX
 - follow-up tuning proposals for authored automations MUST preserve the same shared substrate and
   SHOULD keep enough provenance to relate the tuning proposal back to the authored origin
+
+Current v1 implementation notes:
+- built-in plugin descriptors already declare:
+  - `supports_admin_authored`
+  - `admin_authored_templates`
+- the registry may declare more authorable templates than the options flow currently exposes
+- the first end-to-end implemented admin-authored template is:
+  - `lighting.scene_schedule.basic`
+- room-scoped composite templates are declared in plugin metadata but are not yet all exposed as
+  dedicated authoring wizards
+
+### 10.6 Learning observability and configured reaction provenance
+
+The learning surface is now expected to expose three distinct diagnostic views:
+
+1. plugin/family diagnostics
+- plugin metadata
+- enabled vs disabled families
+- declared admin-authored capability and templates
+
+2. proposal diagnostics
+- pending / accepted / rejected proposals
+- `origin`
+- `identity_key`
+- `last_observed_at`
+- explainability and config summary
+
+3. configured reaction diagnostics
+- active configured reactions summarized by provenance
+- at minimum:
+  - `total`
+  - `by_origin`
+  - `by_author_kind`
+  - `reaction_ids`
+
+Normative rule:
+- when an accepted proposal is rebuilt into a configured reaction, provenance SHOULD remain attached
+  so diagnostics can distinguish legacy/unspecified reactions from `learned` and `admin_authored`
+  ones
 
 ---
 

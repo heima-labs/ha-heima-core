@@ -2,7 +2,7 @@
 ## Configuration & UX Schema (Product-Grade)
 
 **Status:** Active v1 options contract
-**Last Verified Against Code:** 2026-03-11
+**Last Verified Against Code:** 2026-03-30
 
 This document defines the **Options Flow schema** for the Heima integration.
 It specifies UI steps, fields, validation rules, defaults, and runtime effects.
@@ -79,7 +79,10 @@ Heima Options
  ├─ Security
  ├─ Notifications
  ├─ Reactions
- └─ Proposals (shown only when pending proposals exist)
+ ├─ Reactions Edit
+ ├─ Create Automation
+ ├─ Proposals
+ └─ Save
 ```
 
 Each step is independently editable after initial setup.
@@ -450,7 +453,62 @@ Runtime Effect:
 
 ---
 
-## 10. Apply & Reload Semantics
+## 10. Reactions and Proposal Review
+
+### Reactions
+
+The `reactions` step manages currently configured reactions and persisted mute state.
+
+Runtime effect:
+- reads configured reactions from `options["reactions"]["configured"]`
+- lets the admin mute or unmute known reaction ids
+- does not create new reactions by itself
+
+### Reactions Edit
+
+The `reactions_edit` surface edits existing configured reaction payloads.
+
+Normative rules:
+- it remains admin-only
+- it operates on already configured reactions
+- it MUST NOT bypass the shared reaction persistence model
+
+### Create Automation
+
+The `admin_authored_create` step is the bounded admin-authored entry point.
+
+Normative rules:
+- it MUST be admin-only
+- it MUST only expose plugin-declared templates
+- it MUST NOT act as a universal free-form automation builder
+- the resulting artifact MUST be created as a normal `ReactionProposal` with
+  `origin = "admin_authored"`
+- the proposal MUST then flow through the same shared review and rebuild pipeline as learned proposals
+
+Current v1 implementation:
+- the bounded template flow is implemented for `lighting.scene_schedule.basic`
+- plugin families may declare more admin-authored templates than the current flow exposes
+- only templates explicitly implemented in the options flow are user-selectable
+
+### Proposals
+
+The `proposals` step is the shared review surface for both:
+- learned proposals
+- admin-authored proposals
+
+Normative rules:
+- review is one proposal at a time
+- `accept`, `reject`, and `skip` semantics are shared
+- admin-authored proposals MUST preserve visible provenance in review wording
+- accepted proposals persist into `options["reactions"]["configured"]`
+
+Current v1 implementation:
+- if no pending proposals exist, entering `proposals` returns immediately to `init`
+- proposals that require extra user completion may continue into `proposal_configure_action`
+
+---
+
+## 11. Apply & Reload Semantics
 
 - Option changes trigger re-evaluation
 - No immediate mass-apply unless intent changes
@@ -458,7 +516,7 @@ Runtime Effect:
 
 ---
 
-## 11. Migration Rules
+## 12. Migration Rules
 
 - New fields get defaults
 - Removed fields are ignored but preserved
@@ -466,10 +524,15 @@ Runtime Effect:
 
 ---
 
-## 12. Current Implementation Notes
+## 13. Current Implementation Notes
 
 - `proposals` step is implemented:
   - reads pending proposals from `ProposalEngine`
-  - accepts/rejects them
+  - reviews them one at a time
+  - accepts/rejects/skips them
   - persists accepted items in `options["reactions"]["configured"]`
+- `learning.enabled_plugin_families` is implemented and filters the built-in learning registry at runtime
+- `admin_authored_create` is implemented as a bounded template-driven authoring path
+- the current admin-authored template implemented end-to-end in the options flow is:
+  - `lighting.scene_schedule.basic`
 - REST-driven options-flow tests may intentionally return HTTP 400 for invalid schema values; this is expected validation behavior.
