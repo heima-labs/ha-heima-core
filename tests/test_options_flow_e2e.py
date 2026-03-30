@@ -476,6 +476,32 @@ async def test_proposals_step_shows_guided_review_placeholders():
 
 
 @pytest.mark.asyncio
+async def test_proposals_step_tolerates_legacy_non_dict_config():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-legacy",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="Legacy proposal",
+        confidence=0.8,
+        suggested_reaction_config=["bad"],  # type: ignore[arg-type]
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    assert result["type"] == "form"
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"] == "Legacy proposal"
+    assert "Affidabilità: 80%" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_skip_advances_to_next_proposal():
     flow = _flow()
     proposal_1 = ReactionProposal(

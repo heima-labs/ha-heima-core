@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
@@ -11,6 +12,8 @@ from homeassistant.helpers.storage import Store
 
 from .analyzers.base import IPatternAnalyzer, ReactionProposal
 from .event_store import EventStore
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ProposalEngine:
@@ -46,6 +49,10 @@ class ProposalEngine:
         )
         self._analyzers: list[IPatternAnalyzer] = []
         self._proposals: list[ReactionProposal] = []
+        self._load_errors = 0
+        self._last_load_proposal_count = 0
+        self._last_analyzer_failures = 0
+        self._last_analyzer_output_errors = 0
 
     def register_analyzer(self, analyzer: IPatternAnalyzer) -> None:
         self._analyzers.append(analyzer)
@@ -53,20 +60,44 @@ class ProposalEngine:
     async def async_initialize(self) -> None:
         raw = await self._store.async_load()
         self._proposals = []
+        self._load_errors = 0
         if isinstance(raw, dict):
             data = raw.get("data")
             items = data.get("proposals") if isinstance(data, dict) else None
             if isinstance(items, list):
                 for item in items:
-                    if isinstance(item, dict):
-                        self._proposals.append(ReactionProposal.from_dict(item))
+                    if not isinstance(item, dict):
+                        self._load_errors += 1
+                        continue
+                    proposal = self._proposal_from_storage(item)
+                    if proposal is None:
+                        self._load_errors += 1
+                        continue
+                    self._proposals.append(proposal)
+        self._last_load_proposal_count = len(self._proposals)
         self._write_sensor()
 
     async def async_run(self) -> None:
         generated: list[ReactionProposal] = []
+        self._last_analyzer_failures = 0
+        self._last_analyzer_output_errors = 0
         for analyzer in self._analyzers:
-            proposals = await analyzer.analyze(self._event_store)
+            try:
+                proposals = await analyzer.analyze(self._event_store)
+            except Exception:  # noqa: BLE001
+                self._last_analyzer_failures += 1
+                _LOGGER.exception("Learning analyzer '%s' failed during analyze()", analyzer.analyzer_id)
+                continue
+            if not isinstance(proposals, list):
+                try:
+                    proposals = list(proposals)
+                except TypeError:
+                    self._last_analyzer_output_errors += 1
+                    continue
             for proposal in proposals:
+                if not isinstance(proposal, ReactionProposal):
+                    self._last_analyzer_output_errors += 1
+                    continue
                 if proposal.confidence >= self._min_confidence:
                     generated.append(proposal)
 
@@ -148,6 +179,10 @@ class ProposalEngine:
         ordered = self._sort_proposals(self._proposals)
         return {
             "total": len(ordered),
+            "loaded_proposals": self._last_load_proposal_count,
+            "load_errors": self._load_errors,
+            "analyzer_failures": self._last_analyzer_failures,
+            "analyzer_output_errors": self._last_analyzer_output_errors,
             "pending": len(self.pending_proposals()),
             "pending_stale": sum(
                 1 for proposal in ordered if proposal.status == "pending" and self._is_stale(proposal)
@@ -209,7 +244,7 @@ class ProposalEngine:
     def _fingerprint(proposal: ReactionProposal) -> str:
         if proposal.fingerprint:
             return proposal.fingerprint
-        cfg = proposal.suggested_reaction_config
+        cfg = _safe_dict(proposal.suggested_reaction_config)
         weekday = cfg.get("weekday")
         house_state = cfg.get("house_state")
         return f"{proposal.analyzer_id}|{proposal.reaction_type}|{weekday}|{house_state}"
@@ -221,7 +256,7 @@ class ProposalEngine:
         if proposal.fingerprint:
             return proposal.fingerprint
 
-        cfg = dict(proposal.suggested_reaction_config or {})
+        cfg = _safe_dict(proposal.suggested_reaction_config)
         reaction_type = proposal.reaction_type
         if reaction_type == "presence_preheat":
             return f"{reaction_type}|weekday={cfg.get('weekday')}"
@@ -311,6 +346,15 @@ class ProposalEngine:
         return retained
 
     @staticmethod
+    def _proposal_from_storage(raw: dict[str, Any]) -> ReactionProposal | None:
+        proposal = ReactionProposal.from_dict(raw)
+        if not proposal.reaction_type:
+            return None
+        if not proposal.analyzer_id:
+            return None
+        return proposal
+
+    @staticmethod
     def _parse_ts(value: str) -> datetime | None:
         try:
             return datetime.fromisoformat(value)
@@ -319,7 +363,7 @@ class ProposalEngine:
 
     @staticmethod
     def _proposal_config_summary(proposal: ReactionProposal) -> dict[str, Any]:
-        cfg = dict(proposal.suggested_reaction_config or {})
+        cfg = _safe_dict(proposal.suggested_reaction_config)
         summary = {
             "reaction_class": cfg.get("reaction_class"),
             "room_id": cfg.get("room_id"),
@@ -339,7 +383,8 @@ class ProposalEngine:
 
     @staticmethod
     def _proposal_explainability(proposal: ReactionProposal) -> dict[str, Any]:
-        diagnostics = proposal.suggested_reaction_config.get("learning_diagnostics")
+        cfg = _safe_dict(proposal.suggested_reaction_config)
+        diagnostics = cfg.get("learning_diagnostics")
         if not isinstance(diagnostics, dict):
             return {}
         keys = (
@@ -377,3 +422,9 @@ class ProposalEngine:
             for key in keys
             if key in diagnostics and diagnostics[key] not in (None, "", [])
         }
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}

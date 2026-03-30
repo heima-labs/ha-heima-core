@@ -45,14 +45,17 @@ class ReactionProposal:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ReactionProposal":
+        status = str(raw.get("status") or "pending")
+        if status not in {"pending", "accepted", "rejected"}:
+            status = "pending"
         return cls(
             proposal_id=str(raw.get("proposal_id") or str(uuid4())),
             analyzer_id=str(raw.get("analyzer_id") or ""),
             reaction_type=str(raw.get("reaction_type") or ""),
             description=str(raw.get("description") or ""),
-            confidence=float(raw.get("confidence") or 0.0),
-            status=str(raw.get("status") or "pending"),  # type: ignore[arg-type]
-            suggested_reaction_config=dict(raw.get("suggested_reaction_config") or {}),
+            confidence=_safe_float(raw.get("confidence"), default=0.0),
+            status=status,  # type: ignore[arg-type]
+            suggested_reaction_config=_safe_dict(raw.get("suggested_reaction_config")),
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
             updated_at=str(raw.get("updated_at") or datetime.now(UTC).isoformat()),
             last_observed_at=str(
@@ -64,6 +67,19 @@ class ReactionProposal:
             identity_key=str(raw.get("identity_key") or ""),
             fingerprint=str(raw.get("fingerprint") or ""),
         )
+
+
+def _safe_float(value: Any, *, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
 
 
 class IPatternAnalyzer(Protocol):

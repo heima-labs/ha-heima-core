@@ -32,6 +32,24 @@ class _AnalyzerStub:
         return list(self._proposals)
 
 
+class _AnalyzerErrorStub:
+    @property
+    def analyzer_id(self) -> str:
+        return "broken"
+
+    async def analyze(self, event_store):  # noqa: ANN001, ARG002
+        raise RuntimeError("boom")
+
+
+class _AnalyzerInvalidOutputStub:
+    @property
+    def analyzer_id(self) -> str:
+        return "invalid_output"
+
+    async def analyze(self, event_store):  # noqa: ANN001, ARG002
+        return ["not-a-proposal", _proposal(conf=0.8, weekday=3)]
+
+
 class _EventStoreStub:
     pass
 
@@ -154,6 +172,7 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
 
     assert len(engine2._proposals) == 1
     assert engine2._proposals[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    assert engine2.diagnostics()["load_errors"] == 0
 
 
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):
@@ -363,3 +382,181 @@ async def test_proposal_engine_prunes_very_old_stale_pending_proposals(monkeypat
         for proposal in engine._proposals
     )
     assert any(proposal.status == "accepted" for proposal in engine._proposals)
+
+
+async def test_proposal_engine_initialize_skips_malformed_storage_records(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "ok",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "reaction_type": "presence_preheat",
+                    "description": "ok",
+                    "confidence": "0.7",
+                    "status": "pending",
+                    "suggested_reaction_config": {"weekday": 0},
+                },
+                {
+                    "proposal_id": "missing_type",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "description": "bad",
+                    "confidence": "0.5",
+                    "status": "pending",
+                },
+                "not-a-dict",
+            ]
+        }
+    }
+
+    await engine.async_initialize()
+
+    assert len(engine._proposals) == 1
+    diagnostics = engine.diagnostics()
+    assert diagnostics["loaded_proposals"] == 1
+    assert diagnostics["load_errors"] == 2
+
+
+async def test_reaction_proposal_from_dict_sanitizes_invalid_status_and_confidence(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "weird",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "reaction_type": "presence_preheat",
+                    "description": "weird",
+                    "confidence": "not-a-number",
+                    "status": "stale",
+                    "suggested_reaction_config": {"weekday": 2},
+                }
+            ]
+        }
+    }
+
+    await engine.async_initialize()
+
+    assert len(engine._proposals) == 1
+    proposal = engine._proposals[0]
+    assert proposal.confidence == 0.0
+    assert proposal.status == "pending"
+
+
+async def test_reaction_proposal_from_dict_sanitizes_non_dict_config(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "odd",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "reaction_type": "presence_preheat",
+                    "description": "odd",
+                    "confidence": 0.5,
+                    "status": "pending",
+                    "suggested_reaction_config": ["not", "a", "dict"],
+                }
+            ]
+        }
+    }
+
+    await engine.async_initialize()
+
+    assert len(engine._proposals) == 1
+    assert engine._proposals[0].suggested_reaction_config == {}
+
+
+async def test_proposal_engine_run_survives_analyzer_exception(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine.register_analyzer(_AnalyzerErrorStub())
+    engine.register_analyzer(_AnalyzerStub([_proposal(conf=0.8, weekday=1)]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    diagnostics = engine.diagnostics()
+    assert diagnostics["analyzer_failures"] == 1
+    assert diagnostics["analyzer_output_errors"] == 0
+
+
+async def test_proposal_engine_run_skips_invalid_analyzer_outputs(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine.register_analyzer(_AnalyzerInvalidOutputStub())
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    diagnostics = engine.diagnostics()
+    assert diagnostics["analyzer_failures"] == 0
+    assert diagnostics["analyzer_output_errors"] == 1
+
+
+async def test_proposal_engine_restart_dedup_uses_computed_identity_for_legacy_records(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "legacy-presence",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "reaction_type": "presence_preheat",
+                    "description": "legacy",
+                    "confidence": 0.6,
+                    "status": "pending",
+                    "fingerprint": "",
+                    "identity_key": "",
+                    "suggested_reaction_config": {"weekday": 0},
+                }
+            ]
+        }
+    }
+    engine.register_analyzer(_AnalyzerStub([_proposal(conf=0.9, weekday=0)]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].confidence == 0.9
+    assert pending[0].identity_key == "presence_preheat|weekday=0"
+
+
+async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    engine._proposals = [
+        ReactionProposal(
+            proposal_id="legacy",
+            analyzer_id="PresencePatternAnalyzer",
+            reaction_type="presence_preheat",
+            description="legacy",
+            confidence=0.5,
+            suggested_reaction_config=["bad"],  # type: ignore[arg-type]
+        )
+    ]
+
+    diagnostics = engine.diagnostics()
+    engine._write_sensor()
+
+    item = diagnostics["proposals"][0]
+    assert item["config_summary"] == {}
+    assert item["explainability"] == {}
+    assert sensor_updates[-1][1]["legacy"]["config_summary"] == {}
+    assert sensor_updates[-1][1]["legacy"]["explainability"] == {}

@@ -93,3 +93,57 @@ async def test_coordinator_learning_run_refreshes_runtime_state():
     coordinator._proposal_engine.async_run.assert_awaited_once()
     coordinator._write_event_store_sensor.assert_called_once()
     coordinator.async_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = SimpleNamespace(entry_id="entry-1", options={"learning": {}, "rooms": []})
+    coordinator.engine = SimpleNamespace(
+        async_reload_options=AsyncMock(),
+        health=SimpleNamespace(ok=True, reason="ok"),
+        snapshot=SimpleNamespace(house_state="home"),
+        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+    )
+    coordinator._proposal_engine = SimpleNamespace(
+        async_run=AsyncMock(),
+        async_clear=AsyncMock(),
+    )
+    coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
+    coordinator._resubscribe_state_changes = MagicMock()
+    coordinator._sync_scheduler = MagicMock()
+    coordinator.async_refresh = AsyncMock()
+
+    await coordinator.async_reload_options(changed_keys={"calendar"})
+
+    coordinator.engine.async_reload_options.assert_awaited_once()
+    coordinator._context_builder.update_config.assert_called_once_with(
+        {"learning": {}, "rooms": []}
+    )
+    coordinator._proposal_engine.async_run.assert_not_called()
+    coordinator._proposal_engine.async_clear.assert_not_called()
+    coordinator._resubscribe_state_changes.assert_called_once()
+    coordinator._sync_scheduler.assert_called_once()
+    coordinator.async_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_instance():
+    proposal_engine = SimpleNamespace(async_run=AsyncMock(), async_clear=AsyncMock())
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = SimpleNamespace(entry_id="entry-1", options={"learning": {}, "rooms": []})
+    coordinator.engine = SimpleNamespace(
+        async_reload_options=AsyncMock(),
+        health=SimpleNamespace(ok=True, reason="ok"),
+        snapshot=SimpleNamespace(house_state="home"),
+        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+    )
+    coordinator._proposal_engine = proposal_engine
+    coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
+    coordinator._resubscribe_state_changes = MagicMock()
+    coordinator._sync_scheduler = MagicMock()
+    coordinator.async_refresh = AsyncMock()
+
+    await coordinator.async_reload_options(changed_keys={"notifications"})
+
+    assert coordinator._proposal_engine is proposal_engine

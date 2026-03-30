@@ -349,13 +349,13 @@ class _ReactionsStepsMixin:
 
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
-        cfg = dict(proposal.suggested_reaction_config or {})
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
         return self._proposal_human_label(proposal, cfg)
 
     def _proposal_review_details(self, proposal: ReactionProposal) -> str:
         """Build a human-readable review body for one proposal."""
-        cfg = dict(proposal.suggested_reaction_config or {})
-        learning = dict(cfg.get("learning_diagnostics") or {})
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        learning = _safe_mapping(cfg.get("learning_diagnostics"))
         language = self._flow_language()
         is_it = language.startswith("it")
 
@@ -432,7 +432,7 @@ class _ReactionsStepsMixin:
         cfg: dict[str, Any] | None = None,
     ) -> str:
         """Build the most readable label available for a proposal."""
-        cfg = dict(cfg or proposal.suggested_reaction_config or {})
+        cfg = _safe_mapping(cfg if cfg is not None else proposal.suggested_reaction_config)
         derived = self._reaction_label_from_config(
             proposal.proposal_id,
             cfg,
@@ -616,3 +616,9 @@ def _format_last_seen(value: str) -> str:
         return datetime.fromisoformat(value).date().isoformat()
     except (TypeError, ValueError):
         return ""
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
