@@ -137,7 +137,7 @@ async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
     assert pending[0].confidence == 0.85
 
 
-async def test_proposal_engine_skip_accepted(monkeypatch):
+async def test_proposal_engine_accepted_history_generates_followup_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     analyzer = _AnalyzerStub([_proposal(conf=0.9)])
@@ -150,7 +150,24 @@ async def test_proposal_engine_skip_accepted(monkeypatch):
     analyzer._proposals = [_proposal(conf=0.4)]
     await engine.async_run()
     all_pending = engine.pending_proposals()
-    assert len(all_pending) == 0
+    assert len(all_pending) == 1
+    assert all_pending[0].followup_kind == "tuning_suggestion"
+
+
+async def test_proposal_engine_still_skips_rejected_history(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    analyzer = _AnalyzerStub([_proposal(conf=0.9, weekday=1)])
+    engine.register_analyzer(analyzer)
+    await engine.async_initialize()
+    await engine.async_run()
+    pid = engine.pending_proposals()[0].proposal_id
+    assert await engine.async_reject_proposal(pid)
+
+    analyzer._proposals = [_proposal(conf=0.95, weekday=1)]
+    await engine.async_run()
+
+    assert engine.pending_proposals() == []
 
 
 async def test_proposal_engine_reject(monkeypatch):
@@ -679,7 +696,7 @@ async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypa
     assert proposals[0]["status"] == "accepted"
 
 
-async def test_proposal_engine_shutdown_persisted_state_reloads_without_duplication(monkeypatch):
+async def test_proposal_engine_shutdown_persisted_state_reloads_with_single_followup_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     engine1.register_analyzer(_AnalyzerStub([_proposal(conf=0.7, weekday=2)]))
@@ -697,8 +714,10 @@ async def test_proposal_engine_shutdown_persisted_state_reloads_without_duplicat
     await engine2.async_initialize()
     await engine2.async_run()
 
-    assert len(engine2._proposals) == 1
-    reloaded = engine2._proposals[0]
-    assert reloaded.proposal_id == proposal_id
-    assert reloaded.status == "accepted"
-    assert reloaded.confidence == 0.7
+    assert len(engine2._proposals) == 2
+    accepted = next(proposal for proposal in engine2._proposals if proposal.status == "accepted")
+    pending = next(proposal for proposal in engine2._proposals if proposal.status == "pending")
+    assert accepted.proposal_id == proposal_id
+    assert accepted.confidence == 0.7
+    assert pending.followup_kind == "tuning_suggestion"
+    assert pending.confidence == 0.95

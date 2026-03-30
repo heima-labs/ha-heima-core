@@ -108,15 +108,38 @@ class ProposalEngine:
         for candidate in generated:
             now = datetime.now(UTC).isoformat()
             identity_key = self._identity_key(candidate)
-            existing_idx = next(
-                (
-                    idx
-                    for idx, current in enumerate(merged)
-                    if self._identity_key(current) == identity_key
-                ),
+            matching = [
+                (idx, current)
+                for idx, current in enumerate(merged)
+                if self._identity_key(current) == identity_key
+            ]
+            pending_match = next(
+                ((idx, current) for idx, current in matching if current.status == "pending"),
                 None,
             )
-            if existing_idx is None:
+            if pending_match is not None:
+                existing_idx, existing = pending_match
+                merged[existing_idx] = replace(
+                    existing,
+                    confidence=candidate.confidence,
+                    description=candidate.description,
+                    suggested_reaction_config=dict(candidate.suggested_reaction_config),
+                    updated_at=now,
+                    last_observed_at=now,
+                    identity_key=identity_key,
+                    followup_kind=candidate.followup_kind,
+                    target_reaction_id=candidate.target_reaction_id,
+                    target_reaction_class=candidate.target_reaction_class,
+                    target_reaction_origin=candidate.target_reaction_origin,
+                    target_template_id=candidate.target_template_id,
+                )
+                continue
+
+            accepted_match = next(
+                ((idx, current) for idx, current in matching if current.status == "accepted"),
+                None,
+            )
+            if accepted_match is None and not matching:
                 merged.append(
                     replace(
                         candidate,
@@ -126,18 +149,19 @@ class ProposalEngine:
                 )
                 continue
 
-            existing = merged[existing_idx]
-            if existing.status in {"accepted", "rejected"}:
+            if accepted_match is not None:
+                merged.append(
+                    replace(
+                        candidate,
+                        identity_key=identity_key,
+                        last_observed_at=now,
+                        followup_kind="tuning_suggestion",
+                    )
+                )
                 continue
-            merged[existing_idx] = replace(
-                existing,
-                confidence=candidate.confidence,
-                description=candidate.description,
-                suggested_reaction_config=dict(candidate.suggested_reaction_config),
-                updated_at=now,
-                last_observed_at=now,
-                identity_key=identity_key,
-            )
+
+            # Rejected history remains frozen unless explicitly resubmitted by the user.
+            continue
 
         pruned = self._prune_stale_pending(merged)
         self._proposals = pruned
