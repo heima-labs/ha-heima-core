@@ -319,10 +319,12 @@
           "outdoor_lux_entity": "Entità luminosità esterna (sensor)",
           "outdoor_temp_entity": "Entità temperatura esterna (sensor)",
           "weather_entity": "Entità meteo (fallback per temperatura e condizione)",
-          "context_signal_entities": "Segnali contestuali forti (max 10 entità)"
+          "context_signal_entities": "Segnali contestuali forti (max 10 entità)",
+          "enabled_plugin_families": "Famiglie plugin learning abilitate"
         },
         "data_description": {
-          "context_signal_entities": "Entità il cui stato viene registrato insieme a ogni evento di apprendimento. Usa per segnali contestuali forti come un proiettore o un media player specifico. Max 10."
+          "context_signal_entities": "Entità il cui stato viene registrato insieme a ogni evento di apprendimento. Usa per segnali contestuali forti come un proiettore o un media player specifico. Max 10.",
+          "enabled_plugin_families": "Scegli quali famiglie built-in del learning possono generare proposte."
         },
         "submit": "OK"
       },

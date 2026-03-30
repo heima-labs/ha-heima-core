@@ -68,7 +68,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._event_store,
             sensor_writer=self._write_proposals_sensor,
         )
-        self._learning_plugin_registry = create_builtin_learning_plugin_registry()
+        self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
         self._unsub_proposal_tick = None
@@ -133,10 +133,22 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "rooms": list(entry.options.get("rooms", [])),
         }
 
+    def _build_learning_plugin_registry(self, entry: ConfigEntry):
+        learning = dict(entry.options.get("learning", {}))
+        raw_families = learning.get("enabled_plugin_families")
+        enabled_families = (
+            {str(item).strip() for item in raw_families if str(item).strip()}
+            if isinstance(raw_families, list)
+            else None
+        )
+        return create_builtin_learning_plugin_registry(enabled_families=enabled_families)
+
     async def async_reload_options(self, *, changed_keys: set[str] | None = None) -> None:
         """Reload options and refresh state."""
         await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
+        self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
+        self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(

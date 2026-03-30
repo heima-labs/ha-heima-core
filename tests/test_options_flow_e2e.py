@@ -109,6 +109,30 @@ async def test_general_flow_persists_house_signal_bindings():
 
 
 @pytest.mark.asyncio
+async def test_learning_flow_persists_enabled_plugin_families():
+    flow = _flow()
+
+    result = await flow.async_step_learning(
+        {
+            "outdoor_lux_entity": "sensor.outdoor_lux",
+            "outdoor_temp_entity": "",
+            "weather_entity": "",
+            "context_signal_entities": ["media_player.projector"],
+            "enabled_plugin_families": ["presence", "lighting"],
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["learning"] == {
+        "outdoor_lux_entity": "sensor.outdoor_lux",
+        "outdoor_temp_entity": None,
+        "weather_entity": None,
+        "context_signal_entities": ["media_player.projector"],
+        "enabled_plugin_families": ["presence", "lighting"],
+    }
+
+
+@pytest.mark.asyncio
 async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
     flow = _flow(
         {

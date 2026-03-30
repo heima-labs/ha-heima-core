@@ -57,6 +57,9 @@ class ProposalEngine:
     def register_analyzer(self, analyzer: IPatternAnalyzer) -> None:
         self._analyzers.append(analyzer)
 
+    def set_analyzers(self, analyzers: list[IPatternAnalyzer] | tuple[IPatternAnalyzer, ...]) -> None:
+        self._analyzers = list(analyzers)
+
     async def async_initialize(self) -> None:
         raw = await self._store.async_load()
         self._proposals = []

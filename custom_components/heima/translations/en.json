@@ -319,10 +319,12 @@
           "outdoor_lux_entity": "Outdoor light level entity (sensor)",
           "outdoor_temp_entity": "Outdoor temperature entity (sensor)",
           "weather_entity": "Weather entity (fallback for temp and condition)",
-          "context_signal_entities": "Strong context signals (max 10 entities)"
+          "context_signal_entities": "Strong context signals (max 10 entities)",
+          "enabled_plugin_families": "Enabled learning plugin families"
         },
         "data_description": {
-          "context_signal_entities": "Entities whose state is recorded alongside every learning event. Use for strong contextual signals such as a projector or a specific media player. Max 10."
+          "context_signal_entities": "Entities whose state is recorded alongside every learning event. Use for strong contextual signals such as a projector or a specific media player. Max 10.",
+          "enabled_plugin_families": "Choose which built-in learning families are allowed to generate proposals."
         },
         "submit": "OK"
       },

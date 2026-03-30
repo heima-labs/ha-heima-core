@@ -79,3 +79,19 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         ],
         "enabled": True,
     }
+
+
+def test_builtin_learning_plugin_registry_can_disable_families():
+    registry = create_builtin_learning_plugin_registry(
+        enabled_families={"presence", "lighting"}
+    )
+
+    assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
+        "PresencePatternAnalyzer",
+        "LightingPatternAnalyzer",
+    ]
+    diagnostics = registry.diagnostics()
+    enabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is True}
+    disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
+    assert enabled == {"presence", "lighting"}
+    assert disabled == {"heating", "composite_room_assist"}

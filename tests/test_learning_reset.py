@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.heima.coordinator import HeimaCoordinator
+from custom_components.heima.runtime.analyzers.registry import LearningPluginRegistry
 from custom_components.heima.runtime.behaviors.base import HeimaBehavior
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.reactions.base import HeimaReaction
@@ -108,6 +109,7 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
     coordinator._proposal_engine = SimpleNamespace(
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
+        set_analyzers=MagicMock(),
     )
     coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
     coordinator._resubscribe_state_changes = MagicMock()
@@ -122,6 +124,7 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
     )
     coordinator._proposal_engine.async_run.assert_not_called()
     coordinator._proposal_engine.async_clear.assert_not_called()
+    coordinator._proposal_engine.set_analyzers.assert_called_once()
     coordinator._resubscribe_state_changes.assert_called_once()
     coordinator._sync_scheduler.assert_called_once()
     coordinator.async_refresh.assert_awaited_once()
@@ -129,7 +132,11 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
 
 @pytest.mark.asyncio
 async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_instance():
-    proposal_engine = SimpleNamespace(async_run=AsyncMock(), async_clear=AsyncMock())
+    proposal_engine = SimpleNamespace(
+        async_run=AsyncMock(),
+        async_clear=AsyncMock(),
+        set_analyzers=MagicMock(),
+    )
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator.entry = SimpleNamespace(entry_id="entry-1", options={"learning": {}, "rooms": []})
     coordinator.engine = SimpleNamespace(
@@ -147,3 +154,38 @@ async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_ins
     await coordinator.async_reload_options(changed_keys={"notifications"})
 
     assert coordinator._proposal_engine is proposal_engine
+    proposal_engine.set_analyzers.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_runtime_reload_updates_learning_plugin_registry_and_analyzers():
+    initial_registry = LearningPluginRegistry()
+    updated_registry = LearningPluginRegistry()
+    proposal_engine = SimpleNamespace(
+        async_run=AsyncMock(),
+        async_clear=AsyncMock(),
+        set_analyzers=MagicMock(),
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = SimpleNamespace(
+        entry_id="entry-1",
+        options={"learning": {"enabled_plugin_families": ["presence", "lighting"]}, "rooms": []},
+    )
+    coordinator.engine = SimpleNamespace(
+        async_reload_options=AsyncMock(),
+        health=SimpleNamespace(ok=True, reason="ok"),
+        snapshot=SimpleNamespace(house_state="home"),
+        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+    )
+    coordinator._proposal_engine = proposal_engine
+    coordinator._learning_plugin_registry = initial_registry
+    coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
+    coordinator._resubscribe_state_changes = MagicMock()
+    coordinator._sync_scheduler = MagicMock()
+    coordinator.async_refresh = AsyncMock()
+    coordinator._build_learning_plugin_registry = MagicMock(return_value=updated_registry)
+
+    await coordinator.async_reload_options(changed_keys={"learning"})
+
+    assert coordinator._learning_plugin_registry is updated_registry
+    proposal_engine.set_analyzers.assert_called_once_with(list(updated_registry.analyzers()))

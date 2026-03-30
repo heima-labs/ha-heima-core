@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
 
 from ..const import OPT_LEARNING
 from ._common import _entity_selector
@@ -13,6 +14,12 @@ if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
 
 _MAX_SIGNAL_ENTITIES = 10
+_LEARNING_PLUGIN_FAMILY_OPTIONS = {
+    "presence": "Presence",
+    "heating": "Heating",
+    "lighting": "Lighting",
+    "composite_room_assist": "Room Assist",
+}
 
 
 class _LearningStepsMixin:
@@ -32,6 +39,8 @@ class _LearningStepsMixin:
 
     def _learning_schema(self, defaults: dict[str, Any] | None = None) -> vol.Schema:
         defaults = defaults or {}
+        if "enabled_plugin_families" not in defaults:
+            defaults["enabled_plugin_families"] = list(_LEARNING_PLUGIN_FAMILY_OPTIONS)
         schema = vol.Schema(
             {
                 vol.Optional("outdoor_lux_entity"): _entity_selector(["sensor"]),
@@ -40,6 +49,9 @@ class _LearningStepsMixin:
                 vol.Optional("context_signal_entities"): _entity_selector(
                     ["binary_sensor", "sensor", "input_boolean", "switch", "media_player"],
                     multiple=True,
+                ),
+                vol.Optional("enabled_plugin_families"): cv.multi_select(
+                    _LEARNING_PLUGIN_FAMILY_OPTIONS
                 ),
             }
         )
@@ -57,5 +69,19 @@ class _LearningStepsMixin:
             raw_signals = [raw_signals]
         signals = [str(e).strip() for e in raw_signals if e]
         data["context_signal_entities"] = signals[:_MAX_SIGNAL_ENTITIES]
+        raw_families = payload.get("enabled_plugin_families")
+        if isinstance(raw_families, dict):
+            selected = [key for key, enabled in raw_families.items() if enabled]
+        elif isinstance(raw_families, (list, tuple, set)):
+            selected = list(raw_families)
+        elif raw_families:
+            selected = [raw_families]
+        else:
+            selected = list(_LEARNING_PLUGIN_FAMILY_OPTIONS)
+        data["enabled_plugin_families"] = [
+            str(item).strip()
+            for item in selected
+            if str(item).strip() in _LEARNING_PLUGIN_FAMILY_OPTIONS
+        ]
 
         return data

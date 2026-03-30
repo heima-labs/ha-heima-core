@@ -92,7 +92,9 @@ class LearningPluginRegistry:
         return iter(self._plugins)
 
 
-def create_builtin_learning_plugin_registry() -> LearningPluginRegistry:
+def create_builtin_learning_plugin_registry(
+    *, enabled_families: set[str] | None = None
+) -> LearningPluginRegistry:
     """Create the built-in learning plugin registry used by Heima v1."""
     registry = LearningPluginRegistry()
     registry.register(
@@ -104,6 +106,7 @@ def create_builtin_learning_plugin_registry() -> LearningPluginRegistry:
             reaction_targets=("PresencePatternReaction",),
         ),
         analyzer=PresencePatternAnalyzer(),
+        enabled=_is_enabled("presence", enabled_families),
     )
     registry.register(
         descriptor=LearningPatternPluginDescriptor(
@@ -114,6 +117,7 @@ def create_builtin_learning_plugin_registry() -> LearningPluginRegistry:
             reaction_targets=("HeatingPreferenceReaction", "HeatingEcoReaction"),
         ),
         analyzer=HeatingPatternAnalyzer(),
+        enabled=_is_enabled("heating", enabled_families),
     )
     registry.register(
         descriptor=LearningPatternPluginDescriptor(
@@ -124,6 +128,7 @@ def create_builtin_learning_plugin_registry() -> LearningPluginRegistry:
             reaction_targets=("LightingScheduleReaction",),
         ),
         analyzer=LightingPatternAnalyzer(),
+        enabled=_is_enabled("lighting", enabled_families),
     )
     registry.register(
         descriptor=LearningPatternPluginDescriptor(
@@ -139,5 +144,12 @@ def create_builtin_learning_plugin_registry() -> LearningPluginRegistry:
             reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
         ),
         analyzer=CompositePatternCatalogAnalyzer(),
+        enabled=_is_enabled("composite_room_assist", enabled_families),
     )
     return registry
+
+
+def _is_enabled(plugin_family: str, enabled_families: set[str] | None) -> bool:
+    if enabled_families is None:
+        return True
+    return plugin_family in enabled_families
