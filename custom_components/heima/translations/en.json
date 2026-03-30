@@ -361,6 +361,36 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_signal_assist": {
+        "title": "New room signal assist",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Room",
+          "primary_signal_entities": "Primary signal entities",
+          "primary_signal_name": "Primary signal name",
+          "primary_rise_threshold": "Primary rise threshold",
+          "corroboration_signal_entities": "Corroboration entities",
+          "corroboration_signal_name": "Corroboration name",
+          "corroboration_rise_threshold": "Corroboration threshold",
+          "action_entities": "Actions to trigger"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_room_darkness_lighting_assist": {
+        "title": "New room darkness lighting assist",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Room",
+          "primary_signal_entities": "Primary signal entities",
+          "primary_signal_name": "Primary signal name",
+          "primary_threshold": "Darkness threshold",
+          "light_entities": "Lights to control",
+          "action": "Action",
+          "brightness": "Brightness",
+          "color_temp_kelvin": "Color temperature (K)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Review Proposals",
         "description": "Heima detected recurring patterns. Review one proposal at a time and decide whether to accept, reject, or skip it.\n\nQueue: {current_position}\n\nCurrent proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",

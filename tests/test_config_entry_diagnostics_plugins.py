@@ -193,7 +193,8 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         _state=SimpleNamespace(
             get_sensor=lambda key: (
                 '{"r1":{"origin":"learned","author_kind":"heima"},'
-                '"r2":{"origin":"admin_authored","author_kind":"admin"}}'
+                '"r2":{"origin":"admin_authored","author_kind":"admin",'
+                '"source_template_id":"room.signal_assist.basic"}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -214,4 +215,8 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     assert summary["total"] == 2
     assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
     assert summary["by_author_kind"] == {"admin": 1, "heima": 1}
+    assert summary["by_template_id"] == {
+        "room.signal_assist.basic": 1,
+        "unspecified": 1,
+    }
     assert summary["reaction_ids"] == ["r1", "r2"]

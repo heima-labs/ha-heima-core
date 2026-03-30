@@ -361,6 +361,36 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_signal_assist": {
+        "title": "Nuovo assist segnali stanza",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_entities": "Entità segnale primario",
+          "primary_signal_name": "Nome segnale primario",
+          "primary_rise_threshold": "Soglia aumento primario",
+          "corroboration_signal_entities": "Entità di corroborazione",
+          "corroboration_signal_name": "Nome corroborazione",
+          "corroboration_rise_threshold": "Soglia corroborazione",
+          "action_entities": "Azioni da attivare"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_room_darkness_lighting_assist": {
+        "title": "Nuovo assist luce per buio stanza",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_entities": "Entità segnale primario",
+          "primary_signal_name": "Nome segnale primario",
+          "primary_threshold": "Soglia buio",
+          "light_entities": "Luci da controllare",
+          "action": "Azione",
+          "brightness": "Luminosità",
+          "color_temp_kelvin": "Temperatura colore (K)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Revisione Proposte",
         "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
