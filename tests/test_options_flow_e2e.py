@@ -403,6 +403,10 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     assert getattr(flow, "_pending_action_configs", []) == []
     stored = flow.options["reactions"]["configured"]["proposal-darkness"]
     assert stored["reaction_class"] == "RoomLightingAssistReaction"
+    assert stored["origin"] == "learned"
+    assert stored["author_kind"] == "heima"
+    assert stored["source_request"] == "learned_pattern"
+    assert stored["source_proposal_id"] == "proposal-darkness"
 
 
 @pytest.mark.asyncio
@@ -625,6 +629,47 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
     assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
     assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_accept_persists_reaction_provenance():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-admin",
+        analyzer_id="AdminAuthoredLightingTemplate",
+        reaction_type="lighting_scene_schedule",
+        description="Admin lighting draft",
+        confidence=1.0,
+        origin="admin_authored",
+        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        created_at="2026-03-30T10:00:00+00:00",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1200,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "admin_authored_template_id": "lighting.scene_schedule.basic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["proposal-admin"]
+    assert stored["origin"] == "admin_authored"
+    assert stored["author_kind"] == "admin"
+    assert stored["source_request"] == "template:lighting.scene_schedule.basic"
+    assert stored["source_template_id"] == "lighting.scene_schedule.basic"
+    assert stored["source_proposal_id"] == "proposal-admin"
+    assert stored["source_proposal_identity_key"] == proposal.identity_key
+    assert stored["created_at"] == "2026-03-30T10:00:00+00:00"
 
 
 def test_proposal_review_label_marks_admin_authored_origin():

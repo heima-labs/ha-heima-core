@@ -332,7 +332,7 @@ class _ReactionsStepsMixin:
 
         if action == "accept":
             await coordinator.proposal_engine.async_accept_proposal(current_id)
-            configured[current_id] = dict(current.suggested_reaction_config)
+            configured[current_id] = self._configured_reaction_from_proposal(current)
             labels[current_id] = current.description
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
@@ -416,6 +416,27 @@ class _ReactionsStepsMixin:
 
     def _reactions_options(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_REACTIONS, {}))
+
+    @staticmethod
+    def _configured_reaction_from_proposal(proposal: ReactionProposal) -> dict[str, Any]:
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        configured = dict(cfg)
+        origin = proposal.origin
+        configured["origin"] = origin
+        configured["author_kind"] = "admin" if origin == "admin_authored" else "heima"
+        configured["source_proposal_id"] = proposal.proposal_id
+        if proposal.identity_key:
+            configured["source_proposal_identity_key"] = proposal.identity_key
+        if proposal.created_at:
+            configured["created_at"] = proposal.created_at
+        template_id = str(cfg.get("admin_authored_template_id") or "").strip()
+        if template_id:
+            configured["source_template_id"] = template_id
+            configured["source_request"] = f"template:{template_id}"
+            configured.setdefault("last_tuned_at", None)
+        else:
+            configured["source_request"] = "learned_pattern"
+        return configured
 
     def _admin_authored_template_options(self) -> dict[str, str]:
         registry = self._learning_plugin_registry()
