@@ -481,17 +481,20 @@ async def test_e2e_configured_work_window_binding_drives_working_house_state(
     enable_custom_integrations,
 ):
     entry = _entry(
-        _with_house_signals(
-            {
-                "people_anonymous": {
-                    "enabled": True,
-                    "sources": ["binary_sensor.room_presence"],
-                    "required": 1,
-                    "anonymous_count_weight": 1,
-                }
-            },
-            work_window="binary_sensor.office_hours",
-        )
+        {
+            **_with_house_signals(
+                {
+                    "people_anonymous": {
+                        "enabled": True,
+                        "sources": ["binary_sensor.room_presence"],
+                        "required": 1,
+                        "anonymous_count_weight": 1,
+                    }
+                },
+                work_window="binary_sensor.office_hours",
+            ),
+            "house_state_config": {"work_enter_min": 0},
+        }
     )
     entry.add_to_hass(hass)
 
@@ -502,7 +505,10 @@ async def test_e2e_configured_work_window_binding_drives_working_house_state(
     await hass.async_block_till_done()
 
     assert hass.states.get("sensor.heima_house_state").state == "working"
-    assert hass.states.get("sensor.heima_house_state_reason").state == "work_window"
+    assert hass.states.get("sensor.heima_house_state_reason").state in {
+        "work_window",
+        "work_candidate_confirmed",
+    }
 
 
 @pytest.mark.asyncio

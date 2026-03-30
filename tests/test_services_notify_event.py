@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -222,3 +223,27 @@ async def test_heima_set_mode_sets_and_clears_final_house_state_override(monkeyp
         if event_type == "heima_event" and payload["type"] == "system.house_state_override_changed"
     ]
     assert override_events[-1]["context"]["action"] == "clear"
+
+
+@pytest.mark.asyncio
+async def test_heima_command_learning_run_calls_coordinator(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+
+    coordinator = SimpleNamespace(async_run_learning_now=AsyncMock())
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(SimpleNamespace(data={"command": "learning_run", "target": {}, "params": {}}))
+
+    coordinator.async_run_learning_now.assert_awaited_once()

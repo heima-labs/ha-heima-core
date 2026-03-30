@@ -242,6 +242,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._write_event_store_sensor()
         await self.async_refresh()
 
+    async def async_run_learning_now(self) -> None:
+        """Run learning analyzers immediately and refresh exposed state."""
+        await self._proposal_engine.async_run()
+        self._write_event_store_sensor()
+        await self.async_refresh()
+
     async def async_seed_lighting_events(
         self,
         *,
