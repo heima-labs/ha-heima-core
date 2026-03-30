@@ -220,3 +220,59 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         "unspecified": 1,
     }
     assert summary["reaction_ids"] == ["r1", "r2"]
+
+
+async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator._proposal_engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "total": 1,
+            "pending": 1,
+            "pending_stale": 0,
+            "proposals": [
+                {
+                    "id": "p1",
+                    "type": "lighting_scene_schedule",
+                    "status": "pending",
+                    "confidence": 0.91,
+                    "description": "Living tuned lights",
+                    "origin": "learned",
+                    "followup_kind": "discovery",
+                    "identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+                    "is_stale": False,
+                    "updated_at": "2026-03-30T12:00:00+00:00",
+                }
+            ],
+        }
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={
+            "reactions": {
+                "configured": {
+                    "r-existing": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "origin": "admin_authored",
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "source_proposal_identity_key": (
+                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                        ),
+                    }
+                }
+            }
+        },
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    proposals = diagnostics["runtime"]["proposals"]
+
+    assert proposals["tuning_pending"] == 1
+    item = proposals["proposals"][0]
+    assert item["followup_kind"] == "tuning_suggestion"
+    assert item["target_reaction_id"] == "r-existing"
+    assert item["target_reaction_origin"] == "admin_authored"
+    assert item["target_template_id"] == "lighting.scene_schedule.basic"

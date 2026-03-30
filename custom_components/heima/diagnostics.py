@@ -21,6 +21,10 @@ async def async_get_config_entry_diagnostics(
 
     learning_plugins = _learning_plugin_diagnostics(coordinator)
     proposal_diagnostics = coordinator._proposal_engine.diagnostics() if coordinator else {}
+    proposal_diagnostics = _enrich_proposals_with_followups(
+        proposal_diagnostics,
+        entry=entry,
+    )
 
     payload = {
         "entry": {
@@ -203,6 +207,70 @@ def _learning_summary_diagnostics(
         "plugins": plugin_summary,
         "unclaimed_proposal_types": sorted(unclaimed_types),
     }
+
+
+def _enrich_proposals_with_followups(
+    proposal_diagnostics: dict[str, Any],
+    *,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    if not isinstance(proposal_diagnostics, dict):
+        return {}
+    proposals = proposal_diagnostics.get("proposals")
+    if not isinstance(proposals, list):
+        return proposal_diagnostics
+    configured = (
+        dict(dict(entry.options).get("reactions", {})).get("configured", {})
+        if isinstance(dict(entry.options).get("reactions", {}), dict)
+        else {}
+    )
+    if not isinstance(configured, dict) or not configured:
+        return proposal_diagnostics
+
+    configured_by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+    for reaction_id, cfg in configured.items():
+        if not isinstance(cfg, dict):
+            continue
+        identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+        if identity_key:
+            configured_by_identity.setdefault(identity_key, (str(reaction_id), dict(cfg)))
+
+    if not configured_by_identity:
+        return proposal_diagnostics
+
+    enriched: list[dict[str, Any]] = []
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            enriched.append(proposal)
+            continue
+        item = dict(proposal)
+        identity_key = str(item.get("identity_key") or "").strip()
+        if not identity_key:
+            enriched.append(item)
+            continue
+        target = configured_by_identity.get(identity_key)
+        if target is None:
+            enriched.append(item)
+            continue
+        reaction_id, cfg = target
+        if str(item.get("followup_kind") or "discovery") == "discovery":
+            item["followup_kind"] = "tuning_suggestion"
+        item.setdefault("target_reaction_id", reaction_id)
+        item.setdefault("target_reaction_class", str(cfg.get("reaction_class") or ""))
+        item.setdefault("target_reaction_origin", str(cfg.get("origin") or ""))
+        item.setdefault("target_template_id", str(cfg.get("source_template_id") or ""))
+        enriched.append(item)
+
+    updated = dict(proposal_diagnostics)
+    updated["proposals"] = enriched
+    updated["tuning_pending"] = sum(
+        1
+        for proposal in enriched
+        if isinstance(proposal, dict)
+        and str(proposal.get("status") or "") == "pending"
+        and str(proposal.get("followup_kind") or "") == "tuning_suggestion"
+    )
+    return updated
 
 
 def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]:

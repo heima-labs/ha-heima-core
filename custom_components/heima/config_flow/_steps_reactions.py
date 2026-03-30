@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
@@ -608,17 +609,39 @@ class _ReactionsStepsMixin:
         reactions_cfg = dict(self.options.get(OPT_REACTIONS, {}))
         configured = dict(reactions_cfg.get("configured", {}))
         labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
+        followup = self._proposal_followup_target(current)
 
         if action == "accept":
+            accepted_proposal = current
+            if followup is not None and current.followup_kind != "tuning_suggestion":
+                accepted_proposal = replace(
+                    current,
+                    followup_kind="tuning_suggestion",
+                    target_reaction_id=str(followup["reaction_id"]),
+                    target_reaction_class=str(followup["reaction_cfg"].get("reaction_class") or ""),
+                    target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
+                    target_template_id=str(followup.get("target_template_id") or ""),
+                )
             await coordinator.proposal_engine.async_accept_proposal(current_id)
-            configured[current_id] = self._configured_reaction_from_proposal(current)
-            labels[current_id] = current.description
+            target_id = current_id
+            existing_cfg: dict[str, Any] | None = None
+            if followup is not None:
+                target_id = str(followup["reaction_id"])
+                existing_cfg = dict(followup["reaction_cfg"])
+            configured[target_id] = self._configured_reaction_from_proposal(
+                accepted_proposal,
+                existing_config=existing_cfg,
+            )
+            if target_id != current_id:
+                configured.pop(current_id, None)
+                labels.pop(current_id, None)
+            labels[target_id] = current.description
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
             self._update_options({OPT_REACTIONS: reactions_cfg})
 
             if self._proposal_requires_action_completion(current):
-                self._pending_action_configs = [current_id]
+                self._pending_action_configs = [target_id]
                 self._resume_proposal_review = True
                 return await self.async_step_proposal_configure_action()
 
@@ -694,9 +717,27 @@ class _ReactionsStepsMixin:
         return dict(self.options.get(OPT_REACTIONS, {}))
 
     @staticmethod
-    def _configured_reaction_from_proposal(proposal: ReactionProposal) -> dict[str, Any]:
+    def _configured_reaction_from_proposal(
+        proposal: ReactionProposal,
+        *,
+        existing_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        configured = dict(cfg)
+        configured = dict(_safe_mapping(existing_config))
+        configured.update(cfg)
+
+        is_followup = (
+            proposal.followup_kind == "tuning_suggestion"
+            and bool(_safe_mapping(existing_config))
+        )
+        if is_followup:
+            if proposal.updated_at:
+                configured["last_tuned_at"] = proposal.updated_at
+            configured["last_tuning_proposal_id"] = proposal.proposal_id
+            configured["last_tuning_origin"] = proposal.origin
+            configured["last_tuning_followup_kind"] = proposal.followup_kind
+            return configured
+
         origin = proposal.origin
         configured["origin"] = origin
         configured["author_kind"] = "admin" if origin == "admin_authored" else "heima"
@@ -1103,6 +1144,11 @@ class _ReactionsStepsMixin:
         """Build a concise, user-facing title for the current proposal."""
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         title = self._proposal_human_label(proposal, cfg)
+        if self._proposal_followup_target(proposal) is not None:
+            language = self._flow_language()
+            if language.startswith("it"):
+                return f"Affinamento: {title}"
+            return f"Tuning: {title}"
         if proposal.origin != "admin_authored":
             return title
         language = self._flow_language()
@@ -1121,6 +1167,10 @@ class _ReactionsStepsMixin:
         if proposal.origin == "admin_authored":
             details.extend(self._admin_authored_review_details(proposal, cfg, language))
             return "\n".join(details)
+
+        followup = self._proposal_followup_target(proposal)
+        if followup is not None:
+            details.extend(self._proposal_tuning_review_details(proposal, followup, language))
 
         pattern_description = str(proposal.description or "").strip()
         title = self._proposal_human_label(proposal, cfg)
@@ -1186,6 +1236,43 @@ class _ReactionsStepsMixin:
             )
 
         return "\n".join(details)
+
+    def _proposal_tuning_review_details(
+        self,
+        proposal: ReactionProposal,
+        followup: dict[str, Any],
+        language: str,
+    ) -> list[str]:
+        is_it = language.startswith("it")
+        details: list[str] = [
+            (
+                "Tipo proposta: affinamento di una automazione esistente"
+                if is_it
+                else "Proposal type: tuning of an existing automation"
+            )
+        ]
+
+        reaction_label = str(followup.get("reaction_label") or "").strip()
+        if reaction_label:
+            details.append(
+                f"Automazione target: {reaction_label}"
+                if is_it
+                else f"Target automation: {reaction_label}"
+            )
+
+        target_origin = str(followup.get("target_reaction_origin") or "").strip()
+        if target_origin:
+            origin_label = self._proposal_origin_label(target_origin, language)
+            details.append(
+                f"Origine automazione attiva: {origin_label}"
+                if is_it
+                else f"Active automation origin: {origin_label}"
+            )
+
+        target_template_id = str(followup.get("target_template_id") or "").strip()
+        if target_template_id:
+            details.append(f"Template target: {target_template_id}")
+        return details
 
     def _admin_authored_review_details(
         self,
@@ -1354,6 +1441,67 @@ class _ReactionsStepsMixin:
             return f"{day}: typical arrival"
 
         return str(proposal.description or proposal.proposal_id)
+
+    def _proposal_followup_target(self, proposal: ReactionProposal) -> dict[str, Any] | None:
+        explicit_target_id = str(proposal.target_reaction_id or "").strip()
+        if explicit_target_id:
+            cfg = self._configured_reaction_cfg(explicit_target_id)
+            reaction_cfg = dict(cfg or {})
+            labels_map: dict[str, str] = self._reactions_options().get("labels", {})
+            return {
+                "reaction_id": explicit_target_id,
+                "reaction_cfg": reaction_cfg,
+                "reaction_label": self._reaction_label_from_config(
+                    explicit_target_id, reaction_cfg, labels_map
+                ),
+                "target_reaction_origin": str(
+                    proposal.target_reaction_origin or reaction_cfg.get("origin") or ""
+                ),
+                "target_template_id": str(
+                    proposal.target_template_id or reaction_cfg.get("source_template_id") or ""
+                ),
+            }
+
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            return None
+        configured = dict(self._reactions_options().get("configured", {}))
+        labels_map: dict[str, str] = self._reactions_options().get("labels", {})
+        for reaction_id, raw in configured.items():
+            reaction_cfg = _safe_mapping(raw)
+            if str(reaction_cfg.get("source_proposal_identity_key") or "").strip() != identity_key:
+                continue
+            return {
+                "reaction_id": str(reaction_id),
+                "reaction_cfg": reaction_cfg,
+                "reaction_label": self._reaction_label_from_config(
+                    str(reaction_id), reaction_cfg, labels_map
+                ),
+                "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
+                "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
+            }
+        return None
+
+    def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
+        configured = dict(self._reactions_options().get("configured", {}))
+        raw = configured.get(reaction_id)
+        if isinstance(raw, dict):
+            return dict(raw)
+        return None
+
+    @staticmethod
+    def _proposal_origin_label(origin: str, language: str) -> str:
+        if language.startswith("it"):
+            if origin == "admin_authored":
+                return "bozza amministratore"
+            if origin == "learned":
+                return "appresa da Heima"
+        else:
+            if origin == "admin_authored":
+                return "admin-authored"
+            if origin == "learned":
+                return "learned"
+        return origin
 
     @staticmethod
     def _weekday_label(weekday: Any, language: str) -> str:

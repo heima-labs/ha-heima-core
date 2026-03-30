@@ -1259,6 +1259,9 @@ class HeimaEngine:
             "source_proposal_identity_key",
             "created_at",
             "last_tuned_at",
+            "last_tuning_proposal_id",
+            "last_tuning_origin",
+            "last_tuning_followup_kind",
         )
         return {
             key: cfg[key]
