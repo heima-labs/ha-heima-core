@@ -560,3 +560,48 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
     assert item["explainability"] == {}
     assert sensor_updates[-1][1]["legacy"]["config_summary"] == {}
     assert sensor_updates[-1][1]["legacy"]["explainability"] == {}
+
+
+async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine.register_analyzer(_AnalyzerStub([_proposal(conf=0.9, weekday=0)]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+    proposal_id = engine.pending_proposals()[0].proposal_id
+    assert await engine.async_accept_proposal(proposal_id)
+
+    await engine.async_shutdown()
+
+    stored = engine._store._data
+    assert isinstance(stored, dict)
+    proposals = (((stored.get("data") or {}).get("proposals")) or [])
+    assert len(proposals) == 1
+    assert proposals[0]["proposal_id"] == proposal_id
+    assert proposals[0]["status"] == "accepted"
+
+
+async def test_proposal_engine_shutdown_persisted_state_reloads_without_duplication(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine1.register_analyzer(_AnalyzerStub([_proposal(conf=0.7, weekday=2)]))
+
+    await engine1.async_initialize()
+    await engine1.async_run()
+    proposal_id = engine1.pending_proposals()[0].proposal_id
+    assert await engine1.async_accept_proposal(proposal_id)
+    await engine1.async_shutdown()
+
+    engine2 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine2._store._data = engine1._store._data
+    engine2.register_analyzer(_AnalyzerStub([_proposal(conf=0.95, weekday=2)]))
+
+    await engine2.async_initialize()
+    await engine2.async_run()
+
+    assert len(engine2._proposals) == 1
+    reloaded = engine2._proposals[0]
+    assert reloaded.proposal_id == proposal_id
+    assert reloaded.status == "accepted"
+    assert reloaded.confidence == 0.7
