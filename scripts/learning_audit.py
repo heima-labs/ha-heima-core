@@ -71,6 +71,14 @@ def main() -> int:
                     f"{key}={value}" for key, value in sorted(by_author_kind.items())
                 )
             )
+        by_template_id = dict(reaction_summary.get("by_template_id") or {})
+        if by_template_id:
+            print(
+                "by template_id: "
+                + ", ".join(
+                    f"{key}={value}" for key, value in sorted(by_template_id.items())
+                )
+            )
 
     families = dict(summary.get("families") or {})
     if families:
@@ -87,6 +95,12 @@ def main() -> int:
             proposal_types = list(item.get("proposal_types") or [])
             if proposal_types:
                 print(f"  proposal_types: {', '.join(proposal_types)}")
+            implemented_templates = list(item.get("implemented_admin_authored_templates") or [])
+            unimplemented_templates = list(item.get("unimplemented_admin_authored_templates") or [])
+            if implemented_templates:
+                print("  implemented templates: " + ", ".join(implemented_templates))
+            if unimplemented_templates:
+                print("  declared-only templates: " + ", ".join(unimplemented_templates))
             examples = list(item.get("top_examples") or [])
             for example in examples:
                 print(f"  top: {_proposal_label(example)}")
@@ -103,6 +117,12 @@ def main() -> int:
                 f"rejected={item.get('rejected', 0)} "
                 f"stale_pending={item.get('stale_pending', 0)}"
             )
+            implemented_templates = list(item.get("implemented_admin_authored_templates") or [])
+            unimplemented_templates = list(item.get("unimplemented_admin_authored_templates") or [])
+            if implemented_templates:
+                print("  implemented templates: " + ", ".join(implemented_templates))
+            if unimplemented_templates:
+                print("  declared-only templates: " + ", ".join(unimplemented_templates))
 
     unclaimed = list(summary.get("unclaimed_proposal_types") or [])
     if unclaimed:

@@ -43,6 +43,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
         and item["supports_admin_authored"] is True
         and item["admin_authored_templates"][0]["template_id"]
         == "lighting.scene_schedule.basic"
+        and item["admin_authored_templates"][0]["implemented"] is True
         for item in learning
     )
     assert any(item["reaction_class"] == "RoomSignalAssistReaction" for item in reactions)
@@ -150,6 +151,8 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert "lighting_scene_schedule" in lighting["proposal_types"]
     assert lighting["admin_authorable"] is True
     assert lighting["admin_authored_templates"] == ["lighting.scene_schedule.basic"]
+    assert lighting["implemented_admin_authored_templates"] == ["lighting.scene_schedule.basic"]
+    assert lighting["unimplemented_admin_authored_templates"] == []
 
     composite = summary["plugins"]["builtin.composite_room_assist"]
     assert composite["pending"] == 1
@@ -159,6 +162,11 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
     ]
+    assert composite["implemented_admin_authored_templates"] == [
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    ]
+    assert composite["unimplemented_admin_authored_templates"] == []
 
     heating = summary["plugins"]["builtin.heating_preferences"]
     assert heating["accepted"] == 1

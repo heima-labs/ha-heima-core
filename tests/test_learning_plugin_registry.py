@@ -96,6 +96,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "title": "Room Signal Assist",
                 "description": "Create a room assist automation driven by a primary room signal.",
                 "config_schema_id": "room_signal_assist.basic.v1",
+                "implemented": True,
             },
             {
                 "template_id": "room.darkness_lighting_assist.basic",
@@ -103,6 +104,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "title": "Darkness Lighting Assist",
                 "description": "Create a room lighting assist that reacts to darkness conditions.",
                 "config_schema_id": "room_darkness_lighting_assist.basic.v1",
+                "implemented": True,
             },
         ],
         "enabled": True,

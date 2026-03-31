@@ -21,6 +21,7 @@ class AdminAuthoredTemplateDescriptor:
     title: str
     description: str
     config_schema_id: str
+    implemented: bool = False
 
 
 @dataclass(frozen=True)
@@ -188,6 +189,7 @@ def create_builtin_learning_plugin_registry(
                     title="Lighting Schedule",
                     description="Create a room-based recurring lighting schedule.",
                     config_schema_id="lighting_scene_schedule.basic.v1",
+                    implemented=True,
                 ),
             ),
         ),
@@ -214,6 +216,7 @@ def create_builtin_learning_plugin_registry(
                     title="Room Signal Assist",
                     description="Create a room assist automation driven by a primary room signal.",
                     config_schema_id="room_signal_assist.basic.v1",
+                    implemented=True,
                 ),
                 AdminAuthoredTemplateDescriptor(
                     template_id="room.darkness_lighting_assist.basic",
@@ -221,6 +224,7 @@ def create_builtin_learning_plugin_registry(
                     title="Darkness Lighting Assist",
                     description="Create a room lighting assist that reacts to darkness conditions.",
                     config_schema_id="room_darkness_lighting_assist.basic.v1",
+                    implemented=True,
                 ),
             ),
         ),
@@ -246,6 +250,7 @@ def _template_diagnostics(
             "title": item.title,
             "description": item.description,
             "config_schema_id": item.config_schema_id,
+            "implemented": item.implemented,
         }
         for item in templates
     ]

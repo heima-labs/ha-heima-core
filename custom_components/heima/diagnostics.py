@@ -84,6 +84,7 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
                     "title": item.title,
                     "description": item.description,
                     "config_schema_id": item.config_schema_id,
+                    "implemented": item.implemented,
                 }
                 for item in descriptor.admin_authored_templates
             ],
@@ -136,6 +137,15 @@ def _learning_summary_diagnostics(
                 "admin_authored_templates": _template_ids(
                     plugin.get("admin_authored_templates") or []
                 ),
+                "implemented_admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or [],
+                    implemented_only=True,
+                ),
+                "unimplemented_admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or [],
+                    implemented_only=False,
+                    invert_implemented=True,
+                ),
                 "top_examples": _top_proposal_examples(plugin_proposals),
             }
         )
@@ -147,6 +157,8 @@ def _learning_summary_diagnostics(
                 "plugins": [],
                 "proposal_types": set(),
                 "admin_authored_templates": set(),
+                "implemented_admin_authored_templates": set(),
+                "unimplemented_admin_authored_templates": set(),
                 "admin_authorable": False,
                 "total": 0,
                 "pending": 0,
@@ -164,6 +176,12 @@ def _learning_summary_diagnostics(
         family_entry["admin_authored_templates"].update(
             plugin_summary[plugin_id]["admin_authored_templates"]
         )
+        family_entry["implemented_admin_authored_templates"].update(
+            plugin_summary[plugin_id]["implemented_admin_authored_templates"]
+        )
+        family_entry["unimplemented_admin_authored_templates"].update(
+            plugin_summary[plugin_id]["unimplemented_admin_authored_templates"]
+        )
         family_entry["total"] += plugin_stats["total"]
         family_entry["pending"] += plugin_stats["pending"]
         family_entry["accepted"] += plugin_stats["accepted"]
@@ -175,6 +193,12 @@ def _learning_summary_diagnostics(
         stats["plugins"] = sorted(stats["plugins"])
         stats["proposal_types"] = sorted(stats["proposal_types"])
         stats["admin_authored_templates"] = sorted(stats["admin_authored_templates"])
+        stats["implemented_admin_authored_templates"] = sorted(
+            stats["implemented_admin_authored_templates"]
+        )
+        stats["unimplemented_admin_authored_templates"] = sorted(
+            stats["unimplemented_admin_authored_templates"]
+        )
         stats["top_examples"] = stats["top_examples"][:3]
 
     enabled_families = sorted(
@@ -385,14 +409,26 @@ def _top_proposal_examples(proposals: list[dict[str, Any]]) -> list[dict[str, An
     return examples
 
 
-def _template_ids(templates: list[Any]) -> list[str]:
+def _template_ids(
+    templates: list[Any],
+    *,
+    implemented_only: bool | None = None,
+    invert_implemented: bool = False,
+) -> list[str]:
     ids: list[str] = []
     for item in templates:
         if isinstance(item, dict):
+            implemented = bool(item.get("implemented") is True)
+            if implemented_only is True and not implemented:
+                continue
+            if invert_implemented and implemented:
+                continue
             template_id = str(item.get("template_id") or "").strip()
             if template_id:
                 ids.append(template_id)
         else:
+            if implemented_only is True or invert_implemented:
+                continue
             template_id = str(item).strip()
             if template_id:
                 ids.append(template_id)
