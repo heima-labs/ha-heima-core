@@ -1128,3 +1128,13 @@ def test_tuning_pending_summary_counts_followup_proposals():
 
     assert flow._proposal_review_summary() == "2"
     assert flow._tuning_pending_summary() == "1"
+
+
+def test_signal_threshold_mode_options_include_binary_transitions():
+    flow = _flow()
+
+    options = flow._signal_threshold_mode_options()
+
+    assert "switch_on" in options
+    assert "switch_off" in options
+    assert "state_change" in options

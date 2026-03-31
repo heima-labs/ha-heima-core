@@ -1771,6 +1771,17 @@ V1 target config shape:
 - `followup_window_s`
 - `steps=[]` by default, to be completed by the user in the proposal action configuration flow
 
+Supported v1 trigger modes for the generic matcher fields:
+- numeric threshold/delta modes:
+  - `rise`
+  - `drop`
+  - `above`
+  - `below`
+- binary transition modes:
+  - `switch_on`
+  - `switch_off`
+  - `state_change`
+
 Normative rules:
 - composite proposal types MUST remain stable across restart and rebuild boundaries
 - accepted proposals MUST rebuild into a runtime reaction without requiring analyzer-only hidden

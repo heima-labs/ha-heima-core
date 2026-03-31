@@ -88,6 +88,12 @@ Normative clarification:
 - if some trigger modes are not yet implemented, they MUST be treated as declared future capability,
   not implied current behavior
 
+Current v1 implementation status:
+
+- numeric modes are implemented for the generic room-signal assist path
+- binary transition modes `switch_on`, `switch_off`, and `state_change` are also implemented for
+  the generic room-signal assist runtime contract
+
 ## 4. Lifecycle
 
 Admin-authored automations do **not** introduce a separate runtime engine or a second state machine.

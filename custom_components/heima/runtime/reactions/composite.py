@@ -9,8 +9,16 @@ from typing import Callable, Literal
 from homeassistant.core import HomeAssistant
 
 
-StateReader = Callable[[str], float | None]
-ThresholdMode = Literal["rise", "drop", "above", "below"]
+StateReader = Callable[[str], str | None]
+ThresholdMode = Literal[
+    "rise",
+    "drop",
+    "above",
+    "below",
+    "switch_on",
+    "switch_off",
+    "state_change",
+]
 
 
 @dataclass(frozen=True)
@@ -49,7 +57,7 @@ class RuntimeCompositeMatcher:
     def __init__(self, hass: HomeAssistant, *, state_reader: StateReader | None = None) -> None:
         self._hass = hass
         self._state_reader = state_reader or self._default_state_reader
-        self._last_values: dict[str, tuple[float, datetime]] = {}
+        self._last_values: dict[str, tuple[str, float | None, datetime]] = {}
 
     def reset(self) -> None:
         self._last_values.clear()
@@ -114,28 +122,31 @@ class RuntimeCompositeMatcher:
             if current is None:
                 continue
             previous = self._last_values.get(entity_id)
-            self._last_values[entity_id] = (current, now)
+            current_num = _parse_numeric_state(current)
+            self._last_values[entity_id] = (current, current_num, now)
             if previous is None:
                 continue
-            previous_value, previous_ts = previous
+            previous_raw, previous_num, previous_ts = previous
             if (now - previous_ts).total_seconds() > window_s:
                 continue
             if _matches_threshold(
-                previous_value=previous_value,
-                current_value=current,
+                previous_raw=previous_raw,
+                previous_value=previous_num,
+                current_raw=current,
+                current_value=current_num,
                 threshold=spec.threshold,
                 mode=spec.threshold_mode,
             ):
                 triggered = True
         return triggered
 
-    def _default_state_reader(self, entity_id: str) -> float | None:
+    def _default_state_reader(self, entity_id: str) -> str | None:
         state = self._hass.states.get(entity_id)
         if state is None:
             return None
         try:
-            return float(state.state)
-        except (TypeError, ValueError):
+            return str(state.state)
+        except Exception:
             return None
 
 
@@ -148,17 +159,42 @@ def parse_snapshot_ts(raw: str) -> datetime | None:
 
 def _matches_threshold(
     *,
-    previous_value: float,
-    current_value: float,
+    previous_raw: str,
+    previous_value: float | None,
+    current_raw: str,
+    current_value: float | None,
     threshold: float,
     mode: ThresholdMode,
 ) -> bool:
     if mode == "rise":
+        if previous_value is None or current_value is None:
+            return False
         return (current_value - previous_value) >= threshold
     if mode == "drop":
+        if previous_value is None or current_value is None:
+            return False
         return (previous_value - current_value) >= threshold
     if mode == "above":
+        if previous_value is None or current_value is None:
+            return False
         return previous_value < threshold and current_value >= threshold
     if mode == "below":
+        if previous_value is None or current_value is None:
+            return False
         return previous_value > threshold and current_value <= threshold
+    previous_norm = previous_raw.strip().lower()
+    current_norm = current_raw.strip().lower()
+    if mode == "switch_on":
+        return previous_norm != "on" and current_norm == "on"
+    if mode == "switch_off":
+        return previous_norm != "off" and current_norm == "off"
+    if mode == "state_change":
+        return previous_norm != current_norm
     return False
+
+
+def _parse_numeric_state(raw: str) -> float | None:
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None

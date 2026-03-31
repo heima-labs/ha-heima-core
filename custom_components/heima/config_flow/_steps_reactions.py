@@ -840,12 +840,18 @@ class _ReactionsStepsMixin:
                 "drop": "Diminuzione rapida",
                 "above": "Supera soglia",
                 "below": "Scende sotto soglia",
+                "switch_on": "Passa a on",
+                "switch_off": "Passa a off",
+                "state_change": "Cambio stato",
             }
         return {
             "rise": "Rapid rise",
             "drop": "Rapid drop",
             "above": "Crosses above threshold",
             "below": "Drops below threshold",
+            "switch_on": "Switches on",
+            "switch_off": "Switches off",
+            "state_change": "State change",
         }
 
     def _admin_authored_room_signal_assist_schema(

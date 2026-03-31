@@ -328,6 +328,9 @@ Supported v1 threshold modes:
 - `drop`
 - `above`
 - `below`
+- `switch_on`
+- `switch_off`
+- `state_change`
 
 Normative runtime behavior:
 - the reaction inspects room-scoped signal history in bounded windows
