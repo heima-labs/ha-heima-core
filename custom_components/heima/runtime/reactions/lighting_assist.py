@@ -234,3 +234,78 @@ def present_room_lighting_assist_label(
         return " — ".join(parts)
     except (TypeError, ValueError):
         return labels_map.get(reaction_id)
+
+
+def present_admin_authored_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-lighting-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_entities = cfg.get("primary_signal_entities")
+    if isinstance(primary_entities, list) and primary_entities:
+        details.append(
+            f"Entità primarie: {len(primary_entities)}"
+            if is_it
+            else f"Primary entities: {len(primary_entities)}"
+        )
+    primary_threshold = cfg.get("primary_threshold")
+    if primary_threshold not in (None, ""):
+        details.append(
+            f"Soglia buio: {primary_threshold}"
+            if is_it
+            else f"Darkness threshold: {primary_threshold}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci configurate: {len(entity_steps)}"
+            if is_it
+            else f"Configured lights: {len(entity_steps)}"
+        )
+    return details
+
+
+def present_learned_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for room lighting assist proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold")
+    if primary_threshold not in (None, ""):
+        details.append(
+            f"Soglia proposta: {primary_threshold}"
+            if is_it
+            else f"Proposed threshold: {primary_threshold}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci proposte: {len(entity_steps)}"
+            if is_it
+            else f"Proposed lights: {len(entity_steps)}"
+        )
+    return details

@@ -10,11 +10,18 @@ from .heating import (
     build_heating_preference_reaction,
 )
 from .learning import ILearningBackend, NaiveLearningBackend
-from .lighting_assist import RoomLightingAssistReaction, build_room_lighting_assist_reaction
-from .lighting_assist import present_room_lighting_assist_label
+from .lighting_assist import (
+    RoomLightingAssistReaction,
+    build_room_lighting_assist_reaction,
+    present_admin_authored_room_lighting_assist_details,
+    present_learned_room_lighting_assist_details,
+    present_room_lighting_assist_label,
+)
 from .lighting_schedule import (
     LightingScheduleReaction,
     build_lighting_schedule_reaction,
+    present_admin_authored_lighting_schedule_details,
+    present_learned_lighting_schedule_details,
     present_lighting_schedule_label,
 )
 from .patterns import ConsecutiveMatchDetector, IPatternDetector
@@ -27,11 +34,15 @@ from .signal_assist import (
     RoomSignalAssistReaction,
     build_room_signal_assist_reaction,
     normalize_room_signal_assist_config,
+    present_admin_authored_room_signal_assist_details,
+    present_learned_room_signal_assist_details,
     present_room_signal_assist_label,
 )
 
 ReactionPluginBuilder = Callable[[Any, str, dict[str, Any]], HeimaReaction | None]
 ReactionLabelPresenter = Callable[[str, dict[str, Any], dict[str, str]], str | None]
+AdminAuthoredReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], list[str]]
+LearnedReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], list[str]]
 
 
 @dataclass(frozen=True)
@@ -49,6 +60,8 @@ class ReactionPresenterHooks:
     """Optional presentation hooks for one reaction plugin."""
 
     reaction_label_from_config: ReactionLabelPresenter | None = None
+    admin_authored_review_details: AdminAuthoredReviewDetailsPresenter | None = None
+    learned_review_details: LearnedReviewDetailsPresenter | None = None
 
 
 @dataclass(frozen=True)
@@ -123,6 +136,8 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_lighting_schedule_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_lighting_schedule_label,
+                admin_authored_review_details=present_admin_authored_lighting_schedule_details,
+                learned_review_details=present_learned_lighting_schedule_details,
             ),
         ),
         RegisteredReactionPlugin(
@@ -157,6 +172,8 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_room_signal_assist_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_signal_assist_label,
+                admin_authored_review_details=present_admin_authored_room_signal_assist_details,
+                learned_review_details=present_learned_room_signal_assist_details,
             ),
         ),
         RegisteredReactionPlugin(
@@ -169,6 +186,8 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_room_lighting_assist_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_lighting_assist_label,
+                admin_authored_review_details=present_admin_authored_room_lighting_assist_details,
+                learned_review_details=present_learned_room_lighting_assist_details,
             ),
         ),
     )
@@ -195,6 +214,8 @@ __all__ = [
     "ReactionPluginDescriptor",
     "ReactionPluginBuilder",
     "ReactionLabelPresenter",
+    "AdminAuthoredReviewDetailsPresenter",
+    "LearnedReviewDetailsPresenter",
     "ReactionPresenterHooks",
     "RegisteredReactionPlugin",
     "create_builtin_reaction_plugin_registry",

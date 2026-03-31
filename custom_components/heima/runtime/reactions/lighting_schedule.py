@@ -237,3 +237,67 @@ def present_lighting_schedule_label(
         return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
     except (KeyError, TypeError, ValueError, IndexError):
         return labels_map.get(reaction_id)
+
+
+def present_admin_authored_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return lighting-schedule-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    weekday = cfg.get("weekday")
+    if weekday not in (None, ""):
+        weekday_label = flow._weekday_label(weekday, language)  # noqa: SLF001
+        details.append(
+            f"Giorno pianificato: {weekday_label}"
+            if is_it
+            else f"Scheduled day: {weekday_label}"
+        )
+
+    scheduled_min = cfg.get("scheduled_min")
+    if isinstance(scheduled_min, (int, float)):
+        hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
+        details.append(
+            f"Orario pianificato: {hhmm}"
+            if is_it
+            else f"Scheduled time: {hhmm}"
+        )
+
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci coinvolte: {len(entity_steps)}"
+            if is_it
+            else f"Lights involved: {len(entity_steps)}"
+        )
+
+    return details
+
+
+def present_learned_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for lighting schedule proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+    scheduled_min = cfg.get("scheduled_min")
+    if isinstance(scheduled_min, (int, float)):
+        hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
+        details.append(
+            f"Orario proposto: {hhmm}" if is_it else f"Proposed time: {hhmm}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci proposte: {len(entity_steps)}"
+            if is_it
+            else f"Proposed lights: {len(entity_steps)}"
+        )
+    return details

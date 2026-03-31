@@ -292,3 +292,109 @@ def present_room_signal_assist_label(
         return " — ".join(parts)
     except (TypeError, ValueError):
         return labels_map.get(reaction_id)
+
+
+def present_admin_authored_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-signal-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+    if primary_threshold not in (None, ""):
+        mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            primary_threshold_mode, primary_threshold_mode
+        )
+        details.append(
+            f"Condizione primaria: {mode_label} ({primary_threshold})"
+            if is_it
+            else f"Primary condition: {mode_label} ({primary_threshold})"
+        )
+    primary_entities = cfg.get("primary_signal_entities")
+    if isinstance(primary_entities, list) and primary_entities:
+        details.append(
+            f"Entità primarie: {len(primary_entities)}"
+            if is_it
+            else f"Primary entities: {len(primary_entities)}"
+        )
+    corroboration_entities = cfg.get("corroboration_signal_entities")
+    if isinstance(corroboration_entities, list) and corroboration_entities:
+        corroboration_name = str(cfg.get("corroboration_signal_name") or "corroboration")
+        details.append(
+            f"Corroborazione: {corroboration_name} ({len(corroboration_entities)})"
+            if is_it
+            else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
+        )
+        corroboration_threshold = cfg.get(
+            "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+        )
+        corroboration_threshold_mode = str(
+            cfg.get("corroboration_threshold_mode") or "rise"
+        ).strip()
+        if corroboration_threshold not in (None, ""):
+            mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+                corroboration_threshold_mode, corroboration_threshold_mode
+            )
+            details.append(
+                f"Condizione corroborante: {mode_label} ({corroboration_threshold})"
+                if is_it
+                else f"Corroborating condition: {mode_label} ({corroboration_threshold})"
+            )
+    steps = cfg.get("steps")
+    if isinstance(steps, list) and steps:
+        details.append(
+            f"Azioni configurate: {len(steps)}"
+            if is_it
+            else f"Configured actions: {len(steps)}"
+        )
+    return details
+
+
+def present_learned_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for room signal assist proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+    if primary_threshold not in (None, ""):
+        mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            primary_threshold_mode, primary_threshold_mode
+        )
+        details.append(
+            f"Condizione proposta: {mode_label} ({primary_threshold})"
+            if is_it
+            else f"Proposed condition: {mode_label} ({primary_threshold})"
+        )
+    steps = cfg.get("steps")
+    if isinstance(steps, list) and steps:
+        details.append(
+            f"Azioni proposte: {len(steps)}"
+            if is_it
+            else f"Proposed actions: {len(steps)}"
+        )
+    return details
