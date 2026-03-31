@@ -190,3 +190,164 @@ def _hhmm(minute_of_day: int) -> str:
 
 def _minute_of_day(dt: datetime) -> int:
     return dt.hour * 60 + dt.minute
+
+
+def build_lighting_schedule_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> LightingScheduleReaction | None:
+    """Build a LightingScheduleReaction from persisted config."""
+    try:
+        room_id = str(cfg["room_id"]).strip()
+        weekday = int(cfg["weekday"])
+        scheduled_min = int(cfg["scheduled_min"])
+        window_half = int(cfg.get("window_half_min", 10))
+        house_state_filter = cfg.get("house_state_filter") or None
+        entity_steps = list(cfg.get("entity_steps", []))
+        if not room_id or not entity_steps:
+            raise ValueError("room_id or entity_steps missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return LightingScheduleReaction(
+        room_id=room_id,
+        weekday=weekday,
+        scheduled_min=scheduled_min,
+        window_half_min=window_half,
+        house_state_filter=house_state_filter,
+        entity_steps=entity_steps,
+        reaction_id=proposal_id,
+    )
+
+
+def present_lighting_schedule_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted lighting schedule reactions."""
+    weekday_names = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    try:
+        weekday = int(cfg["weekday"])
+        scheduled_min = int(cfg["scheduled_min"])
+        room_id = str(cfg.get("room_id", ""))
+        hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
+        day = weekday_names[weekday] if 0 <= weekday <= 6 else str(weekday)
+        n_steps = len(cfg.get("entity_steps", []))
+        return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
+    except (KeyError, TypeError, ValueError, IndexError):
+        return labels_map.get(reaction_id)
+
+
+def present_admin_authored_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return lighting-schedule-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    weekday = cfg.get("weekday")
+    if weekday not in (None, ""):
+        weekday_label = flow._weekday_label(weekday, language)  # noqa: SLF001
+        details.append(
+            f"Giorno pianificato: {weekday_label}"
+            if is_it
+            else f"Scheduled day: {weekday_label}"
+        )
+
+    scheduled_min = cfg.get("scheduled_min")
+    if isinstance(scheduled_min, (int, float)):
+        hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
+        details.append(
+            f"Orario pianificato: {hhmm}"
+            if is_it
+            else f"Scheduled time: {hhmm}"
+        )
+
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci coinvolte: {len(entity_steps)}"
+            if is_it
+            else f"Lights involved: {len(entity_steps)}"
+        )
+
+    return details
+
+
+def present_learned_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for lighting schedule proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+    scheduled_min = cfg.get("scheduled_min")
+    if isinstance(scheduled_min, (int, float)):
+        hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
+        details.append(
+            f"Orario proposto: {hhmm}" if is_it else f"Proposed time: {hhmm}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci proposte: {len(entity_steps)}"
+            if is_it
+            else f"Proposed lights: {len(entity_steps)}"
+        )
+    return details
+
+
+def present_tuning_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return lighting-schedule-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_scheduled = target_cfg.get("scheduled_min")
+    proposed_scheduled = cfg.get("scheduled_min")
+    if isinstance(current_scheduled, (int, float)) and isinstance(proposed_scheduled, (int, float)):
+        current_hhmm = f"{int(current_scheduled) // 60:02d}:{int(current_scheduled) % 60:02d}"
+        proposed_hhmm = f"{int(proposed_scheduled) // 60:02d}:{int(proposed_scheduled) % 60:02d}"
+        if current_hhmm != proposed_hhmm:
+            details.append(
+                f"Orario: {current_hhmm} -> {proposed_hhmm}"
+                if is_it
+                else f"Time: {current_hhmm} -> {proposed_hhmm}"
+            )
+
+    current_steps = target_cfg.get("entity_steps")
+    proposed_steps = cfg.get("entity_steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details
+
+
+def present_lighting_schedule_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    room_id = str(cfg.get("room_id") or "").strip()
+    if not room_id:
+        return None
+    if language.startswith("it"):
+        return f"Luci {room_id}"
+    return f"Lighting {room_id}"

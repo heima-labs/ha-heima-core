@@ -158,6 +158,28 @@ Normative rule:
   constraint-layer execution model are no longer sufficient
 - the initial v1 registry MAY remain built-in only; dynamic third-party loading is not required
 
+### 4.1.1 Reaction Plugin Registry
+
+The reaction layer SHOULD be mediated by an explicit `ReactionPluginRegistry`.
+
+The registry is the architectural source of truth for built-in reaction capabilities and owns:
+- plugin descriptors
+- builder/rebuild hooks
+- optional config normalizers for legacy aliases
+- optional presentation hooks used by review/authoring UX
+
+Minimum registry responsibilities:
+- resolve `reaction_class -> plugin`
+- expose built-in descriptors for diagnostics/tooling
+- allow the runtime engine to rebuild accepted reactions without hardcoding the full list of
+  reaction families in the engine core
+
+Normative rule:
+- the engine SHOULD depend on the registry contract rather than on a growing set of
+  reaction-family-specific `_build_*` methods
+- v1 MAY still keep built-in-only plugins, but the ownership of build/normalize logic SHOULD live
+  with the reaction plugin layer rather than in the engine core
+
 ### 4.1.1 Future Reaction Enhancement concept
 
 Future versions MAY introduce a **Reaction Enhancement** concept as an optional layer applied on top
@@ -195,6 +217,24 @@ Every reaction implementation MUST obey these rules:
 - if a reaction keeps internal learning state, that state must be resettable through
   `reset_learning_state()`
 - if a reaction depends on persisted configuration, it must be rebuildable from options alone
+
+### 4.1.2 Presenter hooks (bridge target)
+
+Review and authoring UX should not require the options flow core to own all reaction-specific
+rendering logic.
+
+Reaction/template families MAY therefore expose lightweight presenter hooks through the plugin layer.
+
+Minimum bridge-level presenter responsibilities:
+- compact human label
+- review title
+- review details body
+- optional template-specific authoring/rendering hook reference
+
+Normative boundary for v1:
+- presenter hooks are a product-layer convenience, not a separate execution model
+- they SHOULD reduce reaction-type-specific branching in the config flow
+- they do not replace the shared proposal/reaction contracts
 
 ### 4.2 ApplyStep.source Field
 

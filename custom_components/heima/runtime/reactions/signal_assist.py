@@ -176,3 +176,271 @@ class RoomSignalAssistReaction(HeimaReaction):
         if self._last_fired_ts is None:
             return True
         return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
+
+
+def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Normalize legacy aliases to the generic composite reaction contract."""
+    trigger_signal_entities = [
+        str(v).strip() for v in cfg.get("trigger_signal_entities", []) if str(v).strip()
+    ]
+    primary_signal_entities = [
+        str(v).strip()
+        for v in cfg.get("primary_signal_entities", trigger_signal_entities)
+        if str(v).strip()
+    ]
+    temperature_signal_entities = [
+        str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
+    ]
+    corroboration_signal_entities = [
+        str(v).strip()
+        for v in cfg.get("corroboration_signal_entities", temperature_signal_entities)
+        if str(v).strip()
+    ]
+    humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
+    primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
+    primary_threshold = float(cfg.get("primary_threshold", primary_rise_threshold))
+    primary_threshold_mode = str(cfg.get("primary_threshold_mode", "rise")).strip() or "rise"
+    temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
+    corroboration_rise_threshold = float(
+        cfg.get("corroboration_rise_threshold", temperature_rise_threshold)
+    )
+    corroboration_threshold = float(
+        cfg.get("corroboration_threshold", corroboration_rise_threshold)
+    )
+    corroboration_threshold_mode = (
+        str(cfg.get("corroboration_threshold_mode", "rise")).strip() or "rise"
+    )
+    primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
+    corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+    return {
+        "trigger_signal_entities": trigger_signal_entities,
+        "primary_signal_entities": primary_signal_entities,
+        "temperature_signal_entities": temperature_signal_entities,
+        "corroboration_signal_entities": corroboration_signal_entities,
+        "humidity_rise_threshold": humidity_rise_threshold,
+        "primary_rise_threshold": primary_rise_threshold,
+        "primary_threshold": primary_threshold,
+        "primary_threshold_mode": primary_threshold_mode,
+        "temperature_rise_threshold": temperature_rise_threshold,
+        "corroboration_rise_threshold": corroboration_rise_threshold,
+        "corroboration_threshold": corroboration_threshold,
+        "corroboration_threshold_mode": corroboration_threshold_mode,
+        "primary_signal_name": primary_signal_name,
+        "corroboration_signal_name": corroboration_signal_name,
+    }
+
+
+def build_room_signal_assist_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> RoomSignalAssistReaction | None:
+    """Build a RoomSignalAssistReaction from persisted config."""
+    try:
+        room_id = str(cfg["room_id"]).strip()
+        normalized = normalize_room_signal_assist_config(cfg)
+        correlation_window_s = int(cfg.get("correlation_window_s", 600))
+        followup_window_s = int(cfg.get("followup_window_s", 900))
+        steps_raw: list = cfg.get("steps", [])
+        steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+        if not room_id or not normalized["primary_signal_entities"]:
+            raise ValueError("room_id or primary_signal_entities missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return RoomSignalAssistReaction(
+        hass=engine._hass,  # noqa: SLF001
+        room_id=room_id,
+        trigger_signal_entities=normalized["trigger_signal_entities"],
+        primary_signal_entities=normalized["primary_signal_entities"],
+        primary_threshold=normalized["primary_threshold"],
+        primary_threshold_mode=normalized["primary_threshold_mode"],
+        primary_rise_threshold=normalized["primary_rise_threshold"],
+        primary_signal_name=normalized["primary_signal_name"],
+        corroboration_signal_entities=normalized["corroboration_signal_entities"],
+        corroboration_threshold=normalized["corroboration_threshold"],
+        corroboration_threshold_mode=normalized["corroboration_threshold_mode"],
+        corroboration_rise_threshold=normalized["corroboration_rise_threshold"],
+        corroboration_signal_name=normalized["corroboration_signal_name"],
+        temperature_signal_entities=normalized["temperature_signal_entities"],
+        humidity_rise_threshold=normalized["humidity_rise_threshold"],
+        temperature_rise_threshold=normalized["temperature_rise_threshold"],
+        correlation_window_s=correlation_window_s,
+        followup_window_s=followup_window_s,
+        steps=steps,
+        reaction_id=proposal_id,
+    )
+
+
+def present_room_signal_assist_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted room signal assist reactions."""
+    try:
+        room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+        humidity_entities = list(cfg.get("trigger_signal_entities", []))
+        temperature_entities = list(cfg.get("temperature_signal_entities", []))
+        observed = int(cfg.get("episodes_observed", 0))
+        parts = [f"Assist {room_id}"]
+        if humidity_entities:
+            parts.append(f"hum:{len(humidity_entities)}")
+        if temperature_entities:
+            parts.append(f"temp:{len(temperature_entities)}")
+        if observed > 0:
+            parts.append(f"{observed} episodi")
+        return " — ".join(parts)
+    except (TypeError, ValueError):
+        return labels_map.get(reaction_id)
+
+
+def present_admin_authored_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-signal-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+    if primary_threshold not in (None, ""):
+        mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            primary_threshold_mode, primary_threshold_mode
+        )
+        details.append(
+            f"Condizione primaria: {mode_label} ({primary_threshold})"
+            if is_it
+            else f"Primary condition: {mode_label} ({primary_threshold})"
+        )
+    primary_entities = cfg.get("primary_signal_entities")
+    if isinstance(primary_entities, list) and primary_entities:
+        details.append(
+            f"Entità primarie: {len(primary_entities)}"
+            if is_it
+            else f"Primary entities: {len(primary_entities)}"
+        )
+    corroboration_entities = cfg.get("corroboration_signal_entities")
+    if isinstance(corroboration_entities, list) and corroboration_entities:
+        corroboration_name = str(cfg.get("corroboration_signal_name") or "corroboration")
+        details.append(
+            f"Corroborazione: {corroboration_name} ({len(corroboration_entities)})"
+            if is_it
+            else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
+        )
+        corroboration_threshold = cfg.get(
+            "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+        )
+        corroboration_threshold_mode = str(
+            cfg.get("corroboration_threshold_mode") or "rise"
+        ).strip()
+        if corroboration_threshold not in (None, ""):
+            mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+                corroboration_threshold_mode, corroboration_threshold_mode
+            )
+            details.append(
+                f"Condizione corroborante: {mode_label} ({corroboration_threshold})"
+                if is_it
+                else f"Corroborating condition: {mode_label} ({corroboration_threshold})"
+            )
+    steps = cfg.get("steps")
+    if isinstance(steps, list) and steps:
+        details.append(
+            f"Azioni configurate: {len(steps)}"
+            if is_it
+            else f"Configured actions: {len(steps)}"
+        )
+    return details
+
+
+def present_learned_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for room signal assist proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+    if primary_threshold not in (None, ""):
+        mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            primary_threshold_mode, primary_threshold_mode
+        )
+        details.append(
+            f"Condizione proposta: {mode_label} ({primary_threshold})"
+            if is_it
+            else f"Proposed condition: {mode_label} ({primary_threshold})"
+        )
+    steps = cfg.get("steps")
+    if isinstance(steps, list) and steps:
+        details.append(
+            f"Azioni proposte: {len(steps)}"
+            if is_it
+            else f"Proposed actions: {len(steps)}"
+        )
+    return details
+
+
+def present_tuning_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-signal-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_threshold = target_cfg.get("primary_threshold", target_cfg.get("primary_rise_threshold"))
+    proposed_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
+        if str(current_threshold) != str(proposed_threshold):
+            details.append(
+                f"Soglia primaria: {current_threshold} -> {proposed_threshold}"
+                if is_it
+                else f"Primary threshold: {current_threshold} -> {proposed_threshold}"
+            )
+
+    current_steps = target_cfg.get("steps")
+    proposed_steps = cfg.get("steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Azioni: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Actions: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details
+
+
+def present_room_signal_assist_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    room_id = str(cfg.get("room_id") or "").strip()
+    if not room_id:
+        return None
+    return f"Assist {room_id}"

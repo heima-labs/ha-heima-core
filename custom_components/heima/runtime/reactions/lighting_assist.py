@@ -161,3 +161,199 @@ class RoomLightingAssistReaction(HeimaReaction):
                     )
                 )
         return steps
+
+
+def build_room_lighting_assist_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> RoomLightingAssistReaction | None:
+    """Build a RoomLightingAssistReaction from persisted config."""
+    try:
+        room_id = str(cfg["room_id"]).strip()
+        primary_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("primary_signal_entities", [])
+            if str(v).strip()
+        ]
+        primary_threshold = float(cfg["primary_threshold"])
+        primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
+        primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
+        corroboration_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("corroboration_signal_entities", [])
+            if str(v).strip()
+        ]
+        corroboration_threshold = (
+            float(cfg["corroboration_threshold"])
+            if cfg.get("corroboration_threshold") is not None
+            else None
+        )
+        corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+        corroboration_threshold_mode = str(cfg.get("corroboration_threshold_mode", "below"))
+        correlation_window_s = int(cfg.get("correlation_window_s", 600))
+        followup_window_s = int(cfg.get("followup_window_s", 900))
+        entity_steps = list(cfg.get("entity_steps", []))
+        if not room_id or not primary_signal_entities or not entity_steps:
+            raise ValueError("room_id, primary_signal_entities or entity_steps missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return RoomLightingAssistReaction(
+        hass=engine._hass,  # noqa: SLF001
+        room_id=room_id,
+        entity_steps=entity_steps,
+        primary_signal_entities=primary_signal_entities,
+        primary_threshold=primary_threshold,
+        primary_signal_name=primary_signal_name,
+        primary_threshold_mode=primary_threshold_mode,
+        corroboration_signal_entities=corroboration_signal_entities,
+        corroboration_threshold=corroboration_threshold,
+        corroboration_signal_name=corroboration_signal_name,
+        corroboration_threshold_mode=corroboration_threshold_mode,
+        correlation_window_s=correlation_window_s,
+        followup_window_s=followup_window_s,
+        reaction_id=proposal_id,
+    )
+
+
+def present_room_lighting_assist_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted room lighting assist reactions."""
+    try:
+        room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+        primary_entities = list(cfg.get("primary_signal_entities", []))
+        entity_steps = list(cfg.get("entity_steps", []))
+        parts = [f"Luce {room_id}"]
+        if primary_entities:
+            parts.append(f"lux:{len(primary_entities)}")
+        if entity_steps:
+            parts.append(f"{len(entity_steps)} entità")
+        return " — ".join(parts)
+    except (TypeError, ValueError):
+        return labels_map.get(reaction_id)
+
+
+def present_admin_authored_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-lighting-specific admin-authored review details."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_entities = cfg.get("primary_signal_entities")
+    if isinstance(primary_entities, list) and primary_entities:
+        details.append(
+            f"Entità primarie: {len(primary_entities)}"
+            if is_it
+            else f"Primary entities: {len(primary_entities)}"
+        )
+    primary_threshold = cfg.get("primary_threshold")
+    if primary_threshold not in (None, ""):
+        details.append(
+            f"Soglia buio: {primary_threshold}"
+            if is_it
+            else f"Darkness threshold: {primary_threshold}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci configurate: {len(entity_steps)}"
+            if is_it
+            else f"Configured lights: {len(entity_steps)}"
+        )
+    return details
+
+
+def present_learned_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return learned/tuning review details for room lighting assist proposals."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    if primary_signal_name:
+        details.append(
+            f"Segnale primario: {primary_signal_name}"
+            if is_it
+            else f"Primary signal: {primary_signal_name}"
+        )
+    primary_threshold = cfg.get("primary_threshold")
+    if primary_threshold not in (None, ""):
+        details.append(
+            f"Soglia proposta: {primary_threshold}"
+            if is_it
+            else f"Proposed threshold: {primary_threshold}"
+        )
+    entity_steps = cfg.get("entity_steps")
+    if isinstance(entity_steps, list) and entity_steps:
+        details.append(
+            f"Luci proposte: {len(entity_steps)}"
+            if is_it
+            else f"Proposed lights: {len(entity_steps)}"
+        )
+    return details
+
+
+def present_tuning_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-lighting-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_threshold = target_cfg.get("primary_threshold")
+    proposed_threshold = cfg.get("primary_threshold")
+    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
+        if str(current_threshold) != str(proposed_threshold):
+            details.append(
+                f"Soglia: {current_threshold} -> {proposed_threshold}"
+                if is_it
+                else f"Threshold: {current_threshold} -> {proposed_threshold}"
+            )
+
+    current_steps = target_cfg.get("entity_steps")
+    proposed_steps = cfg.get("entity_steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details
+
+
+def present_room_lighting_assist_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    room_id = str(cfg.get("room_id") or "").strip()
+    if not room_id:
+        return None
+    if language.startswith("it"):
+        return f"Luce {room_id}"
+    return f"Lighting {room_id}"

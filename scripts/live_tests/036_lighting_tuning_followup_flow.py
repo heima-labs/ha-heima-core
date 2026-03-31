@@ -416,6 +416,12 @@ def main() -> int:
                 or "existing automation" in details.lower(),
                 "review details do not describe tuning semantics",
             )
+            expected_diff = f"{_format_hhmm(authored_minute)} -> {_format_hhmm(tuned_minute)}"
+            _assert(
+                f"Orario: {expected_diff}" in details
+                or f"Time: {expected_diff}" in details,
+                "review details do not show tuning diff",
+            )
 
             result = client.options_flow_configure(tuning_flow_id, {"review_action": "accept"})
             _assert(result.get("type") == "menu", f"unexpected result after tuning accept: {result}")

@@ -37,13 +37,8 @@ from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
-from .reactions import builtin_reaction_plugin_builders
+from .reactions import create_builtin_reaction_plugin_registry
 from .reactions.base import HeimaReaction
-from .reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
-from .reactions.lighting_assist import RoomLightingAssistReaction
-from .reactions.lighting_schedule import LightingScheduleReaction
-from .reactions.presence import _ArrivalRecord, PresencePatternReaction
-from .reactions.signal_assist import RoomSignalAssistReaction
 from .snapshot_buffer import SnapshotBuffer
 from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
@@ -110,7 +105,7 @@ class HeimaEngine:
         self._configured_reaction_ids: set[str] = set()
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
-        self._reaction_plugin_builders = builtin_reaction_plugin_builders()
+        self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
 
     @property
     def health(self) -> EngineHealth:
@@ -330,7 +325,7 @@ class HeimaEngine:
         configured: dict = dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {})
         for proposal_id, cfg in configured.items():
             reaction_class = cfg.get("reaction_class")
-            builder = self._reaction_plugin_builders.get(str(reaction_class or ""))
+            builder = self._reaction_plugin_registry.builder_for(str(reaction_class or ""))
             if builder is None:
                 _LOGGER.debug(
                     "Skipping configured reaction with unknown class %r (proposal %s)",
@@ -342,239 +337,12 @@ class HeimaEngine:
             if reaction is not None:
                 self._reactions.append(reaction)
                 self._configured_reaction_ids.add(reaction.reaction_id)
-
-    def _build_presence_reaction(self, proposal_id: str, cfg: dict) -> PresencePatternReaction | None:
-        """Build a PresencePatternReaction from a stored proposal config."""
-        try:
-            weekday = int(cfg["weekday"])
-            median_min = int(cfg["median_arrival_min"])
-            window_half = int(cfg.get("window_half_min", 15))
-            pre_cond = int(cfg.get("pre_condition_min", 20))
-            min_arrivals = int(cfg.get("min_arrivals", 5))
-            steps_raw: list = cfg.get("steps", [])
-            steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed PresencePatternReaction config for proposal %s", proposal_id)
-            return None
-
-        # Pre-seed with synthetic arrivals so the pattern fires immediately
-        seed = [_ArrivalRecord(weekday=weekday, minute_of_day=median_min) for _ in range(min_arrivals)]
-        return PresencePatternReaction(
-            steps=steps,
-            min_arrivals=min_arrivals,
-            window_half_min=window_half,
-            pre_condition_min=pre_cond,
-            reaction_id=proposal_id,
-            initial_arrivals=seed,
-        )
-
-    def _build_lighting_schedule_reaction(
-        self, proposal_id: str, cfg: dict
-    ) -> LightingScheduleReaction | None:
-        """Build a LightingScheduleReaction from a stored proposal config."""
-        try:
-            room_id = str(cfg["room_id"]).strip()
-            weekday = int(cfg["weekday"])
-            scheduled_min = int(cfg["scheduled_min"])
-            window_half = int(cfg.get("window_half_min", 10))
-            house_state_filter = cfg.get("house_state_filter") or None
-            entity_steps = list(cfg.get("entity_steps", []))
-            if not room_id or not entity_steps:
-                raise ValueError("room_id or entity_steps missing")
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed LightingScheduleReaction config for proposal %s", proposal_id)
-            return None
-        return LightingScheduleReaction(
-            room_id=room_id,
-            weekday=weekday,
-            scheduled_min=scheduled_min,
-            window_half_min=window_half,
-            house_state_filter=house_state_filter,
-            entity_steps=entity_steps,
-            reaction_id=proposal_id,
-        )
-
-    def _build_heating_preference_reaction(
-        self, proposal_id: str, cfg: dict
-    ) -> HeatingPreferenceReaction | None:
-        """Build a HeatingPreferenceReaction from a stored proposal config."""
-        climate_entity = str(dict(self._entry.options).get(OPT_HEATING, {}).get("climate_entity") or "").strip()
-        try:
-            house_state = str(cfg["house_state"]).strip()
-            target_temperature = float(cfg["target_temperature"])
-            tolerance = float(cfg.get("tolerance", 0.25))
-            if not climate_entity or not house_state:
-                raise ValueError("climate_entity or house_state missing")
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed HeatingPreferenceReaction config for proposal %s", proposal_id)
-            return None
-        return HeatingPreferenceReaction(
-            climate_entity=climate_entity,
-            house_state=house_state,
-            target_temperature=target_temperature,
-            tolerance=tolerance,
-            reaction_id=proposal_id,
-        )
-
-    def _build_heating_eco_reaction(self, proposal_id: str, cfg: dict) -> HeatingEcoReaction | None:
-        """Build a HeatingEcoReaction from a stored proposal config."""
-        climate_entity = str(dict(self._entry.options).get(OPT_HEATING, {}).get("climate_entity") or "").strip()
-        try:
-            eco_target_temperature = float(cfg["eco_target_temperature"])
-            tolerance = float(cfg.get("tolerance", 0.25))
-            if not climate_entity:
-                raise ValueError("climate_entity missing")
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed HeatingEcoReaction config for proposal %s", proposal_id)
-            return None
-        return HeatingEcoReaction(
-            climate_entity=climate_entity,
-            eco_target_temperature=eco_target_temperature,
-            tolerance=tolerance,
-            reaction_id=proposal_id,
-        )
-
-    def _build_room_signal_assist_reaction(
-        self, proposal_id: str, cfg: dict
-    ) -> RoomSignalAssistReaction | None:
-        """Build a RoomSignalAssistReaction from a stored proposal config."""
-        try:
-            room_id = str(cfg["room_id"]).strip()
-            normalized = self._normalize_room_signal_assist_config(cfg)
-            correlation_window_s = int(cfg.get("correlation_window_s", 600))
-            followup_window_s = int(cfg.get("followup_window_s", 900))
-            steps_raw: list = cfg.get("steps", [])
-            steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
-            if not room_id or not normalized["primary_signal_entities"]:
-                raise ValueError("room_id or primary_signal_entities missing")
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed RoomSignalAssistReaction config for proposal %s", proposal_id)
-            return None
-        return RoomSignalAssistReaction(
-            hass=self._hass,
-            room_id=room_id,
-            trigger_signal_entities=normalized["trigger_signal_entities"],
-            primary_signal_entities=normalized["primary_signal_entities"],
-            primary_threshold=normalized["primary_threshold"],
-            primary_threshold_mode=normalized["primary_threshold_mode"],
-            primary_rise_threshold=normalized["primary_rise_threshold"],
-            primary_signal_name=normalized["primary_signal_name"],
-            corroboration_signal_entities=normalized["corroboration_signal_entities"],
-            corroboration_threshold=normalized["corroboration_threshold"],
-            corroboration_threshold_mode=normalized["corroboration_threshold_mode"],
-            corroboration_rise_threshold=normalized["corroboration_rise_threshold"],
-            corroboration_signal_name=normalized["corroboration_signal_name"],
-            temperature_signal_entities=normalized["temperature_signal_entities"],
-            humidity_rise_threshold=normalized["humidity_rise_threshold"],
-            temperature_rise_threshold=normalized["temperature_rise_threshold"],
-            correlation_window_s=correlation_window_s,
-            followup_window_s=followup_window_s,
-            steps=steps,
-            reaction_id=proposal_id,
-        )
-
-    def _build_room_lighting_assist_reaction(
-        self, proposal_id: str, cfg: dict
-    ) -> RoomLightingAssistReaction | None:
-        """Build a RoomLightingAssistReaction from a stored proposal config."""
-        try:
-            room_id = str(cfg["room_id"]).strip()
-            primary_signal_entities = [
-                str(v).strip()
-                for v in cfg.get("primary_signal_entities", [])
-                if str(v).strip()
-            ]
-            primary_threshold = float(cfg["primary_threshold"])
-            primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
-            primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
-            corroboration_signal_entities = [
-                str(v).strip()
-                for v in cfg.get("corroboration_signal_entities", [])
-                if str(v).strip()
-            ]
-            corroboration_threshold = (
-                float(cfg["corroboration_threshold"])
-                if cfg.get("corroboration_threshold") is not None
-                else None
-            )
-            corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
-            corroboration_threshold_mode = str(cfg.get("corroboration_threshold_mode", "below"))
-            correlation_window_s = int(cfg.get("correlation_window_s", 600))
-            followup_window_s = int(cfg.get("followup_window_s", 900))
-            entity_steps = list(cfg.get("entity_steps", []))
-            if not room_id or not primary_signal_entities or not entity_steps:
-                raise ValueError("room_id, primary_signal_entities or entity_steps missing")
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning("Malformed RoomLightingAssistReaction config for proposal %s", proposal_id)
-            return None
-        return RoomLightingAssistReaction(
-            hass=self._hass,
-            room_id=room_id,
-            entity_steps=entity_steps,
-            primary_signal_entities=primary_signal_entities,
-            primary_threshold=primary_threshold,
-            primary_signal_name=primary_signal_name,
-            primary_threshold_mode=primary_threshold_mode,
-            corroboration_signal_entities=corroboration_signal_entities,
-            corroboration_threshold=corroboration_threshold,
-            corroboration_signal_name=corroboration_signal_name,
-            corroboration_threshold_mode=corroboration_threshold_mode,
-            correlation_window_s=correlation_window_s,
-            followup_window_s=followup_window_s,
-            reaction_id=proposal_id,
-        )
-
-    @staticmethod
-    def _normalize_room_signal_assist_config(cfg: dict) -> dict[str, Any]:
-        """Normalize legacy aliases to the generic composite reaction contract."""
-        trigger_signal_entities = [
-            str(v).strip() for v in cfg.get("trigger_signal_entities", []) if str(v).strip()
-        ]
-        primary_signal_entities = [
-            str(v).strip()
-            for v in cfg.get("primary_signal_entities", trigger_signal_entities)
-            if str(v).strip()
-        ]
-        temperature_signal_entities = [
-            str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
-        ]
-        corroboration_signal_entities = [
-            str(v).strip()
-            for v in cfg.get("corroboration_signal_entities", temperature_signal_entities)
-            if str(v).strip()
-        ]
-        humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
-        primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
-        primary_threshold = float(cfg.get("primary_threshold", primary_rise_threshold))
-        primary_threshold_mode = str(cfg.get("primary_threshold_mode", "rise")).strip() or "rise"
-        temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
-        corroboration_rise_threshold = float(
-            cfg.get("corroboration_rise_threshold", temperature_rise_threshold)
-        )
-        corroboration_threshold = float(
-            cfg.get("corroboration_threshold", corroboration_rise_threshold)
-        )
-        corroboration_threshold_mode = (
-            str(cfg.get("corroboration_threshold_mode", "rise")).strip() or "rise"
-        )
-        primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
-        corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
-        return {
-            "trigger_signal_entities": trigger_signal_entities,
-            "primary_signal_entities": primary_signal_entities,
-            "temperature_signal_entities": temperature_signal_entities,
-            "corroboration_signal_entities": corroboration_signal_entities,
-            "humidity_rise_threshold": humidity_rise_threshold,
-            "primary_rise_threshold": primary_rise_threshold,
-            "primary_threshold": primary_threshold,
-            "primary_threshold_mode": primary_threshold_mode,
-            "temperature_rise_threshold": temperature_rise_threshold,
-            "corroboration_rise_threshold": corroboration_rise_threshold,
-            "corroboration_threshold": corroboration_threshold,
-            "corroboration_threshold_mode": corroboration_threshold_mode,
-            "primary_signal_name": primary_signal_name,
-            "corroboration_signal_name": corroboration_signal_name,
-        }
+            else:
+                _LOGGER.warning(
+                    "Malformed %s config for proposal %s",
+                    reaction_class,
+                    proposal_id,
+                )
 
     def set_house_state_override(
         self,

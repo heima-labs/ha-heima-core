@@ -13,6 +13,7 @@ from homeassistant.helpers import config_validation as cv
 from ..const import DOMAIN, OPT_REACTIONS
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.reactions import create_builtin_reaction_plugin_registry
 from ._common import _entity_selector
 
 if TYPE_CHECKING:
@@ -40,15 +41,13 @@ class _ReactionsStepsMixin:
             )
 
         template_id = str(user_input.get("template_id") or "").strip()
-        if template_id == "lighting.scene_schedule.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_lighting_schedule()
-        if template_id == "room.signal_assist.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_room_signal_assist()
-        if template_id == "room.darkness_lighting_assist.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_room_darkness_lighting_assist()
+        template = self._admin_authored_template(template_id)
+        flow_step_id = str(getattr(template, "flow_step_id", "") or "").strip()
+        if template is not None and flow_step_id:
+            step = getattr(self, f"async_step_{flow_step_id}", None)
+            if callable(step):
+                self._selected_admin_authored_template_id = template_id
+                return await step()
         return await self.async_step_init()
 
     async def async_step_admin_authored_lighting_schedule(
@@ -1282,6 +1281,12 @@ class _ReactionsStepsMixin:
                 else f"Recurring day: {weekday_label}"
             )
 
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        if presenter is not None and presenter.learned_review_details is not None:
+            details.extend(
+                presenter.learned_review_details(self, proposal, cfg, language)
+            )
+
         return "\n".join(details)
 
     def _proposal_tuning_review_details(
@@ -1319,6 +1324,19 @@ class _ReactionsStepsMixin:
         target_template_id = str(followup.get("target_template_id") or "").strip()
         if target_template_id:
             details.append(f"Template target: {target_template_id}")
+
+        reaction_cfg = _safe_mapping(followup.get("reaction_cfg"))
+        presenter = self._reaction_presenter_for_cfg(reaction_cfg)
+        if presenter is not None and presenter.tuning_review_details is not None:
+            details.extend(
+                presenter.tuning_review_details(
+                    self,
+                    proposal,
+                    _safe_mapping(proposal.suggested_reaction_config),
+                    reaction_cfg,
+                    language,
+                )
+            )
         return details
 
     def _admin_authored_review_details(
@@ -1353,122 +1371,10 @@ class _ReactionsStepsMixin:
         room_id = str(cfg.get("room_id") or "").strip()
         if room_id:
             details.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
-
-        if proposal.reaction_type == "room_signal_assist":
-            primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
-            if primary_signal_name:
-                details.append(
-                    f"Segnale primario: {primary_signal_name}"
-                    if is_it
-                    else f"Primary signal: {primary_signal_name}"
-                )
-            primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
-            primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-            if primary_threshold not in (None, ""):
-                mode_label = self._signal_threshold_mode_options().get(
-                    primary_threshold_mode, primary_threshold_mode
-                )
-                details.append(
-                    f"Condizione primaria: {mode_label} ({primary_threshold})"
-                    if is_it
-                    else f"Primary condition: {mode_label} ({primary_threshold})"
-                )
-            primary_entities = cfg.get("primary_signal_entities")
-            if isinstance(primary_entities, list) and primary_entities:
-                details.append(
-                    f"Entità primarie: {len(primary_entities)}"
-                    if is_it
-                    else f"Primary entities: {len(primary_entities)}"
-                )
-            corroboration_entities = cfg.get("corroboration_signal_entities")
-            if isinstance(corroboration_entities, list) and corroboration_entities:
-                corroboration_name = str(cfg.get("corroboration_signal_name") or "corroboration")
-                details.append(
-                    f"Corroborazione: {corroboration_name} ({len(corroboration_entities)})"
-                    if is_it
-                    else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
-                )
-                corroboration_threshold = cfg.get(
-                    "corroboration_threshold", cfg.get("corroboration_rise_threshold")
-                )
-                corroboration_threshold_mode = str(
-                    cfg.get("corroboration_threshold_mode") or "rise"
-                ).strip()
-                if corroboration_threshold not in (None, ""):
-                    mode_label = self._signal_threshold_mode_options().get(
-                        corroboration_threshold_mode, corroboration_threshold_mode
-                    )
-                    details.append(
-                        f"Condizione corroborante: {mode_label} ({corroboration_threshold})"
-                        if is_it
-                        else f"Corroborating condition: {mode_label} ({corroboration_threshold})"
-                    )
-            steps = cfg.get("steps")
-            if isinstance(steps, list) and steps:
-                details.append(
-                    f"Azioni configurate: {len(steps)}"
-                    if is_it
-                    else f"Configured actions: {len(steps)}"
-                )
-
-        if proposal.reaction_type == "room_darkness_lighting_assist":
-            primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
-            if primary_signal_name:
-                details.append(
-                    f"Segnale primario: {primary_signal_name}"
-                    if is_it
-                    else f"Primary signal: {primary_signal_name}"
-                )
-            primary_entities = cfg.get("primary_signal_entities")
-            if isinstance(primary_entities, list) and primary_entities:
-                details.append(
-                    f"Entità primarie: {len(primary_entities)}"
-                    if is_it
-                    else f"Primary entities: {len(primary_entities)}"
-                )
-            primary_threshold = cfg.get("primary_threshold")
-            if primary_threshold not in (None, ""):
-                details.append(
-                    f"Soglia buio: {primary_threshold}"
-                    if is_it
-                    else f"Darkness threshold: {primary_threshold}"
-                )
-            entity_steps = cfg.get("entity_steps")
-            if isinstance(entity_steps, list) and entity_steps:
-                details.append(
-                    f"Luci configurate: {len(entity_steps)}"
-                    if is_it
-                    else f"Configured lights: {len(entity_steps)}"
-                )
-
-        weekday = cfg.get("weekday")
-        if weekday not in (None, ""):
-            weekday_label = self._weekday_label(weekday, language)
-            details.append(
-                f"Giorno pianificato: {weekday_label}"
-                if is_it
-                else f"Scheduled day: {weekday_label}"
-            )
-
-        scheduled_min = cfg.get("scheduled_min")
-        if isinstance(scheduled_min, (int, float)):
-            hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
-            details.append(
-                f"Orario pianificato: {hhmm}"
-                if is_it
-                else f"Scheduled time: {hhmm}"
-            )
-
-        entity_steps = cfg.get("entity_steps")
-        if (
-            proposal.reaction_type == "lighting_scene_schedule"
-            and isinstance(entity_steps, list)
-            and entity_steps
-        ):
-            details.append(
-                f"Luci coinvolte: {len(entity_steps)}"
-                if is_it
-                else f"Lights involved: {len(entity_steps)}"
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        if presenter is not None and presenter.admin_authored_review_details is not None:
+            details.extend(
+                presenter.admin_authored_review_details(self, proposal, cfg, language)
             )
 
         return details
@@ -1480,6 +1386,13 @@ class _ReactionsStepsMixin:
     ) -> str:
         """Build the most readable label available for a proposal."""
         cfg = _safe_mapping(cfg if cfg is not None else proposal.suggested_reaction_config)
+        language = self._flow_language()
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        if presenter is not None and presenter.proposal_human_label is not None:
+            presented = presenter.proposal_human_label(self, proposal, cfg, language)
+            if presented:
+                return presented
+
         derived = self._reaction_label_from_config(
             proposal.proposal_id,
             cfg,
@@ -1488,21 +1401,14 @@ class _ReactionsStepsMixin:
         if derived != proposal.proposal_id:
             return derived
 
-        language = self._flow_language()
         room_id = str(cfg.get("room_id") or "").strip()
         house_state = str(cfg.get("house_state") or "").strip()
         weekday = cfg.get("weekday")
 
-        if proposal.reaction_type == "lighting_scene_schedule" and room_id:
-            return f"Luci {room_id}" if language.startswith("it") else f"Lighting {room_id}"
-        if proposal.reaction_type == "room_signal_assist" and room_id:
-            return f"Assist {room_id}"
         if proposal.reaction_type == "room_cooling_assist" and room_id:
             return f"Raffrescamento {room_id}" if language.startswith("it") else f"Cooling {room_id}"
         if proposal.reaction_type == "room_air_quality_assist" and room_id:
             return f"Aria {room_id}" if language.startswith("it") else f"Air quality {room_id}"
-        if proposal.reaction_type == "room_darkness_lighting_assist" and room_id:
-            return f"Luce {room_id}" if language.startswith("it") else f"Lighting {room_id}"
         if proposal.reaction_type == "heating_preference" and house_state:
             return (
                 f"Riscaldamento {house_state}" if language.startswith("it") else f"Heating {house_state}"
@@ -1561,6 +1467,14 @@ class _ReactionsStepsMixin:
         if isinstance(raw, dict):
             return dict(raw)
         return None
+
+    @staticmethod
+    def _reaction_presenter_for_cfg(cfg: dict[str, Any]) -> Any | None:
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        if not reaction_class:
+            return None
+        registry = create_builtin_reaction_plugin_registry()
+        return registry.presenter_for(reaction_class)
 
     @staticmethod
     def _proposal_origin_label(origin: str, language: str) -> str:
@@ -1659,7 +1573,13 @@ class _ReactionsStepsMixin:
         from weekday + median_arrival_min + window_half_min stored in the config.
         Falls back to labels_map, then to reaction_id.
         """
-        _WEEKDAY_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+        registry = create_builtin_reaction_plugin_registry()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        presenter = registry.presenter_for(reaction_class)
+        if presenter is not None and presenter.reaction_label_from_config is not None:
+            presented = presenter.reaction_label_from_config(reaction_id, cfg, labels_map)
+            if presented:
+                return presented
 
         if cfg.get("reaction_class") == "PresencePatternReaction":
             try:
