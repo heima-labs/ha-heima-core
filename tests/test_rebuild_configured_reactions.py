@@ -9,13 +9,16 @@ import pytest
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.reactions import (
-    builtin_reaction_plugin_builders,
     builtin_reaction_plugin_descriptors,
+    create_builtin_reaction_plugin_registry,
 )
 from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
-from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
+from custom_components.heima.runtime.reactions.signal_assist import (
+    RoomSignalAssistReaction,
+    normalize_room_signal_assist_config,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +39,7 @@ def _make_engine(options: dict | None = None) -> HeimaEngine:
     engine._reactions = []
     engine._muted_reactions = set()
     engine._configured_reaction_ids = set()
-    engine._reaction_plugin_builders = builtin_reaction_plugin_builders()
+    engine._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
     return engine
 
 
@@ -76,9 +79,12 @@ def test_no_configured_entries_noop():
 
 
 def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
-    registry = builtin_reaction_plugin_builders()
+    registry = create_builtin_reaction_plugin_registry()
 
-    assert set(registry) == {
+    assert {
+        descriptor.reaction_class
+        for descriptor in registry.descriptors()
+    } == {
         "PresencePatternReaction",
         "LightingScheduleReaction",
         "HeatingPreferenceReaction",
@@ -86,6 +92,8 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
     }
+    assert registry.builder_for("RoomSignalAssistReaction") is not None
+    assert registry.builder_for("MissingReaction") is None
 
 
 def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
@@ -315,7 +323,7 @@ def test_room_signal_assist_reaction_builds_generic_signal_config():
 
 
 def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_legacy_aliases():
-    normalized = HeimaEngine._normalize_room_signal_assist_config(
+    normalized = normalize_room_signal_assist_config(
         {
             "trigger_signal_entities": ["sensor.legacy_humidity"],
             "primary_signal_entities": ["sensor.generic_temperature"],

@@ -161,3 +161,76 @@ class RoomLightingAssistReaction(HeimaReaction):
                     )
                 )
         return steps
+
+
+def build_room_lighting_assist_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> RoomLightingAssistReaction | None:
+    """Build a RoomLightingAssistReaction from persisted config."""
+    try:
+        room_id = str(cfg["room_id"]).strip()
+        primary_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("primary_signal_entities", [])
+            if str(v).strip()
+        ]
+        primary_threshold = float(cfg["primary_threshold"])
+        primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
+        primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
+        corroboration_signal_entities = [
+            str(v).strip()
+            for v in cfg.get("corroboration_signal_entities", [])
+            if str(v).strip()
+        ]
+        corroboration_threshold = (
+            float(cfg["corroboration_threshold"])
+            if cfg.get("corroboration_threshold") is not None
+            else None
+        )
+        corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+        corroboration_threshold_mode = str(cfg.get("corroboration_threshold_mode", "below"))
+        correlation_window_s = int(cfg.get("correlation_window_s", 600))
+        followup_window_s = int(cfg.get("followup_window_s", 900))
+        entity_steps = list(cfg.get("entity_steps", []))
+        if not room_id or not primary_signal_entities or not entity_steps:
+            raise ValueError("room_id, primary_signal_entities or entity_steps missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return RoomLightingAssistReaction(
+        hass=engine._hass,  # noqa: SLF001
+        room_id=room_id,
+        entity_steps=entity_steps,
+        primary_signal_entities=primary_signal_entities,
+        primary_threshold=primary_threshold,
+        primary_signal_name=primary_signal_name,
+        primary_threshold_mode=primary_threshold_mode,
+        corroboration_signal_entities=corroboration_signal_entities,
+        corroboration_threshold=corroboration_threshold,
+        corroboration_signal_name=corroboration_signal_name,
+        corroboration_threshold_mode=corroboration_threshold_mode,
+        correlation_window_s=correlation_window_s,
+        followup_window_s=followup_window_s,
+        reaction_id=proposal_id,
+    )
+
+
+def present_room_lighting_assist_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted room lighting assist reactions."""
+    try:
+        room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+        primary_entities = list(cfg.get("primary_signal_entities", []))
+        entity_steps = list(cfg.get("entity_steps", []))
+        parts = [f"Luce {room_id}"]
+        if primary_entities:
+            parts.append(f"lux:{len(primary_entities)}")
+        if entity_steps:
+            parts.append(f"{len(entity_steps)} entità")
+        return " — ".join(parts)
+    except (TypeError, ValueError):
+        return labels_map.get(reaction_id)

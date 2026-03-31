@@ -10,7 +10,7 @@ from homeassistant.helpers.redact import async_redact_data
 
 from .const import DIAGNOSTICS_REDACT_KEYS, DOMAIN
 from .runtime.analyzers import builtin_learning_pattern_plugin_descriptors
-from .runtime.reactions import builtin_reaction_plugin_descriptors
+from .runtime.reactions import create_builtin_reaction_plugin_registry
 
 
 async def async_get_config_entry_diagnostics(
@@ -48,15 +48,7 @@ async def async_get_config_entry_diagnostics(
                 "configured_reaction_summary": _configured_reaction_summary_diagnostics(
                     coordinator
                 ),
-                "reaction_plugins": [
-                    {
-                        "reaction_class": descriptor.reaction_class,
-                        "reaction_id_strategy": descriptor.reaction_id_strategy,
-                        "supported_config_contracts": list(descriptor.supported_config_contracts),
-                        "supports_normalizer": descriptor.supports_normalizer,
-                    }
-                    for descriptor in builtin_reaction_plugin_descriptors()
-                ],
+                "reaction_plugins": _reaction_plugin_diagnostics(coordinator),
             },
         },
     }
@@ -85,6 +77,7 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
                     "description": item.description,
                     "config_schema_id": item.config_schema_id,
                     "implemented": item.implemented,
+                    "flow_step_id": item.flow_step_id,
                 }
                 for item in descriptor.admin_authored_templates
             ],
@@ -92,6 +85,15 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
         }
         for descriptor in builtin_learning_pattern_plugin_descriptors()
     ]
+
+
+def _reaction_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
+    if coordinator:
+        engine = getattr(coordinator, "engine", None)
+        registry = getattr(engine, "_reaction_plugin_registry", None)
+        if registry is not None and hasattr(registry, "diagnostics"):
+            return list(registry.diagnostics())
+    return create_builtin_reaction_plugin_registry().diagnostics()
 
 
 def _learning_summary_diagnostics(

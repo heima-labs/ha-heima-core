@@ -97,6 +97,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "description": "Create a room assist automation driven by a primary room signal.",
                 "config_schema_id": "room_signal_assist.basic.v1",
                 "implemented": True,
+                "flow_step_id": "admin_authored_room_signal_assist",
             },
             {
                 "template_id": "room.darkness_lighting_assist.basic",
@@ -105,6 +106,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "description": "Create a room lighting assist that reacts to darkness conditions.",
                 "config_schema_id": "room_darkness_lighting_assist.basic.v1",
                 "implemented": True,
+                "flow_step_id": "admin_authored_room_darkness_lighting_assist",
             },
         ],
         "enabled": True,
@@ -147,6 +149,10 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
     assert (
         registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
         == "room_signal_assist"
+    )
+    assert (
+        registry.get_admin_authored_template("room.signal_assist.basic").flow_step_id
+        == "admin_authored_room_signal_assist"
     )
     assert (
         registry.get_admin_authored_template(

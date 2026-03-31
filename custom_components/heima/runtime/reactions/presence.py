@@ -216,3 +216,50 @@ class PresencePatternReaction(HeimaReaction):
         if self._backend is not None:
             diag["learning"] = self._backend.diagnostics(self._reaction_id)
         return diag
+
+
+def build_presence_pattern_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> PresencePatternReaction | None:
+    """Build a PresencePatternReaction from persisted config."""
+    try:
+        weekday = int(cfg["weekday"])
+        median_min = int(cfg["median_arrival_min"])
+        window_half = int(cfg.get("window_half_min", 15))
+        pre_cond = int(cfg.get("pre_condition_min", 20))
+        min_arrivals = int(cfg.get("min_arrivals", 5))
+        steps_raw: list = cfg.get("steps", [])
+        steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    seed = [_ArrivalRecord(weekday=weekday, minute_of_day=median_min) for _ in range(min_arrivals)]
+    return PresencePatternReaction(
+        steps=steps,
+        min_arrivals=min_arrivals,
+        window_half_min=window_half,
+        pre_condition_min=pre_cond,
+        reaction_id=proposal_id,
+        initial_arrivals=seed,
+    )
+
+
+def present_presence_pattern_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted presence reactions."""
+    weekday_names = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    try:
+        weekday = int(cfg["weekday"])
+        median_min = int(cfg["median_arrival_min"])
+        window_half = int(cfg.get("window_half_min", 0))
+        hhmm = f"{median_min // 60:02d}:{median_min % 60:02d}"
+        spread = f" (± {window_half} min)" if window_half > 0 else ""
+        day = weekday_names[weekday] if 0 <= weekday <= 6 else str(weekday)
+        return f"{day}: arrivo alle {hhmm}{spread}"
+    except (KeyError, TypeError, ValueError, IndexError):
+        return labels_map.get(reaction_id)

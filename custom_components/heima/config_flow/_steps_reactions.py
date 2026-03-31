@@ -13,6 +13,7 @@ from homeassistant.helpers import config_validation as cv
 from ..const import DOMAIN, OPT_REACTIONS
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.reactions import create_builtin_reaction_plugin_registry
 from ._common import _entity_selector
 
 if TYPE_CHECKING:
@@ -40,15 +41,13 @@ class _ReactionsStepsMixin:
             )
 
         template_id = str(user_input.get("template_id") or "").strip()
-        if template_id == "lighting.scene_schedule.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_lighting_schedule()
-        if template_id == "room.signal_assist.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_room_signal_assist()
-        if template_id == "room.darkness_lighting_assist.basic":
-            self._selected_admin_authored_template_id = template_id
-            return await self.async_step_admin_authored_room_darkness_lighting_assist()
+        template = self._admin_authored_template(template_id)
+        flow_step_id = str(getattr(template, "flow_step_id", "") or "").strip()
+        if template is not None and flow_step_id:
+            step = getattr(self, f"async_step_{flow_step_id}", None)
+            if callable(step):
+                self._selected_admin_authored_template_id = template_id
+                return await step()
         return await self.async_step_init()
 
     async def async_step_admin_authored_lighting_schedule(
@@ -1659,7 +1658,13 @@ class _ReactionsStepsMixin:
         from weekday + median_arrival_min + window_half_min stored in the config.
         Falls back to labels_map, then to reaction_id.
         """
-        _WEEKDAY_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+        registry = create_builtin_reaction_plugin_registry()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        presenter = registry.presenter_for(reaction_class)
+        if presenter is not None and presenter.reaction_label_from_config is not None:
+            presented = presenter.reaction_label_from_config(reaction_id, cfg, labels_map)
+            if presented:
+                return presented
 
         if cfg.get("reaction_class") == "PresencePatternReaction":
             try:

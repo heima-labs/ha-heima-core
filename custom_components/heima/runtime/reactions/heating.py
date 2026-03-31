@@ -134,3 +134,49 @@ class HeatingEcoReaction(HeimaReaction):
             "fire_count": self._fire_count,
             "last_fired_ts": self._last_fired_ts,
         }
+
+
+def build_heating_preference_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> HeatingPreferenceReaction | None:
+    """Build a HeatingPreferenceReaction from persisted config."""
+    climate_entity = str(dict(engine._entry.options).get("heating", {}).get("climate_entity") or "").strip()  # noqa: SLF001
+    try:
+        house_state = str(cfg["house_state"]).strip()
+        target_temperature = float(cfg["target_temperature"])
+        tolerance = float(cfg.get("tolerance", 0.25))
+        if not climate_entity or not house_state:
+            raise ValueError("climate_entity or house_state missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return HeatingPreferenceReaction(
+        climate_entity=climate_entity,
+        house_state=house_state,
+        target_temperature=target_temperature,
+        tolerance=tolerance,
+        reaction_id=proposal_id,
+    )
+
+
+def build_heating_eco_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> HeatingEcoReaction | None:
+    """Build a HeatingEcoReaction from persisted config."""
+    climate_entity = str(dict(engine._entry.options).get("heating", {}).get("climate_entity") or "").strip()  # noqa: SLF001
+    try:
+        eco_target_temperature = float(cfg["eco_target_temperature"])
+        tolerance = float(cfg.get("tolerance", 0.25))
+        if not climate_entity:
+            raise ValueError("climate_entity missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return HeatingEcoReaction(
+        climate_entity=climate_entity,
+        eco_target_temperature=eco_target_temperature,
+        tolerance=tolerance,
+        reaction_id=proposal_id,
+    )

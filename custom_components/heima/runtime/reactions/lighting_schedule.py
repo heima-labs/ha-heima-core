@@ -190,3 +190,50 @@ def _hhmm(minute_of_day: int) -> str:
 
 def _minute_of_day(dt: datetime) -> int:
     return dt.hour * 60 + dt.minute
+
+
+def build_lighting_schedule_reaction(
+    engine: Any,
+    proposal_id: str,
+    cfg: dict[str, Any],
+) -> LightingScheduleReaction | None:
+    """Build a LightingScheduleReaction from persisted config."""
+    try:
+        room_id = str(cfg["room_id"]).strip()
+        weekday = int(cfg["weekday"])
+        scheduled_min = int(cfg["scheduled_min"])
+        window_half = int(cfg.get("window_half_min", 10))
+        house_state_filter = cfg.get("house_state_filter") or None
+        entity_steps = list(cfg.get("entity_steps", []))
+        if not room_id or not entity_steps:
+            raise ValueError("room_id or entity_steps missing")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return LightingScheduleReaction(
+        room_id=room_id,
+        weekday=weekday,
+        scheduled_min=scheduled_min,
+        window_half_min=window_half,
+        house_state_filter=house_state_filter,
+        entity_steps=entity_steps,
+        reaction_id=proposal_id,
+    )
+
+
+def present_lighting_schedule_label(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels_map: dict[str, str],
+) -> str | None:
+    """Return a human label for persisted lighting schedule reactions."""
+    weekday_names = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    try:
+        weekday = int(cfg["weekday"])
+        scheduled_min = int(cfg["scheduled_min"])
+        room_id = str(cfg.get("room_id", ""))
+        hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
+        day = weekday_names[weekday] if 0 <= weekday <= 6 else str(weekday)
+        n_steps = len(cfg.get("entity_steps", []))
+        return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
+    except (KeyError, TypeError, ValueError, IndexError):
+        return labels_map.get(reaction_id)

@@ -104,6 +104,12 @@ Normative rule:
 - `trigger family` and `response family` are the preferred conceptual tools for deciding whether a
   new behavior extends an existing plugin family or needs a different one
 
+Bridge clarification before Strada 3:
+- the learning side may already be plugin-family-driven while the reaction rebuild/review side is
+  still partially centralized
+- before major domain expansion, the reaction/plugin substrate SHOULD be brought to the same level
+  of explicit ownership as the learning/plugin substrate
+
 ### 0.3 Decision: minimum training window before emitting proposals
 
 Based on the literature, a pattern is considered reliable only when it has been observed a sufficient
@@ -187,6 +193,7 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P11 Generic Signal Recorder | Implemented | `runtime/behaviors/signal_recorder.py` records `state_change` events for configured context entities |
 | P12 Learning registry & family controls | Implemented | built-in `LearningPluginRegistry`, `enabled_plugin_families`, diagnostics reflect enabled/disabled families |
 | P13 Admin-authored proposal path | Implemented/Partial | origin-aware proposal model, plugin-declared templates, first end-to-end flow for `lighting.scene_schedule.basic`, reaction provenance + diagnostics implemented |
+| P14 Reaction plugin realization bridge | Planned | reaction build/normalize ownership should move from engine core to explicit `ReactionPluginRegistry`; review/authoring presenter hooks should reduce config-flow hardcoding before major domain expansion |
 
 ---
 

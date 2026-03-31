@@ -484,6 +484,11 @@ Normative rules:
 - the resulting artifact MUST be created as a normal `ReactionProposal` with
   `origin = "admin_authored"`
 - the proposal MUST then flow through the same shared review and rebuild pipeline as learned proposals
+- template availability and implementability MUST be sourced from plugin/template
+  descriptors rather than a flow-local hardcoded allowlist
+- the flow SHOULD progressively delegate template-specific authoring schema and
+  submit handling to plugin-owned hooks instead of expanding central
+  `template_id` branching
 
 Current v1 implementation:
 - the bounded template flow is implemented for `lighting.scene_schedule.basic`
@@ -501,6 +506,11 @@ Normative rules:
 - `accept`, `reject`, and `skip` semantics are shared
 - admin-authored proposals MUST preserve visible provenance in review wording
 - accepted proposals persist into `options["reactions"]["configured"]`
+- the flow SHOULD progressively obtain compact labels, review titles, and review
+  details from plugin-owned presenter hooks rather than central
+  `reaction_type`/`reaction_class` branching
+- tuning follow-ups SHOULD be renderable through the same presenter layer so the
+  central flow does not grow ad hoc per-type review logic
 
 Current v1 implementation:
 - if no pending proposals exist, entering `proposals` returns immediately to `init`
@@ -533,6 +543,11 @@ Current v1 implementation:
   - persists accepted items in `options["reactions"]["configured"]`
 - `learning.enabled_plugin_families` is implemented and filters the built-in learning registry at runtime
 - `admin_authored_create` is implemented as a bounded template-driven authoring path
+- current bridge target:
+  - plugin/template descriptors should become the source of truth for authoring
+    availability and flow delegation
+  - proposal/reaction presentation should progressively move behind plugin-owned
+    presenter hooks
 - the current admin-authored template implemented end-to-end in the options flow is:
   - `lighting.scene_schedule.basic`
 - REST-driven options-flow tests may intentionally return HTTP 400 for invalid schema values; this is expected validation behavior.
