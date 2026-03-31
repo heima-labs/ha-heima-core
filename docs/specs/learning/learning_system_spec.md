@@ -915,6 +915,17 @@ Normative rules:
 - follow-up tuning proposals for authored automations MUST preserve the same shared substrate and
   SHOULD keep enough provenance to relate the tuning proposal back to the authored origin
 
+Lighting tuning clarification:
+- when a tuning proposal targets an active `LightingScheduleReaction`, the proposal/review layer
+  SHOULD support a structured diff over the active reaction rather than only generic follow-up text
+- minimum diff categories for v1 lighting tuning:
+  - schedule/time change
+  - brightness change
+  - color temperature change
+  - entity-set change
+- the follow-up review SHOULD show only the categories that actually differ between the active
+  reaction config and the proposed config
+
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:
   - `supports_admin_authored`

@@ -237,6 +237,20 @@ Heima may then propose:
 - split or merge suggestions
 - disable/retire suggestions
 
+For lighting-specific authored automations, tuning SHOULD be able to express a structured diff rather
+than only a generic “this could be improved” wording.
+
+Minimum useful lighting tuning diff categories:
+- `schedule_adjustment`
+- `brightness_adjustment`
+- `color_temp_adjustment`
+- `entity_set_adjustment`
+
+Normative UX rule:
+- when a tuning proposal targets an active lighting reaction, the review surface SHOULD show the
+  relevant before/after delta for the affected fields instead of only repeating the proposal title
+  or generic follow-up text
+
 These are not learned proposals in the strict sense. They are follow-up recommendations attached to
 an existing authored automation and should still flow through the same proposal/reaction substrate.
 

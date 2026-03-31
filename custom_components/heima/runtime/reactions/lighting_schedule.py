@@ -335,6 +335,7 @@ def present_tuning_lighting_schedule_details(
                 if is_it
                 else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
             )
+        details.extend(_lighting_entity_step_diffs(current_steps, proposed_steps, is_it=is_it))
 
     return details
 
@@ -351,3 +352,70 @@ def present_lighting_schedule_proposal_label(
     if language.startswith("it"):
         return f"Luci {room_id}"
     return f"Lighting {room_id}"
+
+
+def _lighting_entity_step_diffs(
+    current_steps: list[dict[str, Any]],
+    proposed_steps: list[dict[str, Any]],
+    *,
+    is_it: bool,
+) -> list[str]:
+    """Return structured per-entity tuning diffs for lighting steps."""
+    current_by_entity = {
+        str(step.get("entity_id") or "").strip(): step
+        for step in current_steps
+        if str(step.get("entity_id") or "").strip()
+    }
+    proposed_by_entity = {
+        str(step.get("entity_id") or "").strip(): step
+        for step in proposed_steps
+        if str(step.get("entity_id") or "").strip()
+    }
+
+    details: list[str] = []
+    current_entities = set(current_by_entity)
+    proposed_entities = set(proposed_by_entity)
+
+    added = sorted(proposed_entities - current_entities)
+    removed = sorted(current_entities - proposed_entities)
+    if added:
+        details.append(
+            f"Entità aggiunte: {', '.join(added)}"
+            if is_it
+            else f"Added entities: {', '.join(added)}"
+        )
+    if removed:
+        details.append(
+            f"Entità rimosse: {', '.join(removed)}"
+            if is_it
+            else f"Removed entities: {', '.join(removed)}"
+        )
+
+    for entity_id in sorted(current_entities & proposed_entities):
+        current = current_by_entity[entity_id]
+        proposed = proposed_by_entity[entity_id]
+
+        current_action = str(current.get("action") or "").strip()
+        proposed_action = str(proposed.get("action") or "").strip()
+        if current_action != proposed_action:
+            details.append(
+                f"{entity_id}: azione {current_action} -> {proposed_action}"
+                if is_it
+                else f"{entity_id}: action {current_action} -> {proposed_action}"
+            )
+
+        current_brightness = current.get("brightness")
+        proposed_brightness = proposed.get("brightness")
+        if current_brightness != proposed_brightness:
+            details.append(
+                f"{entity_id}: brightness {current_brightness} -> {proposed_brightness}"
+            )
+
+        current_kelvin = current.get("color_temp_kelvin")
+        proposed_kelvin = proposed.get("color_temp_kelvin")
+        if current_kelvin != proposed_kelvin:
+            details.append(
+                f"{entity_id}: kelvin {current_kelvin} -> {proposed_kelvin}"
+            )
+
+    return details

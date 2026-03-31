@@ -422,6 +422,14 @@ def main() -> int:
                 or f"Time: {expected_diff}" in details,
                 "review details do not show tuning diff",
             )
+            _assert(
+                "brightness 190 -> 160" in details,
+                "review details do not show brightness diff",
+            )
+            _assert(
+                "kelvin 2850 -> 2600" in details,
+                "review details do not show color temperature diff",
+            )
 
             result = client.options_flow_configure(tuning_flow_id, {"review_action": "accept"})
             _assert(result.get("type") == "menu", f"unexpected result after tuning accept: {result}")

@@ -565,7 +565,15 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1210,
-            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "entity_steps": [
+                {
+                    "entity_id": "light.living_main",
+                    "action": "on",
+                    "brightness": 180,
+                    "color_temp_kelvin": 2600,
+                },
+                {"entity_id": "light.living_spot", "action": "on"},
+            ],
             "learning_diagnostics": {"episodes_observed": 6, "weeks_observed": 3},
         },
     )
@@ -585,6 +593,9 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
     assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
+    assert "light.living_main: brightness None -> 180" in placeholders["proposal_details"]
+    assert "light.living_main: kelvin None -> 2600" in placeholders["proposal_details"]
+    assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
     assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
 
 
