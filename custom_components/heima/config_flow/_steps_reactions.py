@@ -19,11 +19,6 @@ if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
-_IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES = {
-    "lighting.scene_schedule.basic",
-    "room.signal_assist.basic",
-    "room.darkness_lighting_assist.basic",
-}
 
 
 class _ReactionsStepsMixin:
@@ -203,9 +198,11 @@ class _ReactionsStepsMixin:
         defaults = {
             "room_id": room_ids[0],
             "primary_signal_name": "humidity",
-            "primary_rise_threshold": 8.0,
+            "primary_threshold_mode": "rise",
+            "primary_threshold": 8.0,
             "corroboration_signal_name": "temperature",
-            "corroboration_rise_threshold": 0.8,
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
             "action_entities": [],
         }
         errors: dict[str, str] = {}
@@ -240,25 +237,35 @@ class _ReactionsStepsMixin:
         if not action_entities:
             errors["action_entities"] = "required"
 
-        try:
-            primary_rise_threshold = float(user_input.get("primary_rise_threshold") or 0)
-            if primary_rise_threshold <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["primary_rise_threshold"] = "invalid_number"
-            primary_rise_threshold = defaults["primary_rise_threshold"]
+        primary_threshold_mode = str(user_input.get("primary_threshold_mode") or "rise").strip()
+        if primary_threshold_mode not in self._signal_threshold_mode_options():
+            errors["primary_threshold_mode"] = "invalid_selection"
+            primary_threshold_mode = defaults["primary_threshold_mode"]
 
         try:
-            corroboration_rise_threshold = float(
-                user_input.get("corroboration_rise_threshold") or 0
-            )
-            if corroboration_signal_entities and corroboration_rise_threshold <= 0:
+            primary_threshold = float(user_input.get("primary_threshold") or 0)
+            if primary_threshold <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["primary_threshold"] = "invalid_number"
+            primary_threshold = defaults["primary_threshold"]
+
+        corroboration_threshold_mode = str(
+            user_input.get("corroboration_threshold_mode") or "rise"
+        ).strip()
+        if corroboration_threshold_mode not in self._signal_threshold_mode_options():
+            errors["corroboration_threshold_mode"] = "invalid_selection"
+            corroboration_threshold_mode = defaults["corroboration_threshold_mode"]
+
+        try:
+            corroboration_threshold = float(user_input.get("corroboration_threshold") or 0)
+            if corroboration_signal_entities and corroboration_threshold <= 0:
                 raise ValueError
             if not corroboration_signal_entities:
-                corroboration_rise_threshold = 0.0
+                corroboration_threshold = 0.0
         except (TypeError, ValueError):
-            errors["corroboration_rise_threshold"] = "invalid_number"
-            corroboration_rise_threshold = defaults["corroboration_rise_threshold"]
+            errors["corroboration_threshold"] = "invalid_number"
+            corroboration_threshold = defaults["corroboration_threshold"]
 
         if errors:
             return self.async_show_form(
@@ -268,11 +275,13 @@ class _ReactionsStepsMixin:
                         "room_id": room_id or defaults["room_id"],
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
-                        "primary_rise_threshold": primary_rise_threshold,
+                        "primary_threshold_mode": primary_threshold_mode,
+                        "primary_threshold": primary_threshold,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name
                         or defaults["corroboration_signal_name"],
-                        "corroboration_rise_threshold": corroboration_rise_threshold,
+                        "corroboration_threshold_mode": corroboration_threshold_mode,
+                        "corroboration_threshold": corroboration_threshold,
                         "action_entities": action_entities,
                     }
                 ),
@@ -287,10 +296,12 @@ class _ReactionsStepsMixin:
             room_id=room_id,
             primary_signal_entities=primary_signal_entities,
             primary_signal_name=primary_signal_name or "primary",
-            primary_rise_threshold=primary_rise_threshold,
+            primary_threshold_mode=primary_threshold_mode,
+            primary_threshold=primary_threshold,
             corroboration_signal_entities=corroboration_signal_entities,
             corroboration_signal_name=corroboration_signal_name or "corroboration",
-            corroboration_rise_threshold=corroboration_rise_threshold,
+            corroboration_threshold_mode=corroboration_threshold_mode,
+            corroboration_threshold=corroboration_threshold,
             action_entities=action_entities,
         )
         coordinator = self._get_coordinator()
@@ -307,10 +318,12 @@ class _ReactionsStepsMixin:
                         "room_id": room_id,
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_rise_threshold": primary_rise_threshold,
+                        "primary_threshold_mode": primary_threshold_mode,
+                        "primary_threshold": primary_threshold,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name,
-                        "corroboration_rise_threshold": corroboration_rise_threshold,
+                        "corroboration_threshold_mode": corroboration_threshold_mode,
+                        "corroboration_threshold": corroboration_threshold,
                         "action_entities": action_entities,
                     }
                 ),
@@ -760,9 +773,7 @@ class _ReactionsStepsMixin:
         if registry is None:
             return {}
         options: dict[str, str] = {}
-        for template in registry.admin_authored_templates():
-            if template.template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
-                continue
+        for template in registry.admin_authored_templates(implemented_only=True):
             options[template.template_id] = template.title
         return options
 
@@ -770,9 +781,10 @@ class _ReactionsStepsMixin:
         registry = self._learning_plugin_registry()
         if registry is None:
             return None
-        if template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
-            return None
-        return registry.get_admin_authored_template(template_id)
+        return registry.get_admin_authored_template(
+            template_id,
+            implemented_only=True,
+        )
 
     def _learning_plugin_registry(self) -> Any | None:
         coordinator = self._get_coordinator()
@@ -820,11 +832,28 @@ class _ReactionsStepsMixin:
             return {"on": "Accendi", "off": "Spegni"}
         return {"on": "Turn on", "off": "Turn off"}
 
+    def _signal_threshold_mode_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        if language.startswith("it"):
+            return {
+                "rise": "Aumento rapido",
+                "drop": "Diminuzione rapida",
+                "above": "Supera soglia",
+                "below": "Scende sotto soglia",
+            }
+        return {
+            "rise": "Rapid rise",
+            "drop": "Rapid drop",
+            "above": "Crosses above threshold",
+            "below": "Drops below threshold",
+        }
+
     def _admin_authored_room_signal_assist_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
         defaults = defaults or {}
         room_options = {room_id: room_id for room_id in self._room_ids()}
+        threshold_modes = self._signal_threshold_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
@@ -833,12 +862,18 @@ class _ReactionsStepsMixin:
                         ["sensor", "binary_sensor"], multiple=True
                     ),
                     vol.Required("primary_signal_name", default="humidity"): str,
-                    vol.Required("primary_rise_threshold", default=8.0): vol.Coerce(float),
+                    vol.Required("primary_threshold_mode", default="rise"): vol.In(
+                        threshold_modes
+                    ),
+                    vol.Required("primary_threshold", default=8.0): vol.Coerce(float),
                     vol.Optional("corroboration_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
                     ),
                     vol.Optional("corroboration_signal_name", default="temperature"): str,
-                    vol.Optional("corroboration_rise_threshold", default=0.8): vol.Coerce(float),
+                    vol.Optional("corroboration_threshold_mode", default="rise"): vol.In(
+                        threshold_modes
+                    ),
+                    vol.Optional("corroboration_threshold", default=0.8): vol.Coerce(float),
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
@@ -937,10 +972,12 @@ class _ReactionsStepsMixin:
         room_id: str,
         primary_signal_entities: list[str],
         primary_signal_name: str,
-        primary_rise_threshold: float,
+        primary_threshold_mode: str,
+        primary_threshold: float,
         corroboration_signal_entities: list[str],
         corroboration_signal_name: str,
-        corroboration_rise_threshold: float,
+        corroboration_threshold_mode: str,
+        corroboration_threshold: float,
         action_entities: list[str],
     ) -> ReactionProposal:
         template_id = "room.signal_assist.basic"
@@ -965,11 +1002,15 @@ class _ReactionsStepsMixin:
                 "room_id": room_id,
                 "trigger_signal_entities": list(primary_signal_entities),
                 "primary_signal_entities": list(primary_signal_entities),
-                "primary_rise_threshold": float(primary_rise_threshold),
+                "primary_threshold": float(primary_threshold),
+                "primary_threshold_mode": primary_threshold_mode,
+                "primary_rise_threshold": float(primary_threshold),
                 "primary_signal_name": primary_signal_name.strip() or "primary",
                 "temperature_signal_entities": list(corroboration_signal_entities),
                 "corroboration_signal_entities": list(corroboration_signal_entities),
-                "corroboration_rise_threshold": float(corroboration_rise_threshold),
+                "corroboration_threshold": float(corroboration_threshold),
+                "corroboration_threshold_mode": corroboration_threshold_mode,
+                "corroboration_rise_threshold": float(corroboration_threshold),
                 "corroboration_signal_name": corroboration_signal_name.strip() or "corroboration",
                 "correlation_window_s": 600,
                 "followup_window_s": 900,
@@ -1315,6 +1356,17 @@ class _ReactionsStepsMixin:
                     if is_it
                     else f"Primary signal: {primary_signal_name}"
                 )
+            primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+            primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+            if primary_threshold not in (None, ""):
+                mode_label = self._signal_threshold_mode_options().get(
+                    primary_threshold_mode, primary_threshold_mode
+                )
+                details.append(
+                    f"Condizione primaria: {mode_label} ({primary_threshold})"
+                    if is_it
+                    else f"Primary condition: {mode_label} ({primary_threshold})"
+                )
             primary_entities = cfg.get("primary_signal_entities")
             if isinstance(primary_entities, list) and primary_entities:
                 details.append(
@@ -1330,6 +1382,21 @@ class _ReactionsStepsMixin:
                     if is_it
                     else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
                 )
+                corroboration_threshold = cfg.get(
+                    "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+                )
+                corroboration_threshold_mode = str(
+                    cfg.get("corroboration_threshold_mode") or "rise"
+                ).strip()
+                if corroboration_threshold not in (None, ""):
+                    mode_label = self._signal_threshold_mode_options().get(
+                        corroboration_threshold_mode, corroboration_threshold_mode
+                    )
+                    details.append(
+                        f"Condizione corroborante: {mode_label} ({corroboration_threshold})"
+                        if is_it
+                        else f"Corroborating condition: {mode_label} ({corroboration_threshold})"
+                    )
             steps = cfg.get("steps")
             if isinstance(steps, list) and steps:
                 details.append(

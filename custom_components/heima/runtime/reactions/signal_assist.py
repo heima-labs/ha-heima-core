@@ -14,6 +14,7 @@ from .composite import (
     RuntimeCompositeMatcher,
     RuntimeCompositePatternSpec,
     RuntimeCompositeSignalSpec,
+    ThresholdMode,
     parse_snapshot_ts,
 )
 
@@ -29,10 +30,14 @@ class RoomSignalAssistReaction(HeimaReaction):
         trigger_signal_entities: list[str] | None = None,
         steps: list[ApplyStep],
         primary_signal_entities: list[str] | None = None,
+        primary_threshold: float | None = None,
+        primary_threshold_mode: ThresholdMode = "rise",
         primary_rise_threshold: float | None = None,
         primary_signal_name: str = "primary",
         humidity_rise_threshold: float = 8.0,
         corroboration_signal_entities: list[str] | None = None,
+        corroboration_threshold: float | None = None,
+        corroboration_threshold_mode: ThresholdMode = "rise",
         corroboration_rise_threshold: float | None = None,
         corroboration_signal_name: str = "corroboration",
         temperature_signal_entities: list[str] | None = None,
@@ -47,21 +52,33 @@ class RoomSignalAssistReaction(HeimaReaction):
             e for e in (primary_signal_entities or trigger_signal_entities or []) if e
         ]
         resolved_primary_threshold = (
-            primary_rise_threshold if primary_rise_threshold is not None else humidity_rise_threshold
+            primary_threshold
+            if primary_threshold is not None
+            else (
+                primary_rise_threshold
+                if primary_rise_threshold is not None
+                else humidity_rise_threshold
+            )
         )
         resolved_corroboration_entities = [
             e for e in (corroboration_signal_entities or temperature_signal_entities or []) if e
         ]
         resolved_corroboration_threshold = (
-            corroboration_rise_threshold
-            if corroboration_rise_threshold is not None
-            else temperature_rise_threshold
+            corroboration_threshold
+            if corroboration_threshold is not None
+            else (
+                corroboration_rise_threshold
+                if corroboration_rise_threshold is not None
+                else temperature_rise_threshold
+            )
         )
         self._primary_entities = resolved_primary_entities
         self._corroboration_entities = resolved_corroboration_entities
         self._steps = list(steps)
-        self._primary_rise_threshold = float(resolved_primary_threshold)
-        self._corroboration_rise_threshold = float(resolved_corroboration_threshold)
+        self._primary_threshold = float(resolved_primary_threshold)
+        self._primary_threshold_mode = primary_threshold_mode
+        self._corroboration_threshold = float(resolved_corroboration_threshold)
+        self._corroboration_threshold_mode = corroboration_threshold_mode
         self._primary_signal_name = primary_signal_name or "primary"
         self._corroboration_signal_name = corroboration_signal_name or "corroboration"
         self._correlation_window_s = correlation_window_s
@@ -73,13 +90,15 @@ class RoomSignalAssistReaction(HeimaReaction):
             primary=RuntimeCompositeSignalSpec(
                 name=self._primary_signal_name,
                 entity_ids=tuple(self._primary_entities),
-                threshold=self._primary_rise_threshold,
+                threshold=self._primary_threshold,
+                threshold_mode=self._primary_threshold_mode,
             ),
             corroborations=(
                 RuntimeCompositeSignalSpec(
                     name=self._corroboration_signal_name,
                     entity_ids=tuple(self._corroboration_entities),
-                    threshold=self._corroboration_rise_threshold,
+                    threshold=self._corroboration_threshold,
+                    threshold_mode=self._corroboration_threshold_mode,
                     required=bool(self._corroboration_entities),
                 ),
             )
@@ -137,10 +156,14 @@ class RoomSignalAssistReaction(HeimaReaction):
             "trigger_signal_entities": list(self._legacy_trigger_entities),
             "primary_signal_name": self._primary_signal_name,
             "primary_entities": list(self._primary_entities),
-            "primary_rise_threshold": self._primary_rise_threshold,
+            "primary_threshold": self._primary_threshold,
+            "primary_threshold_mode": self._primary_threshold_mode,
+            "primary_rise_threshold": self._primary_threshold,
             "corroboration_signal_name": self._corroboration_signal_name,
             "corroboration_entities": list(self._corroboration_entities),
-            "corroboration_rise_threshold": self._corroboration_rise_threshold,
+            "corroboration_threshold": self._corroboration_threshold,
+            "corroboration_threshold_mode": self._corroboration_threshold_mode,
+            "corroboration_rise_threshold": self._corroboration_threshold,
             "humidity_entities": list(self._primary_entities),
             "temperature_entities": list(self._corroboration_entities),
             "fire_count": self._fire_count,

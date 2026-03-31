@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "Configurazione Heima",
-        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte pendenti: {pending_proposals_summary}",
+        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in review: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
         "menu_options": {
           "general": "Generale",
           "people_menu": "Persone",
@@ -368,10 +368,12 @@
           "room_id": "Stanza",
           "primary_signal_entities": "Entità segnale primario",
           "primary_signal_name": "Nome segnale primario",
-          "primary_rise_threshold": "Soglia aumento primario",
+          "primary_threshold_mode": "Condizione primaria",
+          "primary_threshold": "Soglia primaria",
           "corroboration_signal_entities": "Entità di corroborazione",
           "corroboration_signal_name": "Nome corroborazione",
-          "corroboration_rise_threshold": "Soglia corroborazione",
+          "corroboration_threshold_mode": "Condizione corroborante",
+          "corroboration_threshold": "Soglia corroborante",
           "action_entities": "Azioni da attivare"
         },
         "submit": "OK"

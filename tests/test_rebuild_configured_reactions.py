@@ -321,10 +321,14 @@ def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_lega
             "primary_signal_entities": ["sensor.generic_temperature"],
             "humidity_rise_threshold": 8.0,
             "primary_rise_threshold": 1.5,
+            "primary_threshold": 2.0,
+            "primary_threshold_mode": "above",
             "temperature_signal_entities": ["sensor.legacy_temperature"],
             "corroboration_signal_entities": ["sensor.generic_humidity"],
             "temperature_rise_threshold": 0.8,
             "corroboration_rise_threshold": 5.0,
+            "corroboration_threshold": 6.0,
+            "corroboration_threshold_mode": "drop",
             "primary_signal_name": "temperature",
             "corroboration_signal_name": "humidity",
         }
@@ -332,8 +336,12 @@ def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_lega
 
     assert normalized["primary_signal_entities"] == ["sensor.generic_temperature"]
     assert normalized["primary_rise_threshold"] == 1.5
+    assert normalized["primary_threshold"] == 2.0
+    assert normalized["primary_threshold_mode"] == "above"
     assert normalized["corroboration_signal_entities"] == ["sensor.generic_humidity"]
     assert normalized["corroboration_rise_threshold"] == 5.0
+    assert normalized["corroboration_threshold"] == 6.0
+    assert normalized["corroboration_threshold_mode"] == "drop"
 
 
 def test_room_lighting_assist_reaction_built_and_registered():

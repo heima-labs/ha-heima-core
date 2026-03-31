@@ -455,9 +455,13 @@ class HeimaEngine:
             room_id=room_id,
             trigger_signal_entities=normalized["trigger_signal_entities"],
             primary_signal_entities=normalized["primary_signal_entities"],
+            primary_threshold=normalized["primary_threshold"],
+            primary_threshold_mode=normalized["primary_threshold_mode"],
             primary_rise_threshold=normalized["primary_rise_threshold"],
             primary_signal_name=normalized["primary_signal_name"],
             corroboration_signal_entities=normalized["corroboration_signal_entities"],
+            corroboration_threshold=normalized["corroboration_threshold"],
+            corroboration_threshold_mode=normalized["corroboration_threshold_mode"],
             corroboration_rise_threshold=normalized["corroboration_rise_threshold"],
             corroboration_signal_name=normalized["corroboration_signal_name"],
             temperature_signal_entities=normalized["temperature_signal_entities"],
@@ -541,9 +545,17 @@ class HeimaEngine:
         ]
         humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
         primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
+        primary_threshold = float(cfg.get("primary_threshold", primary_rise_threshold))
+        primary_threshold_mode = str(cfg.get("primary_threshold_mode", "rise")).strip() or "rise"
         temperature_rise_threshold = float(cfg.get("temperature_rise_threshold", 0.8))
         corroboration_rise_threshold = float(
             cfg.get("corroboration_rise_threshold", temperature_rise_threshold)
+        )
+        corroboration_threshold = float(
+            cfg.get("corroboration_threshold", corroboration_rise_threshold)
+        )
+        corroboration_threshold_mode = (
+            str(cfg.get("corroboration_threshold_mode", "rise")).strip() or "rise"
         )
         primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
         corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
@@ -554,8 +566,12 @@ class HeimaEngine:
             "corroboration_signal_entities": corroboration_signal_entities,
             "humidity_rise_threshold": humidity_rise_threshold,
             "primary_rise_threshold": primary_rise_threshold,
+            "primary_threshold": primary_threshold,
+            "primary_threshold_mode": primary_threshold_mode,
             "temperature_rise_threshold": temperature_rise_threshold,
             "corroboration_rise_threshold": corroboration_rise_threshold,
+            "corroboration_threshold": corroboration_threshold,
+            "corroboration_threshold_mode": corroboration_threshold_mode,
             "primary_signal_name": primary_signal_name,
             "corroboration_signal_name": corroboration_signal_name,
         }

@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 
 
 StateReader = Callable[[str], float | None]
-ThresholdMode = Literal["rise", "drop", "below"]
+ThresholdMode = Literal["rise", "drop", "above", "below"]
 
 
 @dataclass(frozen=True)
@@ -157,6 +157,8 @@ def _matches_threshold(
         return (current_value - previous_value) >= threshold
     if mode == "drop":
         return (previous_value - current_value) >= threshold
+    if mode == "above":
+        return previous_value < threshold and current_value >= threshold
     if mode == "below":
         return previous_value > threshold and current_value <= threshold
     return False

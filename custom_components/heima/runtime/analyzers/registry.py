@@ -97,7 +97,7 @@ class LearningPluginRegistry:
         )
 
     def admin_authored_templates(
-        self, *, enabled_only: bool = True
+        self, *, enabled_only: bool = True, implemented_only: bool = False
     ) -> tuple[AdminAuthoredTemplateDescriptor, ...]:
         templates: list[AdminAuthoredTemplateDescriptor] = []
         for item in self._plugins:
@@ -105,16 +105,26 @@ class LearningPluginRegistry:
                 continue
             if enabled_only and not item.enabled:
                 continue
-            templates.extend(item.descriptor.admin_authored_templates)
+            for template in item.descriptor.admin_authored_templates:
+                if implemented_only and not template.implemented:
+                    continue
+                templates.append(template)
         return tuple(templates)
 
     def get_admin_authored_template(
-        self, template_id: str, *, enabled_only: bool = True
+        self,
+        template_id: str,
+        *,
+        enabled_only: bool = True,
+        implemented_only: bool = False,
     ) -> AdminAuthoredTemplateDescriptor | None:
         target = template_id.strip()
         if not target:
             return None
-        for template in self.admin_authored_templates(enabled_only=enabled_only):
+        for template in self.admin_authored_templates(
+            enabled_only=enabled_only,
+            implemented_only=implemented_only,
+        ):
             if template.template_id == target:
                 return template
         return None

@@ -139,8 +139,19 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
     ]
+    assert [t.template_id for t in registry.admin_authored_templates(implemented_only=True)] == [
+        "lighting.scene_schedule.basic",
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    ]
     assert (
         registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
+        == "room_signal_assist"
+    )
+    assert (
+        registry.get_admin_authored_template(
+            "room.signal_assist.basic", implemented_only=True
+        ).reaction_type
         == "room_signal_assist"
     )
     assert registry.get_admin_authored_template("missing.template") is None

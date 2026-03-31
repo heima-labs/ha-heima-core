@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "Heima Configuration",
-        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nPending proposals: {pending_proposals_summary}",
+        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nProposals in review: {proposal_review_summary}\nPending tuning: {tuning_pending_summary}",
         "menu_options": {
           "general": "General",
           "people_menu": "People",
@@ -368,10 +368,12 @@
           "room_id": "Room",
           "primary_signal_entities": "Primary signal entities",
           "primary_signal_name": "Primary signal name",
-          "primary_rise_threshold": "Primary rise threshold",
+          "primary_threshold_mode": "Primary condition",
+          "primary_threshold": "Primary threshold",
           "corroboration_signal_entities": "Corroboration entities",
           "corroboration_signal_name": "Corroboration name",
-          "corroboration_rise_threshold": "Corroboration threshold",
+          "corroboration_threshold_mode": "Corroboration condition",
+          "corroboration_threshold": "Corroboration threshold",
           "action_entities": "Actions to trigger"
         },
         "submit": "OK"

@@ -794,10 +794,12 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
             "room_id": "bathroom",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
             "primary_signal_name": "humidity",
-            "primary_rise_threshold": 8.0,
+            "primary_threshold_mode": "rise",
+            "primary_threshold": 8.0,
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "corroboration_signal_name": "temperature",
-            "corroboration_rise_threshold": 0.8,
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
             "action_entities": ["script.bathroom_ventilation"],
         }
     )
@@ -818,7 +820,9 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.signal_assist.basic" in details
     assert "Segnale primario: humidity" in details
+    assert "Condizione primaria: Aumento rapido (8.0)" in details
     assert "Corroborazione: temperature (1)" in details
+    assert "Condizione corroborante: Aumento rapido (0.8)" in details
     assert "Azioni configurate: 1" in details
 
 
@@ -1091,8 +1095,36 @@ async def test_proposal_configure_action_resumes_guided_review():
 
 def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
     flow = _flow()
-    monkeypatch.setattr(flow, "_pending_proposals_summary", lambda: "1")
+    monkeypatch.setattr(flow, "_proposal_review_summary", lambda: "3")
+    monkeypatch.setattr(flow, "_tuning_pending_summary", lambda: "1")
 
     placeholders = flow._init_status_block()
 
-    assert placeholders["pending_proposals_summary"] == "1"
+    assert placeholders["proposal_review_summary"] == "3"
+    assert placeholders["tuning_pending_summary"] == "1"
+
+
+def test_tuning_pending_summary_counts_followup_proposals():
+    flow = _flow()
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="new schedule",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="tuning schedule",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._proposal_review_summary() == "2"
+    assert flow._tuning_pending_summary() == "1"
