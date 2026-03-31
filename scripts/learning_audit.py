@@ -79,6 +79,11 @@ def main() -> int:
                     f"{key}={value}" for key, value in sorted(by_template_id.items())
                 )
             )
+        identity_collisions = dict(reaction_summary.get("identity_collisions") or {})
+        if identity_collisions:
+            print("identity collisions:")
+            for identity_key, reaction_ids in sorted(identity_collisions.items()):
+                print(f"  {identity_key}: {', '.join(str(item) for item in reaction_ids)}")
 
     families = dict(summary.get("families") or {})
     if families:
@@ -128,6 +133,11 @@ def main() -> int:
     if unclaimed:
         _print_header("Warnings")
         print("unclaimed proposal types: " + ", ".join(unclaimed))
+    identity_collisions = dict(reaction_summary.get("identity_collisions") or {})
+    if identity_collisions:
+        if not unclaimed:
+            _print_header("Warnings")
+        print("configured reaction identity collisions detected")
 
     print("\nPASS: learning audit generated")
     return 0

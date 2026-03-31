@@ -340,6 +340,7 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
     by_origin: dict[str, int] = {}
     by_author_kind: dict[str, int] = {}
     by_template_id: dict[str, int] = {}
+    by_identity_key: dict[str, list[str]] = {}
     reaction_ids: list[str] = []
     for reaction_id, raw in reactions.items():
         if not isinstance(raw, dict):
@@ -351,12 +352,22 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         by_author_kind[author_kind] = by_author_kind.get(author_kind, 0) + 1
         template_id = str(raw.get("source_template_id") or "unspecified")
         by_template_id[template_id] = by_template_id.get(template_id, 0) + 1
+        identity_key = str(raw.get("source_proposal_identity_key") or "").strip()
+        if identity_key:
+            by_identity_key.setdefault(identity_key, []).append(str(reaction_id))
+
+    identity_collisions = {
+        key: sorted(ids)
+        for key, ids in sorted(by_identity_key.items())
+        if len(ids) > 1
+    }
 
     return {
         "total": len(reaction_ids),
         "by_origin": dict(sorted(by_origin.items())),
         "by_author_kind": dict(sorted(by_author_kind.items())),
         "by_template_id": dict(sorted(by_template_id.items())),
+        "identity_collisions": identity_collisions,
         "reaction_ids": sorted(reaction_ids),
     }
 
