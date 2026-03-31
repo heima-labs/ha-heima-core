@@ -398,3 +398,37 @@ def present_learned_room_signal_assist_details(
             else f"Proposed actions: {len(steps)}"
         )
     return details
+
+
+def present_tuning_room_signal_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-signal-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_threshold = target_cfg.get("primary_threshold", target_cfg.get("primary_rise_threshold"))
+    proposed_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
+        if str(current_threshold) != str(proposed_threshold):
+            details.append(
+                f"Soglia primaria: {current_threshold} -> {proposed_threshold}"
+                if is_it
+                else f"Primary threshold: {current_threshold} -> {proposed_threshold}"
+            )
+
+    current_steps = target_cfg.get("steps")
+    proposed_steps = cfg.get("steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Azioni: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Actions: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details

@@ -301,3 +301,39 @@ def present_learned_lighting_schedule_details(
             else f"Proposed lights: {len(entity_steps)}"
         )
     return details
+
+
+def present_tuning_lighting_schedule_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return lighting-schedule-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_scheduled = target_cfg.get("scheduled_min")
+    proposed_scheduled = cfg.get("scheduled_min")
+    if isinstance(current_scheduled, (int, float)) and isinstance(proposed_scheduled, (int, float)):
+        current_hhmm = f"{int(current_scheduled) // 60:02d}:{int(current_scheduled) % 60:02d}"
+        proposed_hhmm = f"{int(proposed_scheduled) // 60:02d}:{int(proposed_scheduled) % 60:02d}"
+        if current_hhmm != proposed_hhmm:
+            details.append(
+                f"Orario: {current_hhmm} -> {proposed_hhmm}"
+                if is_it
+                else f"Time: {current_hhmm} -> {proposed_hhmm}"
+            )
+
+    current_steps = target_cfg.get("entity_steps")
+    proposed_steps = cfg.get("entity_steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details

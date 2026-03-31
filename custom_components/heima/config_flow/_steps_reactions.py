@@ -1324,6 +1324,19 @@ class _ReactionsStepsMixin:
         target_template_id = str(followup.get("target_template_id") or "").strip()
         if target_template_id:
             details.append(f"Template target: {target_template_id}")
+
+        reaction_cfg = _safe_mapping(followup.get("reaction_cfg"))
+        presenter = self._reaction_presenter_for_cfg(reaction_cfg)
+        if presenter is not None and presenter.tuning_review_details is not None:
+            details.extend(
+                presenter.tuning_review_details(
+                    self,
+                    proposal,
+                    _safe_mapping(proposal.suggested_reaction_config),
+                    reaction_cfg,
+                    language,
+                )
+            )
         return details
 
     def _admin_authored_review_details(

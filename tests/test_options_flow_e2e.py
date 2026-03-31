@@ -584,6 +584,7 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     assert "Automazione target: Luci living — Lunedì ~20:00 (1 entità)" in placeholders["proposal_details"]
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
+    assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
     assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
 
 

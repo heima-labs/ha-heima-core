@@ -309,3 +309,37 @@ def present_learned_room_lighting_assist_details(
             else f"Proposed lights: {len(entity_steps)}"
         )
     return details
+
+
+def present_tuning_room_lighting_assist_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-lighting-specific tuning diff lines."""
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_threshold = target_cfg.get("primary_threshold")
+    proposed_threshold = cfg.get("primary_threshold")
+    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
+        if str(current_threshold) != str(proposed_threshold):
+            details.append(
+                f"Soglia: {current_threshold} -> {proposed_threshold}"
+                if is_it
+                else f"Threshold: {current_threshold} -> {proposed_threshold}"
+            )
+
+    current_steps = target_cfg.get("entity_steps")
+    proposed_steps = cfg.get("entity_steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        if len(current_steps) != len(proposed_steps):
+            details.append(
+                f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
+                if is_it
+                else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
+            )
+
+    return details
