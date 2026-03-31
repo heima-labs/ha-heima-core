@@ -9,6 +9,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
 - `live_tests/`
   - Home Assistant-facing scripts, grouped by tier in `check_all_live.sh`
   - naming convention: `NNN_<description>.py` (or `.sh`)
+  - `NNN` is a legacy stable test ID, not the canonical execution order
+  - canonical order and grouping are defined only by the explicit tier manifests in `check_all_live.sh`
   - tiers:
     - `setup`
       - `recover_test_lab_config.py`
@@ -48,7 +50,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
 - Live orchestration:
-  - `check_all_live.sh`: runs an explicit ordered manifest by tier (`setup`, `live_e2e`, `seeded_integration`, `diagnostic`, `all`).
+- `check_all_live.sh`: runs an explicit ordered manifest by tier (`setup`, `live_e2e`, `seeded_integration`, `diagnostic`, `all`).
+  Numeric prefixes are treated as legacy IDs only.
   - `test_heima_live_runner.sh`: deploy + patch + smoke orchestrator.
   - `test_heima_learning_live_runner.sh`: baseline reset + seeded learning path.
 
