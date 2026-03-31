@@ -9,6 +9,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
 - `live_tests/`
   - Home Assistant-facing scripts, grouped by tier in `check_all_live.sh`
   - naming convention: `NNN_<description>.py` (or `.sh`)
+  - `NNN` is a legacy stable test ID, not the canonical execution order
+  - canonical order and grouping are defined only by the explicit tier manifests in `check_all_live.sh`
   - tiers:
     - `setup`
       - `recover_test_lab_config.py`
@@ -32,16 +34,24 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `060_lighting_schedule.py`
     - `diagnostic`
     - `030_learning_proposals_diag.py`
-      - `031_learning_summary_diag.py`
+    - `031_learning_summary_diag.py`
+    - targeted manual admin-authored checks
+      - `032_admin_authored_lighting_flow.py`
+      - `033_admin_authored_reaction_origin_diag.py`
+      - `034_admin_authored_room_signal_assist_flow.py`
+      - `035_admin_authored_room_darkness_lighting_flow.py`
+      - `036_lighting_tuning_followup_flow.py`
+      - `037_admin_authored_room_signal_binary_modes.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Utile per verificare quanti eventi sono stati registrati, lo stato del resolver `house_state`, gli ultimi eventi emessi, e se il learning system sta accumulando dati.
-  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale.
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Per `learning` e `reactions` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati e collisioni di identity tra reaction configurate.
+  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati e warning su collisioni di identity tra reaction configurate.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
 - Live orchestration:
-  - `check_all_live.sh`: runs an explicit ordered manifest by tier (`setup`, `live_e2e`, `seeded_integration`, `diagnostic`, `all`).
+- `check_all_live.sh`: runs an explicit ordered manifest by tier (`setup`, `live_e2e`, `seeded_integration`, `diagnostic`, `all`).
+  Numeric prefixes are treated as legacy IDs only.
   - `test_heima_live_runner.sh`: deploy + patch + smoke orchestrator.
   - `test_heima_learning_live_runner.sh`: baseline reset + seeded learning path.
 
@@ -137,5 +147,17 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - current examples:
     - `020_learning_pipeline.py`: uses `heima.set_override` for presence transitions
     - `060_lighting_schedule.py`: relies on `seed_lighting_events` for proposal generation
-- `diagnostic`
+  - `diagnostic`
   - read-only assertions on sensors / diagnostics / counters
+
+## Targeted manual live checks
+
+These are useful focused regressions for proposal/reaction UX and admin-authored flows, but are not
+currently part of the canonical `check_all_live.sh --tier all` lane:
+
+- `032_admin_authored_lighting_flow.py`
+- `033_admin_authored_reaction_origin_diag.py`
+- `034_admin_authored_room_signal_assist_flow.py`
+- `035_admin_authored_room_darkness_lighting_flow.py`
+- `036_lighting_tuning_followup_flow.py`
+- `037_admin_authored_room_signal_binary_modes.py`

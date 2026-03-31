@@ -6,6 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 [[ -f "$SCRIPT_DIR/.env" ]] && source "$SCRIPT_DIR/.env"
 
+# Numeric filename prefixes under scripts/live_tests/ are legacy stable IDs only.
+# They are not the canonical execution order. Order and grouping are defined
+# exclusively by the explicit tier manifests below.
+
 HA_URL="${HA_URL:-http://127.0.0.1:8123}"
 HA_TOKEN="${HA_TOKEN:-}"
 HA_NON_ADMIN_TOKEN="${HA_NON_ADMIN_TOKEN:-}"
@@ -56,10 +60,11 @@ Execution model:
 - avoids mixing setup / seeded / diagnostic scripts into the canonical live E2E lane
 - when `--tier live_e2e` is selected, setup prerequisites run first so the lab
   starts from the expected baseline
+- numeric filename prefixes are legacy IDs, not the authoritative suite order
 
 Options:
   --tier <name>       one of: setup, live_e2e, seeded_integration, diagnostic, all
-  --skip <prefixes>   comma-separated numeric prefixes to skip (e.g. --skip 005,015)
+  --skip <prefixes>   comma-separated legacy numeric IDs to skip (e.g. --skip 005,015)
 EOF
 }
 

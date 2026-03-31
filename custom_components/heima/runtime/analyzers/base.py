@@ -20,6 +20,7 @@ class ReactionProposal:
     description: str = ""
     confidence: float = 0.0
     origin: Literal["learned", "admin_authored"] = "learned"
+    followup_kind: Literal["discovery", "tuning_suggestion"] = "discovery"
     status: Literal["pending", "accepted", "rejected"] = "pending"
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -27,6 +28,10 @@ class ReactionProposal:
     last_observed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     identity_key: str = ""
     fingerprint: str = ""  # if set, used by ProposalEngine instead of the computed fingerprint
+    target_reaction_id: str = ""
+    target_reaction_class: str = ""
+    target_reaction_origin: str = ""
+    target_template_id: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +41,7 @@ class ReactionProposal:
             "description": self.description,
             "confidence": self.confidence,
             "origin": self.origin,
+            "followup_kind": self.followup_kind,
             "status": self.status,
             "suggested_reaction_config": dict(self.suggested_reaction_config),
             "created_at": self.created_at,
@@ -43,6 +49,10 @@ class ReactionProposal:
             "last_observed_at": self.last_observed_at,
             "identity_key": self.identity_key,
             "fingerprint": self.fingerprint,
+            "target_reaction_id": self.target_reaction_id,
+            "target_reaction_class": self.target_reaction_class,
+            "target_reaction_origin": self.target_reaction_origin,
+            "target_template_id": self.target_template_id,
         }
 
     @classmethod
@@ -50,6 +60,9 @@ class ReactionProposal:
         origin = str(raw.get("origin") or "learned")
         if origin not in {"learned", "admin_authored"}:
             origin = "learned"
+        followup_kind = str(raw.get("followup_kind") or "discovery")
+        if followup_kind not in {"discovery", "tuning_suggestion"}:
+            followup_kind = "discovery"
         status = str(raw.get("status") or "pending")
         if status not in {"pending", "accepted", "rejected"}:
             status = "pending"
@@ -60,6 +73,7 @@ class ReactionProposal:
             description=str(raw.get("description") or ""),
             confidence=_safe_float(raw.get("confidence"), default=0.0),
             origin=origin,  # type: ignore[arg-type]
+            followup_kind=followup_kind,  # type: ignore[arg-type]
             status=status,  # type: ignore[arg-type]
             suggested_reaction_config=_safe_dict(raw.get("suggested_reaction_config")),
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
@@ -72,6 +86,10 @@ class ReactionProposal:
             ),
             identity_key=str(raw.get("identity_key") or ""),
             fingerprint=str(raw.get("fingerprint") or ""),
+            target_reaction_id=str(raw.get("target_reaction_id") or ""),
+            target_reaction_class=str(raw.get("target_reaction_class") or ""),
+            target_reaction_origin=str(raw.get("target_reaction_origin") or ""),
+            target_template_id=str(raw.get("target_template_id") or ""),
         )
 
 

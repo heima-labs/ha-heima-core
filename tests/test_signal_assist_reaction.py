@@ -152,3 +152,112 @@ def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger
     ])
     assert len(steps) == 1
     assert steps[0].target == "script.cool_office"
+
+
+def test_signal_assist_reaction_supports_above_mode():
+    hass = MagicMock()
+    states = {"sensor.office_co2": "780.0"}
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="office",
+        primary_signal_entities=["sensor.office_co2"],
+        primary_threshold=800.0,
+        primary_threshold_mode="above",
+        primary_signal_name="co2",
+        steps=[ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
+
+    states["sensor.office_co2"] = "820.0"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["office"], ts=ts1),
+        _snapshot(occupied_rooms=["office"], ts=ts2),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.ventilate_office"
+
+
+def test_signal_assist_reaction_supports_switch_on_mode():
+    hass = MagicMock()
+    states = {"binary_sensor.projector_active": "off"}
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="living",
+        primary_signal_entities=["binary_sensor.projector_active"],
+        primary_threshold=1.0,
+        primary_threshold_mode="switch_on",
+        primary_signal_name="projector",
+        steps=[ApplyStep(domain="script", target="script.projector_scene", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 21, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 21, 1, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
+    states["binary_sensor.projector_active"] = "on"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["living"], ts=ts1),
+        _snapshot(occupied_rooms=["living"], ts=ts2),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.projector_scene"
+
+
+def test_signal_assist_reaction_supports_switch_off_mode():
+    hass = MagicMock()
+    states = {"binary_sensor.projector_active": "on"}
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="living",
+        primary_signal_entities=["binary_sensor.projector_active"],
+        primary_threshold=1.0,
+        primary_threshold_mode="switch_off",
+        primary_signal_name="projector",
+        steps=[ApplyStep(domain="script", target="script.restore_lights", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 22, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 22, 1, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
+    states["binary_sensor.projector_active"] = "off"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["living"], ts=ts1),
+        _snapshot(occupied_rooms=["living"], ts=ts2),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.restore_lights"
+
+
+def test_signal_assist_reaction_supports_state_change_mode():
+    hass = MagicMock()
+    states = {"binary_sensor.window_open": "off"}
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        room_id="studio",
+        primary_signal_entities=["binary_sensor.window_open"],
+        primary_threshold=1.0,
+        primary_threshold_mode="state_change",
+        primary_signal_name="window",
+        steps=[ApplyStep(domain="script", target="script.window_changed", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 23, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 23, 1, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)]) == []
+    states["binary_sensor.window_open"] = "on"
+    steps = reaction.evaluate([
+        _snapshot(occupied_rooms=["studio"], ts=ts1),
+        _snapshot(occupied_rooms=["studio"], ts=ts2),
+    ])
+    assert len(steps) == 1
+    assert steps[0].target == "script.window_changed"

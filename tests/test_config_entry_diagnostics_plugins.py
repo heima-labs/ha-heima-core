@@ -43,6 +43,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
         and item["supports_admin_authored"] is True
         and item["admin_authored_templates"][0]["template_id"]
         == "lighting.scene_schedule.basic"
+        and item["admin_authored_templates"][0]["implemented"] is True
         for item in learning
     )
     assert any(item["reaction_class"] == "RoomSignalAssistReaction" for item in reactions)
@@ -150,6 +151,8 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert "lighting_scene_schedule" in lighting["proposal_types"]
     assert lighting["admin_authorable"] is True
     assert lighting["admin_authored_templates"] == ["lighting.scene_schedule.basic"]
+    assert lighting["implemented_admin_authored_templates"] == ["lighting.scene_schedule.basic"]
+    assert lighting["unimplemented_admin_authored_templates"] == []
 
     composite = summary["plugins"]["builtin.composite_room_assist"]
     assert composite["pending"] == 1
@@ -159,6 +162,11 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
     ]
+    assert composite["implemented_admin_authored_templates"] == [
+        "room.signal_assist.basic",
+        "room.darkness_lighting_assist.basic",
+    ]
+    assert composite["unimplemented_admin_authored_templates"] == []
 
     heating = summary["plugins"]["builtin.heating_preferences"]
     assert heating["accepted"] == 1
@@ -193,7 +201,9 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         _state=SimpleNamespace(
             get_sensor=lambda key: (
                 '{"r1":{"origin":"learned","author_kind":"heima"},'
-                '"r2":{"origin":"admin_authored","author_kind":"admin"}}'
+                '"r2":{"origin":"admin_authored","author_kind":"admin",'
+                '"source_template_id":"room.signal_assist.basic",'
+                '"source_proposal_identity_key":"room_signal_assist|room=bathroom"}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -214,4 +224,98 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     assert summary["total"] == 2
     assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
     assert summary["by_author_kind"] == {"admin": 1, "heima": 1}
+    assert summary["by_template_id"] == {
+        "room.signal_assist.basic": 1,
+        "unspecified": 1,
+    }
+    assert summary["identity_collisions"] == {}
     assert summary["reaction_ids"] == ["r1", "r2"]
+
+
+async def test_config_entry_diagnostics_exposes_configured_reaction_identity_collisions() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"r1":{"origin":"admin_authored","author_kind":"admin",'
+                '"source_template_id":"lighting.scene_schedule.basic",'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200"},'
+                '"r2":{"origin":"learned","author_kind":"heima",'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200"}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+
+    assert summary["identity_collisions"] == {
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+    }
+
+
+async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator._proposal_engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "total": 1,
+            "pending": 1,
+            "pending_stale": 0,
+            "proposals": [
+                {
+                    "id": "p1",
+                    "type": "lighting_scene_schedule",
+                    "status": "pending",
+                    "confidence": 0.91,
+                    "description": "Living tuned lights",
+                    "origin": "learned",
+                    "followup_kind": "discovery",
+                    "identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+                    "is_stale": False,
+                    "updated_at": "2026-03-30T12:00:00+00:00",
+                }
+            ],
+        }
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={
+            "reactions": {
+                "configured": {
+                    "r-existing": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "origin": "admin_authored",
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "source_proposal_identity_key": (
+                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                        ),
+                    }
+                }
+            }
+        },
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    proposals = diagnostics["runtime"]["proposals"]
+
+    assert proposals["tuning_pending"] == 1
+    item = proposals["proposals"][0]
+    assert item["followup_kind"] == "tuning_suggestion"
+    assert item["target_reaction_id"] == "r-existing"
+    assert item["target_reaction_origin"] == "admin_authored"
+    assert item["target_template_id"] == "lighting.scene_schedule.basic"

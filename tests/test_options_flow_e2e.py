@@ -531,6 +531,132 @@ async def test_proposals_step_tolerates_legacy_non_dict_config():
 
 
 @pytest.mark.asyncio
+async def test_proposals_step_marks_tuning_review_for_matching_active_reaction():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r-lighting-admin": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "origin": "admin_authored",
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "source_proposal_identity_key": (
+                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                        ),
+                    }
+                }
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-tuning-1",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Living lights shift slightly later",
+        confidence=0.93,
+        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        last_observed_at="2026-03-30T10:27:51.561727+00:00",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1210,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "learning_diagnostics": {"episodes_observed": 6, "weeks_observed": 3},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Affinamento: Luci living")
+    assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
+    assert "Automazione target: Luci living — Lunedì ~20:00 (1 entità)" in placeholders["proposal_details"]
+    assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
+    assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
+    assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r-lighting-admin": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "origin": "admin_authored",
+                        "author_kind": "admin",
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "source_request": "template:lighting.scene_schedule.basic",
+                        "source_proposal_id": "proposal-admin",
+                        "source_proposal_identity_key": (
+                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                        ),
+                        "created_at": "2026-03-30T10:00:00+00:00",
+                        "last_tuned_at": None,
+                    }
+                },
+                "labels": {"r-lighting-admin": "Admin lighting"},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-tuning-2",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Living lights shift slightly later",
+        confidence=0.93,
+        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        updated_at="2026-03-30T12:34:00+00:00",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1210,
+            "entity_steps": [
+                {"entity_id": "light.living_main", "action": "on", "brightness": 180}
+            ],
+            "steps": [],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    configured = flow.options["reactions"]["configured"]
+    assert sorted(configured) == ["r-lighting-admin"]
+    stored = configured["r-lighting-admin"]
+    assert stored["scheduled_min"] == 1210
+    assert stored["origin"] == "admin_authored"
+    assert stored["source_proposal_id"] == "proposal-admin"
+    assert stored["last_tuned_at"] == "2026-03-30T12:34:00+00:00"
+    assert stored["last_tuning_proposal_id"] == "proposal-tuning-2"
+    assert stored["last_tuning_origin"] == "learned"
+    assert stored["last_tuning_followup_kind"] == "tuning_suggestion"
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_skip_advances_to_next_proposal():
     flow = _flow()
     proposal_1 = ReactionProposal(
@@ -632,6 +758,140 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_opens_review():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "bathroom", "display_name": "Bathroom", "area_id": "bathroom"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "bathroom",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "primary_signal_name": "humidity",
+            "primary_threshold_mode": "rise",
+            "primary_threshold": 8.0,
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "corroboration_signal_name": "temperature",
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
+            "action_entities": ["script.bathroom_ventilation"],
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    created = pending[0]
+    assert created.origin == "admin_authored"
+    assert created.reaction_type == "room_signal_assist"
+    assert created.suggested_reaction_config["admin_authored_template_id"] == "room.signal_assist.basic"
+    assert created.suggested_reaction_config["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert created.suggested_reaction_config["corroboration_signal_entities"] == [
+        "sensor.bathroom_temperature"
+    ]
+    assert created.suggested_reaction_config["steps"][0]["action"] == "script.turn_on"
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert "Bozza admin: Assist bathroom" in result["description_placeholders"]["proposal_label"]
+    details = result["description_placeholders"]["proposal_details"]
+    assert "Template: room.signal_assist.basic" in details
+    assert "Segnale primario: humidity" in details
+    assert "Condizione primaria: Aumento rapido (8.0)" in details
+    assert "Corroborazione: temperature (1)" in details
+    assert "Condizione corroborante: Aumento rapido (0.8)" in details
+    assert "Azioni configurate: 1" in details
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_creates_pending_proposal_and_opens_review():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "light_entities": ["light.studio_main", "light.studio_spot"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    created = pending[0]
+    assert created.origin == "admin_authored"
+    assert created.reaction_type == "room_darkness_lighting_assist"
+    assert (
+        created.suggested_reaction_config["admin_authored_template_id"]
+        == "room.darkness_lighting_assist.basic"
+    )
+    assert created.suggested_reaction_config["primary_signal_entities"] == ["sensor.studio_lux"]
+    assert len(created.suggested_reaction_config["entity_steps"]) == 2
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert "Bozza admin: Luce studio" in result["description_placeholders"]["proposal_label"]
+    details = result["description_placeholders"]["proposal_details"]
+    assert "Template: room.darkness_lighting_assist.basic" in details
+    assert "Segnale primario: room_lux" in details
+    assert "Soglia buio: 120.0" in details
+    assert "Luci configurate: 2" in details
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_accept_persists_reaction_provenance():
     flow = _flow()
     proposal = ReactionProposal(
@@ -696,6 +956,91 @@ def test_proposal_review_label_marks_admin_authored_origin():
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_accept_skips_action_configuration():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-room-signal-admin",
+        analyzer_id="AdminAuthoredRoomSignalAssistTemplate",
+        reaction_type="room_signal_assist",
+        description="bathroom: when humidity changes quickly, trigger 1 action",
+        confidence=1.0,
+        origin="admin_authored",
+        suggested_reaction_config={
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": "bathroom",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "primary_signal_name": "humidity",
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "corroboration_signal_name": "temperature",
+            "steps": [
+                {
+                    "domain": "script",
+                    "target": "script.bathroom_ventilation",
+                    "action": "script.turn_on",
+                    "params": {"entity_id": "script.bathroom_ventilation"},
+                }
+            ],
+            "admin_authored_template_id": "room.signal_assist.basic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["proposal-room-signal-admin"]
+    assert stored["origin"] == "admin_authored"
+    assert stored["source_template_id"] == "room.signal_assist.basic"
+    assert stored["steps"][0]["action"] == "script.turn_on"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_configuration():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-room-darkness-admin",
+        analyzer_id="AdminAuthoredRoomDarknessLightingTemplate",
+        reaction_type="room_darkness_lighting_assist",
+        description="studio: when room_lux drops too low, apply 2 light actions",
+        confidence=1.0,
+        origin="admin_authored",
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "entity_steps": [
+                {"entity_id": "light.studio_main", "action": "on", "brightness": 190},
+                {"entity_id": "light.studio_spot", "action": "on", "brightness": 160},
+            ],
+            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["proposal-room-darkness-admin"]
+    assert stored["origin"] == "admin_authored"
+    assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
+    assert len(stored["entity_steps"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_proposal_configure_action_resumes_guided_review():
     flow = _flow()
     proposal_1 = ReactionProposal(
@@ -750,8 +1095,46 @@ async def test_proposal_configure_action_resumes_guided_review():
 
 def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
     flow = _flow()
-    monkeypatch.setattr(flow, "_pending_proposals_summary", lambda: "1")
+    monkeypatch.setattr(flow, "_proposal_review_summary", lambda: "3")
+    monkeypatch.setattr(flow, "_tuning_pending_summary", lambda: "1")
 
     placeholders = flow._init_status_block()
 
-    assert placeholders["pending_proposals_summary"] == "1"
+    assert placeholders["proposal_review_summary"] == "3"
+    assert placeholders["tuning_pending_summary"] == "1"
+
+
+def test_tuning_pending_summary_counts_followup_proposals():
+    flow = _flow()
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="new schedule",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="tuning schedule",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._proposal_review_summary() == "2"
+    assert flow._tuning_pending_summary() == "1"
+
+
+def test_signal_threshold_mode_options_include_binary_transitions():
+    flow = _flow()
+
+    options = flow._signal_threshold_mode_options()
+
+    assert "switch_on" in options
+    assert "switch_off" in options
+    assert "state_change" in options

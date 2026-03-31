@@ -196,7 +196,8 @@ class HeimaOptionsFlowHandler(
             "heating_summary": self._heating_menu_summary(),
             "security_summary": self._security_menu_summary(),
             "calendar_summary": self._calendar_menu_summary(),
-            "pending_proposals_summary": self._pending_proposals_summary(),
+            "proposal_review_summary": self._proposal_review_summary(),
+            "tuning_pending_summary": self._tuning_pending_summary(),
         }
 
     def _people_menu_summary(self) -> str:
@@ -223,7 +224,7 @@ class HeimaOptionsFlowHandler(
         configured = len([v for v in branches.values() if v.get("branch")])
         return f"{thermostat} | {configured}"
 
-    def _pending_proposals_summary(self) -> str:
+    def _pending_proposals(self) -> list[Any]:
         coordinator = None
         try:
             domain_data = getattr(getattr(self, "hass", None), "data", {}).get(DOMAIN, {})
@@ -236,9 +237,25 @@ class HeimaOptionsFlowHandler(
         proposal_engine = getattr(coordinator, "proposal_engine", None)
         pending_fn = getattr(proposal_engine, "pending_proposals", None)
         pending = pending_fn() if callable(pending_fn) else []
+        return list(pending)
+
+    def _proposal_review_summary(self) -> str:
+        pending = self._pending_proposals()
         if not pending:
             return "—"
         return str(len(pending))
+
+    def _tuning_pending_summary(self) -> str:
+        pending = self._pending_proposals()
+        tuning = [
+            proposal
+            for proposal in pending
+            if str(getattr(proposal, "followup_kind", "") or "").strip()
+            == "tuning_suggestion"
+        ]
+        if not tuning:
+            return "0"
+        return str(len(tuning))
 
     def _room_ids(self) -> list[str]:
         return [room["room_id"] for room in self._rooms()]

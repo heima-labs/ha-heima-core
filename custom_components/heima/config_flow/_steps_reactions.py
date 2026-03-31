@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
-_IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES = {"lighting.scene_schedule.basic"}
 
 
 class _ReactionsStepsMixin:
@@ -43,6 +43,12 @@ class _ReactionsStepsMixin:
         if template_id == "lighting.scene_schedule.basic":
             self._selected_admin_authored_template_id = template_id
             return await self.async_step_admin_authored_lighting_schedule()
+        if template_id == "room.signal_assist.basic":
+            self._selected_admin_authored_template_id = template_id
+            return await self.async_step_admin_authored_room_signal_assist()
+        if template_id == "room.darkness_lighting_assist.basic":
+            self._selected_admin_authored_template_id = template_id
+            return await self.async_step_admin_authored_room_darkness_lighting_assist()
         return await self.async_step_init()
 
     async def async_step_admin_authored_lighting_schedule(
@@ -162,6 +168,293 @@ class _ReactionsStepsMixin:
                         "room_id": room_id,
                         "weekday": str(weekday),
                         "scheduled_time": scheduled_time,
+                        "light_entities": entity_ids,
+                        "action": action,
+                        "brightness": brightness or defaults["brightness"],
+                        "color_temp_kelvin": color_temp_kelvin
+                        or defaults["color_temp_kelvin"],
+                    }
+                ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal_id = await proposal_engine.async_submit_proposal(proposal)
+        self._proposal_review_queue = [proposal_id]
+        return await self.async_step_proposals()
+
+    async def async_step_admin_authored_room_signal_assist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored room signal assist proposal."""
+        template = self._admin_authored_template("room.signal_assist.basic")
+        room_ids = self._room_ids()
+        if template is None or not room_ids:
+            return await self.async_step_init()
+
+        defaults = {
+            "room_id": room_ids[0],
+            "primary_signal_name": "humidity",
+            "primary_threshold_mode": "rise",
+            "primary_threshold": 8.0,
+            "corroboration_signal_name": "temperature",
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
+            "action_entities": [],
+        }
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_room_signal_assist",
+                data_schema=self._admin_authored_room_signal_assist_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        room_id = str(user_input.get("room_id") or "").strip()
+        primary_signal_entities = self._normalize_multi_value(
+            user_input.get("primary_signal_entities")
+        )
+        primary_signal_name = str(user_input.get("primary_signal_name") or "primary").strip()
+        corroboration_signal_entities = self._normalize_multi_value(
+            user_input.get("corroboration_signal_entities")
+        )
+        corroboration_signal_name = str(
+            user_input.get("corroboration_signal_name") or "corroboration"
+        ).strip()
+        action_entities = self._normalize_multi_value(user_input.get("action_entities"))
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not primary_signal_entities:
+            errors["primary_signal_entities"] = "required"
+        if not action_entities:
+            errors["action_entities"] = "required"
+
+        primary_threshold_mode = str(user_input.get("primary_threshold_mode") or "rise").strip()
+        if primary_threshold_mode not in self._signal_threshold_mode_options():
+            errors["primary_threshold_mode"] = "invalid_selection"
+            primary_threshold_mode = defaults["primary_threshold_mode"]
+
+        try:
+            primary_threshold = float(user_input.get("primary_threshold") or 0)
+            if primary_threshold <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["primary_threshold"] = "invalid_number"
+            primary_threshold = defaults["primary_threshold"]
+
+        corroboration_threshold_mode = str(
+            user_input.get("corroboration_threshold_mode") or "rise"
+        ).strip()
+        if corroboration_threshold_mode not in self._signal_threshold_mode_options():
+            errors["corroboration_threshold_mode"] = "invalid_selection"
+            corroboration_threshold_mode = defaults["corroboration_threshold_mode"]
+
+        try:
+            corroboration_threshold = float(user_input.get("corroboration_threshold") or 0)
+            if corroboration_signal_entities and corroboration_threshold <= 0:
+                raise ValueError
+            if not corroboration_signal_entities:
+                corroboration_threshold = 0.0
+        except (TypeError, ValueError):
+            errors["corroboration_threshold"] = "invalid_number"
+            corroboration_threshold = defaults["corroboration_threshold"]
+
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_room_signal_assist",
+                data_schema=self._admin_authored_room_signal_assist_schema(
+                    {
+                        "room_id": room_id or defaults["room_id"],
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+                        "primary_threshold_mode": primary_threshold_mode,
+                        "primary_threshold": primary_threshold,
+                        "corroboration_signal_entities": corroboration_signal_entities,
+                        "corroboration_signal_name": corroboration_signal_name
+                        or defaults["corroboration_signal_name"],
+                        "corroboration_threshold_mode": corroboration_threshold_mode,
+                        "corroboration_threshold": corroboration_threshold,
+                        "action_entities": action_entities,
+                    }
+                ),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal = self._build_admin_authored_room_signal_assist_proposal(
+            room_id=room_id,
+            primary_signal_entities=primary_signal_entities,
+            primary_signal_name=primary_signal_name or "primary",
+            primary_threshold_mode=primary_threshold_mode,
+            primary_threshold=primary_threshold,
+            corroboration_signal_entities=corroboration_signal_entities,
+            corroboration_signal_name=corroboration_signal_name or "corroboration",
+            corroboration_threshold_mode=corroboration_threshold_mode,
+            corroboration_threshold=corroboration_threshold,
+            action_entities=action_entities,
+        )
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        if proposal_engine is None:
+            return await self.async_step_init()
+
+        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
+        if existing is not None and existing.status != "pending":
+            return self.async_show_form(
+                step_id="admin_authored_room_signal_assist",
+                data_schema=self._admin_authored_room_signal_assist_schema(
+                    {
+                        "room_id": room_id,
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
+                        "primary_threshold_mode": primary_threshold_mode,
+                        "primary_threshold": primary_threshold,
+                        "corroboration_signal_entities": corroboration_signal_entities,
+                        "corroboration_signal_name": corroboration_signal_name,
+                        "corroboration_threshold_mode": corroboration_threshold_mode,
+                        "corroboration_threshold": corroboration_threshold,
+                        "action_entities": action_entities,
+                    }
+                ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal_id = await proposal_engine.async_submit_proposal(proposal)
+        self._proposal_review_queue = [proposal_id]
+        return await self.async_step_proposals()
+
+    async def async_step_admin_authored_room_darkness_lighting_assist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored room darkness lighting assist proposal."""
+        template = self._admin_authored_template("room.darkness_lighting_assist.basic")
+        room_ids = self._room_ids()
+        if template is None or not room_ids:
+            return await self.async_step_init()
+
+        defaults = {
+            "room_id": room_ids[0],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_room_darkness_lighting_assist",
+                data_schema=self._admin_authored_room_darkness_lighting_assist_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        room_id = str(user_input.get("room_id") or "").strip()
+        primary_signal_entities = self._normalize_multi_value(
+            user_input.get("primary_signal_entities")
+        )
+        primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
+        action = str(user_input.get("action") or "on").strip()
+        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not primary_signal_entities:
+            errors["primary_signal_entities"] = "required"
+        if not entity_ids:
+            errors["light_entities"] = "required"
+
+        try:
+            primary_threshold = float(user_input.get("primary_threshold") or 0)
+            if primary_threshold <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["primary_threshold"] = "invalid_number"
+            primary_threshold = defaults["primary_threshold"]
+
+        brightness = None
+        color_temp_kelvin = None
+        if action == "on":
+            try:
+                brightness = int(user_input.get("brightness") or 0)
+                if brightness < 1 or brightness > 255:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["brightness"] = "invalid_number"
+            try:
+                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
+                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["color_temp_kelvin"] = "invalid_number"
+
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_room_darkness_lighting_assist",
+                data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
+                    {
+                        "room_id": room_id or defaults["room_id"],
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+                        "primary_threshold": primary_threshold,
+                        "light_entities": entity_ids,
+                        "action": action or defaults["action"],
+                        "brightness": user_input.get("brightness", defaults["brightness"]),
+                        "color_temp_kelvin": user_input.get(
+                            "color_temp_kelvin", defaults["color_temp_kelvin"]
+                        ),
+                    }
+                ),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal = self._build_admin_authored_room_darkness_lighting_assist_proposal(
+            room_id=room_id,
+            primary_signal_entities=primary_signal_entities,
+            primary_signal_name=primary_signal_name or "room_lux",
+            primary_threshold=primary_threshold,
+            entity_ids=entity_ids,
+            action=action,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+        )
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        if proposal_engine is None:
+            return await self.async_step_init()
+
+        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
+        if existing is not None and existing.status != "pending":
+            return self.async_show_form(
+                step_id="admin_authored_room_darkness_lighting_assist",
+                data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
+                    {
+                        "room_id": room_id,
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
+                        "primary_threshold": primary_threshold,
                         "light_entities": entity_ids,
                         "action": action,
                         "brightness": brightness or defaults["brightness"],
@@ -329,20 +622,39 @@ class _ReactionsStepsMixin:
         reactions_cfg = dict(self.options.get(OPT_REACTIONS, {}))
         configured = dict(reactions_cfg.get("configured", {}))
         labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
+        followup = self._proposal_followup_target(current)
 
         if action == "accept":
+            accepted_proposal = current
+            if followup is not None and current.followup_kind != "tuning_suggestion":
+                accepted_proposal = replace(
+                    current,
+                    followup_kind="tuning_suggestion",
+                    target_reaction_id=str(followup["reaction_id"]),
+                    target_reaction_class=str(followup["reaction_cfg"].get("reaction_class") or ""),
+                    target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
+                    target_template_id=str(followup.get("target_template_id") or ""),
+                )
             await coordinator.proposal_engine.async_accept_proposal(current_id)
-            configured[current_id] = self._configured_reaction_from_proposal(current)
-            labels[current_id] = current.description
+            target_id = current_id
+            existing_cfg: dict[str, Any] | None = None
+            if followup is not None:
+                target_id = str(followup["reaction_id"])
+                existing_cfg = dict(followup["reaction_cfg"])
+            configured[target_id] = self._configured_reaction_from_proposal(
+                accepted_proposal,
+                existing_config=existing_cfg,
+            )
+            if target_id != current_id:
+                configured.pop(current_id, None)
+                labels.pop(current_id, None)
+            labels[target_id] = current.description
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
             self._update_options({OPT_REACTIONS: reactions_cfg})
 
-            if current.suggested_reaction_config.get("reaction_class") not in {
-                "LightingScheduleReaction",
-                "RoomLightingAssistReaction",
-            }:
-                self._pending_action_configs = [current_id]
+            if self._proposal_requires_action_completion(current):
+                self._pending_action_configs = [target_id]
                 self._resume_proposal_review = True
                 return await self.async_step_proposal_configure_action()
 
@@ -418,9 +730,27 @@ class _ReactionsStepsMixin:
         return dict(self.options.get(OPT_REACTIONS, {}))
 
     @staticmethod
-    def _configured_reaction_from_proposal(proposal: ReactionProposal) -> dict[str, Any]:
+    def _configured_reaction_from_proposal(
+        proposal: ReactionProposal,
+        *,
+        existing_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        configured = dict(cfg)
+        configured = dict(_safe_mapping(existing_config))
+        configured.update(cfg)
+
+        is_followup = (
+            proposal.followup_kind == "tuning_suggestion"
+            and bool(_safe_mapping(existing_config))
+        )
+        if is_followup:
+            if proposal.updated_at:
+                configured["last_tuned_at"] = proposal.updated_at
+            configured["last_tuning_proposal_id"] = proposal.proposal_id
+            configured["last_tuning_origin"] = proposal.origin
+            configured["last_tuning_followup_kind"] = proposal.followup_kind
+            return configured
+
         origin = proposal.origin
         configured["origin"] = origin
         configured["author_kind"] = "admin" if origin == "admin_authored" else "heima"
@@ -443,9 +773,7 @@ class _ReactionsStepsMixin:
         if registry is None:
             return {}
         options: dict[str, str] = {}
-        for template in registry.admin_authored_templates():
-            if template.template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
-                continue
+        for template in registry.admin_authored_templates(implemented_only=True):
             options[template.template_id] = template.title
         return options
 
@@ -453,9 +781,10 @@ class _ReactionsStepsMixin:
         registry = self._learning_plugin_registry()
         if registry is None:
             return None
-        if template_id not in _IMPLEMENTED_ADMIN_AUTHORED_TEMPLATES:
-            return None
-        return registry.get_admin_authored_template(template_id)
+        return registry.get_admin_authored_template(
+            template_id,
+            implemented_only=True,
+        )
 
     def _learning_plugin_registry(self) -> Any | None:
         coordinator = self._get_coordinator()
@@ -502,6 +831,90 @@ class _ReactionsStepsMixin:
         if language.startswith("it"):
             return {"on": "Accendi", "off": "Spegni"}
         return {"on": "Turn on", "off": "Turn off"}
+
+    def _signal_threshold_mode_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        if language.startswith("it"):
+            return {
+                "rise": "Aumento rapido",
+                "drop": "Diminuzione rapida",
+                "above": "Supera soglia",
+                "below": "Scende sotto soglia",
+                "switch_on": "Passa a on",
+                "switch_off": "Passa a off",
+                "state_change": "Cambio stato",
+            }
+        return {
+            "rise": "Rapid rise",
+            "drop": "Rapid drop",
+            "above": "Crosses above threshold",
+            "below": "Drops below threshold",
+            "switch_on": "Switches on",
+            "switch_off": "Switches off",
+            "state_change": "State change",
+        }
+
+    def _admin_authored_room_signal_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        threshold_modes = self._signal_threshold_mode_options()
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("room_id"): vol.In(room_options),
+                    vol.Required("primary_signal_entities"): _entity_selector(
+                        ["sensor", "binary_sensor"], multiple=True
+                    ),
+                    vol.Required("primary_signal_name", default="humidity"): str,
+                    vol.Required("primary_threshold_mode", default="rise"): vol.In(
+                        threshold_modes
+                    ),
+                    vol.Required("primary_threshold", default=8.0): vol.Coerce(float),
+                    vol.Optional("corroboration_signal_entities"): _entity_selector(
+                        ["sensor", "binary_sensor"], multiple=True
+                    ),
+                    vol.Optional("corroboration_signal_name", default="temperature"): str,
+                    vol.Optional("corroboration_threshold_mode", default="rise"): vol.In(
+                        threshold_modes
+                    ),
+                    vol.Optional("corroboration_threshold", default=0.8): vol.Coerce(float),
+                    vol.Required("action_entities"): _entity_selector(
+                        ["scene", "script"], multiple=True
+                    ),
+                }
+            ),
+            defaults,
+        )
+
+    def _admin_authored_room_darkness_lighting_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        action_options = self._admin_authored_lighting_action_options()
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("room_id"): vol.In(room_options),
+                    vol.Required("primary_signal_entities"): _entity_selector(
+                        ["sensor", "binary_sensor"], multiple=True
+                    ),
+                    vol.Required("primary_signal_name", default="room_lux"): str,
+                    vol.Required("primary_threshold", default=120.0): vol.Coerce(float),
+                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
+                    vol.Required("action", default="on"): vol.In(action_options),
+                    vol.Optional("brightness", default=190): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=255)
+                    ),
+                    vol.Optional("color_temp_kelvin", default=2850): vol.All(
+                        vol.Coerce(int), vol.Range(min=1500, max=9000)
+                    ),
+                }
+            ),
+            defaults,
+        )
 
     def _weekday_options(self) -> dict[str, str]:
         language = self._flow_language()
@@ -559,6 +972,117 @@ class _ReactionsStepsMixin:
             },
         )
 
+    def _build_admin_authored_room_signal_assist_proposal(
+        self,
+        *,
+        room_id: str,
+        primary_signal_entities: list[str],
+        primary_signal_name: str,
+        primary_threshold_mode: str,
+        primary_threshold: float,
+        corroboration_signal_entities: list[str],
+        corroboration_signal_name: str,
+        corroboration_threshold_mode: str,
+        corroboration_threshold: float,
+        action_entities: list[str],
+    ) -> ReactionProposal:
+        template_id = "room.signal_assist.basic"
+        identity_key = (
+            f"room_signal_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
+        )
+        steps = self._action_entities_to_steps(action_entities)
+        description = (
+            f"{room_id}: when {primary_signal_name.strip().lower()} changes quickly, "
+            f"trigger {len(steps)} action{'s' if len(steps) != 1 else ''}"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredRoomSignalAssistTemplate",
+            reaction_type="room_signal_assist",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_class": "RoomSignalAssistReaction",
+                "room_id": room_id,
+                "trigger_signal_entities": list(primary_signal_entities),
+                "primary_signal_entities": list(primary_signal_entities),
+                "primary_threshold": float(primary_threshold),
+                "primary_threshold_mode": primary_threshold_mode,
+                "primary_rise_threshold": float(primary_threshold),
+                "primary_signal_name": primary_signal_name.strip() or "primary",
+                "temperature_signal_entities": list(corroboration_signal_entities),
+                "corroboration_signal_entities": list(corroboration_signal_entities),
+                "corroboration_threshold": float(corroboration_threshold),
+                "corroboration_threshold_mode": corroboration_threshold_mode,
+                "corroboration_rise_threshold": float(corroboration_threshold),
+                "corroboration_signal_name": corroboration_signal_name.strip() or "corroboration",
+                "correlation_window_s": 600,
+                "followup_window_s": 900,
+                "steps": steps,
+                "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
+    def _build_admin_authored_room_darkness_lighting_assist_proposal(
+        self,
+        *,
+        room_id: str,
+        primary_signal_entities: list[str],
+        primary_signal_name: str,
+        primary_threshold: float,
+        entity_ids: list[str],
+        action: str,
+        brightness: int | None,
+        color_temp_kelvin: int | None,
+    ) -> ReactionProposal:
+        template_id = "room.darkness_lighting_assist.basic"
+        identity_key = (
+            f"room_darkness_lighting_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
+        )
+        entity_steps = [
+            {
+                "entity_id": entity_id,
+                "action": action,
+                "brightness": brightness if action == "on" else None,
+                "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
+                "rgb_color": None,
+            }
+            for entity_id in entity_ids
+        ]
+        description = (
+            f"{room_id}: when {primary_signal_name.strip().lower()} drops too low, "
+            f"apply {len(entity_steps)} light action{'s' if len(entity_steps) != 1 else ''}"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredRoomDarknessLightingTemplate",
+            reaction_type="room_darkness_lighting_assist",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_class": "RoomLightingAssistReaction",
+                "room_id": room_id,
+                "primary_signal_entities": list(primary_signal_entities),
+                "primary_threshold": float(primary_threshold),
+                "primary_signal_name": primary_signal_name.strip() or "room_lux",
+                "primary_threshold_mode": "below",
+                "corroboration_signal_entities": [],
+                "corroboration_threshold": None,
+                "corroboration_signal_name": "corroboration",
+                "corroboration_threshold_mode": "below",
+                "correlation_window_s": 600,
+                "followup_window_s": 900,
+                "entity_steps": entity_steps,
+                "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
     @staticmethod
     def _action_entities_to_steps(entities: list[str]) -> list[dict[str, Any]]:
         """Normalize selected action entities into executable ApplyStep-like dicts."""
@@ -584,6 +1108,20 @@ class _ReactionsStepsMixin:
                     }
                 )
         return steps
+
+    @staticmethod
+    def _proposal_requires_action_completion(proposal: ReactionProposal) -> bool:
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        reaction_class = str(cfg.get("reaction_class") or "")
+        if reaction_class in {"LightingScheduleReaction", "RoomLightingAssistReaction"}:
+            return False
+        steps = cfg.get("steps")
+        if isinstance(steps, list) and steps:
+            return False
+        entity_steps = cfg.get("entity_steps")
+        if isinstance(entity_steps, list) and entity_steps:
+            return False
+        return True
 
     @staticmethod
     def _proposal_review_label(proposal: ReactionProposal) -> str:
@@ -653,6 +1191,11 @@ class _ReactionsStepsMixin:
         """Build a concise, user-facing title for the current proposal."""
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         title = self._proposal_human_label(proposal, cfg)
+        if self._proposal_followup_target(proposal) is not None:
+            language = self._flow_language()
+            if language.startswith("it"):
+                return f"Affinamento: {title}"
+            return f"Tuning: {title}"
         if proposal.origin != "admin_authored":
             return title
         language = self._flow_language()
@@ -671,6 +1214,10 @@ class _ReactionsStepsMixin:
         if proposal.origin == "admin_authored":
             details.extend(self._admin_authored_review_details(proposal, cfg, language))
             return "\n".join(details)
+
+        followup = self._proposal_followup_target(proposal)
+        if followup is not None:
+            details.extend(self._proposal_tuning_review_details(proposal, followup, language))
 
         pattern_description = str(proposal.description or "").strip()
         title = self._proposal_human_label(proposal, cfg)
@@ -737,6 +1284,43 @@ class _ReactionsStepsMixin:
 
         return "\n".join(details)
 
+    def _proposal_tuning_review_details(
+        self,
+        proposal: ReactionProposal,
+        followup: dict[str, Any],
+        language: str,
+    ) -> list[str]:
+        is_it = language.startswith("it")
+        details: list[str] = [
+            (
+                "Tipo proposta: affinamento di una automazione esistente"
+                if is_it
+                else "Proposal type: tuning of an existing automation"
+            )
+        ]
+
+        reaction_label = str(followup.get("reaction_label") or "").strip()
+        if reaction_label:
+            details.append(
+                f"Automazione target: {reaction_label}"
+                if is_it
+                else f"Target automation: {reaction_label}"
+            )
+
+        target_origin = str(followup.get("target_reaction_origin") or "").strip()
+        if target_origin:
+            origin_label = self._proposal_origin_label(target_origin, language)
+            details.append(
+                f"Origine automazione attiva: {origin_label}"
+                if is_it
+                else f"Active automation origin: {origin_label}"
+            )
+
+        target_template_id = str(followup.get("target_template_id") or "").strip()
+        if target_template_id:
+            details.append(f"Template target: {target_template_id}")
+        return details
+
     def _admin_authored_review_details(
         self,
         proposal: ReactionProposal,
@@ -770,6 +1354,93 @@ class _ReactionsStepsMixin:
         if room_id:
             details.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
 
+        if proposal.reaction_type == "room_signal_assist":
+            primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+            if primary_signal_name:
+                details.append(
+                    f"Segnale primario: {primary_signal_name}"
+                    if is_it
+                    else f"Primary signal: {primary_signal_name}"
+                )
+            primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
+            primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+            if primary_threshold not in (None, ""):
+                mode_label = self._signal_threshold_mode_options().get(
+                    primary_threshold_mode, primary_threshold_mode
+                )
+                details.append(
+                    f"Condizione primaria: {mode_label} ({primary_threshold})"
+                    if is_it
+                    else f"Primary condition: {mode_label} ({primary_threshold})"
+                )
+            primary_entities = cfg.get("primary_signal_entities")
+            if isinstance(primary_entities, list) and primary_entities:
+                details.append(
+                    f"Entità primarie: {len(primary_entities)}"
+                    if is_it
+                    else f"Primary entities: {len(primary_entities)}"
+                )
+            corroboration_entities = cfg.get("corroboration_signal_entities")
+            if isinstance(corroboration_entities, list) and corroboration_entities:
+                corroboration_name = str(cfg.get("corroboration_signal_name") or "corroboration")
+                details.append(
+                    f"Corroborazione: {corroboration_name} ({len(corroboration_entities)})"
+                    if is_it
+                    else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
+                )
+                corroboration_threshold = cfg.get(
+                    "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+                )
+                corroboration_threshold_mode = str(
+                    cfg.get("corroboration_threshold_mode") or "rise"
+                ).strip()
+                if corroboration_threshold not in (None, ""):
+                    mode_label = self._signal_threshold_mode_options().get(
+                        corroboration_threshold_mode, corroboration_threshold_mode
+                    )
+                    details.append(
+                        f"Condizione corroborante: {mode_label} ({corroboration_threshold})"
+                        if is_it
+                        else f"Corroborating condition: {mode_label} ({corroboration_threshold})"
+                    )
+            steps = cfg.get("steps")
+            if isinstance(steps, list) and steps:
+                details.append(
+                    f"Azioni configurate: {len(steps)}"
+                    if is_it
+                    else f"Configured actions: {len(steps)}"
+                )
+
+        if proposal.reaction_type == "room_darkness_lighting_assist":
+            primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+            if primary_signal_name:
+                details.append(
+                    f"Segnale primario: {primary_signal_name}"
+                    if is_it
+                    else f"Primary signal: {primary_signal_name}"
+                )
+            primary_entities = cfg.get("primary_signal_entities")
+            if isinstance(primary_entities, list) and primary_entities:
+                details.append(
+                    f"Entità primarie: {len(primary_entities)}"
+                    if is_it
+                    else f"Primary entities: {len(primary_entities)}"
+                )
+            primary_threshold = cfg.get("primary_threshold")
+            if primary_threshold not in (None, ""):
+                details.append(
+                    f"Soglia buio: {primary_threshold}"
+                    if is_it
+                    else f"Darkness threshold: {primary_threshold}"
+                )
+            entity_steps = cfg.get("entity_steps")
+            if isinstance(entity_steps, list) and entity_steps:
+                details.append(
+                    f"Luci configurate: {len(entity_steps)}"
+                    if is_it
+                    else f"Configured lights: {len(entity_steps)}"
+                )
+
         weekday = cfg.get("weekday")
         if weekday not in (None, ""):
             weekday_label = self._weekday_label(weekday, language)
@@ -789,7 +1460,11 @@ class _ReactionsStepsMixin:
             )
 
         entity_steps = cfg.get("entity_steps")
-        if isinstance(entity_steps, list) and entity_steps:
+        if (
+            proposal.reaction_type == "lighting_scene_schedule"
+            and isinstance(entity_steps, list)
+            and entity_steps
+        ):
             details.append(
                 f"Luci coinvolte: {len(entity_steps)}"
                 if is_it
@@ -839,6 +1514,67 @@ class _ReactionsStepsMixin:
             return f"{day}: typical arrival"
 
         return str(proposal.description or proposal.proposal_id)
+
+    def _proposal_followup_target(self, proposal: ReactionProposal) -> dict[str, Any] | None:
+        explicit_target_id = str(proposal.target_reaction_id or "").strip()
+        if explicit_target_id:
+            cfg = self._configured_reaction_cfg(explicit_target_id)
+            reaction_cfg = dict(cfg or {})
+            labels_map: dict[str, str] = self._reactions_options().get("labels", {})
+            return {
+                "reaction_id": explicit_target_id,
+                "reaction_cfg": reaction_cfg,
+                "reaction_label": self._reaction_label_from_config(
+                    explicit_target_id, reaction_cfg, labels_map
+                ),
+                "target_reaction_origin": str(
+                    proposal.target_reaction_origin or reaction_cfg.get("origin") or ""
+                ),
+                "target_template_id": str(
+                    proposal.target_template_id or reaction_cfg.get("source_template_id") or ""
+                ),
+            }
+
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            return None
+        configured = dict(self._reactions_options().get("configured", {}))
+        labels_map: dict[str, str] = self._reactions_options().get("labels", {})
+        for reaction_id, raw in configured.items():
+            reaction_cfg = _safe_mapping(raw)
+            if str(reaction_cfg.get("source_proposal_identity_key") or "").strip() != identity_key:
+                continue
+            return {
+                "reaction_id": str(reaction_id),
+                "reaction_cfg": reaction_cfg,
+                "reaction_label": self._reaction_label_from_config(
+                    str(reaction_id), reaction_cfg, labels_map
+                ),
+                "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
+                "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
+            }
+        return None
+
+    def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
+        configured = dict(self._reactions_options().get("configured", {}))
+        raw = configured.get(reaction_id)
+        if isinstance(raw, dict):
+            return dict(raw)
+        return None
+
+    @staticmethod
+    def _proposal_origin_label(origin: str, language: str) -> str:
+        if language.startswith("it"):
+            if origin == "admin_authored":
+                return "bozza amministratore"
+            if origin == "learned":
+                return "appresa da Heima"
+        else:
+            if origin == "admin_authored":
+                return "admin-authored"
+            if origin == "learned":
+                return "learned"
+        return origin
 
     @staticmethod
     def _weekday_label(weekday: Any, language: str) -> str:

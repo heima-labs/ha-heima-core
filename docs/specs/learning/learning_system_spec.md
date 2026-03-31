@@ -1755,17 +1755,32 @@ V1 target config shape:
 - `trigger_signal_entities`
 - generic runtime matcher fields:
   - `primary_signal_entities`
-  - `primary_rise_threshold`
+  - `primary_threshold`
+  - `primary_threshold_mode`
   - `primary_signal_name`
   - `corroboration_signal_entities`
-  - `corroboration_rise_threshold`
+  - `corroboration_threshold`
+  - `corroboration_threshold_mode`
   - `corroboration_signal_name`
 - legacy aliases remain valid for the first humidity/ventilation assist:
   - `humidity_rise_threshold`
+  - `primary_rise_threshold`
   - `temperature_rise_threshold`
+  - `corroboration_rise_threshold`
 - `correlation_window_s`
 - `followup_window_s`
 - `steps=[]` by default, to be completed by the user in the proposal action configuration flow
+
+Supported v1 trigger modes for the generic matcher fields:
+- numeric threshold/delta modes:
+  - `rise`
+  - `drop`
+  - `above`
+  - `below`
+- binary transition modes:
+  - `switch_on`
+  - `switch_off`
+  - `state_change`
 
 Normative rules:
 - composite proposal types MUST remain stable across restart and rebuild boundaries
@@ -1838,6 +1853,28 @@ Backward-compatibility rule:
 - legacy config aliases may remain valid for previously accepted proposals
 - the normalized long-term contract is the generic composite contract, not legacy case-specific
   field names
+
+### P10.11.a Actuation plan variants in v1
+
+Composite and lighting proposal families may rebuild into different concrete actuation payloads,
+but these should be understood as variants of a shared **actuation plan** concept.
+
+In v1:
+
+- `steps`
+  - generic apply/service-oriented actions
+  - used by `RoomSignalAssistReaction` and similar generic assist reactions
+- `entity_steps`
+  - entity-scoped lighting replay/apply actions with richer lighting fields
+  - used by lighting-specific reactions such as learned schedules and darkness-lighting assists
+
+Normative clarification:
+
+- v1 does not require a unified runtime payload for all actuation plans
+- keeping `steps` and `entity_steps` distinct is acceptable in v1 when it preserves clarity,
+  backward compatibility, and simpler runtime code
+- specs and diagnostics SHOULD nevertheless describe both as actuation-plan variants rather than as
+  unrelated concepts
 
 ### P10.11.1 `room_darkness_lighting_assist` execution contract
 

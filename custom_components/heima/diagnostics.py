@@ -21,6 +21,10 @@ async def async_get_config_entry_diagnostics(
 
     learning_plugins = _learning_plugin_diagnostics(coordinator)
     proposal_diagnostics = coordinator._proposal_engine.diagnostics() if coordinator else {}
+    proposal_diagnostics = _enrich_proposals_with_followups(
+        proposal_diagnostics,
+        entry=entry,
+    )
 
     payload = {
         "entry": {
@@ -80,6 +84,7 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
                     "title": item.title,
                     "description": item.description,
                     "config_schema_id": item.config_schema_id,
+                    "implemented": item.implemented,
                 }
                 for item in descriptor.admin_authored_templates
             ],
@@ -132,6 +137,15 @@ def _learning_summary_diagnostics(
                 "admin_authored_templates": _template_ids(
                     plugin.get("admin_authored_templates") or []
                 ),
+                "implemented_admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or [],
+                    implemented_only=True,
+                ),
+                "unimplemented_admin_authored_templates": _template_ids(
+                    plugin.get("admin_authored_templates") or [],
+                    implemented_only=False,
+                    invert_implemented=True,
+                ),
                 "top_examples": _top_proposal_examples(plugin_proposals),
             }
         )
@@ -143,6 +157,8 @@ def _learning_summary_diagnostics(
                 "plugins": [],
                 "proposal_types": set(),
                 "admin_authored_templates": set(),
+                "implemented_admin_authored_templates": set(),
+                "unimplemented_admin_authored_templates": set(),
                 "admin_authorable": False,
                 "total": 0,
                 "pending": 0,
@@ -160,6 +176,12 @@ def _learning_summary_diagnostics(
         family_entry["admin_authored_templates"].update(
             plugin_summary[plugin_id]["admin_authored_templates"]
         )
+        family_entry["implemented_admin_authored_templates"].update(
+            plugin_summary[plugin_id]["implemented_admin_authored_templates"]
+        )
+        family_entry["unimplemented_admin_authored_templates"].update(
+            plugin_summary[plugin_id]["unimplemented_admin_authored_templates"]
+        )
         family_entry["total"] += plugin_stats["total"]
         family_entry["pending"] += plugin_stats["pending"]
         family_entry["accepted"] += plugin_stats["accepted"]
@@ -171,6 +193,12 @@ def _learning_summary_diagnostics(
         stats["plugins"] = sorted(stats["plugins"])
         stats["proposal_types"] = sorted(stats["proposal_types"])
         stats["admin_authored_templates"] = sorted(stats["admin_authored_templates"])
+        stats["implemented_admin_authored_templates"] = sorted(
+            stats["implemented_admin_authored_templates"]
+        )
+        stats["unimplemented_admin_authored_templates"] = sorted(
+            stats["unimplemented_admin_authored_templates"]
+        )
         stats["top_examples"] = stats["top_examples"][:3]
 
     enabled_families = sorted(
@@ -205,6 +233,74 @@ def _learning_summary_diagnostics(
     }
 
 
+def _enrich_proposals_with_followups(
+    proposal_diagnostics: dict[str, Any],
+    *,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    if not isinstance(proposal_diagnostics, dict):
+        return {}
+    proposals = proposal_diagnostics.get("proposals")
+    if not isinstance(proposals, list):
+        return proposal_diagnostics
+    configured = (
+        dict(dict(entry.options).get("reactions", {})).get("configured", {})
+        if isinstance(dict(entry.options).get("reactions", {}), dict)
+        else {}
+    )
+    if not isinstance(configured, dict) or not configured:
+        return proposal_diagnostics
+
+    configured_by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+    for reaction_id, cfg in configured.items():
+        if not isinstance(cfg, dict):
+            continue
+        identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+        if identity_key:
+            configured_by_identity.setdefault(identity_key, (str(reaction_id), dict(cfg)))
+
+    if not configured_by_identity:
+        return proposal_diagnostics
+
+    enriched: list[dict[str, Any]] = []
+    for proposal in proposals:
+        if not isinstance(proposal, dict):
+            enriched.append(proposal)
+            continue
+        item = dict(proposal)
+        identity_key = str(item.get("identity_key") or "").strip()
+        if not identity_key:
+            enriched.append(item)
+            continue
+        target = configured_by_identity.get(identity_key)
+        if target is None:
+            enriched.append(item)
+            continue
+        reaction_id, cfg = target
+        if str(item.get("followup_kind") or "discovery") == "discovery":
+            item["followup_kind"] = "tuning_suggestion"
+        if not str(item.get("target_reaction_id") or "").strip():
+            item["target_reaction_id"] = reaction_id
+        if not str(item.get("target_reaction_class") or "").strip():
+            item["target_reaction_class"] = str(cfg.get("reaction_class") or "")
+        if not str(item.get("target_reaction_origin") or "").strip():
+            item["target_reaction_origin"] = str(cfg.get("origin") or "")
+        if not str(item.get("target_template_id") or "").strip():
+            item["target_template_id"] = str(cfg.get("source_template_id") or "")
+        enriched.append(item)
+
+    updated = dict(proposal_diagnostics)
+    updated["proposals"] = enriched
+    updated["tuning_pending"] = sum(
+        1
+        for proposal in enriched
+        if isinstance(proposal, dict)
+        and str(proposal.get("status") or "") == "pending"
+        and str(proposal.get("followup_kind") or "") == "tuning_suggestion"
+    )
+    return updated
+
+
 def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     if coordinator is None:
         return {}
@@ -213,18 +309,38 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         return {}
     payload = engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None  # noqa: SLF001
     if not isinstance(payload, str) or not payload.strip():
-        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+        return {
+            "total": 0,
+            "by_origin": {},
+            "by_author_kind": {},
+            "by_template_id": {},
+            "reaction_ids": [],
+        }
     import json
 
     try:
         reactions = json.loads(payload)
     except Exception:  # noqa: BLE001
-        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+        return {
+            "total": 0,
+            "by_origin": {},
+            "by_author_kind": {},
+            "by_template_id": {},
+            "reaction_ids": [],
+        }
     if not isinstance(reactions, dict):
-        return {"total": 0, "by_origin": {}, "by_author_kind": {}, "reaction_ids": []}
+        return {
+            "total": 0,
+            "by_origin": {},
+            "by_author_kind": {},
+            "by_template_id": {},
+            "reaction_ids": [],
+        }
 
     by_origin: dict[str, int] = {}
     by_author_kind: dict[str, int] = {}
+    by_template_id: dict[str, int] = {}
+    by_identity_key: dict[str, list[str]] = {}
     reaction_ids: list[str] = []
     for reaction_id, raw in reactions.items():
         if not isinstance(raw, dict):
@@ -234,11 +350,24 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         by_origin[origin] = by_origin.get(origin, 0) + 1
         author_kind = str(raw.get("author_kind") or "unspecified")
         by_author_kind[author_kind] = by_author_kind.get(author_kind, 0) + 1
+        template_id = str(raw.get("source_template_id") or "unspecified")
+        by_template_id[template_id] = by_template_id.get(template_id, 0) + 1
+        identity_key = str(raw.get("source_proposal_identity_key") or "").strip()
+        if identity_key:
+            by_identity_key.setdefault(identity_key, []).append(str(reaction_id))
+
+    identity_collisions = {
+        key: sorted(ids)
+        for key, ids in sorted(by_identity_key.items())
+        if len(ids) > 1
+    }
 
     return {
         "total": len(reaction_ids),
         "by_origin": dict(sorted(by_origin.items())),
         "by_author_kind": dict(sorted(by_author_kind.items())),
+        "by_template_id": dict(sorted(by_template_id.items())),
+        "identity_collisions": identity_collisions,
         "reaction_ids": sorted(reaction_ids),
     }
 
@@ -291,14 +420,26 @@ def _top_proposal_examples(proposals: list[dict[str, Any]]) -> list[dict[str, An
     return examples
 
 
-def _template_ids(templates: list[Any]) -> list[str]:
+def _template_ids(
+    templates: list[Any],
+    *,
+    implemented_only: bool | None = None,
+    invert_implemented: bool = False,
+) -> list[str]:
     ids: list[str] = []
     for item in templates:
         if isinstance(item, dict):
+            implemented = bool(item.get("implemented") is True)
+            if implemented_only is True and not implemented:
+                continue
+            if invert_implemented and implemented:
+                continue
             template_id = str(item.get("template_id") or "").strip()
             if template_id:
                 ids.append(template_id)
         else:
+            if implemented_only is True or invert_implemented:
+                continue
             template_id = str(item).strip()
             if template_id:
                 ids.append(template_id)

@@ -309,10 +309,12 @@ hardcoding a single bathroom/fan semantic into the runtime.
 Normative configuration fields:
 - `room_id`
 - `primary_signal_entities`
-- `primary_rise_threshold`
+- `primary_threshold`
+- `primary_threshold_mode`
 - `primary_signal_name`
 - optional `corroboration_signal_entities`
-- optional `corroboration_rise_threshold`
+- optional `corroboration_threshold`
+- optional `corroboration_threshold_mode`
 - optional `corroboration_signal_name`
 - `correlation_window_s`
 - `followup_window_s`
@@ -320,6 +322,15 @@ Normative configuration fields:
 
 Backward-compatible aliases MAY exist for the first v1 patterns, but new work SHOULD target the
 generic field set.
+
+Supported v1 threshold modes:
+- `rise`
+- `drop`
+- `above`
+- `below`
+- `switch_on`
+- `switch_off`
+- `state_change`
 
 Normative runtime behavior:
 - the reaction inspects room-scoped signal history in bounded windows
@@ -330,6 +341,12 @@ Normative runtime behavior:
 Normative design intent:
 - one generic composite assist reaction SHOULD support multiple reviewable room-scoped patterns
 - the reaction contract must stay understandable without reading implementation internals
+
+Actuation plan note:
+- `steps` is the generic actuation-plan variant used by this reaction class
+- lighting-specific reactions may instead use richer `entity_steps`
+- v1 does not require unifying these payloads as long as both remain executable through the shared
+  runtime pipeline
 
 ---
 

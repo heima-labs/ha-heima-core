@@ -108,15 +108,38 @@ class ProposalEngine:
         for candidate in generated:
             now = datetime.now(UTC).isoformat()
             identity_key = self._identity_key(candidate)
-            existing_idx = next(
-                (
-                    idx
-                    for idx, current in enumerate(merged)
-                    if self._identity_key(current) == identity_key
-                ),
+            matching = [
+                (idx, current)
+                for idx, current in enumerate(merged)
+                if self._identity_key(current) == identity_key
+            ]
+            pending_match = next(
+                ((idx, current) for idx, current in matching if current.status == "pending"),
                 None,
             )
-            if existing_idx is None:
+            if pending_match is not None:
+                existing_idx, existing = pending_match
+                merged[existing_idx] = replace(
+                    existing,
+                    confidence=candidate.confidence,
+                    description=candidate.description,
+                    suggested_reaction_config=dict(candidate.suggested_reaction_config),
+                    updated_at=now,
+                    last_observed_at=now,
+                    identity_key=identity_key,
+                    followup_kind=candidate.followup_kind,
+                    target_reaction_id=candidate.target_reaction_id,
+                    target_reaction_class=candidate.target_reaction_class,
+                    target_reaction_origin=candidate.target_reaction_origin,
+                    target_template_id=candidate.target_template_id,
+                )
+                continue
+
+            accepted_match = next(
+                ((idx, current) for idx, current in matching if current.status == "accepted"),
+                None,
+            )
+            if accepted_match is None and not matching:
                 merged.append(
                     replace(
                         candidate,
@@ -126,18 +149,19 @@ class ProposalEngine:
                 )
                 continue
 
-            existing = merged[existing_idx]
-            if existing.status in {"accepted", "rejected"}:
+            if accepted_match is not None:
+                merged.append(
+                    replace(
+                        candidate,
+                        identity_key=identity_key,
+                        last_observed_at=now,
+                        followup_kind="tuning_suggestion",
+                    )
+                )
                 continue
-            merged[existing_idx] = replace(
-                existing,
-                confidence=candidate.confidence,
-                description=candidate.description,
-                suggested_reaction_config=dict(candidate.suggested_reaction_config),
-                updated_at=now,
-                last_observed_at=now,
-                identity_key=identity_key,
-            )
+
+            # Rejected history remains frozen unless explicitly resubmitted by the user.
+            continue
 
         pruned = self._prune_stale_pending(merged)
         self._proposals = pruned
@@ -253,12 +277,17 @@ class ProposalEngine:
                     "description": p.description,
                     "confidence": round(p.confidence, 2),
                     "origin": p.origin,
+                    "followup_kind": p.followup_kind,
                     "status": p.status,
                     "created_at": p.created_at,
                     "updated_at": p.updated_at,
                     "last_observed_at": p.last_observed_at,
                     "identity_key": self._identity_key(p),
                     "fingerprint": self._fingerprint(p),
+                    "target_reaction_id": p.target_reaction_id,
+                    "target_reaction_class": p.target_reaction_class,
+                    "target_reaction_origin": p.target_reaction_origin,
+                    "target_template_id": p.target_template_id,
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p),
@@ -282,6 +311,7 @@ class ProposalEngine:
                 "description": p.description,
                 "confidence": p.confidence,
                 "origin": p.origin,
+                "followup_kind": p.followup_kind,
                 "status": p.status,
                 "analyzer_id": p.analyzer_id,
                 "created_at": p.created_at,
@@ -289,6 +319,10 @@ class ProposalEngine:
                 "last_observed_at": p.last_observed_at,
                 "identity_key": self._identity_key(p),
                 "fingerprint": self._fingerprint(p),
+                "target_reaction_id": p.target_reaction_id,
+                "target_reaction_class": p.target_reaction_class,
+                "target_reaction_origin": p.target_reaction_origin,
+                "target_template_id": p.target_template_id,
                 "is_stale": self._is_stale(p),
                 "stale_reason": self._stale_reason(p),
                 "config_summary": self._proposal_config_summary(p),
@@ -311,8 +345,6 @@ class ProposalEngine:
     def _identity_key(cls, proposal: ReactionProposal) -> str:
         if proposal.identity_key:
             return proposal.identity_key
-        if proposal.fingerprint:
-            return proposal.fingerprint
 
         cfg = _safe_dict(proposal.suggested_reaction_config)
         reaction_type = proposal.reaction_type
@@ -338,6 +370,8 @@ class ProposalEngine:
             "room_darkness_lighting_assist",
         }:
             return f"{reaction_type}|room={cfg.get('room_id')}"
+        if proposal.fingerprint:
+            return proposal.fingerprint
         return cls._fingerprint(proposal)
 
     @staticmethod

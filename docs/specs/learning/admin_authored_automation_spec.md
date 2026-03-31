@@ -40,6 +40,13 @@ proposal/reaction shape:
 - template IDs, display labels, and schema fragments SHOULD come from the plugin declaration, not from a
   standalone automation builder
 
+For plugin families that support multiple bounded automations:
+
+- one plugin family MAY expose multiple admin-authored templates
+- each template MUST have a stable `template_id`
+- the plugin descriptor remains the source of truth for which templates are declared and which are
+  implemented in v1
+
 ## 3. Admin-Authored Flow
 
 The admin-authored flow is a request-driven path that still materializes a proposal inside the shared
@@ -52,6 +59,40 @@ proposal/reaction pipeline:
 
 This path is distinct from learned proposals because it starts from a human request, not from an
 observed pattern, but it is not a separate automation engine.
+
+For room-assist style templates, the admin-authored request path SHOULD be bounded but not
+needlessly narrow:
+
+- a signal-assist template may expose multiple trigger semantics
+- the template model should distinguish at least:
+  - numeric threshold/delta modes
+  - binary transition modes
+- numeric modes in v1 are:
+  - `rise`
+  - `drop`
+  - `above`
+  - `below`
+- binary transition modes that the model should be able to represent are:
+  - `switch_on`
+  - `switch_off`
+  - `toggle`
+  - or an equivalent `state_change` label if the implementation prefers a more generic name
+- this is still considered a bounded template, not a universal automation builder, because:
+  - the plugin family remains fixed
+  - the reaction class remains fixed
+  - the user fills a limited set of structured fields rather than arbitrary logic
+
+Normative clarification:
+
+- the spec-level trigger model may be broader than the currently implemented v1 wizard/runtime
+- if some trigger modes are not yet implemented, they MUST be treated as declared future capability,
+  not implied current behavior
+
+Current v1 implementation status:
+
+- numeric modes are implemented for the generic room-signal assist path
+- binary transition modes `switch_on`, `switch_off`, and `state_change` are also implemented for
+  the generic room-signal assist runtime contract
 
 ## 4. Lifecycle
 
@@ -121,6 +162,29 @@ At runtime, an authored automation should still become a normal reaction configu
 - `last_tuned_at`
 
 This keeps the runtime consistent and avoids forking the execution model.
+
+## 6.1 Actuation Plan
+
+Admin-authored and learned proposals may differ in how they describe actuation, but they should be
+understood as carrying the same higher-level concept: an **actuation plan**.
+
+In v1, two concrete actuation-plan encodings are expected:
+
+- `steps`
+  - generic apply/service-oriented actions
+  - typically used by generic signal-assist style reactions
+- `entity_steps`
+  - entity-scoped lighting replay/apply actions with richer lighting fields
+  - typically used by lighting-specific reactions
+
+Normative clarification:
+
+- v1 does **not** require unifying `steps` and `entity_steps` into one runtime payload
+- v1 implementations MAY keep separate reaction classes and separate config fields where that keeps
+  the runtime simpler and clearer
+- however, specs and diagnostics SHOULD treat both as variants of the same actuation-plan concept
+- future versions MAY converge these payloads, but v1 should prefer clarity and compatibility over
+  premature abstraction
 
 ## 7. Tuning and Follow-Up
 
