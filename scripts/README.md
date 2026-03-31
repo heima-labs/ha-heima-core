@@ -34,8 +34,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
     - `030_learning_proposals_diag.py`
       - `031_learning_summary_diag.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Utile per verificare quanti eventi sono stati registrati, lo stato del resolver `house_state`, gli ultimi eventi emessi, e se il learning system sta accumulando dati.
-  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale.
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Per `learning` e `reactions` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati e collisioni di identity tra reaction configurate.
+  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati e warning su collisioni di identity tra reaction configurate.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.

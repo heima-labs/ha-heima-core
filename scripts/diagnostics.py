@@ -7,9 +7,77 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.ha_client import HAClient
+
+
+def _print_learning_summary(data: dict[str, Any]) -> None:
+    print(f"plugin_count: {data.get('plugin_count', 0)}")
+    print(f"family_count: {data.get('family_count', 0)}")
+    print(f"proposal_total: {data.get('proposal_total', 0)}")
+    print(f"pending_total: {data.get('pending_total', 0)}")
+    print(f"pending_stale_total: {data.get('pending_stale_total', 0)}")
+    print(f"config_source: {data.get('config_source', 'n/a')}")
+
+    enabled = list(data.get("enabled_plugin_families") or [])
+    disabled = list(data.get("disabled_plugin_families") or [])
+    if enabled:
+        print("enabled_families: " + ", ".join(enabled))
+    if disabled:
+        print("disabled_families: " + ", ".join(disabled))
+
+    families = dict(data.get("families") or {})
+    if families:
+        print("\nFamilies:")
+        for family in sorted(families):
+            item = dict(families[family] or {})
+            print(
+                f"- {family}: total={item.get('total', 0)} "
+                f"pending={item.get('pending', 0)} "
+                f"accepted={item.get('accepted', 0)} "
+                f"rejected={item.get('rejected', 0)} "
+                f"stale_pending={item.get('stale_pending', 0)}"
+            )
+            implemented_templates = list(item.get("implemented_admin_authored_templates") or [])
+            unimplemented_templates = list(item.get("unimplemented_admin_authored_templates") or [])
+            if implemented_templates:
+                print("  implemented_templates: " + ", ".join(implemented_templates))
+            if unimplemented_templates:
+                print("  declared_only_templates: " + ", ".join(unimplemented_templates))
+
+
+def _print_reaction_summary(data: dict[str, Any]) -> None:
+    print(f"total: {data.get('total', 0)}")
+
+    by_origin = dict(data.get("by_origin") or {})
+    if by_origin:
+        print(
+            "by_origin: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(by_origin.items()))
+        )
+
+    by_author_kind = dict(data.get("by_author_kind") or {})
+    if by_author_kind:
+        print(
+            "by_author_kind: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(by_author_kind.items()))
+        )
+
+    by_template_id = dict(data.get("by_template_id") or {})
+    if by_template_id:
+        print(
+            "by_template_id: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(by_template_id.items()))
+        )
+
+    identity_collisions = dict(data.get("identity_collisions") or {})
+    if identity_collisions:
+        print("identity_collisions:")
+        for identity_key, reaction_ids in sorted(identity_collisions.items()):
+            ids = ", ".join(str(item) for item in reaction_ids)
+            print(f"  {identity_key}: {ids}")
 
 
 def main() -> int:
@@ -48,6 +116,12 @@ def main() -> int:
         if data is None:
             continue
         print(f"\n=== {name.upper()} ===")
+        if name == "learning" and isinstance(data, dict):
+            _print_learning_summary(data)
+            print()
+        if name == "reactions" and isinstance(data, dict):
+            _print_reaction_summary(data)
+            print()
         print(json.dumps(data, indent=2))
 
     return 0
