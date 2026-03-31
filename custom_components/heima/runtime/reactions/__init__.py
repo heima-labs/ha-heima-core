@@ -15,6 +15,7 @@ from .lighting_assist import (
     build_room_lighting_assist_reaction,
     present_admin_authored_room_lighting_assist_details,
     present_learned_room_lighting_assist_details,
+    present_room_lighting_assist_proposal_label,
     present_room_lighting_assist_label,
     present_tuning_room_lighting_assist_details,
 )
@@ -23,6 +24,7 @@ from .lighting_schedule import (
     build_lighting_schedule_reaction,
     present_admin_authored_lighting_schedule_details,
     present_learned_lighting_schedule_details,
+    present_lighting_schedule_proposal_label,
     present_lighting_schedule_label,
     present_tuning_lighting_schedule_details,
 )
@@ -38,6 +40,7 @@ from .signal_assist import (
     normalize_room_signal_assist_config,
     present_admin_authored_room_signal_assist_details,
     present_learned_room_signal_assist_details,
+    present_room_signal_assist_proposal_label,
     present_room_signal_assist_label,
     present_tuning_room_signal_assist_details,
 )
@@ -47,6 +50,7 @@ ReactionLabelPresenter = Callable[[str, dict[str, Any], dict[str, str]], str | N
 AdminAuthoredReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], list[str]]
 LearnedReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], list[str]]
 TuningReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], dict[str, Any], str], list[str]]
+ProposalHumanLabelPresenter = Callable[[Any, Any, dict[str, Any], str], str | None]
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,7 @@ class ReactionPresenterHooks:
     """Optional presentation hooks for one reaction plugin."""
 
     reaction_label_from_config: ReactionLabelPresenter | None = None
+    proposal_human_label: ProposalHumanLabelPresenter | None = None
     admin_authored_review_details: AdminAuthoredReviewDetailsPresenter | None = None
     learned_review_details: LearnedReviewDetailsPresenter | None = None
     tuning_review_details: TuningReviewDetailsPresenter | None = None
@@ -141,6 +146,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_lighting_schedule_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_lighting_schedule_label,
+                proposal_human_label=present_lighting_schedule_proposal_label,
                 admin_authored_review_details=present_admin_authored_lighting_schedule_details,
                 learned_review_details=present_learned_lighting_schedule_details,
                 tuning_review_details=present_tuning_lighting_schedule_details,
@@ -178,6 +184,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_room_signal_assist_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_signal_assist_label,
+                proposal_human_label=present_room_signal_assist_proposal_label,
                 admin_authored_review_details=present_admin_authored_room_signal_assist_details,
                 learned_review_details=present_learned_room_signal_assist_details,
                 tuning_review_details=present_tuning_room_signal_assist_details,
@@ -193,6 +200,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_room_lighting_assist_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_lighting_assist_label,
+                proposal_human_label=present_room_lighting_assist_proposal_label,
                 admin_authored_review_details=present_admin_authored_room_lighting_assist_details,
                 learned_review_details=present_learned_room_lighting_assist_details,
                 tuning_review_details=present_tuning_room_lighting_assist_details,
@@ -225,6 +233,7 @@ __all__ = [
     "AdminAuthoredReviewDetailsPresenter",
     "LearnedReviewDetailsPresenter",
     "TuningReviewDetailsPresenter",
+    "ProposalHumanLabelPresenter",
     "ReactionPresenterHooks",
     "RegisteredReactionPlugin",
     "create_builtin_reaction_plugin_registry",

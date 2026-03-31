@@ -343,3 +343,17 @@ def present_tuning_room_lighting_assist_details(
             )
 
     return details
+
+
+def present_room_lighting_assist_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    room_id = str(cfg.get("room_id") or "").strip()
+    if not room_id:
+        return None
+    if language.startswith("it"):
+        return f"Luce {room_id}"
+    return f"Lighting {room_id}"

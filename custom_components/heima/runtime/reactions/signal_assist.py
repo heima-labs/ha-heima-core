@@ -432,3 +432,15 @@ def present_tuning_room_signal_assist_details(
             )
 
     return details
+
+
+def present_room_signal_assist_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    room_id = str(cfg.get("room_id") or "").strip()
+    if not room_id:
+        return None
+    return f"Assist {room_id}"

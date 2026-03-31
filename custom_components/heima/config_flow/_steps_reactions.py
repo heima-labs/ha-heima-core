@@ -1386,6 +1386,13 @@ class _ReactionsStepsMixin:
     ) -> str:
         """Build the most readable label available for a proposal."""
         cfg = _safe_mapping(cfg if cfg is not None else proposal.suggested_reaction_config)
+        language = self._flow_language()
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        if presenter is not None and presenter.proposal_human_label is not None:
+            presented = presenter.proposal_human_label(self, proposal, cfg, language)
+            if presented:
+                return presented
+
         derived = self._reaction_label_from_config(
             proposal.proposal_id,
             cfg,
@@ -1394,21 +1401,14 @@ class _ReactionsStepsMixin:
         if derived != proposal.proposal_id:
             return derived
 
-        language = self._flow_language()
         room_id = str(cfg.get("room_id") or "").strip()
         house_state = str(cfg.get("house_state") or "").strip()
         weekday = cfg.get("weekday")
 
-        if proposal.reaction_type == "lighting_scene_schedule" and room_id:
-            return f"Luci {room_id}" if language.startswith("it") else f"Lighting {room_id}"
-        if proposal.reaction_type == "room_signal_assist" and room_id:
-            return f"Assist {room_id}"
         if proposal.reaction_type == "room_cooling_assist" and room_id:
             return f"Raffrescamento {room_id}" if language.startswith("it") else f"Cooling {room_id}"
         if proposal.reaction_type == "room_air_quality_assist" and room_id:
             return f"Aria {room_id}" if language.startswith("it") else f"Air quality {room_id}"
-        if proposal.reaction_type == "room_darkness_lighting_assist" and room_id:
-            return f"Luce {room_id}" if language.startswith("it") else f"Lighting {room_id}"
         if proposal.reaction_type == "heating_preference" and house_state:
             return (
                 f"Riscaldamento {house_state}" if language.startswith("it") else f"Heating {house_state}"
