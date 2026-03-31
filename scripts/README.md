@@ -32,7 +32,14 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `060_lighting_schedule.py`
     - `diagnostic`
     - `030_learning_proposals_diag.py`
-      - `031_learning_summary_diag.py`
+    - `031_learning_summary_diag.py`
+    - targeted manual admin-authored checks
+      - `032_admin_authored_lighting_flow.py`
+      - `033_admin_authored_reaction_origin_diag.py`
+      - `034_admin_authored_room_signal_assist_flow.py`
+      - `035_admin_authored_room_darkness_lighting_flow.py`
+      - `036_lighting_tuning_followup_flow.py`
+      - `037_admin_authored_room_signal_binary_modes.py`
 - Diagnostics:
   - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Per `learning` e `reactions` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati e collisioni di identity tra reaction configurate.
   - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati e warning su collisioni di identity tra reaction configurate.
@@ -137,5 +144,17 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - current examples:
     - `020_learning_pipeline.py`: uses `heima.set_override` for presence transitions
     - `060_lighting_schedule.py`: relies on `seed_lighting_events` for proposal generation
-- `diagnostic`
+  - `diagnostic`
   - read-only assertions on sensors / diagnostics / counters
+
+## Targeted manual live checks
+
+These are useful focused regressions for proposal/reaction UX and admin-authored flows, but are not
+currently part of the canonical `check_all_live.sh --tier all` lane:
+
+- `032_admin_authored_lighting_flow.py`
+- `033_admin_authored_reaction_origin_diag.py`
+- `034_admin_authored_room_signal_assist_flow.py`
+- `035_admin_authored_room_darkness_lighting_flow.py`
+- `036_lighting_tuning_followup_flow.py`
+- `037_admin_authored_room_signal_binary_modes.py`
