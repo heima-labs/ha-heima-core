@@ -423,6 +423,10 @@ def main() -> int:
                 "review details do not show tuning diff",
             )
             _assert(
+                "Delta luci:" in details or "Delta lighting:" in details,
+                "review details do not show structured lighting delta header",
+            )
+            _assert(
                 "brightness 190 -> 160" in details,
                 "review details do not show brightness diff",
             )
