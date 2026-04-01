@@ -1353,6 +1353,18 @@ restare leggermente meno confident di pattern osservati più spesso e su più se
 - IQR resta il driver principale
 - `observations_count` e `weeks_observed` agiscono come moltiplicatori moderati, non come gate nuovi
 
+**Noise gate operativo v1:** oltre alla confidence, il lighting analyzer può scartare pattern con
+evidenza appena minima ma già troppo dispersi nel tempo. In pratica:
+- un pattern lighting con solo `5` osservazioni su `2` settimane e `IQR` ancora ampia non dovrebbe
+  diventare proposal solo perché supera di poco il `min_confidence` globale
+- in v1 è accettabile introdurre un gate conservativo del tipo:
+  - evidenza minima (`observations_count <= 5` e `weeks_observed <= 2`)
+  - dispersione temporale già larga (`IQR > 30`)
+  - quindi pattern scartato come rumoroso
+
+Questo NON introduce sessioni multi-evento o un nuovo modello: è solo un filtro pragmatico per
+ridurre proposal lighting deboli ma formalmente valide.
+
 #### Finestra runtime adattiva
 
 `window_half_min` per lighting non dovrebbe essere sempre fisso. In v1 può essere derivato dalla

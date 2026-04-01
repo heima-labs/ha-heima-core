@@ -15,6 +15,7 @@ _MIN_OCCURRENCES = 5
 _MIN_WEEKS = 2
 _SCENE_GROUP_WINDOW_MIN = 15   # max gap between entity scheduled_mins to merge into one scene
 _MIN_ATTR_SAMPLES = _MIN_OCCURRENCES // 2  # min non-None values to trust an aggregated attribute
+_MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE = 30
 
 
 @dataclass
@@ -91,9 +92,11 @@ class LightingPatternAnalyzer:
             n = len(samples)
             median = samples[n // 2]
             iqr = samples[(3 * n) // 4] - samples[n // 4]
+            weeks_observed = _weeks_observed(group)
+            if _is_minimal_evidence_group(len(group), weeks_observed, iqr):
+                continue
             base_confidence = max(0.3, 1.0 - iqr / 120.0)
             evidence_factor = min(1.0, len(group) / 8.0)
-            weeks_observed = _weeks_observed(group)
             weeks_factor = min(1.0, weeks_observed / 3.0)
             confidence = round(
                 max(
@@ -210,6 +213,14 @@ class LightingPatternAnalyzer:
 
 def _spans_min_weeks(events: list[HeimaEvent]) -> bool:
     return _weeks_observed(events) >= _MIN_WEEKS
+
+
+def _is_minimal_evidence_group(observations_count: int, weeks_observed: int, iqr_min: int) -> bool:
+    return (
+        observations_count <= _MIN_OCCURRENCES
+        and weeks_observed <= _MIN_WEEKS
+        and iqr_min > _MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE
+    )
 
 
 def _weeks_observed(events: list[HeimaEvent]) -> int:

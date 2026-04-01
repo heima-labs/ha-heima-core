@@ -280,13 +280,20 @@ async def test_lighting_analyzer_confidence_tight_schedule():
 
 
 async def test_lighting_analyzer_confidence_floor():
-    """Very spread schedule → confidence floored at 0.3."""
+    """Very spread schedule can still floor confidence once evidence is richer."""
     analyzer = LightingPatternAnalyzer()
-    minutes = [600, 720, 840, 960, 1080]
-    evts = []
-    for i, m in enumerate(minutes):
-        ts = _WEEK1_TS if i < 3 else _WEEK2_TS
-        evts.append(_lighting(minute=m, ts=ts))
+    minutes = [600, 720, 840, 960, 1080, 780, 900, 1020]
+    timestamps = [
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK2_TS,
+        _WEEK2_TS,
+        "2026-03-16T08:00:00+00:00",
+        "2026-03-16T08:05:00+00:00",
+        "2026-03-16T08:10:00+00:00",
+    ]
+    evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
     assert proposals[0].confidence == 0.3
 
@@ -297,11 +304,18 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
     tight = _multi_week_events(3, 2, minute=1200)
     tight_p = await analyzer.analyze(_StoreStub(tight))  # type: ignore[arg-type]
 
-    spread_minutes = [1080, 1140, 1200, 1260, 1320]
-    spread = []
-    for i, m in enumerate(spread_minutes):
-        ts = _WEEK1_TS if i < 3 else _WEEK2_TS
-        spread.append(_lighting(minute=m, ts=ts))
+    spread_minutes = [1080, 1140, 1200, 1260, 1320, 1110, 1230, 1290]
+    spread_timestamps = [
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK2_TS,
+        _WEEK2_TS,
+        "2026-03-16T08:00:00+00:00",
+        "2026-03-16T08:05:00+00:00",
+        "2026-03-16T08:10:00+00:00",
+    ]
+    spread = [_lighting(minute=minute, ts=ts) for minute, ts in zip(spread_minutes, spread_timestamps, strict=True)]
     spread_p = await analyzer.analyze(_StoreStub(spread))  # type: ignore[arg-type]
 
     assert tight_p and spread_p
@@ -324,6 +338,41 @@ async def test_lighting_analyzer_confidence_rewards_more_evidence():
     assert richer_p[0].confidence > minimal_p[0].confidence
 
 
+async def test_lighting_analyzer_skips_minimal_evidence_with_wide_iqr():
+    """Bare-minimum evidence plus wide spread should be treated as noise."""
+    analyzer = LightingPatternAnalyzer()
+    minutes = [1140, 1170, 1200, 1235, 1275]
+    events = []
+    for i, minute in enumerate(minutes):
+        ts = _WEEK1_TS if i < 3 else _WEEK2_TS
+        events.append(_lighting(minute=minute, ts=ts))
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+
+    assert proposals == []
+
+
+async def test_lighting_analyzer_keeps_wide_iqr_when_evidence_is_richer():
+    """The same spread can still be valid once it has stronger evidence."""
+    analyzer = LightingPatternAnalyzer()
+    minutes = [1140, 1170, 1200, 1235, 1275, 1190, 1210, 1220]
+    timestamps = [
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK2_TS,
+        _WEEK2_TS,
+        "2026-03-16T08:00:00+00:00",
+        "2026-03-16T08:05:00+00:00",
+        "2026-03-16T08:10:00+00:00",
+    ]
+    events = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+
+    assert len(proposals) == 1
+
+
 async def test_lighting_analyzer_window_half_min_tight_cluster():
     """Very tight schedule -> narrow runtime window."""
     analyzer = LightingPatternAnalyzer()
@@ -335,11 +384,18 @@ async def test_lighting_analyzer_window_half_min_tight_cluster():
 async def test_lighting_analyzer_window_half_min_spread_cluster():
     """Spread schedule -> wider runtime window."""
     analyzer = LightingPatternAnalyzer()
-    minutes = [1160, 1180, 1200, 1220, 1240]
-    evts = []
-    for i, minute in enumerate(minutes):
-        ts = _WEEK1_TS if i < 3 else _WEEK2_TS
-        evts.append(_lighting(minute=minute, ts=ts))
+    minutes = [1160, 1180, 1200, 1220, 1240, 1170, 1210, 1230]
+    timestamps = [
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK1_TS,
+        _WEEK2_TS,
+        _WEEK2_TS,
+        "2026-03-16T08:00:00+00:00",
+        "2026-03-16T08:05:00+00:00",
+        "2026-03-16T08:10:00+00:00",
+    ]
+    evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
     assert proposals[0].suggested_reaction_config["window_half_min"] == 15
 
