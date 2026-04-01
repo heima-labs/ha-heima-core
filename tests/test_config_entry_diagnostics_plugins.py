@@ -229,6 +229,7 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         "unspecified": 1,
     }
     assert summary["identity_collisions"] == {}
+    assert summary["lighting_slot_collisions"] == {}
     assert summary["reaction_ids"] == ["r1", "r2"]
 
 
@@ -240,9 +241,43 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
             get_sensor=lambda key: (
                 '{"r1":{"origin":"admin_authored","author_kind":"admin",'
                 '"source_template_id":"lighting.scene_schedule.basic",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200"},'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"},'
                 '"r2":{"origin":"learned","author_kind":"heima",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200"}}'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=b"}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+
+    assert summary["identity_collisions"] == {}
+    assert summary["lighting_slot_collisions"] == {
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+    }
+
+
+async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"r1":{"origin":"admin_authored","author_kind":"admin",'
+                '"source_template_id":"lighting.scene_schedule.basic",'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"},'
+                '"r2":{"origin":"learned","author_kind":"heima",'
+                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -261,6 +296,9 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
 
     assert summary["identity_collisions"] == {
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a": ["r1", "r2"]
+    }
+    assert summary["lighting_slot_collisions"] == {
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
 
@@ -281,7 +319,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
                     "description": "Living tuned lights",
                     "origin": "learned",
                     "followup_kind": "discovery",
-                    "identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+                    "identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=tuned",
                     "is_stale": False,
                     "updated_at": "2026-03-30T12:00:00+00:00",
                 }
@@ -302,7 +340,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
                         "origin": "admin_authored",
                         "source_template_id": "lighting.scene_schedule.basic",
                         "source_proposal_identity_key": (
-                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=base"
                         ),
                     }
                 }

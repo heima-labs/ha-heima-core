@@ -84,6 +84,11 @@ def main() -> int:
             print("identity collisions:")
             for identity_key, reaction_ids in sorted(identity_collisions.items()):
                 print(f"  {identity_key}: {', '.join(str(item) for item in reaction_ids)}")
+        lighting_slot_collisions = dict(reaction_summary.get("lighting_slot_collisions") or {})
+        if lighting_slot_collisions:
+            print("lighting slot collisions:")
+            for slot_key, reaction_ids in sorted(lighting_slot_collisions.items()):
+                print(f"  {slot_key}: {', '.join(str(item) for item in reaction_ids)}")
 
     families = dict(summary.get("families") or {})
     if families:
@@ -134,10 +139,15 @@ def main() -> int:
         _print_header("Warnings")
         print("unclaimed proposal types: " + ", ".join(unclaimed))
     identity_collisions = dict(reaction_summary.get("identity_collisions") or {})
+    lighting_slot_collisions = dict(reaction_summary.get("lighting_slot_collisions") or {})
     if identity_collisions:
         if not unclaimed:
             _print_header("Warnings")
         print("configured reaction identity collisions detected")
+    if lighting_slot_collisions:
+        if not unclaimed and not identity_collisions:
+            _print_header("Warnings")
+        print("configured reaction lighting slot collisions detected")
 
     print("\nPASS: learning audit generated")
     return 0

@@ -934,10 +934,6 @@ class _ReactionsStepsMixin:
         color_temp_kelvin: int | None,
     ) -> ReactionProposal:
         template_id = "lighting.scene_schedule.basic"
-        fingerprint = (
-            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
-            f"|bucket={(scheduled_min // 30) * 30}"
-        )
         entity_steps = [
             {
                 "entity_id": entity_id,
@@ -948,6 +944,12 @@ class _ReactionsStepsMixin:
             }
             for entity_id in entity_ids
         ]
+        identity_key = self._lighting_identity_key(
+            room_id=room_id,
+            weekday=weekday,
+            scheduled_min=scheduled_min,
+            entity_steps=entity_steps,
+        )
         hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
         day = self._weekday_label(weekday, "en")
         description = f"{room_id}: {day} ~{hhmm} — {len(entity_steps)} entities"
@@ -957,8 +959,8 @@ class _ReactionsStepsMixin:
             description=description,
             confidence=1.0,
             origin="admin_authored",
-            identity_key=fingerprint,
-            fingerprint=fingerprint,
+            identity_key=identity_key,
+            fingerprint=identity_key,
             suggested_reaction_config={
                 "reaction_class": "LightingScheduleReaction",
                 "room_id": room_id,
@@ -1541,6 +1543,21 @@ class _ReactionsStepsMixin:
                 pairs.add((entity_id, action))
         return pairs
 
+    @staticmethod
+    def _lighting_identity_key(
+        *,
+        room_id: str,
+        weekday: int,
+        scheduled_min: int,
+        entity_steps: list[dict[str, Any]],
+    ) -> str:
+        bucket = (scheduled_min // 30) * 30
+        scene_signature = _lighting_scene_signature(entity_steps)
+        return (
+            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
+            f"|bucket={bucket}|scene={scene_signature}"
+        )
+
     def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
         configured = dict(self._reactions_options().get("configured", {}))
         raw = configured.get(reaction_id)
@@ -1745,3 +1762,47 @@ def _parse_hhmm_to_min(value: str) -> int | None:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return None
     return hour * 60 + minute
+
+
+def _lighting_scene_signature(entity_steps: list[dict[str, Any]]) -> str:
+    normalized_steps: list[str] = []
+    for raw_step in entity_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        entity_id = str(raw_step.get("entity_id") or "").strip()
+        action = str(raw_step.get("action") or "").strip() or "unknown"
+        if not entity_id:
+            continue
+        brightness = _coarse_numeric_bucket(raw_step.get("brightness"), step=32)
+        color_temp = _coarse_numeric_bucket(raw_step.get("color_temp_kelvin"), step=250)
+        rgb = _normalize_rgb(raw_step.get("rgb_color"))
+        normalized_steps.append(
+            "|".join(
+                [
+                    entity_id,
+                    action,
+                    f"b={brightness if brightness is not None else '-'}",
+                    f"k={color_temp if color_temp is not None else '-'}",
+                    f"rgb={rgb if rgb is not None else '-'}",
+                ]
+            )
+        )
+    if not normalized_steps:
+        return "none"
+    normalized_steps.sort()
+    return "||".join(normalized_steps)
+
+
+def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return int(round(float(value) / step) * step)
+
+
+def _normalize_rgb(value: Any) -> str | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return None
+    try:
+        return ",".join(str(int(channel)) for channel in value)
+    except (TypeError, ValueError):
+        return None

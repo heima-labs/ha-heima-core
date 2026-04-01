@@ -260,11 +260,38 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._write_event_store_sensor()
         await self.async_refresh()
 
+    async def async_upsert_configured_reactions(
+        self,
+        configured_updates: dict[str, dict],
+        *,
+        label_updates: dict[str, str] | None = None,
+    ) -> None:
+        """Merge configured reactions into entry options for live-test harnesses."""
+        options = dict(self.entry.options)
+        reactions = dict(options.get("reactions", {}))
+        configured = dict(reactions.get("configured", {}))
+        labels = dict(reactions.get("labels", {}))
+
+        for reaction_id, cfg in configured_updates.items():
+            if not isinstance(cfg, dict):
+                continue
+            configured[str(reaction_id)] = dict(cfg)
+        for reaction_id, label in (label_updates or {}).items():
+            text = str(label).strip()
+            if text:
+                labels[str(reaction_id)] = text
+
+        reactions["configured"] = configured
+        reactions["labels"] = labels
+        options["reactions"] = reactions
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
     async def async_seed_lighting_events(
         self,
         *,
         entity_id: str,
         room_id: str,
+        action: str = "on",
         weekday: int,
         minute: int,
         brightness: int | None = None,
@@ -310,9 +337,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 data={
                     "entity_id": entity_id,
                     "room_id": room_id,
-                    "action": "on",
-                    "brightness": brightness,
-                    "color_temp_kelvin": color_temp_kelvin,
+                    "action": action,
+                    "brightness": brightness if action == "on" else None,
+                    "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
                     "rgb_color": None,
                 },
             )

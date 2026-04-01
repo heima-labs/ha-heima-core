@@ -79,6 +79,13 @@ def _print_reaction_summary(data: dict[str, Any]) -> None:
             ids = ", ".join(str(item) for item in reaction_ids)
             print(f"  {identity_key}: {ids}")
 
+    lighting_slot_collisions = dict(data.get("lighting_slot_collisions") or {})
+    if lighting_slot_collisions:
+        print("lighting_slot_collisions:")
+        for slot_key, reaction_ids in sorted(lighting_slot_collisions.items()):
+            ids = ", ".join(str(item) for item in reaction_ids)
+            print(f"  {slot_key}: {ids}")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")

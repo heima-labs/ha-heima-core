@@ -77,6 +77,11 @@ class _FakeCoordinator:
     async def async_request_evaluation(self, reason: str):
         return None
 
+    async def async_upsert_configured_reactions(self, configured_updates, *, label_updates=None):
+        self.last_configured_updates = configured_updates
+        self.last_label_updates = label_updates
+        return None
+
     async def async_set_house_state_override(self, *, mode: str, enabled: bool):
         action, previous, current = self.engine.set_house_state_override(
             mode=mode,
@@ -247,3 +252,51 @@ async def test_heima_command_learning_run_calls_coordinator(monkeypatch):
     await handler(SimpleNamespace(data={"command": "learning_run", "target": {}, "params": {}}))
 
     coordinator.async_run_learning_now.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_heima_command_upsert_configured_reactions_calls_coordinator(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    entry = SimpleNamespace(options={})
+    engine = HeimaEngine(hass=hass, entry=entry)
+    engine._build_default_state()
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "upsert_configured_reactions",
+                "target": {},
+                "params": {
+                    "configured": {
+                        "r-collision": {
+                            "reaction_class": "LightingScheduleReaction",
+                            "room_id": "living",
+                        }
+                    },
+                    "labels": {"r-collision": "Collision reaction"},
+                },
+            }
+        )
+    )
+
+    assert coordinator.last_configured_updates == {
+        "r-collision": {
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+        }
+    }
+    assert coordinator.last_label_updates == {"r-collision": "Collision reaction"}

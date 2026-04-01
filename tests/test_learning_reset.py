@@ -97,6 +97,34 @@ async def test_coordinator_learning_run_refreshes_runtime_state():
 
 
 @pytest.mark.asyncio
+async def test_coordinator_upsert_configured_reactions_updates_entry_options():
+    config_entries = MagicMock()
+    hass = SimpleNamespace(config_entries=config_entries)
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.hass = hass
+    coordinator.entry = SimpleNamespace(
+        options={
+            "reactions": {
+                "configured": {"r1": {"reaction_class": "LightingScheduleReaction"}},
+                "labels": {"r1": "Existing"},
+            }
+        }
+    )
+
+    await coordinator.async_upsert_configured_reactions(
+        {"r2": {"reaction_class": "LightingScheduleReaction", "room_id": "living"}},
+        label_updates={"r2": "New reaction"},
+    )
+
+    config_entries.async_update_entry.assert_called_once()
+    _, kwargs = config_entries.async_update_entry.call_args
+    updated = kwargs["options"]["reactions"]
+    assert updated["configured"]["r1"]["reaction_class"] == "LightingScheduleReaction"
+    assert updated["configured"]["r2"]["room_id"] == "living"
+    assert updated["labels"]["r2"] == "New reaction"
+
+
+@pytest.mark.asyncio
 async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator.entry = SimpleNamespace(entry_id="entry-1", options={"learning": {}, "rooms": []})

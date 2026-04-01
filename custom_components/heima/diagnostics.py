@@ -254,14 +254,18 @@ def _enrich_proposals_with_followups(
         return proposal_diagnostics
 
     configured_by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+    configured_by_lighting_slot: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for reaction_id, cfg in configured.items():
         if not isinstance(cfg, dict):
             continue
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
         if identity_key:
             configured_by_identity.setdefault(identity_key, (str(reaction_id), dict(cfg)))
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                configured_by_lighting_slot.setdefault(slot_key, []).append((str(reaction_id), dict(cfg)))
 
-    if not configured_by_identity:
+    if not configured_by_identity and not configured_by_lighting_slot:
         return proposal_diagnostics
 
     enriched: list[dict[str, Any]] = []
@@ -275,6 +279,12 @@ def _enrich_proposals_with_followups(
             enriched.append(item)
             continue
         target = configured_by_identity.get(identity_key)
+        if target is None:
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                slot_targets = configured_by_lighting_slot.get(slot_key) or []
+                if len(slot_targets) == 1:
+                    target = slot_targets[0]
         if target is None:
             enriched.append(item)
             continue
@@ -343,6 +353,7 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
     by_author_kind: dict[str, int] = {}
     by_template_id: dict[str, int] = {}
     by_identity_key: dict[str, list[str]] = {}
+    by_lighting_slot: dict[str, list[str]] = {}
     reaction_ids: list[str] = []
     for reaction_id, raw in reactions.items():
         if not isinstance(raw, dict):
@@ -357,10 +368,18 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         identity_key = str(raw.get("source_proposal_identity_key") or "").strip()
         if identity_key:
             by_identity_key.setdefault(identity_key, []).append(str(reaction_id))
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                by_lighting_slot.setdefault(slot_key, []).append(str(reaction_id))
 
     identity_collisions = {
         key: sorted(ids)
         for key, ids in sorted(by_identity_key.items())
+        if len(ids) > 1
+    }
+    lighting_slot_collisions = {
+        key: sorted(ids)
+        for key, ids in sorted(by_lighting_slot.items())
         if len(ids) > 1
     }
 
@@ -370,6 +389,7 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         "by_author_kind": dict(sorted(by_author_kind.items())),
         "by_template_id": dict(sorted(by_template_id.items())),
         "identity_collisions": identity_collisions,
+        "lighting_slot_collisions": lighting_slot_collisions,
         "reaction_ids": sorted(reaction_ids),
     }
 
@@ -446,3 +466,10 @@ def _template_ids(
             if template_id:
                 ids.append(template_id)
     return ids
+
+
+def _lighting_slot_key_from_identity(identity_key: str) -> str:
+    value = str(identity_key or "").strip()
+    if not value.startswith("lighting_scene_schedule|"):
+        return ""
+    return value.split("|scene=", 1)[0]

@@ -772,12 +772,63 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     assert created.origin == "admin_authored"
     assert created.reaction_type == "lighting_scene_schedule"
     assert created.suggested_reaction_config["admin_authored_template_id"] == "lighting.scene_schedule.basic"
+    assert created.identity_key.startswith(
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
+    )
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
     assert "Bozza admin: Luci living" in result["description_placeholders"]["proposal_label"]
     assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
     assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
     assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_slot():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "area_id": "living"},
+            ],
+            "learning": {"enabled_plugin_families": ["lighting"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"lighting"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_lighting_schedule(
+        {
+            "room_id": "living",
+            "weekday": "0",
+            "scheduled_time": "20:10",
+            "light_entities": ["light.living_spot"],
+            "action": "on",
+            "brightness": 160,
+            "color_temp_kelvin": 2600,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    assert result["step_id"] == "proposals"
 
 
 @pytest.mark.asyncio
