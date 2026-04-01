@@ -546,6 +546,7 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
                         "source_template_id": "lighting.scene_schedule.basic",
                         "source_proposal_identity_key": (
                             "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
                         ),
                     }
                 }
@@ -558,7 +559,10 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
         reaction_type="lighting_scene_schedule",
         description="Living lights shift slightly later",
         confidence=0.93,
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        identity_key=(
+            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+            "|scene=light.living_main|on|b=192|k=2500|rgb=-||light.living_spot|on|b=-|k=-|rgb=-"
+        ),
         last_observed_at="2026-03-30T10:27:51.561727+00:00",
         suggested_reaction_config={
             "reaction_class": "LightingScheduleReaction",
@@ -621,6 +625,7 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
                         "source_proposal_id": "proposal-admin",
                         "source_proposal_identity_key": (
                             "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
                         ),
                         "created_at": "2026-03-30T10:00:00+00:00",
                         "last_tuned_at": None,
@@ -636,7 +641,10 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
         reaction_type="lighting_scene_schedule",
         description="Living lights shift slightly later",
         confidence=0.93,
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        identity_key=(
+            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+            "|scene=light.living_main|on|b=192|k=-|rgb=-"
+        ),
         updated_at="2026-03-30T12:34:00+00:00",
         suggested_reaction_config={
             "reaction_class": "LightingScheduleReaction",

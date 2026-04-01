@@ -107,7 +107,7 @@ def _format_hhmm(minute: int) -> str:
     return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
-def _identity_key(room_id: str, weekday: int, minute: int) -> str:
+def _slot_key(room_id: str, weekday: int, minute: int) -> str:
     bucket = (minute // 30) * 30
     return f"lighting_scene_schedule|room={room_id}|weekday={weekday}|bucket={bucket}"
 
@@ -156,7 +156,9 @@ def _used_lighting_buckets(client: HAFlowClient, entry_id: str, room_id: str) ->
 
 def _find_unused_lighting_slot(client: HAFlowClient, entry_id: str, room_id: str) -> tuple[str, int]:
     used_buckets = _used_lighting_buckets(client, entry_id, room_id)
-    candidates = ["23:00", "22:30", "22:00", "21:30", "21:00", "20:30", "20:00", "19:30"]
+    preferred = ["23:00", "22:30", "22:00", "21:30", "21:00", "20:30", "20:00", "19:30"]
+    full_day = [f"{hour:02d}:{minute:02d}" for hour in range(23, -1, -1) for minute in (30, 0)]
+    candidates = preferred + [value for value in full_day if value not in preferred]
     for hhmm in candidates:
         minute = _parse_hhmm(hhmm)
         bucket = (minute // 30) * 30
@@ -213,7 +215,7 @@ def _wait_for_tuning_proposal(
     client: HAClient,
     entry_id: str,
     *,
-    identity_key: str,
+    slot_key: str,
     target_reaction_id: str | None,
     timeout_s: int,
     poll_s: float,
@@ -233,7 +235,7 @@ def _wait_for_tuning_proposal(
                     continue
                 if str(proposal.get("status") or "") != "pending":
                     continue
-                if str(proposal.get("identity_key") or "") != identity_key:
+                if not str(proposal.get("identity_key") or "").startswith(slot_key):
                     continue
                 if str(proposal.get("followup_kind") or "") != "tuning_suggestion":
                     continue
@@ -327,7 +329,7 @@ def main() -> int:
         room_id = "living" if "living" in room_ids else room_ids[0]
         authored_time, authored_minute = _find_unused_lighting_slot(client, entry_id, room_id)
         weekday = 0
-        identity_key = _identity_key(room_id, weekday, authored_minute)
+        slot_key = _slot_key(room_id, weekday, authored_minute)
         print(f"Using authored slot: room={room_id} weekday={weekday} time={authored_time}")
         summary_before = _diagnostics_reactions_summary(client, entry_id)
         total_before = int(summary_before.get("total") or 0)
@@ -389,7 +391,7 @@ def main() -> int:
         tuning = _wait_for_tuning_proposal(
             client,
             entry_id,
-            identity_key=identity_key,
+            slot_key=slot_key,
             target_reaction_id=None,
             timeout_s=args.timeout_s,
             poll_s=args.poll_s,

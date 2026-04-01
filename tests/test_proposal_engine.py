@@ -260,7 +260,9 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
 
     pending = engine.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].identity_key == "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+    assert pending[0].identity_key.startswith(
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
+    )
     assert pending[0].confidence == 0.9
 
 
@@ -286,7 +288,89 @@ async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fing
     pending = engine.pending_proposals()
     assert len(pending) == 1
     assert pending[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1350"
-    assert pending[0].identity_key == "lighting_scene_schedule|room=living|weekday=0|bucket=1350"
+    assert pending[0].identity_key.startswith(
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1350|scene="
+    )
+
+
+async def test_proposal_engine_lighting_identity_tolerates_minor_scene_drift(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    first = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.8,
+        description="living:1205",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1205,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
+        },
+    )
+    second = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.9,
+        description="living:1225",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1225,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 135}],
+        },
+    )
+    analyzer = _AnalyzerStub([first])
+    engine.register_analyzer(analyzer)
+    await engine.async_initialize()
+    await engine.async_run()
+
+    analyzer._proposals = [second]
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].confidence == 0.9
+
+
+async def test_proposal_engine_lighting_identity_separates_materially_different_scenes(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    first = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.8,
+        description="living:1205",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1205,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 96}],
+        },
+    )
+    second = ReactionProposal(
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        confidence=0.9,
+        description="living:1225",
+        suggested_reaction_config={
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1225,
+            "entity_steps": [
+                {"entity_id": "light.living_main", "action": "on", "brightness": 224},
+                {"entity_id": "light.living_spot", "action": "off"},
+            ],
+        },
+    )
+    analyzer = _AnalyzerStub([first, second])
+    engine.register_analyzer(analyzer)
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 2
+    assert pending[0].identity_key != pending[1].identity_key
 
 
 async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypatch):

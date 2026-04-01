@@ -1459,7 +1459,87 @@ class _ReactionsStepsMixin:
                 "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
                 "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
             }
+
+        followup_slot_key = self._proposal_followup_slot_key(proposal)
+        if followup_slot_key:
+            ranked: list[tuple[tuple[int, int, int, str], str, dict[str, Any]]] = []
+            proposal_cfg = _safe_mapping(proposal.suggested_reaction_config)
+            proposal_entities = self._lighting_entity_actions(proposal_cfg)
+            proposal_min = int(proposal_cfg.get("scheduled_min") or 0)
+            for reaction_id, raw in configured.items():
+                reaction_cfg = _safe_mapping(raw)
+                if self._lighting_followup_slot_key_from_cfg(reaction_cfg) != followup_slot_key:
+                    continue
+                reaction_entities = self._lighting_entity_actions(reaction_cfg)
+                overlap = len(proposal_entities & reaction_entities)
+                symmetric_diff = len(proposal_entities ^ reaction_entities)
+                reaction_min = int(reaction_cfg.get("scheduled_min") or 0)
+                ranked.append(
+                    (
+                        (-overlap, symmetric_diff, abs(proposal_min - reaction_min), str(reaction_id)),
+                        str(reaction_id),
+                        reaction_cfg,
+                    )
+                )
+            if ranked:
+                ranked.sort(key=lambda item: item[0])
+                _, reaction_id, reaction_cfg = ranked[0]
+                return {
+                    "reaction_id": reaction_id,
+                    "reaction_cfg": reaction_cfg,
+                    "reaction_label": self._reaction_label_from_config(
+                        reaction_id, reaction_cfg, labels_map
+                    ),
+                    "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
+                    "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
+                }
         return None
+
+    @staticmethod
+    def _proposal_followup_slot_key(proposal: ReactionProposal) -> str:
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        reaction_type = proposal.reaction_type
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+            return ""
+        scheduled_min = cfg.get("scheduled_min")
+        bucket = None
+        if isinstance(scheduled_min, (int, float)):
+            bucket = (int(scheduled_min) // 30) * 30
+        return (
+            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+            f"|bucket={bucket}"
+        )
+
+    @staticmethod
+    def _lighting_followup_slot_key_from_cfg(cfg: dict[str, Any]) -> str:
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+            return ""
+        scheduled_min = cfg.get("scheduled_min")
+        bucket = None
+        if isinstance(scheduled_min, (int, float)):
+            bucket = (int(scheduled_min) // 30) * 30
+        return (
+            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+            f"|bucket={bucket}"
+        )
+
+    @staticmethod
+    def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
+        entity_steps = cfg.get("entity_steps")
+        if not isinstance(entity_steps, list):
+            return set()
+        pairs: set[tuple[str, str]] = set()
+        for step in entity_steps:
+            if not isinstance(step, dict):
+                continue
+            entity_id = str(step.get("entity_id") or "").strip()
+            action = str(step.get("action") or "").strip()
+            if entity_id:
+                pairs.add((entity_id, action))
+        return pairs
 
     def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
         configured = dict(self._reactions_options().get("configured", {}))

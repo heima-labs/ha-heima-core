@@ -213,6 +213,40 @@ async def test_lighting_analyzer_groups_same_room_into_one_proposal():
     assert len(proposals[0].suggested_reaction_config["entity_steps"]) == 2
 
 
+async def test_lighting_analyzer_collapses_duplicate_entity_candidates_in_same_scene():
+    """A scene candidate keeps at most one step per entity_id."""
+    analyzer = LightingPatternAnalyzer()
+    on_events = _multi_week_events(
+        3, 2, entity_id="light.living_main", room_id="living", action="on", minute=1200
+    )
+    off_events = _multi_week_events(
+        3, 2, entity_id="light.living_main", room_id="living", action="off", minute=1205
+    )
+    proposals = await analyzer.analyze(_StoreStub(on_events + off_events))  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    entity_steps = proposals[0].suggested_reaction_config["entity_steps"]
+    assert len(entity_steps) == 1
+    assert entity_steps[0]["entity_id"] == "light.living_main"
+    diagnostics = proposals[0].suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["cluster_entities"] == ["light.living_main"]
+    assert diagnostics["entity_steps_count"] == 1
+
+
+async def test_lighting_analyzer_orders_scene_entities_deterministically():
+    """Entity ordering is stable and not dependent on cluster input order."""
+    analyzer = LightingPatternAnalyzer()
+    main = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1205)
+    spot = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1200)
+    proposals = await analyzer.analyze(_StoreStub(spot + main))  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    entity_ids = [
+        step["entity_id"] for step in proposals[0].suggested_reaction_config["entity_steps"]
+    ]
+    assert entity_ids == ["light.living_main", "light.living_spot"]
+    assert "living_main" in proposals[0].description
+    assert "living_spot" in proposals[0].description
+
+
 async def test_lighting_analyzer_splits_distant_times_into_separate_proposals():
     """Two entities in the same room but 20+ min apart → 2 separate proposals."""
     analyzer = LightingPatternAnalyzer()

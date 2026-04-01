@@ -141,8 +141,9 @@ class LightingPatternAnalyzer:
                 cluster_mins = [p.scheduled_min for p in cluster]
                 n = len(cluster_mins)
                 scheduled_min = sorted(cluster_mins)[n // 2]
-                confidence = sum(p.confidence for p in cluster) / n
-                entity_steps = [p.as_entity_step() for p in cluster]
+                normalized_cluster = _normalize_cluster_patterns(cluster, scheduled_min=scheduled_min)
+                confidence = sum(p.confidence for p in normalized_cluster) / len(normalized_cluster)
+                entity_steps = [p.as_entity_step() for p in normalized_cluster]
 
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
@@ -174,12 +175,12 @@ class LightingPatternAnalyzer:
                                 if step.get("entity_id")
                             ),
                             observations_count=sum(
-                                pattern.observations_count for pattern in cluster
+                                pattern.observations_count for pattern in normalized_cluster
                             ),
                             weeks_observed=min(
-                                pattern.weeks_observed for pattern in cluster
+                                pattern.weeks_observed for pattern in normalized_cluster
                             ),
-                            iqr_min=max(pattern.iqr_min for pattern in cluster),
+                            iqr_min=max(pattern.iqr_min for pattern in normalized_cluster),
                             scheduled_min=scheduled_min,
                             entity_steps_count=len(entity_steps),
                         ),
@@ -234,6 +235,32 @@ def _mode_rgb(values: list) -> list[int] | None:
 
 def _hhmm(minute_of_day: int) -> str:
     return f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}"
+
+
+def _normalize_cluster_patterns(
+    cluster: list[_EntityPattern], *, scheduled_min: int
+) -> list[_EntityPattern]:
+    """Collapse duplicate entity candidates inside a scene and order them deterministically."""
+    by_entity: dict[str, list[_EntityPattern]] = {}
+    for pattern in cluster:
+        by_entity.setdefault(pattern.entity_id, []).append(pattern)
+
+    normalized: list[_EntityPattern] = []
+    for entity_id, patterns in by_entity.items():
+        winner = min(
+            patterns,
+            key=lambda p: (
+                abs(p.scheduled_min - scheduled_min),
+                -p.observations_count,
+                -p.confidence,
+                p.action,
+                p.entity_id,
+            ),
+        )
+        normalized.append(winner)
+
+    normalized.sort(key=lambda p: (p.entity_id, p.action, p.scheduled_min))
+    return normalized
 
 
 def _describe(room_id: str, weekday: int, scheduled_min: int, entity_steps: list[dict]) -> str:

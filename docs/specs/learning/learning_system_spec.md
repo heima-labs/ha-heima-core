@@ -1412,6 +1412,37 @@ fingerprint_min = (scheduled_min // 5) * 5
 fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{fingerprint_min}"
 ```
 
+### P9.4.1 Scene quality and collision handling
+
+Lighting scene proposals SHOULD prefer stable, human-legible output over raw cluster exhaust.
+
+Normative quality rules for v1 lighting proposals:
+- a scene candidate SHOULD contain at most one step per `entity_id`
+- when multiple raw patterns for the same `entity_id` fall into the same logical cluster, the
+  analyzer SHOULD collapse them into one representative step rather than emitting duplicates
+- proposal descriptions SHOULD be stable and deterministic for the same logical scene candidate
+- entity ordering in descriptions and config SHOULD be deterministic so small analyzer churn does
+  not create confusing review diffs
+
+Normative collision rule:
+- when two lighting scene candidates for the same `(room_id, weekday)` fall into the same
+  30-minute identity bucket, v1 SHOULD prefer emitting at most one logical proposal candidate for
+  that bucket unless there is a materially different entity set
+- proposal identity for lighting MUST therefore combine:
+  - `(room_id, weekday, time_bucket_30m)`
+  - a stable `scene_signature` derived from normalized `entity_steps`
+- `scene_signature` SHOULD use coarse payload normalization so that minor brightness / kelvin drift
+  refreshes the same logical proposal instead of creating a new identity slot
+
+Examples of materially different changes:
+- added or removed entities
+- different dominant on/off intent for one entity
+- materially different brightness / color temperature payloads
+
+Minor drift that SHOULD NOT create a separate logical scene:
+- a few minutes of schedule movement inside the same 30-minute bucket
+- small attribute noise on a minority of samples
+
 ### P9.5 LightingScheduleReaction
 
 #### Trigger — RuntimeScheduler

@@ -108,6 +108,7 @@ class ProposalEngine:
         for candidate in generated:
             now = datetime.now(UTC).isoformat()
             identity_key = self._identity_key(candidate)
+            followup_slot_key = self._followup_slot_key(candidate)
             matching = [
                 (idx, current)
                 for idx, current in enumerate(merged)
@@ -139,6 +140,12 @@ class ProposalEngine:
                 ((idx, current) for idx, current in matching if current.status == "accepted"),
                 None,
             )
+            if accepted_match is None and followup_slot_key:
+                accepted_match = self._fallback_followup_match(
+                    merged,
+                    candidate,
+                    followup_slot_key=followup_slot_key,
+                )
             if accepted_match is None and not matching:
                 merged.append(
                     replace(
@@ -150,12 +157,31 @@ class ProposalEngine:
                 continue
 
             if accepted_match is not None:
+                _, accepted = accepted_match
                 merged.append(
                     replace(
                         candidate,
                         identity_key=identity_key,
                         last_observed_at=now,
                         followup_kind="tuning_suggestion",
+                        target_reaction_class=(
+                            candidate.target_reaction_class
+                            or str(
+                                _safe_dict(accepted.suggested_reaction_config).get("reaction_class") or ""
+                            )
+                        ),
+                        target_reaction_origin=(
+                            candidate.target_reaction_origin or accepted.origin
+                        ),
+                        target_template_id=(
+                            candidate.target_template_id
+                            or str(
+                                _safe_dict(accepted.suggested_reaction_config).get(
+                                    "admin_authored_template_id"
+                                )
+                                or ""
+                            )
+                        ),
                     )
                 )
                 continue
@@ -359,9 +385,10 @@ class ProposalEngine:
             bucket = None
             if isinstance(scheduled_min, (int, float)):
                 bucket = (int(scheduled_min) // 30) * 30
+            scene_signature = _lighting_scene_signature(cfg)
             return (
                 f"{reaction_type}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-                f"|bucket={bucket}"
+                f"|bucket={bucket}|scene={scene_signature}"
             )
         if reaction_type in {
             "room_signal_assist",
@@ -373,6 +400,60 @@ class ProposalEngine:
         if proposal.fingerprint:
             return proposal.fingerprint
         return cls._fingerprint(proposal)
+
+    @classmethod
+    def _followup_slot_key(cls, proposal: ReactionProposal) -> str:
+        cfg = _safe_dict(proposal.suggested_reaction_config)
+        if proposal.reaction_type == "lighting_scene_schedule":
+            scheduled_min = cfg.get("scheduled_min")
+            bucket = None
+            if isinstance(scheduled_min, (int, float)):
+                bucket = (int(scheduled_min) // 30) * 30
+            return (
+                f"{proposal.reaction_type}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+                f"|bucket={bucket}"
+            )
+        return cls._identity_key(proposal)
+
+    @classmethod
+    def _fallback_followup_match(
+        cls,
+        proposals: list[ReactionProposal],
+        candidate: ReactionProposal,
+        *,
+        followup_slot_key: str,
+    ) -> tuple[int, ReactionProposal] | None:
+        if candidate.reaction_type != "lighting_scene_schedule":
+            return None
+
+        candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
+        candidate_entities = _lighting_entity_actions(candidate_cfg)
+        ranked: list[tuple[tuple[int, int, int, str], int, ReactionProposal]] = []
+        for idx, current in enumerate(proposals):
+            if current.status != "accepted":
+                continue
+            if cls._followup_slot_key(current) != followup_slot_key:
+                continue
+            current_cfg = _safe_dict(current.suggested_reaction_config)
+            current_entities = _lighting_entity_actions(current_cfg)
+            overlap = len(candidate_entities & current_entities)
+            symmetric_diff = len(candidate_entities ^ current_entities)
+            schedule_gap = abs(
+                int(candidate_cfg.get("scheduled_min") or 0) - int(current_cfg.get("scheduled_min") or 0)
+            )
+            ranked.append(
+                (
+                    (-overlap, symmetric_diff, schedule_gap, current.proposal_id),
+                    idx,
+                    current,
+                )
+            )
+
+        if not ranked:
+            return None
+        ranked.sort(key=lambda item: item[0])
+        _, idx, proposal = ranked[0]
+        return idx, proposal
 
     @staticmethod
     def _sort_proposals(proposals: list[ReactionProposal]) -> list[ReactionProposal]:
@@ -520,3 +601,67 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _lighting_scene_signature(cfg: dict[str, Any]) -> str:
+    entity_steps = cfg.get("entity_steps")
+    if not isinstance(entity_steps, list):
+        return "none"
+
+    normalized_steps: list[str] = []
+    for raw_step in entity_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        entity_id = str(raw_step.get("entity_id") or "").strip()
+        action = str(raw_step.get("action") or "").strip() or "unknown"
+        if not entity_id:
+            continue
+        brightness = _coarse_numeric_bucket(raw_step.get("brightness"), step=32)
+        color_temp = _coarse_numeric_bucket(raw_step.get("color_temp_kelvin"), step=250)
+        rgb = _normalize_rgb(raw_step.get("rgb_color"))
+        normalized_steps.append(
+            "|".join(
+                [
+                    entity_id,
+                    action,
+                    f"b={brightness if brightness is not None else '-'}",
+                    f"k={color_temp if color_temp is not None else '-'}",
+                    f"rgb={rgb if rgb is not None else '-'}",
+                ]
+            )
+        )
+
+    if not normalized_steps:
+        return "none"
+    normalized_steps.sort()
+    return "||".join(normalized_steps)
+
+
+def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return int(round(float(value) / step) * step)
+
+
+def _normalize_rgb(value: Any) -> str | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return None
+    try:
+        return ",".join(str(int(channel)) for channel in value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
+    entity_steps = cfg.get("entity_steps")
+    if not isinstance(entity_steps, list):
+        return set()
+    pairs: set[tuple[str, str]] = set()
+    for step in entity_steps:
+        if not isinstance(step, dict):
+            continue
+        entity_id = str(step.get("entity_id") or "").strip()
+        action = str(step.get("action") or "").strip()
+        if entity_id:
+            pairs.add((entity_id, action))
+    return pairs
