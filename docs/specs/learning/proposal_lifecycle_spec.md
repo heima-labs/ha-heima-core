@@ -124,6 +124,14 @@ Normative clarification:
   `entity_steps`, not only `(room_id, weekday, time_bucket)`
 - `scene_signature` SHOULD be coarse enough to tolerate minor drift in brightness / color
   temperature while still separating materially different scenes in the same bucket
+- matching the same lighting slot is NOT by itself sufficient to create a `tuning_suggestion`
+- if the candidate differs from the accepted lighting reaction only by minor drift, v1 SHOULD
+  suppress the follow-up instead of surfacing review noise
+
+Recommended v1 `minor drift` examples:
+- schedule drift within roughly 5 minutes
+- small brightness drift for the same entity set
+- small color temperature drift for the same entity set
 
 ## 5. Lifecycle Fields
 

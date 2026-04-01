@@ -158,6 +158,8 @@ class ProposalEngine:
 
             if accepted_match is not None:
                 _, accepted = accepted_match
+                if self._should_suppress_minor_lighting_followup(candidate, accepted):
+                    continue
                 merged.append(
                     replace(
                         candidate,
@@ -455,6 +457,44 @@ class ProposalEngine:
         _, idx, proposal = ranked[0]
         return idx, proposal
 
+    @classmethod
+    def _should_suppress_minor_lighting_followup(
+        cls,
+        candidate: ReactionProposal,
+        accepted: ReactionProposal,
+    ) -> bool:
+        if candidate.reaction_type != "lighting_scene_schedule":
+            return False
+
+        candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
+        accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
+        if not candidate_cfg or not accepted_cfg:
+            return False
+
+        candidate_steps = _lighting_steps_by_entity(candidate_cfg)
+        accepted_steps = _lighting_steps_by_entity(accepted_cfg)
+        if set(candidate_steps) != set(accepted_steps):
+            return False
+
+        candidate_min = int(candidate_cfg.get("scheduled_min") or 0)
+        accepted_min = int(accepted_cfg.get("scheduled_min") or 0)
+        if abs(candidate_min - accepted_min) > 5:
+            return False
+
+        for entity_id in sorted(candidate_steps):
+            current = accepted_steps[entity_id]
+            proposed = candidate_steps[entity_id]
+            if str(current.get("action") or "") != str(proposed.get("action") or ""):
+                return False
+            if _numeric_gap(current.get("brightness"), proposed.get("brightness")) > 16:
+                return False
+            if _numeric_gap(current.get("color_temp_kelvin"), proposed.get("color_temp_kelvin")) > 150:
+                return False
+            if _normalize_rgb(current.get("rgb_color")) != _normalize_rgb(proposed.get("rgb_color")):
+                return False
+
+        return True
+
     @staticmethod
     def _sort_proposals(proposals: list[ReactionProposal]) -> list[ReactionProposal]:
         status_rank = {"pending": 0, "accepted": 1, "rejected": 2}
@@ -665,3 +705,25 @@ def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
         if entity_id:
             pairs.add((entity_id, action))
     return pairs
+
+
+def _lighting_steps_by_entity(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    entity_steps = cfg.get("entity_steps")
+    if not isinstance(entity_steps, list):
+        return {}
+    by_entity: dict[str, dict[str, Any]] = {}
+    for step in entity_steps:
+        if not isinstance(step, dict):
+            continue
+        entity_id = str(step.get("entity_id") or "").strip()
+        if entity_id:
+            by_entity[entity_id] = dict(step)
+    return by_entity
+
+
+def _numeric_gap(current: Any, proposed: Any) -> int:
+    if current in (None, "") and proposed in (None, ""):
+        return 0
+    if not isinstance(current, (int, float)) or not isinstance(proposed, (int, float)):
+        return 10**9
+    return abs(int(current) - int(proposed))

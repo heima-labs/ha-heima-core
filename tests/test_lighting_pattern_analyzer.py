@@ -142,7 +142,7 @@ async def test_lighting_analyzer_proposal_config_fields():
     assert cfg["room_id"] == "kitchen"
     assert cfg["weekday"] == 2
     assert cfg["scheduled_min"] == 1380
-    assert cfg["window_half_min"] == 10
+    assert cfg["window_half_min"] == 5
     assert len(cfg["entity_steps"]) == 1
     step = cfg["entity_steps"][0]
     assert step["entity_id"] == "light.kitchen_spot"
@@ -306,6 +306,42 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
 
     assert tight_p and spread_p
     assert tight_p[0].confidence > spread_p[0].confidence
+
+
+async def test_lighting_analyzer_confidence_rewards_more_evidence():
+    """Same tight schedule but more observations/weeks -> slightly higher confidence."""
+    analyzer = LightingPatternAnalyzer()
+    minimal = _multi_week_events(3, 2, minute=1200)
+    richer = (
+        _multi_week_events(3, 2, minute=1200)
+        + [_lighting(minute=1200, ts="2026-03-16T08:00:00+00:00") for _ in range(3)]
+    )
+
+    minimal_p = await analyzer.analyze(_StoreStub(minimal))  # type: ignore[arg-type]
+    richer_p = await analyzer.analyze(_StoreStub(richer))  # type: ignore[arg-type]
+
+    assert minimal_p and richer_p
+    assert richer_p[0].confidence > minimal_p[0].confidence
+
+
+async def test_lighting_analyzer_window_half_min_tight_cluster():
+    """Very tight schedule -> narrow runtime window."""
+    analyzer = LightingPatternAnalyzer()
+    events = _multi_week_events(3, 2, minute=1200)
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert proposals[0].suggested_reaction_config["window_half_min"] == 5
+
+
+async def test_lighting_analyzer_window_half_min_spread_cluster():
+    """Spread schedule -> wider runtime window."""
+    analyzer = LightingPatternAnalyzer()
+    minutes = [1160, 1180, 1200, 1220, 1240]
+    evts = []
+    for i, minute in enumerate(minutes):
+        ts = _WEEK1_TS if i < 3 else _WEEK2_TS
+        evts.append(_lighting(minute=minute, ts=ts))
+    proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
+    assert proposals[0].suggested_reaction_config["window_half_min"] == 15
 
 
 # ---------------------------------------------------------------------------

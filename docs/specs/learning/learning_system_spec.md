@@ -1287,7 +1287,13 @@ For each key (entity_id, action, weekday):
     p25       = samples_sorted[n // 4]
     p75       = samples_sorted[3 * n // 4]
     IQR       = p75 - p25
-    confidence = max(0.3, 1.0 - IQR / 120.0)
+    base_confidence = max(0.3, 1.0 - IQR / 120.0)
+    evidence_factor = min(1.0, len(matching) / 8.0)
+    weeks_factor    = min(1.0, weeks_observed(matching) / 3.0)
+    confidence = round(
+        max(0.3, base_confidence * (0.85 + 0.15 * evidence_factor) * (0.9 + 0.1 * weeks_factor)),
+        3,
+    )
 
     # Attributi fisici aggregati (action="on" only)
     brightness       = _median_int([e.data["brightness"] for e in matching])
@@ -1341,6 +1347,24 @@ for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
 pattern; penalizza meno i casi in cui la maggioranza delle entità è consistente ma una sola è
 leggermente più variabile.
 
+**Confidence operativa v1:** la confidence lighting NON dovrebbe dipendere solo da IQR.
+Anche pattern con IQR molto basso ma evidenza minima (es. appena 5 eventi su 2 settimane) dovrebbero
+restare leggermente meno confident di pattern osservati più spesso e su più settimane. In v1:
+- IQR resta il driver principale
+- `observations_count` e `weeks_observed` agiscono come moltiplicatori moderati, non come gate nuovi
+
+#### Finestra runtime adattiva
+
+`window_half_min` per lighting non dovrebbe essere sempre fisso. In v1 può essere derivato dalla
+stabilità del cluster:
+- pattern molto stretti → finestra più piccola
+- pattern più variabili ma ancora accettati → finestra più larga
+
+Recommended v1 mapping:
+- `IQR <= 5` → `window_half_min = 5`
+- `IQR <= 15` → `window_half_min = 10`
+- altrimenti → `window_half_min = 15`
+
 #### Fase 3 — Proposal emission
 
 Per ogni `SceneCandidate`, emetti una `ReactionProposal` (vedi §P9.3).
@@ -1382,7 +1406,7 @@ ReactionProposal(
         "room_id": room_id,
         "weekday": weekday,
         "scheduled_min": scheduled_min,
-        "window_half_min": 10,
+        "window_half_min": derived_window_half_min,
         "house_state_filter": None,
         "entity_steps": [
             # Un dict per entità nel cluster
