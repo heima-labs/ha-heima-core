@@ -37,6 +37,7 @@ def main() -> int:
     runtime = dict(diag.get("data", {}).get("runtime", {}) or {})
     summary = dict(runtime.get("plugins", {}).get("learning_summary", {}) or {})
     reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
+    lighting_summary = dict(runtime.get("plugins", {}).get("lighting_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -89,6 +90,30 @@ def main() -> int:
             print("lighting slot collisions:")
             for slot_key, reaction_ids in sorted(lighting_slot_collisions.items()):
                 print(f"  {slot_key}: {', '.join(str(item) for item in reaction_ids)}")
+
+    if lighting_summary:
+        _print_header("Lighting")
+        print(f"configured total: {lighting_summary.get('configured_total', 0)}")
+        print(f"pending total: {lighting_summary.get('pending_total', 0)}")
+        print(f"pending tuning: {lighting_summary.get('pending_tuning_total', 0)}")
+        print(f"pending discovery: {lighting_summary.get('pending_discovery_total', 0)}")
+        configured_by_room = dict(lighting_summary.get("configured_by_room") or {})
+        if configured_by_room:
+            print(
+                "configured by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        pending_by_room = dict(lighting_summary.get("pending_by_room") or {})
+        if pending_by_room:
+            print(
+                "pending by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_room.items()))
+            )
+        configured_by_slot = dict(lighting_summary.get("configured_by_slot") or {})
+        if configured_by_slot:
+            print("configured by slot:")
+            for slot_key, total in sorted(configured_by_slot.items()):
+                print(f"  {slot_key}: {total}")
 
     families = dict(summary.get("families") or {})
     if families:

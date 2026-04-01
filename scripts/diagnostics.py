@@ -87,13 +87,47 @@ def _print_reaction_summary(data: dict[str, Any]) -> None:
             print(f"  {slot_key}: {ids}")
 
 
+def _print_lighting_summary(data: dict[str, Any]) -> None:
+    print(f"configured_total: {data.get('configured_total', 0)}")
+    print(f"pending_total: {data.get('pending_total', 0)}")
+    print(f"pending_tuning_total: {data.get('pending_tuning_total', 0)}")
+    print(f"pending_discovery_total: {data.get('pending_discovery_total', 0)}")
+
+    configured_by_room = dict(data.get("configured_by_room") or {})
+    if configured_by_room:
+        print(
+            "configured_by_room: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+        )
+
+    pending_by_room = dict(data.get("pending_by_room") or {})
+    if pending_by_room:
+        print(
+            "pending_by_room: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_room.items()))
+        )
+
+    configured_by_slot = dict(data.get("configured_by_slot") or {})
+    if configured_by_slot:
+        print("configured_by_slot:")
+        for slot_key, total in sorted(configured_by_slot.items()):
+            print(f"  {slot_key}: {total}")
+
+    slot_collisions = dict(data.get("slot_collisions") or {})
+    if slot_collisions:
+        print("slot_collisions:")
+        for slot_key, reaction_ids in sorted(slot_collisions.items()):
+            ids = ", ".join(str(item) for item in reaction_ids)
+            print(f"  {slot_key}: {ids}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "house_state", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions"],
+        choices=["all", "engine", "house_state", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -115,6 +149,7 @@ def main() -> int:
         "plugins": runtime.get("plugins"),
         "learning": runtime.get("plugins", {}).get("learning_summary"),
         "reactions": runtime.get("plugins", {}).get("configured_reaction_summary"),
+        "lighting": runtime.get("plugins", {}).get("lighting_summary"),
     }
 
     to_print = sections if args.section == "all" else {args.section: sections[args.section]}
@@ -128,6 +163,9 @@ def main() -> int:
             print()
         if name == "reactions" and isinstance(data, dict):
             _print_reaction_summary(data)
+            print()
+        if name == "lighting" and isinstance(data, dict):
+            _print_lighting_summary(data)
             print()
         print(json.dumps(data, indent=2))
 

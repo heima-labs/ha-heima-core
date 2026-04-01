@@ -220,6 +220,7 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+    lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
 
     assert summary["total"] == 2
     assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
@@ -231,6 +232,16 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     assert summary["identity_collisions"] == {}
     assert summary["lighting_slot_collisions"] == {}
     assert summary["reaction_ids"] == ["r1", "r2"]
+    assert lighting == {
+        "configured_total": 0,
+        "configured_by_room": {},
+        "configured_by_slot": {},
+        "pending_total": 0,
+        "pending_tuning_total": 0,
+        "pending_discovery_total": 0,
+        "pending_by_room": {},
+        "slot_collisions": {},
+    }
 
 
 async def test_config_entry_diagnostics_exposes_configured_reaction_identity_collisions() -> None:
@@ -260,9 +271,18 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+    lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
 
     assert summary["identity_collisions"] == {}
     assert summary["lighting_slot_collisions"] == {
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+    }
+    assert lighting["configured_total"] == 2
+    assert lighting["configured_by_room"] == {"living": 2}
+    assert lighting["configured_by_slot"] == {
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": 2
+    }
+    assert lighting["slot_collisions"] == {
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
 
@@ -294,6 +314,7 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+    lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
 
     assert summary["identity_collisions"] == {
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a": ["r1", "r2"]
@@ -301,6 +322,7 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
     assert summary["lighting_slot_collisions"] == {
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
+    assert lighting["configured_total"] == 2
 
 
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:
@@ -350,6 +372,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     proposals = diagnostics["runtime"]["proposals"]
+    lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
 
     assert proposals["tuning_pending"] == 1
     item = proposals["proposals"][0]
@@ -357,3 +380,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
     assert item["target_reaction_id"] == "r-existing"
     assert item["target_reaction_origin"] == "admin_authored"
     assert item["target_template_id"] == "lighting.scene_schedule.basic"
+    assert lighting["pending_total"] == 1
+    assert lighting["pending_tuning_total"] == 1
+    assert lighting["pending_discovery_total"] == 0
+    assert lighting["pending_by_room"] == {}

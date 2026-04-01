@@ -960,6 +960,20 @@ The learning surface is now expected to expose three distinct diagnostic views:
   - `by_author_kind`
   - `reaction_ids`
 
+For lighting-heavy deployments, diagnostics SHOULD also expose a lighting-oriented summary view so
+operators do not need to reconstruct lighting state manually from generic proposal and reaction
+payloads.
+
+Recommended v1 lighting summary fields:
+- `configured_total`
+- `configured_by_room`
+- `configured_by_slot`
+- `pending_total`
+- `pending_tuning_total`
+- `pending_discovery_total`
+- `pending_by_room`
+- `slot_collisions`
+
 Normative rule:
 - when an accepted proposal is rebuilt into a configured reaction, provenance SHOULD remain attached
   so diagnostics can distinguish legacy/unspecified reactions from `learned` and `admin_authored`
