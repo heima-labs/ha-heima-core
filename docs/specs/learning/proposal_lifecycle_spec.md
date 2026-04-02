@@ -132,6 +132,19 @@ Composite domain clarification for the next iteration:
 - any refinement MUST remain plugin-owned and SHOULD avoid reintroducing central branching in
   `ProposalEngine`
 
+Composite proposal quality clarification:
+- for composite proposal families, not every observed entity list change should become a new core
+  proposal payload
+- support thresholds SHOULD prefer ratios when the question is “how consistently is this element
+  part of the pattern?”
+- examples:
+  - follow-up entities promoted into the proposal payload
+  - optional corroboration signals promoted into the structural config
+- absolute floors MAY still be used as guards, but SHOULD not be the only criterion when a
+  percentage better represents stability
+- these thresholds SHOULD come from a configurable analyzer policy, even if v1 initially uses
+  built-in defaults
+
 ### 4.4 Lighting time bucket
 
 For v1, lighting schedules use a **30-minute time bucket** in logical identity.

@@ -146,7 +146,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             if isinstance(raw_families, list)
             else None
         )
-        return create_builtin_learning_plugin_registry(enabled_families=enabled_families)
+        return create_builtin_learning_plugin_registry(
+            enabled_families=enabled_families,
+            learning_config=learning,
+        )
 
     async def async_reload_options(self, *, changed_keys: set[str] | None = None) -> None:
         """Reload options and refresh state."""

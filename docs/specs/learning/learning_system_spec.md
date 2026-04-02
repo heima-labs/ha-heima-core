@@ -136,6 +136,18 @@ Strada 4 direction:
   including future heating work
 - the first composite slice SHOULD align learned and admin-authored proposal identity on the same
   room + primary-signal semantics before broader tuning work
+- proposal quality gates for composite SHOULD prefer ratio-based support thresholds where that is
+  semantically clearer than absolute-only thresholds
+
+Composite quality policy guidance:
+- stable follow-up entity selection SHOULD be driven primarily by support ratio across confirmed
+  episodes, with an optional minimum absolute episode floor as a guard
+- optional corroboration signals SHOULD be promoted into the core proposal payload only when their
+  support ratio is high enough to be considered structurally stable
+- these thresholds SHOULD be modeled as a configurable analyzer policy rather than as scattered
+  hardcoded values
+- v1 does not require a polished UI for all such policy knobs, but the runtime/config model SHOULD
+  allow them to be overridden from learning configuration
 
 ### 0.3 Decision: minimum training window before emitting proposals
 

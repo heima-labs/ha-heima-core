@@ -175,6 +175,27 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("missing.reaction") is None
 
 
+def test_builtin_learning_plugin_registry_passes_composite_quality_policy():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "composite_quality_policy": {
+                "followup_entity_min_ratio": 0.75,
+                "followup_entity_min_episodes": 4,
+                "corroboration_promote_min_ratio": 0.8,
+                "corroboration_promote_min_episodes": 4,
+            }
+        }
+    )
+
+    composite = next(
+        analyzer
+        for analyzer in registry.analyzers()
+        if analyzer.analyzer_id == "CompositePatternCatalogAnalyzer"
+    )
+    assert composite._quality_policy.followup_entity_min_ratio == 0.75  # noqa: SLF001
+    assert composite._quality_policy.followup_entity_min_episodes == 4  # noqa: SLF001
+
+
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
     registry = create_builtin_learning_plugin_registry(enabled_families={"lighting"})
 
