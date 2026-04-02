@@ -147,7 +147,7 @@ class CompositePatternCatalogAnalyzer:
                     quality_policy=self._quality_policy,
                 )
             )
-        return proposals
+        return _dominant_composite_candidates(proposals)
 
 
 async def _analyze_definition(
@@ -353,6 +353,43 @@ def _stable_entities_from_counts(
             continue
         stable.append(entity_id)
     return sorted(stable)
+
+
+def _dominant_composite_candidates(
+    proposals: list[ReactionProposal],
+) -> list[ReactionProposal]:
+    by_slot: dict[str, ReactionProposal] = {}
+    for proposal in proposals:
+        slot_key = _composite_slot_key(proposal)
+        current = by_slot.get(slot_key)
+        if current is None or _composite_candidate_rank(proposal) > _composite_candidate_rank(current):
+            by_slot[slot_key] = proposal
+    return sorted(
+        by_slot.values(),
+        key=lambda proposal: (
+            str(proposal.reaction_type),
+            str(_safe_dict(proposal.suggested_reaction_config).get("room_id") or ""),
+            str(proposal.description),
+        ),
+    )
+
+
+def _composite_slot_key(proposal: ReactionProposal) -> str:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+    return (
+        f"{proposal.reaction_type}|room={cfg.get('room_id')}|primary={primary_signal}"
+    )
+
+
+def _composite_candidate_rank(proposal: ReactionProposal) -> tuple[float, int, int, str]:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    return (
+        float(proposal.confidence),
+        int(cfg.get("episodes_observed") or 0),
+        int(cfg.get("corroborated_episodes") or 0),
+        str(proposal.description),
+    )
 
 
 def _build_signal_assist_config(
@@ -751,6 +788,12 @@ def _ratio(part: int, total: int) -> float:
     if total <= 0:
         return 0.0
     return part / total
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
 
 
 def _coerce_ratio(value: Any, default: float) -> float:

@@ -144,6 +144,12 @@ Composite proposal quality clarification:
   percentage better represents stability
 - these thresholds SHOULD come from a configurable analyzer policy, even if v1 initially uses
   built-in defaults
+- if multiple composite candidates still emerge for the same logical slot in one analysis pass,
+  the analyzer SHOULD retain only one dominant representative candidate
+- a dominant-candidate choice SHOULD prefer stronger evidence and clearer stability, for example:
+  - higher confidence
+  - more confirmed episodes
+  - more corroborated episodes when relevant
 
 ### 4.4 Lighting time bucket
 

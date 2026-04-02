@@ -148,6 +148,8 @@ Composite quality policy guidance:
   hardcoded values
 - v1 does not require a polished UI for all such policy knobs, but the runtime/config model SHOULD
   allow them to be overridden from learning configuration
+- if equivalent composite candidates emerge for the same logical slot during one analyzer pass,
+  the analyzer SHOULD keep only one dominant candidate rather than surfacing multiple near-duplicates
 
 ### 0.3 Decision: minimum training window before emitting proposals
 
