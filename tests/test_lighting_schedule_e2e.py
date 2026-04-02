@@ -159,6 +159,19 @@ async def test_e2e_analyzer_scene_grouping():
     assert len(proposals[0].suggested_reaction_config["entity_steps"]) == 2
 
 
+async def test_e2e_analyzer_scene_grouping_collapses_duplicate_entity_steps():
+    """A grouped scene keeps one normalized step per entity_id."""
+    on_events = _seed_events(entity_id="light.living_main", room_id="living", action="on", minute=1200)
+    off_events = _seed_events(entity_id="light.living_main", room_id="living", action="off", minute=1205)
+    store = _StoreStub(on_events + off_events)
+    analyzer = LightingPatternAnalyzer()
+    proposals = await analyzer.analyze(store)  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    entity_steps = proposals[0].suggested_reaction_config["entity_steps"]
+    assert len(entity_steps) == 1
+    assert entity_steps[0]["entity_id"] == "light.living_main"
+
+
 # ---------------------------------------------------------------------------
 # 2. Analyzer → ProposalEngine: run, dedup, confidence update
 # ---------------------------------------------------------------------------

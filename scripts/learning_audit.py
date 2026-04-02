@@ -37,6 +37,7 @@ def main() -> int:
     runtime = dict(diag.get("data", {}).get("runtime", {}) or {})
     summary = dict(runtime.get("plugins", {}).get("learning_summary", {}) or {})
     reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
+    lighting_summary = dict(runtime.get("plugins", {}).get("lighting_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -84,6 +85,57 @@ def main() -> int:
             print("identity collisions:")
             for identity_key, reaction_ids in sorted(identity_collisions.items()):
                 print(f"  {identity_key}: {', '.join(str(item) for item in reaction_ids)}")
+        lighting_slot_collisions = dict(reaction_summary.get("lighting_slot_collisions") or {})
+        if lighting_slot_collisions:
+            print("lighting slot collisions:")
+            for slot_key, reaction_ids in sorted(lighting_slot_collisions.items()):
+                print(f"  {slot_key}: {', '.join(str(item) for item in reaction_ids)}")
+
+    if lighting_summary:
+        _print_header("Lighting")
+        print(f"configured total: {lighting_summary.get('configured_total', 0)}")
+        print(f"pending total: {lighting_summary.get('pending_total', 0)}")
+        print(f"pending tuning: {lighting_summary.get('pending_tuning_total', 0)}")
+        print(f"pending discovery: {lighting_summary.get('pending_discovery_total', 0)}")
+        configured_by_room = dict(lighting_summary.get("configured_by_room") or {})
+        if configured_by_room:
+            print(
+                "configured by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        pending_by_room = dict(lighting_summary.get("pending_by_room") or {})
+        if pending_by_room:
+            print(
+                "pending by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_room.items()))
+            )
+        configured_by_slot = dict(lighting_summary.get("configured_by_slot") or {})
+        if configured_by_slot:
+            print("configured by slot:")
+            for slot_key, total in sorted(configured_by_slot.items()):
+                print(f"  {slot_key}: {total}")
+        tuning_examples = list(lighting_summary.get("pending_tuning_examples") or [])
+        if tuning_examples:
+            print("pending tuning examples:")
+            for item in tuning_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('slot_key') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
+        discovery_examples = list(lighting_summary.get("pending_discovery_examples") or [])
+        if discovery_examples:
+            print("pending discovery examples:")
+            for item in discovery_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('slot_key') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
 
     families = dict(summary.get("families") or {})
     if families:
@@ -134,10 +186,15 @@ def main() -> int:
         _print_header("Warnings")
         print("unclaimed proposal types: " + ", ".join(unclaimed))
     identity_collisions = dict(reaction_summary.get("identity_collisions") or {})
+    lighting_slot_collisions = dict(reaction_summary.get("lighting_slot_collisions") or {})
     if identity_collisions:
         if not unclaimed:
             _print_header("Warnings")
         print("configured reaction identity collisions detected")
+    if lighting_slot_collisions:
+        if not unclaimed and not identity_collisions:
+            _print_header("Warnings")
+        print("configured reaction lighting slot collisions detected")
 
     print("\nPASS: learning audit generated")
     return 0

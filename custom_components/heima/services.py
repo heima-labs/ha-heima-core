@@ -57,6 +57,7 @@ SUPPORTED_COMMANDS = {
     "unmute_reaction",
     "learning_reset",
     "seed_lighting_events",
+    "upsert_configured_reactions",
 }
 
 
@@ -242,6 +243,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
             room_id = str(p.get("room_id") or "")
             if not entity_id or not room_id:
                 raise ServiceValidationError("seed_lighting_events requires 'entity_id' and 'room_id' in params")
+            action = str(p.get("action") or "on").strip().lower()
+            if action not in {"on", "off"}:
+                raise ServiceValidationError("seed_lighting_events action must be 'on' or 'off'")
             weekday = int(p.get("weekday", 0))
             minute = int(p.get("minute", 1200))
             brightness = int(p["brightness"]) if p.get("brightness") is not None else None
@@ -252,6 +256,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 total += await coordinator.async_seed_lighting_events(
                     entity_id=entity_id,
                     room_id=room_id,
+                    action=action,
                     weekday=weekday,
                     minute=minute,
                     brightness=brightness,
@@ -259,6 +264,24 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     count=count,
                 )
             _LOGGER.info("seed_lighting_events: injected %d events for %s", total, entity_id)
+            return
+
+        if command == "upsert_configured_reactions":
+            configured = params.get("configured", {})
+            labels = params.get("labels", {})
+            if not isinstance(configured, dict) or not configured:
+                raise ServiceValidationError(
+                    "upsert_configured_reactions requires non-empty 'configured' dict in params"
+                )
+            if labels is not None and not isinstance(labels, dict):
+                raise ServiceValidationError(
+                    "upsert_configured_reactions 'labels' must be a dict when provided"
+                )
+            for coordinator in coordinators:
+                await coordinator.async_upsert_configured_reactions(
+                    configured,
+                    label_updates=labels if isinstance(labels, dict) else None,
+                )
             return
 
     async def _handle_set_mode(call: ServiceCall) -> None:

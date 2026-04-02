@@ -312,7 +312,7 @@ def present_tuning_lighting_schedule_details(
 ) -> list[str]:
     """Return lighting-schedule-specific tuning diff lines."""
     is_it = language.startswith("it")
-    details: list[str] = []
+    diff_lines: list[str] = []
 
     current_scheduled = target_cfg.get("scheduled_min")
     proposed_scheduled = cfg.get("scheduled_min")
@@ -320,7 +320,7 @@ def present_tuning_lighting_schedule_details(
         current_hhmm = f"{int(current_scheduled) // 60:02d}:{int(current_scheduled) % 60:02d}"
         proposed_hhmm = f"{int(proposed_scheduled) // 60:02d}:{int(proposed_scheduled) % 60:02d}"
         if current_hhmm != proposed_hhmm:
-            details.append(
+            diff_lines.append(
                 f"Orario: {current_hhmm} -> {proposed_hhmm}"
                 if is_it
                 else f"Time: {current_hhmm} -> {proposed_hhmm}"
@@ -330,13 +330,17 @@ def present_tuning_lighting_schedule_details(
     proposed_steps = cfg.get("entity_steps")
     if isinstance(current_steps, list) and isinstance(proposed_steps, list):
         if len(current_steps) != len(proposed_steps):
-            details.append(
+            diff_lines.append(
                 f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
                 if is_it
                 else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
             )
+        diff_lines.extend(_lighting_entity_step_diffs(current_steps, proposed_steps, is_it=is_it))
 
-    return details
+    if not diff_lines:
+        return []
+    header = "Delta lighting:" if not is_it else "Delta luci:"
+    return [header, *diff_lines]
 
 
 def present_lighting_schedule_proposal_label(
@@ -351,3 +355,96 @@ def present_lighting_schedule_proposal_label(
     if language.startswith("it"):
         return f"Luci {room_id}"
     return f"Lighting {room_id}"
+
+
+def present_lighting_schedule_review_title(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+    is_followup: bool,
+) -> str | None:
+    """Return a lighting-specific review title."""
+    if getattr(proposal, "origin", "") == "admin_authored":
+        return None
+    base = present_lighting_schedule_proposal_label(flow, proposal, cfg, language)
+    if not base:
+        return None
+    if language.startswith("it"):
+        if is_followup:
+            return f"Affinamento luci: {base}"
+        return f"Nuova automazione luci: {base}"
+    if is_followup:
+        return f"Lighting tuning: {base}"
+    return f"New lighting automation: {base}"
+
+
+def _lighting_entity_step_diffs(
+    current_steps: list[dict[str, Any]],
+    proposed_steps: list[dict[str, Any]],
+    *,
+    is_it: bool,
+) -> list[str]:
+    """Return structured per-entity tuning diffs for lighting steps."""
+    current_by_entity = {
+        str(step.get("entity_id") or "").strip(): step
+        for step in current_steps
+        if str(step.get("entity_id") or "").strip()
+    }
+    proposed_by_entity = {
+        str(step.get("entity_id") or "").strip(): step
+        for step in proposed_steps
+        if str(step.get("entity_id") or "").strip()
+    }
+
+    details: list[str] = []
+    current_entities = set(current_by_entity)
+    proposed_entities = set(proposed_by_entity)
+
+    added = sorted(proposed_entities - current_entities)
+    removed = sorted(current_entities - proposed_entities)
+    if added:
+        details.append(
+            f"Entità aggiunte: {', '.join(added)}"
+            if is_it
+            else f"Added entities: {', '.join(added)}"
+        )
+    if removed:
+        details.append(
+            f"Entità rimosse: {', '.join(removed)}"
+            if is_it
+            else f"Removed entities: {', '.join(removed)}"
+        )
+
+    for entity_id in sorted(current_entities & proposed_entities):
+        current = current_by_entity[entity_id]
+        proposed = proposed_by_entity[entity_id]
+
+        field_diffs: list[str] = []
+        current_action = str(current.get("action") or "").strip()
+        proposed_action = str(proposed.get("action") or "").strip()
+        if current_action != proposed_action:
+            field_diffs.append(
+                f"azione {current_action} -> {proposed_action}"
+                if is_it
+                else f"action {current_action} -> {proposed_action}"
+            )
+
+        current_brightness = current.get("brightness")
+        proposed_brightness = proposed.get("brightness")
+        if current_brightness != proposed_brightness:
+            field_diffs.append(
+                f"brightness {current_brightness} -> {proposed_brightness}"
+            )
+
+        current_kelvin = current.get("color_temp_kelvin")
+        proposed_kelvin = proposed.get("color_temp_kelvin")
+        if current_kelvin != proposed_kelvin:
+            field_diffs.append(
+                f"kelvin {current_kelvin} -> {proposed_kelvin}"
+            )
+
+        if field_diffs:
+            details.append(f"{entity_id}: {'; '.join(field_diffs)}")
+
+    return details

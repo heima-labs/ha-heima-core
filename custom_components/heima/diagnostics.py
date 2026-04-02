@@ -45,6 +45,10 @@ async def async_get_config_entry_diagnostics(
                     learning_plugins,
                     proposal_diagnostics,
                 ),
+                "lighting_summary": _lighting_summary_diagnostics(
+                    proposal_diagnostics,
+                    coordinator,
+                ),
                 "configured_reaction_summary": _configured_reaction_summary_diagnostics(
                     coordinator
                 ),
@@ -254,14 +258,18 @@ def _enrich_proposals_with_followups(
         return proposal_diagnostics
 
     configured_by_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+    configured_by_lighting_slot: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for reaction_id, cfg in configured.items():
         if not isinstance(cfg, dict):
             continue
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
         if identity_key:
             configured_by_identity.setdefault(identity_key, (str(reaction_id), dict(cfg)))
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                configured_by_lighting_slot.setdefault(slot_key, []).append((str(reaction_id), dict(cfg)))
 
-    if not configured_by_identity:
+    if not configured_by_identity and not configured_by_lighting_slot:
         return proposal_diagnostics
 
     enriched: list[dict[str, Any]] = []
@@ -275,6 +283,12 @@ def _enrich_proposals_with_followups(
             enriched.append(item)
             continue
         target = configured_by_identity.get(identity_key)
+        if target is None:
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                slot_targets = configured_by_lighting_slot.get(slot_key) or []
+                if len(slot_targets) == 1:
+                    target = slot_targets[0]
         if target is None:
             enriched.append(item)
             continue
@@ -343,6 +357,7 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
     by_author_kind: dict[str, int] = {}
     by_template_id: dict[str, int] = {}
     by_identity_key: dict[str, list[str]] = {}
+    by_lighting_slot: dict[str, list[str]] = {}
     reaction_ids: list[str] = []
     for reaction_id, raw in reactions.items():
         if not isinstance(raw, dict):
@@ -357,10 +372,18 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         identity_key = str(raw.get("source_proposal_identity_key") or "").strip()
         if identity_key:
             by_identity_key.setdefault(identity_key, []).append(str(reaction_id))
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+            if slot_key:
+                by_lighting_slot.setdefault(slot_key, []).append(str(reaction_id))
 
     identity_collisions = {
         key: sorted(ids)
         for key, ids in sorted(by_identity_key.items())
+        if len(ids) > 1
+    }
+    lighting_slot_collisions = {
+        key: sorted(ids)
+        for key, ids in sorted(by_lighting_slot.items())
         if len(ids) > 1
     }
 
@@ -370,7 +393,90 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         "by_author_kind": dict(sorted(by_author_kind.items())),
         "by_template_id": dict(sorted(by_template_id.items())),
         "identity_collisions": identity_collisions,
+        "lighting_slot_collisions": lighting_slot_collisions,
         "reaction_ids": sorted(reaction_ids),
+    }
+
+
+def _lighting_summary_diagnostics(
+    proposal_diagnostics: dict[str, Any],
+    coordinator: Any,
+) -> dict[str, Any]:
+    proposals = list(proposal_diagnostics.get("proposals") or [])
+    lighting_pending = [
+        dict(item)
+        for item in proposals
+        if isinstance(item, dict)
+        and str(item.get("type") or "") == "lighting_scene_schedule"
+        and str(item.get("status") or "") == "pending"
+    ]
+
+    pending_by_room: dict[str, int] = {}
+    pending_tuning_total = 0
+    pending_discovery_total = 0
+    pending_tuning_examples: list[dict[str, Any]] = []
+    pending_discovery_examples: list[dict[str, Any]] = []
+    for proposal in lighting_pending:
+        config_summary = _safe_dict(proposal.get("config_summary"))
+        room_id = str(config_summary.get("room_id") or "").strip()
+        if room_id:
+            pending_by_room[room_id] = pending_by_room.get(room_id, 0) + 1
+        example = {
+            "id": proposal.get("id"),
+            "label": str(proposal.get("description") or "").strip(),
+            "room_id": room_id,
+            "slot_key": _lighting_slot_key_from_identity(str(proposal.get("identity_key") or "").strip()),
+            "confidence": proposal.get("confidence"),
+        }
+        if str(proposal.get("followup_kind") or "") == "tuning_suggestion":
+            pending_tuning_total += 1
+            if len(pending_tuning_examples) < 3:
+                pending_tuning_examples.append(example)
+        else:
+            pending_discovery_total += 1
+            if len(pending_discovery_examples) < 3:
+                pending_discovery_examples.append(example)
+
+    active = _active_reaction_items(coordinator)
+    configured_by_room: dict[str, int] = {}
+    configured_by_slot: dict[str, int] = {}
+    configured_total = 0
+    for _reaction_id, cfg in active:
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+        is_lighting = (
+            reaction_type == "lighting_scene_schedule"
+            or reaction_class == "LightingScheduleReaction"
+            or identity_key.startswith("lighting_scene_schedule|")
+        )
+        if not is_lighting:
+            continue
+        configured_total += 1
+        room_id = str(cfg.get("room_id") or "").strip()
+        if not room_id and identity_key.startswith("lighting_scene_schedule|"):
+            room_id = _lighting_room_from_identity(identity_key)
+        if room_id:
+            configured_by_room[room_id] = configured_by_room.get(room_id, 0) + 1
+        slot_key = _lighting_followup_slot_key(cfg)
+        if not slot_key and identity_key:
+            slot_key = _lighting_slot_key_from_identity(identity_key)
+        if slot_key:
+            configured_by_slot[slot_key] = configured_by_slot.get(slot_key, 0) + 1
+
+    configured_summary = _configured_reaction_summary_diagnostics(coordinator)
+
+    return {
+        "configured_total": configured_total,
+        "configured_by_room": dict(sorted(configured_by_room.items())),
+        "configured_by_slot": dict(sorted(configured_by_slot.items())),
+        "pending_total": len(lighting_pending),
+        "pending_tuning_total": pending_tuning_total,
+        "pending_discovery_total": pending_discovery_total,
+        "pending_by_room": dict(sorted(pending_by_room.items())),
+        "pending_tuning_examples": pending_tuning_examples,
+        "pending_discovery_examples": pending_discovery_examples,
+        "slot_collisions": dict(configured_summary.get("lighting_slot_collisions") or {}),
     }
 
 
@@ -446,3 +552,66 @@ def _template_ids(
             if template_id:
                 ids.append(template_id)
     return ids
+
+
+def _lighting_slot_key_from_identity(identity_key: str) -> str:
+    value = str(identity_key or "").strip()
+    if not value.startswith("lighting_scene_schedule|"):
+        return ""
+    return value.split("|scene=", 1)[0]
+
+
+def _lighting_room_from_identity(identity_key: str) -> str:
+    slot_key = _lighting_slot_key_from_identity(identity_key)
+    if not slot_key:
+        return ""
+    for part in slot_key.split("|"):
+        if part.startswith("room="):
+            return part.split("=", 1)[1]
+    return ""
+
+
+def _lighting_followup_slot_key(cfg: dict[str, Any]) -> str:
+    reaction_type = str(cfg.get("reaction_type") or "").strip()
+    reaction_class = str(cfg.get("reaction_class") or "").strip()
+    if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+        return ""
+    scheduled_min = cfg.get("scheduled_min")
+    bucket = None
+    if isinstance(scheduled_min, (int, float)):
+        bucket = (int(scheduled_min) // 30) * 30
+    return (
+        f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+        f"|bucket={bucket}"
+    )
+
+
+def _active_reaction_items(coordinator: Any) -> list[tuple[str, dict[str, Any]]]:
+    if coordinator is None:
+        return []
+    engine = getattr(coordinator, "engine", None)
+    state = getattr(engine, "_state", None)
+    get_sensor = getattr(state, "get_sensor", None)
+    if get_sensor is None:
+        return []
+    payload = get_sensor("heima_reactions_active")
+    if not isinstance(payload, str) or not payload.strip():
+        return []
+
+    import json
+
+    try:
+        reactions = json.loads(payload)
+    except Exception:  # noqa: BLE001
+        return []
+    if not isinstance(reactions, dict):
+        return []
+    return [
+        (str(reaction_id), dict(cfg))
+        for reaction_id, cfg in reactions.items()
+        if isinstance(cfg, dict)
+    ]
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}

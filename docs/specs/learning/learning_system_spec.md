@@ -915,6 +915,17 @@ Normative rules:
 - follow-up tuning proposals for authored automations MUST preserve the same shared substrate and
   SHOULD keep enough provenance to relate the tuning proposal back to the authored origin
 
+Lighting tuning clarification:
+- when a tuning proposal targets an active `LightingScheduleReaction`, the proposal/review layer
+  SHOULD support a structured diff over the active reaction rather than only generic follow-up text
+- minimum diff categories for v1 lighting tuning:
+  - schedule/time change
+  - brightness change
+  - color temperature change
+  - entity-set change
+- the follow-up review SHOULD show only the categories that actually differ between the active
+  reaction config and the proposed config
+
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:
   - `supports_admin_authored`
@@ -948,6 +959,28 @@ The learning surface is now expected to expose three distinct diagnostic views:
   - `by_origin`
   - `by_author_kind`
   - `reaction_ids`
+
+For lighting-heavy deployments, diagnostics SHOULD also expose a lighting-oriented summary view so
+operators do not need to reconstruct lighting state manually from generic proposal and reaction
+payloads.
+
+Recommended v1 lighting summary fields:
+- `configured_total`
+- `configured_by_room`
+- `configured_by_slot`
+- `pending_total`
+- `pending_tuning_total`
+- `pending_discovery_total`
+- `pending_by_room`
+- `slot_collisions`
+
+For lighting-specific operability in Strada 3:
+- diagnostics SHOULD also expose small, stable pending examples separated by follow-up kind
+- at minimum, a lighting summary MAY expose:
+  - `pending_tuning_examples`
+  - `pending_discovery_examples`
+- examples SHOULD be lightweight and product-facing rather than raw internal payload dumps
+- examples SHOULD prefer room / slot / confidence / concise label fields over full config bodies
 
 Normative rule:
 - when an accepted proposal is rebuilt into a configured reaction, provenance SHOULD remain attached
@@ -1262,7 +1295,13 @@ For each key (entity_id, action, weekday):
     p25       = samples_sorted[n // 4]
     p75       = samples_sorted[3 * n // 4]
     IQR       = p75 - p25
-    confidence = max(0.3, 1.0 - IQR / 120.0)
+    base_confidence = max(0.3, 1.0 - IQR / 120.0)
+    evidence_factor = min(1.0, len(matching) / 8.0)
+    weeks_factor    = min(1.0, weeks_observed(matching) / 3.0)
+    confidence = round(
+        max(0.3, base_confidence * (0.85 + 0.15 * evidence_factor) * (0.9 + 0.1 * weeks_factor)),
+        3,
+    )
 
     # Attributi fisici aggregati (action="on" only)
     brightness       = _median_int([e.data["brightness"] for e in matching])
@@ -1316,6 +1355,36 @@ for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
 pattern; penalizza meno i casi in cui la maggioranza delle entità è consistente ma una sola è
 leggermente più variabile.
 
+**Confidence operativa v1:** la confidence lighting NON dovrebbe dipendere solo da IQR.
+Anche pattern con IQR molto basso ma evidenza minima (es. appena 5 eventi su 2 settimane) dovrebbero
+restare leggermente meno confident di pattern osservati più spesso e su più settimane. In v1:
+- IQR resta il driver principale
+- `observations_count` e `weeks_observed` agiscono come moltiplicatori moderati, non come gate nuovi
+
+**Noise gate operativo v1:** oltre alla confidence, il lighting analyzer può scartare pattern con
+evidenza appena minima ma già troppo dispersi nel tempo. In pratica:
+- un pattern lighting con solo `5` osservazioni su `2` settimane e `IQR` ancora ampia non dovrebbe
+  diventare proposal solo perché supera di poco il `min_confidence` globale
+- in v1 è accettabile introdurre un gate conservativo del tipo:
+  - evidenza minima (`observations_count <= 5` e `weeks_observed <= 2`)
+  - dispersione temporale già larga (`IQR > 30`)
+  - quindi pattern scartato come rumoroso
+
+Questo NON introduce sessioni multi-evento o un nuovo modello: è solo un filtro pragmatico per
+ridurre proposal lighting deboli ma formalmente valide.
+
+#### Finestra runtime adattiva
+
+`window_half_min` per lighting non dovrebbe essere sempre fisso. In v1 può essere derivato dalla
+stabilità del cluster:
+- pattern molto stretti → finestra più piccola
+- pattern più variabili ma ancora accettati → finestra più larga
+
+Recommended v1 mapping:
+- `IQR <= 5` → `window_half_min = 5`
+- `IQR <= 15` → `window_half_min = 10`
+- altrimenti → `window_half_min = 15`
+
 #### Fase 3 — Proposal emission
 
 Per ogni `SceneCandidate`, emetti una `ReactionProposal` (vedi §P9.3).
@@ -1357,7 +1426,7 @@ ReactionProposal(
         "room_id": room_id,
         "weekday": weekday,
         "scheduled_min": scheduled_min,
-        "window_half_min": 10,
+        "window_half_min": derived_window_half_min,
         "house_state_filter": None,
         "entity_steps": [
             # Un dict per entità nel cluster
@@ -1401,6 +1470,37 @@ fingerprint_min = (scheduled_min // 5) * 5
 fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{fingerprint_min}"
 ```
 
+### P9.4.1 Scene quality and collision handling
+
+Lighting scene proposals SHOULD prefer stable, human-legible output over raw cluster exhaust.
+
+Normative quality rules for v1 lighting proposals:
+- a scene candidate SHOULD contain at most one step per `entity_id`
+- when multiple raw patterns for the same `entity_id` fall into the same logical cluster, the
+  analyzer SHOULD collapse them into one representative step rather than emitting duplicates
+- proposal descriptions SHOULD be stable and deterministic for the same logical scene candidate
+- entity ordering in descriptions and config SHOULD be deterministic so small analyzer churn does
+  not create confusing review diffs
+
+Normative collision rule:
+- when two lighting scene candidates for the same `(room_id, weekday)` fall into the same
+  30-minute identity bucket, v1 SHOULD prefer emitting at most one logical proposal candidate for
+  that bucket unless there is a materially different entity set
+- proposal identity for lighting MUST therefore combine:
+  - `(room_id, weekday, time_bucket_30m)`
+  - a stable `scene_signature` derived from normalized `entity_steps`
+- `scene_signature` SHOULD use coarse payload normalization so that minor brightness / kelvin drift
+  refreshes the same logical proposal instead of creating a new identity slot
+
+Examples of materially different changes:
+- added or removed entities
+- different dominant on/off intent for one entity
+- materially different brightness / color temperature payloads
+
+Minor drift that SHOULD NOT create a separate logical scene:
+- a few minutes of schedule movement inside the same 30-minute bucket
+- small attribute noise on a minority of samples
+
 ### P9.5 LightingScheduleReaction
 
 #### Trigger — RuntimeScheduler
@@ -1434,6 +1534,19 @@ gestire correttamente le finestre che attraversano mezzanotte.
 La finestra deve supportare wrap su mezzanotte. Il debounce non è legato semplicemente alla data
 wall-clock corrente, ma al giorno logico dell'occorrenza configurata: una schedule `00:05 ± 10 min`
 può iniziare il giorno precedente e non deve double-fire dopo mezzanotte.
+
+#### Runtime guardrails
+
+Le lighting reaction non dovrebbero bypassare i guardrail operativi del dominio lighting. In v1:
+- un `LightingScheduleReaction` può ancora emettere i suoi `ApplyStep`
+- ma gli step lighting reaction-generated devono passare anche da un `apply_filter` behavior che
+  rispetta il manual hold della stanza
+- se `heima_lighting_hold_<room_id>` è attivo e la stanza è configurata con manual hold abilitato,
+  gli step lighting con `source="reaction:<...>"` dovrebbero essere bloccati con una ragione
+  esplicita tipo:
+  - `lighting.manual_hold:<room_id>`
+
+Questo è un guardrail runtime, non un cambio del modello di learning.
 
 #### ApplyStep — uno per entità
 

@@ -934,10 +934,6 @@ class _ReactionsStepsMixin:
         color_temp_kelvin: int | None,
     ) -> ReactionProposal:
         template_id = "lighting.scene_schedule.basic"
-        fingerprint = (
-            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
-            f"|bucket={(scheduled_min // 30) * 30}"
-        )
         entity_steps = [
             {
                 "entity_id": entity_id,
@@ -948,6 +944,12 @@ class _ReactionsStepsMixin:
             }
             for entity_id in entity_ids
         ]
+        identity_key = self._lighting_identity_key(
+            room_id=room_id,
+            weekday=weekday,
+            scheduled_min=scheduled_min,
+            entity_steps=entity_steps,
+        )
         hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
         day = self._weekday_label(weekday, "en")
         description = f"{room_id}: {day} ~{hhmm} — {len(entity_steps)} entities"
@@ -957,8 +959,8 @@ class _ReactionsStepsMixin:
             description=description,
             confidence=1.0,
             origin="admin_authored",
-            identity_key=fingerprint,
-            fingerprint=fingerprint,
+            identity_key=identity_key,
+            fingerprint=identity_key,
             suggested_reaction_config={
                 "reaction_class": "LightingScheduleReaction",
                 "room_id": room_id,
@@ -1189,15 +1191,26 @@ class _ReactionsStepsMixin:
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
         cfg = _safe_mapping(proposal.suggested_reaction_config)
+        followup = self._proposal_followup_target(proposal)
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        language = self._flow_language()
+        if presenter is not None and presenter.proposal_review_title is not None:
+            title = presenter.proposal_review_title(
+                self,
+                proposal,
+                cfg,
+                language,
+                followup is not None,
+            )
+            if title:
+                return title
         title = self._proposal_human_label(proposal, cfg)
-        if self._proposal_followup_target(proposal) is not None:
-            language = self._flow_language()
+        if followup is not None:
             if language.startswith("it"):
                 return f"Affinamento: {title}"
             return f"Tuning: {title}"
         if proposal.origin != "admin_authored":
             return title
-        language = self._flow_language()
         if language.startswith("it"):
             return f"Bozza admin: {title}"
         return f"Admin draft: {title}"
@@ -1459,7 +1472,102 @@ class _ReactionsStepsMixin:
                 "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
                 "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
             }
+
+        followup_slot_key = self._proposal_followup_slot_key(proposal)
+        if followup_slot_key:
+            ranked: list[tuple[tuple[int, int, int, str], str, dict[str, Any]]] = []
+            proposal_cfg = _safe_mapping(proposal.suggested_reaction_config)
+            proposal_entities = self._lighting_entity_actions(proposal_cfg)
+            proposal_min = int(proposal_cfg.get("scheduled_min") or 0)
+            for reaction_id, raw in configured.items():
+                reaction_cfg = _safe_mapping(raw)
+                if self._lighting_followup_slot_key_from_cfg(reaction_cfg) != followup_slot_key:
+                    continue
+                reaction_entities = self._lighting_entity_actions(reaction_cfg)
+                overlap = len(proposal_entities & reaction_entities)
+                symmetric_diff = len(proposal_entities ^ reaction_entities)
+                reaction_min = int(reaction_cfg.get("scheduled_min") or 0)
+                ranked.append(
+                    (
+                        (-overlap, symmetric_diff, abs(proposal_min - reaction_min), str(reaction_id)),
+                        str(reaction_id),
+                        reaction_cfg,
+                    )
+                )
+            if ranked:
+                ranked.sort(key=lambda item: item[0])
+                _, reaction_id, reaction_cfg = ranked[0]
+                return {
+                    "reaction_id": reaction_id,
+                    "reaction_cfg": reaction_cfg,
+                    "reaction_label": self._reaction_label_from_config(
+                        reaction_id, reaction_cfg, labels_map
+                    ),
+                    "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
+                    "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
+                }
         return None
+
+    @staticmethod
+    def _proposal_followup_slot_key(proposal: ReactionProposal) -> str:
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        reaction_type = proposal.reaction_type
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+            return ""
+        scheduled_min = cfg.get("scheduled_min")
+        bucket = None
+        if isinstance(scheduled_min, (int, float)):
+            bucket = (int(scheduled_min) // 30) * 30
+        return (
+            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+            f"|bucket={bucket}"
+        )
+
+    @staticmethod
+    def _lighting_followup_slot_key_from_cfg(cfg: dict[str, Any]) -> str:
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+            return ""
+        scheduled_min = cfg.get("scheduled_min")
+        bucket = None
+        if isinstance(scheduled_min, (int, float)):
+            bucket = (int(scheduled_min) // 30) * 30
+        return (
+            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+            f"|bucket={bucket}"
+        )
+
+    @staticmethod
+    def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
+        entity_steps = cfg.get("entity_steps")
+        if not isinstance(entity_steps, list):
+            return set()
+        pairs: set[tuple[str, str]] = set()
+        for step in entity_steps:
+            if not isinstance(step, dict):
+                continue
+            entity_id = str(step.get("entity_id") or "").strip()
+            action = str(step.get("action") or "").strip()
+            if entity_id:
+                pairs.add((entity_id, action))
+        return pairs
+
+    @staticmethod
+    def _lighting_identity_key(
+        *,
+        room_id: str,
+        weekday: int,
+        scheduled_min: int,
+        entity_steps: list[dict[str, Any]],
+    ) -> str:
+        bucket = (scheduled_min // 30) * 30
+        scene_signature = _lighting_scene_signature(entity_steps)
+        return (
+            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
+            f"|bucket={bucket}|scene={scene_signature}"
+        )
 
     def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
         configured = dict(self._reactions_options().get("configured", {}))
@@ -1665,3 +1773,47 @@ def _parse_hhmm_to_min(value: str) -> int | None:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return None
     return hour * 60 + minute
+
+
+def _lighting_scene_signature(entity_steps: list[dict[str, Any]]) -> str:
+    normalized_steps: list[str] = []
+    for raw_step in entity_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        entity_id = str(raw_step.get("entity_id") or "").strip()
+        action = str(raw_step.get("action") or "").strip() or "unknown"
+        if not entity_id:
+            continue
+        brightness = _coarse_numeric_bucket(raw_step.get("brightness"), step=32)
+        color_temp = _coarse_numeric_bucket(raw_step.get("color_temp_kelvin"), step=250)
+        rgb = _normalize_rgb(raw_step.get("rgb_color"))
+        normalized_steps.append(
+            "|".join(
+                [
+                    entity_id,
+                    action,
+                    f"b={brightness if brightness is not None else '-'}",
+                    f"k={color_temp if color_temp is not None else '-'}",
+                    f"rgb={rgb if rgb is not None else '-'}",
+                ]
+            )
+        )
+    if not normalized_steps:
+        return "none"
+    normalized_steps.sort()
+    return "||".join(normalized_steps)
+
+
+def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return int(round(float(value) / step) * step)
+
+
+def _normalize_rgb(value: Any) -> str | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return None
+    try:
+        return ",".join(str(int(channel)) for channel in value)
+    except (TypeError, ValueError):
+        return None

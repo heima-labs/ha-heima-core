@@ -5,8 +5,11 @@ from types import SimpleNamespace
 import pytest
 from homeassistant.exceptions import ServiceNotFound
 
+from custom_components.heima.runtime.behaviors.lighting_reaction_guard import (
+    LightingReactionGuardBehavior,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
-from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -649,6 +652,41 @@ def test_conflict_first_valid_step_wins_after_prior_skip():
     assert plan.steps[0].action == "scene.turn_on"
     assert plan.steps[0].params == {"entity_id": "scene.soggiorno_off"}
     assert engine.diagnostics()["lighting"]["conflicts_last_eval"] == []
+
+
+def test_lighting_reaction_steps_blocked_by_manual_hold_behavior():
+    options = {
+        "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
+    }
+    engine = _build_engine(options)
+    engine.register_behavior(LightingReactionGuardBehavior(engine.state, options))
+    engine.state.set_binary("heima_lighting_hold_living", True)
+    snapshot = DecisionSnapshot.empty()
+    plan = ApplyPlan(
+        steps=[
+            ApplyStep(
+                domain="lighting",
+                target="living",
+                action="light.turn_on",
+                params={"entity_id": "light.living_main"},
+                reason="test",
+                source="reaction:lighting-1",
+            ),
+            ApplyStep(
+                domain="lighting",
+                target="living",
+                action="light.turn_on",
+                params={"entity_id": "light.living_main"},
+                reason="domain-test",
+                source="",
+            ),
+        ]
+    )
+
+    filtered = engine._dispatch_apply_filter(plan, snapshot)
+
+    assert filtered.steps[0].blocked_by == "lighting.manual_hold:living"
+    assert filtered.steps[1].blocked_by == ""
 
 
 @pytest.mark.asyncio

@@ -43,8 +43,8 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `036_lighting_tuning_followup_flow.py`
       - `037_admin_authored_room_signal_binary_modes.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning). Per `learning` e `reactions` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati e collisioni di identity tra reaction configurate.
-  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati e warning su collisioni di identity tra reaction configurate.
+  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). Per `learning`, `reactions` e `lighting` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati, collisioni lighting per slot e pending tuning lighting.
+  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati, collisioni lighting per slot e overview lighting-specifica su configured/pending/tuning.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
@@ -98,6 +98,7 @@ python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --secti
 
 # Solo il summary learning plugin-centric
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section learning
+python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section lighting
 python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 ```
 

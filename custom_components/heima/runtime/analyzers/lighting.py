@@ -15,6 +15,7 @@ _MIN_OCCURRENCES = 5
 _MIN_WEEKS = 2
 _SCENE_GROUP_WINDOW_MIN = 15   # max gap between entity scheduled_mins to merge into one scene
 _MIN_ATTR_SAMPLES = _MIN_OCCURRENCES // 2  # min non-None values to trust an aggregated attribute
+_MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE = 30
 
 
 @dataclass
@@ -91,7 +92,21 @@ class LightingPatternAnalyzer:
             n = len(samples)
             median = samples[n // 2]
             iqr = samples[(3 * n) // 4] - samples[n // 4]
-            confidence = max(0.3, 1.0 - iqr / 120.0)
+            weeks_observed = _weeks_observed(group)
+            if _is_minimal_evidence_group(len(group), weeks_observed, iqr):
+                continue
+            base_confidence = max(0.3, 1.0 - iqr / 120.0)
+            evidence_factor = min(1.0, len(group) / 8.0)
+            weeks_factor = min(1.0, weeks_observed / 3.0)
+            confidence = round(
+                max(
+                    0.3,
+                    base_confidence
+                    * (0.85 + 0.15 * evidence_factor)
+                    * (0.9 + 0.1 * weeks_factor),
+                ),
+                3,
+            )
 
             brightness = _median_int([e.data.get("brightness") for e in group])
             color_temp = _median_int([e.data.get("color_temp_kelvin") for e in group])
@@ -105,7 +120,7 @@ class LightingPatternAnalyzer:
                 scheduled_min=median,
                 confidence=float(confidence),
                 observations_count=len(group),
-                weeks_observed=_weeks_observed(group),
+                weeks_observed=weeks_observed,
                 iqr_min=iqr,
                 brightness=brightness if action == "on" else None,
                 color_temp_kelvin=color_temp if action == "on" else None,
@@ -141,8 +156,10 @@ class LightingPatternAnalyzer:
                 cluster_mins = [p.scheduled_min for p in cluster]
                 n = len(cluster_mins)
                 scheduled_min = sorted(cluster_mins)[n // 2]
-                confidence = sum(p.confidence for p in cluster) / n
-                entity_steps = [p.as_entity_step() for p in cluster]
+                normalized_cluster = _normalize_cluster_patterns(cluster, scheduled_min=scheduled_min)
+                confidence = sum(p.confidence for p in normalized_cluster) / len(normalized_cluster)
+                entity_steps = [p.as_entity_step() for p in normalized_cluster]
+                window_half_min = _cluster_window_half_min(normalized_cluster)
 
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
@@ -158,7 +175,7 @@ class LightingPatternAnalyzer:
                         "room_id": room_id,
                         "weekday": weekday,
                         "scheduled_min": scheduled_min,
-                        "window_half_min": 10,
+                        "window_half_min": window_half_min,
                         "house_state_filter": None,
                         "entity_steps": entity_steps,
                         "learning_diagnostics": build_learning_diagnostics(
@@ -174,12 +191,12 @@ class LightingPatternAnalyzer:
                                 if step.get("entity_id")
                             ),
                             observations_count=sum(
-                                pattern.observations_count for pattern in cluster
+                                pattern.observations_count for pattern in normalized_cluster
                             ),
                             weeks_observed=min(
-                                pattern.weeks_observed for pattern in cluster
+                                pattern.weeks_observed for pattern in normalized_cluster
                             ),
-                            iqr_min=max(pattern.iqr_min for pattern in cluster),
+                            iqr_min=max(pattern.iqr_min for pattern in normalized_cluster),
                             scheduled_min=scheduled_min,
                             entity_steps_count=len(entity_steps),
                         ),
@@ -196,6 +213,14 @@ class LightingPatternAnalyzer:
 
 def _spans_min_weeks(events: list[HeimaEvent]) -> bool:
     return _weeks_observed(events) >= _MIN_WEEKS
+
+
+def _is_minimal_evidence_group(observations_count: int, weeks_observed: int, iqr_min: int) -> bool:
+    return (
+        observations_count <= _MIN_OCCURRENCES
+        and weeks_observed <= _MIN_WEEKS
+        and iqr_min > _MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE
+    )
 
 
 def _weeks_observed(events: list[HeimaEvent]) -> int:
@@ -236,6 +261,32 @@ def _hhmm(minute_of_day: int) -> str:
     return f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}"
 
 
+def _normalize_cluster_patterns(
+    cluster: list[_EntityPattern], *, scheduled_min: int
+) -> list[_EntityPattern]:
+    """Collapse duplicate entity candidates inside a scene and order them deterministically."""
+    by_entity: dict[str, list[_EntityPattern]] = {}
+    for pattern in cluster:
+        by_entity.setdefault(pattern.entity_id, []).append(pattern)
+
+    normalized: list[_EntityPattern] = []
+    for entity_id, patterns in by_entity.items():
+        winner = min(
+            patterns,
+            key=lambda p: (
+                abs(p.scheduled_min - scheduled_min),
+                -p.observations_count,
+                -p.confidence,
+                p.action,
+                p.entity_id,
+            ),
+        )
+        normalized.append(winner)
+
+    normalized.sort(key=lambda p: (p.entity_id, p.action, p.scheduled_min))
+    return normalized
+
+
 def _describe(room_id: str, weekday: int, scheduled_min: int, entity_steps: list[dict]) -> str:
     parts = []
     for s in entity_steps:
@@ -254,3 +305,12 @@ def _describe(room_id: str, weekday: int, scheduled_min: int, entity_steps: list
         f"{room_id}: {_WEEKDAY_NAMES[weekday]} ~{_hhmm(scheduled_min)} — "
         + ", ".join(parts)
     )
+
+
+def _cluster_window_half_min(cluster: list[_EntityPattern]) -> int:
+    max_iqr = max((int(p.iqr_min) for p in cluster), default=0)
+    if max_iqr <= 5:
+        return 5
+    if max_iqr <= 15:
+        return 10
+    return 15

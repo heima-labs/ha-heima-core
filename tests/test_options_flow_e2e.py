@@ -546,6 +546,7 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
                         "source_template_id": "lighting.scene_schedule.basic",
                         "source_proposal_identity_key": (
                             "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
                         ),
                     }
                 }
@@ -558,14 +559,25 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
         reaction_type="lighting_scene_schedule",
         description="Living lights shift slightly later",
         confidence=0.93,
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        identity_key=(
+            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+            "|scene=light.living_main|on|b=192|k=2500|rgb=-||light.living_spot|on|b=-|k=-|rgb=-"
+        ),
         last_observed_at="2026-03-30T10:27:51.561727+00:00",
         suggested_reaction_config={
             "reaction_class": "LightingScheduleReaction",
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1210,
-            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "entity_steps": [
+                {
+                    "entity_id": "light.living_main",
+                    "action": "on",
+                    "brightness": 180,
+                    "color_temp_kelvin": 2600,
+                },
+                {"entity_id": "light.living_spot", "action": "on"},
+            ],
             "learning_diagnostics": {"episodes_observed": 6, "weeks_observed": 3},
         },
     )
@@ -579,13 +591,51 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento: Luci living")
+    assert placeholders["proposal_label"].startswith("Affinamento luci: Luci living")
     assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
     assert "Automazione target: Luci living — Lunedì ~20:00 (1 entità)" in placeholders["proposal_details"]
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
+    assert "Delta luci:" in placeholders["proposal_details"]
     assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
+    assert (
+        "light.living_main: brightness None -> 180; kelvin None -> 2600"
+        in placeholders["proposal_details"]
+    )
+    assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
     assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_marks_lighting_discovery_as_new_automation():
+    flow = _flow({})
+    proposal = ReactionProposal(
+        proposal_id="proposal-lighting-new-1",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Living evening lights",
+        confidence=0.88,
+        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=base",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1200,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "learning_diagnostics": {"observations_count": 5, "weeks_observed": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Nuova automazione luci: Luci living")
 
 
 @pytest.mark.asyncio
@@ -607,6 +657,7 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
                         "source_proposal_id": "proposal-admin",
                         "source_proposal_identity_key": (
                             "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
                         ),
                         "created_at": "2026-03-30T10:00:00+00:00",
                         "last_tuned_at": None,
@@ -622,7 +673,10 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
         reaction_type="lighting_scene_schedule",
         description="Living lights shift slightly later",
         confidence=0.93,
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        identity_key=(
+            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
+            "|scene=light.living_main|on|b=192|k=-|rgb=-"
+        ),
         updated_at="2026-03-30T12:34:00+00:00",
         suggested_reaction_config={
             "reaction_class": "LightingScheduleReaction",
@@ -750,12 +804,63 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     assert created.origin == "admin_authored"
     assert created.reaction_type == "lighting_scene_schedule"
     assert created.suggested_reaction_config["admin_authored_template_id"] == "lighting.scene_schedule.basic"
+    assert created.identity_key.startswith(
+        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
+    )
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
     assert "Bozza admin: Luci living" in result["description_placeholders"]["proposal_label"]
     assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
     assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
     assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_slot():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "area_id": "living"},
+            ],
+            "learning": {"enabled_plugin_families": ["lighting"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"lighting"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_lighting_schedule(
+        {
+            "room_id": "living",
+            "weekday": "0",
+            "scheduled_time": "20:10",
+            "light_entities": ["light.living_spot"],
+            "action": "on",
+            "brightness": 160,
+            "color_temp_kelvin": 2600,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    assert result["step_id"] == "proposals"
 
 
 @pytest.mark.asyncio
@@ -1129,6 +1234,58 @@ def test_tuning_pending_summary_counts_followup_proposals():
 
     assert flow._proposal_review_summary() == "2"
     assert flow._tuning_pending_summary() == "1"
+
+
+def test_lighting_menu_summary_is_operational() -> None:
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living"},
+                {"room_id": "studio", "display_name": "Studio"},
+                {"room_id": "bathroom", "display_name": "Bathroom"},
+            ],
+            "lighting_rooms": [
+                {"room_id": "living", "enable_manual_hold": True},
+                {"room_id": "studio", "enable_manual_hold": True},
+            ],
+            "reactions": {
+                "configured": {
+                    "r-light-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                    },
+                    "r-signal-1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                    },
+                }
+            },
+            "language": "it",
+        }
+    )
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="new schedule",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="tuning schedule",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._lighting_menu_summary() == "2/3 stanze | attive 1 | review 2 | tuning 1"
 
 
 def test_signal_threshold_mode_options_include_binary_transitions():

@@ -102,7 +102,7 @@ Built-in proposals should converge on these identity keys:
 - `presence_preheat|weekday=<weekday>`
 - `heating_preference|house_state=<house_state>`
 - `heating_eco`
-- `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>`
+- `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>`
 - `room_signal_assist|room=<room_id>`
 - `room_cooling_assist|room=<room_id>`
 - `room_air_quality_assist|room=<room_id>`
@@ -113,6 +113,39 @@ Built-in proposals should converge on these identity keys:
 For v1, lighting schedules use a **30-minute time bucket** in logical identity.
 
 This is intentionally coarser than exact `scheduled_min` to reduce duplicate proposals caused by minor drift.
+
+Normative clarification:
+- proposals that remain inside the same lighting identity bucket SHOULD normally refresh the same
+  logical proposal rather than creating bucket-local near-duplicates
+- if multiple generated lighting candidates land in the same bucket during one analysis run, the
+  analyzer SHOULD prefer one stable representative candidate unless the competing candidates have a
+  materially different entity set or payload
+- lighting identity MUST therefore include a stable `scene_signature` derived from normalized
+  `entity_steps`, not only `(room_id, weekday, time_bucket)`
+- `scene_signature` SHOULD be coarse enough to tolerate minor drift in brightness / color
+  temperature while still separating materially different scenes in the same bucket
+- matching the same lighting slot is NOT by itself sufficient to create a `tuning_suggestion`
+- if the candidate differs from the accepted lighting reaction only by minor drift, v1 SHOULD
+  suppress the follow-up instead of surfacing review noise
+
+Recommended v1 `minor drift` examples:
+- schedule drift within roughly 5 minutes
+- small brightness drift for the same entity set
+- small color temperature drift for the same entity set
+
+## 4.5 Review wording for lighting proposals
+
+For lighting-specific review UX, wording SHOULD distinguish clearly between:
+
+- `discovery`
+  - a newly learned lighting automation candidate
+- `tuning_suggestion`
+  - a follow-up change over an already active lighting automation
+
+Normative guidance:
+- review titles for lighting discovery SHOULD read as a new learned automation, not a generic proposal
+- review titles for lighting tuning SHOULD read as an adjustment of an existing automation, not a second discovery
+- the same distinction SHOULD be visible both in proposal review wording and in lighting-specific diagnostics summaries
 
 ## 5. Lifecycle Fields
 

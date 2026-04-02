@@ -215,7 +215,52 @@ class HeimaOptionsFlowHandler(
         return f"{len(rooms)}: {', '.join(names)}"
 
     def _lighting_menu_summary(self) -> str:
-        return f"{len(self._lighting_rooms())}/{len(self._rooms())}"
+        configured_rooms = len(self._lighting_rooms())
+        total_rooms = len(self._rooms())
+        pending = self._pending_proposals()
+
+        lighting_pending = [
+            proposal
+            for proposal in pending
+            if str(getattr(proposal, "reaction_type", "") or "").strip()
+            == "lighting_scene_schedule"
+        ]
+        lighting_tuning = [
+            proposal
+            for proposal in lighting_pending
+            if str(getattr(proposal, "followup_kind", "") or "").strip()
+            == "tuning_suggestion"
+        ]
+
+        configured = dict(self._reactions_options().get("configured", {}))
+        active_lighting = 0
+        for cfg in configured.values():
+            if not isinstance(cfg, dict):
+                continue
+            reaction_type = str(cfg.get("reaction_type") or "").strip()
+            reaction_class = str(cfg.get("reaction_class") or "").strip()
+            identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+            if (
+                reaction_type == "lighting_scene_schedule"
+                or reaction_class == "LightingScheduleReaction"
+                or identity_key.startswith("lighting_scene_schedule|")
+            ):
+                active_lighting += 1
+
+        lang = str(self.options.get(CONF_LANGUAGE, "it"))
+        if lang.startswith("it"):
+            return (
+                f"{configured_rooms}/{total_rooms} stanze"
+                f" | attive {active_lighting}"
+                f" | review {len(lighting_pending)}"
+                f" | tuning {len(lighting_tuning)}"
+            )
+        return (
+            f"{configured_rooms}/{total_rooms} rooms"
+            f" | active {active_lighting}"
+            f" | review {len(lighting_pending)}"
+            f" | tuning {len(lighting_tuning)}"
+        )
 
     def _heating_menu_summary(self) -> str:
         cfg = self._heating_config()
