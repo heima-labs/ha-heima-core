@@ -10,7 +10,7 @@ from .composite import CompositePatternSpec
 
 DescriptionBuilder = Callable[[str, int, int], str]
 SuggestedConfigBuilder = Callable[[str, list[Any], Any], dict[str, Any]]
-ConfidenceBuilder = Callable[[list[Any]], float]
+ConfidenceBuilder = Callable[[list[Any], Any], float]
 DiagnosticsBuilder = Callable[[str, list[Any], list[Any], CompositePatternSpec], dict[str, Any]]
 
 

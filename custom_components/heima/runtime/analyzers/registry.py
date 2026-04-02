@@ -11,6 +11,7 @@ from .cross_domain import composite_quality_policy_from_learning_config
 from .heating import HeatingPatternAnalyzer
 from .lifecycle import (
     ProposalLifecycleHooks,
+    composite_lifecycle_policy_from_learning_config,
     composite_room_assist_lifecycle_hooks,
     heating_lifecycle_hooks,
     lighting_lifecycle_hooks,
@@ -251,7 +252,9 @@ def create_builtin_learning_plugin_registry(
                 "room_darkness_lighting_assist",
             ),
             reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
-            lifecycle_hooks=composite_room_assist_lifecycle_hooks(),
+            lifecycle_hooks=composite_room_assist_lifecycle_hooks(
+                policy=composite_lifecycle_policy_from_learning_config(learning_config)
+            ),
             supports_admin_authored=True,
             admin_authored_templates=(
                 AdminAuthoredTemplateDescriptor(

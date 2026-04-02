@@ -34,6 +34,13 @@ class CompositeProposalQualityPolicy:
     followup_entity_min_episodes: int = 3
     corroboration_promote_min_ratio: float = 0.6
     corroboration_promote_min_episodes: int = 3
+    minimal_evidence_confidence_cap: float = 0.86
+    near_minimal_evidence_confidence_cap: float = 0.90
+    minimal_evidence_max_confirmed: int = 6
+    minimal_evidence_max_weeks: int = 2
+    near_minimal_evidence_max_confirmed: int = 7
+    near_minimal_evidence_max_weeks: int = 3
+    corroboration_cap_bonus: float = 0.02
 
 
 DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY = CompositeProposalQualityPolicy()
@@ -65,6 +72,34 @@ def composite_quality_policy_from_learning_config(
         corroboration_promote_min_episodes=_coerce_positive_int(
             policy_raw.get("corroboration_promote_min_episodes"),
             default.corroboration_promote_min_episodes,
+        ),
+        minimal_evidence_confidence_cap=_coerce_ratio(
+            policy_raw.get("minimal_evidence_confidence_cap"),
+            default.minimal_evidence_confidence_cap,
+        ),
+        near_minimal_evidence_confidence_cap=_coerce_ratio(
+            policy_raw.get("near_minimal_evidence_confidence_cap"),
+            default.near_minimal_evidence_confidence_cap,
+        ),
+        minimal_evidence_max_confirmed=_coerce_positive_int(
+            policy_raw.get("minimal_evidence_max_confirmed"),
+            default.minimal_evidence_max_confirmed,
+        ),
+        minimal_evidence_max_weeks=_coerce_positive_int(
+            policy_raw.get("minimal_evidence_max_weeks"),
+            default.minimal_evidence_max_weeks,
+        ),
+        near_minimal_evidence_max_confirmed=_coerce_positive_int(
+            policy_raw.get("near_minimal_evidence_max_confirmed"),
+            default.near_minimal_evidence_max_confirmed,
+        ),
+        near_minimal_evidence_max_weeks=_coerce_positive_int(
+            policy_raw.get("near_minimal_evidence_max_weeks"),
+            default.near_minimal_evidence_max_weeks,
+        ),
+        corroboration_cap_bonus=_coerce_ratio(
+            policy_raw.get("corroboration_cap_bonus"),
+            default.corroboration_cap_bonus,
         ),
     )
 
@@ -207,7 +242,14 @@ async def _analyze_definition(
                 analyzer_id=definition.analyzer_id,
                 reaction_type=definition.reaction_type,
                 description=definition.description_builder(room_id, len(confirmed), corroborated),
-                confidence=round(definition.confidence_builder(confirmed), 3),
+                confidence=round(
+                    _call_composite_confidence_builder(
+                        definition.confidence_builder,
+                        confirmed,
+                        quality_policy,
+                    ),
+                    3,
+                ),
                 suggested_reaction_config=suggested,
                 fingerprint=(
                     f"{definition.analyzer_id}|{definition.reaction_type}|{room_id}|"
@@ -295,6 +337,7 @@ def _composite_confidence(
     *,
     base: float,
     cap: float,
+    quality_policy: CompositeProposalQualityPolicy,
     corroboration_key: str | None = None,
 ) -> float:
     count = len(confirmed)
@@ -313,12 +356,37 @@ def _composite_confidence(
 
     # Keep barely-above-gate patterns below the maximum until they gather
     # more observations across weeks.
-    if count <= (_MIN_OCCURRENCES + 1) and weeks <= _MIN_WEEKS:
-        cap = min(cap, 0.86 + (0.02 * corroboration_ratio))
-    elif count <= (_MIN_OCCURRENCES + 2) and weeks <= (_MIN_WEEKS + 1):
-        cap = min(cap, 0.9 + (0.02 * corroboration_ratio))
+    if (
+        count <= quality_policy.minimal_evidence_max_confirmed
+        and weeks <= quality_policy.minimal_evidence_max_weeks
+    ):
+        cap = min(
+            cap,
+            quality_policy.minimal_evidence_confidence_cap
+            + (quality_policy.corroboration_cap_bonus * corroboration_ratio),
+        )
+    elif (
+        count <= quality_policy.near_minimal_evidence_max_confirmed
+        and weeks <= quality_policy.near_minimal_evidence_max_weeks
+    ):
+        cap = min(
+            cap,
+            quality_policy.near_minimal_evidence_confidence_cap
+            + (quality_policy.corroboration_cap_bonus * corroboration_ratio),
+        )
 
     return min(cap, round(confidence, 3))
+
+
+def _call_composite_confidence_builder(
+    builder: Any,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> float:
+    try:
+        return float(builder(confirmed, quality_policy))
+    except TypeError:
+        return float(builder(confirmed))
 
 
 def _stable_entities_from_corroboration(
@@ -688,10 +756,11 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_signal_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: _composite_confidence(
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
         base=0.46,
         cap=0.95,
+        quality_policy=quality_policy,
         corroboration_key="temperature",
     ),
 )
@@ -730,10 +799,11 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_cooling_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: _composite_confidence(
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
         base=0.43,
         cap=0.95,
+        quality_policy=quality_policy,
         corroboration_key="humidity",
     ),
 )
@@ -764,10 +834,11 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_air_quality_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: _composite_confidence(
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
         base=0.41,
         cap=0.93,
+        quality_policy=quality_policy,
     ),
 )
 
@@ -798,10 +869,11 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_darkness_lighting_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: _composite_confidence(
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
         base=0.43,
         cap=0.94,
+        quality_policy=quality_policy,
     ),
 )
 

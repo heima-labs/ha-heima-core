@@ -1013,6 +1013,10 @@ Composite runtime-confidence clarification:
 - this suppression is especially valuable for:
   - `room_signal_assist`
   - `room_darkness_lighting_assist`
+- the thresholds that define “minor drift” SHOULD come from configurable composite lifecycle policy,
+  not from hardcoded constants scattered in lifecycle hooks
+- v1 does not require a polished UI for these knobs, but the runtime/config model SHOULD allow
+  overrides from `learning` configuration in the same spirit as analyzer quality policy
 
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:

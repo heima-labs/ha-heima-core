@@ -174,6 +174,8 @@ Composite proposal quality clarification:
   - same actuation payload size
   - unchanged threshold mode
   - small threshold delta only
+- the exact “small threshold delta” and comparable payload-drift tolerances SHOULD be modeled as
+  configurable lifecycle policy, even if v1 ships with built-in defaults
 
 ### 4.4 Lighting time bucket
 

@@ -26,6 +26,20 @@ class ProposalLifecycleHooks:
     should_suppress_followup: LifecycleShouldSuppressFollowup | None = None
 
 
+@dataclass(frozen=True)
+class CompositeLifecyclePolicy:
+    """Lifecycle suppression policy for composite follow-ups."""
+
+    room_signal_primary_threshold_max_gap: float = 1.0
+    room_signal_corroboration_threshold_max_gap: float = 0.0
+    room_darkness_primary_threshold_max_gap: float = 10.0
+    room_darkness_brightness_max_gap: int = 16
+    room_darkness_color_temp_max_gap: int = 150
+
+
+DEFAULT_COMPOSITE_LIFECYCLE_POLICY = CompositeLifecyclePolicy()
+
+
 def presence_lifecycle_hooks() -> ProposalLifecycleHooks:
     return ProposalLifecycleHooks(identity_key=_presence_identity_key)
 
@@ -43,10 +57,52 @@ def lighting_lifecycle_hooks() -> ProposalLifecycleHooks:
     )
 
 
-def composite_room_assist_lifecycle_hooks() -> ProposalLifecycleHooks:
+def composite_lifecycle_policy_from_learning_config(
+    learning_config: dict[str, Any] | None,
+) -> CompositeLifecyclePolicy:
+    """Build composite lifecycle policy from learning config overrides."""
+    raw = dict(learning_config or {})
+    policy_raw = raw.get("composite_lifecycle_policy")
+    if not isinstance(policy_raw, dict):
+        return DEFAULT_COMPOSITE_LIFECYCLE_POLICY
+
+    default = DEFAULT_COMPOSITE_LIFECYCLE_POLICY
+    return CompositeLifecyclePolicy(
+        room_signal_primary_threshold_max_gap=_coerce_non_negative_float(
+            policy_raw.get("room_signal_primary_threshold_max_gap"),
+            default.room_signal_primary_threshold_max_gap,
+        ),
+        room_signal_corroboration_threshold_max_gap=_coerce_non_negative_float(
+            policy_raw.get("room_signal_corroboration_threshold_max_gap"),
+            default.room_signal_corroboration_threshold_max_gap,
+        ),
+        room_darkness_primary_threshold_max_gap=_coerce_non_negative_float(
+            policy_raw.get("room_darkness_primary_threshold_max_gap"),
+            default.room_darkness_primary_threshold_max_gap,
+        ),
+        room_darkness_brightness_max_gap=_coerce_non_negative_int(
+            policy_raw.get("room_darkness_brightness_max_gap"),
+            default.room_darkness_brightness_max_gap,
+        ),
+        room_darkness_color_temp_max_gap=_coerce_non_negative_int(
+            policy_raw.get("room_darkness_color_temp_max_gap"),
+            default.room_darkness_color_temp_max_gap,
+        ),
+    )
+
+
+def composite_room_assist_lifecycle_hooks(
+    *,
+    policy: CompositeLifecyclePolicy | None = None,
+) -> ProposalLifecycleHooks:
+    configured_policy = policy or DEFAULT_COMPOSITE_LIFECYCLE_POLICY
     return ProposalLifecycleHooks(
         identity_key=_composite_room_identity_key,
-        should_suppress_followup=_composite_should_suppress_followup,
+        should_suppress_followup=lambda candidate, accepted: _composite_should_suppress_followup(
+            candidate,
+            accepted,
+            policy=configured_policy,
+        ),
     )
 
 
@@ -169,6 +225,8 @@ def _composite_room_identity_key(proposal: ReactionProposal) -> str:
 def _composite_should_suppress_followup(
     candidate: ReactionProposal,
     accepted: ReactionProposal,
+    *,
+    policy: CompositeLifecyclePolicy,
 ) -> bool:
     candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
     accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
@@ -179,15 +237,21 @@ def _composite_should_suppress_followup(
         return False
 
     if candidate.reaction_type == "room_signal_assist":
-        return _room_signal_assist_should_suppress_followup(candidate_cfg, accepted_cfg)
+        return _room_signal_assist_should_suppress_followup(candidate_cfg, accepted_cfg, policy=policy)
     if candidate.reaction_type == "room_darkness_lighting_assist":
-        return _room_darkness_lighting_assist_should_suppress_followup(candidate_cfg, accepted_cfg)
+        return _room_darkness_lighting_assist_should_suppress_followup(
+            candidate_cfg,
+            accepted_cfg,
+            policy=policy,
+        )
     return False
 
 
 def _room_signal_assist_should_suppress_followup(
     candidate_cfg: dict[str, Any],
     accepted_cfg: dict[str, Any],
+    *,
+    policy: CompositeLifecyclePolicy,
 ) -> bool:
     if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
         accepted_cfg.get("primary_threshold_mode")
@@ -207,12 +271,15 @@ def _room_signal_assist_should_suppress_followup(
         return False
     if _steps_count(candidate_cfg.get("steps")) != _steps_count(accepted_cfg.get("steps")):
         return False
-    if _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold")) > 1:
+    if (
+        _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold"))
+        > policy.room_signal_primary_threshold_max_gap
+    ):
         return False
     if _numeric_gap(
         candidate_cfg.get("corroboration_threshold"),
         accepted_cfg.get("corroboration_threshold"),
-    ) > 0:
+    ) > policy.room_signal_corroboration_threshold_max_gap:
         return False
     return True
 
@@ -220,6 +287,8 @@ def _room_signal_assist_should_suppress_followup(
 def _room_darkness_lighting_assist_should_suppress_followup(
     candidate_cfg: dict[str, Any],
     accepted_cfg: dict[str, Any],
+    *,
+    policy: CompositeLifecyclePolicy,
 ) -> bool:
     if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
         accepted_cfg.get("primary_threshold_mode")
@@ -234,7 +303,10 @@ def _room_darkness_lighting_assist_should_suppress_followup(
     accepted_steps = _lighting_steps_by_entity(accepted_cfg)
     if set(candidate_steps) != set(accepted_steps):
         return False
-    if _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold")) > 10:
+    if (
+        _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold"))
+        > policy.room_darkness_primary_threshold_max_gap
+    ):
         return False
 
     for entity_id in sorted(candidate_steps):
@@ -242,9 +314,15 @@ def _room_darkness_lighting_assist_should_suppress_followup(
         proposed = candidate_steps[entity_id]
         if _normalize_str(current.get("action")) != _normalize_str(proposed.get("action")):
             return False
-        if _numeric_gap(current.get("brightness"), proposed.get("brightness")) > 16:
+        if (
+            _numeric_gap(current.get("brightness"), proposed.get("brightness"))
+            > policy.room_darkness_brightness_max_gap
+        ):
             return False
-        if _numeric_gap(current.get("color_temp_kelvin"), proposed.get("color_temp_kelvin")) > 150:
+        if (
+            _numeric_gap(current.get("color_temp_kelvin"), proposed.get("color_temp_kelvin"))
+            > policy.room_darkness_color_temp_max_gap
+        ):
             return False
         if _normalize_rgb(current.get("rgb_color")) != _normalize_rgb(proposed.get("rgb_color")):
             return False
@@ -358,3 +436,19 @@ def _steps_count(value: Any) -> int:
 
 def _normalize_str(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _coerce_non_negative_float(value: Any, default: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, numeric)
+
+
+def _coerce_non_negative_int(value: Any, default: int) -> int:
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, numeric)
