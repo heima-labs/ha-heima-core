@@ -38,6 +38,7 @@ def main() -> int:
     summary = dict(runtime.get("plugins", {}).get("learning_summary", {}) or {})
     reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
     lighting_summary = dict(runtime.get("plugins", {}).get("lighting_summary", {}) or {})
+    composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -133,6 +134,59 @@ def main() -> int:
                     "  "
                     f"{item.get('room_id') or '-'} | "
                     f"{item.get('slot_key') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
+
+    if composite_summary:
+        _print_header("Composite")
+        print(f"configured total: {composite_summary.get('configured_total', 0)}")
+        print(f"pending total: {composite_summary.get('pending_total', 0)}")
+        print(f"pending tuning: {composite_summary.get('pending_tuning_total', 0)}")
+        print(f"pending discovery: {composite_summary.get('pending_discovery_total', 0)}")
+        configured_by_room = dict(composite_summary.get("configured_by_room") or {})
+        if configured_by_room:
+            print(
+                "configured by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        configured_by_type = dict(composite_summary.get("configured_by_type") or {})
+        if configured_by_type:
+            print(
+                "configured by type: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_type.items()))
+            )
+        pending_by_room = dict(composite_summary.get("pending_by_room") or {})
+        if pending_by_room:
+            print(
+                "pending by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_room.items()))
+            )
+        pending_by_type = dict(composite_summary.get("pending_by_type") or {})
+        if pending_by_type:
+            print(
+                "pending by type: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_type.items()))
+            )
+        tuning_examples = list(composite_summary.get("pending_tuning_examples") or [])
+        if tuning_examples:
+            print("pending tuning examples:")
+            for item in tuning_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('primary_signal_name') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
+        discovery_examples = list(composite_summary.get("pending_discovery_examples") or [])
+        if discovery_examples:
+            print("pending discovery examples:")
+            for item in discovery_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('primary_signal_name') or '-'} | "
                     f"{item.get('confidence')} | "
                     f"{item.get('label') or '-'}"
                 )

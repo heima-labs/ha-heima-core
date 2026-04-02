@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "Heima Configuration",
-        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nProposals in review: {proposal_review_summary}\nPending tuning: {tuning_pending_summary}",
+        "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nRoom assists: {composite_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nProposals in review: {proposal_review_summary}\nPending tuning: {tuning_pending_summary}",
         "menu_options": {
           "general": "General",
           "people_menu": "People",

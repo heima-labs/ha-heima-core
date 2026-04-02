@@ -1403,11 +1403,13 @@ def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
     flow = _flow()
     monkeypatch.setattr(flow, "_proposal_review_summary", lambda: "3")
     monkeypatch.setattr(flow, "_tuning_pending_summary", lambda: "1")
+    monkeypatch.setattr(flow, "_composite_menu_summary", lambda: "stanze 2 | attive 1 | review 1 | tuning 1")
 
     placeholders = flow._init_status_block()
 
     assert placeholders["proposal_review_summary"] == "3"
     assert placeholders["tuning_pending_summary"] == "1"
+    assert placeholders["composite_summary"] == "stanze 2 | attive 1 | review 1 | tuning 1"
 
 
 def test_tuning_pending_summary_counts_followup_proposals():
@@ -1486,6 +1488,60 @@ def test_lighting_menu_summary_is_operational() -> None:
     ]
 
     assert flow._lighting_menu_summary() == "2/3 stanze | attive 1 | review 2 | tuning 1"
+
+
+def test_composite_menu_summary_is_operational() -> None:
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r-signal-1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "reaction_type": "room_signal_assist",
+                    },
+                    "r-light-1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
+                    },
+                    "r-other": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                    },
+                }
+            },
+            "language": "it",
+        }
+    )
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_signal_assist",
+            description="new assist",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_darkness_lighting_assist",
+            description="tuning assist",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p3",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="lighting",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._composite_menu_summary() == "stanze 2 | attive 2 | review 2 | tuning 1"
 
 
 def test_signal_threshold_mode_options_include_binary_transitions():

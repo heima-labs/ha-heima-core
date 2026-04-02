@@ -49,6 +49,10 @@ async def async_get_config_entry_diagnostics(
                     proposal_diagnostics,
                     coordinator,
                 ),
+                "composite_summary": _composite_summary_diagnostics(
+                    proposal_diagnostics,
+                    coordinator,
+                ),
                 "configured_reaction_summary": _configured_reaction_summary_diagnostics(
                     coordinator
                 ),
@@ -477,6 +481,106 @@ def _lighting_summary_diagnostics(
         "pending_tuning_examples": pending_tuning_examples,
         "pending_discovery_examples": pending_discovery_examples,
         "slot_collisions": dict(configured_summary.get("lighting_slot_collisions") or {}),
+    }
+
+
+def _composite_summary_diagnostics(
+    proposal_diagnostics: dict[str, Any],
+    coordinator: Any,
+) -> dict[str, Any]:
+    proposals = list(proposal_diagnostics.get("proposals") or [])
+    composite_pending = [
+        dict(item)
+        for item in proposals
+        if isinstance(item, dict)
+        and str(item.get("type") or "").strip().startswith("room_")
+        and str(item.get("status") or "") == "pending"
+    ]
+
+    pending_by_room: dict[str, int] = {}
+    pending_by_type: dict[str, int] = {}
+    pending_by_primary_signal: dict[str, int] = {}
+    pending_tuning_total = 0
+    pending_discovery_total = 0
+    pending_tuning_examples: list[dict[str, Any]] = []
+    pending_discovery_examples: list[dict[str, Any]] = []
+    for proposal in composite_pending:
+        config_summary = _safe_dict(proposal.get("config_summary"))
+        reaction_type = str(proposal.get("type") or "").strip()
+        room_id = str(config_summary.get("room_id") or "").strip()
+        primary_signal_name = str(config_summary.get("primary_signal_name") or "").strip()
+        if room_id:
+            pending_by_room[room_id] = pending_by_room.get(room_id, 0) + 1
+        if reaction_type:
+            pending_by_type[reaction_type] = pending_by_type.get(reaction_type, 0) + 1
+        if primary_signal_name:
+            pending_by_primary_signal[primary_signal_name] = (
+                pending_by_primary_signal.get(primary_signal_name, 0) + 1
+            )
+        example = {
+            "id": proposal.get("id"),
+            "type": reaction_type,
+            "label": str(proposal.get("description") or "").strip(),
+            "room_id": room_id,
+            "primary_signal_name": primary_signal_name,
+            "confidence": proposal.get("confidence"),
+        }
+        if str(proposal.get("followup_kind") or "") == "tuning_suggestion":
+            pending_tuning_total += 1
+            if len(pending_tuning_examples) < 3:
+                pending_tuning_examples.append(example)
+        else:
+            pending_discovery_total += 1
+            if len(pending_discovery_examples) < 3:
+                pending_discovery_examples.append(example)
+
+    active = _active_reaction_items(coordinator)
+    configured_total = 0
+    configured_by_room: dict[str, int] = {}
+    configured_by_type: dict[str, int] = {}
+    configured_by_primary_signal: dict[str, int] = {}
+    for _reaction_id, cfg in active:
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+        is_composite = (
+            reaction_type.startswith("room_")
+            or reaction_class in {"RoomSignalAssistReaction", "RoomLightingAssistReaction"}
+            or identity_key.startswith("room_")
+        )
+        if not is_composite:
+            continue
+        configured_total += 1
+        if reaction_type:
+            configured_by_type[reaction_type] = configured_by_type.get(reaction_type, 0) + 1
+        room_id = str(cfg.get("room_id") or "").strip()
+        primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+        if not room_id and "|room=" in identity_key:
+            for part in identity_key.split("|"):
+                if part.startswith("room="):
+                    room_id = part.split("=", 1)[1]
+                if part.startswith("primary=") and not primary_signal_name:
+                    primary_signal_name = part.split("=", 1)[1]
+        if room_id:
+            configured_by_room[room_id] = configured_by_room.get(room_id, 0) + 1
+        if primary_signal_name:
+            configured_by_primary_signal[primary_signal_name] = (
+                configured_by_primary_signal.get(primary_signal_name, 0) + 1
+            )
+
+    return {
+        "configured_total": configured_total,
+        "configured_by_room": dict(sorted(configured_by_room.items())),
+        "configured_by_type": dict(sorted(configured_by_type.items())),
+        "configured_by_primary_signal": dict(sorted(configured_by_primary_signal.items())),
+        "pending_total": len(composite_pending),
+        "pending_tuning_total": pending_tuning_total,
+        "pending_discovery_total": pending_discovery_total,
+        "pending_by_room": dict(sorted(pending_by_room.items())),
+        "pending_by_type": dict(sorted(pending_by_type.items())),
+        "pending_by_primary_signal": dict(sorted(pending_by_primary_signal.items())),
+        "pending_tuning_examples": pending_tuning_examples,
+        "pending_discovery_examples": pending_discovery_examples,
     }
 
 

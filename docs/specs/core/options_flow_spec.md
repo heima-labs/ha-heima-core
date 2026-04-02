@@ -161,10 +161,15 @@ Normative guidance for review wording:
 
 Normative guidance for the init overview:
 - `lighting_summary` SHOULD be operational rather than purely configurational
+- `composite_summary` SHOULD follow the same pattern for the room-assist family
 - when runtime diagnostics are available, the summary SHOULD prefer a compact view including:
   - configured lighting reactions
   - pending lighting proposals
   - pending lighting tuning, when non-zero
+- for composite, the compact view SHOULD include at least:
+  - active configured room-assist reactions
+  - pending composite proposals in review
+  - pending composite tuning, when non-zero
 - a purely configurational fallback such as `configured_rooms / total_rooms` remains acceptable only when runtime state is unavailable
 - future domain-strong families such as `composite_room_assist` SHOULD follow the same pattern:
   compact operational summaries are preferred over purely configurational summaries when runtime

@@ -1018,6 +1018,14 @@ Composite runtime-confidence clarification:
 - v1 does not require a polished UI for these knobs, but the runtime/config model SHOULD allow
   overrides from `learning` configuration in the same spirit as analyzer quality policy
 
+Composite operability clarification:
+- diagnostics SHOULD expose a composite-domain summary comparable in spirit to `lighting_summary`
+- that summary SHOULD make it easy to answer:
+  - how many composite reactions are active
+  - how many composite proposals are pending
+  - how many pending items are tuning vs discovery
+  - which rooms and primary signals are currently represented
+
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:
   - `supports_admin_authored`

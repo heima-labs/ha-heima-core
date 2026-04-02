@@ -139,13 +139,84 @@ def _print_lighting_summary(data: dict[str, Any]) -> None:
             print(f"  {slot_key}: {ids}")
 
 
+def _print_composite_summary(data: dict[str, Any]) -> None:
+    print(f"configured_total: {data.get('configured_total', 0)}")
+    print(f"pending_total: {data.get('pending_total', 0)}")
+    print(f"pending_tuning_total: {data.get('pending_tuning_total', 0)}")
+    print(f"pending_discovery_total: {data.get('pending_discovery_total', 0)}")
+
+    configured_by_room = dict(data.get("configured_by_room") or {})
+    if configured_by_room:
+        print(
+            "configured_by_room: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+        )
+
+    configured_by_type = dict(data.get("configured_by_type") or {})
+    if configured_by_type:
+        print(
+            "configured_by_type: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_type.items()))
+        )
+
+    configured_by_primary_signal = dict(data.get("configured_by_primary_signal") or {})
+    if configured_by_primary_signal:
+        print(
+            "configured_by_primary_signal: "
+            + ", ".join(
+                f"{key}={value}" for key, value in sorted(configured_by_primary_signal.items())
+            )
+        )
+
+    pending_by_room = dict(data.get("pending_by_room") or {})
+    if pending_by_room:
+        print(
+            "pending_by_room: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_room.items()))
+        )
+
+    pending_by_type = dict(data.get("pending_by_type") or {})
+    if pending_by_type:
+        print(
+            "pending_by_type: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(pending_by_type.items()))
+        )
+
+    pending_by_primary_signal = dict(data.get("pending_by_primary_signal") or {})
+    if pending_by_primary_signal:
+        print(
+            "pending_by_primary_signal: "
+            + ", ".join(
+                f"{key}={value}" for key, value in sorted(pending_by_primary_signal.items())
+            )
+        )
+
+    tuning_examples = list(data.get("pending_tuning_examples") or [])
+    if tuning_examples:
+        print("pending_tuning_examples:")
+        for item in tuning_examples:
+            print(
+                f"  {item.get('room_id') or '-'} | {item.get('primary_signal_name') or '-'} | "
+                f"{item.get('confidence')} | {item.get('label') or '-'}"
+            )
+
+    discovery_examples = list(data.get("pending_discovery_examples") or [])
+    if discovery_examples:
+        print("pending_discovery_examples:")
+        for item in discovery_examples:
+            print(
+                f"  {item.get('room_id') or '-'} | {item.get('primary_signal_name') or '-'} | "
+                f"{item.get('confidence')} | {item.get('label') or '-'}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "house_state", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting"],
+        choices=["all", "engine", "house_state", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -168,6 +239,7 @@ def main() -> int:
         "learning": runtime.get("plugins", {}).get("learning_summary"),
         "reactions": runtime.get("plugins", {}).get("configured_reaction_summary"),
         "lighting": runtime.get("plugins", {}).get("lighting_summary"),
+        "composite": runtime.get("plugins", {}).get("composite_summary"),
     }
 
     to_print = sections if args.section == "all" else {args.section: sections[args.section]}
@@ -184,6 +256,9 @@ def main() -> int:
             print()
         if name == "lighting" and isinstance(data, dict):
             _print_lighting_summary(data)
+            print()
+        if name == "composite" and isinstance(data, dict):
+            _print_composite_summary(data)
             print()
         print(json.dumps(data, indent=2))
 
