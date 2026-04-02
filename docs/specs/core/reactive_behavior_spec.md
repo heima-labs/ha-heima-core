@@ -577,7 +577,19 @@ Additional diagnostic detail is allowed but optional.
 | Constraint layer | n/a | Applied to all reaction steps |
 | Use case | Diagnostics, snapshot history logging | Adaptive automations, pre-conditioning |
 
-`apply_filter` on `HeimaBehavior` is available as an advanced extension point but **not used for concrete built-in behaviors** because it cannot safely block individual steps without a `tags` field on `ApplyStep` (context needed to distinguish auto-generated vs user-intent steps).
+`apply_filter` on `HeimaBehavior` is available as an advanced extension point. In v1 it is now
+valid also for concrete built-in guards when `ApplyStep.source` is sufficient to distinguish
+reaction-generated steps from domain pipeline steps.
+
+Concrete built-in use case allowed in v1:
+- a lighting guard behavior may block `domain="lighting"` steps whose `source` starts with
+  `reaction:` when the target room has manual hold enabled and the corresponding
+  `heima_lighting_hold_<room_id>` binary is on
+- the block reason should be explicit, for example:
+  - `lighting.manual_hold:<room_id>`
+
+This keeps the domain lighting pipeline and the reaction pipeline aligned without adding a second
+manual-hold implementation inside each lighting reaction class.
 
 ---
 

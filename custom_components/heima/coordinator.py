@@ -17,6 +17,7 @@ from .runtime.analyzers import (
 from .runtime.behaviors import (
     EventRecorderBehavior,
     HeatingRecorderBehavior,
+    LightingReactionGuardBehavior,
     LightingRecorderBehavior,
     SignalRecorderBehavior,
 )
@@ -46,6 +47,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
         self.engine.register_behavior(EventRecorderBehavior(hass, self._event_store, self._context_builder))
         self.engine.register_behavior(HeatingRecorderBehavior(hass, self._event_store, self._context_builder))
+        self.engine.register_behavior(
+            LightingReactionGuardBehavior(self.engine.state, dict(entry.options))
+        )
         self._lighting_recorder = LightingRecorderBehavior(
             hass,
             self._event_store,

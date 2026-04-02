@@ -1527,6 +1527,19 @@ La finestra deve supportare wrap su mezzanotte. Il debounce non è legato sempli
 wall-clock corrente, ma al giorno logico dell'occorrenza configurata: una schedule `00:05 ± 10 min`
 può iniziare il giorno precedente e non deve double-fire dopo mezzanotte.
 
+#### Runtime guardrails
+
+Le lighting reaction non dovrebbero bypassare i guardrail operativi del dominio lighting. In v1:
+- un `LightingScheduleReaction` può ancora emettere i suoi `ApplyStep`
+- ma gli step lighting reaction-generated devono passare anche da un `apply_filter` behavior che
+  rispetta il manual hold della stanza
+- se `heima_lighting_hold_<room_id>` è attivo e la stanza è configurata con manual hold abilitato,
+  gli step lighting con `source="reaction:<...>"` dovrebbero essere bloccati con una ragione
+  esplicita tipo:
+  - `lighting.manual_hold:<room_id>`
+
+Questo è un guardrail runtime, non un cambio del modello di learning.
+
 #### ApplyStep — uno per entità
 
 ```python
