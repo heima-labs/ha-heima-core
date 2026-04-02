@@ -504,9 +504,23 @@ class ProposalEngine:
             "house_state": cfg.get("house_state"),
             "weekday": cfg.get("weekday"),
             "scheduled_min": cfg.get("scheduled_min"),
+            "primary_signal_name": cfg.get("primary_signal_name"),
+            "primary_threshold_mode": cfg.get("primary_threshold_mode"),
+            "primary_threshold": cfg.get("primary_threshold", cfg.get("primary_rise_threshold")),
+            "corroboration_signal_name": cfg.get("corroboration_signal_name"),
+            "corroboration_threshold_mode": cfg.get("corroboration_threshold_mode"),
+            "corroboration_threshold": cfg.get(
+                "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+            ),
             "episodes_observed": cfg.get("episodes_observed"),
             "corroborated_episodes": cfg.get("corroborated_episodes"),
         }
+        primary_entities = cfg.get("primary_signal_entities")
+        if isinstance(primary_entities, list):
+            summary["primary_signal_entities_count"] = len(primary_entities)
+        corroboration_entities = cfg.get("corroboration_signal_entities")
+        if isinstance(corroboration_entities, list):
+            summary["corroboration_signal_entities_count"] = len(corroboration_entities)
         entity_steps = cfg.get("entity_steps")
         if isinstance(entity_steps, list):
             summary["entity_steps_count"] = len(entity_steps)

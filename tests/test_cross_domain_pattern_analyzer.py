@@ -232,6 +232,7 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "room_cooling_assist"
+    assert proposal.description.startswith("studio: cooling assist")
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "studio"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
@@ -287,6 +288,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     air_quality = [p for p in proposals if p.reaction_type == "room_air_quality_assist"]
     assert len(air_quality) == 1
     proposal = air_quality[0]
+    assert proposal.description.startswith("office: air quality assist")
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "office"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == ["sensor.office_co2"]

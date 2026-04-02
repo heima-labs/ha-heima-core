@@ -430,12 +430,12 @@ def _describe(room_id: str, observed: int, corroborated: int) -> str:
 def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
     if corroborated:
         return (
-            f"{room_id}: when occupancy is present and temperature rises quickly, "
+            f"{room_id}: cooling assist — when occupancy is present and temperature rises quickly, "
             f"you usually start cooling within a few minutes "
             f"({observed} episodes, {corroborated} humidity-correlated)."
         )
     return (
-        f"{room_id}: when occupancy is present and temperature rises quickly, "
+        f"{room_id}: cooling assist — when occupancy is present and temperature rises quickly, "
         f"you usually start cooling within a few minutes "
         f"({observed} observed episodes)."
     )
@@ -444,7 +444,7 @@ def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
 def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str:
     del corroborated
     return (
-        f"{room_id}: when occupancy is present and CO2 rises quickly, "
+        f"{room_id}: air quality assist — when occupancy is present and CO2 rises quickly, "
         f"you usually start ventilation within a few minutes "
         f"({observed} observed episodes)."
     )

@@ -359,6 +359,48 @@ async def test_reaction_label_from_room_signal_assist_config_is_readable():
 
 
 @pytest.mark.asyncio
+async def test_proposal_human_label_for_room_signal_assist_includes_primary_signal():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_signal_assist",
+        description="bathroom learned assist",
+        confidence=0.88,
+        suggested_reaction_config={
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": "bathroom",
+            "primary_signal_name": "humidity",
+        },
+    )
+
+    label = flow._proposal_human_label(proposal)
+
+    assert label == "Assist bathroom (humidity)"
+
+
+@pytest.mark.asyncio
+async def test_proposal_human_label_for_room_lighting_assist_includes_primary_signal():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-darkness",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_darkness_lighting_assist",
+        description="studio darkness",
+        confidence=0.9,
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+        },
+    )
+
+    label = flow._proposal_human_label(proposal)
+
+    assert label == "Luce studio (room_lux)"
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     flow = _flow()
     proposal = ReactionProposal(
