@@ -148,6 +148,16 @@ Normative guidance for review wording:
 - admin-authored lighting proposals MUST continue to render as admin drafts, not as learned discoveries
 - these distinctions SHOULD be concise and visible in the primary review title, not only in secondary details
 
+### Init Overview Summaries
+
+Normative guidance for the init overview:
+- `lighting_summary` SHOULD be operational rather than purely configurational
+- when runtime diagnostics are available, the summary SHOULD prefer a compact view including:
+  - configured lighting reactions
+  - pending lighting proposals
+  - pending lighting tuning, when non-zero
+- a purely configurational fallback such as `configured_rooms / total_rooms` remains acceptable only when runtime state is unavailable
+
 ---
 
 ## 2. People — Named Persons

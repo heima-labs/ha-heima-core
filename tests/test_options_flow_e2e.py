@@ -1236,6 +1236,58 @@ def test_tuning_pending_summary_counts_followup_proposals():
     assert flow._tuning_pending_summary() == "1"
 
 
+def test_lighting_menu_summary_is_operational() -> None:
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living"},
+                {"room_id": "studio", "display_name": "Studio"},
+                {"room_id": "bathroom", "display_name": "Bathroom"},
+            ],
+            "lighting_rooms": [
+                {"room_id": "living", "enable_manual_hold": True},
+                {"room_id": "studio", "enable_manual_hold": True},
+            ],
+            "reactions": {
+                "configured": {
+                    "r-light-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                    },
+                    "r-signal-1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                    },
+                }
+            },
+            "language": "it",
+        }
+    )
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="new schedule",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="tuning schedule",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._lighting_menu_summary() == "2/3 stanze | attive 1 | review 2 | tuning 1"
+
+
 def test_signal_threshold_mode_options_include_binary_transitions():
     flow = _flow()
 
