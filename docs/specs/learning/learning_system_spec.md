@@ -1025,6 +1025,8 @@ Composite operability clarification:
   - how many composite proposals are pending
   - how many pending items are tuning vs discovery
   - which rooms and primary signals are currently represented
+- diagnostics/audit examples for composite SHOULD prefer compact human labels aligned with proposal
+  review wording, not only long narrative descriptions
 
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:

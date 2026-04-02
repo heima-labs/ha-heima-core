@@ -500,7 +500,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
         {
             "id": "p1",
             "type": "room_signal_assist",
-            "label": "Bathroom humidity assist",
+            "label": "Assist bathroom · humidity",
             "room_id": "bathroom",
             "primary_signal_name": "humidity",
             "confidence": 0.88,
@@ -510,7 +510,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
         {
             "id": "p2",
             "type": "room_darkness_lighting_assist",
-            "label": "Living darkness lighting assist",
+            "label": "Luci living · room_lux",
             "room_id": "living",
             "primary_signal_name": "room_lux",
             "confidence": 0.83,

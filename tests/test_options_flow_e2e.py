@@ -376,7 +376,7 @@ async def test_proposal_human_label_for_room_signal_assist_includes_primary_sign
 
     label = flow._proposal_human_label(proposal)
 
-    assert label == "Assist bathroom (humidity)"
+    assert label == "Assist bathroom · humidity"
 
 
 @pytest.mark.asyncio
@@ -397,7 +397,7 @@ async def test_proposal_human_label_for_room_lighting_assist_includes_primary_si
 
     label = flow._proposal_human_label(proposal)
 
-    assert label == "Luce studio (room_lux)"
+    assert label == "Luci studio · room_lux"
 
 
 @pytest.mark.asyncio
@@ -717,7 +717,7 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento assist: Assist bathroom")
+    assert placeholders["proposal_label"].startswith("Affinamento assist: Assist bathroom · humidity")
     assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
     assert "Automazione target: Assist bathroom" in placeholders["proposal_details"]
     assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
@@ -797,7 +797,7 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento luce: Luce living")
+    assert placeholders["proposal_label"].startswith("Affinamento luce: Luci living · room_lux")
     assert "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
     assert "Soglia: 120.0 -> 90.0" in placeholders["proposal_details"]
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
@@ -1122,7 +1122,7 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert created.suggested_reaction_config["steps"][0]["action"] == "script.turn_on"
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Assist bathroom" in result["description_placeholders"]["proposal_label"]
+    assert "Bozza admin: Assist bathroom · humidity" in result["description_placeholders"]["proposal_label"]
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.signal_assist.basic" in details
     assert "Segnale primario: humidity" in details
@@ -1189,7 +1189,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert len(created.suggested_reaction_config["entity_steps"]) == 2
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Luce studio" in result["description_placeholders"]["proposal_label"]
+    assert "Bozza admin: Luci studio · room_lux" in result["description_placeholders"]["proposal_label"]
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.darkness_lighting_assist.basic" in details
     assert "Segnale primario: room_lux" in details

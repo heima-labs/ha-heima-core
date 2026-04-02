@@ -522,7 +522,7 @@ def present_room_signal_assist_proposal_label(
         return None
     primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
     if primary_signal_name:
-        return f"Assist {room_id} ({primary_signal_name})"
+        return f"Assist {room_id} · {primary_signal_name}"
     return f"Assist {room_id}"
 
 

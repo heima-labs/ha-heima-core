@@ -520,7 +520,8 @@ def _composite_summary_diagnostics(
         example = {
             "id": proposal.get("id"),
             "type": reaction_type,
-            "label": str(proposal.get("description") or "").strip(),
+            "label": _composite_example_label(reaction_type, room_id, primary_signal_name)
+            or str(proposal.get("description") or "").strip(),
             "room_id": room_id,
             "primary_signal_name": primary_signal_name,
             "confidence": proposal.get("confidence"),
@@ -688,6 +689,28 @@ def _lighting_followup_slot_key(cfg: dict[str, Any]) -> str:
         f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
         f"|bucket={bucket}"
     )
+
+
+def _composite_example_label(
+    reaction_type: str,
+    room_id: str,
+    primary_signal_name: str,
+) -> str:
+    reaction_type = str(reaction_type or "").strip()
+    room_id = str(room_id or "").strip()
+    primary_signal_name = str(primary_signal_name or "").strip()
+    if not room_id:
+        return ""
+
+    if reaction_type == "room_signal_assist":
+        return f"Assist {room_id} · {primary_signal_name}" if primary_signal_name else f"Assist {room_id}"
+    if reaction_type == "room_darkness_lighting_assist":
+        return f"Luci {room_id} · {primary_signal_name}" if primary_signal_name else f"Luci {room_id}"
+    if reaction_type == "room_cooling_assist":
+        return f"Cooling {room_id} · {primary_signal_name}" if primary_signal_name else f"Cooling {room_id}"
+    if reaction_type == "room_air_quality_assist":
+        return f"Air quality {room_id} · {primary_signal_name}" if primary_signal_name else f"Air quality {room_id}"
+    return ""
 
 
 def _active_reaction_items(coordinator: Any) -> list[tuple[str, dict[str, Any]]]:

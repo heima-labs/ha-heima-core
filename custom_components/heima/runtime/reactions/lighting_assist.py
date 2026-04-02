@@ -422,10 +422,10 @@ def present_room_lighting_assist_proposal_label(
     primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
     if language.startswith("it"):
         if primary_signal_name:
-            return f"Luce {room_id} ({primary_signal_name})"
-        return f"Luce {room_id}"
+            return f"Luci {room_id} · {primary_signal_name}"
+        return f"Luci {room_id}"
     if primary_signal_name:
-        return f"Lighting {room_id} ({primary_signal_name})"
+        return f"Lighting {room_id} · {primary_signal_name}"
     return f"Lighting {room_id}"
 
 

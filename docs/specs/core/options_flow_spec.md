@@ -151,6 +151,8 @@ Normative guidance for review wording:
   and primary signal
 - composite tuning follow-ups SHOULD render as an adjustment of an existing room assist, not as a
   second discovery
+- composite labels shown in review SHOULD prefer compact room + primary-signal wording over long
+  narrative descriptions
 - the options flow remains a bounded review surface in v1.x:
   - it is appropriate for one-proposal-at-a-time review, accept/reject/skip, and structured
     details/diffs
