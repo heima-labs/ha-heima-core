@@ -990,6 +990,12 @@ Composite tuning clarification:
 - if future automation management requires dense queue browsing, history inspection, or
   side-by-side comparison, that SHOULD be introduced as a dedicated management surface rather than
   by overloading the bounded options flow
+- the first domain-strong composite tuning coverage SHOULD include both:
+  - `room_signal_assist`
+  - `room_darkness_lighting_assist`
+- these two families are sufficient for v1.x because they exercise both bounded actuation payloads:
+  - `steps`
+  - `entity_steps`
 
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:

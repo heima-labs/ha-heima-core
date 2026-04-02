@@ -279,6 +279,9 @@ Normative UX clarification:
 - denser automation-management UX such as queue browsing, history inspection, or side-by-side
   comparison SHOULD move to a dedicated management surface rather than overloading the bounded
   config flow
+- the first end-to-end validation target for composite tuning SHOULD include:
+  - `room.signal_assist.basic`
+  - `room.darkness_lighting_assist.basic`
 
 These are not learned proposals in the strict sense. They are follow-up recommendations attached to
 an existing authored automation and should still flow through the same proposal/reaction substrate.

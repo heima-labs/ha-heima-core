@@ -162,3 +162,5 @@ currently part of the canonical `check_all_live.sh --tier all` lane:
 - `035_admin_authored_room_darkness_lighting_flow.py`
 - `036_lighting_tuning_followup_flow.py`
 - `037_admin_authored_room_signal_binary_modes.py`
+- `042_room_signal_assist_tuning_followup_flow.py`
+- `043_room_darkness_lighting_tuning_followup_flow.py`

@@ -1070,3 +1070,72 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
     pending = next(item for item in engine._proposals if item.status == "pending")
     assert pending.followup_kind == "tuning_suggestion"
     assert pending.identity_key == "room_signal_assist|room=bathroom|primary=humidity"
+
+
+async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    base = _composite_proposal(
+        reaction_type="room_darkness_lighting_assist",
+        room_id="living",
+        primary_signal_name="room_lux",
+    )
+    base = ReactionProposal.from_dict(
+        {
+            **base.as_dict(),
+            "status": "accepted",
+            "origin": "admin_authored",
+        }
+    )
+    base.suggested_reaction_config.update(
+        {
+            "reaction_class": "RoomLightingAssistReaction",
+            "primary_threshold_mode": "below",
+            "primary_threshold": 100.0,
+            "primary_signal_entities": ["sensor.living_room_lux"],
+            "entity_steps": [
+                {
+                    "entity_id": "light.living_main",
+                    "action": "on",
+                    "brightness": 190,
+                    "color_temp_kelvin": 2850,
+                    "rgb_color": None,
+                }
+            ],
+        }
+    )
+    candidate = _composite_proposal(
+        reaction_type="room_darkness_lighting_assist",
+        room_id="living",
+        primary_signal_name="room_lux",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "reaction_class": "RoomLightingAssistReaction",
+            "primary_threshold_mode": "below",
+            "primary_threshold": 120.0,
+            "primary_signal_entities": [
+                "sensor.living_room_lux",
+                "sensor.living_room_lux_aux",
+            ],
+            "entity_steps": [
+                {
+                    "entity_id": "light.living_main",
+                    "action": "on",
+                    "brightness": 144,
+                    "color_temp_kelvin": 2900,
+                    "rgb_color": None,
+                }
+            ],
+        }
+    )
+
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._proposals = [base]
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_run()
+
+    assert len(engine._proposals) == 2
+    pending = next(item for item in engine._proposals if item.status == "pending")
+    assert pending.followup_kind == "tuning_suggestion"
+    assert pending.identity_key == "room_darkness_lighting_assist|room=living|primary=room_lux"

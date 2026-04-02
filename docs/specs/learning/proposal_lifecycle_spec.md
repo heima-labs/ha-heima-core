@@ -164,6 +164,9 @@ Composite proposal quality clarification:
   - threshold mode change
   - signal/corroboration entity-count change
   - action/entity-step count change
+- the first end-to-end validation set for composite tuning SHOULD cover:
+  - one `RoomSignalAssistReaction` target
+  - one `RoomLightingAssistReaction` target
 
 ### 4.4 Lighting time bucket
 
