@@ -221,6 +221,7 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
     lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
+    composite = diagnostics["runtime"]["plugins"]["composite_summary"]
 
     assert summary["total"] == 2
     assert summary["by_origin"] == {"admin_authored": 1, "learned": 1}
@@ -243,6 +244,20 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         "pending_tuning_examples": [],
         "pending_discovery_examples": [],
         "slot_collisions": {},
+    }
+    assert composite == {
+        "configured_total": 1,
+        "configured_by_room": {"bathroom": 1},
+        "configured_by_type": {},
+        "configured_by_primary_signal": {},
+        "pending_total": 0,
+        "pending_tuning_total": 0,
+        "pending_discovery_total": 0,
+        "pending_by_room": {},
+        "pending_by_type": {},
+        "pending_by_primary_signal": {},
+        "pending_tuning_examples": [],
+        "pending_discovery_examples": [],
     }
 
 
@@ -274,6 +289,7 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
     lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
+    composite = diagnostics["runtime"]["plugins"]["composite_summary"]
 
     assert summary["identity_collisions"] == {}
     assert summary["lighting_slot_collisions"] == {
@@ -375,6 +391,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     proposals = diagnostics["runtime"]["proposals"]
     lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
+    composite = diagnostics["runtime"]["plugins"]["composite_summary"]
 
     assert proposals["tuning_pending"] == 1
     item = proposals["proposals"][0]
@@ -396,3 +413,106 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
         }
     ]
     assert lighting["pending_discovery_examples"] == []
+    assert composite == {
+        "configured_total": 0,
+        "configured_by_room": {},
+        "configured_by_type": {},
+        "configured_by_primary_signal": {},
+        "pending_total": 0,
+        "pending_tuning_total": 0,
+        "pending_discovery_total": 0,
+        "pending_by_room": {},
+        "pending_by_type": {},
+        "pending_by_primary_signal": {},
+        "pending_tuning_examples": [],
+        "pending_discovery_examples": [],
+    }
+
+
+async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator._proposal_engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "total": 2,
+            "pending": 2,
+            "pending_stale": 0,
+            "proposals": [
+                {
+                    "id": "p1",
+                    "type": "room_signal_assist",
+                    "status": "pending",
+                    "confidence": 0.88,
+                    "description": "Bathroom humidity assist",
+                    "origin": "learned",
+                    "followup_kind": "tuning_suggestion",
+                    "config_summary": {
+                        "room_id": "bathroom",
+                        "primary_signal_name": "humidity",
+                    },
+                },
+                {
+                    "id": "p2",
+                    "type": "room_darkness_lighting_assist",
+                    "status": "pending",
+                    "confidence": 0.83,
+                    "description": "Living darkness lighting assist",
+                    "origin": "learned",
+                    "followup_kind": "discovery",
+                    "config_summary": {
+                        "room_id": "living",
+                        "primary_signal_name": "room_lux",
+                    },
+                },
+            ],
+        }
+    )
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"r1":{"reaction_type":"room_signal_assist","reaction_class":"RoomSignalAssistReaction","room_id":"bathroom","primary_signal_name":"humidity"},'
+                '"r2":{"reaction_class":"RoomLightingAssistReaction","source_proposal_identity_key":"room_darkness_lighting_assist|room=living|primary=room_lux"}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    composite = diagnostics["runtime"]["plugins"]["composite_summary"]
+
+    assert composite["configured_total"] == 2
+    assert composite["configured_by_room"] == {"bathroom": 1, "living": 1}
+    assert composite["configured_by_type"] == {"room_signal_assist": 1}
+    assert composite["configured_by_primary_signal"] == {"humidity": 1, "room_lux": 1}
+    assert composite["pending_total"] == 2
+    assert composite["pending_tuning_total"] == 1
+    assert composite["pending_discovery_total"] == 1
+    assert composite["pending_by_room"] == {"bathroom": 1, "living": 1}
+    assert composite["pending_by_type"] == {
+        "room_darkness_lighting_assist": 1,
+        "room_signal_assist": 1,
+    }
+    assert composite["pending_by_primary_signal"] == {"humidity": 1, "room_lux": 1}
+    assert composite["pending_tuning_examples"] == [
+        {
+            "id": "p1",
+            "type": "room_signal_assist",
+            "label": "Assist bathroom · humidity",
+            "room_id": "bathroom",
+            "primary_signal_name": "humidity",
+            "confidence": 0.88,
+        }
+    ]
+    assert composite["pending_discovery_examples"] == [
+        {
+            "id": "p2",
+            "type": "room_darkness_lighting_assist",
+            "label": "Luci living · room_lux",
+            "room_id": "living",
+            "primary_signal_name": "room_lux",
+            "confidence": 0.83,
+        }
+    ]

@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "Configurazione Heima",
-        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in review: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
+        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nAssist stanza: {composite_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in review: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
         "menu_options": {
           "general": "Generale",
           "people_menu": "Persone",

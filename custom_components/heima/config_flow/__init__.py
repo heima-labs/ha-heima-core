@@ -193,6 +193,7 @@ class HeimaOptionsFlowHandler(
             "people_summary": self._people_menu_summary(),
             "rooms_summary": self._rooms_menu_summary(),
             "lighting_summary": self._lighting_menu_summary(),
+            "composite_summary": self._composite_menu_summary(),
             "heating_summary": self._heating_menu_summary(),
             "security_summary": self._security_menu_summary(),
             "calendar_summary": self._calendar_menu_summary(),
@@ -268,6 +269,61 @@ class HeimaOptionsFlowHandler(
         branches = self._heating_override_branches()
         configured = len([v for v in branches.values() if v.get("branch")])
         return f"{thermostat} | {configured}"
+
+    def _composite_menu_summary(self) -> str:
+        pending = self._pending_proposals()
+        composite_pending = [
+            proposal
+            for proposal in pending
+            if str(getattr(proposal, "reaction_type", "") or "").strip().startswith("room_")
+        ]
+        composite_tuning = [
+            proposal
+            for proposal in composite_pending
+            if str(getattr(proposal, "followup_kind", "") or "").strip()
+            == "tuning_suggestion"
+        ]
+
+        configured = dict(self._reactions_options().get("configured", {}))
+        active_composite = 0
+        rooms: set[str] = set()
+        for cfg in configured.values():
+            if not isinstance(cfg, dict):
+                continue
+            reaction_type = str(cfg.get("reaction_type") or "").strip()
+            reaction_class = str(cfg.get("reaction_class") or "").strip()
+            identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
+            is_composite = (
+                reaction_type.startswith("room_")
+                or reaction_class in {"RoomSignalAssistReaction", "RoomLightingAssistReaction"}
+                or identity_key.startswith("room_")
+            )
+            if not is_composite:
+                continue
+            active_composite += 1
+            room_id = str(cfg.get("room_id") or "").strip()
+            if not room_id and "|room=" in identity_key:
+                for part in identity_key.split("|"):
+                    if part.startswith("room="):
+                        room_id = part.split("=", 1)[1]
+                        break
+            if room_id:
+                rooms.add(room_id)
+
+        lang = str(self.options.get(CONF_LANGUAGE, "it"))
+        if lang.startswith("it"):
+            return (
+                f"stanze {len(rooms)}"
+                f" | attive {active_composite}"
+                f" | review {len(composite_pending)}"
+                f" | tuning {len(composite_tuning)}"
+            )
+        return (
+            f"rooms {len(rooms)}"
+            f" | active {active_composite}"
+            f" | review {len(composite_pending)}"
+            f" | tuning {len(composite_tuning)}"
+        )
 
     def _pending_proposals(self) -> list[Any]:
         coordinator = None

@@ -7,9 +7,11 @@ from typing import Iterable
 
 from .base import IPatternAnalyzer
 from .cross_domain import CompositePatternCatalogAnalyzer
+from .cross_domain import composite_quality_policy_from_learning_config
 from .heating import HeatingPatternAnalyzer
 from .lifecycle import (
     ProposalLifecycleHooks,
+    composite_lifecycle_policy_from_learning_config,
     composite_room_assist_lifecycle_hooks,
     heating_lifecycle_hooks,
     lighting_lifecycle_hooks,
@@ -180,7 +182,9 @@ class LearningPluginRegistry:
 
 
 def create_builtin_learning_plugin_registry(
-    *, enabled_families: set[str] | None = None
+    *,
+    enabled_families: set[str] | None = None,
+    learning_config: dict[str, object] | None = None,
 ) -> LearningPluginRegistry:
     """Create the built-in learning plugin registry used by Heima v1."""
     registry = LearningPluginRegistry()
@@ -248,7 +252,9 @@ def create_builtin_learning_plugin_registry(
                 "room_darkness_lighting_assist",
             ),
             reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
-            lifecycle_hooks=composite_room_assist_lifecycle_hooks(),
+            lifecycle_hooks=composite_room_assist_lifecycle_hooks(
+                policy=composite_lifecycle_policy_from_learning_config(learning_config)
+            ),
             supports_admin_authored=True,
             admin_authored_templates=(
                 AdminAuthoredTemplateDescriptor(
@@ -271,7 +277,9 @@ def create_builtin_learning_plugin_registry(
                 ),
             ),
         ),
-        analyzer=CompositePatternCatalogAnalyzer(),
+        analyzer=CompositePatternCatalogAnalyzer(
+            quality_policy=composite_quality_policy_from_learning_config(learning_config)
+        ),
         enabled=_is_enabled("composite_room_assist", enabled_families),
     )
     return registry

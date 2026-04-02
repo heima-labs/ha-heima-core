@@ -175,6 +175,54 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("missing.reaction") is None
 
 
+def test_builtin_learning_plugin_registry_passes_composite_quality_policy():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "composite_quality_policy": {
+                "followup_entity_min_ratio": 0.75,
+                "followup_entity_min_episodes": 4,
+                "corroboration_promote_min_ratio": 0.8,
+                "corroboration_promote_min_episodes": 4,
+                "minimal_evidence_confidence_cap": 0.82,
+            }
+        }
+    )
+
+    composite = next(
+        analyzer
+        for analyzer in registry.analyzers()
+        if analyzer.analyzer_id == "CompositePatternCatalogAnalyzer"
+    )
+    assert composite._quality_policy.followup_entity_min_ratio == 0.75  # noqa: SLF001
+    assert composite._quality_policy.followup_entity_min_episodes == 4  # noqa: SLF001
+    assert composite._quality_policy.minimal_evidence_confidence_cap == 0.82  # noqa: SLF001
+
+
+def test_builtin_learning_plugin_registry_passes_composite_lifecycle_policy():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "composite_lifecycle_policy": {
+                "room_signal_primary_threshold_max_gap": 2.0,
+                "room_signal_corroboration_threshold_max_gap": 0.5,
+                "room_darkness_primary_threshold_max_gap": 15.0,
+                "room_darkness_brightness_max_gap": 24,
+                "room_darkness_color_temp_max_gap": 180,
+            }
+        }
+    )
+
+    hooks = registry.lifecycle_hooks_for("room_signal_assist")
+    assert hooks is not None
+    closure_cells = hooks.should_suppress_followup.__closure__  # type: ignore[union-attr]
+    assert closure_cells is not None
+    policy = closure_cells[0].cell_contents
+    assert policy.room_signal_primary_threshold_max_gap == 2.0
+    assert policy.room_signal_corroboration_threshold_max_gap == 0.5
+    assert policy.room_darkness_primary_threshold_max_gap == 15.0
+    assert policy.room_darkness_brightness_max_gap == 24
+    assert policy.room_darkness_color_temp_max_gap == 180
+
+
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
     registry = create_builtin_learning_plugin_registry(enabled_families={"lighting"})
 

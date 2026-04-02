@@ -359,6 +359,48 @@ async def test_reaction_label_from_room_signal_assist_config_is_readable():
 
 
 @pytest.mark.asyncio
+async def test_proposal_human_label_for_room_signal_assist_includes_primary_signal():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_signal_assist",
+        description="bathroom learned assist",
+        confidence=0.88,
+        suggested_reaction_config={
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": "bathroom",
+            "primary_signal_name": "humidity",
+        },
+    )
+
+    label = flow._proposal_human_label(proposal)
+
+    assert label == "Assist bathroom · humidity"
+
+
+@pytest.mark.asyncio
+async def test_proposal_human_label_for_room_lighting_assist_includes_primary_signal():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-darkness",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_darkness_lighting_assist",
+        description="studio darkness",
+        confidence=0.9,
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+        },
+    )
+
+    label = flow._proposal_human_label(proposal)
+
+    assert label == "Luci studio · room_lux"
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     flow = _flow()
     proposal = ReactionProposal(
@@ -604,6 +646,164 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     )
     assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
     assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_bounded_diff():
+    flow = _flow(
+        {
+            "language": "it",
+            "reactions": {
+                "configured": {
+                    "reaction-signal-1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "origin": "admin_authored",
+                        "source_template_id": "room.signal_assist.basic",
+                        "source_proposal_identity_key": "room_signal_assist|room=bathroom|primary=humidity",
+                        "primary_signal_name": "humidity",
+                        "primary_threshold_mode": "rise",
+                        "primary_threshold": 8.0,
+                        "primary_signal_entities": ["sensor.bathroom_humidity"],
+                        "corroboration_signal_name": "temperature",
+                        "corroboration_threshold_mode": "rise",
+                        "corroboration_threshold": 0.8,
+                        "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+                        "steps": [],
+                    }
+                }
+            },
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal-followup-1",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_signal_assist",
+        description="Bathroom humidity assist refined",
+        confidence=0.91,
+        identity_key="room_signal_assist|room=bathroom|primary=humidity",
+        followup_kind="tuning_suggestion",
+        suggested_reaction_config={
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": "bathroom",
+            "primary_signal_name": "humidity",
+            "primary_threshold_mode": "above",
+            "primary_threshold": 9.5,
+            "primary_signal_entities": [
+                "sensor.bathroom_humidity",
+                "sensor.bathroom_humidity_aux",
+            ],
+            "corroboration_signal_name": "temperature",
+            "corroboration_threshold_mode": "above",
+            "corroboration_threshold": 1.2,
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [
+                {
+                    "domain": "fan",
+                    "target": "fan.bathroom",
+                    "action": "fan.turn_on",
+                    "params": {"entity_id": "fan.bathroom"},
+                }
+            ],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Affinamento assist: Assist bathroom · humidity")
+    assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
+    assert "Automazione target: Assist bathroom" in placeholders["proposal_details"]
+    assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
+    assert "Soglia primaria: 8.0 -> 9.5" in placeholders["proposal_details"]
+    assert "Modo primario: Supera soglia -> Aumento rapido" not in placeholders["proposal_details"]
+    assert "Modo primario: Aumento rapido -> Supera soglia" in placeholders["proposal_details"]
+    assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
+    assert "Soglia corroborante: 0.8 -> 1.2" in placeholders["proposal_details"]
+    assert "Modo corroborante: Aumento rapido -> Supera soglia" in placeholders["proposal_details"]
+    assert "Azioni: 0 -> 1" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with_bounded_diff():
+    flow = _flow(
+        {
+            "language": "it",
+            "reactions": {
+                "configured": {
+                    "reaction-darkness-1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "room_id": "living",
+                        "origin": "admin_authored",
+                        "source_template_id": "room.darkness_lighting_assist.basic",
+                        "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
+                        "primary_signal_name": "room_lux",
+                        "primary_threshold_mode": "below",
+                        "primary_threshold": 120.0,
+                        "primary_signal_entities": ["sensor.living_lux"],
+                        "corroboration_signal_name": "projector",
+                        "corroboration_threshold_mode": "switch_on",
+                        "corroboration_threshold": 1.0,
+                        "corroboration_signal_entities": ["binary_sensor.projector_power"],
+                        "entity_steps": [
+                            {"entity_id": "light.living_main", "action": "on", "brightness": 144}
+                        ],
+                    }
+                }
+            },
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-darkness-followup-1",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_darkness_lighting_assist",
+        description="Living darkness assist refined",
+        confidence=0.92,
+        identity_key="room_darkness_lighting_assist|room=living|primary=room_lux",
+        followup_kind="tuning_suggestion",
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "living",
+            "primary_signal_name": "room_lux",
+            "primary_threshold_mode": "below",
+            "primary_threshold": 90.0,
+            "primary_signal_entities": ["sensor.living_lux", "sensor.living_lux_aux"],
+            "corroboration_signal_name": "projector",
+            "corroboration_threshold_mode": "state_change",
+            "corroboration_threshold": 1.0,
+            "corroboration_signal_entities": [
+                "binary_sensor.projector_power",
+                "binary_sensor.media_mode",
+            ],
+            "entity_steps": [
+                {"entity_id": "light.living_main", "action": "on", "brightness": 144},
+                {"entity_id": "light.living_spot", "action": "off"},
+            ],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Affinamento luce: Luci living · room_lux")
+    assert "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
+    assert "Soglia: 120.0 -> 90.0" in placeholders["proposal_details"]
+    assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
+    assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
+    assert "Entità corroboranti: 1 -> 2" in placeholders["proposal_details"]
+    assert "Luci: 1 -> 2" in placeholders["proposal_details"]
 
 
 @pytest.mark.asyncio
@@ -922,7 +1122,7 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert created.suggested_reaction_config["steps"][0]["action"] == "script.turn_on"
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Assist bathroom" in result["description_placeholders"]["proposal_label"]
+    assert "Bozza admin: Assist bathroom · humidity" in result["description_placeholders"]["proposal_label"]
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.signal_assist.basic" in details
     assert "Segnale primario: humidity" in details
@@ -989,7 +1189,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert len(created.suggested_reaction_config["entity_steps"]) == 2
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Luce studio" in result["description_placeholders"]["proposal_label"]
+    assert "Bozza admin: Luci studio · room_lux" in result["description_placeholders"]["proposal_label"]
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.darkness_lighting_assist.basic" in details
     assert "Segnale primario: room_lux" in details
@@ -1203,11 +1403,13 @@ def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
     flow = _flow()
     monkeypatch.setattr(flow, "_proposal_review_summary", lambda: "3")
     monkeypatch.setattr(flow, "_tuning_pending_summary", lambda: "1")
+    monkeypatch.setattr(flow, "_composite_menu_summary", lambda: "stanze 2 | attive 1 | review 1 | tuning 1")
 
     placeholders = flow._init_status_block()
 
     assert placeholders["proposal_review_summary"] == "3"
     assert placeholders["tuning_pending_summary"] == "1"
+    assert placeholders["composite_summary"] == "stanze 2 | attive 1 | review 1 | tuning 1"
 
 
 def test_tuning_pending_summary_counts_followup_proposals():
@@ -1286,6 +1488,60 @@ def test_lighting_menu_summary_is_operational() -> None:
     ]
 
     assert flow._lighting_menu_summary() == "2/3 stanze | attive 1 | review 2 | tuning 1"
+
+
+def test_composite_menu_summary_is_operational() -> None:
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r-signal-1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "reaction_type": "room_signal_assist",
+                    },
+                    "r-light-1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
+                    },
+                    "r-other": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "room_id": "living",
+                    },
+                }
+            },
+            "language": "it",
+        }
+    )
+    flow._pending_proposals = lambda: [
+        ReactionProposal(
+            proposal_id="p1",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_signal_assist",
+            description="new assist",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p2",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_darkness_lighting_assist",
+            description="tuning assist",
+            confidence=1.0,
+            followup_kind="tuning_suggestion",
+            suggested_reaction_config={},
+        ),
+        ReactionProposal(
+            proposal_id="p3",
+            analyzer_id="LightingPatternAnalyzer",
+            reaction_type="lighting_scene_schedule",
+            description="lighting",
+            confidence=1.0,
+            suggested_reaction_config={},
+        ),
+    ]
+
+    assert flow._composite_menu_summary() == "stanze 2 | attive 2 | review 2 | tuning 1"
 
 
 def test_signal_threshold_mode_options_include_binary_transitions():

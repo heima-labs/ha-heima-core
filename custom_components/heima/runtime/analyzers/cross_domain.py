@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -25,12 +26,95 @@ _CORRELATION_WINDOW_S = 10 * 60
 _FOLLOWUP_WINDOW_S = 15 * 60
 
 
+@dataclass(frozen=True)
+class CompositeProposalQualityPolicy:
+    """Quality policy for composite proposal payload stabilization."""
+
+    followup_entity_min_ratio: float = 0.5
+    followup_entity_min_episodes: int = 3
+    corroboration_promote_min_ratio: float = 0.6
+    corroboration_promote_min_episodes: int = 3
+    minimal_evidence_confidence_cap: float = 0.86
+    near_minimal_evidence_confidence_cap: float = 0.90
+    minimal_evidence_max_confirmed: int = 6
+    minimal_evidence_max_weeks: int = 2
+    near_minimal_evidence_max_confirmed: int = 7
+    near_minimal_evidence_max_weeks: int = 3
+    corroboration_cap_bonus: float = 0.02
+
+
+DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY = CompositeProposalQualityPolicy()
+
+
+def composite_quality_policy_from_learning_config(
+    learning_config: dict[str, Any] | None,
+) -> CompositeProposalQualityPolicy:
+    """Build a composite proposal quality policy from learning config overrides."""
+    raw = dict(learning_config or {})
+    policy_raw = raw.get("composite_quality_policy")
+    if not isinstance(policy_raw, dict):
+        return DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY
+
+    default = DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY
+    return CompositeProposalQualityPolicy(
+        followup_entity_min_ratio=_coerce_ratio(
+            policy_raw.get("followup_entity_min_ratio"),
+            default.followup_entity_min_ratio,
+        ),
+        followup_entity_min_episodes=_coerce_positive_int(
+            policy_raw.get("followup_entity_min_episodes"),
+            default.followup_entity_min_episodes,
+        ),
+        corroboration_promote_min_ratio=_coerce_ratio(
+            policy_raw.get("corroboration_promote_min_ratio"),
+            default.corroboration_promote_min_ratio,
+        ),
+        corroboration_promote_min_episodes=_coerce_positive_int(
+            policy_raw.get("corroboration_promote_min_episodes"),
+            default.corroboration_promote_min_episodes,
+        ),
+        minimal_evidence_confidence_cap=_coerce_ratio(
+            policy_raw.get("minimal_evidence_confidence_cap"),
+            default.minimal_evidence_confidence_cap,
+        ),
+        near_minimal_evidence_confidence_cap=_coerce_ratio(
+            policy_raw.get("near_minimal_evidence_confidence_cap"),
+            default.near_minimal_evidence_confidence_cap,
+        ),
+        minimal_evidence_max_confirmed=_coerce_positive_int(
+            policy_raw.get("minimal_evidence_max_confirmed"),
+            default.minimal_evidence_max_confirmed,
+        ),
+        minimal_evidence_max_weeks=_coerce_positive_int(
+            policy_raw.get("minimal_evidence_max_weeks"),
+            default.minimal_evidence_max_weeks,
+        ),
+        near_minimal_evidence_max_confirmed=_coerce_positive_int(
+            policy_raw.get("near_minimal_evidence_max_confirmed"),
+            default.near_minimal_evidence_max_confirmed,
+        ),
+        near_minimal_evidence_max_weeks=_coerce_positive_int(
+            policy_raw.get("near_minimal_evidence_max_weeks"),
+            default.near_minimal_evidence_max_weeks,
+        ),
+        corroboration_cap_bonus=_coerce_ratio(
+            policy_raw.get("corroboration_cap_bonus"),
+            default.corroboration_cap_bonus,
+        ),
+    )
+
+
 class CrossDomainPatternAnalyzer:
     """Detect room-scoped humidity burst + occupancy + ventilation follow-up patterns."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        quality_policy: CompositeProposalQualityPolicy | None = None,
+    ) -> None:
         self._matcher = RoomScopedCompositeMatcher()
         self._definition = _definition_by_pattern_id("room_signal_assist")
+        self._quality_policy = quality_policy or DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY
 
     @property
     def analyzer_id(self) -> str:
@@ -41,15 +125,21 @@ class CrossDomainPatternAnalyzer:
             event_store=event_store,
             matcher=self._matcher,
             definition=self._definition,
+            quality_policy=self._quality_policy,
         )
 
 
 class RoomCoolingPatternAnalyzer:
     """Detect room-scoped temperature rise + cooling follow-up patterns."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        quality_policy: CompositeProposalQualityPolicy | None = None,
+    ) -> None:
         self._matcher = RoomScopedCompositeMatcher()
         self._definition = _definition_by_pattern_id("room_cooling_assist")
+        self._quality_policy = quality_policy or DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY
 
     @property
     def analyzer_id(self) -> str:
@@ -60,6 +150,7 @@ class RoomCoolingPatternAnalyzer:
             event_store=event_store,
             matcher=self._matcher,
             definition=self._definition,
+            quality_policy=self._quality_policy,
         )
 
 
@@ -70,9 +161,11 @@ class CompositePatternCatalogAnalyzer:
         self,
         *,
         catalog: tuple[CompositeLearningPatternDefinition, ...] | None = None,
+        quality_policy: CompositeProposalQualityPolicy | None = None,
     ) -> None:
         self._matcher = RoomScopedCompositeMatcher()
         self._catalog = tuple(catalog or DEFAULT_COMPOSITE_PATTERN_CATALOG)
+        self._quality_policy = quality_policy or DEFAULT_COMPOSITE_PROPOSAL_QUALITY_POLICY
 
     @property
     def analyzer_id(self) -> str:
@@ -86,9 +179,10 @@ class CompositePatternCatalogAnalyzer:
                     event_store=event_store,
                     matcher=self._matcher,
                     definition=definition,
+                    quality_policy=self._quality_policy,
                 )
             )
-        return proposals
+        return _dominant_composite_candidates(proposals)
 
 
 async def _analyze_definition(
@@ -96,6 +190,7 @@ async def _analyze_definition(
     event_store: EventStore,
     matcher: RoomScopedCompositeMatcher,
     definition: CompositeLearningPatternDefinition,
+    quality_policy: CompositeProposalQualityPolicy,
 ) -> list[ReactionProposal]:
     state_changes = await event_store.async_query(event_type="state_change")
     lighting_events = await event_store.async_query(event_type="lighting")
@@ -123,12 +218,13 @@ async def _analyze_definition(
         if len(confirmed) < definition.min_occurrences:
             continue
 
-        suggested = definition.suggested_config_builder(room_id, confirmed)
+        suggested = definition.suggested_config_builder(room_id, confirmed, quality_policy)
         diagnostics = _build_default_diagnostics(
             room_id=room_id,
             definition=definition,
             episodes=episodes,
             confirmed=confirmed,
+            quality_policy=quality_policy,
         )
         if definition.diagnostics_builder is not None:
             diagnostics.update(
@@ -146,7 +242,14 @@ async def _analyze_definition(
                 analyzer_id=definition.analyzer_id,
                 reaction_type=definition.reaction_type,
                 description=definition.description_builder(room_id, len(confirmed), corroborated),
-                confidence=round(definition.confidence_builder(confirmed), 3),
+                confidence=round(
+                    _call_composite_confidence_builder(
+                        definition.confidence_builder,
+                        confirmed,
+                        quality_policy,
+                    ),
+                    3,
+                ),
                 suggested_reaction_config=suggested,
                 fingerprint=(
                     f"{definition.analyzer_id}|{definition.reaction_type}|{room_id}|"
@@ -229,29 +332,190 @@ def _corroborated_ratio(episodes: list, key: str) -> float:
     return sum(1 for ep in episodes if ep.corroboration_matches.get(key)) / len(episodes)
 
 
-def _build_signal_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+def _composite_confidence(
+    confirmed: list,
+    *,
+    base: float,
+    cap: float,
+    quality_policy: CompositeProposalQualityPolicy,
+    corroboration_key: str | None = None,
+) -> float:
+    count = len(confirmed)
+    weeks = _episode_week_count(confirmed)
+    corroboration_ratio = (
+        _corroborated_ratio(confirmed, corroboration_key)
+        if corroboration_key
+        else 0.0
+    )
+
+    confidence = base
+    confidence += min(0.24, 0.045 * count)
+    confidence += min(0.12, 0.05 * max(0, weeks - 1))
+    if corroboration_key:
+        confidence += min(0.08, 0.08 * corroboration_ratio)
+
+    # Keep barely-above-gate patterns below the maximum until they gather
+    # more observations across weeks.
+    if (
+        count <= quality_policy.minimal_evidence_max_confirmed
+        and weeks <= quality_policy.minimal_evidence_max_weeks
+    ):
+        cap = min(
+            cap,
+            quality_policy.minimal_evidence_confidence_cap
+            + (quality_policy.corroboration_cap_bonus * corroboration_ratio),
+        )
+    elif (
+        count <= quality_policy.near_minimal_evidence_max_confirmed
+        and weeks <= quality_policy.near_minimal_evidence_max_weeks
+    ):
+        cap = min(
+            cap,
+            quality_policy.near_minimal_evidence_confidence_cap
+            + (quality_policy.corroboration_cap_bonus * corroboration_ratio),
+        )
+
+    return min(cap, round(confidence, 3))
+
+
+def _call_composite_confidence_builder(
+    builder: Any,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> float:
+    try:
+        return float(builder(confirmed, quality_policy))
+    except TypeError:
+        return float(builder(confirmed))
+
+
+def _stable_entities_from_corroboration(
+    confirmed: list,
+    key: str,
+    *,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> list[str]:
+    counts: dict[str, int] = {}
+    total = len(confirmed)
+    if total <= 0:
+        return []
+    for episode in confirmed:
+        matched = {
+            entity_id
+            for entity_id in episode.corroboration_matches.get(key, ())
+            if entity_id
+        }
+        for entity_id in matched:
+            counts[entity_id] = counts.get(entity_id, 0) + 1
+    return _stable_entities_from_counts(
+        counts,
+        total=total,
+        min_ratio=quality_policy.corroboration_promote_min_ratio,
+        min_episodes=quality_policy.corroboration_promote_min_episodes,
+    )
+
+
+def _stable_followup_entities(
+    confirmed: list,
+    *,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> list[str]:
+    counts: dict[str, int] = {}
+    total = len(confirmed)
+    if total <= 0:
+        return []
+    for episode in confirmed:
+        matched = {entity_id for entity_id in episode.followup_entities if entity_id}
+        for entity_id in matched:
+            counts[entity_id] = counts.get(entity_id, 0) + 1
+    return _stable_entities_from_counts(
+        counts,
+        total=total,
+        min_ratio=quality_policy.followup_entity_min_ratio,
+        min_episodes=quality_policy.followup_entity_min_episodes,
+    )
+
+
+def _stable_entities_from_counts(
+    counts: dict[str, int],
+    *,
+    total: int,
+    min_ratio: float,
+    min_episodes: int,
+) -> list[str]:
+    stable: list[str] = []
+    for entity_id, count in counts.items():
+        ratio = _ratio(count, total)
+        if count < min_episodes:
+            continue
+        if ratio < min_ratio:
+            continue
+        stable.append(entity_id)
+    return sorted(stable)
+
+
+def _dominant_composite_candidates(
+    proposals: list[ReactionProposal],
+) -> list[ReactionProposal]:
+    by_slot: dict[str, ReactionProposal] = {}
+    for proposal in proposals:
+        slot_key = _composite_slot_key(proposal)
+        current = by_slot.get(slot_key)
+        if current is None or _composite_candidate_rank(proposal) > _composite_candidate_rank(current):
+            by_slot[slot_key] = proposal
+    return sorted(
+        by_slot.values(),
+        key=lambda proposal: (
+            str(proposal.reaction_type),
+            str(_safe_dict(proposal.suggested_reaction_config).get("room_id") or ""),
+            str(proposal.description),
+        ),
+    )
+
+
+def _composite_slot_key(proposal: ReactionProposal) -> str:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+    return (
+        f"{proposal.reaction_type}|room={cfg.get('room_id')}|primary={primary_signal}"
+    )
+
+
+def _composite_candidate_rank(proposal: ReactionProposal) -> tuple[float, int, int, str]:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    return (
+        float(proposal.confidence),
+        int(cfg.get("episodes_observed") or 0),
+        int(cfg.get("corroborated_episodes") or 0),
+        str(proposal.description),
+    )
+
+
+def _build_signal_assist_config(
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> dict[str, Any]:
     humidity_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-    temperature_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.corroboration_matches.get("temperature", ())
-            if entity_id
-        }
+    temperature_entities = _stable_entities_from_corroboration(
+        confirmed,
+        "temperature",
+        quality_policy=quality_policy,
     )
-    followup_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.followup_entities
-            if entity_id
-        }
-    )
+    followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     return {
         "reaction_class": "RoomSignalAssistReaction",
         "room_id": room_id,
         "trigger_signal_entities": humidity_entities,
+        "primary_signal_entities": humidity_entities,
+        "primary_signal_name": "humidity",
+        "primary_threshold_mode": "rise",
+        "primary_threshold": _HUMIDITY_RISE_THRESHOLD,
         "temperature_signal_entities": temperature_entities,
+        "corroboration_signal_entities": temperature_entities,
+        "corroboration_signal_name": "temperature",
+        "corroboration_threshold_mode": "rise",
+        "corroboration_threshold": _TEMPERATURE_RISE_THRESHOLD,
         "humidity_rise_threshold": _HUMIDITY_RISE_THRESHOLD,
         "temperature_rise_threshold": _TEMPERATURE_RISE_THRESHOLD,
         "correlation_window_s": _CORRELATION_WINDOW_S,
@@ -265,24 +529,18 @@ def _build_signal_assist_config(room_id: str, confirmed: list) -> dict[str, Any]
     }
 
 
-def _build_cooling_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+def _build_cooling_assist_config(
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> dict[str, Any]:
     temperature_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-    humidity_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.corroboration_matches.get("humidity", ())
-            if entity_id
-        }
+    humidity_entities = _stable_entities_from_corroboration(
+        confirmed,
+        "humidity",
+        quality_policy=quality_policy,
     )
-    followup_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.followup_entities
-            if entity_id
-        }
-    )
+    followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     corroborated_count = sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity"))
     return {
         "reaction_class": "RoomSignalAssistReaction",
@@ -304,16 +562,13 @@ def _build_cooling_assist_config(room_id: str, confirmed: list) -> dict[str, Any
     }
 
 
-def _build_air_quality_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+def _build_air_quality_assist_config(
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> dict[str, Any]:
     co2_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-    followup_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.followup_entities
-            if entity_id
-        }
-    )
+    followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     return {
         "reaction_class": "RoomSignalAssistReaction",
         "room_id": room_id,
@@ -334,9 +589,13 @@ def _build_air_quality_assist_config(room_id: str, confirmed: list) -> dict[str,
     }
 
 
-def _build_darkness_lighting_assist_config(room_id: str, confirmed: list) -> dict[str, Any]:
+def _build_darkness_lighting_assist_config(
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> dict[str, Any]:
     lux_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
-    entity_steps = _aggregate_lighting_followup_steps(confirmed)
+    entity_steps = _aggregate_lighting_followup_steps(confirmed, quality_policy=quality_policy)
     followup_entities = sorted({step["entity_id"] for step in entity_steps if step.get("entity_id")})
     return {
         "reaction_class": "RoomLightingAssistReaction",
@@ -363,6 +622,7 @@ def _build_default_diagnostics(
     definition: CompositeLearningPatternDefinition,
     episodes: list,
     confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
 ) -> dict[str, Any]:
     corroboration_signal_names = [
         signal.name for signal in definition.matcher_spec.corroborations
@@ -407,6 +667,10 @@ def _build_default_diagnostics(
         corroborated_episodes=sum(
             1 for ep in confirmed if any(ep.corroboration_matches.values())
         ),
+        followup_entity_min_ratio=quality_policy.followup_entity_min_ratio,
+        followup_entity_min_episodes=quality_policy.followup_entity_min_episodes,
+        corroboration_promote_min_ratio=quality_policy.corroboration_promote_min_ratio,
+        corroboration_promote_min_episodes=quality_policy.corroboration_promote_min_episodes,
         matched_primary_entities=primary_entities,
         matched_corroboration_entities=corroboration_entities,
         observed_followup_entities=followup_entities,
@@ -416,12 +680,12 @@ def _build_default_diagnostics(
 def _describe(room_id: str, observed: int, corroborated: int) -> str:
     if corroborated:
         return (
-            f"{room_id}: when occupancy is present and humidity rises rapidly, "
+            f"{room_id}: humidity assist — when occupancy is present and humidity rises rapidly, "
             f"you usually start ventilation within a few minutes "
             f"({observed} episodes, {corroborated} temperature-correlated)."
         )
     return (
-        f"{room_id}: when occupancy is present and humidity rises rapidly, "
+        f"{room_id}: humidity assist — when occupancy is present and humidity rises rapidly, "
         f"you usually start ventilation within a few minutes "
         f"({observed} observed episodes)."
     )
@@ -430,12 +694,12 @@ def _describe(room_id: str, observed: int, corroborated: int) -> str:
 def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
     if corroborated:
         return (
-            f"{room_id}: when occupancy is present and temperature rises quickly, "
+            f"{room_id}: cooling assist — when occupancy is present and temperature rises quickly, "
             f"you usually start cooling within a few minutes "
             f"({observed} episodes, {corroborated} humidity-correlated)."
         )
     return (
-        f"{room_id}: when occupancy is present and temperature rises quickly, "
+        f"{room_id}: cooling assist — when occupancy is present and temperature rises quickly, "
         f"you usually start cooling within a few minutes "
         f"({observed} observed episodes)."
     )
@@ -444,7 +708,7 @@ def _describe_cooling(room_id: str, observed: int, corroborated: int) -> str:
 def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str:
     del corroborated
     return (
-        f"{room_id}: when occupancy is present and CO2 rises quickly, "
+        f"{room_id}: air quality assist — when occupancy is present and CO2 rises quickly, "
         f"you usually start ventilation within a few minutes "
         f"({observed} observed episodes)."
     )
@@ -453,7 +717,7 @@ def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str
 def _describe_darkness_lighting(room_id: str, observed: int, corroborated: int) -> str:
     del corroborated
     return (
-        f"{room_id}: when the room becomes too dark while occupied, "
+        f"{room_id}: darkness lighting assist — when the room becomes too dark while occupied, "
         f"you usually turn on lights with a similar brightness "
         f"({observed} observed episodes)."
     )
@@ -489,10 +753,15 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe,
-    suggested_config_builder=lambda room_id, confirmed: _build_signal_assist_config(room_id, confirmed),
-    confidence_builder=lambda confirmed: min(
-        0.95,
-        0.45 + (0.07 * len(confirmed)) + (0.05 * _corroborated_ratio(confirmed, "temperature")),
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_signal_assist_config(
+        room_id, confirmed, quality_policy
+    ),
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
+        confirmed,
+        base=0.46,
+        cap=0.95,
+        quality_policy=quality_policy,
+        corroboration_key="temperature",
     ),
 )
 
@@ -527,18 +796,15 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_cooling,
-    suggested_config_builder=lambda room_id, confirmed: _build_cooling_assist_config(room_id, confirmed),
-    confidence_builder=lambda confirmed: min(
-        0.95,
-        0.42
-        + (0.07 * len(confirmed))
-        + (
-            0.05
-            * _ratio(
-                sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity")),
-                len(confirmed),
-            )
-        ),
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_cooling_assist_config(
+        room_id, confirmed, quality_policy
+    ),
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
+        confirmed,
+        base=0.43,
+        cap=0.95,
+        quality_policy=quality_policy,
+        corroboration_key="humidity",
     ),
 )
 
@@ -565,12 +831,14 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_air_quality,
-    suggested_config_builder=lambda room_id, confirmed: _build_air_quality_assist_config(
-        room_id, confirmed
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_air_quality_assist_config(
+        room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.93,
-        0.4 + (0.08 * len(confirmed)),
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
+        confirmed,
+        base=0.41,
+        cap=0.93,
+        quality_policy=quality_policy,
     ),
 )
 
@@ -598,12 +866,14 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_darkness_lighting,
-    suggested_config_builder=lambda room_id, confirmed: _build_darkness_lighting_assist_config(
-        room_id, confirmed
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_darkness_lighting_assist_config(
+        room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.94,
-        0.42 + (0.08 * len(confirmed)),
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
+        confirmed,
+        base=0.43,
+        cap=0.94,
+        quality_policy=quality_policy,
     ),
 )
 
@@ -629,6 +899,32 @@ def _ratio(part: int, total: int) -> float:
     return part / total
 
 
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _coerce_ratio(value: Any, default: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    if numeric < 0.0:
+        return 0.0
+    if numeric > 1.0:
+        return 1.0
+    return numeric
+
+
+def _coerce_positive_int(value: Any, default: int) -> int:
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, numeric)
+
+
 def _episode_week_count(episodes: list) -> int:
     weeks: set[tuple[int, int]] = set()
     for episode in episodes:
@@ -637,9 +933,16 @@ def _episode_week_count(episodes: list) -> int:
     return len(weeks)
 
 
-def _aggregate_lighting_followup_steps(episodes: list) -> list[dict[str, Any]]:
+def _aggregate_lighting_followup_steps(
+    episodes: list,
+    *,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> list[dict[str, Any]]:
     by_entity: dict[str, list[HeimaEvent]] = {}
+    episode_counts: dict[str, int] = {}
+    total = len(episodes)
     for episode in episodes:
+        seen_in_episode: set[str] = set()
         for event in getattr(episode, "followup_events", ()):
             if not isinstance(event, HeimaEvent) or event.event_type != "lighting":
                 continue
@@ -647,9 +950,22 @@ def _aggregate_lighting_followup_steps(episodes: list) -> list[dict[str, Any]]:
             if not entity_id:
                 continue
             by_entity.setdefault(entity_id, []).append(event)
+            seen_in_episode.add(entity_id)
+        for entity_id in seen_in_episode:
+            episode_counts[entity_id] = episode_counts.get(entity_id, 0) + 1
 
     steps: list[dict[str, Any]] = []
+    stable_entities = set(
+        _stable_entities_from_counts(
+            episode_counts,
+            total=total,
+            min_ratio=quality_policy.followup_entity_min_ratio,
+            min_episodes=quality_policy.followup_entity_min_episodes,
+        )
+    )
     for entity_id, group in sorted(by_entity.items()):
+        if entity_id not in stable_entities:
+            continue
         last = group[-1]
         action = str(last.data.get("action") or "on")
         brightness = _median_int([e.data.get("brightness") for e in group]) if action == "on" else None

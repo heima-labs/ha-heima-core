@@ -47,6 +47,13 @@ For plugin families that support multiple bounded automations:
 - the plugin descriptor remains the source of truth for which templates are declared and which are
   implemented in v1
 
+Current planning clarification:
+- the immediate post-lighting domain work should focus on strengthening the existing composite
+  family (`room.signal_assist.basic`, `room.darkness_lighting_assist.basic`, and the learned-only
+  composite proposal types already present)
+- that work SHOULD prioritize proposal quality, identity, and tuning readiness before introducing
+  additional admin-authored templates
+
 ## 3. Admin-Authored Flow
 
 The admin-authored flow is a request-driven path that still materializes a proposal inside the shared
@@ -250,6 +257,31 @@ Normative UX rule:
 - when a tuning proposal targets an active lighting reaction, the review surface SHOULD show the
   relevant before/after delta for the affected fields instead of only repeating the proposal title
   or generic follow-up text
+
+For composite authored automations, tuning SHOULD also be able to express a bounded structured diff
+rather than only a generic “this could be improved” wording.
+
+Minimum useful v1 composite tuning diff categories:
+- primary threshold change
+- primary threshold mode change
+- primary signal entity-count change
+- corroboration threshold change, when a corroboration exists
+- corroboration threshold mode change, when a corroboration exists
+- corroboration entity-count change
+- actuation payload count change:
+  - `steps` count for generic signal assist
+  - `entity_steps` count for room lighting assist
+
+Normative UX clarification:
+- in v1.x, the options flow remains the bounded review surface for admin-authored and learned
+  follow-up tuning
+- this is sufficient for one-proposal-at-a-time review with compact diff lines
+- denser automation-management UX such as queue browsing, history inspection, or side-by-side
+  comparison SHOULD move to a dedicated management surface rather than overloading the bounded
+  config flow
+- the first end-to-end validation target for composite tuning SHOULD include:
+  - `room.signal_assist.basic`
+  - `room.darkness_lighting_assist.basic`
 
 These are not learned proposals in the strict sense. They are follow-up recommendations attached to
 an existing authored automation and should still flow through the same proposal/reaction substrate.

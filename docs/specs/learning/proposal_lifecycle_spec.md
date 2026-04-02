@@ -118,10 +118,64 @@ Built-in proposals should converge on these identity keys:
 - `heating_preference|house_state=<house_state>`
 - `heating_eco`
 - `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>`
-- `room_signal_assist|room=<room_id>`
-- `room_cooling_assist|room=<room_id>`
-- `room_air_quality_assist|room=<room_id>`
-- `room_darkness_lighting_assist|room=<room_id>`
+- `room_signal_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_cooling_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_darkness_lighting_assist|room=<room_id>|primary=<primary_signal_name>`
+
+Composite domain clarification for the next iteration:
+- the current composite identity remains intentionally coarse and room-scoped
+- before the composite domain becomes fully domain-strong, identity SHOULD be reviewed so that:
+  - materially different composite proposal families in the same room stay distinct
+  - repeated evidence refreshes the same logical slot instead of creating noise
+  - future tuning can target the correct active reaction without relying on brittle proposal wording
+- any refinement MUST remain plugin-owned and SHOULD avoid reintroducing central branching in
+  `ProposalEngine`
+- for v1 composite tuning, the same logical identity slot SHOULD normally be sufficient to target
+  the active reaction:
+  - `reaction_type`
+  - `room_id`
+  - `primary_signal_name`
+- changes in thresholds, entity counts, corroboration support, or actuation payload size SHOULD
+  normally be treated as evidence for a tuning follow-up, not as a new logical identity
+
+Composite proposal quality clarification:
+- for composite proposal families, not every observed entity list change should become a new core
+  proposal payload
+- support thresholds SHOULD prefer ratios when the question is “how consistently is this element
+  part of the pattern?”
+- examples:
+  - follow-up entities promoted into the proposal payload
+  - optional corroboration signals promoted into the structural config
+- absolute floors MAY still be used as guards, but SHOULD not be the only criterion when a
+  percentage better represents stability
+- these thresholds SHOULD come from a configurable analyzer policy, even if v1 initially uses
+  built-in defaults
+- if multiple composite candidates still emerge for the same logical slot in one analysis pass,
+  the analyzer SHOULD retain only one dominant representative candidate
+- a dominant-candidate choice SHOULD prefer stronger evidence and clearer stability, for example:
+  - higher confidence
+  - more confirmed episodes
+  - more corroborated episodes when relevant
+- when an accepted composite reaction already owns that logical slot, a materially changed learned
+  candidate SHOULD normally become a `tuning_suggestion` rather than a second discovery
+- bounded structured diffs are preferred for composite tuning review; examples include:
+  - threshold value change
+  - threshold mode change
+  - signal/corroboration entity-count change
+  - action/entity-step count change
+- the first end-to-end validation set for composite tuning SHOULD cover:
+  - one `RoomSignalAssistReaction` target
+  - one `RoomLightingAssistReaction` target
+- composite lifecycle hooks SHOULD also be allowed to suppress a follow-up when the learned candidate
+  represents only minor drift over an accepted reaction in the same logical slot
+- v1 examples of minor drift:
+  - same signal entity sets
+  - same actuation payload size
+  - unchanged threshold mode
+  - small threshold delta only
+- the exact “small threshold delta” and comparable payload-drift tolerances SHOULD be modeled as
+  configurable lifecycle policy, even if v1 ships with built-in defaults
 
 ### 4.4 Lighting time bucket
 
