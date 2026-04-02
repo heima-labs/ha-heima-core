@@ -1191,15 +1191,26 @@ class _ReactionsStepsMixin:
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
         cfg = _safe_mapping(proposal.suggested_reaction_config)
+        followup = self._proposal_followup_target(proposal)
+        presenter = self._reaction_presenter_for_cfg(cfg)
+        language = self._flow_language()
+        if presenter is not None and presenter.proposal_review_title is not None:
+            title = presenter.proposal_review_title(
+                self,
+                proposal,
+                cfg,
+                language,
+                followup is not None,
+            )
+            if title:
+                return title
         title = self._proposal_human_label(proposal, cfg)
-        if self._proposal_followup_target(proposal) is not None:
-            language = self._flow_language()
+        if followup is not None:
             if language.startswith("it"):
                 return f"Affinamento: {title}"
             return f"Tuning: {title}"
         if proposal.origin != "admin_authored":
             return title
-        language = self._flow_language()
         if language.startswith("it"):
             return f"Bozza admin: {title}"
         return f"Admin draft: {title}"

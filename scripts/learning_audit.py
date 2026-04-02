@@ -114,6 +114,28 @@ def main() -> int:
             print("configured by slot:")
             for slot_key, total in sorted(configured_by_slot.items()):
                 print(f"  {slot_key}: {total}")
+        tuning_examples = list(lighting_summary.get("pending_tuning_examples") or [])
+        if tuning_examples:
+            print("pending tuning examples:")
+            for item in tuning_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('slot_key') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
+        discovery_examples = list(lighting_summary.get("pending_discovery_examples") or [])
+        if discovery_examples:
+            print("pending discovery examples:")
+            for item in discovery_examples:
+                print(
+                    "  "
+                    f"{item.get('room_id') or '-'} | "
+                    f"{item.get('slot_key') or '-'} | "
+                    f"{item.get('confidence')} | "
+                    f"{item.get('label') or '-'}"
+                )
 
     families = dict(summary.get("families") or {})
     if families:

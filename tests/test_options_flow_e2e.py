@@ -591,7 +591,7 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento: Luci living")
+    assert placeholders["proposal_label"].startswith("Affinamento luci: Luci living")
     assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
     assert "Automazione target: Luci living — Lunedì ~20:00 (1 entità)" in placeholders["proposal_details"]
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
@@ -604,6 +604,38 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     )
     assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
     assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_marks_lighting_discovery_as_new_automation():
+    flow = _flow({})
+    proposal = ReactionProposal(
+        proposal_id="proposal-lighting-new-1",
+        analyzer_id="LightingPatternAnalyzer",
+        reaction_type="lighting_scene_schedule",
+        description="Living evening lights",
+        confidence=0.88,
+        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=base",
+        suggested_reaction_config={
+            "reaction_class": "LightingScheduleReaction",
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1200,
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "learning_diagnostics": {"observations_count": 5, "weeks_observed": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Nuova automazione luci: Luci living")
 
 
 @pytest.mark.asyncio

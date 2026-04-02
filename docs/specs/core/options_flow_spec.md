@@ -140,6 +140,14 @@ Optional house-state tuning/config:
 - disabled families MUST not emit proposals in that runtime session
 - proposal diagnostics MUST reflect which families were enabled and which were not
 
+### Proposal Review Wording
+
+Normative guidance for review wording:
+- lighting discovery proposals SHOULD render with wording equivalent to "new lighting automation"
+- lighting tuning follow-ups SHOULD render with wording equivalent to "lighting adjustment" or "lighting tuning"
+- admin-authored lighting proposals MUST continue to render as admin drafts, not as learned discoveries
+- these distinctions SHOULD be concise and visible in the primary review title, not only in secondary details
+
 ---
 
 ## 2. People — Named Persons

@@ -113,6 +113,24 @@ def _print_lighting_summary(data: dict[str, Any]) -> None:
         for slot_key, total in sorted(configured_by_slot.items()):
             print(f"  {slot_key}: {total}")
 
+    tuning_examples = list(data.get("pending_tuning_examples") or [])
+    if tuning_examples:
+        print("pending_tuning_examples:")
+        for item in tuning_examples:
+            print(
+                f"  {item.get('room_id') or '-'} | {item.get('slot_key') or '-'} | "
+                f"{item.get('confidence')} | {item.get('label') or '-'}"
+            )
+
+    discovery_examples = list(data.get("pending_discovery_examples") or [])
+    if discovery_examples:
+        print("pending_discovery_examples:")
+        for item in discovery_examples:
+            print(
+                f"  {item.get('room_id') or '-'} | {item.get('slot_key') or '-'} | "
+                f"{item.get('confidence')} | {item.get('label') or '-'}"
+            )
+
     slot_collisions = dict(data.get("slot_collisions") or {})
     if slot_collisions:
         print("slot_collisions:")

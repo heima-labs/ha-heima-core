@@ -414,15 +414,28 @@ def _lighting_summary_diagnostics(
     pending_by_room: dict[str, int] = {}
     pending_tuning_total = 0
     pending_discovery_total = 0
+    pending_tuning_examples: list[dict[str, Any]] = []
+    pending_discovery_examples: list[dict[str, Any]] = []
     for proposal in lighting_pending:
         config_summary = _safe_dict(proposal.get("config_summary"))
         room_id = str(config_summary.get("room_id") or "").strip()
         if room_id:
             pending_by_room[room_id] = pending_by_room.get(room_id, 0) + 1
+        example = {
+            "id": proposal.get("id"),
+            "label": str(proposal.get("description") or "").strip(),
+            "room_id": room_id,
+            "slot_key": _lighting_slot_key_from_identity(str(proposal.get("identity_key") or "").strip()),
+            "confidence": proposal.get("confidence"),
+        }
         if str(proposal.get("followup_kind") or "") == "tuning_suggestion":
             pending_tuning_total += 1
+            if len(pending_tuning_examples) < 3:
+                pending_tuning_examples.append(example)
         else:
             pending_discovery_total += 1
+            if len(pending_discovery_examples) < 3:
+                pending_discovery_examples.append(example)
 
     active = _active_reaction_items(coordinator)
     configured_by_room: dict[str, int] = {}
@@ -461,6 +474,8 @@ def _lighting_summary_diagnostics(
         "pending_tuning_total": pending_tuning_total,
         "pending_discovery_total": pending_discovery_total,
         "pending_by_room": dict(sorted(pending_by_room.items())),
+        "pending_tuning_examples": pending_tuning_examples,
+        "pending_discovery_examples": pending_discovery_examples,
         "slot_collisions": dict(configured_summary.get("lighting_slot_collisions") or {}),
     }
 

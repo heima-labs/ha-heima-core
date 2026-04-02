@@ -240,6 +240,8 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
         "pending_tuning_total": 0,
         "pending_discovery_total": 0,
         "pending_by_room": {},
+        "pending_tuning_examples": [],
+        "pending_discovery_examples": [],
         "slot_collisions": {},
     }
 
@@ -384,3 +386,13 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
     assert lighting["pending_tuning_total"] == 1
     assert lighting["pending_discovery_total"] == 0
     assert lighting["pending_by_room"] == {}
+    assert lighting["pending_tuning_examples"] == [
+        {
+            "id": "p1",
+            "label": "Living tuned lights",
+            "room_id": "",
+            "slot_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+            "confidence": 0.91,
+        }
+    ]
+    assert lighting["pending_discovery_examples"] == []

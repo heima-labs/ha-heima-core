@@ -25,6 +25,7 @@ from .lighting_schedule import (
     present_admin_authored_lighting_schedule_details,
     present_learned_lighting_schedule_details,
     present_lighting_schedule_proposal_label,
+    present_lighting_schedule_review_title,
     present_lighting_schedule_label,
     present_tuning_lighting_schedule_details,
 )
@@ -51,6 +52,7 @@ AdminAuthoredReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], 
 LearnedReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], str], list[str]]
 TuningReviewDetailsPresenter = Callable[[Any, Any, dict[str, Any], dict[str, Any], str], list[str]]
 ProposalHumanLabelPresenter = Callable[[Any, Any, dict[str, Any], str], str | None]
+ProposalReviewTitlePresenter = Callable[[Any, Any, dict[str, Any], str, bool], str | None]
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ class ReactionPresenterHooks:
 
     reaction_label_from_config: ReactionLabelPresenter | None = None
     proposal_human_label: ProposalHumanLabelPresenter | None = None
+    proposal_review_title: ProposalReviewTitlePresenter | None = None
     admin_authored_review_details: AdminAuthoredReviewDetailsPresenter | None = None
     learned_review_details: LearnedReviewDetailsPresenter | None = None
     tuning_review_details: TuningReviewDetailsPresenter | None = None
@@ -147,6 +150,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_lighting_schedule_label,
                 proposal_human_label=present_lighting_schedule_proposal_label,
+                proposal_review_title=present_lighting_schedule_review_title,
                 admin_authored_review_details=present_admin_authored_lighting_schedule_details,
                 learned_review_details=present_learned_lighting_schedule_details,
                 tuning_review_details=present_tuning_lighting_schedule_details,
@@ -234,6 +238,7 @@ __all__ = [
     "LearnedReviewDetailsPresenter",
     "TuningReviewDetailsPresenter",
     "ProposalHumanLabelPresenter",
+    "ProposalReviewTitlePresenter",
     "ReactionPresenterHooks",
     "RegisteredReactionPlugin",
     "create_builtin_reaction_plugin_registry",

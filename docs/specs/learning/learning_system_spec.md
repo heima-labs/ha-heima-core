@@ -974,6 +974,14 @@ Recommended v1 lighting summary fields:
 - `pending_by_room`
 - `slot_collisions`
 
+For lighting-specific operability in Strada 3:
+- diagnostics SHOULD also expose small, stable pending examples separated by follow-up kind
+- at minimum, a lighting summary MAY expose:
+  - `pending_tuning_examples`
+  - `pending_discovery_examples`
+- examples SHOULD be lightweight and product-facing rather than raw internal payload dumps
+- examples SHOULD prefer room / slot / confidence / concise label fields over full config bodies
+
 Normative rule:
 - when an accepted proposal is rebuilt into a configured reaction, provenance SHOULD remain attached
   so diagnostics can distinguish legacy/unspecified reactions from `learned` and `admin_authored`

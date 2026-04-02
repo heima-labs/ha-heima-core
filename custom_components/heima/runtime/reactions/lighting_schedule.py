@@ -357,6 +357,28 @@ def present_lighting_schedule_proposal_label(
     return f"Lighting {room_id}"
 
 
+def present_lighting_schedule_review_title(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+    is_followup: bool,
+) -> str | None:
+    """Return a lighting-specific review title."""
+    if getattr(proposal, "origin", "") == "admin_authored":
+        return None
+    base = present_lighting_schedule_proposal_label(flow, proposal, cfg, language)
+    if not base:
+        return None
+    if language.startswith("it"):
+        if is_followup:
+            return f"Affinamento luci: {base}"
+        return f"Nuova automazione luci: {base}"
+    if is_followup:
+        return f"Lighting tuning: {base}"
+    return f"New lighting automation: {base}"
+
+
 def _lighting_entity_step_diffs(
     current_steps: list[dict[str, Any]],
     proposed_steps: list[dict[str, Any]],

@@ -133,6 +133,20 @@ Recommended v1 `minor drift` examples:
 - small brightness drift for the same entity set
 - small color temperature drift for the same entity set
 
+## 4.5 Review wording for lighting proposals
+
+For lighting-specific review UX, wording SHOULD distinguish clearly between:
+
+- `discovery`
+  - a newly learned lighting automation candidate
+- `tuning_suggestion`
+  - a follow-up change over an already active lighting automation
+
+Normative guidance:
+- review titles for lighting discovery SHOULD read as a new learned automation, not a generic proposal
+- review titles for lighting tuning SHOULD read as an adjustment of an existing automation, not a second discovery
+- the same distinction SHOULD be visible both in proposal review wording and in lighting-specific diagnostics summaries
+
 ## 5. Lifecycle Fields
 
 In addition to current timestamps, proposals should carry:
