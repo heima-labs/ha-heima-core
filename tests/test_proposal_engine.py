@@ -1017,3 +1017,56 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
     assert summary["corroboration_threshold_mode"] == "rise"
     assert summary["corroboration_threshold"] == 0.8
     assert summary["corroboration_signal_entities_count"] == 1
+
+
+async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_slot(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    base = _composite_proposal(
+        reaction_type="room_signal_assist",
+        room_id="bathroom",
+        primary_signal_name="humidity",
+    )
+    base = ReactionProposal.from_dict(
+        {
+            **base.as_dict(),
+            "status": "accepted",
+            "origin": "admin_authored",
+        }
+    )
+    candidate = _composite_proposal(
+        reaction_type="room_signal_assist",
+        room_id="bathroom",
+        primary_signal_name="humidity",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "primary_threshold": 9.5,
+            "primary_threshold_mode": "above",
+            "primary_signal_entities": [
+                "sensor.bathroom_humidity",
+                "sensor.bathroom_humidity_aux",
+            ],
+            "corroboration_threshold": 1.2,
+            "corroboration_threshold_mode": "above",
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [
+                {
+                    "domain": "fan",
+                    "target": "fan.bathroom",
+                    "action": "fan.turn_on",
+                    "params": {"entity_id": "fan.bathroom"},
+                }
+            ],
+        }
+    )
+
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._proposals = [base]
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_run()
+
+    assert len(engine._proposals) == 2
+    pending = next(item for item in engine._proposals if item.status == "pending")
+    assert pending.followup_kind == "tuning_suggestion"
+    assert pending.identity_key == "room_signal_assist|room=bathroom|primary=humidity"

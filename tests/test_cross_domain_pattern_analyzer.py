@@ -171,9 +171,21 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "bathroom"
     assert proposal.suggested_reaction_config["trigger_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert proposal.suggested_reaction_config["primary_signal_entities"] == [
+        "sensor.bathroom_humidity"
+    ]
+    assert proposal.suggested_reaction_config["primary_signal_name"] == "humidity"
+    assert proposal.suggested_reaction_config["primary_threshold_mode"] == "rise"
+    assert proposal.suggested_reaction_config["primary_threshold"] == 8.0
     assert proposal.suggested_reaction_config["temperature_signal_entities"] == [
         "sensor.bathroom_temperature"
     ]
+    assert proposal.suggested_reaction_config["corroboration_signal_entities"] == [
+        "sensor.bathroom_temperature"
+    ]
+    assert proposal.suggested_reaction_config["corroboration_signal_name"] == "temperature"
+    assert proposal.suggested_reaction_config["corroboration_threshold_mode"] == "rise"
+    assert proposal.suggested_reaction_config["corroboration_threshold"] == 0.8
     assert proposal.suggested_reaction_config["observed_followup_entities"] == [
         "fan.bathroom_fan"
     ]

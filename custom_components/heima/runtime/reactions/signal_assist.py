@@ -421,6 +421,83 @@ def present_tuning_room_signal_assist_details(
                 else f"Primary threshold: {current_threshold} -> {proposed_threshold}"
             )
 
+    current_mode = str(target_cfg.get("primary_threshold_mode") or "rise").strip()
+    proposed_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
+    if current_mode != proposed_mode:
+        current_label = flow._signal_threshold_mode_options().get(current_mode, current_mode)  # noqa: SLF001
+        proposed_label = flow._signal_threshold_mode_options().get(proposed_mode, proposed_mode)  # noqa: SLF001
+        details.append(
+            f"Modo primario: {current_label} -> {proposed_label}"
+            if is_it
+            else f"Primary mode: {current_label} -> {proposed_label}"
+        )
+
+    current_primary_entities = target_cfg.get("primary_signal_entities")
+    proposed_primary_entities = cfg.get("primary_signal_entities")
+    if isinstance(current_primary_entities, list) and isinstance(proposed_primary_entities, list):
+        if len(current_primary_entities) != len(proposed_primary_entities):
+            details.append(
+                f"Entità primarie: {len(current_primary_entities)} -> {len(proposed_primary_entities)}"
+                if is_it
+                else (
+                    f"Primary entities: {len(current_primary_entities)} ->"
+                    f" {len(proposed_primary_entities)}"
+                )
+            )
+
+    current_corroboration_threshold = target_cfg.get(
+        "corroboration_threshold", target_cfg.get("corroboration_rise_threshold")
+    )
+    proposed_corroboration_threshold = cfg.get(
+        "corroboration_threshold", cfg.get("corroboration_rise_threshold")
+    )
+    if current_corroboration_threshold not in (None, "") and proposed_corroboration_threshold not in (
+        None,
+        "",
+    ):
+        if str(current_corroboration_threshold) != str(proposed_corroboration_threshold):
+            details.append(
+                f"Soglia corroborante: {current_corroboration_threshold} -> {proposed_corroboration_threshold}"
+                if is_it
+                else (
+                    "Corroboration threshold: "
+                    f"{current_corroboration_threshold} -> {proposed_corroboration_threshold}"
+                )
+            )
+
+    current_corroboration_mode = str(target_cfg.get("corroboration_threshold_mode") or "rise").strip()
+    proposed_corroboration_mode = str(cfg.get("corroboration_threshold_mode") or "rise").strip()
+    if current_corroboration_mode != proposed_corroboration_mode:
+        current_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            current_corroboration_mode, current_corroboration_mode
+        )
+        proposed_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
+            proposed_corroboration_mode, proposed_corroboration_mode
+        )
+        details.append(
+            f"Modo corroborante: {current_label} -> {proposed_label}"
+            if is_it
+            else f"Corroboration mode: {current_label} -> {proposed_label}"
+        )
+
+    current_corroboration_entities = target_cfg.get("corroboration_signal_entities")
+    proposed_corroboration_entities = cfg.get("corroboration_signal_entities")
+    if isinstance(current_corroboration_entities, list) and isinstance(
+        proposed_corroboration_entities, list
+    ):
+        if len(current_corroboration_entities) != len(proposed_corroboration_entities):
+            details.append(
+                (
+                    "Entità corroboranti: "
+                    f"{len(current_corroboration_entities)} -> {len(proposed_corroboration_entities)}"
+                )
+                if is_it
+                else (
+                    "Corroboration entities: "
+                    f"{len(current_corroboration_entities)} -> {len(proposed_corroboration_entities)}"
+                )
+            )
+
     current_steps = target_cfg.get("steps")
     proposed_steps = cfg.get("steps")
     if isinstance(current_steps, list) and isinstance(proposed_steps, list):
@@ -447,3 +524,20 @@ def present_room_signal_assist_proposal_label(
     if primary_signal_name:
         return f"Assist {room_id} ({primary_signal_name})"
     return f"Assist {room_id}"
+
+
+def present_room_signal_assist_review_title(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+    is_followup: bool,
+) -> str | None:
+    if str(getattr(proposal, "origin", "") or "") == "admin_authored":
+        return None
+    title = present_room_signal_assist_proposal_label(flow, proposal, cfg, language)
+    if not title:
+        return None
+    if language.startswith("it"):
+        return f"Affinamento assist: {title}" if is_followup else f"Nuovo assist: {title}"
+    return f"Assist tuning: {title}" if is_followup else f"New assist: {title}"

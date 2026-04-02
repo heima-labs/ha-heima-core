@@ -16,6 +16,7 @@ from .lighting_assist import (
     present_admin_authored_room_lighting_assist_details,
     present_learned_room_lighting_assist_details,
     present_room_lighting_assist_proposal_label,
+    present_room_lighting_assist_review_title,
     present_room_lighting_assist_label,
     present_tuning_room_lighting_assist_details,
 )
@@ -42,6 +43,7 @@ from .signal_assist import (
     present_admin_authored_room_signal_assist_details,
     present_learned_room_signal_assist_details,
     present_room_signal_assist_proposal_label,
+    present_room_signal_assist_review_title,
     present_room_signal_assist_label,
     present_tuning_room_signal_assist_details,
 )
@@ -189,6 +191,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_signal_assist_label,
                 proposal_human_label=present_room_signal_assist_proposal_label,
+                proposal_review_title=present_room_signal_assist_review_title,
                 admin_authored_review_details=present_admin_authored_room_signal_assist_details,
                 learned_review_details=present_learned_room_signal_assist_details,
                 tuning_review_details=present_tuning_room_signal_assist_details,
@@ -205,6 +208,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_lighting_assist_label,
                 proposal_human_label=present_room_lighting_assist_proposal_label,
+                proposal_review_title=present_room_lighting_assist_review_title,
                 admin_authored_review_details=present_admin_authored_room_lighting_assist_details,
                 learned_review_details=present_learned_room_lighting_assist_details,
                 tuning_review_details=present_tuning_room_lighting_assist_details,

@@ -131,6 +131,13 @@ Composite domain clarification for the next iteration:
   - future tuning can target the correct active reaction without relying on brittle proposal wording
 - any refinement MUST remain plugin-owned and SHOULD avoid reintroducing central branching in
   `ProposalEngine`
+- for v1 composite tuning, the same logical identity slot SHOULD normally be sufficient to target
+  the active reaction:
+  - `reaction_type`
+  - `room_id`
+  - `primary_signal_name`
+- changes in thresholds, entity counts, corroboration support, or actuation payload size SHOULD
+  normally be treated as evidence for a tuning follow-up, not as a new logical identity
 
 Composite proposal quality clarification:
 - for composite proposal families, not every observed entity list change should become a new core
@@ -150,6 +157,13 @@ Composite proposal quality clarification:
   - higher confidence
   - more confirmed episodes
   - more corroborated episodes when relevant
+- when an accepted composite reaction already owns that logical slot, a materially changed learned
+  candidate SHOULD normally become a `tuning_suggestion` rather than a second discovery
+- bounded structured diffs are preferred for composite tuning review; examples include:
+  - threshold value change
+  - threshold mode change
+  - signal/corroboration entity-count change
+  - action/entity-step count change
 
 ### 4.4 Lighting time bucket
 

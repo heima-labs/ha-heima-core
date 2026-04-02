@@ -68,6 +68,17 @@ def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return event_store if isinstance(event_store, dict) else {}
 
 
+def _engine_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
+    raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    if not isinstance(raw, dict):
+        return {}
+    runtime = raw.get("data", {}).get("runtime", {})
+    if not isinstance(runtime, dict):
+        return {}
+    engine = runtime.get("engine", {})
+    return engine if isinstance(engine, dict) else {}
+
+
 def _find_room_signal_assist(diag: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     proposals = diag.get("proposals")
     if not isinstance(proposals, list):
@@ -145,6 +156,36 @@ def _wait_for_room_signal_proposal(
             return proposal_id, proposal, "dedup_stable_count"
         time.sleep(poll_s)
     raise RuntimeError("Timeout waiting for pending room_signal_assist proposal in diagnostics")
+
+
+def _wait_for_room_occupancy_context(
+    client: HAClient,
+    entry_id: str,
+    *,
+    room_id: str,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        engine = _engine_diagnostics(client, entry_id)
+        occupancy = engine.get("occupancy", {})
+        if not isinstance(occupancy, dict):
+            time.sleep(poll_s)
+            continue
+        room_trace = occupancy.get("room_trace", {})
+        if not isinstance(room_trace, dict):
+            time.sleep(poll_s)
+            continue
+        trace = room_trace.get(room_id, {})
+        if not isinstance(trace, dict):
+            time.sleep(poll_s)
+            continue
+        effective_state = str(trace.get("effective_state") or "").strip().lower()
+        if effective_state == "on":
+            return
+        time.sleep(poll_s)
+    raise RuntimeError(f"Timeout waiting for occupancy trace effective_state=on for room={room_id}")
 
 
 def _recompute(client: HAClient) -> None:
@@ -248,6 +289,13 @@ def main() -> int:
     client.wait_state("binary_sensor.test_heima_room_bathroom_motion", "on", args.timeout_s, args.poll_s)
     _recompute(client)
     client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
+    _wait_for_room_occupancy_context(
+        client,
+        entry_id,
+        room_id="bathroom",
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+    )
 
     before_events = _to_int((_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("state_change"))
     print("Executing real bathroom humidity + temperature + fan sequence...")

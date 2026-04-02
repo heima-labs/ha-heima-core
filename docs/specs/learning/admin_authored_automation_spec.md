@@ -258,6 +258,28 @@ Normative UX rule:
   relevant before/after delta for the affected fields instead of only repeating the proposal title
   or generic follow-up text
 
+For composite authored automations, tuning SHOULD also be able to express a bounded structured diff
+rather than only a generic “this could be improved” wording.
+
+Minimum useful v1 composite tuning diff categories:
+- primary threshold change
+- primary threshold mode change
+- primary signal entity-count change
+- corroboration threshold change, when a corroboration exists
+- corroboration threshold mode change, when a corroboration exists
+- corroboration entity-count change
+- actuation payload count change:
+  - `steps` count for generic signal assist
+  - `entity_steps` count for room lighting assist
+
+Normative UX clarification:
+- in v1.x, the options flow remains the bounded review surface for admin-authored and learned
+  follow-up tuning
+- this is sufficient for one-proposal-at-a-time review with compact diff lines
+- denser automation-management UX such as queue browsing, history inspection, or side-by-side
+  comparison SHOULD move to a dedicated management surface rather than overloading the bounded
+  config flow
+
 These are not learned proposals in the strict sense. They are follow-up recommendations attached to
 an existing authored automation and should still flow through the same proposal/reaction substrate.
 

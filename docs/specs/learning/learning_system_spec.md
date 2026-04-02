@@ -236,7 +236,7 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P13 Admin-authored proposal path | Implemented/Partial | origin-aware proposal model, plugin-declared templates, first end-to-end flow for `lighting.scene_schedule.basic`, reaction provenance + diagnostics implemented |
 | P14 Reaction plugin realization bridge | Implemented | reaction build/normalize ownership moved from engine core to explicit `ReactionPluginRegistry`; review/authoring presenter hooks reduce config-flow hardcoding |
 | P15 Proposal lifecycle hook bridge | Implemented | `ProposalEngine` lifecycle policy moved from hardcoded `reaction_type` branches to plugin-owned lifecycle hooks |
-| P16 Composite domain-strong stream | Planned | next focus after lighting: improve proposal quality, identity, tuning readiness, and UX for the existing composite room-assist family before larger cross-domain domains |
+| P16 Composite domain-strong stream | In progress | strengthen proposal quality, identity, tuning readiness, and bounded UX for the existing composite room-assist family before larger cross-domain domains |
 
 ---
 
@@ -968,6 +968,28 @@ Lighting tuning clarification:
   - entity-set change
 - the follow-up review SHOULD show only the categories that actually differ between the active
   reaction config and the proposed config
+
+Composite tuning clarification:
+- when a tuning proposal targets an active composite room-assist reaction, the proposal/review
+  layer SHOULD support a bounded structured diff over the active reaction rather than only generic
+  follow-up wording
+- minimum useful v1 composite tuning diff categories are:
+  - primary threshold change
+  - primary threshold mode change
+  - primary signal entity-count change
+  - corroboration threshold change, when a corroboration exists
+  - corroboration threshold mode change, when a corroboration exists
+  - corroboration entity-count change
+  - actuation payload count change:
+    - `steps` count for generic signal assist
+    - `entity_steps` count for room lighting assist
+- the follow-up review SHOULD show only the categories that actually differ between the active
+  reaction config and the proposed config
+- v1 composite tuning does not require a dense comparison UI; the bounded options-flow review is
+  sufficient if it can render these categories clearly
+- if future automation management requires dense queue browsing, history inspection, or
+  side-by-side comparison, that SHOULD be introduced as a dedicated management surface rather than
+  by overloading the bounded options flow
 
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:

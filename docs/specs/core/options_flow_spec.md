@@ -147,6 +147,15 @@ Normative guidance for review wording:
 - lighting tuning follow-ups SHOULD render with wording equivalent to "lighting adjustment" or "lighting tuning"
 - admin-authored lighting proposals MUST continue to render as admin drafts, not as learned discoveries
 - these distinctions SHOULD be concise and visible in the primary review title, not only in secondary details
+- composite discovery proposals SHOULD render as a new room assist/automation for the relevant room
+  and primary signal
+- composite tuning follow-ups SHOULD render as an adjustment of an existing room assist, not as a
+  second discovery
+- the options flow remains a bounded review surface in v1.x:
+  - it is appropriate for one-proposal-at-a-time review, accept/reject/skip, and structured
+    details/diffs
+  - it is not the normative target for dense queue management, batch operations, or rich
+    side-by-side inspection
 
 ### Init Overview Summaries
 
@@ -157,6 +166,9 @@ Normative guidance for the init overview:
   - pending lighting proposals
   - pending lighting tuning, when non-zero
 - a purely configurational fallback such as `configured_rooms / total_rooms` remains acceptable only when runtime state is unavailable
+- future domain-strong families such as `composite_room_assist` SHOULD follow the same pattern:
+  compact operational summaries are preferred over purely configurational summaries when runtime
+  diagnostics are available
 
 ---
 
@@ -529,6 +541,13 @@ Normative rules:
   `reaction_type`/`reaction_class` branching
 - tuning follow-ups SHOULD be renderable through the same presenter layer so the
   central flow does not grow ad hoc per-type review logic
+- for composite families, the same presenter layer SHOULD be able to render:
+  - discovery wording
+  - tuning wording
+  - bounded tuning diffs such as threshold/mode/entity-count changes
+- if future automation management requires dense filtering, history inspection, comparison, or
+  batch operations, that SHOULD be introduced as a dedicated management surface rather than by
+  overloading the bounded options flow
 
 Current v1 implementation:
 - if no pending proposals exist, entering `proposals` returns immediately to `init`
