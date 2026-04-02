@@ -158,7 +158,9 @@ def _lighting_should_suppress_followup(
 
 def _composite_room_identity_key(proposal: ReactionProposal) -> str:
     cfg = _safe_dict(proposal.suggested_reaction_config)
-    return f"{proposal.reaction_type}|room={cfg.get('room_id')}"
+    primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+    suffix = f"|primary={primary_signal}" if primary_signal else ""
+    return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}"
 
 
 def _safe_dict(value: Any) -> dict[str, Any]:

@@ -126,6 +126,17 @@ Bridge clarification before Strada 4:
 This avoids re-centralizing domain-specific lifecycle semantics inside `ProposalEngine` as more
 domains become first-class.
 
+Strada 4 direction:
+- after lighting, `composite_room_assist` is the intended next domain-strong stream
+- the goal is not to add many new templates immediately, but to make the existing composite domain:
+  - more stable in proposal identity
+  - clearer in proposal/review wording
+  - more robust for future tuning
+- this domain is also the intended bridge toward more complex cross-domain orchestration later,
+  including future heating work
+- the first composite slice SHOULD align learned and admin-authored proposal identity on the same
+  room + primary-signal semantics before broader tuning work
+
 ### 0.3 Decision: minimum training window before emitting proposals
 
 Based on the literature, a pattern is considered reliable only when it has been observed a sufficient
@@ -210,7 +221,8 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P12 Learning registry & family controls | Implemented | built-in `LearningPluginRegistry`, `enabled_plugin_families`, diagnostics reflect enabled/disabled families |
 | P13 Admin-authored proposal path | Implemented/Partial | origin-aware proposal model, plugin-declared templates, first end-to-end flow for `lighting.scene_schedule.basic`, reaction provenance + diagnostics implemented |
 | P14 Reaction plugin realization bridge | Implemented | reaction build/normalize ownership moved from engine core to explicit `ReactionPluginRegistry`; review/authoring presenter hooks reduce config-flow hardcoding |
-| P15 Proposal lifecycle hook bridge | Planned | `ProposalEngine` lifecycle policy should move from hardcoded `reaction_type` branches to plugin-owned lifecycle hooks before major composite-domain expansion |
+| P15 Proposal lifecycle hook bridge | Implemented | `ProposalEngine` lifecycle policy moved from hardcoded `reaction_type` branches to plugin-owned lifecycle hooks |
+| P16 Composite domain-strong stream | Planned | next focus after lighting: improve proposal quality, identity, tuning readiness, and UX for the existing composite room-assist family before larger cross-domain domains |
 
 ---
 

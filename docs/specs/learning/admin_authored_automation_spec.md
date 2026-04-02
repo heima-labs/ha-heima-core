@@ -47,6 +47,13 @@ For plugin families that support multiple bounded automations:
 - the plugin descriptor remains the source of truth for which templates are declared and which are
   implemented in v1
 
+Current planning clarification:
+- the immediate post-lighting domain work should focus on strengthening the existing composite
+  family (`room.signal_assist.basic`, `room.darkness_lighting_assist.basic`, and the learned-only
+  composite proposal types already present)
+- that work SHOULD prioritize proposal quality, identity, and tuning readiness before introducing
+  additional admin-authored templates
+
 ## 3. Admin-Authored Flow
 
 The admin-authored flow is a request-driven path that still materializes a proposal inside the shared

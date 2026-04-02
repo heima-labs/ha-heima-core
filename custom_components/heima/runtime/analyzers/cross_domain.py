@@ -416,12 +416,12 @@ def _build_default_diagnostics(
 def _describe(room_id: str, observed: int, corroborated: int) -> str:
     if corroborated:
         return (
-            f"{room_id}: when occupancy is present and humidity rises rapidly, "
+            f"{room_id}: humidity assist — when occupancy is present and humidity rises rapidly, "
             f"you usually start ventilation within a few minutes "
             f"({observed} episodes, {corroborated} temperature-correlated)."
         )
     return (
-        f"{room_id}: when occupancy is present and humidity rises rapidly, "
+        f"{room_id}: humidity assist — when occupancy is present and humidity rises rapidly, "
         f"you usually start ventilation within a few minutes "
         f"({observed} observed episodes)."
     )
@@ -453,7 +453,7 @@ def _describe_air_quality(room_id: str, observed: int, corroborated: int) -> str
 def _describe_darkness_lighting(room_id: str, observed: int, corroborated: int) -> str:
     del corroborated
     return (
-        f"{room_id}: when the room becomes too dark while occupied, "
+        f"{room_id}: darkness lighting assist — when the room becomes too dark while occupied, "
         f"you usually turn on lights with a similar brightness "
         f"({observed} observed episodes)."
     )

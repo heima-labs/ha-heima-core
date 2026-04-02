@@ -118,10 +118,19 @@ Built-in proposals should converge on these identity keys:
 - `heating_preference|house_state=<house_state>`
 - `heating_eco`
 - `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>`
-- `room_signal_assist|room=<room_id>`
-- `room_cooling_assist|room=<room_id>`
-- `room_air_quality_assist|room=<room_id>`
-- `room_darkness_lighting_assist|room=<room_id>`
+- `room_signal_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_cooling_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>`
+- `room_darkness_lighting_assist|room=<room_id>|primary=<primary_signal_name>`
+
+Composite domain clarification for the next iteration:
+- the current composite identity remains intentionally coarse and room-scoped
+- before the composite domain becomes fully domain-strong, identity SHOULD be reviewed so that:
+  - materially different composite proposal families in the same room stay distinct
+  - repeated evidence refreshes the same logical slot instead of creating noise
+  - future tuning can target the correct active reaction without relying on brittle proposal wording
+- any refinement MUST remain plugin-owned and SHOULD avoid reintroducing central branching in
+  `ProposalEngine`
 
 ### 4.4 Lighting time bucket
 

@@ -120,6 +120,20 @@ def _admin_authored_proposal() -> ReactionProposal:
     )
 
 
+def _composite_proposal(*, reaction_type: str, room_id: str, primary_signal_name: str) -> ReactionProposal:
+    return ReactionProposal(
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type=reaction_type,
+        confidence=0.8,
+        description=f"{room_id}:{primary_signal_name}",
+        suggested_reaction_config={
+            "reaction_class": "RoomSignalAssistReaction",
+            "room_id": room_id,
+            "primary_signal_name": primary_signal_name,
+        },
+    )
+
+
 async def test_proposal_engine_run_and_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     sensor_updates = []
@@ -946,3 +960,25 @@ async def test_proposal_engine_uses_plugin_lifecycle_hooks_for_identity(monkeypa
     assert len(pending) == 1
     assert pending[0].proposal_id == proposal_id
     assert pending[0].identity_key == "custom|weekday=4"
+
+
+async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    analyzer = _AnalyzerStub(
+        [
+            _composite_proposal(
+                reaction_type="room_signal_assist",
+                room_id="bathroom",
+                primary_signal_name="humidity",
+            )
+        ]
+    )
+    engine.register_analyzer(analyzer)
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].identity_key == "room_signal_assist|room=bathroom|primary=humidity"

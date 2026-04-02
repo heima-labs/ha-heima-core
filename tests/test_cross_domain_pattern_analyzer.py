@@ -165,6 +165,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "room_signal_assist"
+    assert proposal.description.startswith("bathroom: humidity assist")
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "bathroom"
     assert proposal.suggested_reaction_config["trigger_signal_entities"] == ["sensor.bathroom_humidity"]
@@ -334,6 +335,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
     darkness = [p for p in proposals if p.reaction_type == "room_darkness_lighting_assist"]
     assert len(darkness) == 1
     proposal = darkness[0]
+    assert proposal.description.startswith("living: darkness lighting assist")
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomLightingAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "living"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
