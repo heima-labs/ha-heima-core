@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from custom_components.heima.runtime.analyzers.lifecycle import ProposalLifecycleHooks
+from custom_components.heima.runtime.analyzers.registry import (
+    LearningPatternPluginDescriptor,
+    LearningPluginRegistry,
+)
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.proposal_engine import ProposalEngine
 
@@ -910,3 +915,34 @@ async def test_lighting_followup_material_drift_still_creates_tuning(monkeypatch
     assert len(engine._proposals) == 2
     pending = next(item for item in engine._proposals if item.status == "pending")
     assert pending.followup_kind == "tuning_suggestion"
+
+
+async def test_proposal_engine_uses_plugin_lifecycle_hooks_for_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = LearningPluginRegistry()
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="test.presence",
+            analyzer_id="PresencePatternAnalyzer",
+            plugin_family="presence",
+            proposal_types=("presence_preheat",),
+            reaction_targets=("PresencePatternReaction",),
+            lifecycle_hooks=ProposalLifecycleHooks(
+                identity_key=lambda proposal: f"custom|weekday={proposal.suggested_reaction_config.get('weekday')}"
+            ),
+        ),
+        analyzer=_AnalyzerStub([]),
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_proposal(conf=0.8, weekday=4))
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].proposal_id == proposal_id
+    assert pending[0].identity_key == "custom|weekday=4"

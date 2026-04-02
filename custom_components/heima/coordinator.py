@@ -67,12 +67,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 lambda: self.engine.lighting_recent_apply_state,
             )
         )
+        self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
         self._proposal_engine = ProposalEngine(
             hass,
             self._event_store,
+            learning_plugin_registry=self._learning_plugin_registry,
             sensor_writer=self._write_proposals_sensor,
         )
-        self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
         self._unsub_proposal_tick = None
@@ -152,6 +153,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
         self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
+        self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
         self._resubscribe_state_changes()
         self._sync_scheduler()

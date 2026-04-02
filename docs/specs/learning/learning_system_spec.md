@@ -110,6 +110,22 @@ Bridge clarification before Strada 3:
 - before major domain expansion, the reaction/plugin substrate SHOULD be brought to the same level
   of explicit ownership as the learning/plugin substrate
 
+Bridge clarification before Strada 4:
+- proposal lifecycle policy SHOULD also become plugin-owned
+- a learning plugin SHOULD eventually own not only:
+  - analyzer output
+  - proposal types
+  - admin-authored template exposure
+  - presentation hooks
+- but also:
+  - logical identity strategy
+  - follow-up slot strategy
+  - fallback follow-up matching policy
+  - minor-drift / suppress-follow-up policy
+
+This avoids re-centralizing domain-specific lifecycle semantics inside `ProposalEngine` as more
+domains become first-class.
+
 ### 0.3 Decision: minimum training window before emitting proposals
 
 Based on the literature, a pattern is considered reliable only when it has been observed a sufficient
@@ -193,7 +209,8 @@ The goal is a phased, persistent, async-safe learning pipeline that:
 | P11 Generic Signal Recorder | Implemented | `runtime/behaviors/signal_recorder.py` records `state_change` events for configured context entities |
 | P12 Learning registry & family controls | Implemented | built-in `LearningPluginRegistry`, `enabled_plugin_families`, diagnostics reflect enabled/disabled families |
 | P13 Admin-authored proposal path | Implemented/Partial | origin-aware proposal model, plugin-declared templates, first end-to-end flow for `lighting.scene_schedule.basic`, reaction provenance + diagnostics implemented |
-| P14 Reaction plugin realization bridge | Planned | reaction build/normalize ownership should move from engine core to explicit `ReactionPluginRegistry`; review/authoring presenter hooks should reduce config-flow hardcoding before major domain expansion |
+| P14 Reaction plugin realization bridge | Implemented | reaction build/normalize ownership moved from engine core to explicit `ReactionPluginRegistry`; review/authoring presenter hooks reduce config-flow hardcoding |
+| P15 Proposal lifecycle hook bridge | Planned | `ProposalEngine` lifecycle policy should move from hardcoded `reaction_type` branches to plugin-owned lifecycle hooks before major composite-domain expansion |
 
 ---
 

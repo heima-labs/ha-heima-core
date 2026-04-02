@@ -8,6 +8,13 @@ from typing import Iterable
 from .base import IPatternAnalyzer
 from .cross_domain import CompositePatternCatalogAnalyzer
 from .heating import HeatingPatternAnalyzer
+from .lifecycle import (
+    ProposalLifecycleHooks,
+    composite_room_assist_lifecycle_hooks,
+    heating_lifecycle_hooks,
+    lighting_lifecycle_hooks,
+    presence_lifecycle_hooks,
+)
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
 
@@ -34,6 +41,7 @@ class LearningPatternPluginDescriptor:
     plugin_family: str
     proposal_types: tuple[str, ...]
     reaction_targets: tuple[str, ...]
+    lifecycle_hooks: ProposalLifecycleHooks | None = None
     supports_admin_authored: bool = False
     admin_authored_templates: tuple[AdminAuthoredTemplateDescriptor, ...] = ()
 
@@ -138,6 +146,7 @@ class LearningPluginRegistry:
                 "plugin_family": item.descriptor.plugin_family,
                 "proposal_types": list(item.descriptor.proposal_types),
                 "reaction_targets": list(item.descriptor.reaction_targets),
+                "has_lifecycle_hooks": item.descriptor.lifecycle_hooks is not None,
                 "supports_admin_authored": item.descriptor.supports_admin_authored,
                 "admin_authored_templates": list(
                     _template_diagnostics(item.descriptor.admin_authored_templates)
@@ -146,6 +155,22 @@ class LearningPluginRegistry:
             }
             for item in self._plugins
         ]
+
+    def lifecycle_hooks_for(
+        self,
+        reaction_type: str,
+        *,
+        enabled_only: bool = False,
+    ) -> ProposalLifecycleHooks | None:
+        target = reaction_type.strip()
+        if not target:
+            return None
+        for item in self._plugins:
+            if enabled_only and not item.enabled:
+                continue
+            if target in item.descriptor.proposal_types:
+                return item.descriptor.lifecycle_hooks
+        return None
 
     def __len__(self) -> int:
         return len(self._plugins)
@@ -166,6 +191,7 @@ def create_builtin_learning_plugin_registry(
             plugin_family="presence",
             proposal_types=("presence_preheat",),
             reaction_targets=("PresencePatternReaction",),
+            lifecycle_hooks=presence_lifecycle_hooks(),
             supports_admin_authored=False,
             admin_authored_templates=(),
         ),
@@ -179,6 +205,7 @@ def create_builtin_learning_plugin_registry(
             plugin_family="heating",
             proposal_types=("heating_preference", "heating_eco"),
             reaction_targets=("HeatingPreferenceReaction", "HeatingEcoReaction"),
+            lifecycle_hooks=heating_lifecycle_hooks(),
             supports_admin_authored=False,
             admin_authored_templates=(),
         ),
@@ -192,6 +219,7 @@ def create_builtin_learning_plugin_registry(
             plugin_family="lighting",
             proposal_types=("lighting_scene_schedule",),
             reaction_targets=("LightingScheduleReaction",),
+            lifecycle_hooks=lighting_lifecycle_hooks(),
             supports_admin_authored=True,
             admin_authored_templates=(
                 AdminAuthoredTemplateDescriptor(
@@ -220,6 +248,7 @@ def create_builtin_learning_plugin_registry(
                 "room_darkness_lighting_assist",
             ),
             reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
+            lifecycle_hooks=composite_room_assist_lifecycle_hooks(),
             supports_admin_authored=True,
             admin_authored_templates=(
                 AdminAuthoredTemplateDescriptor(

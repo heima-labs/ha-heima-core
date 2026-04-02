@@ -7,6 +7,7 @@ from .cross_domain import (
     RoomCoolingPatternAnalyzer,
 )
 from .heating import HeatingPatternAnalyzer
+from .lifecycle import ProposalLifecycleHooks
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
 from .registry import (
@@ -32,6 +33,7 @@ __all__ = [
     "AdminAuthoredTemplateDescriptor",
     "LearningPatternPluginDescriptor",
     "LearningPluginRegistry",
+    "ProposalLifecycleHooks",
     "create_builtin_learning_plugin_registry",
     "builtin_learning_pattern_plugins",
     "builtin_learning_pattern_plugin_descriptors",

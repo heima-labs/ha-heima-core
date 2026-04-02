@@ -35,6 +35,17 @@ Pattern analyzers:
 
 This keeps lifecycle policy consistent across learning plugins.
 
+Normative bridge clarification:
+- `ProposalEngine` SHOULD remain the owner of persistence, merge ordering, refresh, and pruning
+- but domain-specific lifecycle semantics SHOULD be delegated to plugin-owned hooks rather than
+  being hardcoded on `reaction_type`
+
+Required lifecycle hooks per proposal family SHOULD include:
+- `identity_key(proposal)`
+- `followup_slot_key(proposal)`
+- `fallback_followup_match(existing, candidate, followup_slot_key)`
+- `should_suppress_followup(candidate, accepted)`
+
 Lifecycle applies equally to learned and admin-authored proposals. The `origin` of a proposal is
 orthogonal to its review `status`; the same lifecycle rules should work for both unless a specific
 plugin family documents a stricter exception.
@@ -65,6 +76,10 @@ Proposal identity must represent the **behavioral slot** of a pattern, not the l
 Identity fields define "this is still the same proposal".
 
 Evidence fields define "this proposal is now better supported or slightly shifted".
+
+Lifecycle ownership rule:
+- the definition of logical identity for a proposal family SHOULD live with that plugin family's
+  lifecycle hooks, not as a central `ProposalEngine` branch on `reaction_type`
 
 ### 4.2 Identity vs Evidence
 

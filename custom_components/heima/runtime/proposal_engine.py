@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .analyzers.base import IPatternAnalyzer, ReactionProposal
+from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class ProposalEngine:
         hass: HomeAssistant,
         event_store: EventStore,
         *,
+        learning_plugin_registry: LearningPluginRegistry | None = None,
         min_confidence: float = 0.4,
         stale_after: timedelta | None = None,
         prune_pending_stale_after: timedelta | None = None,
@@ -42,6 +44,9 @@ class ProposalEngine:
             prune_pending_stale_after or self.DEFAULT_PRUNE_PENDING_STALE_AFTER
         )
         self._sensor_writer = sensor_writer
+        self._learning_plugin_registry = (
+            learning_plugin_registry or create_builtin_learning_plugin_registry()
+        )
         self._store: Store[dict[str, Any]] = Store(
             hass,
             version=self.STORAGE_VERSION,
@@ -59,6 +64,9 @@ class ProposalEngine:
 
     def set_analyzers(self, analyzers: list[IPatternAnalyzer] | tuple[IPatternAnalyzer, ...]) -> None:
         self._analyzers = list(analyzers)
+
+    def set_learning_plugin_registry(self, registry: LearningPluginRegistry) -> None:
+        self._learning_plugin_registry = registry
 
     async def async_initialize(self) -> None:
         raw = await self._store.async_load()
@@ -158,7 +166,7 @@ class ProposalEngine:
 
             if accepted_match is not None:
                 _, accepted = accepted_match
-                if self._should_suppress_minor_lighting_followup(candidate, accepted):
+                if self._should_suppress_followup(candidate, accepted):
                     continue
                 merged.append(
                     replace(
@@ -369,131 +377,44 @@ class ProposalEngine:
         house_state = cfg.get("house_state")
         return f"{proposal.analyzer_id}|{proposal.reaction_type}|{weekday}|{house_state}"
 
-    @classmethod
-    def _identity_key(cls, proposal: ReactionProposal) -> str:
+    def _identity_key(self, proposal: ReactionProposal) -> str:
         if proposal.identity_key:
             return proposal.identity_key
 
-        cfg = _safe_dict(proposal.suggested_reaction_config)
-        reaction_type = proposal.reaction_type
-        if reaction_type == "presence_preheat":
-            return f"{reaction_type}|weekday={cfg.get('weekday')}"
-        if reaction_type == "heating_preference":
-            return f"{reaction_type}|house_state={cfg.get('house_state')}"
-        if reaction_type == "heating_eco":
-            return reaction_type
-        if reaction_type == "lighting_scene_schedule":
-            scheduled_min = cfg.get("scheduled_min")
-            bucket = None
-            if isinstance(scheduled_min, (int, float)):
-                bucket = (int(scheduled_min) // 30) * 30
-            scene_signature = _lighting_scene_signature(cfg)
-            return (
-                f"{reaction_type}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-                f"|bucket={bucket}|scene={scene_signature}"
-            )
-        if reaction_type in {
-            "room_signal_assist",
-            "room_cooling_assist",
-            "room_air_quality_assist",
-            "room_darkness_lighting_assist",
-        }:
-            return f"{reaction_type}|room={cfg.get('room_id')}"
+        hooks = self._learning_plugin_registry.lifecycle_hooks_for(proposal.reaction_type)
+        if hooks is not None:
+            return hooks.identity_key(proposal)
         if proposal.fingerprint:
             return proposal.fingerprint
-        return cls._fingerprint(proposal)
+        return self._fingerprint(proposal)
 
-    @classmethod
-    def _followup_slot_key(cls, proposal: ReactionProposal) -> str:
-        cfg = _safe_dict(proposal.suggested_reaction_config)
-        if proposal.reaction_type == "lighting_scene_schedule":
-            scheduled_min = cfg.get("scheduled_min")
-            bucket = None
-            if isinstance(scheduled_min, (int, float)):
-                bucket = (int(scheduled_min) // 30) * 30
-            return (
-                f"{proposal.reaction_type}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-                f"|bucket={bucket}"
-            )
-        return cls._identity_key(proposal)
+    def _followup_slot_key(self, proposal: ReactionProposal) -> str:
+        hooks = self._learning_plugin_registry.lifecycle_hooks_for(proposal.reaction_type)
+        if hooks is not None and hooks.followup_slot_key is not None:
+            return hooks.followup_slot_key(proposal)
+        return self._identity_key(proposal)
 
-    @classmethod
     def _fallback_followup_match(
-        cls,
+        self,
         proposals: list[ReactionProposal],
         candidate: ReactionProposal,
         *,
         followup_slot_key: str,
     ) -> tuple[int, ReactionProposal] | None:
-        if candidate.reaction_type != "lighting_scene_schedule":
+        hooks = self._learning_plugin_registry.lifecycle_hooks_for(candidate.reaction_type)
+        if hooks is None or hooks.fallback_followup_match is None:
             return None
+        return hooks.fallback_followup_match(proposals, candidate, followup_slot_key)
 
-        candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
-        candidate_entities = _lighting_entity_actions(candidate_cfg)
-        ranked: list[tuple[tuple[int, int, int, str], int, ReactionProposal]] = []
-        for idx, current in enumerate(proposals):
-            if current.status != "accepted":
-                continue
-            if cls._followup_slot_key(current) != followup_slot_key:
-                continue
-            current_cfg = _safe_dict(current.suggested_reaction_config)
-            current_entities = _lighting_entity_actions(current_cfg)
-            overlap = len(candidate_entities & current_entities)
-            symmetric_diff = len(candidate_entities ^ current_entities)
-            schedule_gap = abs(
-                int(candidate_cfg.get("scheduled_min") or 0) - int(current_cfg.get("scheduled_min") or 0)
-            )
-            ranked.append(
-                (
-                    (-overlap, symmetric_diff, schedule_gap, current.proposal_id),
-                    idx,
-                    current,
-                )
-            )
-
-        if not ranked:
-            return None
-        ranked.sort(key=lambda item: item[0])
-        _, idx, proposal = ranked[0]
-        return idx, proposal
-
-    @classmethod
-    def _should_suppress_minor_lighting_followup(
-        cls,
+    def _should_suppress_followup(
+        self,
         candidate: ReactionProposal,
         accepted: ReactionProposal,
     ) -> bool:
-        if candidate.reaction_type != "lighting_scene_schedule":
+        hooks = self._learning_plugin_registry.lifecycle_hooks_for(candidate.reaction_type)
+        if hooks is None or hooks.should_suppress_followup is None:
             return False
-
-        candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
-        accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
-        if not candidate_cfg or not accepted_cfg:
-            return False
-
-        candidate_steps = _lighting_steps_by_entity(candidate_cfg)
-        accepted_steps = _lighting_steps_by_entity(accepted_cfg)
-        if set(candidate_steps) != set(accepted_steps):
-            return False
-
-        candidate_min = int(candidate_cfg.get("scheduled_min") or 0)
-        accepted_min = int(accepted_cfg.get("scheduled_min") or 0)
-        if abs(candidate_min - accepted_min) > 5:
-            return False
-
-        for entity_id in sorted(candidate_steps):
-            current = accepted_steps[entity_id]
-            proposed = candidate_steps[entity_id]
-            if str(current.get("action") or "") != str(proposed.get("action") or ""):
-                return False
-            if _numeric_gap(current.get("brightness"), proposed.get("brightness")) > 16:
-                return False
-            if _numeric_gap(current.get("color_temp_kelvin"), proposed.get("color_temp_kelvin")) > 150:
-                return False
-            if _normalize_rgb(current.get("rgb_color")) != _normalize_rgb(proposed.get("rgb_color")):
-                return False
-
-        return True
+        return hooks.should_suppress_followup(candidate, accepted)
 
     @staticmethod
     def _sort_proposals(proposals: list[ReactionProposal]) -> list[ReactionProposal]:
@@ -641,89 +562,3 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
-
-
-def _lighting_scene_signature(cfg: dict[str, Any]) -> str:
-    entity_steps = cfg.get("entity_steps")
-    if not isinstance(entity_steps, list):
-        return "none"
-
-    normalized_steps: list[str] = []
-    for raw_step in entity_steps:
-        if not isinstance(raw_step, dict):
-            continue
-        entity_id = str(raw_step.get("entity_id") or "").strip()
-        action = str(raw_step.get("action") or "").strip() or "unknown"
-        if not entity_id:
-            continue
-        brightness = _coarse_numeric_bucket(raw_step.get("brightness"), step=32)
-        color_temp = _coarse_numeric_bucket(raw_step.get("color_temp_kelvin"), step=250)
-        rgb = _normalize_rgb(raw_step.get("rgb_color"))
-        normalized_steps.append(
-            "|".join(
-                [
-                    entity_id,
-                    action,
-                    f"b={brightness if brightness is not None else '-'}",
-                    f"k={color_temp if color_temp is not None else '-'}",
-                    f"rgb={rgb if rgb is not None else '-'}",
-                ]
-            )
-        )
-
-    if not normalized_steps:
-        return "none"
-    normalized_steps.sort()
-    return "||".join(normalized_steps)
-
-
-def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:
-    if not isinstance(value, (int, float)):
-        return None
-    return int(round(float(value) / step) * step)
-
-
-def _normalize_rgb(value: Any) -> str | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 3:
-        return None
-    try:
-        return ",".join(str(int(channel)) for channel in value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
-    entity_steps = cfg.get("entity_steps")
-    if not isinstance(entity_steps, list):
-        return set()
-    pairs: set[tuple[str, str]] = set()
-    for step in entity_steps:
-        if not isinstance(step, dict):
-            continue
-        entity_id = str(step.get("entity_id") or "").strip()
-        action = str(step.get("action") or "").strip()
-        if entity_id:
-            pairs.add((entity_id, action))
-    return pairs
-
-
-def _lighting_steps_by_entity(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    entity_steps = cfg.get("entity_steps")
-    if not isinstance(entity_steps, list):
-        return {}
-    by_entity: dict[str, dict[str, Any]] = {}
-    for step in entity_steps:
-        if not isinstance(step, dict):
-            continue
-        entity_id = str(step.get("entity_id") or "").strip()
-        if entity_id:
-            by_entity[entity_id] = dict(step)
-    return by_entity
-
-
-def _numeric_gap(current: Any, proposed: Any) -> int:
-    if current in (None, "") and proposed in (None, ""):
-        return 0
-    if not isinstance(current, (int, float)) or not isinstance(proposed, (int, float)):
-        return 10**9
-    return abs(int(current) - int(proposed))
