@@ -997,6 +997,23 @@ Composite tuning clarification:
   - `steps`
   - `entity_steps`
 
+Composite runtime-confidence clarification:
+- v1 composite confidence SHOULD not depend only on the raw count of confirmed episodes
+- confidence SHOULD also reflect minimum evidence quality, especially:
+  - `episodes_confirmed`
+  - `weeks_observed`
+  - corroboration consistency when relevant
+- patterns that barely meet the minimum count/weeks gate SHOULD remain below the maximum confidence
+  unless evidence is stronger than the floor
+- composite follow-up suggestions SHOULD also support minor-drift suppression when the candidate:
+  - targets the same logical identity slot
+  - keeps the same primary/corroboration signal entity sets
+  - keeps the same actuation payload size
+  - changes thresholds only by a small amount
+- this suppression is especially valuable for:
+  - `room_signal_assist`
+  - `room_darkness_lighting_assist`
+
 Current v1 implementation notes:
 - built-in plugin descriptors already declare:
   - `supports_admin_authored`

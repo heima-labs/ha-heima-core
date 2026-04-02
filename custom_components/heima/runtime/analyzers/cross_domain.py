@@ -290,6 +290,37 @@ def _corroborated_ratio(episodes: list, key: str) -> float:
     return sum(1 for ep in episodes if ep.corroboration_matches.get(key)) / len(episodes)
 
 
+def _composite_confidence(
+    confirmed: list,
+    *,
+    base: float,
+    cap: float,
+    corroboration_key: str | None = None,
+) -> float:
+    count = len(confirmed)
+    weeks = _episode_week_count(confirmed)
+    corroboration_ratio = (
+        _corroborated_ratio(confirmed, corroboration_key)
+        if corroboration_key
+        else 0.0
+    )
+
+    confidence = base
+    confidence += min(0.24, 0.045 * count)
+    confidence += min(0.12, 0.05 * max(0, weeks - 1))
+    if corroboration_key:
+        confidence += min(0.08, 0.08 * corroboration_ratio)
+
+    # Keep barely-above-gate patterns below the maximum until they gather
+    # more observations across weeks.
+    if count <= (_MIN_OCCURRENCES + 1) and weeks <= _MIN_WEEKS:
+        cap = min(cap, 0.86 + (0.02 * corroboration_ratio))
+    elif count <= (_MIN_OCCURRENCES + 2) and weeks <= (_MIN_WEEKS + 1):
+        cap = min(cap, 0.9 + (0.02 * corroboration_ratio))
+
+    return min(cap, round(confidence, 3))
+
+
 def _stable_entities_from_corroboration(
     confirmed: list,
     key: str,
@@ -657,9 +688,11 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_signal_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.95,
-        0.45 + (0.07 * len(confirmed)) + (0.05 * _corroborated_ratio(confirmed, "temperature")),
+    confidence_builder=lambda confirmed: _composite_confidence(
+        confirmed,
+        base=0.46,
+        cap=0.95,
+        corroboration_key="temperature",
     ),
 )
 
@@ -697,17 +730,11 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_cooling_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.95,
-        0.42
-        + (0.07 * len(confirmed))
-        + (
-            0.05
-            * _ratio(
-                sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity")),
-                len(confirmed),
-            )
-        ),
+    confidence_builder=lambda confirmed: _composite_confidence(
+        confirmed,
+        base=0.43,
+        cap=0.95,
+        corroboration_key="humidity",
     ),
 )
 
@@ -737,9 +764,10 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_air_quality_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.93,
-        0.4 + (0.08 * len(confirmed)),
+    confidence_builder=lambda confirmed: _composite_confidence(
+        confirmed,
+        base=0.41,
+        cap=0.93,
     ),
 )
 
@@ -770,9 +798,10 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_darkness_lighting_assist_config(
         room_id, confirmed, quality_policy
     ),
-    confidence_builder=lambda confirmed: min(
-        0.94,
-        0.42 + (0.08 * len(confirmed)),
+    confidence_builder=lambda confirmed: _composite_confidence(
+        confirmed,
+        base=0.43,
+        cap=0.94,
     ),
 )
 

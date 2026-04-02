@@ -167,6 +167,13 @@ Composite proposal quality clarification:
 - the first end-to-end validation set for composite tuning SHOULD cover:
   - one `RoomSignalAssistReaction` target
   - one `RoomLightingAssistReaction` target
+- composite lifecycle hooks SHOULD also be allowed to suppress a follow-up when the learned candidate
+  represents only minor drift over an accepted reaction in the same logical slot
+- v1 examples of minor drift:
+  - same signal entity sets
+  - same actuation payload size
+  - unchanged threshold mode
+  - small threshold delta only
 
 ### 4.4 Lighting time bucket
 

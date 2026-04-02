@@ -44,7 +44,10 @@ def lighting_lifecycle_hooks() -> ProposalLifecycleHooks:
 
 
 def composite_room_assist_lifecycle_hooks() -> ProposalLifecycleHooks:
-    return ProposalLifecycleHooks(identity_key=_composite_room_identity_key)
+    return ProposalLifecycleHooks(
+        identity_key=_composite_room_identity_key,
+        should_suppress_followup=_composite_should_suppress_followup,
+    )
 
 
 def _presence_identity_key(proposal: ReactionProposal) -> str:
@@ -163,6 +166,92 @@ def _composite_room_identity_key(proposal: ReactionProposal) -> str:
     return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}"
 
 
+def _composite_should_suppress_followup(
+    candidate: ReactionProposal,
+    accepted: ReactionProposal,
+) -> bool:
+    candidate_cfg = _safe_dict(candidate.suggested_reaction_config)
+    accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
+    if not candidate_cfg or not accepted_cfg:
+        return False
+
+    if candidate.reaction_type != accepted.reaction_type:
+        return False
+
+    if candidate.reaction_type == "room_signal_assist":
+        return _room_signal_assist_should_suppress_followup(candidate_cfg, accepted_cfg)
+    if candidate.reaction_type == "room_darkness_lighting_assist":
+        return _room_darkness_lighting_assist_should_suppress_followup(candidate_cfg, accepted_cfg)
+    return False
+
+
+def _room_signal_assist_should_suppress_followup(
+    candidate_cfg: dict[str, Any],
+    accepted_cfg: dict[str, Any],
+) -> bool:
+    if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
+        accepted_cfg.get("primary_threshold_mode")
+    ):
+        return False
+    if _normalize_str(candidate_cfg.get("corroboration_threshold_mode")) != _normalize_str(
+        accepted_cfg.get("corroboration_threshold_mode")
+    ):
+        return False
+    if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
+        accepted_cfg.get("primary_signal_entities")
+    ):
+        return False
+    if _sorted_strings(candidate_cfg.get("corroboration_signal_entities")) != _sorted_strings(
+        accepted_cfg.get("corroboration_signal_entities")
+    ):
+        return False
+    if _steps_count(candidate_cfg.get("steps")) != _steps_count(accepted_cfg.get("steps")):
+        return False
+    if _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold")) > 1:
+        return False
+    if _numeric_gap(
+        candidate_cfg.get("corroboration_threshold"),
+        accepted_cfg.get("corroboration_threshold"),
+    ) > 0:
+        return False
+    return True
+
+
+def _room_darkness_lighting_assist_should_suppress_followup(
+    candidate_cfg: dict[str, Any],
+    accepted_cfg: dict[str, Any],
+) -> bool:
+    if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
+        accepted_cfg.get("primary_threshold_mode")
+    ):
+        return False
+    if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
+        accepted_cfg.get("primary_signal_entities")
+    ):
+        return False
+
+    candidate_steps = _lighting_steps_by_entity(candidate_cfg)
+    accepted_steps = _lighting_steps_by_entity(accepted_cfg)
+    if set(candidate_steps) != set(accepted_steps):
+        return False
+    if _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold")) > 10:
+        return False
+
+    for entity_id in sorted(candidate_steps):
+        current = accepted_steps[entity_id]
+        proposed = candidate_steps[entity_id]
+        if _normalize_str(current.get("action")) != _normalize_str(proposed.get("action")):
+            return False
+        if _numeric_gap(current.get("brightness"), proposed.get("brightness")) > 16:
+            return False
+        if _numeric_gap(current.get("color_temp_kelvin"), proposed.get("color_temp_kelvin")) > 150:
+            return False
+        if _normalize_rgb(current.get("rgb_color")) != _normalize_rgb(proposed.get("rgb_color")):
+            return False
+
+    return True
+
+
 def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -253,3 +342,19 @@ def _numeric_gap(current: Any, proposed: Any) -> int:
     if not isinstance(current, (int, float)) or not isinstance(proposed, (int, float)):
         return 10**9
     return abs(int(current) - int(proposed))
+
+
+def _sorted_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return sorted(str(item).strip() for item in value if str(item).strip())
+
+
+def _steps_count(value: Any) -> int:
+    if not isinstance(value, list):
+        return 0
+    return sum(1 for item in value if isinstance(item, dict))
+
+
+def _normalize_str(value: Any) -> str:
+    return str(value or "").strip().lower()

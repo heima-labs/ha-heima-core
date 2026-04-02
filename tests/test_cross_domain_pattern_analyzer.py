@@ -204,6 +204,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert diagnostics["matched_primary_entities"] == ["sensor.bathroom_humidity"]
     assert diagnostics["matched_corroboration_entities"] == ["sensor.bathroom_temperature"]
     assert diagnostics["observed_followup_entities"] == ["fan.bathroom_fan"]
+    assert proposal.confidence < 0.9
 
 
 async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal():
@@ -427,6 +428,55 @@ async def test_cross_domain_analyzer_filters_sparse_followup_entities_by_ratio()
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["followup_entity_min_ratio"] == 0.5
     assert diagnostics["followup_entity_min_episodes"] == 3
+
+
+async def test_cross_domain_analyzer_confidence_grows_with_more_confirmed_weeks():
+    analyzer = CrossDomainPatternAnalyzer()
+    base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+
+    def _episode_triplet(week_index: int) -> list[HeimaEvent]:
+        ts = (base + timedelta(days=week_index * 7)).isoformat()
+        temp_ts = (base + timedelta(days=week_index * 7, minutes=3)).isoformat()
+        fan_ts = (base + timedelta(days=week_index * 7, minutes=5)).isoformat()
+        return [
+            _state_change(
+                entity_id="sensor.bathroom_humidity",
+                room="bathroom",
+                ts=ts,
+                old_state="55",
+                new_state="66",
+                device_class="humidity",
+            ),
+            _state_change(
+                entity_id="sensor.bathroom_temperature",
+                room="bathroom",
+                ts=temp_ts,
+                old_state="21.0",
+                new_state="22.1",
+                device_class="temperature",
+            ),
+            _state_change(
+                entity_id="fan.bathroom_fan",
+                room="bathroom",
+                ts=fan_ts,
+                old_state="off",
+                new_state="on",
+            ),
+        ]
+
+    weaker_events: list[HeimaEvent] = []
+    for i in range(5):
+        weaker_events.extend(_episode_triplet(i))
+
+    stronger_events = list(weaker_events)
+    for i in range(5, 8):
+        stronger_events.extend(_episode_triplet(i))
+
+    weaker = (await analyzer.analyze(_StoreStub(weaker_events)))[0]  # type: ignore[arg-type]
+    stronger = (await analyzer.analyze(_StoreStub(stronger_events)))[0]  # type: ignore[arg-type]
+
+    assert weaker.confidence < stronger.confidence
+    assert stronger.confidence <= 0.95
 
 
 async def test_room_cooling_pattern_analyzer_can_override_quality_policy():
