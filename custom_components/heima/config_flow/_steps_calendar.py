@@ -88,6 +88,37 @@ class _CalendarStepsMixin:
         return await self.async_step_init()
 
     def _calendar_menu_summary(self) -> str:
+        coordinator = None
+        try:
+            domain = getattr(getattr(self, "hass", None), "data", {}).get("heima", {})
+            if isinstance(domain, dict):
+                entry_data = domain.get(getattr(self._config_entry, "entry_id", None), {})
+                if isinstance(entry_data, dict):
+                    coordinator = entry_data.get("coordinator")
+        except Exception:
+            coordinator = None
+
+        state = getattr(getattr(coordinator, "engine", None), "_state", None)
+        calendar_result = getattr(state, "calendar_result", None) if state is not None else None
+        lang = str(self.options.get("language", "it"))
+        is_it = lang.startswith("it")
+
+        if calendar_result is not None:
+            if bool(getattr(calendar_result, "is_vacation_active", False)):
+                return "vacation attiva" if is_it else "vacation active"
+            if bool(getattr(calendar_result, "is_office_today", False)):
+                return "office oggi" if is_it else "office today"
+            if bool(getattr(calendar_result, "is_wfh_today", False)):
+                return "WFH oggi" if is_it else "WFH today"
+            next_vacation = getattr(calendar_result, "next_vacation", None)
+            if next_vacation is not None:
+                summary = str(getattr(next_vacation, "summary", "") or "").strip() or "-"
+                return (
+                    f"prossima vacation: {summary}"
+                    if is_it
+                    else f"next vacation: {summary}"
+                )
+
         calendar = dict(self.options.get(OPT_CALENDAR, {}))
         entities = list(calendar.get("calendar_entities") or [])
         if not entities:

@@ -114,6 +114,23 @@ Il dominio espone diagnostics con:
 
 Il payload engine include anche il frammento `calendar` nelle diagnostics runtime.
 
+Per operabilità v1.x, la surface SHOULD esporre anche un summary compatto leggibile senza dover
+ispezionare l’elenco completo degli eventi.
+
+Il summary SHOULD includere almeno:
+- `configured_entities`
+- `current_events_count`
+- `upcoming_events_count`
+- `is_vacation_active`
+- `is_wfh_today`
+- `is_office_today`
+- `next_vacation`
+
+Questo summary può vivere:
+- nelle diagnostics config-entry
+- nelle CLI di supporto
+- in eventuali menu summary bounded del config/options flow
+
 ## Degradazione graceful
 - Nessuna `calendar_entities` configurata → dominio disabled, nessun effetto sui downstream
 - Entity non disponibile → saltata silenziosamente, le altre vengono processate

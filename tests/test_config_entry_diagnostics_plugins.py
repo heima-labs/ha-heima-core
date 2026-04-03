@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from custom_components.heima.const import DOMAIN
 from custom_components.heima.diagnostics import async_get_config_entry_diagnostics
 from custom_components.heima.runtime.analyzers import create_builtin_learning_plugin_registry
+from custom_components.heima.runtime.domains.calendar import CalendarEvent, CalendarResult
 
 
 class _CoordinatorStub:
@@ -341,6 +342,71 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
     assert lighting["configured_total"] == 2
+
+
+async def test_config_entry_diagnostics_exposes_calendar_summary() -> None:
+    coordinator = _CoordinatorStub()
+    next_vacation = CalendarEvent(
+        summary="Ferie agosto",
+        start=SimpleNamespace(isoformat=lambda: "2026-08-10T00:00:00+00:00"),
+        end=SimpleNamespace(isoformat=lambda: "2026-08-20T00:00:00+00:00"),
+        all_day=True,
+        category="vacation",
+        calendar_entity="calendar.personal",
+    )
+    coordinator._entry = SimpleNamespace(
+        options={
+            "calendar": {
+                "calendar_entities": ["calendar.personal", "calendar.work"],
+            }
+        }
+    )
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "calendar": {
+                "cache_ts": "2026-04-03T10:00:00+00:00",
+                "cached_events_count": 4,
+            }
+        },
+        _state=SimpleNamespace(
+            get_sensor=lambda _key: None,
+            calendar_result=CalendarResult(
+                current_events=[object()],
+                upcoming_events=[object(), object(), object(), object()],
+                is_vacation_active=False,
+                is_wfh_today=True,
+                is_office_today=False,
+                next_vacation=next_vacation,
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["calendar_summary"]
+
+    assert summary == {
+        "configured_entities": ["calendar.personal", "calendar.work"],
+        "current_events_count": 1,
+        "upcoming_events_count": 4,
+        "cache_ts": "2026-04-03T10:00:00+00:00",
+        "cached_events_count": 4,
+        "is_vacation_active": False,
+        "is_wfh_today": True,
+        "is_office_today": False,
+        "next_vacation": {
+            "summary": "Ferie agosto",
+            "start": "2026-08-10T00:00:00+00:00",
+            "calendar_entity": "calendar.personal",
+        },
+    }
 
 
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:

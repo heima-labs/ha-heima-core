@@ -49,6 +49,7 @@ async def async_get_config_entry_diagnostics(
                     proposal_diagnostics,
                     coordinator,
                 ),
+                "calendar_summary": _calendar_summary_diagnostics(coordinator),
                 "composite_summary": _composite_summary_diagnostics(
                     proposal_diagnostics,
                     coordinator,
@@ -481,6 +482,66 @@ def _lighting_summary_diagnostics(
         "pending_tuning_examples": pending_tuning_examples,
         "pending_discovery_examples": pending_discovery_examples,
         "slot_collisions": dict(configured_summary.get("lighting_slot_collisions") or {}),
+    }
+
+
+def _calendar_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    engine = getattr(coordinator, "engine", None)
+    if engine is None:
+        return {}
+
+    engine_diag = engine.diagnostics() if hasattr(engine, "diagnostics") else {}
+    calendar_diag = dict(engine_diag.get("calendar") or {})
+    state = getattr(engine, "_state", None)
+    calendar_result = getattr(state, "calendar_result", None) if state is not None else None
+
+    configured_entities: list[str] = []
+    options = getattr(getattr(coordinator, "_entry", None), "options", None)
+    if isinstance(options, dict):
+        calendar_cfg = dict(options.get("calendar", {}) or {})
+        configured_entities = [
+            str(item).strip()
+            for item in list(calendar_cfg.get("calendar_entities") or [])
+            if str(item).strip()
+        ]
+
+    cache_ts = calendar_diag.get("cache_ts")
+    cached_events_count = int(calendar_diag.get("cached_events_count") or 0)
+    current_events_count = 0
+    upcoming_events_count = cached_events_count
+    is_vacation_active = False
+    is_wfh_today = False
+    is_office_today = False
+    next_vacation: dict[str, Any] | None = None
+
+    if calendar_result is not None:
+        current_events = list(getattr(calendar_result, "current_events", []) or [])
+        upcoming_events = list(getattr(calendar_result, "upcoming_events", []) or [])
+        current_events_count = len(current_events)
+        upcoming_events_count = len(upcoming_events)
+        is_vacation_active = bool(getattr(calendar_result, "is_vacation_active", False))
+        is_wfh_today = bool(getattr(calendar_result, "is_wfh_today", False))
+        is_office_today = bool(getattr(calendar_result, "is_office_today", False))
+        next_raw = getattr(calendar_result, "next_vacation", None)
+        if next_raw is not None:
+            next_vacation = {
+                "summary": str(getattr(next_raw, "summary", "") or "").strip(),
+                "start": getattr(getattr(next_raw, "start", None), "isoformat", lambda: None)(),
+                "calendar_entity": str(getattr(next_raw, "calendar_entity", "") or "").strip(),
+            }
+
+    return {
+        "configured_entities": configured_entities,
+        "current_events_count": current_events_count,
+        "upcoming_events_count": upcoming_events_count,
+        "cache_ts": cache_ts,
+        "cached_events_count": cached_events_count,
+        "is_vacation_active": is_vacation_active,
+        "is_wfh_today": is_wfh_today,
+        "is_office_today": is_office_today,
+        "next_vacation": next_vacation,
     }
 
 

@@ -164,6 +164,8 @@ Normative guidance for review wording:
 Normative guidance for the init overview:
 - `lighting_summary` SHOULD be operational rather than purely configurational
 - `composite_summary` SHOULD follow the same pattern for the room-assist family
+- `calendar_summary` SHOULD prefer an operational summary over a pure entity count when runtime
+  diagnostics are available
 - when runtime diagnostics are available, the summary SHOULD prefer a compact view including:
   - configured lighting reactions
   - pending lighting proposals
@@ -172,6 +174,10 @@ Normative guidance for the init overview:
   - active configured room-assist reactions
   - pending composite proposals in review
   - pending composite tuning, when non-zero
+- for calendar, the compact view SHOULD include at least:
+  - whether vacation is currently active
+  - whether today is classified as WFH or office
+  - next vacation when known
 - a purely configurational fallback such as `configured_rooms / total_rooms` remains acceptable only when runtime state is unavailable
 - future domain-strong families such as `composite_room_assist` SHOULD follow the same pattern:
   compact operational summaries are preferred over purely configurational summaries when runtime

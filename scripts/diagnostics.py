@@ -200,6 +200,29 @@ def _print_composite_summary(data: dict[str, Any]) -> None:
                 f"{item.get('confidence')} | {item.get('label') or '-'}"
             )
 
+
+def _print_calendar_summary(data: dict[str, Any]) -> None:
+    configured_entities = list(data.get("configured_entities") or [])
+    print(f"configured_entities_count: {len(configured_entities)}")
+    if configured_entities:
+        print("configured_entities: " + ", ".join(configured_entities))
+    print(f"current_events_count: {data.get('current_events_count', 0)}")
+    print(f"upcoming_events_count: {data.get('upcoming_events_count', 0)}")
+    print(f"cached_events_count: {data.get('cached_events_count', 0)}")
+    print(f"is_vacation_active: {bool(data.get('is_vacation_active', False))}")
+    print(f"is_wfh_today: {bool(data.get('is_wfh_today', False))}")
+    print(f"is_office_today: {bool(data.get('is_office_today', False))}")
+    if data.get("cache_ts"):
+        print(f"cache_ts: {data.get('cache_ts')}")
+    next_vacation = dict(data.get("next_vacation") or {})
+    if next_vacation:
+        print(
+            "next_vacation: "
+            f"{next_vacation.get('summary') or '-'} | "
+            f"{next_vacation.get('start') or '-'} | "
+            f"{next_vacation.get('calendar_entity') or '-'}"
+        )
+
     discovery_examples = list(data.get("pending_discovery_examples") or [])
     if discovery_examples:
         print("pending_discovery_examples:")
@@ -230,7 +253,8 @@ def main() -> int:
     sections = {
         "event_store": runtime.get("event_store"),
         "proposals": runtime.get("proposals"),
-        "calendar": runtime.get("engine", {}).get("calendar"),
+        "calendar": runtime.get("plugins", {}).get("calendar_summary")
+        or runtime.get("engine", {}).get("calendar"),
         "house_state": runtime.get("engine", {}).get("house_state"),
         "events": runtime.get("engine", {}).get("events"),
         "engine": {k: v for k, v in runtime.get("engine", {}).items() if k != "calendar"},
@@ -259,6 +283,9 @@ def main() -> int:
             print()
         if name == "composite" and isinstance(data, dict):
             _print_composite_summary(data)
+            print()
+        if name == "calendar" and isinstance(data, dict):
+            _print_calendar_summary(data)
             print()
         print(json.dumps(data, indent=2))
 

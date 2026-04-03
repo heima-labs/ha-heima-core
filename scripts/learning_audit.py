@@ -38,6 +38,7 @@ def main() -> int:
     summary = dict(runtime.get("plugins", {}).get("learning_summary", {}) or {})
     reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
     lighting_summary = dict(runtime.get("plugins", {}).get("lighting_summary", {}) or {})
+    calendar_summary = dict(runtime.get("plugins", {}).get("calendar_summary", {}) or {})
     composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
 
     _print_header("Learning Audit")
@@ -137,6 +138,25 @@ def main() -> int:
                     f"{item.get('confidence')} | "
                     f"{item.get('label') or '-'}"
                 )
+
+    if calendar_summary:
+        _print_header("Calendar")
+        configured_entities = list(calendar_summary.get("configured_entities") or [])
+        print(f"configured entities: {len(configured_entities)}")
+        if configured_entities:
+            print("entities: " + ", ".join(configured_entities))
+        print(f"current events: {calendar_summary.get('current_events_count', 0)}")
+        print(f"upcoming events: {calendar_summary.get('upcoming_events_count', 0)}")
+        print(f"vacation active: {bool(calendar_summary.get('is_vacation_active', False))}")
+        print(f"wfh today: {bool(calendar_summary.get('is_wfh_today', False))}")
+        print(f"office today: {bool(calendar_summary.get('is_office_today', False))}")
+        next_vacation = dict(calendar_summary.get("next_vacation") or {})
+        if next_vacation:
+            print(
+                "next vacation: "
+                f"{next_vacation.get('summary') or '-'} | "
+                f"{next_vacation.get('start') or '-'}"
+            )
 
     if composite_summary:
         _print_header("Composite")

@@ -512,6 +512,33 @@ def test_proposals_step_summary_includes_pending_count_and_top_labels():
     assert summary == "1 proposta pendente"
 
 
+def test_init_status_block_uses_operational_calendar_summary_when_runtime_available():
+    next_vacation = SimpleNamespace(summary="Ferie agosto")
+    flow = _flow(options={"language": "it", "calendar": {"calendar_entities": ["calendar.personal"]}})
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    engine=SimpleNamespace(
+                        _state=SimpleNamespace(
+                            calendar_result=SimpleNamespace(
+                                is_vacation_active=False,
+                                is_office_today=False,
+                                is_wfh_today=True,
+                                next_vacation=next_vacation,
+                            )
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    placeholders = flow._init_status_block()
+
+    assert placeholders["calendar_summary"] == "WFH oggi"
+
+
 @pytest.mark.asyncio
 async def test_proposals_step_shows_guided_review_placeholders():
     flow = _flow()
