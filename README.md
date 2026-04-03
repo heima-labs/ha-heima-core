@@ -14,7 +14,7 @@ The success metric is invisibility. If the people living in the home never notic
 Home Assistant provides the infrastructure (UI, storage, device services, event bus).
 Heima provides the reasoning: **what should the home be doing right now, given everything it knows?**
 
-See `docs/specs/heima_spec_v1.md` § 0 for the full design intent.
+See `docs/specs/rfc/heima_spec_v1.md` § 0 for the full design intent.
 
 ## Project Icon
 ![Heima icon](docs/assets/heima-icon.svg)

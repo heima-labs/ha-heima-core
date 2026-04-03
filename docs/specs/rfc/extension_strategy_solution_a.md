@@ -1,8 +1,8 @@
 # Heima — Extension Strategy SPEC v1 (Solution A)
 ## Event-Based Extensions (No Public Python API Object)
 
-**Status:** Draft/RFC — partially superseded by current runtime/service evolution
-**Last Verified Against Code:** 2026-03-11
+**Status:** RFC / Partially superseded — still useful as an extension-direction note, but it is not the current canonical runtime/service contract
+**Last Verified Against Code:** 2026-04-03
 
 This document defines the **extension strategy** for Heima using **Solution A**:
 - integrations/extensions interact with Heima **only via HA events and HA services**

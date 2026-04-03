@@ -30,6 +30,6 @@ Respond in Italian unless code, identifiers, or spec content requires English.
 - Apply plan è l'unico canale di output per le azioni su HA.
 
 ## Key specs
-- v1: `docs/specs/heima_spec_v1.md`
+- v1: `docs/specs/rfc/heima_spec_v1.md`
 - v2: `docs/specs/heima_v2_spec.md`
-- Learning system: `docs/specs/heima_learning_system_spec_v1.md`
+- Learning system: `docs/specs/learning/learning_system_spec.md`

@@ -380,7 +380,7 @@ But the actual actively used public event stream today is:
 This framework is documented but **not implemented** yet.
 
 Spec file:
-- `docs/specs/heima_policy_plugin_framework_spec_v1.md`
+- `docs/specs/rfc/policy_plugin_framework_spec.md`
 
 Purpose:
 - future cross-domain policy extension layer

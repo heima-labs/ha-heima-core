@@ -1,7 +1,7 @@
 # Heima — Input Normalization Layer SPEC v1 (Incremental Introduction)
 
-**Status:** Partial — normalization facade implemented, full cross-domain migration in progress
-**Last Verified Against Code:** 2026-03-11
+**Status:** RFC / Partial — some normalization facade concepts exist, but the full single-entry normalization architecture described here is not yet the current runtime contract
+**Last Verified Against Code:** 2026-04-03
 
 ## 1. Purpose
 

@@ -1,7 +1,7 @@
 # Heima — Policy Plugin Framework Mini-SPEC v1
 
-**Status:** Draft/RFC — architecture target, not yet fully implemented
-**Last Verified Against Code:** 2026-03-11
+**Status:** Draft/RFC — future architecture target, not implemented as a general runtime policy layer on `main`
+**Last Verified Against Code:** 2026-04-03
 
 ## Purpose
 

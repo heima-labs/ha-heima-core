@@ -1,7 +1,12 @@
-# Heima — Options Flow UX v2 SPEC
+# Heima — Options Flow UX SPEC
 
-**Status:** Active v2 UX and persistence contract
+**Status:** Active v1.x UX and persistence contract
 **Created:** 2026-03-17
+**Last Verified Against Code:** 2026-04-03
+
+> Naming note:
+> this document describes the current bounded Options Flow UX used on `main`.
+> It is not a separate product-generation `v2` flow.
 
 ---
 

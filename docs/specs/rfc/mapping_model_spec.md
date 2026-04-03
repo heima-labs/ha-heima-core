@@ -1,14 +1,23 @@
 # Heima — Mapping Model SPEC v1
 ## Room→Scenes, Zone→Rooms, Intent→Scene, Holds, Behavior Clamps, Fallback
 
-**Status:** Partial — core model implemented, remaining clauses need reconciliation
-**Last Verified Against Code:** 2026-03-11
+**Status:** Partial — LightingDomain intent-to-scene mapping model only; reaction-driven lighting assist flows are specified elsewhere
+**Last Verified Against Code:** 2026-04-03
 
 This document defines the **mapping model** used by Heima to translate:
 - canonical **lighting intents** (per zone) into **scene activations** (per room),
 - with support for **per-room manual holds**, **behavior clamps**, and **fallback rules**.
 
-Heima uses **Choice B**: *room-based scenes* (no direct light entity control).
+Scope clarification:
+- this document applies to the deterministic `LightingDomain` intent/apply path
+- it does **not** define the admin-authored or learned lighting reaction model
+- reaction-driven lighting assists may legitimately use `entity_steps` and are covered by:
+  - `core/reactive_behavior_spec.md`
+  - `learning/admin_authored_automation_spec.md`
+  - `learning/learning_system_spec.md`
+
+Heima uses **Choice B** for the domain mapping path: *room-based scenes* as the canonical
+deterministic lighting control model.
 
 ---
 
@@ -39,6 +48,15 @@ A **Lighting Intent** is a stable enum. v1 defines:
 
 ### 0.4 Scene
 A Home Assistant scene entity (domain `scene`) that encodes desired state for a set of devices.
+
+### 0.5 Out-of-Scope Lighting Reaction Model
+The following are intentionally out of scope for this document:
+- learned lighting schedule reactions
+- admin-authored lighting scene schedules
+- room darkness lighting assists
+- reaction payloads using `entity_steps`
+
+Those paths are not a contradiction of this spec; they belong to a different layer of the system.
 
 ---
 
@@ -164,6 +182,11 @@ Apply rules:
 ### 6.2 Anti-Loop Window
 Heima may apply a loop suppression window per room to avoid reacting immediately to its own apply.
 
+Current implementation note:
+- the broader lighting subsystem also tracks reaction-level provenance and batch correlation for
+  learned/admin-authored paths
+- that logic is not part of the deterministic mapping contract defined here
+
 ---
 
 ## 7. Zone Membership Conflicts
@@ -216,5 +239,9 @@ Mapping model must be included in diagnostics:
 - last applied per room
 - scene missing events history
 - hold state summary
+
+Interpretation rule:
+- if a diagnostic or runtime behavior concerns learned/admin-authored lighting reactions rather than
+  zone intent → room scene mapping, the reaction/lifecycle specs take precedence over this document
 
 ---

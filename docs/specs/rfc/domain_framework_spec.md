@@ -1,8 +1,8 @@
 # Heima — Domain Framework SPEC v1
 ## How to Add New Domains Without Rewriting the Core
 
-**Status:** Partial — architectural direction valid, runtime still hybrid
-**Last Verified Against Code:** 2026-03-11
+**Status:** RFC / Partial — direction valid, but current runtime is still hybrid and does not implement the full domain DAG framework described here
+**Last Verified Against Code:** 2026-04-03
 
 This specification defines the **Domain Framework v1** for Heima.
 A “domain” is a bounded module that can:

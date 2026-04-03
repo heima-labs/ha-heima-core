@@ -1,8 +1,8 @@
 # Heima — Constraints & Dependencies SPEC v1
 ## Cross-Domain Constraints, Precedence, and Gating (Product-Grade)
 
-**Status:** Partial — subset implemented in runtime; full model still planned
-**Last Verified Against Code:** 2026-03-11
+**Status:** RFC / Partial — some constraints exist in runtime, but the central constraint layer described here is not implemented on `main`
+**Last Verified Against Code:** 2026-04-03
 
 This specification defines how Heima handles **dependencies between concepts** (house modes, security state, overrides)
 and how these dependencies influence **domain decisions** and **actuation** in a consistent, maintainable way.

@@ -1,13 +1,13 @@
 # Heima — Core Product Spec (Consolidated)
 
 **Status:** Active core product contract
-**Last Verified Against Code:** 2026-03-11
+**Last Verified Against Code:** 2026-04-03
 
 ## Scope
 
 This document is the consolidated product-level contract previously split across:
-- `heima_spec_v1.md`
-- `heima_spec_v1_1_behavior_framework.md`
+- `rfc/heima_spec_v1.md`
+- `rfc/heima_spec_v1_1_behavior_framework.md`
 - runtime behavior clarifications now in `core/reactive_behavior_spec.md`
 
 ## Normative precedence
@@ -53,6 +53,8 @@ This includes:
 - Behavior/reaction pipeline with snapshot history
 - Notification/event pipeline with routing and gating controls
 - Learning proposal pipeline (see `learning/learning_system_spec.md`)
+- Plugin-owned learning families, reaction rebuild hooks, and proposal lifecycle hooks
+- Domain-strong lighting and composite assist flows with bounded tuning/review UX
 
 ## Canonical Source Specs
 

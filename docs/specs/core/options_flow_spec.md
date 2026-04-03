@@ -21,7 +21,7 @@ Interpretation rule:
 
 This document defines the stable configuration schema and runtime effects.
 
-The companion document `core/options_flow_ux_v2_spec.md` refines UX behavior, session flow, and
+The companion document `core/options_flow_ux_spec.md` refines UX behavior, session flow, and
 proposal-configuration interactions without replacing the schema contract defined here.
 
 ## Scope and non-goals

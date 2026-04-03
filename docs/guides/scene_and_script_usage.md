@@ -6,7 +6,7 @@ one, and what the learning/runtime can trace reliably.
 This is an operational guide, not a normative spec.
 
 For the normative contracts, see:
-- [`docs/specs/core/options_flow_ux_v2_spec.md`](../specs/core/options_flow_ux_v2_spec.md)
+- [`docs/specs/core/options_flow_ux_spec.md`](../specs/core/options_flow_ux_spec.md)
 - [`docs/specs/learning/learning_system_spec.md`](../specs/learning/learning_system_spec.md)
 
 ## 1. The short version
