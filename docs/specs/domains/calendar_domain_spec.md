@@ -1,16 +1,21 @@
 # CalendarDomain — Mini Spec v0.1
 
-**Status:** Draft
-**Last updated:** 2026-03-16
+**Status:** Active v1.x calendar domain contract (implemented/partial)
+**Last Verified Against Code:** 2026-04-03
 
 ## Obiettivo
 Integrare eventi da calendar entities HA in Heima per abilitare comportamenti
 proattivi basati su agenda (vacation, WFH) e fornire lookahead a domini futuri.
 
-## Posizione nel DAG
+## Posizione nel runtime
 ```
 InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply
 ```
+
+Note:
+- `CalendarDomain` is already present in the runtime and is evaluated before `HouseStateDomain`
+- the most important implemented integration today is `calendar -> house_state`
+- `HeatingDomain` can already consume the resulting context, but product-level heating usage remains limited
 
 ## Configurazione
 
@@ -88,23 +93,33 @@ Calendario prevale su `work_window_entity`; il sensore esterno è usato solo
 se nessun evento calendario WFH/office è presente oggi.
 
 **HeatingDomain:**
-- `is_vacation_active=True` → attiva vacation curve, bypassa normal schedule
-- Prevale su `away_mode_entity` se entrambi configurati
+- `CalendarResult` è già disponibile nel runtime shared state
+- il ponte più importante per heating oggi passa prima da `house_state`
+- un uso heating più ricco del calendario resta un refinement futuro
 
 **Domini futuri** (es. Watering):
 - Leggono `CalendarResult` da `CanonicalState` — zero accoppiamento con CalendarDomain
 
-## CanonicalState
-`CalendarResult` viene persistito in `CanonicalState` al termine di ogni ciclo.
+## Runtime shared state
+`CalendarResult` viene scritto nel runtime shared state al termine di ogni ciclo.
 Il TTL della cache sopravvive ai cicli: il dominio confronta `cache_ts` con `now`
 ad ogni ciclo per decidere se rifetchare.
+
+## Diagnostics
+
+Il dominio espone diagnostics con:
+- `cache_ts`
+- `cached_events_count`
+- `cached_events`
+
+Il payload engine include anche il frammento `calendar` nelle diagnostics runtime.
 
 ## Degradazione graceful
 - Nessuna `calendar_entities` configurata → dominio disabled, nessun effetto sui downstream
 - Entity non disponibile → saltata silenziosamente, le altre vengono processate
 - Tutti i fallimenti → `CalendarResult` vuoto, comportamento Heima invariato
 
-## Fuori scope (v1)
+## Fuori scope (v1.x)
 - Notifiche proattive basate su eventi futuri (es. "impianto OK prima delle vacanze")
   — richiede ProposalEngine extension
 - Modifica/creazione eventi da Heima

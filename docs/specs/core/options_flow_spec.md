@@ -2,7 +2,7 @@
 ## Configuration & UX Schema (Product-Grade)
 
 **Status:** Active v1 options contract
-**Last Verified Against Code:** 2026-03-30
+**Last Verified Against Code:** 2026-04-03
 
 This document defines the **Options Flow schema** for the Heima integration.
 It specifies UI steps, fields, validation rules, defaults, and runtime effects.

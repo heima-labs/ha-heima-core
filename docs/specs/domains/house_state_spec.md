@@ -1,8 +1,8 @@
 # House State Domain Spec
 
-**Status:** Target vNext for v1.x evolution  
-**Implementation status:** Partially implemented in v1.x  
-**Last reviewed:** 2026-03-30
+**Status:** Active v1.x house-state contract with remaining refinement targets  
+**Implementation status:** Largely implemented on `main`; remaining items are incremental refinements  
+**Last reviewed:** 2026-04-03
 
 ---
 
@@ -16,8 +16,8 @@ It must:
 - support explicit overrides and explicit modes
 - infer meaningful states from behaviorally relevant evidence, not only from direct helper booleans
 
-This spec defines the **target model** for `house_state` evolution beyond the current
-direct-signal v1 implementation.
+This spec defines the current candidate/hysteresis-driven `house_state` model on `main`,
+plus the remaining refinement targets that may still land in later v1.x work.
 
 ---
 
@@ -65,7 +65,7 @@ House-state resolution is split into two layers:
 
 The home substate layer is **candidate-based** and **hysteresis-driven**.
 
-This replaces the current direct mapping:
+This replaces the earlier direct mapping:
 - `sleep_window -> sleeping`
 - `relax_mode -> relax`
 - `work_window -> working`
@@ -128,9 +128,9 @@ Existing bindings remain valid:
 - `relax_mode_entity`
 - `work_window_entity`
 
-### 5.4 New planned bindings
+### 5.4 Additional configurable bindings
 
-This spec introduces the following planned additions:
+The following bindings are part of the current v1.x contract:
 
 - `media_active_entities`
   - one or more entities that indicate active media usage
@@ -145,7 +145,7 @@ This spec introduces the following planned additions:
 - `sleep_charging_min_count`
   - optional integer corroboration threshold
 
-These bindings are additive. Existing configurations must remain backward compatible.
+These bindings are additive. Existing configurations remain backward compatible.
 
 ---
 
@@ -216,7 +216,8 @@ must satisfy the configured enter timer.
 
 ## 7. Hysteresis and Timers
 
-The home substate layer uses explicit enter/exit thresholds.
+The home substate layer uses explicit enter/exit thresholds. This behavior is already implemented
+on `main`.
 
 Default timers:
 - `sleep_enter_min = 10`
@@ -399,8 +400,8 @@ The canonical entities remain unchanged:
 - `sensor.heima_house_state_reason`
 
 Existing options must continue to work:
-- if only legacy direct bindings are configured, the candidate engine must still derive usable states
-- if new candidate-support bindings are absent, defaults apply and the system remains functional
+- if only legacy direct bindings are configured, the candidate engine still derives usable states
+- if candidate-support bindings are absent, defaults apply and the system remains functional
 
 This means:
 - old installations keep working
@@ -408,28 +409,20 @@ This means:
 
 ---
 
-## 13. Implementation Phasing
+## 13. Remaining Refinement Targets
 
-This spec is intentionally broader than the first implementation slice.
+Most of the base model described above is already implemented on `main`.
 
-Recommended implementation phases:
+The remaining useful refinement targets are:
 
-### Phase A
-- keep existing hard states
-- introduce candidate traces
-- implement hysteresis only on top of existing `sleep_window`, `relax_mode`, `work_window`
+### R1
+- continue refining candidate heuristics without changing the canonical top-level state set
 
-### Phase B
-- add `media_active_entities`
-- derive `relax_candidate` from media activity
-- derive `wake_candidate` from media activity
+### R2
+- improve operability wording and diagnostics where helpful
 
-### Phase C
-- add `workday_entity` + calendar-aware work candidate
-- add optional sleep corroboration (`media_off`, charging threshold)
-
-### Phase D
-- refine reasons, diagnostics, and learning/event visibility
+### R3
+- keep strengthening the calendar-aware context that future heating logic will consume
 
 ---
 
@@ -441,4 +434,4 @@ This spec does not:
 - remove explicit overrides
 - depend on current-cycle outputs of other domains
 
-Those remain future directions outside this target vNext contract.
+Those remain future directions outside the current v1.x contract.

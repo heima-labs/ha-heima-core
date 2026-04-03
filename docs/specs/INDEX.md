@@ -34,8 +34,8 @@ Related practical guides live outside this tree:
 
 ## Domains
 
-- `domains/house_state_spec.md` — target house-state candidate/hysteresis model
-- `domains/calendar_domain_spec.md` — calendar domain draft for future house-state/heating inputs
+- `domains/house_state_spec.md` — current house-state candidate/hysteresis contract
+- `domains/calendar_domain_spec.md` — current calendar domain contract and house-state integration
 - `domains/heating_spec.md` — heating domain (implemented/partial)
 - `domains/watering_spec.md` — watering domain (planned)
 
