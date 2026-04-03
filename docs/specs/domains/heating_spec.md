@@ -1,7 +1,7 @@
 # Heima — Heating Domain Mini-SPEC v1
 
-**Status:** Partial — core runtime implemented, refinement and policy-plug-in evolution pending
-**Last Verified Against Code:** 2026-03-11
+**Status:** Partial — core runtime implemented, heating-prep contract clarified before broader domain work
+**Last Verified Against Code:** 2026-04-03
 
 ## Purpose
 
@@ -37,6 +37,7 @@ Heating v1 does **not** include:
 - adaptive learning / self-tuning
 - weather-compensated PID-like control
 - advanced per-room radiator balancing
+- direct business-logic consumption of calendar categories inside `HeatingDomain`
 
 Those can be added later once the fixed policy tree is stable.
 
@@ -122,7 +123,41 @@ All override branches depend on:
 
 Additional inputs depend on the selected branch type.
 
-### 4.2.1 House-State Branch Mapping (Config Model)
+### 4.2.1 Canonical Context Contract for Heating v1.x
+
+Heating v1.x consumes contextual state through a deliberately narrow contract:
+
+- **direct canonical context**
+  - `house_state`
+- **direct device/runtime context**
+  - `current_setpoint`
+  - `manual_override_state`
+- **direct branch-local helper bindings**
+  - `outdoor_temperature`
+  - vacation timing helpers/sensors
+
+This is intentional.
+
+In the current runtime, `HeatingDomain` does **not** independently interpret calendar categories such as:
+- `vacation`
+- `office`
+- `wfh`
+
+Instead, those categories influence heating through upstream canonicalization:
+
+- `CalendarDomain` produces `CalendarResult`
+- `HouseStateDomain` folds that into the canonical `house_state`
+- `HeatingDomain` consumes the resolved `house_state`
+
+Therefore, the contractual context boundary for Heating v1.x is:
+
+- **Heating reads `house_state`, not raw calendar semantics**
+- calendar-specific logic belongs to `CalendarDomain` and `HouseStateDomain`
+- heating-specific vacation timing helpers remain a pragmatic branch-local exception for `vacation_curve`
+
+This keeps the first heating slice bounded and avoids duplicating decision logic across domains.
+
+### 4.2.2 House-State Branch Mapping (Config Model)
 
 Heating v1 must support an explicit configuration mapping:
 
@@ -169,6 +204,15 @@ Vacation timing context:
 
 These may initially come from bound helper/sensor entities.
 In v1 they do **not** need to be natively modeled by Heima yet.
+
+Important distinction:
+
+- `house_state = vacation` may be influenced by `CalendarDomain`
+- `vacation_curve` timing inputs are still branch-local helper bindings in Heating config
+
+So calendar participation in Heating v1.x is:
+- **indirect for branch selection**
+- **not yet authoritative for vacation timing math**
 
 ### 4.4 Fixed Target Branch Inputs
 
@@ -251,6 +295,18 @@ Examples:
 - `sleeping -> fixed_target`
 - `guest -> scheduler_delegate`
 - any unmapped state -> `normal`
+
+Recommended first-slice heating usage of `house_state`:
+- `vacation`
+- `sleeping`
+- `away`
+- optionally `guest`
+
+States such as:
+- `working`
+- `relax`
+
+may be mapped later, but are not required for the first bounded heating slice.
 
 ### 5.2 `scheduler_delegate` Branch
 
@@ -509,6 +565,27 @@ This keeps concerns separated:
 - signal fusion in the normalization layer
 - setpoint policy in the Heating domain
 
+## 11.1 Relationship with House State and Calendar
+
+Heating v1.x depends on the context stack in this order:
+
+1. raw entities / helpers
+2. `CalendarDomain`
+3. `HouseStateDomain`
+4. `HeatingDomain`
+
+Practical implications:
+
+- if calendar marks `vacation`, Heating should normally observe this only through `house_state = vacation`
+- if calendar marks `office` / `wfh`, Heating should not branch directly on those categories in v1.x
+- any future direct calendar-aware heating policy would be a deliberate later evolution, not part of the current contract
+
+This is the canonical bridge contract for the post-lighting / post-composite roadmap:
+
+- strengthen `calendar` and `house_state`
+- keep Heating bounded to canonical context
+- avoid reopening cross-domain semantics inside Heating prematurely
+
 ---
 
 ## 12. Relationship with Future Policy Plugins
@@ -518,6 +595,24 @@ The built-in branch selector introduced here is designed to evolve cleanly into 
 Expected future evolution:
 - current mapping:
   - `house_state -> built-in branch type`
+  
+## 13. Scope Guard for the Next Heating Roadmap Slice
+
+The next heating-focused roadmap slice should assume the following inputs are already acceptable and stable:
+
+- canonical `house_state`
+- `CalendarResult` only via `HouseStateDomain`
+- bound helper entities for vacation timing and outdoor temperature
+
+The next slice should **not** assume:
+
+- direct calendar event interpretation inside `HeatingDomain`
+- multi-zone/TRV orchestration
+- generalized policy plugin framework
+- advanced weather strategy beyond the current `vacation_curve` safety logic
+- a new global constraints engine
+
+This scope guard exists to keep the next heating stream product-bounded rather than architecture-led.
 - future mapping:
   - `house_state -> policy plugin / built-in policy id`
 
