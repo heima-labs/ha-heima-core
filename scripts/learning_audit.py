@@ -39,6 +39,7 @@ def main() -> int:
     reaction_summary = dict(runtime.get("plugins", {}).get("configured_reaction_summary", {}) or {})
     lighting_summary = dict(runtime.get("plugins", {}).get("lighting_summary", {}) or {})
     calendar_summary = dict(runtime.get("plugins", {}).get("calendar_summary", {}) or {})
+    house_state_summary = dict(runtime.get("plugins", {}).get("house_state_summary", {}) or {})
     composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
 
     _print_header("Learning Audit")
@@ -157,6 +158,22 @@ def main() -> int:
                 f"{next_vacation.get('summary') or '-'} | "
                 f"{next_vacation.get('start') or '-'}"
             )
+
+    if house_state_summary:
+        _print_header("House State")
+        print(f"state: {house_state_summary.get('state') or '-'}")
+        print(f"reason: {house_state_summary.get('reason') or '-'}")
+        print(f"path: {house_state_summary.get('resolution_path') or '-'}")
+        print(f"winning reason: {house_state_summary.get('winning_reason') or '-'}")
+        print(f"sticky retention: {bool(house_state_summary.get('sticky_retention', False))}")
+        active_candidates = list(house_state_summary.get("active_candidates") or [])
+        if active_candidates:
+            print("active candidates: " + ", ".join(active_candidates))
+        pending_candidate = str(house_state_summary.get("pending_candidate") or "").strip()
+        if pending_candidate:
+            print(f"pending candidate: {pending_candidate}")
+        if house_state_summary.get("pending_remaining_s") is not None:
+            print(f"pending remaining s: {house_state_summary.get('pending_remaining_s')}")
 
     if composite_summary:
         _print_header("Composite")

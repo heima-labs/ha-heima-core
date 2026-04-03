@@ -50,6 +50,7 @@ async def async_get_config_entry_diagnostics(
                     coordinator,
                 ),
                 "calendar_summary": _calendar_summary_diagnostics(coordinator),
+                "house_state_summary": _house_state_summary_diagnostics(coordinator),
                 "composite_summary": _composite_summary_diagnostics(
                     proposal_diagnostics,
                     coordinator,
@@ -542,6 +543,57 @@ def _calendar_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "is_wfh_today": is_wfh_today,
         "is_office_today": is_office_today,
         "next_vacation": next_vacation,
+    }
+
+
+def _house_state_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    engine = getattr(coordinator, "engine", None)
+    if engine is None:
+        return {}
+
+    state = getattr(engine, "_state", None)
+    engine_diag = engine.diagnostics() if hasattr(engine, "diagnostics") else {}
+    house_diag = dict(engine_diag.get("house_state") or {})
+    calendar_result = getattr(state, "calendar_result", None) if state is not None else None
+
+    resolution_trace = dict(house_diag.get("resolution_trace") or {})
+    decision = dict(resolution_trace.get("decision") or {})
+    active_candidates = list(resolution_trace.get("active_candidates") or [])
+    pending_candidate = (
+        str(decision.get("source_candidate") or "").strip()
+        if str(decision.get("action") or "") == "pending"
+        else ""
+    )
+    pending_remaining_s = (
+        decision.get("pending_remaining_s")
+        if str(decision.get("action") or "") == "pending"
+        else None
+    )
+
+    calendar_context = {
+        "is_vacation_active": bool(getattr(calendar_result, "is_vacation_active", False))
+        if calendar_result is not None
+        else False,
+        "is_wfh_today": bool(getattr(calendar_result, "is_wfh_today", False))
+        if calendar_result is not None
+        else False,
+        "is_office_today": bool(getattr(calendar_result, "is_office_today", False))
+        if calendar_result is not None
+        else False,
+    }
+
+    return {
+        "state": getattr(state, "get_sensor", lambda _k: None)("heima_house_state") if state is not None else None,
+        "reason": getattr(state, "get_sensor", lambda _k: None)("heima_house_state_reason") if state is not None else None,
+        "resolution_path": resolution_trace.get("resolution_path"),
+        "winning_reason": resolution_trace.get("winning_reason"),
+        "sticky_retention": bool(resolution_trace.get("sticky_retention")),
+        "active_candidates": active_candidates,
+        "pending_candidate": pending_candidate,
+        "pending_remaining_s": pending_remaining_s,
+        "calendar_context": calendar_context,
     }
 
 

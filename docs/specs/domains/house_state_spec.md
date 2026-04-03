@@ -391,6 +391,24 @@ Interpretation rule:
 - the helper sensors are an operability surface for dashboards and quick inspection
 - the diagnostics payload remains the deeper source of truth for candidate and signal traces
 
+For bounded operability surfaces in v1.x, the system SHOULD also expose a compact summary that
+helps an admin answer quickly:
+- what state is currently active
+- why it is active
+- whether the result is pending, retained, or calendar-influenced
+
+That compact summary may include fields equivalent to:
+- `state`
+- `reason`
+- `resolution_path`
+- `active_candidates`
+- `pending_candidate`
+- `pending_remaining_s`
+- `calendar_context`
+
+The compact summary is intended for diagnostics CLI, dashboards, and options-flow overviews.
+It does not replace the deeper `resolution_trace` / `candidate_trace` payload.
+
 ---
 
 ## 12. Backward Compatibility

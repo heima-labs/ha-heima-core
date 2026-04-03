@@ -223,6 +223,30 @@ def _print_calendar_summary(data: dict[str, Any]) -> None:
             f"{next_vacation.get('calendar_entity') or '-'}"
         )
 
+
+def _print_house_state_summary(data: dict[str, Any]) -> None:
+    print(f"state: {data.get('state') or '-'}")
+    print(f"reason: {data.get('reason') or '-'}")
+    print(f"resolution_path: {data.get('resolution_path') or '-'}")
+    print(f"winning_reason: {data.get('winning_reason') or '-'}")
+    print(f"sticky_retention: {bool(data.get('sticky_retention', False))}")
+    active_candidates = list(data.get("active_candidates") or [])
+    if active_candidates:
+        print("active_candidates: " + ", ".join(active_candidates))
+    pending_candidate = str(data.get("pending_candidate") or "").strip()
+    if pending_candidate:
+        print(f"pending_candidate: {pending_candidate}")
+    if data.get("pending_remaining_s") is not None:
+        print(f"pending_remaining_s: {data.get('pending_remaining_s')}")
+    calendar_context = dict(data.get("calendar_context") or {})
+    if calendar_context:
+        print(
+            "calendar_context: "
+            f"vacation={bool(calendar_context.get('is_vacation_active', False))}, "
+            f"wfh={bool(calendar_context.get('is_wfh_today', False))}, "
+            f"office={bool(calendar_context.get('is_office_today', False))}"
+        )
+
     discovery_examples = list(data.get("pending_discovery_examples") or [])
     if discovery_examples:
         print("pending_discovery_examples:")
@@ -239,7 +263,7 @@ def main() -> int:
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "house_state", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite"],
+        choices=["all", "engine", "house_state", "house_state_summary", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -255,6 +279,8 @@ def main() -> int:
         "proposals": runtime.get("proposals"),
         "calendar": runtime.get("plugins", {}).get("calendar_summary")
         or runtime.get("engine", {}).get("calendar"),
+        "house_state_summary": runtime.get("plugins", {}).get("house_state_summary")
+        or runtime.get("engine", {}).get("house_state"),
         "house_state": runtime.get("engine", {}).get("house_state"),
         "events": runtime.get("engine", {}).get("events"),
         "engine": {k: v for k, v in runtime.get("engine", {}).items() if k != "calendar"},
@@ -286,6 +312,9 @@ def main() -> int:
             print()
         if name == "calendar" and isinstance(data, dict):
             _print_calendar_summary(data)
+            print()
+        if name == "house_state_summary" and isinstance(data, dict):
+            _print_house_state_summary(data)
             print()
         print(json.dumps(data, indent=2))
 

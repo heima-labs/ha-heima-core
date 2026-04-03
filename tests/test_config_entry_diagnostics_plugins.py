@@ -409,6 +409,68 @@ async def test_config_entry_diagnostics_exposes_calendar_summary() -> None:
     }
 
 
+async def test_config_entry_diagnostics_exposes_house_state_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "house_state": {
+                "resolution_trace": {
+                    "resolution_path": "home_substate",
+                    "winning_reason": "work_candidate_confirmed",
+                    "sticky_retention": False,
+                    "active_candidates": ["work_candidate", "wake_candidate"],
+                    "decision": {
+                        "action": "pending",
+                        "source_candidate": "work_candidate",
+                        "pending_remaining_s": 42.0,
+                    },
+                }
+            }
+        },
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                "working"
+                if key == "heima_house_state"
+                else "work_candidate_confirmed"
+                if key == "heima_house_state_reason"
+                else None
+            ),
+            calendar_result=CalendarResult(
+                is_vacation_active=False,
+                is_wfh_today=True,
+                is_office_today=False,
+            ),
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["house_state_summary"]
+
+    assert summary == {
+        "state": "working",
+        "reason": "work_candidate_confirmed",
+        "resolution_path": "home_substate",
+        "winning_reason": "work_candidate_confirmed",
+        "sticky_retention": False,
+        "active_candidates": ["work_candidate", "wake_candidate"],
+        "pending_candidate": "work_candidate",
+        "pending_remaining_s": 42.0,
+        "calendar_context": {
+            "is_vacation_active": False,
+            "is_wfh_today": True,
+            "is_office_today": False,
+        },
+    }
+
+
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:
     coordinator = _CoordinatorStub()
     coordinator._proposal_engine = SimpleNamespace(
