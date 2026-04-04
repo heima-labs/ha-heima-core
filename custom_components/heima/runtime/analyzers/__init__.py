@@ -10,6 +10,7 @@ from .heating import HeatingPatternAnalyzer
 from .lifecycle import ProposalLifecycleHooks
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
+from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 from .registry import (
     AdminAuthoredTemplateDescriptor,
     LearningPatternPluginDescriptor,
@@ -43,4 +44,5 @@ __all__ = [
     "HeatingPatternAnalyzer",
     "LightingPatternAnalyzer",
     "PresencePatternAnalyzer",
+    "SecurityPresenceSimulationAnalyzer",
 ]

@@ -38,9 +38,24 @@ class _ReactionsStepsMixin:
             return self.async_show_form(
                 step_id="admin_authored_create",
                 data_schema=schema,
+                description_placeholders={
+                    "availability_notes": self._admin_authored_template_availability_notes()
+                },
             )
 
         template_id = str(user_input.get("template_id") or "").strip()
+        available, reason = self._admin_authored_template_availability(template_id)
+        if not available:
+            schema = vol.Schema({vol.Required("template_id"): vol.In(template_options)})
+            return self.async_show_form(
+                step_id="admin_authored_create",
+                data_schema=schema,
+                errors={"base": "template_unavailable"},
+                description_placeholders={
+                    "availability_notes": reason
+                    or self._admin_authored_template_availability_notes()
+                },
+            )
         template = self._admin_authored_template(template_id)
         flow_step_id = str(getattr(template, "flow_step_id", "") or "").strip()
         if template is not None and flow_step_id:
@@ -174,6 +189,105 @@ class _ReactionsStepsMixin:
                         or defaults["color_temp_kelvin"],
                     }
                 ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal_id = await proposal_engine.async_submit_proposal(proposal)
+        self._proposal_review_queue = [proposal_id]
+        return await self.async_step_proposals()
+
+    async def async_step_admin_authored_security_presence_simulation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored vacation presence simulation policy."""
+        template = self._admin_authored_template("security.vacation_presence_simulation.basic")
+        if template is None:
+            return await self.async_step_init()
+        available, reason = self._admin_authored_template_availability(template.template_id)
+        if not available:
+            schema = vol.Schema({vol.Required("template_id"): vol.In(self._admin_authored_template_options())})
+            return self.async_show_form(
+                step_id="admin_authored_create",
+                data_schema=schema,
+                errors={"base": "template_unavailable"},
+                description_placeholders={"availability_notes": reason or ""},
+            )
+
+        defaults = {
+            "enabled": True,
+            "allowed_rooms": [],
+            "allowed_entities": [],
+            "requires_dark_outside": True,
+            "simulation_aggressiveness": "medium",
+            "min_jitter_override_min": None,
+            "max_jitter_override_min": None,
+            "max_events_per_evening_override": None,
+            "latest_end_time_override": "",
+            "skip_if_presence_detected": True,
+        }
+        errors: dict[str, str] = {}
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_security_presence_simulation",
+                data_schema=self._admin_authored_security_presence_simulation_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        min_jitter = self._coerce_optional_int(user_input.get("min_jitter_override_min"))
+        max_jitter = self._coerce_optional_int(user_input.get("max_jitter_override_min"))
+        max_events = self._coerce_optional_int(user_input.get("max_events_per_evening_override"))
+        latest_end = str(user_input.get("latest_end_time_override") or "").strip()
+        if latest_end and _parse_hhmm_to_min(latest_end) is None:
+            errors["latest_end_time_override"] = "invalid_hhmm"
+        if min_jitter is not None and min_jitter < 0:
+            errors["min_jitter_override_min"] = "invalid_number"
+        if max_jitter is not None and max_jitter < 0:
+            errors["max_jitter_override_min"] = "invalid_number"
+        if min_jitter is not None and max_jitter is not None and min_jitter > max_jitter:
+            errors["max_jitter_override_min"] = "invalid_number"
+        if max_events is not None and max_events <= 0:
+            errors["max_events_per_evening_override"] = "invalid_number"
+
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_security_presence_simulation",
+                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal = self._build_admin_authored_security_presence_simulation_proposal(
+            enabled=bool(user_input.get("enabled", True)),
+            allowed_rooms=self._normalize_multi_value(user_input.get("allowed_rooms")),
+            allowed_entities=self._normalize_multi_value(user_input.get("allowed_entities")),
+            requires_dark_outside=bool(user_input.get("requires_dark_outside", True)),
+            simulation_aggressiveness=str(user_input.get("simulation_aggressiveness") or "medium"),
+            min_jitter_override_min=min_jitter,
+            max_jitter_override_min=max_jitter,
+            max_events_per_evening_override=max_events,
+            latest_end_time_override=latest_end or None,
+            skip_if_presence_detected=bool(user_input.get("skip_if_presence_detected", True)),
+        )
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        if proposal_engine is None:
+            return await self.async_step_init()
+
+        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
+        if existing is not None and existing.status != "pending":
+            return self.async_show_form(
+                step_id="admin_authored_security_presence_simulation",
+                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
                 errors={"base": "duplicate"},
                 description_placeholders={
                     "template_title": template.title,
@@ -773,7 +887,11 @@ class _ReactionsStepsMixin:
             return {}
         options: dict[str, str] = {}
         for template in registry.admin_authored_templates(implemented_only=True):
-            options[template.template_id] = template.title
+            available, _reason = self._admin_authored_template_availability(template.template_id)
+            title = template.title
+            if not available:
+                title = f"{title} ({'non disponibile' if self._flow_language().startswith('it') else 'unavailable'})"
+            options[template.template_id] = title
         return options
 
     def _admin_authored_template(self, template_id: str) -> Any | None:
@@ -784,6 +902,49 @@ class _ReactionsStepsMixin:
             template_id,
             implemented_only=True,
         )
+
+    def _admin_authored_template_availability(
+        self, template_id: str
+    ) -> tuple[bool, str]:
+        template_id = str(template_id or "").strip()
+        if not template_id:
+            return False, ""
+        if template_id != "security.vacation_presence_simulation.basic":
+            return True, ""
+        configured = dict(self._reactions_options().get("configured", {}))
+        for cfg in configured.values():
+            if not isinstance(cfg, dict):
+                continue
+            reaction_class = str(cfg.get("reaction_class") or "").strip()
+            if reaction_class == "LightingScheduleReaction":
+                return True, ""
+            reaction_type = str(cfg.get("reaction_type") or "").strip()
+            if reaction_type == "lighting_scene_schedule":
+                return True, ""
+            template = str(cfg.get("source_template_id") or "").strip()
+            if template == "lighting.scene_schedule.basic":
+                return True, ""
+        lang = self._flow_language()
+        if lang.startswith("it"):
+            return (
+                False,
+                "Template non disponibile: servono routine luci già accettate per costruire un profilo credibile.",
+            )
+        return (
+            False,
+            "Template unavailable: accepted lighting routines are required to build a credible source profile.",
+        )
+
+    def _admin_authored_template_availability_notes(self) -> str:
+        registry = self._learning_plugin_registry()
+        if registry is None:
+            return ""
+        lines: list[str] = []
+        for template in registry.admin_authored_templates(implemented_only=True):
+            available, reason = self._admin_authored_template_availability(template.template_id)
+            if not available and reason:
+                lines.append(f"- {template.title}: {reason}")
+        return "\n".join(lines)
 
     def _learning_plugin_registry(self) -> Any | None:
         coordinator = self._get_coordinator()
@@ -799,6 +960,15 @@ class _ReactionsStepsMixin:
         return create_builtin_learning_plugin_registry(
             enabled_families=enabled_families or None
         )
+
+    @staticmethod
+    def _coerce_optional_int(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _admin_authored_lighting_schedule_schema(
         self, defaults: dict[str, Any] | None = None
@@ -820,6 +990,46 @@ class _ReactionsStepsMixin:
                     vol.Optional("color_temp_kelvin", default=2850): vol.All(
                         vol.Coerce(int), vol.Range(min=1500, max=9000)
                     ),
+                }
+            ),
+            defaults,
+        )
+
+    def _admin_authored_security_presence_simulation_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        aggressiveness = (
+            {"low": "Bassa", "medium": "Media", "high": "Alta"}
+            if self._flow_language().startswith("it")
+            else {"low": "Low", "medium": "Medium", "high": "High"}
+        )
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("enabled", default=bool(defaults.get("enabled", True))): bool,
+                    vol.Optional(
+                        "allowed_rooms",
+                        default=defaults.get("allowed_rooms", []),
+                    ): cv.multi_select(room_options),
+                    vol.Optional("allowed_entities"): _entity_selector(["light"], multiple=True),
+                    vol.Required(
+                        "requires_dark_outside",
+                        default=bool(defaults.get("requires_dark_outside", True)),
+                    ): bool,
+                    vol.Required(
+                        "simulation_aggressiveness",
+                        default=str(defaults.get("simulation_aggressiveness", "medium") or "medium"),
+                    ): vol.In(aggressiveness),
+                    vol.Optional("min_jitter_override_min", default=defaults.get("min_jitter_override_min")): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional("max_jitter_override_min", default=defaults.get("max_jitter_override_min")): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional("max_events_per_evening_override", default=defaults.get("max_events_per_evening_override")): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional("latest_end_time_override", default=str(defaults.get("latest_end_time_override", "") or "")): str,
+                    vol.Required(
+                        "skip_if_presence_detected",
+                        default=bool(defaults.get("skip_if_presence_detected", True)),
+                    ): bool,
                 }
             ),
             defaults,
@@ -1081,6 +1291,52 @@ class _ReactionsStepsMixin:
                 "entity_steps": entity_steps,
                 "plugin_family": "composite_room_assist",
                 "admin_authored_template_id": template_id,
+            },
+        )
+
+    def _build_admin_authored_security_presence_simulation_proposal(
+        self,
+        *,
+        enabled: bool,
+        allowed_rooms: list[str],
+        allowed_entities: list[str],
+        requires_dark_outside: bool,
+        simulation_aggressiveness: str,
+        min_jitter_override_min: int | None,
+        max_jitter_override_min: int | None,
+        max_events_per_evening_override: int | None,
+        latest_end_time_override: str | None,
+        skip_if_presence_detected: bool,
+    ) -> ReactionProposal:
+        template_id = "security.vacation_presence_simulation.basic"
+        identity_key = "vacation_presence_simulation|scope=home"
+        description = (
+            "Vacation presence simulation using learned lighting routines as source profile"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredSecurityPresenceSimulationTemplate",
+            reaction_type="vacation_presence_simulation",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_class": "VacationPresenceSimulationReaction",
+                "enabled": enabled,
+                "allowed_rooms": list(allowed_rooms),
+                "allowed_entities": list(allowed_entities),
+                "requires_dark_outside": requires_dark_outside,
+                "simulation_aggressiveness": simulation_aggressiveness,
+                "min_jitter_override_min": min_jitter_override_min,
+                "max_jitter_override_min": max_jitter_override_min,
+                "max_events_per_evening_override": max_events_per_evening_override,
+                "latest_end_time_override": latest_end_time_override,
+                "skip_if_presence_detected": skip_if_presence_detected,
+                "plugin_family": "security_presence_simulation",
+                "admin_authored_template_id": template_id,
+                "dynamic_policy": True,
+                "source_profile_kind": "accepted_lighting_reactions",
             },
         )
 

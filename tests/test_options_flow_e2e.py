@@ -983,6 +983,99 @@ async def test_admin_authored_create_lists_supported_templates():
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_create_marks_security_presence_simulation_unavailable_without_lighting_source():
+    flow = _flow({"rooms": [{"room_id": "living", "display_name": "Living", "area_id": "living"}]})
+
+    result = await flow.async_step_admin_authored_create()
+
+    options = result["data_schema"].schema["template_id"].container
+    assert "security.vacation_presence_simulation.basic" in options
+    assert "non disponibile" in options["security.vacation_presence_simulation.basic"].lower()
+    assert "routine luci già accettate" in result["description_placeholders"]["availability_notes"].lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_security_presence_simulation_template_unavailable_returns_reason():
+    flow = _flow({"rooms": [{"room_id": "living", "display_name": "Living", "area_id": "living"}]})
+
+    result = await flow.async_step_admin_authored_create(
+        {"template_id": "security.vacation_presence_simulation.basic"}
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_create"
+    assert result["errors"] == {"base": "template_unavailable"}
+    assert "profilo credibile" in result["description_placeholders"]["availability_notes"].lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_security_presence_simulation_creates_pending_proposal_when_lighting_source_exists():
+    flow = _flow(
+        {
+            "rooms": [{"room_id": "living", "display_name": "Living", "area_id": "living"}],
+            "reactions": {
+                "configured": {
+                    "light-src-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                    }
+                }
+            },
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_security_presence_simulation(
+        {
+            "enabled": True,
+            "allowed_rooms": {"living": True},
+            "allowed_entities": ["light.living_main"],
+            "requires_dark_outside": True,
+            "simulation_aggressiveness": "medium",
+            "min_jitter_override_min": 5,
+            "max_jitter_override_min": 20,
+            "max_events_per_evening_override": 3,
+            "latest_end_time_override": "23:30",
+            "skip_if_presence_detected": True,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    created = pending[0]
+    assert created.origin == "admin_authored"
+    assert created.reaction_type == "vacation_presence_simulation"
+    assert created.identity_key == "vacation_presence_simulation|scope=home"
+    assert created.suggested_reaction_config["reaction_class"] == "VacationPresenceSimulationReaction"
+    assert created.suggested_reaction_config["admin_authored_template_id"] == "security.vacation_presence_simulation.basic"
+    assert created.suggested_reaction_config["dynamic_policy"] is True
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_opens_review():
     flow = _flow(
         {

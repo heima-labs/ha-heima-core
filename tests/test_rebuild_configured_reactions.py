@@ -91,6 +91,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "HeatingEcoReaction",
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
+        "VacationPresenceSimulationReaction",
     }
     assert registry.builder_for("RoomSignalAssistReaction") is not None
     assert registry.builder_for("MissingReaction") is None
@@ -106,17 +107,22 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "HeatingEcoReaction",
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
+        "VacationPresenceSimulationReaction",
     ]
     assert descriptors[-1].supported_config_contracts == (
-        "room_darkness_lighting_assist",
+        "vacation_presence_simulation",
     )
     assert descriptors[-1].supports_normalizer is False
     assert descriptors[-2].supported_config_contracts == (
+        "room_darkness_lighting_assist",
+    )
+    assert descriptors[-2].supports_normalizer is False
+    assert descriptors[-3].supported_config_contracts == (
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
     )
-    assert descriptors[-2].supports_normalizer is True
+    assert descriptors[-3].supports_normalizer is True
 
 
 def test_presence_reaction_built_and_registered():

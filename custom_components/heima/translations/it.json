@@ -341,9 +341,26 @@
       },
       "admin_authored_create": {
         "title": "Crea automazione",
-        "description": "Seleziona un template di automazione predefinito. Heima creerà una proposta admin-authored dentro il normale flusso di revisione.",
+        "description": "Seleziona un template di automazione predefinito. Heima creerà una proposta admin-authored dentro il normale flusso di revisione.\n{availability_notes}",
         "data": {
           "template_id": "Template"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_security_presence_simulation": {
+        "title": "Nuova simulazione presenza vacation",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "enabled": "Abilitata",
+          "allowed_rooms": "Stanze consentite",
+          "allowed_entities": "Entità consentite",
+          "requires_dark_outside": "Richiede buio esterno",
+          "simulation_aggressiveness": "Aggressività simulazione",
+          "min_jitter_override_min": "Jitter minimo override (min)",
+          "max_jitter_override_min": "Jitter massimo override (min)",
+          "max_events_per_evening_override": "Massimo eventi per sera (override)",
+          "latest_end_time_override": "Fine massima override (HH:MM)",
+          "skip_if_presence_detected": "Blocca se rilevata presenza"
         },
         "submit": "OK"
       },
@@ -462,6 +479,7 @@
     "error": {
       "required": "Obbligatorio",
       "duplicate": "Gia esistente",
+      "template_unavailable": "Template non disponibile",
       "invalid_required": "Il numero richiesto deve essere minore o uguale alle sorgenti",
       "reserved_prefix": "Il valore non puo iniziare con 'heima_'",
       "invalid_time_zone": "Fuso orario non valido",

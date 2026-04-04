@@ -17,6 +17,7 @@ def test_builtin_learning_pattern_plugins_exposes_default_learning_plugins():
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
+        "SecurityPresenceSimulationAnalyzer",
     ]
 
 
@@ -28,20 +29,22 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.security_presence_simulation",
     ]
     assert [d.plugin_family for d in descriptors] == [
         "presence",
         "heating",
         "lighting",
         "composite_room_assist",
+        "security_presence_simulation",
     ]
-    assert descriptors[-1].proposal_types == (
+    assert descriptors[-2].proposal_types == (
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
     )
-    assert descriptors[-1].reaction_targets == (
+    assert descriptors[-2].reaction_targets == (
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
     )
@@ -56,25 +59,52 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
     )
+    assert descriptors[4].supports_admin_authored is True
+    assert tuple(item.template_id for item in descriptors[4].admin_authored_templates) == (
+        "security.vacation_presence_simulation.basic",
+    )
 
 
 def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata():
     registry = create_builtin_learning_plugin_registry()
 
-    assert len(registry) == 4
+    assert len(registry) == 5
     assert [item.descriptor.plugin_id for item in registry] == [
         "builtin.presence_preheat",
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.security_presence_simulation",
     ]
     assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
         "PresencePatternAnalyzer",
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
+        "SecurityPresenceSimulationAnalyzer",
     ]
     assert registry.diagnostics()[-1] == {
+        "plugin_id": "builtin.security_presence_simulation",
+        "analyzer_id": "SecurityPresenceSimulationAnalyzer",
+        "plugin_family": "security_presence_simulation",
+        "proposal_types": ["vacation_presence_simulation"],
+        "reaction_targets": ["VacationPresenceSimulationReaction"],
+        "has_lifecycle_hooks": False,
+        "supports_admin_authored": True,
+        "admin_authored_templates": [
+            {
+                "template_id": "security.vacation_presence_simulation.basic",
+                "reaction_type": "vacation_presence_simulation",
+                "title": "Vacation Presence Simulation",
+                "description": "Create a security-owned vacation presence simulation driven by learned lighting behavior.",
+                "config_schema_id": "vacation_presence_simulation.basic.v1",
+                "implemented": True,
+                "flow_step_id": "admin_authored_security_presence_simulation",
+            },
+        ],
+        "enabled": True,
+    }
+    assert registry.diagnostics()[-2] == {
         "plugin_id": "builtin.composite_room_assist",
         "analyzer_id": "CompositePatternCatalogAnalyzer",
         "plugin_family": "composite_room_assist",
@@ -127,7 +157,7 @@ def test_builtin_learning_plugin_registry_can_disable_families():
     enabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is True}
     disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
     assert enabled == {"presence", "lighting"}
-    assert disabled == {"heating", "composite_room_assist"}
+    assert disabled == {"heating", "composite_room_assist", "security_presence_simulation"}
 
 
 def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
@@ -136,16 +166,19 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
     assert [d.plugin_family for d in registry.admin_authored_descriptors()] == [
         "lighting",
         "composite_room_assist",
+        "security_presence_simulation",
     ]
     assert [t.template_id for t in registry.admin_authored_templates()] == [
         "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "security.vacation_presence_simulation.basic",
     ]
     assert [t.template_id for t in registry.admin_authored_templates(implemented_only=True)] == [
         "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "security.vacation_presence_simulation.basic",
     ]
     assert (
         registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
