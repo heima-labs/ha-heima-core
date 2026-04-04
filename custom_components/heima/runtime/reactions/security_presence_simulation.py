@@ -18,6 +18,8 @@ _SOURCE_EVENT_RECOVERY_WINDOW_S = 120
 _SOURCE_PROFILE_MAX_AGE_DAYS = 90
 _SOURCE_PROFILE_PREFERRED_AGE_DAYS = 45
 _MIN_EVENT_GAP_MIN = 18
+_LATE_OUTLIER_SOFT_LIMIT_MIN = 23 * 60 + 15
+_LATE_OUTLIER_HARD_LIMIT_MIN = 23 * 60 + 30
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -220,9 +222,13 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         source_candidates = self._candidate_sources_for_tonight(now_local.date())
         if not source_candidates:
             return [], "no_suitable_recent_sources"
+        if not self._has_sufficient_source_strength(source_candidates, now_local.date()):
+            return [], "insufficient_source_strength"
 
-        budget = self._event_budget()
+        budget = self._event_budget(source_candidates)
         selected = self._select_plan_sources(source_candidates, budget)
+        if not selected:
+            return [], "insufficient_source_strength"
         first_min = int(selected[0]["scheduled_min"])
         start_offset_min = self._bootstrap_dark_start_offset_min()
         anchor = dark_anchor + timedelta(minutes=start_offset_min)
@@ -263,49 +269,67 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return []
 
         selected: list[dict[str, Any]] = []
-        seen_rooms: set[str] = set()
+        remaining = list(source_candidates)
+        selected.append(remaining.pop(0))
 
-        # First pass: prefer covering distinct rooms when credible alternatives exist.
-        for item in source_candidates:
-            room_id = str(item.get("room_id") or "").strip()
-            if room_id and room_id in seen_rooms:
-                continue
-            selected.append(item)
-            if room_id:
-                seen_rooms.add(room_id)
-            if len(selected) >= budget:
-                return selected
+        while remaining and len(selected) < budget:
+            selected_rooms = {str(item.get("room_id") or "").strip() for item in selected}
+            best_index: int | None = None
+            best_key: tuple[int, int, int, float, str] | None = None
+            for index, item in enumerate(remaining):
+                room_id = str(item.get("room_id") or "").strip()
+                room_bonus = 1 if room_id and room_id not in selected_rooms else 0
+                spread_min = _closest_scheduled_gap_min(item, selected)
+                spread_bucket = min(spread_min, 240)
+                key = (
+                    room_bonus,
+                    spread_bucket,
+                    int(item.get("same_weekday") is True),
+                    float(item.get("score") or 0.0),
+                    str(item.get("reaction_id") or ""),
+                )
+                if best_key is None or key > best_key:
+                    best_key = key
+                    best_index = index
+            assert best_index is not None
+            selected.append(remaining.pop(best_index))
 
-        # Second pass: fill any remaining budget with the next best chronological candidates.
-        selected_ids = {str(item.get("reaction_id") or "") for item in selected}
-        for item in source_candidates:
-            reaction_id = str(item.get("reaction_id") or "")
-            if reaction_id in selected_ids:
-                continue
-            selected.append(item)
-            selected_ids.add(reaction_id)
-            if len(selected) >= budget:
-                break
-
-        return selected
+        return sorted(
+            selected,
+            key=lambda item: (int(item["scheduled_min"]), -float(item.get("score") or 0.0), item["reaction_id"]),
+        )
 
     def _candidate_sources_for_tonight(self, today: date) -> list[dict[str, Any]]:
         recent_profiles = self._recent_source_profiles(today)
         if not recent_profiles:
             return []
         weekday = today.weekday()
-        preferred_same_weekday = [
-            item
-            for item in recent_profiles
-            if item["weekday"] == weekday and _age_days(item, today) <= _SOURCE_PROFILE_PREFERRED_AGE_DAYS
-        ]
-        same_weekday = [item for item in recent_profiles if item["weekday"] == weekday]
-        pool = preferred_same_weekday or same_weekday or recent_profiles
-        evening = [item for item in pool if 16 * 60 <= int(item["scheduled_min"]) <= 23 * 60 + 59]
-        selected_pool = evening or pool
+        candidates: list[dict[str, Any]] = []
+        for item in recent_profiles:
+            scheduled_min = int(item["scheduled_min"])
+            if scheduled_min < 16 * 60 or scheduled_min > _LATE_OUTLIER_HARD_LIMIT_MIN:
+                continue
+            age_days = _age_days(item, today)
+            same_weekday = int(item["weekday"]) == weekday
+            late_penalty = 0.0
+            if scheduled_min > _LATE_OUTLIER_SOFT_LIMIT_MIN:
+                late_penalty = float(scheduled_min - _LATE_OUTLIER_SOFT_LIMIT_MIN) * 2.0
+            weekday_bonus = 120.0 if same_weekday else 0.0
+            recency_score = max(0.0, float(_SOURCE_PROFILE_MAX_AGE_DAYS - age_days))
+            score = weekday_bonus + recency_score - late_penalty
+            candidate = dict(item)
+            candidate["same_weekday"] = same_weekday
+            candidate["age_days"] = age_days
+            candidate["score"] = score
+            candidates.append(candidate)
+
         return sorted(
-            selected_pool,
-            key=lambda item: (int(item["scheduled_min"]), -_ts_score(item.get("updated_at")), item["reaction_id"]),
+            candidates,
+            key=lambda item: (
+                -float(item.get("score") or 0.0),
+                int(item["scheduled_min"]),
+                str(item["reaction_id"]),
+            ),
         )
 
     def _recent_source_profiles(self, today: date) -> list[dict[str, Any]]:
@@ -322,14 +346,44 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 10
         return 20
 
-    def _event_budget(self) -> int:
+    def _event_budget(self, source_candidates: list[dict[str, Any]]) -> int:
         if self._max_events_per_evening_override is not None:
-            return max(1, self._max_events_per_evening_override)
-        if self._simulation_aggressiveness == "low":
+            desired = max(1, self._max_events_per_evening_override)
+        elif self._simulation_aggressiveness == "low":
+            desired = 1
+        elif self._simulation_aggressiveness == "high":
+            desired = 3
+        else:
+            desired = 2
+
+        if not source_candidates:
+            return 0
+
+        unique_rooms = {
+            str(item.get("room_id") or "").strip()
+            for item in source_candidates
+            if str(item.get("room_id") or "").strip()
+        }
+        candidate_count = len(source_candidates)
+        if candidate_count == 1:
             return 1
-        if self._simulation_aggressiveness == "high":
-            return 3
-        return 2
+        if len(unique_rooms) >= 2:
+            return min(desired, candidate_count)
+        return min(desired, min(candidate_count, 2))
+
+    def _has_sufficient_source_strength(
+        self,
+        source_candidates: list[dict[str, Any]],
+        today: date,
+    ) -> bool:
+        if not source_candidates:
+            return False
+        if len(source_candidates) >= 2:
+            return True
+        candidate = source_candidates[0]
+        age_days = int(candidate.get("age_days") or _age_days(candidate, today))
+        same_weekday = bool(candidate.get("same_weekday") is True)
+        return same_weekday and age_days <= _SOURCE_PROFILE_PREFERRED_AGE_DAYS
 
     def _minimum_event_gap_min(self) -> int:
         return _MIN_EVENT_GAP_MIN
@@ -646,6 +700,17 @@ def _matches_allowed_entities(cfg: dict[str, Any], allowed_entities: set[str]) -
         if entity_id and entity_id in allowed_entities:
             return True
     return False
+
+
+def _closest_scheduled_gap_min(candidate: dict[str, Any], selected: list[dict[str, Any]]) -> int:
+    scheduled_min = int(candidate.get("scheduled_min") or 0)
+    if not selected:
+        return 24 * 60
+    gaps = [
+        abs(scheduled_min - int(item.get("scheduled_min") or 0))
+        for item in selected
+    ]
+    return min(gaps) if gaps else 24 * 60
 
 
 def _ts_score(value: Any) -> float:

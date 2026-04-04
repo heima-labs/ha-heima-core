@@ -216,8 +216,17 @@ For the current MVP bootstrap:
 - the source profile is derived from accepted `lighting_scene_schedule` reactions
 - the nightly plan is anchored relative to `sun.sun`
 - stale lighting reactions MUST be excluded from the usable nightly source set
+- source suitability SHOULD weight:
+  - recentness
+  - weekday compatibility
+  - plausible evening density
+  - late-night penalties for weak outliers
 - when multiple suitable rooms exist, the nightly plan SHOULD prefer room diversity before selecting
   multiple closely related events from the same room
+- when multiple suitable source reactions exist, the nightly plan SHOULD prefer a temporally spread subset
+  over tightly clustered near-duplicates
+- if the usable nightly source set is too small or too weak after these suitability checks, the runtime
+  SHOULD skip the simulation rather than inventing a low-credibility evening
 - the nightly plan SHOULD apply bounded deterministic jitter rather than pure random runtime drift
 - the nightly plan MUST enforce a minimum gap between consecutive simulated events
 - diagnostics SHOULD expose which source reactions are considered recent enough for tonight
