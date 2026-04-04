@@ -1370,7 +1370,11 @@ class _ReactionsStepsMixin:
     def _proposal_requires_action_completion(proposal: ReactionProposal) -> bool:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         reaction_class = str(cfg.get("reaction_class") or "")
-        if reaction_class in {"LightingScheduleReaction", "RoomLightingAssistReaction"}:
+        if reaction_class in {
+            "LightingScheduleReaction",
+            "RoomLightingAssistReaction",
+            "VacationPresenceSimulationReaction",
+        }:
             return False
         steps = cfg.get("steps")
         if isinstance(steps, list) and steps:

@@ -450,10 +450,25 @@ class HeimaOptionsFlowHandler(
             options[OPT_HEATING] = self._normalize_heating_payload(options.get(OPT_HEATING, {}))
 
         if OPT_REACTIONS in options:
-            muted = self._normalize_multi_value(
-                options.get(OPT_REACTIONS, {}).get("muted", [])
-            )
-            options[OPT_REACTIONS] = {"muted": muted}
+            reactions = dict(options.get(OPT_REACTIONS, {}) or {})
+            muted = self._normalize_multi_value(reactions.get("muted", []))
+            configured_raw = reactions.get("configured", {})
+            labels_raw = reactions.get("labels", {})
+            configured = {
+                str(reaction_id): dict(cfg)
+                for reaction_id, cfg in dict(configured_raw or {}).items()
+                if str(reaction_id).strip() and isinstance(cfg, dict)
+            }
+            labels = {
+                str(reaction_id): str(label)
+                for reaction_id, label in dict(labels_raw or {}).items()
+                if str(reaction_id).strip() and str(label).strip()
+            }
+            options[OPT_REACTIONS] = {
+                "muted": muted,
+                "configured": configured,
+                "labels": labels,
+            }
 
         self.options = options
         return options

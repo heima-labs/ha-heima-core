@@ -134,6 +134,40 @@ async def test_learning_flow_persists_enabled_plugin_families():
 
 
 @pytest.mark.asyncio
+async def test_save_preserves_configured_reactions_and_labels():
+    flow = _flow(
+        {
+            "reactions": {
+                "muted": ["lighting"],
+                "configured": {
+                    "reaction-1": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                    }
+                },
+                "labels": {"reaction-1": "Presence simulation"},
+            }
+        }
+    )
+
+    result = await flow.async_step_save()
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["reactions"] == {
+        "muted": ["lighting"],
+        "configured": {
+            "reaction-1": {
+                "reaction_class": "VacationPresenceSimulationReaction",
+                "reaction_type": "vacation_presence_simulation",
+                "enabled": True,
+            }
+        },
+        "labels": {"reaction-1": "Presence simulation"},
+    }
+
+
+@pytest.mark.asyncio
 async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
     flow = _flow(
         {
@@ -1464,6 +1498,46 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
     assert stored["origin"] == "admin_authored"
     assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
     assert len(stored["entity_steps"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_security_presence_simulation_accept_skips_action_configuration():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-security-presence-admin",
+        analyzer_id="AdminAuthoredSecurityPresenceSimulationTemplate",
+        reaction_type="vacation_presence_simulation",
+        description="Vacation presence simulation using learned lighting routines as source profile",
+        confidence=1.0,
+        origin="admin_authored",
+        suggested_reaction_config={
+            "reaction_class": "VacationPresenceSimulationReaction",
+            "enabled": True,
+            "allowed_rooms": ["living"],
+            "requires_dark_outside": False,
+            "simulation_aggressiveness": "medium",
+            "skip_if_presence_detected": True,
+            "dynamic_policy": True,
+            "source_profile_kind": "accepted_lighting_reactions",
+            "admin_authored_template_id": "security.vacation_presence_simulation.basic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["proposal-security-presence-admin"]
+    assert stored["origin"] == "admin_authored"
+    assert stored["source_template_id"] == "security.vacation_presence_simulation.basic"
+    assert stored["reaction_class"] == "VacationPresenceSimulationReaction"
+    assert stored["dynamic_policy"] is True
 
 
 @pytest.mark.asyncio
