@@ -1,6 +1,6 @@
 # Heima — Security Presence Simulation Spec
 
-**Status:** Draft backlog — not implemented
+**Status:** Draft / partially implemented MVP
 **Last Updated:** 2026-04-04
 
 ## Purpose
@@ -211,6 +211,13 @@ The preferred interpretation is:
 - the reaction policy is persistent
 - the nightly execution profile is dynamic and continually refreshed from suitable recent evidence
 
+For the current MVP bootstrap:
+
+- the source profile is derived from accepted `lighting_scene_schedule` reactions
+- the nightly plan is anchored relative to `sun.sun`
+- stale lighting reactions MUST be excluded from the usable nightly source set
+- diagnostics SHOULD expose which source reactions are considered recent enough for tonight
+
 ### 4.3 Output Shape
 
 The learned output should not be a literal history replay.
@@ -411,6 +418,8 @@ Suggested diagnostics:
 - current block reason
 - next planned activation
 - last executed simulated activation
+- source reactions considered usable tonight
+- derived tonight-plan preview
 - reasons for skipping:
   - daylight
   - occupancy detected

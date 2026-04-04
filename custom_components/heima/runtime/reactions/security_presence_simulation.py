@@ -14,6 +14,8 @@ from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
 
 _SOURCE_EVENT_RECOVERY_WINDOW_S = 120
+_SOURCE_PROFILE_MAX_AGE_DAYS = 90
+_SOURCE_PROFILE_PREFERRED_AGE_DAYS = 45
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -155,6 +157,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         now_local = dt_util.now()
         tonight_plan, _ = self._derive_tonight_plan(now_local)
         next_event = self._next_pending_event(tonight_plan, now_local)
+        recent_profiles = self._recent_source_profiles(now_local.date())
         return {
             "enabled": self._enabled,
             "allowed_rooms": list(self._allowed_rooms),
@@ -171,8 +174,19 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             "source_reaction_count": len(self._source_reaction_ids),
             "source_reaction_ids": list(self._source_reaction_ids),
             "source_rooms": list(self._source_rooms),
+            "recent_source_reaction_count": len(recent_profiles),
+            "recent_source_reaction_ids": [item["reaction_id"] for item in recent_profiles],
             "active_tonight": bool(self._enabled and tonight_plan),
             "tonight_plan_count": len(tonight_plan),
+            "tonight_plan_preview": [
+                {
+                    "source_reaction_id": item["source_reaction_id"],
+                    "room_id": item["room_id"],
+                    "due_local": item["due_local"].isoformat(),
+                    "entity_steps": len(item["entity_steps"]),
+                }
+                for item in tonight_plan
+            ],
             "next_planned_activation": next_event["due_local"].isoformat() if next_event else None,
             "last_simulated_activation": self._last_simulated_activation,
             "fire_count": self._fire_count,
@@ -232,15 +246,30 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         return plan, ""
 
     def _candidate_sources_for_tonight(self, today: date) -> list[dict[str, Any]]:
+        recent_profiles = self._recent_source_profiles(today)
+        if not recent_profiles:
+            return []
         weekday = today.weekday()
-        same_weekday = [item for item in self._source_profiles if item["weekday"] == weekday]
-        pool = same_weekday or list(self._source_profiles)
+        preferred_same_weekday = [
+            item
+            for item in recent_profiles
+            if item["weekday"] == weekday and _age_days(item, today) <= _SOURCE_PROFILE_PREFERRED_AGE_DAYS
+        ]
+        same_weekday = [item for item in recent_profiles if item["weekday"] == weekday]
+        pool = preferred_same_weekday or same_weekday or recent_profiles
         evening = [item for item in pool if 16 * 60 <= int(item["scheduled_min"]) <= 23 * 60 + 59]
         selected_pool = evening or pool
         return sorted(
             selected_pool,
             key=lambda item: (int(item["scheduled_min"]), -_ts_score(item.get("updated_at")), item["reaction_id"]),
         )
+
+    def _recent_source_profiles(self, today: date) -> list[dict[str, Any]]:
+        return [
+            item
+            for item in self._source_profiles
+            if _age_days(item, today) <= _SOURCE_PROFILE_MAX_AGE_DAYS
+        ]
 
     def _bootstrap_dark_start_offset_min(self) -> int:
         if self._simulation_aggressiveness == "low":
@@ -558,3 +587,12 @@ def _parse_dt_local(value: Any) -> datetime | None:
     if parsed is None:
         return None
     return dt_util.as_local(parsed)
+
+
+def _age_days(profile: dict[str, Any], today: date) -> int:
+    updated = _parse_dt_local(profile.get("updated_at"))
+    created = _parse_dt_local(profile.get("created_at"))
+    reference = updated or created
+    if reference is None:
+        return _SOURCE_PROFILE_MAX_AGE_DAYS + 1
+    return max(0, (today - reference.date()).days)
