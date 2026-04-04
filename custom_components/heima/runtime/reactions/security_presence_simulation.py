@@ -222,7 +222,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return [], "no_suitable_recent_sources"
 
         budget = self._event_budget()
-        selected = source_candidates[:budget]
+        selected = self._select_plan_sources(source_candidates, budget)
         first_min = int(selected[0]["scheduled_min"])
         start_offset_min = self._bootstrap_dark_start_offset_min()
         anchor = dark_anchor + timedelta(minutes=start_offset_min)
@@ -253,6 +253,41 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         if not plan:
             return [], "plan_empty_after_guardrails"
         return plan, ""
+
+    def _select_plan_sources(
+        self,
+        source_candidates: list[dict[str, Any]],
+        budget: int,
+    ) -> list[dict[str, Any]]:
+        if budget <= 0 or not source_candidates:
+            return []
+
+        selected: list[dict[str, Any]] = []
+        seen_rooms: set[str] = set()
+
+        # First pass: prefer covering distinct rooms when credible alternatives exist.
+        for item in source_candidates:
+            room_id = str(item.get("room_id") or "").strip()
+            if room_id and room_id in seen_rooms:
+                continue
+            selected.append(item)
+            if room_id:
+                seen_rooms.add(room_id)
+            if len(selected) >= budget:
+                return selected
+
+        # Second pass: fill any remaining budget with the next best chronological candidates.
+        selected_ids = {str(item.get("reaction_id") or "") for item in selected}
+        for item in source_candidates:
+            reaction_id = str(item.get("reaction_id") or "")
+            if reaction_id in selected_ids:
+                continue
+            selected.append(item)
+            selected_ids.add(reaction_id)
+            if len(selected) >= budget:
+                break
+
+        return selected
 
     def _candidate_sources_for_tonight(self, today: date) -> list[dict[str, Any]]:
         recent_profiles = self._recent_source_profiles(today)
