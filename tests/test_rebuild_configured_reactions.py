@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -15,10 +17,14 @@ from custom_components.heima.runtime.reactions import (
 from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
 from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
+from custom_components.heima.runtime.reactions.security_presence_simulation import (
+    VacationPresenceSimulationReaction,
+)
 from custom_components.heima.runtime.reactions.signal_assist import (
     RoomSignalAssistReaction,
     normalize_room_signal_assist_config,
 )
+from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +63,12 @@ def _presence_cfg(
         "min_arrivals": kwargs.get("min_arrivals", 5),
         "steps": kwargs.get("steps", []),
     }
+
+
+class _FakeState:
+    def __init__(self, state: str, attributes: dict | None = None) -> None:
+        self.state = state
+        self.attributes = dict(attributes or {})
 
 
 def _heating_options(configured: dict[str, dict]) -> dict:
@@ -258,6 +270,217 @@ def test_heating_preference_reaction_built_and_registered():
     reaction = engine._reactions[0]
     assert isinstance(reaction, HeatingPreferenceReaction)
     assert reaction.reaction_id == "hp1"
+
+
+def test_vacation_presence_simulation_reaction_bootstraps_source_profile_from_recent_lighting_reactions():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "allowed_rooms": ["living"],
+                    "allowed_entities": ["light.living_main"],
+                },
+                "light-old": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 0,
+                    "scheduled_min": 1140,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-30T09:00:00+00:00",
+                },
+                "light-new": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 1,
+                    "scheduled_min": 1200,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-30T11:00:00+00:00",
+                },
+                "light-other-room": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "kitchen",
+                    "weekday": 1,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-30T12:00:00+00:00",
+                },
+            }
+        }
+    })
+
+    engine._rebuild_configured_reactions()
+
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    assert isinstance(reaction, VacationPresenceSimulationReaction)
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["source_profile_ready"] is True
+    assert diagnostics["source_reaction_ids"] == ["light-new", "light-old"]
+    assert diagnostics["source_rooms"] == ["living"]
+    assert diagnostics["blocked_reason"] == "waiting_for_snapshot"
+
+
+def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_until_plan_exists():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "requires_dark_outside": True,
+                    "skip_if_presence_detected": True,
+                },
+                "light-src": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 1,
+                    "scheduled_min": 1200,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                },
+            }
+        }
+    })
+    engine._rebuild_configured_reactions()
+
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    current = DecisionSnapshot(
+        snapshot_id="s1",
+        ts="2026-04-04T19:00:00+00:00",
+        house_state="vacation",
+        anyone_home=False,
+        people_count=0,
+        occupied_rooms=[],
+        lighting_intents={},
+        security_state="armed_away",
+    )
+
+    assert reaction.evaluate([current]) == []
+    assert reaction.diagnostics()["blocked_reason"] == "sun_unavailable"
+
+
+def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_job():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "skip_if_presence_detected": True,
+                },
+                "light-src": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        jobs = reaction.scheduled_jobs("entry-1")
+
+    assert len(jobs) == 1
+    job = next(iter(jobs.values()))
+    assert job.owner == "VacationPresenceSimulationReaction"
+    assert "security_presence_simulation:security-presence:" in job.job_id
+
+
+def test_vacation_presence_simulation_reaction_fires_derived_plan_step_when_due():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "skip_if_presence_detected": True,
+                },
+                "light-src": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    current = DecisionSnapshot(
+        snapshot_id="s1",
+        ts="2026-04-04T19:10:10+00:00",
+        house_state="vacation",
+        anyone_home=False,
+        people_count=0,
+        occupied_rooms=[],
+        lighting_intents={},
+        security_state="armed_away",
+    )
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 10, 10, tzinfo=timezone.utc),
+    ):
+        steps = reaction.evaluate([current])
+
+    assert len(steps) == 1
+    step = steps[0]
+    assert step.action == "light.turn_on"
+    assert step.params["entity_id"] == "light.living_main"
+    assert step.reason == "security_presence_simulation:security-presence:light-src"
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["last_simulated_activation"] is not None
+    assert diagnostics["fire_count"] == 1
 
 
 def test_heating_eco_reaction_built_and_registered():
