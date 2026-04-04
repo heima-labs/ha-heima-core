@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -16,6 +17,7 @@ from .base import HeimaReaction
 _SOURCE_EVENT_RECOVERY_WINDOW_S = 120
 _SOURCE_PROFILE_MAX_AGE_DAYS = 90
 _SOURCE_PROFILE_PREFERRED_AGE_DAYS = 45
+_MIN_EVENT_GAP_MIN = 18
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -183,6 +185,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     "source_reaction_id": item["source_reaction_id"],
                     "room_id": item["room_id"],
                     "due_local": item["due_local"].isoformat(),
+                    "jitter_min": item.get("jitter_min", 0),
                     "entity_steps": len(item["entity_steps"]),
                 }
                 for item in tonight_plan
@@ -228,7 +231,12 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         plan: list[dict[str, Any]] = []
         for index, profile in enumerate(selected):
             delta_min = int(profile["scheduled_min"]) - first_min
-            due_local = anchor + timedelta(minutes=delta_min)
+            jitter_min = self._event_jitter_min(now_local.date(), index, profile["reaction_id"])
+            due_local = anchor + timedelta(minutes=delta_min + jitter_min)
+            if plan:
+                min_due = plan[-1]["due_local"] + timedelta(minutes=self._minimum_event_gap_min())
+                if due_local < min_due:
+                    due_local = min_due
             if latest_end is not None and due_local > latest_end:
                 continue
             event_id = f"{now_local.date().isoformat()}:{index}:{profile['reaction_id']}"
@@ -239,6 +247,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     "room_id": profile["room_id"],
                     "entity_steps": list(profile["entity_steps"]),
                     "due_local": due_local,
+                    "jitter_min": jitter_min,
                 }
             )
         if not plan:
@@ -286,6 +295,41 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         if self._simulation_aggressiveness == "high":
             return 3
         return 2
+
+    def _minimum_event_gap_min(self) -> int:
+        return _MIN_EVENT_GAP_MIN
+
+    def _event_jitter_min(self, today: date, index: int, source_reaction_id: str) -> int:
+        if index == 0:
+            return 0
+        min_jitter, max_jitter = self._jitter_bounds_min()
+        if max_jitter <= 0:
+            return 0
+        if min_jitter > max_jitter:
+            min_jitter, max_jitter = max_jitter, min_jitter
+        spread = max_jitter - min_jitter
+        if spread <= 0:
+            magnitude = max_jitter
+        else:
+            seed = f"{today.isoformat()}|{self._reaction_id}|{source_reaction_id}|{index}"
+            digest = hashlib.sha256(seed.encode("utf-8")).digest()
+            magnitude = min_jitter + (int.from_bytes(digest[:2], "big") % (spread + 1))
+
+        sign_seed = f"{today.isoformat()}|sign|{self._reaction_id}|{source_reaction_id}|{index}"
+        sign_digest = hashlib.sha256(sign_seed.encode("utf-8")).digest()
+        sign = 1 if sign_digest[0] % 2 == 0 else -1
+        return sign * magnitude
+
+    def _jitter_bounds_min(self) -> tuple[int, int]:
+        min_jitter = self._min_jitter_override_min
+        max_jitter = self._max_jitter_override_min
+        if min_jitter is None or max_jitter is None:
+            if self._simulation_aggressiveness == "low":
+                return 2, 4
+            if self._simulation_aggressiveness == "high":
+                return 5, 12
+            return 3, 8
+        return max(0, min_jitter), max(0, max_jitter)
 
     def _latest_end_local(self, today: date) -> datetime | None:
         if not self._latest_end_time_override:

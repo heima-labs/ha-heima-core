@@ -602,6 +602,71 @@ def test_vacation_presence_simulation_reaction_exposes_tonight_plan_preview():
     assert diagnostics["tonight_plan_count"] == 2
     assert len(diagnostics["tonight_plan_preview"]) == 2
     assert diagnostics["tonight_plan_preview"][0]["source_reaction_id"] == "light-src-1"
+    assert diagnostics["tonight_plan_preview"][0]["jitter_min"] == 0
+    assert isinstance(diagnostics["tonight_plan_preview"][1]["jitter_min"], int)
+
+
+def test_vacation_presence_simulation_reaction_enforces_min_gap_between_close_events():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "high",
+                    "min_jitter_override_min": 0,
+                    "max_jitter_override_min": 0,
+                    "skip_if_presence_detected": True,
+                },
+                "light-src-1": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+                "light-src-2": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "kitchen",
+                    "weekday": 5,
+                    "scheduled_min": 1215,
+                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T09:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        diagnostics = reaction.diagnostics()
+
+    preview = diagnostics["tonight_plan_preview"]
+    assert len(preview) == 2
+    first_due = datetime.fromisoformat(preview[0]["due_local"])
+    second_due = datetime.fromisoformat(preview[1]["due_local"])
+    assert int((second_due - first_due).total_seconds() // 60) >= 18
 
 
 def test_heating_eco_reaction_built_and_registered():

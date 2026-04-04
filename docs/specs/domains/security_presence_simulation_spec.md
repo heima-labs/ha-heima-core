@@ -216,6 +216,8 @@ For the current MVP bootstrap:
 - the source profile is derived from accepted `lighting_scene_schedule` reactions
 - the nightly plan is anchored relative to `sun.sun`
 - stale lighting reactions MUST be excluded from the usable nightly source set
+- the nightly plan SHOULD apply bounded deterministic jitter rather than pure random runtime drift
+- the nightly plan MUST enforce a minimum gap between consecutive simulated events
 - diagnostics SHOULD expose which source reactions are considered recent enough for tonight
 
 ### 4.3 Output Shape
