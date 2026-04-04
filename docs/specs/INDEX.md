@@ -37,6 +37,7 @@ Related practical guides live outside this tree:
 - `domains/house_state_spec.md` — current house-state candidate/hysteresis contract
 - `domains/calendar_domain_spec.md` — current calendar domain contract and house-state integration
 - `domains/heating_spec.md` — heating domain (implemented/partial)
+- `domains/security_presence_simulation_spec.md` — security-owned occupancy simulation capability (draft)
 - `domains/watering_spec.md` — watering domain (planned)
 
 ## Learning
