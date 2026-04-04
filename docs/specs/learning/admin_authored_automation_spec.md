@@ -53,6 +53,9 @@ Current planning clarification:
   composite proposal types already present)
 - that work SHOULD prioritize proposal quality, identity, and tuning readiness before introducing
   additional admin-authored templates
+- for future dynamic-policy families such as security-owned vacation presence simulation, an
+  admin-authored template MAY depend on sufficient learned evidence before it is considered
+  available
 
 ## 3. Admin-Authored Flow
 
@@ -100,6 +103,18 @@ Current v1 implementation status:
 - numeric modes are implemented for the generic room-signal assist path
 - binary transition modes `switch_on`, `switch_off`, and `state_change` are also implemented for
   the generic room-signal assist runtime contract
+
+Normative availability clarification:
+
+- an admin-authored template does not have to be universally available just because the plugin
+  family declares it
+- a template MAY declare runtime or learned-evidence prerequisites
+- if prerequisites are not met, the options flow SHOULD:
+  - hide the template,
+  - disable it,
+  - or show it as unavailable with an explicit reason
+- it MUST NOT silently instantiate a poor substitute configuration when the declared prerequisites
+  are missing
 
 ## 4. Lifecycle
 

@@ -224,6 +224,25 @@ It should instead derive a bounded simulation profile:
 The output should be rich enough that the runtime can operate even when the
 admin provides little or no detailed timing configuration.
 
+### 4.4 Minimum Evidence Requirement
+
+This family is only valid when the learned source profile is strong enough to
+produce a credible simulation.
+
+Normative rule:
+
+- if suitable learned evidence is too weak, the capability MUST NOT be offered
+  as a normally available automation choice
+- the system SHOULD surface an explicit reason instead of silently degrading to
+  a poor static schedule
+
+Examples of insufficient evidence:
+
+- no accepted recent lighting reactions in suitable rooms
+- accepted lighting reactions exist, but are too old
+- accepted lighting reactions exist, but do not yield credible darkness-relative timing
+- the usable room/entity set is too small to produce plausible occupancy simulation
+
 ---
 
 ## 5. Proposal Model
@@ -508,6 +527,15 @@ Important rule:
 - all fields above are optional overrides except `enabled`
 - omitted fields should resolve to learned values when available
 
+Availability rule:
+
+- this template SHOULD be hidden, disabled, or marked unavailable when the
+  learned source profile does not meet the minimum evidence requirement
+- the admin-facing surface MUST provide a reason such as:
+  - insufficient recent learned lighting routines
+  - no suitable rooms/entities
+  - learned profile not credible enough for vacation simulation
+
 Exit criteria:
 - the admin can enable the policy from the config flow without specifying clock schedules
 
@@ -562,6 +590,9 @@ Tasks:
 - enforce event count cap
 - enforce end boundary
 4. stop or suppress activity immediately when occupancy reappears
+5. if the usable learned profile falls below the minimum evidence threshold:
+- do not derive a nightly plan
+- expose a block/unavailable reason explicitly
 
 Exit criteria:
 - the simulation can run for a vacation evening without looking purely static or unsafe
@@ -577,6 +608,7 @@ Tasks:
 2. diagnostics:
 - active tonight
 - blocked reason
+- unavailable reason
 - next planned activation
 - last simulated activation
 - events executed tonight
@@ -605,6 +637,7 @@ Tasks:
 - active in vacation
 - blocked if presence appears
 - blocked if dark requirement fails
+- unavailable when learned evidence is insufficient
 - diagnostics visibility
 
 Exit criteria:
