@@ -6,7 +6,8 @@
 ## Purpose
 
 Define a future Heima capability that simulates home occupancy during `vacation`
-by driving selected lights in a plausible, bounded way.
+by replaying, in a bounded and security-oriented way, historically learned
+lighting behavior associated with real occupancy.
 
 This capability belongs semantically to the `security` domain even if its first
 actuation surface is primarily lighting.
@@ -22,6 +23,7 @@ The intent is **not**:
 - comfort lighting
 - room assist
 - routine replay for convenience
+- user-authored schedules with fixed clock times
 
 ---
 
@@ -50,6 +52,12 @@ The capability should not be modeled as a plain lighting routine because:
 - the goal is security-oriented
 - the active condition is contextual (`vacation`, no real occupancy)
 - the runtime semantics and guardrails are different from normal lighting automations
+
+It should also not be modeled as a user-authored clock schedule because:
+
+- Heima already learns when and how lights are used
+- the point of the feature is to reuse that learned behavior
+- static times would be less plausible across seasons and daylight conditions
 
 ---
 
@@ -99,11 +107,14 @@ an exact historical schedule.
 
 Required properties:
 
-- bounded time windows
+- learned timing baseline
 - bounded number of activations
 - bounded room/entity set
 - bounded randomness
 - easy manual disable
+
+The primary source of timing, room choice and activation density should be
+learned historical behavior, not fixed configured hours.
 
 ### 3.3 Behavioral Style
 
@@ -120,6 +131,20 @@ The runtime should avoid:
 - overly random chaotic switching
 - exact copies of past evenings
 - daytime actions without explicit justification
+
+### 3.4 Authored Policy, Learned Execution
+
+The recommended model for this family is:
+
+- **admin-authored policy**
+- **learned execution source**
+
+Meaning:
+
+- the admin enables and constrains the capability
+- Heima decides concrete timing and actuation using learned occupancy-like lighting patterns
+
+This family should therefore not be treated as a classic authored schedule.
 
 ---
 
@@ -154,10 +179,13 @@ The analyzer should exclude or down-rank:
 The learned output should not be a literal history replay.
 It should instead derive a bounded simulation profile:
 
-- typical time window
+- typical darkness-relative or seasonally plausible activation periods
 - candidate rooms / entities
 - event count budget
 - plausible duration/jitter bounds
+
+The output should be rich enough that the runtime can operate even when the
+admin provides little or no detailed timing configuration.
 
 ---
 
@@ -178,7 +206,7 @@ Proposal wording should make the intent explicit, for example:
 
 The summary should expose at least:
 
-- active window
+- learned activity profile
 - rooms involved
 - variability/jitter policy
 - event budget or density
@@ -191,13 +219,14 @@ The logical slot should instead be security-oriented, roughly by:
 
 - simulation family
 - home scope
-- possibly evening window class
+- possibly learned simulation profile class
 
 Small changes in:
 
 - jitter
 - room subset size
 - event budget
+- learned activation distribution
 
 should normally be treated as bounded tuning, not as completely new identity.
 
@@ -215,14 +244,14 @@ The reaction should encapsulate:
 Recommended configuration surface:
 
 - `enabled`
-- `active_window_start`
-- `active_window_end`
-- `rooms`
-- `entities`
+- `allowed_rooms`
+- `allowed_entities`
 - `requires_dark_outside`
-- `min_jitter_min`
-- `max_jitter_min`
-- `max_events_per_evening`
+- `simulation_aggressiveness`
+- `min_jitter_override_min`
+- `max_jitter_override_min`
+- `max_events_per_evening_override`
+- `latest_end_time_override`
 - `skip_if_presence_detected`
 
 Optional later additions:
@@ -230,6 +259,33 @@ Optional later additions:
 - room weighting
 - weekday/weekend distinctions
 - cover/media participation
+
+### 6.1 Configuration Precedence
+
+For this family, configuration fields should behave as **overrides**, not as the
+primary source of behavior.
+
+Required precedence:
+
+1. explicit admin-configured override
+2. learned value
+3. minimal static safety fallback, only if learned evidence is insufficient
+
+Normative rule:
+
+- omitted configuration fields MUST resolve to learned values when available
+- static defaults MUST NOT be the normal source of behavior for omitted fields
+
+Examples:
+
+- if `allowed_rooms` is omitted:
+  - use learned credible rooms
+- if `max_events_per_evening_override` is omitted:
+  - derive event density from learned behavior
+- if `latest_end_time_override` is omitted:
+  - derive a learned plausible end boundary
+
+This rule is central to the product semantics of the family.
 
 ---
 
@@ -283,10 +339,13 @@ The review should clearly state:
 
 It should show:
 
-- active window
+- learned activity profile
 - entities/rooms used
 - variability policy
 - why the system considers the pattern plausible
+
+It should avoid presenting the feature as a manually scheduled clock-based automation
+unless explicit overrides were actually configured.
 
 ### 8.2 Runtime Diagnostics
 
@@ -327,8 +386,13 @@ Goal:
 
 This MVP may start with:
 
-- admin-authored/manual configuration first
+- admin-authored policy first
 - no learned proposal yet
+
+The expected MVP shape is:
+
+- policy authored by admin
+- execution driven by already learned lighting behavior
 
 This keeps the first slice smaller while preserving the correct family boundary.
 
@@ -355,9 +419,9 @@ Recommended approach:
 
 - **semantic placement:** `security`
 - **technical packaging:** new plugin family
-- **first implementation style:** runtime-first MVP, possibly admin-authored first
+- **first implementation style:** runtime-first MVP with admin-authored policy and learned execution source
 
 This avoids two common mistakes:
 
 1. modeling it as just another lighting routine
-2. waiting for a fully learned/advanced version before creating the right domain boundary
+2. treating omitted configuration as a reason to fall back to static schedule defaults
