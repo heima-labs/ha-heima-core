@@ -2,7 +2,7 @@
 ## Phase 7: Behavior-as-Reaction
 
 **Status**: Active v1 reaction contract
-**Last Verified Against Code:** 2026-03-20
+**Last Verified Against Code:** 2026-04-04
 **Supersedes**: The `apply_filter` use case described in SPEC v1.1 (which was found redundant; see decisions).
 **Complements**: `HeimaBehavior` framework (SPEC v1.1) which remains valid for passive observability.
 
@@ -235,6 +235,83 @@ Normative boundary for v1:
 - presenter hooks are a product-layer convenience, not a separate execution model
 - they SHOULD reduce reaction-type-specific branching in the config flow
 - they do not replace the shared proposal/reaction contracts
+
+### 4.1.3 Dynamic Policy Reactions
+
+Some reaction families are best modeled not as fixed authored schedules, but as
+**persisted policy plus derived execution plan**.
+
+This spec calls those families **Dynamic Policy Reactions**.
+
+Examples of future candidates:
+- security-owned vacation presence simulation
+- bounded future heating policies that regenerate a plan from current context
+
+Normative distinction:
+
+- **static or mostly-static reaction**
+  - persisted configuration describes most runtime behavior directly
+- **dynamic policy reaction**
+  - persisted configuration describes:
+    - intent
+    - guardrails
+    - allowed scope
+    - optional overrides
+  - the concrete execution plan is regenerated from context and/or learned data
+
+#### Persisted policy vs derived plan
+
+For a Dynamic Policy Reaction, the persisted configuration MUST NOT be assumed to
+fully describe the concrete nightly or per-cycle behavior.
+
+Instead, the runtime may derive an execution plan from:
+
+- current canonical context
+- recent learned profile(s)
+- time-relative references such as darkness or scheduler deadlines
+- optional admin-authored override fields
+
+This means:
+
+- the reaction remains stable as a persisted artifact
+- the concrete plan may vary between executions without changing the reaction configuration
+
+#### Required contract
+
+If a reaction family is modeled as a Dynamic Policy Reaction:
+
+- the persisted artifact MUST remain reviewable and bounded
+- the derived execution plan MUST remain explainable
+- the runtime MUST expose diagnostics for the currently derived plan or the reason no plan was derived
+- the reaction MUST still execute through the shared constraint layer
+
+#### Configuration precedence
+
+Dynamic Policy Reactions SHOULD use the following precedence for optional fields:
+
+1. explicit configured override
+2. derived/learned value
+3. minimal static safety fallback, only when necessary
+
+Normative rule:
+
+- omitted optional fields SHOULD resolve to derived or learned values when those are available
+- static defaults SHOULD NOT be the normal source of behavior for omitted fields
+
+#### Regeneration semantics
+
+Dynamic Policy Reactions MAY regenerate their execution plan:
+
+- every evaluation cycle
+- on scheduler checkpoints
+- once per night or other bounded window
+- whenever relevant context invalidates the previous plan
+
+The exact cadence is family-specific, but the following invariants MUST hold:
+
+- regeneration must not bypass constraints or guards
+- plan changes must be attributable to visible context or learned-profile changes
+- diagnostics must make the active plan, pending plan, or block reason inspectable
 
 ### 4.2 ApplyStep.source Field
 
