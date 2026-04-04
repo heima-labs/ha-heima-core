@@ -158,6 +158,12 @@ The family should learn primarily from:
 - periods with real occupancy
 - historically plausible evening lighting behavior
 
+Normative rule:
+
+- the source profile for this family MUST NOT be built primarily from `vacation` behavior
+- `vacation` periods are considered execution-time context for the simulation, not the normal
+  baseline from which to infer credible occupancy behavior
+
 Priority sources:
 
 - first evening light-on events
@@ -173,6 +179,37 @@ The analyzer should exclude or down-rank:
 - maintenance/cleaning anomalies
 - late-night outliers
 - events during already-automated special modes
+- events that occurred while `house_state = vacation`
+
+### 4.2.1 Learning During Vacation
+
+Heima should **not** suspend the global learning system only because `vacation` is active.
+
+However, for this specific family:
+
+- `vacation` behavior SHOULD be excluded from the occupancy-simulation source profile
+- the active simulation itself MUST NOT become the primary evidence used to refresh its own learned
+  baseline
+
+This distinction is important:
+
+- the house may continue learning other things during `vacation`
+- but presence-simulation source material must remain grounded in normal occupied behavior
+
+### 4.2.2 Rolling Source Profile
+
+The execution source for this family should be treated as a rolling profile, not as a frozen model.
+
+Recommended properties:
+
+- prefer recent evidence over old evidence
+- adapt gradually as real household behavior changes
+- avoid immediate instability from a few recent outliers
+
+The preferred interpretation is:
+
+- the reaction policy is persistent
+- the nightly execution profile is dynamic and continually refreshed from suitable recent evidence
 
 ### 4.3 Output Shape
 
@@ -498,7 +535,9 @@ Tasks:
 - recency
 - stability
 - darkness-relative plausibility
-5. reject activation if learned evidence is too weak and no safe fallback exists
+5. explicitly exclude `vacation` periods and simulation-generated activity from the source-profile
+   refresh path
+6. reject activation if learned evidence is too weak and no safe fallback exists
 
 Exit criteria:
 - the MVP is not schedule-authored; it is truly learned-driven
