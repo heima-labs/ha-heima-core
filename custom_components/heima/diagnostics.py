@@ -51,6 +51,9 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "calendar_summary": _calendar_summary_diagnostics(coordinator),
                 "house_state_summary": _house_state_summary_diagnostics(coordinator),
+                "security_presence_summary": _security_presence_summary_diagnostics(
+                    coordinator
+                ),
                 "composite_summary": _composite_summary_diagnostics(
                     proposal_diagnostics,
                     coordinator,
@@ -594,6 +597,76 @@ def _house_state_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "pending_candidate": pending_candidate,
         "pending_remaining_s": pending_remaining_s,
         "calendar_context": calendar_context,
+    }
+
+
+def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    active = _active_reaction_items(coordinator)
+    configured_total = 0
+    active_tonight_total = 0
+    blocked_total = 0
+    configured_by_room: dict[str, int] = {}
+    source_room_counts: dict[str, int] = {}
+    blocked_by_reason: dict[str, int] = {}
+    examples: list[dict[str, Any]] = []
+
+    for reaction_id, cfg in active:
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        template_id = str(cfg.get("source_template_id") or "").strip()
+        is_security_presence = (
+            reaction_type == "vacation_presence_simulation"
+            or reaction_class == "VacationPresenceSimulationReaction"
+            or template_id == "security.vacation_presence_simulation.basic"
+        )
+        if not is_security_presence:
+            continue
+
+        configured_total += 1
+        active_tonight = bool(cfg.get("active_tonight") is True)
+        blocked_reason = str(cfg.get("blocked_reason") or "").strip()
+        if active_tonight:
+            active_tonight_total += 1
+        if blocked_reason:
+            blocked_total += 1
+            blocked_by_reason[blocked_reason] = blocked_by_reason.get(blocked_reason, 0) + 1
+
+        allowed_rooms = [
+            str(item).strip()
+            for item in list(cfg.get("allowed_rooms") or [])
+            if str(item).strip()
+        ]
+        source_rooms = [
+            str(item).strip()
+            for item in list(cfg.get("source_rooms") or [])
+            if str(item).strip()
+        ]
+        for room_id in allowed_rooms:
+            configured_by_room[room_id] = configured_by_room.get(room_id, 0) + 1
+        for room_id in source_rooms:
+            source_room_counts[room_id] = source_room_counts.get(room_id, 0) + 1
+
+        if len(examples) < 3:
+            examples.append(
+                {
+                    "reaction_id": reaction_id,
+                    "allowed_rooms": allowed_rooms,
+                    "source_rooms": source_rooms,
+                    "active_tonight": active_tonight,
+                    "blocked_reason": blocked_reason,
+                    "tonight_plan_count": int(cfg.get("tonight_plan_count") or 0),
+                    "next_planned_activation": cfg.get("next_planned_activation"),
+                }
+            )
+
+    return {
+        "configured_total": configured_total,
+        "active_tonight_total": active_tonight_total,
+        "blocked_total": blocked_total,
+        "configured_by_room": dict(sorted(configured_by_room.items())),
+        "source_room_counts": dict(sorted(source_room_counts.items())),
+        "blocked_by_reason": dict(sorted(blocked_by_reason.items())),
+        "examples": examples,
     }
 
 

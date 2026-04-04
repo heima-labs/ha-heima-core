@@ -573,6 +573,37 @@ def test_init_status_block_uses_operational_calendar_summary_when_runtime_availa
     assert placeholders["calendar_summary"] == "WFH oggi"
 
 
+def test_init_status_block_uses_operational_security_presence_summary_when_runtime_available():
+    flow = _flow(
+        options={
+            "language": "it",
+            "security": {"enabled": True, "security_state_entity": "alarm_control_panel.home"},
+        }
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    engine=SimpleNamespace(
+                        _state=SimpleNamespace(
+                            get_sensor=lambda key: (
+                                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":true,"blocked_reason":""},'
+                                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark"}}'
+                                if key == "heima_reactions_active"
+                                else None
+                            )
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    placeholders = flow._init_status_block()
+
+    assert placeholders["security_summary"] == "simulazioni 2 | attive 1 | bloccate 1"
+
+
 @pytest.mark.asyncio
 async def test_proposals_step_shows_guided_review_placeholders():
     flow = _flow()

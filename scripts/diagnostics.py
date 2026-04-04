@@ -257,13 +257,50 @@ def _print_house_state_summary(data: dict[str, Any]) -> None:
             )
 
 
+def _print_security_presence_summary(data: dict[str, Any]) -> None:
+    print(f"configured_total: {data.get('configured_total', 0)}")
+    print(f"active_tonight_total: {data.get('active_tonight_total', 0)}")
+    print(f"blocked_total: {data.get('blocked_total', 0)}")
+
+    configured_by_room = dict(data.get("configured_by_room") or {})
+    if configured_by_room:
+        print(
+            "configured_by_room: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+        )
+
+    source_room_counts = dict(data.get("source_room_counts") or {})
+    if source_room_counts:
+        print(
+            "source_room_counts: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(source_room_counts.items()))
+        )
+
+    blocked_by_reason = dict(data.get("blocked_by_reason") or {})
+    if blocked_by_reason:
+        print(
+            "blocked_by_reason: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
+        )
+
+    examples = list(data.get("examples") or [])
+    if examples:
+        print("examples:")
+        for item in examples:
+            print(
+                f"  {item.get('reaction_id') or '-'} | active={bool(item.get('active_tonight', False))} | "
+                f"plan={item.get('tonight_plan_count', 0)} | blocked={item.get('blocked_reason') or '-'} | "
+                f"next={item.get('next_planned_activation') or '-'}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "house_state", "house_state_summary", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite"],
+        choices=["all", "engine", "house_state", "house_state_summary", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite", "security_presence"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -290,6 +327,7 @@ def main() -> int:
         "reactions": runtime.get("plugins", {}).get("configured_reaction_summary"),
         "lighting": runtime.get("plugins", {}).get("lighting_summary"),
         "composite": runtime.get("plugins", {}).get("composite_summary"),
+        "security_presence": runtime.get("plugins", {}).get("security_presence_summary"),
     }
 
     to_print = sections if args.section == "all" else {args.section: sections[args.section]}
@@ -315,6 +353,9 @@ def main() -> int:
             print()
         if name == "house_state_summary" and isinstance(data, dict):
             _print_house_state_summary(data)
+            print()
+        if name == "security_presence" and isinstance(data, dict):
+            _print_security_presence_summary(data)
             print()
         print(json.dumps(data, indent=2))
 

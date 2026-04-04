@@ -41,6 +41,7 @@ def main() -> int:
     calendar_summary = dict(runtime.get("plugins", {}).get("calendar_summary", {}) or {})
     house_state_summary = dict(runtime.get("plugins", {}).get("house_state_summary", {}) or {})
     composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
+    security_presence_summary = dict(runtime.get("plugins", {}).get("security_presence_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -227,6 +228,24 @@ def main() -> int:
                     f"{item.get('confidence')} | "
                     f"{item.get('label') or '-'}"
                 )
+
+    if security_presence_summary:
+        _print_header("Security Presence")
+        print(f"configured total: {security_presence_summary.get('configured_total', 0)}")
+        print(f"active tonight: {security_presence_summary.get('active_tonight_total', 0)}")
+        print(f"blocked total: {security_presence_summary.get('blocked_total', 0)}")
+        configured_by_room = dict(security_presence_summary.get("configured_by_room") or {})
+        if configured_by_room:
+            print(
+                "configured by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        blocked_by_reason = dict(security_presence_summary.get("blocked_by_reason") or {})
+        if blocked_by_reason:
+            print(
+                "blocked by reason: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
+            )
 
     families = dict(summary.get("families") or {})
     if families:
