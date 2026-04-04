@@ -413,6 +413,199 @@ Goal:
 
 ---
 
+## 9.1 First MVP Backlog
+
+This is the recommended concrete backlog for the first implementation slice.
+
+The MVP should be:
+
+- admin-authored at the policy layer
+- learned-driven at the execution layer
+- runtime-first
+- vacation-only
+
+### SPS-A1 Family and Runtime Skeleton
+
+Goal:
+- introduce the family with the minimum runtime ownership needed to make it a real security capability
+
+Tasks:
+1. add plugin family wiring:
+- `security_presence_simulation`
+2. add reaction type / class:
+- `vacation_presence_simulation`
+- `VacationPresenceSimulationReaction`
+3. add presenter hooks:
+- reaction label
+- review details
+- diagnostics label
+4. add runtime diagnostics surface stub for the family
+
+Exit criteria:
+- the family exists as a first-class security capability in the plugin/runtime layer
+
+### SPS-A2 Admin-Authored Policy Template
+
+Goal:
+- allow an admin to enable the capability without authoring timings manually
+
+Template:
+
+- `security.vacation_presence_simulation.basic`
+
+Recommended config surface:
+
+- `enabled`
+- `allowed_rooms`
+- `allowed_entities`
+- `requires_dark_outside`
+- `simulation_aggressiveness`
+- `min_jitter_override_min`
+- `max_jitter_override_min`
+- `max_events_per_evening_override`
+- `latest_end_time_override`
+- `skip_if_presence_detected`
+
+Important rule:
+
+- all fields above are optional overrides except `enabled`
+- omitted fields should resolve to learned values when available
+
+Exit criteria:
+- the admin can enable the policy from the config flow without specifying clock schedules
+
+### SPS-A3 Learned Execution Source
+
+Goal:
+- derive nightly simulation behavior from already stabilized lighting behavior
+
+Tasks:
+1. bootstrap the execution source from **accepted recent lighting reactions** rather than from:
+- raw generic event history
+- pending proposals
+- non-accepted lighting candidates
+2. define the learned input contract the runtime will consume:
+- credible rooms
+- credible entities
+- plausible darkness-relative activation distribution
+- plausible event density
+- plausible end boundary
+3. define how the runtime resolves each field:
+- config override if present
+- learned value if available
+- conservative fallback if learning is insufficient
+4. apply suitability gates:
+- recency
+- stability
+- darkness-relative plausibility
+5. reject activation if learned evidence is too weak and no safe fallback exists
+
+Exit criteria:
+- the MVP is not schedule-authored; it is truly learned-driven
+
+### SPS-A4 Guarded Vacation Runtime
+
+Goal:
+- execute the simulation safely and plausibly
+
+Tasks:
+1. only activate when:
+- `house_state = vacation`
+2. block when:
+- anyone is home
+- recent occupancy evidence exists
+- dark requirement is not satisfied
+- manual disable/hold is active
+3. generate a bounded nightly plan:
+- project candidate activations relative to current darkness context
+- choose room/entity subset
+- apply bounded jitter
+- enforce event count cap
+- enforce end boundary
+4. stop or suppress activity immediately when occupancy reappears
+
+Exit criteria:
+- the simulation can run for a vacation evening without looking purely static or unsafe
+
+### SPS-A5 Diagnostics and UX
+
+Goal:
+- make the feature legible as a security capability
+
+Tasks:
+1. review wording:
+- explain this is presence simulation, not comfort automation
+2. diagnostics:
+- active tonight
+- blocked reason
+- next planned activation
+- last simulated activation
+- events executed tonight
+- learned profile summary
+3. operational summary:
+- configured
+- active
+- blocked
+- pending, if future learned proposals are later added
+
+Exit criteria:
+- an admin can understand what the simulation will do and why it may not run
+
+### SPS-A6 Validation
+
+Goal:
+- close the MVP with explicit verification
+
+Tasks:
+1. unit tests for:
+- field resolution precedence
+- guard behavior
+- nightly-plan bounds
+2. options flow tests for the admin-authored template
+3. live tests for:
+- active in vacation
+- blocked if presence appears
+- blocked if dark requirement fails
+- diagnostics visibility
+
+Exit criteria:
+- MVP is verifiably safe, bounded and learned-driven
+
+### Suggested Order
+
+1. `SPS-A1`
+2. `SPS-A2`
+3. `SPS-A3`
+4. `SPS-A4`
+5. `SPS-A5`
+6. `SPS-A6`
+
+### Recommended First Coding Slice
+
+If implementation starts, the recommended first slice is:
+
+- `SPS-A1` + `SPS-A2` + bootstrap `SPS-A3`
+
+Reason:
+
+- it establishes the family boundary and the admin-authored policy shape
+- and it already proves the intended dynamic model
+- without requiring the full future learned proposal pipeline
+
+Concretely, the first coding slice should already include:
+
+- accepted-lighting-reaction selection
+- darkness-relative timing bootstrap
+- minimal nightly derived plan generation
+
+The second slice should then expand:
+
+- `SPS-A4` + `SPS-A5`
+
+so the capability becomes truly learned-driven rather than degenerating into a static schedule.
+
+---
+
 ## 10. Recommendation
 
 Recommended approach:
