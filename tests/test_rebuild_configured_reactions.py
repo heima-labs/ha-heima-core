@@ -1122,6 +1122,121 @@ def test_vacation_presence_simulation_reaction_prefers_plausible_closeout_durati
     assert preview[1]["selection_reason"] == "room_closeout_duration_preferred"
 
 
+def test_vacation_presence_simulation_reaction_prefers_observed_room_dwell_target():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "min_jitter_override_min": 0,
+                    "max_jitter_override_min": 0,
+                    "skip_if_presence_detected": True,
+                },
+                "light-living-on-current": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+                "light-living-off-observed-short": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1250,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T09:30:00+00:00",
+                },
+                "light-living-off-static-mid": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1280,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T09:00:00+00:00",
+                },
+                "light-living-on-historical-1": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1180,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-28T10:00:00+00:00",
+                },
+                "light-living-off-historical-1": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1215,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-28T10:30:00+00:00",
+                },
+                "light-living-on-historical-2": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1190,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-21T10:00:00+00:00",
+                },
+                "light-living-off-historical-2": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1228,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-03-21T10:35:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        diagnostics = reaction.diagnostics()
+
+    preview = diagnostics["tonight_plan_preview"]
+    assert len(preview) == 2
+    assert [item["source_reaction_id"] for item in preview] == [
+        "light-living-on-current",
+        "light-living-off-observed-short",
+    ]
+    assert preview[1]["selection_reason"] == "room_closeout_duration_preferred"
+
+
 def test_vacation_presence_simulation_reaction_exposes_selected_and_excluded_source_trace():
     engine = _make_engine(options={
         "reactions": {

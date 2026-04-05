@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from statistics import median
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -414,8 +415,11 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 0
 
         dwell_min = candidate_min - latest_selected_min
+        target = self._room_closeout_target_min(candidate, selected)
         if dwell_min < _ROOM_CLOSEOUT_PREFERRED_MIN:
             return 1
+        if abs(dwell_min - target) <= 20:
+            return 4
         if dwell_min <= _ROOM_CLOSEOUT_SOFT_MAX_MIN:
             return 3
         if dwell_min <= _ROOM_CLOSEOUT_HARD_MAX_MIN:
@@ -444,8 +448,78 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         dwell_min = int(candidate.get("scheduled_min") or 0) - latest_on_min
         if dwell_min < 0:
             return 9999
-        target = (_ROOM_CLOSEOUT_PREFERRED_MIN + _ROOM_CLOSEOUT_SOFT_MAX_MIN) // 2
+        target = self._room_closeout_target_min(candidate, selected)
         return abs(dwell_min - target)
+
+    def _room_closeout_target_min(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        observed = self._observed_room_dwell_target_min(candidate, selected)
+        if observed is not None:
+            return observed
+        return (_ROOM_CLOSEOUT_PREFERRED_MIN + _ROOM_CLOSEOUT_SOFT_MAX_MIN) // 2
+
+    def _observed_room_dwell_target_min(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int | None:
+        room_id = str(candidate.get("room_id") or "").strip()
+        if not room_id or str(candidate.get("action_kind") or "") != "off":
+            return None
+        selected_weekdays = {
+            int(item.get("weekday") or 0)
+            for item in selected
+            if str(item.get("room_id") or "").strip() == room_id
+        }
+        by_room = [
+            item
+            for item in self._source_profiles
+            if str(item.get("room_id") or "").strip() == room_id
+        ]
+        preferred_weekdays = [
+            item for item in by_room if int(item.get("weekday") or 0) in selected_weekdays
+        ]
+        samples = self._room_dwell_samples(preferred_weekdays)
+        if not samples:
+            samples = self._room_dwell_samples(by_room)
+        if not samples:
+            return None
+        return int(round(float(median(samples))))
+
+    def _room_dwell_samples(self, profiles: list[dict[str, Any]]) -> list[int]:
+        if not profiles:
+            return []
+        grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        for item in profiles:
+            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(item.get("created_at"))
+            observation_key = observed_at.date().isoformat() if observed_at is not None else "unknown"
+            group_key = (observation_key, int(item.get("weekday") or 0))
+            grouped.setdefault(group_key, []).append(item)
+        samples: list[int] = []
+        for group_key in sorted(grouped):
+            ordered = sorted(
+                grouped[group_key],
+                key=lambda item: (
+                    int(item.get("scheduled_min") or 0),
+                    str(item.get("reaction_id") or ""),
+                ),
+            )
+            latest_on: int | None = None
+            for item in ordered:
+                action_kind = str(item.get("action_kind") or "")
+                scheduled_min = int(item.get("scheduled_min") or 0)
+                if action_kind == "on":
+                    latest_on = scheduled_min
+                elif action_kind == "off":
+                    if latest_on is None or scheduled_min <= latest_on:
+                        continue
+                    dwell = scheduled_min - latest_on
+                    if _ROOM_CLOSEOUT_PREFERRED_MIN <= dwell <= _ROOM_CLOSEOUT_HARD_MAX_MIN:
+                        samples.append(dwell)
+        return samples
 
     def _temporal_companion_score(
         self,

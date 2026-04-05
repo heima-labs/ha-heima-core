@@ -903,6 +903,7 @@ Tasks:
 2. improve duration realism:
 - prefer observed room dwell patterns when enough evidence exists
 - avoid overly compressed or stretched room occupancy windows
+- when the room has historical `on -> off` dwell evidence, prefer closeout candidates near that observed dwell target over a generic midpoint heuristic
 3. improve evening-shape fidelity:
 - weight same-weekday and recent profiles more strongly when selecting the final subset
 - keep temporal spread without erasing the shape of the observed evening
