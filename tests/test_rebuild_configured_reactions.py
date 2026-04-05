@@ -935,6 +935,81 @@ def test_vacation_presence_simulation_reaction_prefers_room_closeout_off_event()
     assert [item["source_reaction_id"] for item in preview] == ["light-living-on", "light-living-off"]
 
 
+def test_vacation_presence_simulation_reaction_prefers_plausible_closeout_duration():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "min_jitter_override_min": 0,
+                    "max_jitter_override_min": 0,
+                    "skip_if_presence_detected": True,
+                },
+                "light-living-on": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+                "light-living-off-plausible": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1280,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T09:00:00+00:00",
+                },
+                "light-living-off-late": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1425,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T08:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        diagnostics = reaction.diagnostics()
+
+    preview = diagnostics["tonight_plan_preview"]
+    assert len(preview) == 2
+    assert [item["source_reaction_id"] for item in preview] == [
+        "light-living-on",
+        "light-living-off-plausible",
+    ]
+    assert preview[1]["selection_reason"] == "room_closeout_duration_preferred"
+
+
 def test_vacation_presence_simulation_reaction_exposes_selected_and_excluded_source_trace():
     engine = _make_engine(options={
         "reactions": {
@@ -1143,6 +1218,81 @@ def test_vacation_presence_simulation_reaction_prefers_room_diversity_in_tonight
     preview = diagnostics["tonight_plan_preview"]
     assert len(preview) == 2
     assert [item["room_id"] for item in preview] == ["living", "kitchen"]
+
+
+def test_vacation_presence_simulation_reaction_prefers_same_weekday_temporal_companion():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "min_jitter_override_min": 0,
+                    "max_jitter_override_min": 0,
+                    "skip_if_presence_detected": True,
+                },
+                "light-seed-sunday": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "studio",
+                    "weekday": 6,
+                    "scheduled_min": 1080,
+                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-05T10:00:00+00:00",
+                },
+                "light-companion-sunday": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 6,
+                    "scheduled_min": 1170,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-05T09:00:00+00:00",
+                },
+                "light-closer-other-weekday": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1120,
+                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-05T11:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-05T18:50:00+00:00",
+                "next_setting": "2026-04-06T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 5, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        diagnostics = reaction.diagnostics()
+
+    preview = diagnostics["tonight_plan_preview"]
+    assert len(preview) == 2
+    assert [item["source_reaction_id"] for item in preview] == [
+        "light-seed-sunday",
+        "light-companion-sunday",
+    ]
+    assert preview[1]["selection_reason"] == "same_weekday_companion_preferred"
 
 
 def test_heating_eco_reaction_built_and_registered():

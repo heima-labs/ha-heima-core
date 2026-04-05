@@ -20,6 +20,11 @@ _SOURCE_PROFILE_PREFERRED_AGE_DAYS = 45
 _MIN_EVENT_GAP_MIN = 18
 _LATE_OUTLIER_SOFT_LIMIT_MIN = 23 * 60 + 15
 _LATE_OUTLIER_HARD_LIMIT_MIN = 23 * 60 + 30
+_ROOM_CLOSEOUT_PREFERRED_MIN = 25
+_ROOM_CLOSEOUT_SOFT_MAX_MIN = 150
+_ROOM_CLOSEOUT_HARD_MAX_MIN = 240
+_TEMPORAL_COMPANION_PREFERRED_MIN = 35
+_TEMPORAL_COMPANION_SOFT_MAX_MIN = 150
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -289,28 +294,49 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         selection_reasons[str(first.get("reaction_id") or "")] = "top_ranked_seed"
 
         while remaining and len(selected) < budget:
+            same_weekday_available = any(bool(item.get("same_weekday") is True) for item in remaining)
             best_index: int | None = None
-            best_key: tuple[int, int, int, int, float, str] | None = None
+            best_key: tuple[int, int, int, int, int, int, int, float, str] | None = None
             best_reason = "ranked_fill"
             for index, item in enumerate(remaining):
                 room_id = str(item.get("room_id") or "").strip()
-                room_closer_bonus = 1 if self._is_room_closer_candidate(item, selected) else 0
+                room_closeout_score = self._room_closeout_score(item, selected)
+                temporal_companion_score = self._temporal_companion_score(item, selected)
+                same_weekday_companion = (
+                    1
+                    if (
+                        same_weekday_available
+                        and bool(selected[0].get("same_weekday") is True)
+                        and bool(item.get("same_weekday") is True)
+                    )
+                    else 0
+                )
                 selected_rooms = {str(chosen.get("room_id") or "").strip() for chosen in selected}
                 room_bonus = 1 if room_id and room_id not in selected_rooms else 0
                 spread_min = _closest_scheduled_gap_min(item, selected)
                 spread_bucket = min(spread_min, 240)
                 reason = "ranked_fill"
-                if room_closer_bonus:
+                if room_closeout_score >= 3:
+                    reason = "room_closeout_duration_preferred"
+                elif same_weekday_companion:
+                    reason = "same_weekday_companion_preferred"
+                elif temporal_companion_score >= 2:
+                    reason = "temporal_companion_preferred"
+                elif room_closeout_score > 0:
                     reason = "room_closeout_preferred"
                 elif room_bonus:
                     reason = "room_diversity_preferred"
                 elif spread_bucket >= 45:
                     reason = "temporal_spread_preferred"
                 key = (
-                    room_closer_bonus,
+                    room_closeout_score,
+                    same_weekday_companion,
+                    temporal_companion_score,
+                    int(item.get("same_weekday") is True),
                     room_bonus,
                     spread_bucket,
-                    int(item.get("same_weekday") is True),
+                    -abs(self._preferred_closeout_delta_penalty(item, selected)),
+                    -abs(self._preferred_temporal_companion_penalty(item, selected)),
                     float(item.get("score") or 0.0),
                     str(item.get("reaction_id") or ""),
                 )
@@ -329,29 +355,103 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         )
         return ordered, selection_reasons
 
-    def _is_room_closer_candidate(
+    def _room_closeout_score(
         self,
         candidate: dict[str, Any],
         selected: list[dict[str, Any]],
-    ) -> bool:
+    ) -> int:
         room_id = str(candidate.get("room_id") or "").strip()
         if not room_id or str(candidate.get("action_kind") or "") != "off":
-            return False
+            return 0
 
         selected_same_room = [
             item for item in selected if str(item.get("room_id") or "").strip() == room_id
         ]
         if not selected_same_room:
-            return False
+            return 0
 
         has_on = any(str(item.get("action_kind") or "") == "on" for item in selected_same_room)
         has_off = any(str(item.get("action_kind") or "") == "off" for item in selected_same_room)
         if not has_on or has_off:
-            return False
+            return 0
 
         candidate_min = int(candidate.get("scheduled_min") or 0)
         latest_selected_min = max(int(item.get("scheduled_min") or 0) for item in selected_same_room)
-        return candidate_min >= latest_selected_min
+        if candidate_min < latest_selected_min:
+            return 0
+
+        dwell_min = candidate_min - latest_selected_min
+        if dwell_min < _ROOM_CLOSEOUT_PREFERRED_MIN:
+            return 1
+        if dwell_min <= _ROOM_CLOSEOUT_SOFT_MAX_MIN:
+            return 3
+        if dwell_min <= _ROOM_CLOSEOUT_HARD_MAX_MIN:
+            return 2
+        return 1
+
+    def _preferred_closeout_delta_penalty(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        room_id = str(candidate.get("room_id") or "").strip()
+        if not room_id or str(candidate.get("action_kind") or "") != "off":
+            return 9999
+
+        selected_same_room = [
+            item
+            for item in selected
+            if str(item.get("room_id") or "").strip() == room_id
+            and str(item.get("action_kind") or "") == "on"
+        ]
+        if not selected_same_room:
+            return 9999
+
+        latest_on_min = max(int(item.get("scheduled_min") or 0) for item in selected_same_room)
+        dwell_min = int(candidate.get("scheduled_min") or 0) - latest_on_min
+        if dwell_min < 0:
+            return 9999
+        target = (_ROOM_CLOSEOUT_PREFERRED_MIN + _ROOM_CLOSEOUT_SOFT_MAX_MIN) // 2
+        return abs(dwell_min - target)
+
+    def _temporal_companion_score(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        if not selected or not bool(candidate.get("same_weekday") is True):
+            return 0
+        if not bool(selected[0].get("same_weekday") is True):
+            return 0
+        candidate_min = int(candidate.get("scheduled_min") or 0)
+        seed_min = int(selected[0].get("scheduled_min") or 0)
+        if candidate_min <= seed_min:
+            return 0
+        delta_min = candidate_min - seed_min
+        if delta_min < _TEMPORAL_COMPANION_PREFERRED_MIN:
+            return 1
+        if delta_min <= _TEMPORAL_COMPANION_SOFT_MAX_MIN:
+            return 3
+        return 2
+
+    def _preferred_temporal_companion_penalty(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        if not selected:
+            return 9999
+        if bool(candidate.get("same_weekday") is True) is False:
+            return 9999
+        if bool(selected[0].get("same_weekday") is True) is False:
+            return 9999
+        candidate_min = int(candidate.get("scheduled_min") or 0)
+        seed_min = int(selected[0].get("scheduled_min") or 0)
+        delta_min = candidate_min - seed_min
+        if delta_min < 0:
+            return 9999
+        target = (_TEMPORAL_COMPANION_PREFERRED_MIN + _TEMPORAL_COMPANION_SOFT_MAX_MIN) // 2
+        return abs(delta_min - target)
 
     def _candidate_sources_for_tonight(self, today: date) -> list[dict[str, Any]]:
         recent_profiles = self._recent_source_profiles(today)

@@ -1,7 +1,7 @@
 # Heima — Security Presence Simulation Spec
 
-**Status:** Draft / partially implemented MVP
-**Last Updated:** 2026-04-04
+**Status:** MVP implemented / maturation backlog open
+**Last Updated:** 2026-04-05
 
 ## Purpose
 
@@ -365,6 +365,165 @@ Examples:
 
 This rule is central to the product semantics of the family.
 
+### 6.2 Nightly Plan Generation Contract
+
+The nightly plan generation algorithm MUST be explicit and stable enough that:
+
+- runtime behavior is explainable
+- diagnostics can describe why a plan exists or does not exist
+- future tuning work refines the same model instead of replacing it ad hoc
+
+The nightly plan is a **bounded replay of observed occupied-evening behavior**.
+
+It is not:
+
+- a fixed authored schedule
+- a random evening generator
+- an exact historical copy of one past night
+
+The current family contract SHOULD therefore treat nightly-plan generation as
+the following ordered pipeline.
+
+#### 6.2.1 Inputs
+
+The planner consumes:
+
+- persisted policy configuration
+- learned source profiles or accepted lighting reactions
+- current `house_state`
+- current occupancy state
+- current `sun.sun` context
+- current local date / weekday
+
+The planner MUST prefer learned source profiles when they are present.
+Accepted lighting reactions are the fallback bootstrap source only when learned
+source profiles are absent.
+
+#### 6.2.2 Guard Phase
+
+Before building a plan, the runtime MUST verify:
+
+1. reaction is enabled
+2. a source profile is present
+3. snapshot history exists
+4. `house_state = vacation`
+5. no occupancy guard blocks execution
+6. darkness requirement is satisfied if configured
+
+If any of these fail, the reaction MUST expose a clear blocked reason rather
+than synthesizing a degraded plan.
+
+#### 6.2.3 Darkness Anchor Resolution
+
+The planner MUST anchor the evening relative to the current darkness context,
+not to fixed clock times.
+
+Preferred sources:
+
+- `sun.sun.last_setting`
+- `sun.sun.next_setting`
+- `sun.sun.next_dusk`
+
+Normative rule:
+
+- after sunset, if Home Assistant only exposes the next setting/dusk for the
+  following day, the planner SHOULD derive tonight's darkness anchor from that
+  next event rather than treating darkness context as unavailable
+
+If no credible darkness anchor can be resolved, the planner MUST fail with an
+explicit reason such as `sun_unavailable`.
+
+#### 6.2.4 Candidate Source Selection
+
+From the source profile, the planner builds a candidate set for tonight.
+
+The candidate set SHOULD:
+
+- exclude stale sources
+- exclude weak or low-credibility sources
+- exclude sources outside allowed room/entity scope
+- prefer recent evidence
+- prefer same-weekday evidence when available
+- penalize late-night outliers
+
+If the remaining candidate set is too weak, the planner MUST not produce a
+nightly plan.
+
+#### 6.2.5 Budget and Subset Selection
+
+The planner then chooses a bounded subset for tonight.
+
+The subset selection SHOULD optimize for:
+
+- strong source suitability
+- room diversity when plausible
+- temporal spread across the evening
+- credible room closeout behavior (`on -> off`)
+
+The planner MUST NOT simply take the first `N` candidates sorted by time.
+
+It SHOULD instead select a subset that remains faithful to the observed
+evening shape while respecting:
+
+- event budget
+- minimum gap constraints
+- room/entity scope constraints
+- optional latest-end overrides
+
+#### 6.2.6 Time Projection
+
+For each selected source item, the planner projects a runtime due time for the
+current evening.
+
+The projection model is:
+
+1. choose an evening darkness anchor for tonight
+2. preserve relative ordering between selected source items
+3. preserve approximate inter-event spacing where possible
+4. apply bounded deterministic jitter
+5. enforce minimum gap between consecutive events
+6. discard items that violate end-of-evening guardrails
+
+This projection MUST remain:
+
+- darkness-relative
+- deterministic enough to be explainable
+- variable enough not to look scripted
+
+#### 6.2.7 Empty-Plan Semantics
+
+A reaction may be valid and source-ready while the nightly plan is still empty.
+
+Examples:
+
+- waiting for darkness
+- waiting for the first planned activation
+- no valid events survive current-night guardrails
+
+Normative rule:
+
+- diagnostics MUST distinguish:
+  - missing source profile
+  - blocked context
+  - source-ready but empty plan
+  - plan derived and waiting for next activation
+
+#### 6.2.8 Diagnostics Requirements
+
+The runtime diagnostics for this family SHOULD expose at least:
+
+- source profile kind
+- source profile readiness
+- selected source trace
+- excluded source trace
+- tonight-plan count
+- tonight-plan preview
+- next planned activation
+- blocked reason
+
+This is required because the nightly plan is derived dynamically and cannot be
+understood from persisted config alone.
+
 ---
 
 ## 7. Guardrails
@@ -719,6 +878,116 @@ The second slice should then expand:
 - `SPS-A4` + `SPS-A5`
 
 so the capability becomes truly learned-driven rather than degenerating into a static schedule.
+
+## 9.2 Maturation Backlog
+
+This is the recommended follow-up backlog after the MVP is already working end-to-end.
+
+The intent of this phase is not to add a different behavioral model.
+The intent is to make the family:
+
+- more faithful to the observed source behavior
+- more legible operationally
+- safer to run and easier to debug
+
+### SPS-B1 Planner Fidelity
+
+Goal:
+- preserve the credibility of the observed household behavior more faithfully in the derived nightly plan
+
+Tasks:
+1. improve closeout fidelity:
+- preserve plausible `on -> off` room sequences
+- prefer plausible room dwell durations when multiple closeout candidates exist
+- avoid plans that only accumulate unrelated `on` activations
+2. improve duration realism:
+- prefer observed room dwell patterns when enough evidence exists
+- avoid overly compressed or stretched room occupancy windows
+3. improve evening-shape fidelity:
+- weight same-weekday and recent profiles more strongly when selecting the final subset
+- keep temporal spread without erasing the shape of the observed evening
+- prefer plausible same-weekday temporal companions over stronger but less coherent cross-day candidates
+4. avoid low-credibility derivations:
+- skip the nightly plan when the selected subset is too weak or too distorted after guards and caps
+
+Exit criteria:
+- the nightly plan looks like a bounded replay of real occupied evenings, not a generic plausible schedule
+
+### SPS-B2 Operability and Debug Surface
+
+Goal:
+- make the family easy to inspect and operate without reading raw diagnostics payloads
+
+Tasks:
+1. add richer plan preview:
+- selected source profiles
+- excluded source profiles and reasons
+- expected nightly timeline
+- closeout rationale
+2. add operational summaries:
+- ready tonight
+- blocked tonight
+- insufficient evidence
+- waiting for darkness
+3. expose clearer admin-facing runtime state:
+- which source profile kind is active
+- why the plan is empty
+- whether the current plan was derived from learned profiles or accepted lighting reactions
+4. prepare a panel-friendly summary contract:
+- compact status
+- tonight plan preview
+- source-profile quality indicators
+
+Exit criteria:
+- an admin can understand what Heima plans to do tonight and why, without reading raw engine internals
+
+### SPS-B3 Guardrails and Runtime Control
+
+Goal:
+- harden the family as an operational security automation
+
+Tasks:
+1. add stronger blocked-state polish:
+- product-facing blocked reasons
+- clearer distinction between unavailable evidence, waiting state and active suppression
+2. add family-specific runtime controls where appropriate:
+- explicit mute/disable behavior
+- clearer hold semantics
+- predictable recovery after temporary blocks
+3. tighten safety around presence return:
+- verify immediate stop behavior
+- verify no further queued activation survives a presence comeback
+4. validate guard combinations:
+- darkness present but evidence weak
+- evidence strong but presence detected
+- eligible source profile but temporary runtime hold
+
+Exit criteria:
+- the family behaves predictably under real-world guard and override conditions
+
+### Suggested Order
+
+1. `SPS-B1`
+2. `SPS-B2`
+3. `SPS-B3`
+
+### Recommendation
+
+The recommended next step after the current MVP is:
+
+- `SPS-B1` first
+
+Reason:
+
+- planner fidelity improves the actual behavior the user will observe
+- it keeps the family grounded in the observed source behavior
+- it avoids opening more learned complexity before the runtime shape is fully credible
+
+After `SPS-B1`, the next most valuable step is:
+
+- `SPS-B2`
+
+because this family benefits unusually strongly from a serious control/debug surface.
 
 ---
 
