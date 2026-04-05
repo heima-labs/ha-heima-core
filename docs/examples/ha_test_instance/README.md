@@ -11,7 +11,7 @@ Goal:
 ## Files
 
 - `configuration.yaml`
-  - minimal snippet to enable package loading
+  - minimal snippet to enable package loading and `sun`
 - `packages/heima_test_lab.yaml`
   - helpers
   - template entities
@@ -55,6 +55,8 @@ Notes:
 1. Home Assistant package loading enabled in `configuration.yaml`:
 
 ```yaml
+sun:
+
 homeassistant:
   packages: !include_dir_named packages
 ```

@@ -464,6 +464,89 @@ def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_
     assert "security_presence_simulation:security-presence:" in job.job_id
 
 
+def test_vacation_presence_simulation_reaction_derives_tonight_anchor_from_next_setting_after_sunset():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "skip_if_presence_detected": True,
+                    "allowed_rooms": ["living", "studio"],
+                    "allowed_entities": [
+                        "light.test_heima_living_main",
+                        "light.test_heima_living_spot",
+                        "light.test_heima_studio_main",
+                    ],
+                    "learned_source_profiles": [
+                        {
+                            "reaction_id": "learned:studio:6:1080:on",
+                            "room_id": "studio",
+                            "weekday": 6,
+                            "scheduled_min": 1080,
+                            "entity_steps": [{"entity_id": "light.test_heima_studio_main", "action": "on"}],
+                            "action_kind": "on",
+                            "updated_at": "2026-04-05T18:00:00+00:00",
+                        },
+                        {
+                            "reaction_id": "learned:living:6:1170:on",
+                            "room_id": "living",
+                            "weekday": 6,
+                            "scheduled_min": 1170,
+                            "entity_steps": [{"entity_id": "light.test_heima_living_main", "action": "on"}],
+                            "action_kind": "on",
+                            "updated_at": "2026-04-05T19:30:00+00:00",
+                        },
+                    ],
+                    "max_events_per_evening_override": 2,
+                    "min_jitter_override_min": 0,
+                    "max_jitter_override_min": 0,
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "next_dawn": "2026-04-06T04:28:09.207546+00:00",
+                "next_dusk": "2026-04-06T18:58:47.226688+00:00",
+                "next_rising": "2026-04-06T05:03:51.809861+00:00",
+                "next_setting": "2026-04-06T18:22:53.573033+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    current = DecisionSnapshot(
+        snapshot_id="s1",
+        ts="2026-04-05T19:45:00+00:00",
+        house_state="vacation",
+        anyone_home=False,
+        people_count=0,
+        occupied_rooms=[],
+        lighting_intents={},
+        security_state="armed_away",
+    )
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 5, 19, 45, 0, tzinfo=timezone.utc),
+    ):
+        assert reaction.evaluate([current]) == []
+        diagnostics = reaction.diagnostics()
+
+    assert diagnostics["source_profile_kind"] == "learned_source_profiles"
+    assert diagnostics["source_profile_ready"] is True
+    assert diagnostics["tonight_plan_count"] >= 1
+    assert diagnostics["blocked_reason"] == "awaiting_next_planned_activation"
+
+
 def test_vacation_presence_simulation_reaction_fires_derived_plan_step_when_due():
     engine = _make_engine(options={
         "reactions": {

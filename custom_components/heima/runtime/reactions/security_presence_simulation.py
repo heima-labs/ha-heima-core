@@ -554,6 +554,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         sun_state = self._hass.states.get("sun.sun") if self._hass is not None else None
         if sun_state is None:
             return None
+        raw_state = str(getattr(sun_state, "state", "") or "").strip()
         attrs = getattr(sun_state, "attributes", {}) or {}
 
         last_setting = _parse_dt_local(attrs.get("last_setting"))
@@ -563,6 +564,21 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         next_setting = _parse_dt_local(attrs.get("next_setting"))
         if next_setting is not None and next_setting.date() == now_local.date():
             return next_setting
+
+        # HA can expose only ``next_setting`` after sunset. In that case, derive
+        # the dark anchor for "tonight" from tomorrow's next setting.
+        if raw_state == "below_horizon" and next_setting is not None:
+            derived = next_setting - timedelta(days=1)
+            if derived.date() == now_local.date():
+                return derived
+
+        next_dusk = _parse_dt_local(attrs.get("next_dusk"))
+        if next_dusk is not None and next_dusk.date() == now_local.date():
+            return next_dusk
+        if raw_state == "below_horizon" and next_dusk is not None:
+            derived = next_dusk - timedelta(days=1)
+            if derived.date() == now_local.date():
+                return derived
 
         return None
 
