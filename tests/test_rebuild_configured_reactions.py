@@ -447,6 +447,10 @@ def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_
             },
         )
         if entity_id == "sun.sun"
+        else _FakeState("vacation")
+        if entity_id == "sensor.heima_house_state"
+        else _FakeState("off")
+        if entity_id == "binary_sensor.heima_anyone_home"
         else None
     )
     engine._rebuild_configured_reactions()
@@ -462,6 +466,108 @@ def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_
     job = next(iter(jobs.values()))
     assert job.owner == "VacationPresenceSimulationReaction"
     assert "security_presence_simulation:security-presence:" in job.job_id
+
+
+def test_vacation_presence_simulation_reaction_does_not_schedule_when_not_in_vacation():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "skip_if_presence_detected": True,
+                },
+                "light-src": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else _FakeState("home")
+        if entity_id == "sensor.heima_house_state"
+        else _FakeState("off")
+        if entity_id == "binary_sensor.heima_anyone_home"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        jobs = reaction.scheduled_jobs("entry-1")
+
+    assert jobs == {}
+
+
+def test_vacation_presence_simulation_reaction_does_not_schedule_when_presence_returns():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "simulation_aggressiveness": "medium",
+                    "skip_if_presence_detected": True,
+                },
+                "light-src": {
+                    "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
+                    "room_id": "living",
+                    "weekday": 5,
+                    "scheduled_min": 1210,
+                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "updated_at": "2026-04-04T10:00:00+00:00",
+                },
+            }
+        }
+    })
+    engine._hass.states.get.side_effect = lambda entity_id: (
+        _FakeState(
+            "below_horizon",
+            {
+                "last_setting": "2026-04-04T18:50:00+00:00",
+                "next_setting": "2026-04-05T18:51:00+00:00",
+            },
+        )
+        if entity_id == "sun.sun"
+        else _FakeState("vacation")
+        if entity_id == "sensor.heima_house_state"
+        else _FakeState("on")
+        if entity_id == "binary_sensor.heima_anyone_home"
+        else None
+    )
+    engine._rebuild_configured_reactions()
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+
+    with patch(
+        "custom_components.heima.runtime.reactions.security_presence_simulation.dt_util.now",
+        return_value=datetime(2026, 4, 4, 19, 0, 0, tzinfo=timezone.utc),
+    ):
+        jobs = reaction.scheduled_jobs("entry-1")
+
+    assert jobs == {}
 
 
 def test_vacation_presence_simulation_reaction_derives_tonight_anchor_from_next_setting_after_sunset():

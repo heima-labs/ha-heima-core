@@ -127,6 +127,10 @@ class VacationPresenceSimulationReaction(HeimaReaction):
     def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
         if not self._enabled or not self._source_reaction_ids:
             return {}
+        if self._current_house_state() != "vacation":
+            return {}
+        if self._skip_if_presence_detected and self._current_anyone_home():
+            return {}
         if self._requires_dark_outside:
             dark_ok, _ = self._is_dark_outside()
             if not dark_ok:
@@ -681,6 +685,15 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 return derived
 
         return None
+
+    def _current_house_state(self) -> str:
+        state = self._hass.states.get("sensor.heima_house_state") if self._hass is not None else None
+        return str(getattr(state, "state", "") or "").strip()
+
+    def _current_anyone_home(self) -> bool:
+        state = self._hass.states.get("binary_sensor.heima_anyone_home") if self._hass is not None else None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        return raw == "on"
 
     def _next_pending_event(
         self,

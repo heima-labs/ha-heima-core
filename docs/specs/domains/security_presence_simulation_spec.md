@@ -958,6 +958,7 @@ Tasks:
 3. tighten safety around presence return:
 - verify immediate stop behavior
 - verify no further queued activation survives a presence comeback
+- ensure scheduled runtime jobs are withdrawn as soon as the family is no longer eligible
 4. validate guard combinations:
 - darkness present but evidence weak
 - evidence strong but presence detected
