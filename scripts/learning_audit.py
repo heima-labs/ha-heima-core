@@ -261,6 +261,12 @@ def main() -> int:
                 "blocked by class: "
                 + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
             )
+        operational_state_counts = dict(security_presence_summary.get("operational_state_counts") or {})
+        if operational_state_counts:
+            print(
+                "operational states: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(operational_state_counts.items()))
+            )
         ready_examples = list(security_presence_summary.get("ready_examples") or [])
         if ready_examples:
             print("ready examples:")
@@ -273,6 +279,7 @@ def main() -> int:
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
+                    f"{item.get('operational_state') or '-'} | "
                     f"{item.get('source_profile_kind') or '-'} | "
                     f"plan={item.get('tonight_plan_count', 0)} | "
                     f"next={item.get('next_planned_activation') or '-'} | "
@@ -290,6 +297,7 @@ def main() -> int:
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
+                    f"{item.get('operational_state') or '-'} | "
                     f"{item.get('source_profile_kind') or '-'} | "
                     f"sources={selected_compact or '-'}"
                 )

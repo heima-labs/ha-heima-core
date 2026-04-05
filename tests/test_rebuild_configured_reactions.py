@@ -411,7 +411,9 @@ def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_unti
     )
 
     assert reaction.evaluate([current]) == []
-    assert reaction.diagnostics()["blocked_reason"] == "sun_unavailable"
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["blocked_reason"] == "sun_unavailable"
+    assert diagnostics["operational_state"] == "waiting_for_readiness"
 
 
 def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_job():
@@ -651,6 +653,7 @@ def test_vacation_presence_simulation_reaction_derives_tonight_anchor_from_next_
     assert diagnostics["source_profile_ready"] is True
     assert diagnostics["tonight_plan_count"] >= 1
     assert diagnostics["blocked_reason"] == "awaiting_next_planned_activation"
+    assert diagnostics["operational_state"] == "ready_tonight"
 
 
 def test_vacation_presence_simulation_reaction_fires_derived_plan_step_when_due():
@@ -776,6 +779,7 @@ def test_vacation_presence_simulation_reaction_excludes_stale_sources_from_tonig
     assert diagnostics["recent_source_reaction_count"] == 0
     assert diagnostics["tonight_plan_count"] == 0
     assert diagnostics["blocked_reason"] == "no_suitable_recent_sources"
+    assert diagnostics["operational_state"] == "insufficient_evidence"
 
 
 def test_vacation_presence_simulation_reaction_exposes_tonight_plan_preview():
@@ -967,7 +971,9 @@ def test_vacation_presence_simulation_reaction_skips_single_weak_source():
         steps = reaction.evaluate([current])
 
     assert steps == []
-    assert reaction.diagnostics()["blocked_reason"] == "insufficient_source_strength"
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["blocked_reason"] == "insufficient_source_strength"
+    assert diagnostics["operational_state"] == "insufficient_evidence"
 
 
 def test_vacation_presence_simulation_reaction_prefers_room_closeout_off_event():

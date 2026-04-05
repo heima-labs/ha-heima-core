@@ -178,6 +178,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         source_trace = self._source_trace(now_local.date())
         selected_trace = [item for item in source_trace if item.get("selected") is True]
         excluded_trace = [item for item in source_trace if item.get("selected") is not True]
+        blocked_reason = self._last_blocked_reason
         return {
             "enabled": self._enabled,
             "allowed_rooms": list(self._allowed_rooms),
@@ -199,6 +200,11 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             "selected_source_trace": selected_trace[:5],
             "excluded_source_trace": excluded_trace[:5],
             "active_tonight": bool(self._enabled and tonight_plan),
+            "operational_state": _operational_state_for_security_presence(
+                enabled=self._enabled,
+                tonight_plan=tonight_plan,
+                blocked_reason=blocked_reason,
+            ),
             "tonight_plan_count": len(tonight_plan),
             "tonight_plan_preview": [
                 {
@@ -216,7 +222,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             "last_simulated_activation": self._last_simulated_activation,
             "fire_count": self._fire_count,
             "last_fired_ts": self._last_fired_ts,
-            "blocked_reason": self._last_blocked_reason,
+            "blocked_reason": blocked_reason,
         }
 
     def reset_learning_state(self) -> None:
@@ -1111,3 +1117,33 @@ def _age_days(profile: dict[str, Any], today: date) -> int:
     if reference is None:
         return _SOURCE_PROFILE_MAX_AGE_DAYS + 1
     return max(0, (today - reference.date()).days)
+
+
+def _operational_state_for_security_presence(
+    *,
+    enabled: bool,
+    tonight_plan: list[dict[str, Any]],
+    blocked_reason: str,
+) -> str:
+    reason = str(blocked_reason or "").strip()
+    if not enabled or reason == "disabled":
+        return "disabled"
+    if tonight_plan or reason == "awaiting_next_planned_activation":
+        return "ready_tonight"
+    if reason == "outside_not_dark":
+        return "waiting_for_darkness"
+    if reason in {
+        "insufficient_learned_evidence",
+        "insufficient_source_strength",
+        "no_suitable_recent_sources",
+    }:
+        return "insufficient_evidence"
+    if reason in {"waiting_for_snapshot", "sun_unavailable"}:
+        return "waiting_for_readiness"
+    if reason == "presence_detected":
+        return "blocked_for_safety"
+    if reason == "not_in_vacation":
+        return "blocked_for_context"
+    if not reason:
+        return "idle"
+    return "blocked_other"

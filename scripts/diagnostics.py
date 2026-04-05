@@ -293,6 +293,13 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
             + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
         )
 
+    operational_state_counts = dict(data.get("operational_state_counts") or {})
+    if operational_state_counts:
+        print(
+            "operational_state_counts: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(operational_state_counts.items()))
+        )
+
     source_profile_kind_counts = dict(data.get("source_profile_kind_counts") or {})
     if source_profile_kind_counts:
         print(
@@ -306,6 +313,7 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
         for item in examples:
             print(
                 f"  {item.get('reaction_id') or '-'} | active={bool(item.get('active_tonight', False))} | "
+                f"state={item.get('operational_state') or '-'} | "
                 f"kind={item.get('source_profile_kind') or '-'} | "
                 f"plan={item.get('tonight_plan_count', 0)} | blocked={item.get('blocked_reason') or '-'} | "
                 f"next={item.get('next_planned_activation') or '-'}"

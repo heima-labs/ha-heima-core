@@ -612,6 +612,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     source_room_counts: dict[str, int] = {}
     blocked_by_reason: dict[str, int] = {}
     blocked_by_class: dict[str, int] = {}
+    operational_state_counts: dict[str, int] = {}
     source_profile_kind_counts: dict[str, int] = {}
     examples: list[dict[str, Any]] = []
     ready_examples: list[dict[str, Any]] = []
@@ -633,13 +634,23 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         configured_total += 1
         active_tonight = bool(cfg.get("active_tonight") is True)
         blocked_reason = str(cfg.get("blocked_reason") or "").strip()
+        operational_state = str(cfg.get("operational_state") or "").strip()
         source_profile_kind = str(cfg.get("source_profile_kind") or "").strip()
         plan_count = int(cfg.get("tonight_plan_count") or 0)
+        if not operational_state:
+            operational_state = _security_presence_operational_state_fallback(
+                blocked_reason=blocked_reason,
+                plan_count=plan_count,
+            )
         if active_tonight:
             active_tonight_total += 1
         if source_profile_kind:
             source_profile_kind_counts[source_profile_kind] = (
                 source_profile_kind_counts.get(source_profile_kind, 0) + 1
+            )
+        if operational_state:
+            operational_state_counts[operational_state] = (
+                operational_state_counts.get(operational_state, 0) + 1
             )
         if plan_count > 0 or blocked_reason == "awaiting_next_planned_activation":
             ready_tonight_total += 1
@@ -679,6 +690,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                     "allowed_rooms": allowed_rooms,
                     "source_rooms": source_rooms,
                     "active_tonight": active_tonight,
+                    "operational_state": operational_state,
                     "blocked_reason": blocked_reason,
                     "source_profile_kind": source_profile_kind,
                     "tonight_plan_count": plan_count,
@@ -691,6 +703,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
             "allowed_rooms": allowed_rooms,
             "source_rooms": source_rooms,
             "source_profile_kind": source_profile_kind,
+            "operational_state": operational_state,
             "tonight_plan_count": plan_count,
             "next_planned_activation": cfg.get("next_planned_activation"),
             "selected_sources": [
@@ -726,6 +739,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "source_room_counts": dict(sorted(source_room_counts.items())),
         "blocked_by_class": dict(sorted(blocked_by_class.items())),
         "blocked_by_reason": dict(sorted(blocked_by_reason.items())),
+        "operational_state_counts": dict(sorted(operational_state_counts.items())),
         "source_profile_kind_counts": dict(sorted(source_profile_kind_counts.items())),
         "examples": examples,
         "ready_examples": ready_examples,
@@ -751,6 +765,28 @@ def _security_presence_blocked_reason_class(reason: str) -> str:
     if not value:
         return "none"
     return "other"
+
+
+def _security_presence_operational_state_fallback(*, blocked_reason: str, plan_count: int) -> str:
+    if plan_count > 0 or blocked_reason == "awaiting_next_planned_activation":
+        return "ready_tonight"
+    if blocked_reason == "outside_not_dark":
+        return "waiting_for_darkness"
+    if blocked_reason in {
+        "insufficient_learned_evidence",
+        "insufficient_source_strength",
+        "no_suitable_recent_sources",
+    }:
+        return "insufficient_evidence"
+    if blocked_reason in {"waiting_for_snapshot", "sun_unavailable"}:
+        return "waiting_for_readiness"
+    if blocked_reason == "presence_detected":
+        return "blocked_for_safety"
+    if blocked_reason == "not_in_vacation":
+        return "blocked_for_context"
+    if blocked_reason == "disabled":
+        return "disabled"
+    return "idle"
 
 
 def _composite_summary_diagnostics(
