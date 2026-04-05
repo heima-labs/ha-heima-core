@@ -25,6 +25,8 @@ _ROOM_CLOSEOUT_SOFT_MAX_MIN = 150
 _ROOM_CLOSEOUT_HARD_MAX_MIN = 240
 _TEMPORAL_COMPANION_PREFERRED_MIN = 35
 _TEMPORAL_COMPANION_SOFT_MAX_MIN = 150
+_SEQUENCE_COMPANION_PREFERRED_MIN = 20
+_SEQUENCE_COMPANION_SOFT_MAX_MIN = 120
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -311,13 +313,29 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             for index, item in enumerate(remaining):
                 room_id = str(item.get("room_id") or "").strip()
                 room_closeout_score = self._room_closeout_score(item, selected)
+                sequence_coherence_score = self._sequence_coherence_score(item, selected)
                 temporal_companion_score = self._temporal_companion_score(item, selected)
+                progresses_evening = (
+                    int(item.get("scheduled_min") or 0)
+                    > max(int(chosen.get("scheduled_min") or 0) for chosen in selected)
+                )
+                backward_same_weekday_penalty = (
+                    1
+                    if bool(item.get("same_weekday") is True) and not progresses_evening
+                    else 0
+                )
+                same_weekday_progressive = (
+                    1
+                    if bool(item.get("same_weekday") is True) and progresses_evening
+                    else 0
+                )
                 same_weekday_companion = (
                     1
                     if (
                         same_weekday_available
                         and bool(selected[0].get("same_weekday") is True)
                         and bool(item.get("same_weekday") is True)
+                        and progresses_evening
                     )
                     else 0
                 )
@@ -328,6 +346,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 reason = "ranked_fill"
                 if room_closeout_score >= 3:
                     reason = "room_closeout_duration_preferred"
+                elif sequence_coherence_score >= 2:
+                    reason = "sequence_coherence_preferred"
                 elif same_weekday_companion:
                     reason = "same_weekday_companion_preferred"
                 elif temporal_companion_score >= 2:
@@ -340,12 +360,15 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     reason = "temporal_spread_preferred"
                 key = (
                     room_closeout_score,
+                    sequence_coherence_score,
                     same_weekday_companion,
                     temporal_companion_score,
-                    int(item.get("same_weekday") is True),
+                    same_weekday_progressive,
+                    -backward_same_weekday_penalty,
                     room_bonus,
                     spread_bucket,
                     -abs(self._preferred_closeout_delta_penalty(item, selected)),
+                    -abs(self._preferred_sequence_coherence_penalty(item, selected)),
                     -abs(self._preferred_temporal_companion_penalty(item, selected)),
                     float(item.get("score") or 0.0),
                     str(item.get("reaction_id") or ""),
@@ -443,6 +466,45 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         if delta_min <= _TEMPORAL_COMPANION_SOFT_MAX_MIN:
             return 3
         return 2
+
+    def _sequence_coherence_score(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        if not selected or not bool(candidate.get("same_weekday") is True):
+            return 0
+        seed = selected[0]
+        if not bool(seed.get("same_weekday") is True):
+            return 0
+        latest_selected_min = max(int(item.get("scheduled_min") or 0) for item in selected)
+        candidate_min = int(candidate.get("scheduled_min") or 0)
+        if candidate_min <= latest_selected_min:
+            return 0
+        delta_min = candidate_min - latest_selected_min
+        if delta_min < _SEQUENCE_COMPANION_PREFERRED_MIN:
+            return 1
+        if delta_min <= _SEQUENCE_COMPANION_SOFT_MAX_MIN:
+            return 3
+        return 2
+
+    def _preferred_sequence_coherence_penalty(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        if not selected or bool(candidate.get("same_weekday") is True) is False:
+            return 9999
+        seed = selected[0]
+        if bool(seed.get("same_weekday") is True) is False:
+            return 9999
+        latest_selected_min = max(int(item.get("scheduled_min") or 0) for item in selected)
+        candidate_min = int(candidate.get("scheduled_min") or 0)
+        delta_min = candidate_min - latest_selected_min
+        if delta_min < 0:
+            return 9999
+        target = (_SEQUENCE_COMPANION_PREFERRED_MIN + _SEQUENCE_COMPANION_SOFT_MAX_MIN) // 2
+        return abs(delta_min - target)
 
     def _preferred_temporal_companion_penalty(
         self,

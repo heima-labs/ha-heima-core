@@ -907,6 +907,7 @@ Tasks:
 - weight same-weekday and recent profiles more strongly when selecting the final subset
 - keep temporal spread without erasing the shape of the observed evening
 - prefer plausible same-weekday temporal companions over stronger but less coherent cross-day candidates
+- do not promote same-weekday companions that move backwards relative to the current evening progression
 4. avoid low-credibility derivations:
 - skip the nightly plan when the selected subset is too weak or too distorted after guards and caps
 
