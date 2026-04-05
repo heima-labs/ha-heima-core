@@ -607,6 +607,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     ready_tonight_total = 0
     waiting_for_darkness_total = 0
     insufficient_evidence_total = 0
+    muted_total = 0
     blocked_total = 0
     configured_by_room: dict[str, int] = {}
     source_room_counts: dict[str, int] = {}
@@ -633,10 +634,14 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
 
         configured_total += 1
         active_tonight = bool(cfg.get("active_tonight") is True)
+        muted = bool(cfg.get("muted") is True)
         blocked_reason = str(cfg.get("blocked_reason") or "").strip()
         operational_state = str(cfg.get("operational_state") or "").strip()
         source_profile_kind = str(cfg.get("source_profile_kind") or "").strip()
         plan_count = int(cfg.get("tonight_plan_count") or 0)
+        if muted:
+            muted_total += 1
+            operational_state = "muted"
         if not operational_state:
             operational_state = _security_presence_operational_state_fallback(
                 blocked_reason=blocked_reason,
@@ -690,6 +695,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                     "allowed_rooms": allowed_rooms,
                     "source_rooms": source_rooms,
                     "active_tonight": active_tonight,
+                    "muted": muted,
                     "operational_state": operational_state,
                     "blocked_reason": blocked_reason,
                     "source_profile_kind": source_profile_kind,
@@ -703,6 +709,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
             "allowed_rooms": allowed_rooms,
             "source_rooms": source_rooms,
             "source_profile_kind": source_profile_kind,
+            "muted": muted,
             "operational_state": operational_state,
             "tonight_plan_count": plan_count,
             "next_planned_activation": cfg.get("next_planned_activation"),
@@ -734,6 +741,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "ready_tonight_total": ready_tonight_total,
         "waiting_for_darkness_total": waiting_for_darkness_total,
         "insufficient_evidence_total": insufficient_evidence_total,
+        "muted_total": muted_total,
         "blocked_total": blocked_total,
         "configured_by_room": dict(sorted(configured_by_room.items())),
         "source_room_counts": dict(sorted(source_room_counts.items())),

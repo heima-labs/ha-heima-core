@@ -500,6 +500,7 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert summary["ready_tonight_total"] == 1
     assert summary["waiting_for_darkness_total"] == 1
     assert summary["insufficient_evidence_total"] == 0
+    assert summary["muted_total"] == 0
     assert summary["configured_by_room"] == {"living": 1, "studio": 1}
     assert summary["source_room_counts"] == {"kitchen": 1, "living": 1, "studio": 1}
     assert summary["blocked_by_class"] == {"context_block": 1}
@@ -521,6 +522,31 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert summary["waiting_for_darkness_examples"][0]["operational_state"] == "waiting_for_darkness"
     assert summary["waiting_for_darkness_examples"][0]["selected_sources"][0]["room_id"] == "studio"
     assert summary["insufficient_evidence_examples"] == []
+
+
+async def test_config_entry_diagnostics_exposes_muted_security_presence_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"sec-muted":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":false,"muted":true,"blocked_reason":"","tonight_plan_count":1,"source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}]}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["security_presence_summary"]
+
+    assert summary["configured_total"] == 1
+    assert summary["muted_total"] == 1
+    assert summary["operational_state_counts"] == {"muted": 1}
+    assert summary["examples"][0]["muted"] is True
+    assert summary["examples"][0]["operational_state"] == "muted"
 
 
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:

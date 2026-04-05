@@ -236,6 +236,7 @@ def main() -> int:
         print(f"ready tonight: {security_presence_summary.get('ready_tonight_total', 0)}")
         print(f"waiting for darkness: {security_presence_summary.get('waiting_for_darkness_total', 0)}")
         print(f"insufficient evidence: {security_presence_summary.get('insufficient_evidence_total', 0)}")
+        print(f"muted total: {security_presence_summary.get('muted_total', 0)}")
         print(f"blocked total: {security_presence_summary.get('blocked_total', 0)}")
         configured_by_room = dict(security_presence_summary.get("configured_by_room") or {})
         if configured_by_room:
@@ -279,6 +280,7 @@ def main() -> int:
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
+                    f"muted={bool(item.get('muted', False))} | "
                     f"{item.get('operational_state') or '-'} | "
                     f"{item.get('source_profile_kind') or '-'} | "
                     f"plan={item.get('tonight_plan_count', 0)} | "
@@ -297,6 +299,7 @@ def main() -> int:
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
+                    f"muted={bool(item.get('muted', False))} | "
                     f"{item.get('operational_state') or '-'} | "
                     f"{item.get('source_profile_kind') or '-'} | "
                     f"sources={selected_compact or '-'}"

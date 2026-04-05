@@ -957,6 +957,7 @@ Tasks:
 - explicit mute/disable behavior
 - clearer hold semantics
 - predictable recovery after temporary blocks
+- operational summaries MUST surface muted reactions explicitly, not only via generic blocked counts
 3. tighten safety around presence return:
 - verify immediate stop behavior
 - verify no further queued activation survives a presence comeback

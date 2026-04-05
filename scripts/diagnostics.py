@@ -263,6 +263,7 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
     print(f"ready_tonight_total: {data.get('ready_tonight_total', 0)}")
     print(f"waiting_for_darkness_total: {data.get('waiting_for_darkness_total', 0)}")
     print(f"insufficient_evidence_total: {data.get('insufficient_evidence_total', 0)}")
+    print(f"muted_total: {data.get('muted_total', 0)}")
     print(f"blocked_total: {data.get('blocked_total', 0)}")
 
     configured_by_room = dict(data.get("configured_by_room") or {})
@@ -313,6 +314,7 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
         for item in examples:
             print(
                 f"  {item.get('reaction_id') or '-'} | active={bool(item.get('active_tonight', False))} | "
+                f"muted={bool(item.get('muted', False))} | "
                 f"state={item.get('operational_state') or '-'} | "
                 f"kind={item.get('source_profile_kind') or '-'} | "
                 f"plan={item.get('tonight_plan_count', 0)} | blocked={item.get('blocked_reason') or '-'} | "
