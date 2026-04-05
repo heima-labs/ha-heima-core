@@ -924,6 +924,7 @@ Tasks:
 - excluded source profiles and reasons
 - expected nightly timeline
 - closeout rationale
+ - ready / waiting-for-darkness / insufficient-evidence examples
 2. add operational summaries:
 - ready tonight
 - blocked tonight

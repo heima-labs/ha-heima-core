@@ -481,8 +481,8 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
         diagnostics=lambda: {"engine": "ok"},
         _state=SimpleNamespace(
             get_sensor=lambda key: (
-                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles"},'
-                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions"}}'
+                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}]},'
+                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions","selected_source_trace":[{"reaction_id":"src2","room_id":"studio","selection_reason":"top_ranked_seed","score":140.0}]}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -508,6 +508,11 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
         "learned_source_profiles": 1,
     }
     assert len(summary["examples"]) == 2
+    assert len(summary["ready_examples"]) == 1
+    assert summary["ready_examples"][0]["selected_sources"][0]["room_id"] == "living"
+    assert len(summary["waiting_for_darkness_examples"]) == 1
+    assert summary["waiting_for_darkness_examples"][0]["selected_sources"][0]["room_id"] == "studio"
+    assert summary["insufficient_evidence_examples"] == []
 
 
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:

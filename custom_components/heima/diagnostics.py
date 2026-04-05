@@ -613,6 +613,9 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     blocked_by_reason: dict[str, int] = {}
     source_profile_kind_counts: dict[str, int] = {}
     examples: list[dict[str, Any]] = []
+    ready_examples: list[dict[str, Any]] = []
+    waiting_for_darkness_examples: list[dict[str, Any]] = []
+    insufficient_evidence_examples: list[dict[str, Any]] = []
 
     for reaction_id, cfg in active:
         reaction_type = str(cfg.get("reaction_type") or "").strip()
@@ -680,6 +683,35 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                 }
             )
 
+        example = {
+            "reaction_id": reaction_id,
+            "allowed_rooms": allowed_rooms,
+            "source_rooms": source_rooms,
+            "source_profile_kind": source_profile_kind,
+            "tonight_plan_count": plan_count,
+            "next_planned_activation": cfg.get("next_planned_activation"),
+            "selected_sources": [
+                {
+                    "reaction_id": str(item.get("reaction_id") or ""),
+                    "room_id": str(item.get("room_id") or ""),
+                    "selection_reason": str(item.get("selection_reason") or ""),
+                    "score": item.get("score"),
+                }
+                for item in list(cfg.get("selected_source_trace") or [])[:3]
+                if isinstance(item, dict)
+            ],
+        }
+        if (plan_count > 0 or blocked_reason == "awaiting_next_planned_activation") and len(ready_examples) < 3:
+            ready_examples.append(dict(example))
+        if blocked_reason == "outside_not_dark" and len(waiting_for_darkness_examples) < 3:
+            waiting_for_darkness_examples.append(dict(example))
+        if blocked_reason in {
+            "insufficient_learned_evidence",
+            "insufficient_source_strength",
+            "no_suitable_recent_sources",
+        } and len(insufficient_evidence_examples) < 3:
+            insufficient_evidence_examples.append(dict(example))
+
     return {
         "configured_total": configured_total,
         "active_tonight_total": active_tonight_total,
@@ -692,6 +724,9 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "blocked_by_reason": dict(sorted(blocked_by_reason.items())),
         "source_profile_kind_counts": dict(sorted(source_profile_kind_counts.items())),
         "examples": examples,
+        "ready_examples": ready_examples,
+        "waiting_for_darkness_examples": waiting_for_darkness_examples,
+        "insufficient_evidence_examples": insufficient_evidence_examples,
     }
 
 

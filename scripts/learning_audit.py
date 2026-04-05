@@ -255,6 +255,38 @@ def main() -> int:
                 "blocked by reason: "
                 + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
             )
+        ready_examples = list(security_presence_summary.get("ready_examples") or [])
+        if ready_examples:
+            print("ready examples:")
+            for item in ready_examples:
+                selected = list(item.get("selected_sources") or [])
+                selected_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                    for src in selected
+                )
+                print(
+                    "  "
+                    f"{item.get('reaction_id') or '-'} | "
+                    f"{item.get('source_profile_kind') or '-'} | "
+                    f"plan={item.get('tonight_plan_count', 0)} | "
+                    f"next={item.get('next_planned_activation') or '-'} | "
+                    f"sources={selected_compact or '-'}"
+                )
+        waiting_examples = list(security_presence_summary.get("waiting_for_darkness_examples") or [])
+        if waiting_examples:
+            print("waiting for darkness examples:")
+            for item in waiting_examples:
+                selected = list(item.get("selected_sources") or [])
+                selected_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                    for src in selected
+                )
+                print(
+                    "  "
+                    f"{item.get('reaction_id') or '-'} | "
+                    f"{item.get('source_profile_kind') or '-'} | "
+                    f"sources={selected_compact or '-'}"
+                )
 
     families = dict(summary.get("families") or {})
     if families:

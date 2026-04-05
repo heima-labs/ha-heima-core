@@ -304,6 +304,44 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
                 f"next={item.get('next_planned_activation') or '-'}"
             )
 
+    ready_examples = list(data.get("ready_examples") or [])
+    if ready_examples:
+        print("ready_examples:")
+        for item in ready_examples:
+            selected = list(item.get("selected_sources") or [])
+            selected_compact = ", ".join(
+                f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                for src in selected
+            )
+            print(
+                f"  {item.get('reaction_id') or '-'} | kind={item.get('source_profile_kind') or '-'} | "
+                f"plan={item.get('tonight_plan_count', 0)} | next={item.get('next_planned_activation') or '-'} | "
+                f"sources={selected_compact or '-'}"
+            )
+
+    waiting_examples = list(data.get("waiting_for_darkness_examples") or [])
+    if waiting_examples:
+        print("waiting_for_darkness_examples:")
+        for item in waiting_examples:
+            selected = list(item.get("selected_sources") or [])
+            selected_compact = ", ".join(
+                f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                for src in selected
+            )
+            print(
+                f"  {item.get('reaction_id') or '-'} | kind={item.get('source_profile_kind') or '-'} | "
+                f"plan={item.get('tonight_plan_count', 0)} | sources={selected_compact or '-'}"
+            )
+
+    insufficient_examples = list(data.get("insufficient_evidence_examples") or [])
+    if insufficient_examples:
+        print("insufficient_evidence_examples:")
+        for item in insufficient_examples:
+            print(
+                f"  {item.get('reaction_id') or '-'} | kind={item.get('source_profile_kind') or '-'} | "
+                f"rooms={','.join(item.get('source_rooms') or []) or '-'}"
+            )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")
