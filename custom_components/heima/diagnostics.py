@@ -611,6 +611,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     configured_by_room: dict[str, int] = {}
     source_room_counts: dict[str, int] = {}
     blocked_by_reason: dict[str, int] = {}
+    blocked_by_class: dict[str, int] = {}
     source_profile_kind_counts: dict[str, int] = {}
     examples: list[dict[str, Any]] = []
     ready_examples: list[dict[str, Any]] = []
@@ -653,6 +654,8 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         if blocked_reason:
             blocked_total += 1
             blocked_by_reason[blocked_reason] = blocked_by_reason.get(blocked_reason, 0) + 1
+            reason_class = _security_presence_blocked_reason_class(blocked_reason)
+            blocked_by_class[reason_class] = blocked_by_class.get(reason_class, 0) + 1
 
         allowed_rooms = [
             str(item).strip()
@@ -721,6 +724,7 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "blocked_total": blocked_total,
         "configured_by_room": dict(sorted(configured_by_room.items())),
         "source_room_counts": dict(sorted(source_room_counts.items())),
+        "blocked_by_class": dict(sorted(blocked_by_class.items())),
         "blocked_by_reason": dict(sorted(blocked_by_reason.items())),
         "source_profile_kind_counts": dict(sorted(source_profile_kind_counts.items())),
         "examples": examples,
@@ -728,6 +732,25 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "waiting_for_darkness_examples": waiting_for_darkness_examples,
         "insufficient_evidence_examples": insufficient_evidence_examples,
     }
+
+
+def _security_presence_blocked_reason_class(reason: str) -> str:
+    value = str(reason or "").strip()
+    if value in {"presence_detected"}:
+        return "safety_block"
+    if value in {"outside_not_dark", "not_in_vacation"}:
+        return "context_block"
+    if value in {
+        "insufficient_learned_evidence",
+        "insufficient_source_strength",
+        "no_suitable_recent_sources",
+    }:
+        return "evidence_block"
+    if value in {"waiting_for_snapshot", "awaiting_next_planned_activation", "sun_unavailable"}:
+        return "readiness_block"
+    if not value:
+        return "none"
+    return "other"
 
 
 def _composite_summary_diagnostics(

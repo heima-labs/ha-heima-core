@@ -255,6 +255,12 @@ def main() -> int:
                 "blocked by reason: "
                 + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
             )
+        blocked_by_class = dict(security_presence_summary.get("blocked_by_class") or {})
+        if blocked_by_class:
+            print(
+                "blocked by class: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
+            )
         ready_examples = list(security_presence_summary.get("ready_examples") or [])
         if ready_examples:
             print("ready examples:")

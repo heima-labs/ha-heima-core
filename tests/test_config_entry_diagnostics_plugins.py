@@ -502,6 +502,7 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert summary["insufficient_evidence_total"] == 0
     assert summary["configured_by_room"] == {"living": 1, "studio": 1}
     assert summary["source_room_counts"] == {"kitchen": 1, "living": 1, "studio": 1}
+    assert summary["blocked_by_class"] == {"context_block": 1}
     assert summary["blocked_by_reason"] == {"outside_not_dark": 1}
     assert summary["source_profile_kind_counts"] == {
         "accepted_lighting_reactions": 1,

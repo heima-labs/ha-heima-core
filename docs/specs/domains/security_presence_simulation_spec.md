@@ -951,6 +951,7 @@ Tasks:
 1. add stronger blocked-state polish:
 - product-facing blocked reasons
 - clearer distinction between unavailable evidence, waiting state and active suppression
+- operational grouping of blocked states such as context / safety / evidence / readiness
 2. add family-specific runtime controls where appropriate:
 - explicit mute/disable behavior
 - clearer hold semantics

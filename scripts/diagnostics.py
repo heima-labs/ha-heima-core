@@ -286,6 +286,13 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
             + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
         )
 
+    blocked_by_class = dict(data.get("blocked_by_class") or {})
+    if blocked_by_class:
+        print(
+            "blocked_by_class: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
+        )
+
     source_profile_kind_counts = dict(data.get("source_profile_kind_counts") or {})
     if source_profile_kind_counts:
         print(
