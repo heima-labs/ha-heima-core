@@ -28,6 +28,8 @@ _TEMPORAL_COMPANION_PREFERRED_MIN = 35
 _TEMPORAL_COMPANION_SOFT_MAX_MIN = 150
 _SEQUENCE_COMPANION_PREFERRED_MIN = 20
 _SEQUENCE_COMPANION_SOFT_MAX_MIN = 120
+_EVENING_SHAPE_SPAN_TOLERANCE_MIN = 30
+_EVENING_SHAPE_SPAN_SOFT_TOLERANCE_MIN = 90
 
 
 class VacationPresenceSimulationReaction(HeimaReaction):
@@ -315,6 +317,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 room_id = str(item.get("room_id") or "").strip()
                 room_closeout_score = self._room_closeout_score(item, selected)
                 sequence_coherence_score = self._sequence_coherence_score(item, selected)
+                evening_shape_score = self._evening_shape_score(item, selected)
                 temporal_companion_score = self._temporal_companion_score(item, selected)
                 progresses_evening = (
                     int(item.get("scheduled_min") or 0)
@@ -349,6 +352,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     reason = "room_closeout_duration_preferred"
                 elif sequence_coherence_score >= 2:
                     reason = "sequence_coherence_preferred"
+                elif evening_shape_score >= 2:
+                    reason = "evening_shape_preferred"
                 elif same_weekday_companion:
                     reason = "same_weekday_companion_preferred"
                 elif temporal_companion_score >= 2:
@@ -361,6 +366,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     reason = "temporal_spread_preferred"
                 key = (
                     room_closeout_score,
+                    evening_shape_score,
                     sequence_coherence_score,
                     same_weekday_companion,
                     temporal_companion_score,
@@ -369,6 +375,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     room_bonus,
                     spread_bucket,
                     -abs(self._preferred_closeout_delta_penalty(item, selected)),
+                    -abs(self._preferred_evening_shape_penalty(item, selected)),
                     -abs(self._preferred_sequence_coherence_penalty(item, selected)),
                     -abs(self._preferred_temporal_companion_penalty(item, selected)),
                     float(item.get("score") or 0.0),
@@ -539,7 +546,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 1
         if delta_min <= _TEMPORAL_COMPANION_SOFT_MAX_MIN:
             return 3
-        return 2
+        return 1
 
     def _sequence_coherence_score(
         self,
@@ -560,7 +567,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 1
         if delta_min <= _SEQUENCE_COMPANION_SOFT_MAX_MIN:
             return 3
-        return 2
+        return 1
 
     def _preferred_sequence_coherence_penalty(
         self,
@@ -579,6 +586,78 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 9999
         target = (_SEQUENCE_COMPANION_PREFERRED_MIN + _SEQUENCE_COMPANION_SOFT_MAX_MIN) // 2
         return abs(delta_min - target)
+
+    def _evening_shape_score(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        target = self._observed_evening_shape_span_target_min(selected)
+        if target is None or not selected:
+            return 0
+        projected = self._projected_evening_span_min(candidate, selected)
+        if projected is None:
+            return 0
+        delta = abs(projected - target)
+        if delta <= _EVENING_SHAPE_SPAN_TOLERANCE_MIN:
+            return 3
+        if delta <= _EVENING_SHAPE_SPAN_SOFT_TOLERANCE_MIN:
+            return 2
+        return 1
+
+    def _preferred_evening_shape_penalty(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int:
+        target = self._observed_evening_shape_span_target_min(selected)
+        projected = self._projected_evening_span_min(candidate, selected)
+        if target is None or projected is None:
+            return 9999
+        return abs(projected - target)
+
+    def _projected_evening_span_min(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> int | None:
+        if not selected:
+            return None
+        mins = [int(item.get("scheduled_min") or 0) for item in selected]
+        mins.append(int(candidate.get("scheduled_min") or 0))
+        return max(mins) - min(mins)
+
+    def _observed_evening_shape_span_target_min(
+        self,
+        selected: list[dict[str, Any]],
+    ) -> int | None:
+        if not selected:
+            return None
+        seed = selected[0]
+        if bool(seed.get("same_weekday") is True) is False:
+            return None
+        target_weekday = int(seed.get("weekday") or 0)
+        samples = self._evening_shape_span_samples(target_weekday)
+        if not samples:
+            return None
+        return int(round(float(median(samples))))
+
+    def _evening_shape_span_samples(self, weekday: int) -> list[int]:
+        grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        for item in self._source_profiles:
+            if int(item.get("weekday") or 0) != weekday:
+                continue
+            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(item.get("created_at"))
+            observation_key = observed_at.date().isoformat() if observed_at is not None else "unknown"
+            group_key = (observation_key, weekday)
+            grouped.setdefault(group_key, []).append(item)
+        samples: list[int] = []
+        for group_key in sorted(grouped):
+            scheduled = sorted(int(item.get("scheduled_min") or 0) for item in grouped[group_key])
+            if len(scheduled) < 2:
+                continue
+            samples.append(max(scheduled) - min(scheduled))
+        return samples
 
     def _preferred_temporal_companion_penalty(
         self,
