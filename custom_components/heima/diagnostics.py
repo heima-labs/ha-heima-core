@@ -713,6 +713,16 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
             "operational_state": operational_state,
             "tonight_plan_count": plan_count,
             "next_planned_activation": cfg.get("next_planned_activation"),
+            "tonight_plan_preview": [
+                {
+                    "room_id": str(item.get("room_id") or ""),
+                    "due_local": str(item.get("due_local") or ""),
+                    "jitter_min": int(item.get("jitter_min") or 0),
+                    "selection_reason": str(item.get("selection_reason") or ""),
+                }
+                for item in list(cfg.get("tonight_plan_preview") or [])[:3]
+                if isinstance(item, dict)
+            ],
             "selected_sources": [
                 {
                     "reaction_id": str(item.get("reaction_id") or ""),
@@ -721,6 +731,16 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                     "score": item.get("score"),
                 }
                 for item in list(cfg.get("selected_source_trace") or [])[:3]
+                if isinstance(item, dict)
+            ],
+            "excluded_sources": [
+                {
+                    "reaction_id": str(item.get("reaction_id") or ""),
+                    "room_id": str(item.get("room_id") or ""),
+                    "exclusion_reason": str(item.get("exclusion_reason") or ""),
+                    "score": item.get("score"),
+                }
+                for item in list(cfg.get("excluded_source_trace") or [])[:3]
                 if isinstance(item, dict)
             ],
         }

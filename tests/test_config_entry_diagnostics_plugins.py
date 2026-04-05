@@ -481,8 +481,8 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
         diagnostics=lambda: {"engine": "ok"},
         _state=SimpleNamespace(
             get_sensor=lambda key: (
-                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"operational_state":"ready_tonight","blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}]},'
-                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"operational_state":"waiting_for_darkness","blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions","selected_source_trace":[{"reaction_id":"src2","room_id":"studio","selection_reason":"top_ranked_seed","score":140.0}]}}'
+                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"operational_state":"ready_tonight","blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}],"excluded_source_trace":[{"reaction_id":"src3","room_id":"kitchen","exclusion_reason":"not_selected_within_budget","score":150.0}],"tonight_plan_preview":[{"room_id":"living","due_local":"2026-04-04T20:30:00+02:00","jitter_min":0,"selection_reason":"top_ranked_seed"}]},'
+                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"operational_state":"waiting_for_darkness","blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions","selected_source_trace":[{"reaction_id":"src2","room_id":"studio","selection_reason":"top_ranked_seed","score":140.0}],"excluded_source_trace":[{"reaction_id":"src4","room_id":"studio","exclusion_reason":"outside_not_dark","score":120.0}]}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -518,9 +518,12 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert len(summary["ready_examples"]) == 1
     assert summary["ready_examples"][0]["operational_state"] == "ready_tonight"
     assert summary["ready_examples"][0]["selected_sources"][0]["room_id"] == "living"
+    assert summary["ready_examples"][0]["tonight_plan_preview"][0]["room_id"] == "living"
+    assert summary["ready_examples"][0]["excluded_sources"][0]["room_id"] == "kitchen"
     assert len(summary["waiting_for_darkness_examples"]) == 1
     assert summary["waiting_for_darkness_examples"][0]["operational_state"] == "waiting_for_darkness"
     assert summary["waiting_for_darkness_examples"][0]["selected_sources"][0]["room_id"] == "studio"
+    assert summary["waiting_for_darkness_examples"][0]["excluded_sources"][0]["room_id"] == "studio"
     assert summary["insufficient_evidence_examples"] == []
 
 

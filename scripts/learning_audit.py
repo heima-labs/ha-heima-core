@@ -277,6 +277,11 @@ def main() -> int:
                     f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
                     for src in selected
                 )
+                plan_preview = list(item.get("tonight_plan_preview") or [])
+                plan_compact = ", ".join(
+                    f"{step.get('room_id') or '-'}@{str(step.get('due_local') or '').split('T')[-1][:5]}:{step.get('selection_reason') or '-'}"
+                    for step in plan_preview
+                )
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
@@ -285,7 +290,8 @@ def main() -> int:
                     f"{item.get('source_profile_kind') or '-'} | "
                     f"plan={item.get('tonight_plan_count', 0)} | "
                     f"next={item.get('next_planned_activation') or '-'} | "
-                    f"sources={selected_compact or '-'}"
+                    f"sources={selected_compact or '-'} | "
+                    f"plan={plan_compact or '-'}"
                 )
         waiting_examples = list(security_presence_summary.get("waiting_for_darkness_examples") or [])
         if waiting_examples:
@@ -296,13 +302,19 @@ def main() -> int:
                     f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
                     for src in selected
                 )
+                excluded = list(item.get("excluded_sources") or [])
+                excluded_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('exclusion_reason') or '-'}"
+                    for src in excluded
+                )
                 print(
                     "  "
                     f"{item.get('reaction_id') or '-'} | "
                     f"muted={bool(item.get('muted', False))} | "
                     f"{item.get('operational_state') or '-'} | "
                     f"{item.get('source_profile_kind') or '-'} | "
-                    f"sources={selected_compact or '-'}"
+                    f"sources={selected_compact or '-'} | "
+                    f"excluded={excluded_compact or '-'}"
                 )
 
     families = dict(summary.get("families") or {})

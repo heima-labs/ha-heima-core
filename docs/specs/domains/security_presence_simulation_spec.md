@@ -941,6 +941,7 @@ Tasks:
 
 Exit criteria:
 - an admin can understand what Heima plans to do tonight and why, without reading raw engine internals
+- summaries SHOULD expose compact plan preview and selected/excluded source examples suitable for a panel-style control surface
 
 ### SPS-B3 Guardrails and Runtime Control
 
