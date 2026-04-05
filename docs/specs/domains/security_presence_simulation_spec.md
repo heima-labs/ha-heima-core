@@ -483,6 +483,24 @@ This keeps the first slice smaller while preserving the correct family boundary.
 Goal:
 - add analyzer/proposal generation from historical evening occupancy patterns
 
+The first learned slice should stay bounded:
+
+- emit at most one home-scoped proposal
+- derive an initial `learned_source_profiles` payload directly from historical
+  user lighting events
+- exclude `vacation` periods from the learned baseline
+- only emit when the learned material is strong enough to run credibly without
+  degrading to a static fallback
+
+The learned proposal should therefore carry:
+
+- `reaction_class = VacationPresenceSimulationReaction`
+- `dynamic_policy = true`
+- `learned_source_profiles`
+- learned `allowed_rooms`
+- learned `allowed_entities`
+- conservative default guards (`requires_dark_outside`, `skip_if_presence_detected`)
+
 ### SPS-4 Tuning and UX
 
 Goal:

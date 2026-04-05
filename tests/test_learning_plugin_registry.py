@@ -89,7 +89,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "plugin_family": "security_presence_simulation",
         "proposal_types": ["vacation_presence_simulation"],
         "reaction_targets": ["VacationPresenceSimulationReaction"],
-        "has_lifecycle_hooks": False,
+        "has_lifecycle_hooks": True,
         "supports_admin_authored": True,
         "admin_authored_templates": [
             {
@@ -205,6 +205,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("heating_eco") is not None
     assert registry.lifecycle_hooks_for("lighting_scene_schedule") is not None
     assert registry.lifecycle_hooks_for("room_signal_assist") is not None
+    assert registry.lifecycle_hooks_for("vacation_presence_simulation") is not None
     assert registry.lifecycle_hooks_for("missing.reaction") is None
 
 

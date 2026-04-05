@@ -57,6 +57,10 @@ def lighting_lifecycle_hooks() -> ProposalLifecycleHooks:
     )
 
 
+def security_presence_simulation_lifecycle_hooks() -> ProposalLifecycleHooks:
+    return ProposalLifecycleHooks(identity_key=_security_presence_simulation_identity_key)
+
+
 def composite_lifecycle_policy_from_learning_config(
     learning_config: dict[str, Any] | None,
 ) -> CompositeLifecyclePolicy:
@@ -220,6 +224,10 @@ def _composite_room_identity_key(proposal: ReactionProposal) -> str:
     primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
     suffix = f"|primary={primary_signal}" if primary_signal else ""
     return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}"
+
+
+def _security_presence_simulation_identity_key(proposal: ReactionProposal) -> str:
+    return "vacation_presence_simulation|scope=home"
 
 
 def _composite_should_suppress_followup(

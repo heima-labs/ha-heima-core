@@ -328,6 +328,51 @@ def test_vacation_presence_simulation_reaction_bootstraps_source_profile_from_re
     assert diagnostics["blocked_reason"] == "waiting_for_snapshot"
 
 
+def test_vacation_presence_simulation_reaction_uses_learned_source_profiles_from_config():
+    engine = _make_engine(options={
+        "reactions": {
+            "configured": {
+                "security-presence": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "enabled": True,
+                    "learned_source_profiles": [
+                        {
+                            "reaction_id": "learned:living:0:1110:on",
+                            "room_id": "living",
+                            "weekday": 0,
+                            "scheduled_min": 1110,
+                            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                            "action_kind": "on",
+                            "updated_at": "2026-04-01T20:00:00+00:00",
+                        },
+                        {
+                            "reaction_id": "learned:living:0:1320:off",
+                            "room_id": "living",
+                            "weekday": 0,
+                            "scheduled_min": 1320,
+                            "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                            "action_kind": "off",
+                            "updated_at": "2026-04-01T22:00:00+00:00",
+                        },
+                    ],
+                },
+            }
+        }
+    })
+
+    engine._rebuild_configured_reactions()
+
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    assert isinstance(reaction, VacationPresenceSimulationReaction)
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["source_profile_kind"] == "learned_source_profiles"
+    assert diagnostics["source_reaction_ids"] == [
+        "learned:living:0:1110:on",
+        "learned:living:0:1320:off",
+    ]
+
+
 def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_until_plan_exists():
     engine = _make_engine(options={
         "reactions": {

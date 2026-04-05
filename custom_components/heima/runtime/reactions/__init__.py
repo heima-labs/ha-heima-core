@@ -51,7 +51,9 @@ from .security_presence_simulation import (
     VacationPresenceSimulationReaction,
     build_vacation_presence_simulation_reaction,
     present_admin_authored_vacation_presence_simulation_details,
+    present_learned_vacation_presence_simulation_details,
     present_vacation_presence_simulation_label,
+    present_vacation_presence_simulation_proposal_label,
     present_vacation_presence_simulation_review_title,
 )
 
@@ -231,8 +233,10 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_vacation_presence_simulation_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_vacation_presence_simulation_label,
+                proposal_human_label=present_vacation_presence_simulation_proposal_label,
                 proposal_review_title=present_vacation_presence_simulation_review_title,
                 admin_authored_review_details=present_admin_authored_vacation_presence_simulation_details,
+                learned_review_details=present_learned_vacation_presence_simulation_details,
             ),
         ),
     )

@@ -44,6 +44,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         max_events_per_evening_override: int | None,
         latest_end_time_override: str | None,
         skip_if_presence_detected: bool,
+        source_profile_kind: str,
         source_reaction_ids: list[str],
         source_rooms: list[str],
         source_profiles: list[dict[str, Any]],
@@ -61,6 +62,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         self._max_events_per_evening_override = max_events_per_evening_override
         self._latest_end_time_override = latest_end_time_override
         self._skip_if_presence_detected = skip_if_presence_detected
+        self._source_profile_kind = source_profile_kind
         self._source_reaction_ids = list(source_reaction_ids)
         self._source_rooms = list(source_rooms)
         self._source_profiles = list(source_profiles)
@@ -146,6 +148,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         }
 
     def on_options_reloaded(self, options: dict[str, Any]) -> None:
+        if self._source_profile_kind != "accepted_lighting_reactions":
+            return
         source_reaction_ids, source_rooms, source_profiles = _select_source_profile(
             options=options,
             allowed_rooms=self._allowed_rooms,
@@ -176,7 +180,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             "max_events_per_evening_override": self._max_events_per_evening_override,
             "latest_end_time_override": self._latest_end_time_override,
             "skip_if_presence_detected": self._skip_if_presence_detected,
-            "source_profile_kind": "accepted_lighting_reactions",
+            "source_profile_kind": self._source_profile_kind,
             "source_profile_ready": bool(self._source_reaction_ids),
             "source_reaction_count": len(self._source_reaction_ids),
             "source_reaction_ids": list(self._source_reaction_ids),
@@ -654,11 +658,15 @@ def build_vacation_presence_simulation_reaction(
         max_events_per_evening_override = _optional_int(cfg.get("max_events_per_evening_override"))
         latest_end_time_override = str(cfg.get("latest_end_time_override") or "").strip() or None
         skip_if_presence_detected = bool(cfg.get("skip_if_presence_detected", True))
-        source_reaction_ids, source_rooms, source_profiles = _select_source_profile(
-            options=dict(getattr(engine, "_entry").options),  # noqa: SLF001
-            allowed_rooms=allowed_rooms,
-            allowed_entities=allowed_entities,
-        )
+        source_reaction_ids, source_rooms, source_profiles = _select_source_profile_from_config(cfg)
+        source_profile_kind = "learned_source_profiles"
+        if not source_reaction_ids:
+            source_reaction_ids, source_rooms, source_profiles = _select_source_profile(
+                options=dict(getattr(engine, "_entry").options),  # noqa: SLF001
+                allowed_rooms=allowed_rooms,
+                allowed_entities=allowed_entities,
+            )
+            source_profile_kind = "accepted_lighting_reactions"
     except Exception:
         return None
     return VacationPresenceSimulationReaction(
@@ -673,6 +681,7 @@ def build_vacation_presence_simulation_reaction(
         max_events_per_evening_override=max_events_per_evening_override,
         latest_end_time_override=latest_end_time_override,
         skip_if_presence_detected=skip_if_presence_detected,
+        source_profile_kind=source_profile_kind,
         source_reaction_ids=source_reaction_ids,
         source_rooms=source_rooms,
         source_profiles=source_profiles,
@@ -714,14 +723,98 @@ def present_admin_authored_vacation_presence_simulation_details(
     return details
 
 
+def present_learned_vacation_presence_simulation_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    diagnostics = dict(cfg.get("learning_diagnostics", {}) or {})
+    is_it = language.startswith("it")
+    details = ["Tipo: policy dinamica appresa" if is_it else "Type: learned dynamic policy"]
+    rooms = [str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()]
+    if rooms:
+        details.append(
+            f"Stanze apprese: {', '.join(rooms)}"
+            if is_it
+            else f"Learned rooms: {', '.join(rooms)}"
+        )
+    source_profile_count = diagnostics.get("source_profile_count")
+    if isinstance(source_profile_count, int):
+        details.append(
+            f"Profili sorgente: {source_profile_count}"
+            if is_it
+            else f"Source profiles: {source_profile_count}"
+        )
+    weekdays = diagnostics.get("weekdays")
+    if isinstance(weekdays, list) and weekdays:
+        labels = [
+            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][int(item) % 7]
+            for item in weekdays
+        ]
+        details.append(
+            f"Giorni coperti: {', '.join(labels)}"
+            if is_it
+            else f"Covered weekdays: {', '.join(labels)}"
+        )
+    details.append(
+        "Profilo di esecuzione: derivato da user lighting history non-vacation"
+        if is_it
+        else "Execution profile: derived from non-vacation user lighting history"
+    )
+    return details
+
+
+def present_vacation_presence_simulation_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    rooms = [str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()]
+    if rooms:
+        scope = ", ".join(rooms[:2])
+        if len(rooms) > 2:
+            scope = f"{scope}, +{len(rooms) - 2}"
+        return (
+            f"Presenza vacation · {scope}"
+            if language.startswith("it")
+            else f"Vacation presence · {scope}"
+        )
+    return (
+        "Simulazione presenza vacation"
+        if language.startswith("it")
+        else "Vacation presence simulation"
+    )
+
+
 def present_vacation_presence_simulation_review_title(
     flow: Any,
     proposal: Any,
     cfg: dict[str, Any],
     language: str,
-    is_admin_authored: bool,
+    is_followup: bool,
 ) -> str | None:
-    return "Simulazione presenza in vacation"
+    base = present_vacation_presence_simulation_proposal_label(flow, proposal, cfg, language)
+    if not base:
+        return (
+            "Simulazione presenza in vacation"
+            if language.startswith("it")
+            else "Vacation presence simulation"
+        )
+    if getattr(proposal, "origin", "") == "admin_authored":
+        return (
+            "Simulazione presenza in vacation"
+            if language.startswith("it")
+            else "Vacation presence simulation"
+        )
+    if language.startswith("it"):
+        if is_followup:
+            return f"Affinamento simulazione presenza: {base}"
+        return f"Nuova simulazione presenza: {base}"
+    if is_followup:
+        return f"Presence simulation tuning: {base}"
+    return f"New presence simulation: {base}"
 
 
 def _optional_int(value: Any) -> int | None:
@@ -777,6 +870,41 @@ def _select_source_profile(
     source_profiles = [payload for _, payload in candidates]
     source_ids = [payload["reaction_id"] for payload in source_profiles]
     source_rooms = sorted({payload["room_id"] for payload in source_profiles if payload["room_id"]})
+    return source_ids, source_rooms, source_profiles
+
+
+def _select_source_profile_from_config(
+    cfg: dict[str, Any],
+) -> tuple[list[str], list[str], list[dict[str, Any]]]:
+    items = cfg.get("learned_source_profiles")
+    if not isinstance(items, list):
+        return [], [], []
+
+    source_profiles: list[dict[str, Any]] = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        room_id = str(raw.get("room_id") or "").strip()
+        reaction_id = str(raw.get("reaction_id") or "").strip()
+        entity_steps = list(raw.get("entity_steps", []) or [])
+        action_kind = str(raw.get("action_kind") or _event_action_kind(entity_steps)).strip()
+        if not room_id or not reaction_id or not entity_steps or action_kind not in {"on", "off"}:
+            continue
+        source_profiles.append(
+            {
+                "reaction_id": reaction_id,
+                "room_id": room_id,
+                "weekday": int(raw.get("weekday", 0)),
+                "scheduled_min": int(raw.get("scheduled_min", 0)),
+                "entity_steps": entity_steps,
+                "action_kind": action_kind,
+                "created_at": raw.get("created_at"),
+                "updated_at": raw.get("updated_at"),
+            }
+        )
+
+    source_ids = [item["reaction_id"] for item in source_profiles]
+    source_rooms = sorted({item["room_id"] for item in source_profiles if item["room_id"]})
     return source_ids, source_rooms, source_profiles
 
 

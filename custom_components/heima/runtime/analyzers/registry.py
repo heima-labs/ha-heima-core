@@ -16,6 +16,7 @@ from .lifecycle import (
     heating_lifecycle_hooks,
     lighting_lifecycle_hooks,
     presence_lifecycle_hooks,
+    security_presence_simulation_lifecycle_hooks,
 )
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
@@ -290,7 +291,7 @@ def create_builtin_learning_plugin_registry(
             plugin_family="security_presence_simulation",
             proposal_types=("vacation_presence_simulation",),
             reaction_targets=("VacationPresenceSimulationReaction",),
-            lifecycle_hooks=None,
+            lifecycle_hooks=security_presence_simulation_lifecycle_hooks(),
             supports_admin_authored=True,
             admin_authored_templates=(
                 AdminAuthoredTemplateDescriptor(
