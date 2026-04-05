@@ -481,8 +481,8 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
         diagnostics=lambda: {"engine": "ok"},
         _state=SimpleNamespace(
             get_sensor=lambda key: (
-                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00"},'
-                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"presence_detected","tonight_plan_count":0}}'
+                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles"},'
+                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions"}}'
                 if key == "heima_reactions_active"
                 else None
             )
@@ -497,9 +497,16 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert summary["configured_total"] == 2
     assert summary["active_tonight_total"] == 1
     assert summary["blocked_total"] == 1
+    assert summary["ready_tonight_total"] == 1
+    assert summary["waiting_for_darkness_total"] == 1
+    assert summary["insufficient_evidence_total"] == 0
     assert summary["configured_by_room"] == {"living": 1, "studio": 1}
     assert summary["source_room_counts"] == {"kitchen": 1, "living": 1, "studio": 1}
-    assert summary["blocked_by_reason"] == {"presence_detected": 1}
+    assert summary["blocked_by_reason"] == {"outside_not_dark": 1}
+    assert summary["source_profile_kind_counts"] == {
+        "accepted_lighting_reactions": 1,
+        "learned_source_profiles": 1,
+    }
     assert len(summary["examples"]) == 2
 
 

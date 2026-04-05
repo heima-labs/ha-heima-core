@@ -260,6 +260,9 @@ def _print_house_state_summary(data: dict[str, Any]) -> None:
 def _print_security_presence_summary(data: dict[str, Any]) -> None:
     print(f"configured_total: {data.get('configured_total', 0)}")
     print(f"active_tonight_total: {data.get('active_tonight_total', 0)}")
+    print(f"ready_tonight_total: {data.get('ready_tonight_total', 0)}")
+    print(f"waiting_for_darkness_total: {data.get('waiting_for_darkness_total', 0)}")
+    print(f"insufficient_evidence_total: {data.get('insufficient_evidence_total', 0)}")
     print(f"blocked_total: {data.get('blocked_total', 0)}")
 
     configured_by_room = dict(data.get("configured_by_room") or {})
@@ -283,12 +286,20 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
             + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
         )
 
+    source_profile_kind_counts = dict(data.get("source_profile_kind_counts") or {})
+    if source_profile_kind_counts:
+        print(
+            "source_profile_kind_counts: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(source_profile_kind_counts.items()))
+        )
+
     examples = list(data.get("examples") or [])
     if examples:
         print("examples:")
         for item in examples:
             print(
                 f"  {item.get('reaction_id') or '-'} | active={bool(item.get('active_tonight', False))} | "
+                f"kind={item.get('source_profile_kind') or '-'} | "
                 f"plan={item.get('tonight_plan_count', 0)} | blocked={item.get('blocked_reason') or '-'} | "
                 f"next={item.get('next_planned_activation') or '-'}"
             )

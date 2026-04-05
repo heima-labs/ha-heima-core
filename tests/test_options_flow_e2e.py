@@ -587,8 +587,8 @@ def test_init_status_block_uses_operational_security_presence_summary_when_runti
                     engine=SimpleNamespace(
                         _state=SimpleNamespace(
                             get_sensor=lambda key: (
-                                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":true,"blocked_reason":""},'
-                                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark"}}'
+                                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2},'
+                                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark","tonight_plan_count":0}}'
                                 if key == "heima_reactions_active"
                                 else None
                             )
@@ -601,7 +601,7 @@ def test_init_status_block_uses_operational_security_presence_summary_when_runti
 
     placeholders = flow._init_status_block()
 
-    assert placeholders["security_summary"] == "simulazioni 2 | attive 1 | bloccate 1"
+    assert placeholders["security_summary"] == "simulazioni 2 | pronte 1 | bloccate 1"
 
 
 @pytest.mark.asyncio

@@ -604,10 +604,14 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     active = _active_reaction_items(coordinator)
     configured_total = 0
     active_tonight_total = 0
+    ready_tonight_total = 0
+    waiting_for_darkness_total = 0
+    insufficient_evidence_total = 0
     blocked_total = 0
     configured_by_room: dict[str, int] = {}
     source_room_counts: dict[str, int] = {}
     blocked_by_reason: dict[str, int] = {}
+    source_profile_kind_counts: dict[str, int] = {}
     examples: list[dict[str, Any]] = []
 
     for reaction_id, cfg in active:
@@ -625,8 +629,24 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         configured_total += 1
         active_tonight = bool(cfg.get("active_tonight") is True)
         blocked_reason = str(cfg.get("blocked_reason") or "").strip()
+        source_profile_kind = str(cfg.get("source_profile_kind") or "").strip()
+        plan_count = int(cfg.get("tonight_plan_count") or 0)
         if active_tonight:
             active_tonight_total += 1
+        if source_profile_kind:
+            source_profile_kind_counts[source_profile_kind] = (
+                source_profile_kind_counts.get(source_profile_kind, 0) + 1
+            )
+        if plan_count > 0 or blocked_reason == "awaiting_next_planned_activation":
+            ready_tonight_total += 1
+        if blocked_reason == "outside_not_dark":
+            waiting_for_darkness_total += 1
+        if blocked_reason in {
+            "insufficient_learned_evidence",
+            "insufficient_source_strength",
+            "no_suitable_recent_sources",
+        }:
+            insufficient_evidence_total += 1
         if blocked_reason:
             blocked_total += 1
             blocked_by_reason[blocked_reason] = blocked_by_reason.get(blocked_reason, 0) + 1
@@ -654,7 +674,8 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                     "source_rooms": source_rooms,
                     "active_tonight": active_tonight,
                     "blocked_reason": blocked_reason,
-                    "tonight_plan_count": int(cfg.get("tonight_plan_count") or 0),
+                    "source_profile_kind": source_profile_kind,
+                    "tonight_plan_count": plan_count,
                     "next_planned_activation": cfg.get("next_planned_activation"),
                 }
             )
@@ -662,10 +683,14 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     return {
         "configured_total": configured_total,
         "active_tonight_total": active_tonight_total,
+        "ready_tonight_total": ready_tonight_total,
+        "waiting_for_darkness_total": waiting_for_darkness_total,
+        "insufficient_evidence_total": insufficient_evidence_total,
         "blocked_total": blocked_total,
         "configured_by_room": dict(sorted(configured_by_room.items())),
         "source_room_counts": dict(sorted(source_room_counts.items())),
         "blocked_by_reason": dict(sorted(blocked_by_reason.items())),
+        "source_profile_kind_counts": dict(sorted(source_profile_kind_counts.items())),
         "examples": examples,
     }
 

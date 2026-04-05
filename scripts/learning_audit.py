@@ -233,12 +233,21 @@ def main() -> int:
         _print_header("Security Presence")
         print(f"configured total: {security_presence_summary.get('configured_total', 0)}")
         print(f"active tonight: {security_presence_summary.get('active_tonight_total', 0)}")
+        print(f"ready tonight: {security_presence_summary.get('ready_tonight_total', 0)}")
+        print(f"waiting for darkness: {security_presence_summary.get('waiting_for_darkness_total', 0)}")
+        print(f"insufficient evidence: {security_presence_summary.get('insufficient_evidence_total', 0)}")
         print(f"blocked total: {security_presence_summary.get('blocked_total', 0)}")
         configured_by_room = dict(security_presence_summary.get("configured_by_room") or {})
         if configured_by_room:
             print(
                 "configured by room: "
                 + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        source_profile_kind_counts = dict(security_presence_summary.get("source_profile_kind_counts") or {})
+        if source_profile_kind_counts:
+            print(
+                "source profile kinds: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(source_profile_kind_counts.items()))
             )
         blocked_by_reason = dict(security_presence_summary.get("blocked_by_reason") or {})
         if blocked_by_reason:

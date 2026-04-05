@@ -43,12 +43,12 @@ class _SecurityStepsMixin:
 
             summary = _security_presence_summary_diagnostics(coordinator)
             configured_total = int(summary.get("configured_total") or 0)
-            active_tonight_total = int(summary.get("active_tonight_total") or 0)
+            ready_tonight_total = int(summary.get("ready_tonight_total") or 0)
             blocked_total = int(summary.get("blocked_total") or 0)
             if configured_total > 0:
                 return (
                     f"simulazioni {configured_total}"
-                    f" | attive {active_tonight_total}"
+                    f" | pronte {ready_tonight_total}"
                     f" | bloccate {blocked_total}"
                 )
         if security.get("enabled") and security.get("security_state_entity"):
