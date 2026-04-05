@@ -221,6 +221,8 @@ For the current MVP bootstrap:
   - weekday compatibility
   - plausible evening density
   - late-night penalties for weak outliers
+- for rooms selected into the nightly plan, the runtime SHOULD prefer preserving observed `on/off`
+  closure patterns instead of emitting only isolated `on` activations
 - when multiple suitable rooms exist, the nightly plan SHOULD prefer room diversity before selecting
   multiple closely related events from the same room
 - when multiple suitable source reactions exist, the nightly plan SHOULD prefer a temporally spread subset
@@ -433,6 +435,8 @@ Suggested diagnostics:
 - last executed simulated activation
 - source reactions considered usable tonight
 - derived tonight-plan preview
+- selected source trace with suitability score and selection reason
+- excluded source trace with exclusion reason
 - reasons for skipping:
   - daylight
   - occupancy detected

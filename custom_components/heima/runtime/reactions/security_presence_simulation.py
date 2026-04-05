@@ -162,6 +162,9 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         tonight_plan, _ = self._derive_tonight_plan(now_local)
         next_event = self._next_pending_event(tonight_plan, now_local)
         recent_profiles = self._recent_source_profiles(now_local.date())
+        source_trace = self._source_trace(now_local.date())
+        selected_trace = [item for item in source_trace if item.get("selected") is True]
+        excluded_trace = [item for item in source_trace if item.get("selected") is not True]
         return {
             "enabled": self._enabled,
             "allowed_rooms": list(self._allowed_rooms),
@@ -180,6 +183,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             "source_rooms": list(self._source_rooms),
             "recent_source_reaction_count": len(recent_profiles),
             "recent_source_reaction_ids": [item["reaction_id"] for item in recent_profiles],
+            "selected_source_trace": selected_trace[:5],
+            "excluded_source_trace": excluded_trace[:5],
             "active_tonight": bool(self._enabled and tonight_plan),
             "tonight_plan_count": len(tonight_plan),
             "tonight_plan_preview": [
@@ -189,6 +194,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     "due_local": item["due_local"].isoformat(),
                     "jitter_min": item.get("jitter_min", 0),
                     "entity_steps": len(item["entity_steps"]),
+                    "selection_reason": item.get("selection_reason"),
+                    "source_score": item.get("source_score"),
                 }
                 for item in tonight_plan
             ],
@@ -226,7 +233,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return [], "insufficient_source_strength"
 
         budget = self._event_budget(source_candidates)
-        selected = self._select_plan_sources(source_candidates, budget)
+        selected, selection_reasons = self._select_plan_sources(source_candidates, budget)
         if not selected:
             return [], "insufficient_source_strength"
         first_min = int(selected[0]["scheduled_min"])
@@ -254,6 +261,8 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                     "entity_steps": list(profile["entity_steps"]),
                     "due_local": due_local,
                     "jitter_min": jitter_min,
+                    "selection_reason": selection_reasons.get(profile["reaction_id"], ""),
+                    "source_score": float(profile.get("score") or 0.0),
                 }
             )
         if not plan:
@@ -264,24 +273,37 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         self,
         source_candidates: list[dict[str, Any]],
         budget: int,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, str]]:
         if budget <= 0 or not source_candidates:
-            return []
+            return [], {}
 
         selected: list[dict[str, Any]] = []
+        selection_reasons: dict[str, str] = {}
         remaining = list(source_candidates)
-        selected.append(remaining.pop(0))
+        first = remaining.pop(0)
+        selected.append(first)
+        selection_reasons[str(first.get("reaction_id") or "")] = "top_ranked_seed"
 
         while remaining and len(selected) < budget:
-            selected_rooms = {str(item.get("room_id") or "").strip() for item in selected}
             best_index: int | None = None
-            best_key: tuple[int, int, int, float, str] | None = None
+            best_key: tuple[int, int, int, int, float, str] | None = None
+            best_reason = "ranked_fill"
             for index, item in enumerate(remaining):
                 room_id = str(item.get("room_id") or "").strip()
+                room_closer_bonus = 1 if self._is_room_closer_candidate(item, selected) else 0
+                selected_rooms = {str(chosen.get("room_id") or "").strip() for chosen in selected}
                 room_bonus = 1 if room_id and room_id not in selected_rooms else 0
                 spread_min = _closest_scheduled_gap_min(item, selected)
                 spread_bucket = min(spread_min, 240)
+                reason = "ranked_fill"
+                if room_closer_bonus:
+                    reason = "room_closeout_preferred"
+                elif room_bonus:
+                    reason = "room_diversity_preferred"
+                elif spread_bucket >= 45:
+                    reason = "temporal_spread_preferred"
                 key = (
+                    room_closer_bonus,
                     room_bonus,
                     spread_bucket,
                     int(item.get("same_weekday") is True),
@@ -291,13 +313,41 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 if best_key is None or key > best_key:
                     best_key = key
                     best_index = index
+                    best_reason = reason
             assert best_index is not None
-            selected.append(remaining.pop(best_index))
+            chosen = remaining.pop(best_index)
+            selected.append(chosen)
+            selection_reasons[str(chosen.get("reaction_id") or "")] = best_reason
 
-        return sorted(
+        ordered = sorted(
             selected,
             key=lambda item: (int(item["scheduled_min"]), -float(item.get("score") or 0.0), item["reaction_id"]),
         )
+        return ordered, selection_reasons
+
+    def _is_room_closer_candidate(
+        self,
+        candidate: dict[str, Any],
+        selected: list[dict[str, Any]],
+    ) -> bool:
+        room_id = str(candidate.get("room_id") or "").strip()
+        if not room_id or str(candidate.get("action_kind") or "") != "off":
+            return False
+
+        selected_same_room = [
+            item for item in selected if str(item.get("room_id") or "").strip() == room_id
+        ]
+        if not selected_same_room:
+            return False
+
+        has_on = any(str(item.get("action_kind") or "") == "on" for item in selected_same_room)
+        has_off = any(str(item.get("action_kind") or "") == "off" for item in selected_same_room)
+        if not has_on or has_off:
+            return False
+
+        candidate_min = int(candidate.get("scheduled_min") or 0)
+        latest_selected_min = max(int(item.get("scheduled_min") or 0) for item in selected_same_room)
+        return candidate_min >= latest_selected_min
 
     def _candidate_sources_for_tonight(self, today: date) -> list[dict[str, Any]]:
         recent_profiles = self._recent_source_profiles(today)
@@ -384,6 +434,56 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         age_days = int(candidate.get("age_days") or _age_days(candidate, today))
         same_weekday = bool(candidate.get("same_weekday") is True)
         return same_weekday and age_days <= _SOURCE_PROFILE_PREFERRED_AGE_DAYS
+
+    def _source_trace(self, today: date) -> list[dict[str, Any]]:
+        recent_ids = {item["reaction_id"] for item in self._recent_source_profiles(today)}
+        candidates = self._candidate_sources_for_tonight(today)
+        candidate_map = {item["reaction_id"]: item for item in candidates}
+        budget = self._event_budget(candidates)
+        selected, selection_reasons = self._select_plan_sources(candidates, budget)
+        selected_ids = {item["reaction_id"] for item in selected}
+
+        trace: list[dict[str, Any]] = []
+        for item in self._source_profiles:
+            reaction_id = str(item.get("reaction_id") or "")
+            scheduled_min = int(item.get("scheduled_min") or 0)
+            row = {
+                "reaction_id": reaction_id,
+                "room_id": str(item.get("room_id") or "").strip(),
+                "scheduled_min": scheduled_min,
+                "weekday": int(item.get("weekday") or 0),
+                "action_kind": str(item.get("action_kind") or ""),
+                "recent": reaction_id in recent_ids,
+                "candidate": reaction_id in candidate_map,
+                "selected": reaction_id in selected_ids,
+                "score": float(candidate_map.get(reaction_id, {}).get("score") or 0.0),
+                "selection_reason": selection_reasons.get(reaction_id, ""),
+                "exclusion_reason": "",
+            }
+            if reaction_id in selected_ids:
+                row["exclusion_reason"] = ""
+            elif reaction_id in candidate_map:
+                row["exclusion_reason"] = "not_selected_within_budget"
+            elif reaction_id not in recent_ids:
+                row["exclusion_reason"] = "too_old"
+            elif scheduled_min < 16 * 60:
+                row["exclusion_reason"] = "outside_evening_window"
+            elif scheduled_min > _LATE_OUTLIER_HARD_LIMIT_MIN:
+                row["exclusion_reason"] = "late_outlier"
+            else:
+                row["exclusion_reason"] = "candidate_filtered"
+            trace.append(row)
+
+        return sorted(
+            trace,
+            key=lambda item: (
+                0 if item["selected"] else 1,
+                0 if item["candidate"] else 1,
+                -float(item["score"]),
+                int(item["scheduled_min"]),
+                item["reaction_id"],
+            ),
+        )
 
     def _minimum_event_gap_min(self) -> int:
         return _MIN_EVENT_GAP_MIN
@@ -666,6 +766,7 @@ def _select_source_profile(
                     "weekday": int(cfg.get("weekday", 0)),
                     "scheduled_min": int(cfg.get("scheduled_min", 0)),
                     "entity_steps": list(cfg.get("entity_steps", []) or []),
+                    "action_kind": _event_action_kind(list(cfg.get("entity_steps", []) or [])),
                     "created_at": cfg.get("created_at"),
                     "updated_at": cfg.get("updated_at"),
                 },
@@ -711,6 +812,19 @@ def _closest_scheduled_gap_min(candidate: dict[str, Any], selected: list[dict[st
         for item in selected
     ]
     return min(gaps) if gaps else 24 * 60
+
+
+def _event_action_kind(entity_steps: list[dict[str, Any]]) -> str:
+    actions = {
+        str(step.get("action") or "").strip()
+        for step in entity_steps
+        if isinstance(step, dict) and str(step.get("action") or "").strip()
+    }
+    if actions == {"on"}:
+        return "on"
+    if actions == {"off"}:
+        return "off"
+    return "mixed"
 
 
 def _ts_score(value: Any) -> float:
