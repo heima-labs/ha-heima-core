@@ -55,6 +55,8 @@ SUPPORTED_COMMANDS = {
     "notify_event",
     "mute_reaction",
     "unmute_reaction",
+    "mute_reaction_type",
+    "unmute_reaction_type",
     "learning_reset",
     "seed_lighting_events",
     "upsert_configured_reactions",
@@ -225,6 +227,24 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     matched = True
             if not matched:
                 raise ServiceValidationError(f"Reaction '{reaction_id}' not found")
+            return
+
+        if command == "mute_reaction_type":
+            reaction_type = _require_target_value(params or target, "reaction_type")
+            matched: list[str] = []
+            for coordinator in coordinators:
+                matched.extend(coordinator.engine.mute_reactions_by_type(reaction_type))
+            if not matched:
+                raise ServiceValidationError(f"No configured reactions found for reaction_type '{reaction_type}'")
+            return
+
+        if command == "unmute_reaction_type":
+            reaction_type = _require_target_value(params or target, "reaction_type")
+            matched: list[str] = []
+            for coordinator in coordinators:
+                matched.extend(coordinator.engine.unmute_reactions_by_type(reaction_type))
+            if not matched:
+                raise ServiceValidationError(f"No configured reactions found for reaction_type '{reaction_type}'")
             return
 
         if command == "learning_reset":

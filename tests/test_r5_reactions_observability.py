@@ -108,6 +108,7 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
             "configured": {
                 "my_reaction": {
                     "reaction_class": "LightingScheduleReaction",
+                    "reaction_type": "lighting_scene_schedule",
                     "origin": "admin_authored",
                     "author_kind": "admin",
                     "source_request": "template:lighting.scene_schedule.basic",
@@ -128,7 +129,9 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
     engine._sync_reactions_sensor()
     val = json.loads(engine._state.get_sensor("heima_reactions_active"))
     assert val["my_reaction"]["origin"] == "admin_authored"
+    assert val["my_reaction"]["reaction_class"] == "LightingScheduleReaction"
     assert val["my_reaction"]["author_kind"] == "admin"
+    assert val["my_reaction"]["reaction_type"] == "lighting_scene_schedule"
     assert val["my_reaction"]["source_request"] == "template:lighting.scene_schedule.basic"
     assert val["my_reaction"]["source_template_id"] == "lighting.scene_schedule.basic"
     assert val["my_reaction"]["source_proposal_id"] == "proposal-admin"
@@ -187,6 +190,53 @@ def test_unmute_removes_from_muted_set():
 def test_unmute_reaction_returns_false_for_unknown():
     engine = _make_engine()
     assert engine.unmute_reaction("nonexistent") is False
+
+
+def test_mute_reactions_by_type_returns_matching_ids():
+    engine = _make_engine()
+    engine._entry.options = {
+        "reactions": {
+            "configured": {
+                "sec1": {"reaction_type": "vacation_presence_simulation"},
+                "sec2": {"reaction_type": "vacation_presence_simulation"},
+                "light1": {"reaction_type": "lighting_scene_schedule"},
+            }
+        }
+    }
+    for reaction_id in ("sec1", "sec2", "light1"):
+        r = ConsecutiveStateReaction(
+            predicate=lambda s: True, consecutive_n=1, steps=[], reaction_id=reaction_id
+        )
+        engine._reactions.append(r)
+
+    matched = engine.mute_reactions_by_type("vacation_presence_simulation")
+
+    assert matched == ["sec1", "sec2"]
+    assert engine._muted_reactions == {"sec1", "sec2"}
+
+
+def test_unmute_reactions_by_type_returns_matching_ids():
+    engine = _make_engine()
+    engine._entry.options = {
+        "reactions": {
+            "configured": {
+                "sec1": {"reaction_type": "vacation_presence_simulation"},
+                "sec2": {"reaction_type": "vacation_presence_simulation"},
+                "light1": {"reaction_type": "lighting_scene_schedule"},
+            }
+        }
+    }
+    for reaction_id in ("sec1", "sec2", "light1"):
+        r = ConsecutiveStateReaction(
+            predicate=lambda s: True, consecutive_n=1, steps=[], reaction_id=reaction_id
+        )
+        engine._reactions.append(r)
+    engine._muted_reactions = {"sec1", "sec2", "light1"}
+
+    matched = engine.unmute_reactions_by_type("vacation_presence_simulation")
+
+    assert matched == ["sec1", "sec2"]
+    assert engine._muted_reactions == {"light1"}
 
 
 # ---------------------------------------------------------------------------

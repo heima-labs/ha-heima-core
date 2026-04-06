@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -252,6 +252,68 @@ async def test_heima_command_learning_run_calls_coordinator(monkeypatch):
     await handler(SimpleNamespace(data={"command": "learning_run", "target": {}, "params": {}}))
 
     coordinator.async_run_learning_now.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_heima_command_mute_reaction_type_calls_engine(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator = SimpleNamespace(engine=SimpleNamespace(mute_reactions_by_type=MagicMock(return_value=["sec1"])))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "mute_reaction_type",
+                "target": {},
+                "params": {"reaction_type": "vacation_presence_simulation"},
+            }
+        )
+    )
+
+    coordinator.engine.mute_reactions_by_type.assert_called_once_with("vacation_presence_simulation")
+
+
+@pytest.mark.asyncio
+async def test_heima_command_unmute_reaction_type_calls_engine(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator = SimpleNamespace(engine=SimpleNamespace(unmute_reactions_by_type=MagicMock(return_value=["sec1"])))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "unmute_reaction_type",
+                "target": {},
+                "params": {"reaction_type": "vacation_presence_simulation"},
+            }
+        )
+    )
+
+    coordinator.engine.unmute_reactions_by_type.assert_called_once_with("vacation_presence_simulation")
 
 
 @pytest.mark.asyncio

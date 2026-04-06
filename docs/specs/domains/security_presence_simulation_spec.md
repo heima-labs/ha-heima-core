@@ -118,6 +118,19 @@ learned historical behavior, not fixed configured hours.
 
 ### 3.3 Behavioral Style
 
+### 3.2.1 Admin Control Surface
+
+The family SHOULD expose operational admin actions that do not require knowing
+internal reaction ids.
+
+Minimum expectation:
+
+- mute / unmute by `reaction_type`
+- runtime recompute trigger
+- clear diagnostics path for tonight plan preview and blocked state
+
+### 3.3 Behavioral Style
+
 The simulation should be:
 
 - plausible
