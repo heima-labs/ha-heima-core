@@ -1,0 +1,249 @@
+# Heima Production Dashboard (Lovelace YAML)
+# Usage:
+# 1) Dashboard -> Edit -> Raw configuration editor
+# 2) Paste this YAML as one full view
+# 3) Replace placeholder people / rooms / zones / lights with your configured ids
+#
+# Design goals:
+# - polished day-to-day operational view
+# - low-noise summary of Heima decisions
+# - room-centric reading instead of runtime-internals-first
+
+title: Heima
+path: heima
+icon: mdi:home-analytics
+type: sections
+max_columns: 4
+theme: visionos
+sections:
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Heima
+          Operational dashboard for everyday use.
+
+          Replace placeholders such as `stefano`, `living_room`, `living_zone`, `studio`, and the sample light entities with your real configuration.
+
+      - type: tile
+        entity: sensor.heima_house_state
+        name: House State
+        color: state
+
+      - type: tile
+        entity: binary_sensor.heima_anyone_home
+        name: Anyone Home
+        color: state
+
+      - type: tile
+        entity: sensor.heima_people_count
+        name: People Count
+
+      - type: tile
+        entity: sensor.heima_security_state
+        name: Security
+        color: state
+
+      - type: entities
+        title: House Summary
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: sensor.heima_people_home_list
+          - entity: sensor.heima_last_event
+
+      - type: entities
+        title: People
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_person_stefano_home
+          - entity: sensor.heima_person_stefano_source
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: sensor.heima_anonymous_presence_source
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Rooms
+          Duplicate these room patterns for each important space in your installation.
+
+      - type: entities
+        title: Living Room
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_occupancy_living_room
+          - entity: binary_sensor.heima_lighting_hold_living_room
+          - entity: select.heima_lighting_intent_living_zone
+          - entity: light.soggiorno
+          - entity: light.divano
+
+      - type: entities
+        title: Studio
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_occupancy_studio
+          - entity: binary_sensor.heima_lighting_hold_studio
+          - entity: select.heima_lighting_intent_work_zone
+          - entity: light.finestra_studio
+          - entity: light.porta_studio
+
+      - type: entities
+        title: Zone Presence
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_occ_zone_living_zone
+          - entity: binary_sensor.heima_occ_zone_work_zone
+
+      - type: history-graph
+        title: Presence Timeline
+        hours_to_show: 8
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: binary_sensor.heima_occupancy_living_room
+          - entity: binary_sensor.heima_occupancy_studio
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Comfort
+          Daily comfort signals and automation output, without full debug noise.
+
+      - type: tile
+        entity: sensor.heima_heating_state
+        name: Heating State
+        color: state
+
+      - type: tile
+        entity: sensor.heima_heating_target_temp
+        name: Target Temp
+
+      - type: tile
+        entity: sensor.heima_reaction_proposals
+        name: Pending Proposals
+
+      - type: entities
+        title: Heating
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_heating_reason
+          - entity: sensor.heima_heating_phase
+          - entity: sensor.heima_heating_branch
+          - entity: sensor.heima_heating_current_setpoint
+          - entity: binary_sensor.heima_heating_manual_hold
+
+      - type: entities
+        title: Lighting
+        show_header_toggle: false
+        entities:
+          - entity: select.heima_lighting_intent_living_zone
+          - entity: select.heima_lighting_intent_work_zone
+          - entity: binary_sensor.heima_lighting_hold_living_room
+          - entity: binary_sensor.heima_lighting_hold_studio
+
+      - type: entities
+        title: System Health
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_event_stats
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_reactions_active
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Security Presence
+          Surface compatta per `security_presence_simulation`.
+
+          Usa questi controlli per mutare o riattivare tutta la family `vacation_presence_simulation`
+          senza cercare gli id interni delle reaction.
+
+      - type: entities
+        title: Security Presence Context
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+
+      - type: history-graph
+        title: Vacation Context
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+
+      - type: button
+        name: Mute Presence Simulation
+        icon: mdi:bell-off-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: mute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: button
+        name: Unmute Presence Simulation
+        icon: mdi:bell-ring-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: unmute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: markdown
+        content: |
+          Keep this section intentionally compact.
+          For tonight plan preview, selected/excluded sources, and blocked-state detail,
+          use the debug dashboard or:
+          `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_presence`
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Quick Actions
+          Keep actions here intentionally limited. Diagnostics and aggressive testing belong in the debug dashboard.
+
+      - type: button
+        name: Recompute Now
+        icon: mdi:refresh
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: recompute_now
+
+      - type: button
+        name: Force Relax
+        icon: mdi:sofa
+        tap_action:
+          action: call-service
+          service: heima.set_mode
+          data:
+            mode: relax
+            state: true
+
+      - type: button
+        name: Clear Relax
+        icon: mdi:sofa-outline
+        tap_action:
+          action: call-service
+          service: heima.set_mode
+          data:
+            mode: relax
+            state: false
