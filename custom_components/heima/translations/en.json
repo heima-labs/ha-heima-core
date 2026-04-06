@@ -341,9 +341,26 @@
       },
       "admin_authored_create": {
         "title": "Create automation",
-        "description": "Select a predefined automation template. Heima will create an admin-authored proposal inside the normal review flow.",
+        "description": "Select a predefined automation template. Heima will create an admin-authored proposal inside the normal review flow.\n{availability_notes}",
         "data": {
           "template_id": "Template"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_security_presence_simulation": {
+        "title": "New vacation presence simulation",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "enabled": "Enabled",
+          "allowed_rooms": "Allowed rooms",
+          "allowed_entities": "Allowed entities",
+          "requires_dark_outside": "Requires outside darkness",
+          "simulation_aggressiveness": "Simulation aggressiveness",
+          "min_jitter_override_min": "Minimum jitter override (min)",
+          "max_jitter_override_min": "Maximum jitter override (min)",
+          "max_events_per_evening_override": "Max events per evening (override)",
+          "latest_end_time_override": "Latest end override (HH:MM)",
+          "skip_if_presence_detected": "Block if presence is detected"
         },
         "submit": "OK"
       },
@@ -462,6 +479,7 @@
     "error": {
       "required": "Required",
       "duplicate": "Already exists",
+      "template_unavailable": "Template unavailable",
       "invalid_required": "Required count must be less than or equal to sources",
       "reserved_prefix": "Value cannot start with 'heima_'",
       "invalid_time_zone": "Invalid timezone",

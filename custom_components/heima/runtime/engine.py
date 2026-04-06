@@ -316,6 +316,43 @@ class HeimaEngine:
             self._sync_reactions_sensor()
         return exists
 
+    def mute_reactions_by_type(self, reaction_type: str) -> list[str]:
+        """Mute all configured reactions matching a reaction_type."""
+        target = str(reaction_type or "").strip()
+        if not target:
+            return []
+        matched = self._configured_reaction_ids_by_type(target)
+        if not matched:
+            return []
+        self._muted_reactions.update(matched)
+        self._sync_reactions_sensor()
+        return matched
+
+    def unmute_reactions_by_type(self, reaction_type: str) -> list[str]:
+        """Unmute all configured reactions matching a reaction_type."""
+        target = str(reaction_type or "").strip()
+        if not target:
+            return []
+        matched = self._configured_reaction_ids_by_type(target)
+        if not matched:
+            return []
+        for reaction_id in matched:
+            self._muted_reactions.discard(reaction_id)
+        self._sync_reactions_sensor()
+        return matched
+
+    def _configured_reaction_ids_by_type(self, reaction_type: str) -> list[str]:
+        configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))
+        known_ids = {reaction.reaction_id for reaction in self._reactions}
+        matched: list[str] = []
+        for reaction_id, cfg in configured.items():
+            if reaction_id not in known_ids or not isinstance(cfg, dict):
+                continue
+            value = str(cfg.get("reaction_type") or "").strip()
+            if value == reaction_type:
+                matched.append(str(reaction_id))
+        return sorted(matched)
+
     def _rebuild_configured_reactions(self) -> None:
         """Instantiate reactions from accepted proposals stored in options."""
         # Remove previously configured reactions
@@ -1035,6 +1072,8 @@ class HeimaEngine:
         if not isinstance(cfg, dict):
             return {}
         keys = (
+            "reaction_class",
+            "reaction_type",
             "origin",
             "author_kind",
             "source_request",

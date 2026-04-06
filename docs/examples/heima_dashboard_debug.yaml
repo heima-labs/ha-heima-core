@@ -1,0 +1,408 @@
+# Heima Debug Dashboard (Lovelace YAML)
+# Usage:
+# 1) Dashboard -> Edit -> Raw configuration editor
+# 2) Paste this YAML as one full view
+# 3) Replace placeholder entities with your configured ids and local inputs
+#
+# This file consolidates the previous debug examples into one canonical structure:
+# Inputs -> Inference -> Domains -> Events -> Learning -> Commands
+
+title: Heima Debug
+path: heima-debug
+icon: mdi:bug
+type: sections
+max_columns: 4
+theme: visionos
+sections:
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Runtime Overview
+          Canonical view of Heima's current state.
+
+          Replace placeholders such as `stefano`, `living_room`, `living_zone`, `work_zone`, `studio`, and local source entities with your real setup.
+
+      - type: entities
+        title: Core Runtime
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: sensor.heima_house_state_path
+          - entity: sensor.heima_house_state_active_candidates
+          - entity: sensor.heima_house_state_pending_candidate
+          - entity: sensor.heima_house_state_pending_remaining_s
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+          - entity: sensor.heima_people_home_list
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+
+      - type: entities
+        title: Event And Learning Summary
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_last_event
+          - entity: sensor.heima_event_stats
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+
+      - type: history-graph
+        title: Fast Runtime History
+        hours_to_show: 8
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_heating_state
+          - entity: sensor.heima_reaction_proposals
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Inputs
+          Signals that feed the runtime before inference and domain policy are applied.
+
+      - type: entities
+        title: People Inputs
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_person_stefano_home
+          - entity: sensor.heima_person_stefano_confidence
+          - entity: sensor.heima_person_stefano_source
+          - entity: select.heima_person_stefano_override
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: sensor.heima_anonymous_presence_confidence
+          - entity: sensor.heima_anonymous_presence_source
+
+      - type: entities
+        title: House-State Inputs
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.house_sleep_window
+          - entity: binary_sensor.house_work_window
+          - entity: input_boolean.modalita_relax_ativa
+          - entity: input_boolean.vacation_enabled
+          - entity: input_boolean.guest_mode
+          - entity: media_player.cineforum_4
+
+      - type: entities
+        title: Room Signal Inputs
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.sensore_studio_presence
+          - entity: binary_sensor.sensore_bagno_presence
+          - entity: sensor.sensore_bagno_humidity
+          - entity: sensor.sensore_bagno_temperature
+          - entity: sensor.sensore_studio_illuminance
+
+      - type: markdown
+        content: |
+          ## Reading Guide
+          Quick interpretation:
+          - overrides and hard modes win first
+          - `heima_house_state_path` shows which resolver branch won
+          - pending candidate sensors explain threshold waiting
+          - use the learning section to correlate proposals with stored events
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Occupancy And Inference
+          This section ties raw room signals to Heima occupancy and final house-state resolution.
+
+      - type: entities
+        title: Room Occupancy
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_occupancy_living_room
+          - entity: sensor.heima_occupancy_living_room_source
+          - entity: sensor.heima_occupancy_living_room_last_change
+          - entity: binary_sensor.heima_occupancy_studio
+          - entity: sensor.heima_occupancy_studio_source
+          - entity: sensor.heima_occupancy_studio_last_change
+
+      - type: entities
+        title: Zone Occupancy
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_occ_zone_living_zone
+          - entity: binary_sensor.heima_occ_zone_work_zone
+
+      - type: history-graph
+        title: Occupancy And House State
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_occupancy_living_room
+          - entity: binary_sensor.heima_occupancy_studio
+          - entity: binary_sensor.heima_occ_zone_living_zone
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Domain Runtimes
+          Runtime outputs per domain after policy evaluation.
+
+      - type: entities
+        title: Lighting Runtime
+        show_header_toggle: false
+        entities:
+          - entity: select.heima_lighting_intent_living_zone
+          - entity: select.heima_lighting_intent_work_zone
+          - entity: binary_sensor.heima_lighting_hold_living_room
+          - entity: binary_sensor.heima_lighting_hold_studio
+          - entity: light.soggiorno
+          - entity: light.divano
+          - entity: light.finestra_studio
+          - entity: light.porta_studio
+
+      - type: entities
+        title: Heating Runtime
+        show_header_toggle: false
+        entities:
+          - entity: climate.termostato
+          - entity: sensor.termostato_temperatura_esterna
+          - entity: sensor.heima_heating_state
+          - entity: sensor.heima_heating_reason
+          - entity: sensor.heima_heating_phase
+          - entity: sensor.heima_heating_branch
+          - entity: sensor.heima_heating_target_temp
+          - entity: sensor.heima_heating_current_setpoint
+          - entity: sensor.heima_heating_last_applied_target
+          - entity: binary_sensor.heima_heating_manual_hold
+          - entity: binary_sensor.heima_heating_applying_guard
+
+      - type: entities
+        title: Security Runtime
+        show_header_toggle: false
+        entities:
+          - entity: alarm_control_panel.8124_aa4bbc_zone_1_alarm
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: select.heima_security_intent
+
+      - type: history-graph
+        title: Domain Timeline
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_heating_state
+          - entity: sensor.heima_heating_target_temp
+          - entity: select.heima_lighting_intent_living_zone
+          - entity: binary_sensor.heima_lighting_hold_living_room
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Events And Learning
+          Runtime diagnostics, stored pattern evidence, and proposal generation.
+
+      - type: entities
+        title: Event Pipeline
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_last_event
+          - entity: sensor.heima_event_stats
+          - entity: sensor.heima_event_store
+
+      - type: entities
+        title: Learning Runtime
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.sensore_bagno_humidity
+          - entity: sensor.sensore_bagno_temperature
+          - entity: sensor.sensore_studio_illuminance
+
+      - type: history-graph
+        title: Learning Signal Trends
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.sensore_bagno_humidity
+          - entity: sensor.sensore_bagno_temperature
+          - entity: sensor.sensore_studio_illuminance
+          - entity: binary_sensor.sensore_studio_presence
+          - entity: binary_sensor.sensore_bagno_presence
+
+      - type: markdown
+        content: |
+          Useful correlations:
+          - `sensor.heima_event_stats` exposes counters and suppression info in attributes
+          - `sensor.heima_event_store` exposes event counts by type in attributes
+          - `sensor.heima_reaction_proposals` uses the state as pending count and attributes for full proposal details
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Security Presence Debug
+          Dedicated surface for `security_presence_simulation`.
+
+          Quick read:
+          - `vacation` + `Anyone Home = off` is the base eligibility context
+          - if the family is muted, the runtime remains visible but will not act
+          - for tonight plan preview and selected/excluded sources, use:
+            `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_presence`
+
+      - type: entities
+        title: Security Presence Context
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_last_event
+          - entity: sensor.heima_reaction_proposals
+
+      - type: entities
+        title: Security Presence Observability
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_reaction_proposals
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+
+      - type: history-graph
+        title: Security Presence Timeline
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_reaction_proposals
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Commands
+          Safe manual controls for recompute, notifications, overrides, and hold testing.
+
+      - type: button
+        name: Recompute Now
+        icon: mdi:refresh
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: recompute_now
+
+      - type: button
+        name: Mute Presence Family
+        icon: mdi:bell-off-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: mute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: button
+        name: Unmute Presence Family
+        icon: mdi:bell-ring-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: unmute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: button
+        name: Notify Test Event
+        icon: mdi:bell-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: notify_event
+            params:
+              type: debug.manual_test
+              key: debug.manual_test
+              severity: info
+              title: Heima Debug Test
+              message: Manual debug event from canonical debug dashboard
+              context:
+                source: lovelace_heima_debug
+
+      - type: button
+        name: Force Relax
+        icon: mdi:sofa
+        tap_action:
+          action: call-service
+          service: heima.set_mode
+          data:
+            mode: relax
+            state: true
+
+      - type: button
+        name: Clear Relax
+        icon: mdi:sofa-outline
+        tap_action:
+          action: call-service
+          service: heima.set_mode
+          data:
+            mode: relax
+            state: false
+
+      - type: button
+        name: Living Hold ON
+        icon: mdi:hand-back-right-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: set_room_lighting_hold
+            target:
+              room_id: living_room
+            params:
+              state: true
+
+      - type: button
+        name: Living Hold OFF
+        icon: mdi:hand-back-right-off-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: set_room_lighting_hold
+            target:
+              room_id: living_room
+            params:
+              state: false
+
+      - type: button
+        name: Person Force Home
+        icon: mdi:account-check-outline
+        tap_action:
+          action: call-service
+          service: heima.set_override
+          data:
+            scope: person
+            id: stefano
+            override: force_home
+
+      - type: button
+        name: Person Override Auto
+        icon: mdi:account-sync-outline
+        tap_action:
+          action: call-service
+          service: heima.set_override
+          data:
+            scope: person
+            id: stefano
+            override: auto

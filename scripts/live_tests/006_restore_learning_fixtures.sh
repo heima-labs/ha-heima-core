@@ -58,6 +58,18 @@ if [[ -n "$HA_TOKEN" ]]; then
     sleep 2
   done
 
+  echo "Waiting for sun.sun to be available..."
+  deadline=$((SECONDS + 180))
+  until curl -fsS \
+    -H "Authorization: Bearer ${HA_TOKEN}" \
+    "$HA_URL/api/states/sun.sun" >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      echo "FAIL: sun.sun did not become ready after restore" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+
   echo "Refreshing room area assignments and room config after restart..."
   python3 "$REPO_ROOT/scripts/recover_test_lab_config.py" \
     --ha-url "$HA_URL" \

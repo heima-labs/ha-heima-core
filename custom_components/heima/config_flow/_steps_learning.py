@@ -19,6 +19,7 @@ _LEARNING_PLUGIN_FAMILY_OPTIONS = {
     "heating": "Heating",
     "lighting": "Lighting",
     "composite_room_assist": "Room Assist",
+    "security_presence_simulation": "Security Presence Simulation",
 }
 
 

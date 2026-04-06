@@ -41,6 +41,7 @@ def main() -> int:
     calendar_summary = dict(runtime.get("plugins", {}).get("calendar_summary", {}) or {})
     house_state_summary = dict(runtime.get("plugins", {}).get("house_state_summary", {}) or {})
     composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
+    security_presence_summary = dict(runtime.get("plugins", {}).get("security_presence_summary", {}) or {})
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -226,6 +227,94 @@ def main() -> int:
                     f"{item.get('primary_signal_name') or '-'} | "
                     f"{item.get('confidence')} | "
                     f"{item.get('label') or '-'}"
+                )
+
+    if security_presence_summary:
+        _print_header("Security Presence")
+        print(f"configured total: {security_presence_summary.get('configured_total', 0)}")
+        print(f"active tonight: {security_presence_summary.get('active_tonight_total', 0)}")
+        print(f"ready tonight: {security_presence_summary.get('ready_tonight_total', 0)}")
+        print(f"waiting for darkness: {security_presence_summary.get('waiting_for_darkness_total', 0)}")
+        print(f"insufficient evidence: {security_presence_summary.get('insufficient_evidence_total', 0)}")
+        print(f"muted total: {security_presence_summary.get('muted_total', 0)}")
+        print(f"blocked total: {security_presence_summary.get('blocked_total', 0)}")
+        configured_by_room = dict(security_presence_summary.get("configured_by_room") or {})
+        if configured_by_room:
+            print(
+                "configured by room: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_room.items()))
+            )
+        source_profile_kind_counts = dict(security_presence_summary.get("source_profile_kind_counts") or {})
+        if source_profile_kind_counts:
+            print(
+                "source profile kinds: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(source_profile_kind_counts.items()))
+            )
+        blocked_by_reason = dict(security_presence_summary.get("blocked_by_reason") or {})
+        if blocked_by_reason:
+            print(
+                "blocked by reason: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_reason.items()))
+            )
+        blocked_by_class = dict(security_presence_summary.get("blocked_by_class") or {})
+        if blocked_by_class:
+            print(
+                "blocked by class: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
+            )
+        operational_state_counts = dict(security_presence_summary.get("operational_state_counts") or {})
+        if operational_state_counts:
+            print(
+                "operational states: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(operational_state_counts.items()))
+            )
+        ready_examples = list(security_presence_summary.get("ready_examples") or [])
+        if ready_examples:
+            print("ready examples:")
+            for item in ready_examples:
+                selected = list(item.get("selected_sources") or [])
+                selected_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                    for src in selected
+                )
+                plan_preview = list(item.get("tonight_plan_preview") or [])
+                plan_compact = ", ".join(
+                    f"{step.get('room_id') or '-'}@{str(step.get('due_local') or '').split('T')[-1][:5]}:{step.get('selection_reason') or '-'}"
+                    for step in plan_preview
+                )
+                print(
+                    "  "
+                    f"{item.get('reaction_id') or '-'} | "
+                    f"muted={bool(item.get('muted', False))} | "
+                    f"{item.get('operational_state') or '-'} | "
+                    f"{item.get('source_profile_kind') or '-'} | "
+                    f"plan={item.get('tonight_plan_count', 0)} | "
+                    f"next={item.get('next_planned_activation') or '-'} | "
+                    f"sources={selected_compact or '-'} | "
+                    f"plan={plan_compact or '-'}"
+                )
+        waiting_examples = list(security_presence_summary.get("waiting_for_darkness_examples") or [])
+        if waiting_examples:
+            print("waiting for darkness examples:")
+            for item in waiting_examples:
+                selected = list(item.get("selected_sources") or [])
+                selected_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('selection_reason') or '-'}"
+                    for src in selected
+                )
+                excluded = list(item.get("excluded_sources") or [])
+                excluded_compact = ", ".join(
+                    f"{src.get('room_id') or '-'}:{src.get('exclusion_reason') or '-'}"
+                    for src in excluded
+                )
+                print(
+                    "  "
+                    f"{item.get('reaction_id') or '-'} | "
+                    f"muted={bool(item.get('muted', False))} | "
+                    f"{item.get('operational_state') or '-'} | "
+                    f"{item.get('source_profile_kind') or '-'} | "
+                    f"sources={selected_compact or '-'} | "
+                    f"excluded={excluded_compact or '-'}"
                 )
 
     families = dict(summary.get("families") or {})

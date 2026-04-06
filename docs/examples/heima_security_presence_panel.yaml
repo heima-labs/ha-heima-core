@@ -1,0 +1,159 @@
+# Heima Security Presence Panel (Lovelace YAML)
+# Usage:
+# 1) Dashboard -> Edit -> Raw configuration editor
+# 2) Paste this YAML as one full view or merge the cards into an existing debug dashboard
+# 3) Replace placeholder entities with your installation ids where needed
+#
+# Goal:
+# - operational control surface for `security_presence_simulation`
+# - quick read of readiness, tonight plan and learned source quality
+# - direct admin actions without searching reaction ids manually
+
+title: Security Presence
+path: heima-security-presence
+icon: mdi:shield-home
+type: sections
+max_columns: 4
+theme: visionos
+sections:
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Security Presence
+          Pannello operativo per `security_presence_simulation`.
+
+          Usa i pulsanti qui sotto per mutare o riattivare tutta la family `vacation_presence_simulation`
+          senza cercare gli id interni delle reaction.
+
+      - type: tile
+        entity: sensor.heima_house_state
+        name: House State
+        color: state
+
+      - type: tile
+        entity: binary_sensor.heima_anyone_home
+        name: Anyone Home
+        color: state
+
+      - type: tile
+        entity: sensor.heima_security_state
+        name: Security
+        color: state
+
+      - type: entities
+        title: Runtime Context
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_last_event
+
+      - type: markdown
+        content: |
+          ## Reading
+          Lettura rapida:
+          - `vacation` + `Anyone Home = off` è il contesto base di eligibilità
+          - se la family è mutata, il runtime resta visibile ma non agirà
+          - per il dettaglio di selected/excluded sources usa:
+            `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_presence`
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Admin Actions
+          Queste azioni operano sulla family `vacation_presence_simulation`.
+
+      - type: button
+        name: Mute Family
+        icon: mdi:bell-off-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: mute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: button
+        name: Unmute Family
+        icon: mdi:bell-ring-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: unmute_reaction_type
+            params:
+              reaction_type: vacation_presence_simulation
+
+      - type: button
+        name: Recompute Now
+        icon: mdi:refresh
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: recompute_now
+
+      - type: button
+        name: Run Learning
+        icon: mdi:brain
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: learning_run
+
+      - type: button
+        name: Emit Debug Event
+        icon: mdi:shield-alert-outline
+        tap_action:
+          action: call-service
+          service: heima.command
+          data:
+            command: notify_event
+            params:
+              type: debug.security_presence_panel
+              key: debug.security_presence_panel
+              severity: info
+              title: Security Presence Panel
+              message: Manual debug event from security presence panel
+              context:
+                source: lovelace_security_presence_panel
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Suggested Entities
+          Queste entità non sono create specificamente dalla family ma aiutano a leggere il contesto.
+
+      - type: entities
+        title: Presence And Lighting Signals
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+          - entity: light.soggiorno
+          - entity: light.divano
+          - entity: light.finestra_studio
+
+      - type: entities
+        title: Reaction Sensor
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_reaction_proposals
+
+      - type: history-graph
+        title: Context Timeline
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_reaction_proposals

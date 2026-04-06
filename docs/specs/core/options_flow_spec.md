@@ -36,6 +36,13 @@ Not a goal of this document:
 - documenting every internal helper or migration detail
 - replacing narrower specs for reactions, notifications, or scheduler semantics
 
+Normative clarification for bounded dynamic-policy templates:
+
+- some admin-authored templates MAY require sufficient learned/runtime evidence before they can be
+  instantiated credibly
+- in those cases, the options flow SHOULD prefer explicit unavailability with a human-readable
+  reason over silently creating a weak static fallback
+
 ## Design Principles
 
 - Incremental configuration (minimal viable setup first)

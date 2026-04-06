@@ -36,6 +36,21 @@ class _SecurityStepsMixin:
 
     def _security_menu_summary(self) -> str:
         security = dict(self.options.get(OPT_SECURITY, {}))
+        coordinator_getter = getattr(self, "_get_coordinator", None)
+        coordinator = coordinator_getter() if callable(coordinator_getter) else None
+        if coordinator is not None:
+            from ..diagnostics import _security_presence_summary_diagnostics
+
+            summary = _security_presence_summary_diagnostics(coordinator)
+            configured_total = int(summary.get("configured_total") or 0)
+            ready_tonight_total = int(summary.get("ready_tonight_total") or 0)
+            blocked_total = int(summary.get("blocked_total") or 0)
+            if configured_total > 0:
+                return (
+                    f"simulazioni {configured_total}"
+                    f" | pronte {ready_tonight_total}"
+                    f" | bloccate {blocked_total}"
+                )
         if security.get("enabled") and security.get("security_state_entity"):
             return str(security["security_state_entity"])
         return "—"

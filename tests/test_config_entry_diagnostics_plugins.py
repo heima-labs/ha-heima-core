@@ -192,7 +192,11 @@ async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> 
     summary = diagnostics["runtime"]["plugins"]["learning_summary"]
 
     assert summary["enabled_plugin_families"] == ["lighting", "presence"]
-    assert summary["disabled_plugin_families"] == ["composite_room_assist", "heating"]
+    assert summary["disabled_plugin_families"] == [
+        "composite_room_assist",
+        "heating",
+        "security_presence_simulation",
+    ]
 
 
 async def test_config_entry_diagnostics_exposes_configured_reaction_summary() -> None:
@@ -469,6 +473,83 @@ async def test_config_entry_diagnostics_exposes_house_state_summary() -> None:
             "is_office_today": False,
         },
     }
+
+
+async def test_config_entry_diagnostics_exposes_security_presence_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"operational_state":"ready_tonight","blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}],"excluded_source_trace":[{"reaction_id":"src3","room_id":"kitchen","exclusion_reason":"not_selected_within_budget","score":150.0}],"tonight_plan_preview":[{"room_id":"living","due_local":"2026-04-04T20:30:00+02:00","jitter_min":0,"selection_reason":"top_ranked_seed"}]},'
+                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"operational_state":"waiting_for_darkness","blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions","selected_source_trace":[{"reaction_id":"src2","room_id":"studio","selection_reason":"top_ranked_seed","score":140.0}],"excluded_source_trace":[{"reaction_id":"src4","room_id":"studio","exclusion_reason":"outside_not_dark","score":120.0}]}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["security_presence_summary"]
+
+    assert summary["configured_total"] == 2
+    assert summary["active_tonight_total"] == 1
+    assert summary["blocked_total"] == 1
+    assert summary["ready_tonight_total"] == 1
+    assert summary["waiting_for_darkness_total"] == 1
+    assert summary["insufficient_evidence_total"] == 0
+    assert summary["muted_total"] == 0
+    assert summary["configured_by_room"] == {"living": 1, "studio": 1}
+    assert summary["source_room_counts"] == {"kitchen": 1, "living": 1, "studio": 1}
+    assert summary["blocked_by_class"] == {"context_block": 1}
+    assert summary["blocked_by_reason"] == {"outside_not_dark": 1}
+    assert summary["operational_state_counts"] == {
+        "ready_tonight": 1,
+        "waiting_for_darkness": 1,
+    }
+    assert summary["source_profile_kind_counts"] == {
+        "accepted_lighting_reactions": 1,
+        "learned_source_profiles": 1,
+    }
+    assert len(summary["examples"]) == 2
+    assert summary["examples"][0]["operational_state"] == "ready_tonight"
+    assert len(summary["ready_examples"]) == 1
+    assert summary["ready_examples"][0]["operational_state"] == "ready_tonight"
+    assert summary["ready_examples"][0]["selected_sources"][0]["room_id"] == "living"
+    assert summary["ready_examples"][0]["tonight_plan_preview"][0]["room_id"] == "living"
+    assert summary["ready_examples"][0]["excluded_sources"][0]["room_id"] == "kitchen"
+    assert len(summary["waiting_for_darkness_examples"]) == 1
+    assert summary["waiting_for_darkness_examples"][0]["operational_state"] == "waiting_for_darkness"
+    assert summary["waiting_for_darkness_examples"][0]["selected_sources"][0]["room_id"] == "studio"
+    assert summary["waiting_for_darkness_examples"][0]["excluded_sources"][0]["room_id"] == "studio"
+    assert summary["insufficient_evidence_examples"] == []
+
+
+async def test_config_entry_diagnostics_exposes_muted_security_presence_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(
+            get_sensor=lambda key: (
+                '{"sec-muted":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":false,"muted":true,"blocked_reason":"","tonight_plan_count":1,"source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}]}}'
+                if key == "heima_reactions_active"
+                else None
+            )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["security_presence_summary"]
+
+    assert summary["configured_total"] == 1
+    assert summary["muted_total"] == 1
+    assert summary["operational_state_counts"] == {"muted": 1}
+    assert summary["examples"][0]["muted"] is True
+    assert summary["examples"][0]["operational_state"] == "muted"
 
 
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:

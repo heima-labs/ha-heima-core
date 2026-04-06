@@ -16,9 +16,11 @@ from .lifecycle import (
     heating_lifecycle_hooks,
     lighting_lifecycle_hooks,
     presence_lifecycle_hooks,
+    security_presence_simulation_lifecycle_hooks,
 )
 from .lighting import LightingPatternAnalyzer
 from .presence import PresencePatternAnalyzer
+from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 
 
 @dataclass(frozen=True)
@@ -281,6 +283,30 @@ def create_builtin_learning_plugin_registry(
             quality_policy=composite_quality_policy_from_learning_config(learning_config)
         ),
         enabled=_is_enabled("composite_room_assist", enabled_families),
+    )
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="builtin.security_presence_simulation",
+            analyzer_id="SecurityPresenceSimulationAnalyzer",
+            plugin_family="security_presence_simulation",
+            proposal_types=("vacation_presence_simulation",),
+            reaction_targets=("VacationPresenceSimulationReaction",),
+            lifecycle_hooks=security_presence_simulation_lifecycle_hooks(),
+            supports_admin_authored=True,
+            admin_authored_templates=(
+                AdminAuthoredTemplateDescriptor(
+                    template_id="security.vacation_presence_simulation.basic",
+                    reaction_type="vacation_presence_simulation",
+                    title="Vacation Presence Simulation",
+                    description="Create a security-owned vacation presence simulation driven by learned lighting behavior.",
+                    config_schema_id="vacation_presence_simulation.basic.v1",
+                    implemented=True,
+                    flow_step_id="admin_authored_security_presence_simulation",
+                ),
+            ),
+        ),
+        analyzer=SecurityPresenceSimulationAnalyzer(),
+        enabled=_is_enabled("security_presence_simulation", enabled_families),
     )
     return registry
 

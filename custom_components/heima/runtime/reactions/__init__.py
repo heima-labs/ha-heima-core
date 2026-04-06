@@ -47,6 +47,15 @@ from .signal_assist import (
     present_room_signal_assist_label,
     present_tuning_room_signal_assist_details,
 )
+from .security_presence_simulation import (
+    VacationPresenceSimulationReaction,
+    build_vacation_presence_simulation_reaction,
+    present_admin_authored_vacation_presence_simulation_details,
+    present_learned_vacation_presence_simulation_details,
+    present_vacation_presence_simulation_label,
+    present_vacation_presence_simulation_proposal_label,
+    present_vacation_presence_simulation_review_title,
+)
 
 ReactionPluginBuilder = Callable[[Any, str, dict[str, Any]], HeimaReaction | None]
 ReactionLabelPresenter = Callable[[str, dict[str, Any], dict[str, str]], str | None]
@@ -214,6 +223,22 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 tuning_review_details=present_tuning_room_lighting_assist_details,
             ),
         ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
+                reaction_class="VacationPresenceSimulationReaction",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("vacation_presence_simulation",),
+                supports_normalizer=False,
+            ),
+            builder=build_vacation_presence_simulation_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_vacation_presence_simulation_label,
+                proposal_human_label=present_vacation_presence_simulation_proposal_label,
+                proposal_review_title=present_vacation_presence_simulation_review_title,
+                admin_authored_review_details=present_admin_authored_vacation_presence_simulation_details,
+                learned_review_details=present_learned_vacation_presence_simulation_details,
+            ),
+        ),
     )
     return ReactionPluginRegistry(plugins)
 
@@ -259,4 +284,5 @@ __all__ = [
     "NaiveLearningBackend",
     "PresencePatternReaction",
     "RoomSignalAssistReaction",
+    "VacationPresenceSimulationReaction",
 ]
