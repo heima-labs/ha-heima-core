@@ -80,15 +80,14 @@ Good rules:
 
 ### 5.2 Register the plugin
 
-Update the built-in registry in:
-- [`custom_components/heima/runtime/analyzers/__init__.py`](../../custom_components/heima/runtime/analyzers/__init__.py)
+The registration point is:
+- [`custom_components/heima/runtime/analyzers/registry.py`](../../custom_components/heima/runtime/analyzers/registry.py) → `create_builtin_learning_plugin_registry()`
 
-You usually need:
-- a concrete analyzer in `builtin_learning_pattern_plugins()`
-- a metadata entry in `builtin_learning_pattern_plugin_descriptors()`
+Add a `LearningPluginRegistryEntry` block (analyzer instance + descriptor + `enabled` flag) inside
+that function. `__init__.py` is just a re-export layer — do not register there.
 
-Minimum metadata:
-- `plugin_id`
+Minimum metadata in the descriptor:
+- `plugin_id` (unique, convention: `builtin.<family>`)
 - `analyzer_id`
 - `plugin_family`
 - `proposal_types`
@@ -102,6 +101,33 @@ A good proposal should make it clear:
 - which reaction target it expects after acceptance
 
 For composite plugins, keep diagnostics in `suggested_reaction_config["learning_diagnostics"]`.
+
+### 5.3b Lifecycle hooks (optional, but required for custom identity logic)
+
+If your plugin needs non-default identity key semantics — for example, weekday-scoped deduplication
+or follow-up tuning slot logic — register a `ProposalLifecycleHooks` instance alongside the descriptor.
+
+Where:
+- [`custom_components/heima/runtime/analyzers/lifecycle.py`](../../custom_components/heima/runtime/analyzers/lifecycle.py)
+
+```python
+from .lifecycle import ProposalLifecycleHooks
+
+def my_plugin_lifecycle_hooks() -> ProposalLifecycleHooks:
+    return ProposalLifecycleHooks(
+        identity_key=lambda p: f"my_reaction_type|key={p.suggested_reaction_config.get('key')}",
+        # followup_slot_key, fallback_followup_match, should_suppress_followup are all optional
+    )
+```
+
+Then wire it when building the registry entry by passing it to
+`LearningPluginRegistry.register(..., lifecycle_hooks=my_plugin_lifecycle_hooks())`.
+
+If you omit lifecycle hooks entirely, `ProposalEngine` falls back to its built-in fingerprint-based
+identity, which is less precise for proposal refresh and follow-up deduplication.
+
+For the normative contract of all 4 hook callables, see
+[`docs/specs/learning/proposal_lifecycle_spec.md`](../specs/learning/proposal_lifecycle_spec.md) §2b.
 
 ### 5.4 Tests you should add
 
