@@ -21,6 +21,7 @@ Interpretation notes:
 Related practical guides live outside this tree:
 - `docs/guides/scene_and_script_usage.md`
 - `docs/guides/plugin_authoring.md`
+- `docs/guides/options_flow_configuration_guide.md`
 
 ## Core
 
