@@ -384,13 +384,90 @@ def _print_security_presence_summary(data: dict[str, Any]) -> None:
             )
 
 
+def _print_security_camera_evidence_summary(data: dict[str, Any]) -> None:
+    print(f"configured_total: {data.get('configured_total', 0)}")
+    print(f"active_evidence_total: {data.get('active_evidence_total', 0)}")
+    print(f"unavailable_total: {data.get('unavailable_total', 0)}")
+    print(f"breach_candidate_total: {data.get('breach_candidate_total', 0)}")
+    print(f"return_home_hint_active: {bool(data.get('return_home_hint_active', False))}")
+
+    configured_by_role = dict(data.get("configured_by_role") or {})
+    if configured_by_role:
+        print(
+            "configured_by_role: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_role.items()))
+        )
+
+    active_by_role = dict(data.get("active_by_role") or {})
+    if active_by_role:
+        print(
+            "active_by_role: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(active_by_role.items()))
+        )
+
+    active_by_kind = dict(data.get("active_by_kind") or {})
+    if active_by_kind:
+        print(
+            "active_by_kind: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(active_by_kind.items()))
+        )
+
+    source_status_counts = dict(data.get("source_status_counts") or {})
+    if source_status_counts:
+        print(
+            "source_status_counts: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(source_status_counts.items()))
+        )
+
+    breach_by_rule = dict(data.get("breach_by_rule") or {})
+    if breach_by_rule:
+        print(
+            "breach_by_rule: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(breach_by_rule.items()))
+        )
+
+    examples = list(data.get("examples") or [])
+    if examples:
+        print("examples:")
+        for item in examples:
+            print(
+                f"  {item.get('source_id') or '-'} | "
+                f"{item.get('role') or '-'} | "
+                f"{item.get('status') or '-'} | "
+                f"active={','.join(item.get('active_kinds') or []) or '-'} | "
+                f"unavailable={','.join(item.get('unavailable_kinds') or []) or '-'}"
+            )
+
+    breach_candidates = list(data.get("breach_candidates") or [])
+    if breach_candidates:
+        print("breach_candidates:")
+        for item in breach_candidates:
+            print(
+                f"  {item.get('source_id') or '-'} | "
+                f"{item.get('rule') or '-'} | "
+                f"{item.get('severity') or '-'} | "
+                f"{','.join(item.get('evidence_kinds') or []) or '-'}"
+            )
+
+    return_home_reasons = list(data.get("return_home_hint_reasons") or [])
+    if return_home_reasons:
+        print("return_home_hint_reasons:")
+        for item in return_home_reasons:
+            print(
+                f"  {item.get('source_id') or '-'} | "
+                f"{item.get('role') or '-'} | "
+                f"{item.get('reason') or '-'} | "
+                f"contact_active={bool(item.get('contact_active'))}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima diagnostics")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument(
         "--section",
-        choices=["all", "engine", "house_state", "house_state_summary", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite", "security_presence"],
+        choices=["all", "engine", "house_state", "house_state_summary", "events", "event_store", "proposals", "scheduler", "calendar", "plugins", "learning", "reactions", "lighting", "composite", "security_presence", "security_camera_evidence"],
         default="all",
         help="Sezione da mostrare (default: all)",
     )
@@ -418,6 +495,7 @@ def main() -> int:
         "lighting": runtime.get("plugins", {}).get("lighting_summary"),
         "composite": runtime.get("plugins", {}).get("composite_summary"),
         "security_presence": runtime.get("plugins", {}).get("security_presence_summary"),
+        "security_camera_evidence": runtime.get("plugins", {}).get("security_camera_evidence_summary"),
     }
 
     to_print = sections if args.section == "all" else {args.section: sections[args.section]}
@@ -446,6 +524,9 @@ def main() -> int:
             print()
         if name == "security_presence" and isinstance(data, dict):
             _print_security_presence_summary(data)
+            print()
+        if name == "security_camera_evidence" and isinstance(data, dict):
+            _print_security_camera_evidence_summary(data)
             print()
         print(json.dumps(data, indent=2))
 

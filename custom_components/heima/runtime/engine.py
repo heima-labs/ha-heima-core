@@ -609,6 +609,11 @@ class HeimaEngine:
                 "camera_evidence": security_camera_evidence.as_dict(),
             },
         )
+        self._security_domain.consume_camera_evidence(
+            security_state=security_state,
+            camera_evidence=security_camera_evidence,
+            state=self._state,
+        )
 
         self._house_state_domain._normalizer = self._normalizer  # keep in sync
         house_signal_entities = self._configured_house_signal_entities()

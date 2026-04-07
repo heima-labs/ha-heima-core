@@ -51,6 +51,9 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "calendar_summary": _calendar_summary_diagnostics(coordinator),
                 "house_state_summary": _house_state_summary_diagnostics(coordinator),
+                "security_camera_evidence_summary": _security_camera_evidence_summary_diagnostics(
+                    coordinator
+                ),
                 "security_presence_summary": _security_presence_summary_diagnostics(
                     coordinator
                 ),
@@ -773,6 +776,94 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "ready_examples": ready_examples,
         "waiting_for_darkness_examples": waiting_for_darkness_examples,
         "insufficient_evidence_examples": insufficient_evidence_examples,
+    }
+
+
+def _security_camera_evidence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    engine = getattr(coordinator, "engine", None) if coordinator is not None else None
+    diagnostics = engine.diagnostics() if engine is not None and hasattr(engine, "diagnostics") else {}
+    section = dict(diagnostics.get("security_camera_evidence") or {})
+
+    configured_sources = [
+        dict(item)
+        for item in list(section.get("configured_sources") or [])
+        if isinstance(item, dict)
+    ]
+    active_evidence = [
+        dict(item)
+        for item in list(section.get("active_evidence") or [])
+        if isinstance(item, dict)
+    ]
+    unavailable_sources = [
+        dict(item)
+        for item in list(section.get("unavailable_sources") or [])
+        if isinstance(item, dict)
+    ]
+    security_trace = dict(diagnostics.get("security", {}).get("camera_evidence_trace") or {})
+    breach_candidates = [
+        dict(item)
+        for item in list(security_trace.get("breach_candidates") or [])
+        if isinstance(item, dict)
+    ]
+    return_home_hint_reasons = [
+        dict(item)
+        for item in list(security_trace.get("return_home_hint_reasons") or [])[:3]
+        if isinstance(item, dict)
+    ]
+
+    configured_by_role: dict[str, int] = {}
+    active_by_role: dict[str, int] = {}
+    active_by_kind: dict[str, int] = {}
+    source_status_counts = dict(section.get("source_status_counts") or {})
+    breach_by_rule: dict[str, int] = {}
+
+    for item in configured_sources:
+        role = str(item.get("role") or "").strip()
+        if role:
+            configured_by_role[role] = configured_by_role.get(role, 0) + 1
+
+    for item in active_evidence:
+        role = str(item.get("role") or "").strip()
+        kind = str(item.get("kind") or "").strip()
+        if role:
+            active_by_role[role] = active_by_role.get(role, 0) + 1
+        if kind:
+            active_by_kind[kind] = active_by_kind.get(kind, 0) + 1
+
+    for item in breach_candidates:
+        rule = str(item.get("rule") or "").strip()
+        if rule:
+            breach_by_rule[rule] = breach_by_rule.get(rule, 0) + 1
+
+    examples: list[dict[str, Any]] = []
+    for item in configured_sources[:3]:
+        examples.append(
+            {
+                "source_id": str(item.get("id") or ""),
+                "display_name": str(item.get("display_name") or ""),
+                "role": str(item.get("role") or ""),
+                "status": str(item.get("status") or ""),
+                "active_kinds": list(item.get("active_kinds") or []),
+                "unavailable_kinds": list(item.get("unavailable_kinds") or []),
+                "contact_active": bool(item.get("contact_active")),
+                "last_seen_ts": item.get("last_seen_ts"),
+            }
+        )
+
+    return {
+        "configured_total": len(configured_sources),
+        "active_evidence_total": len(active_evidence),
+        "unavailable_total": len(unavailable_sources),
+        "breach_candidate_total": len(breach_candidates),
+        "return_home_hint_active": bool(security_trace.get("return_home_hint") is True),
+        "configured_by_role": dict(sorted(configured_by_role.items())),
+        "active_by_role": dict(sorted(active_by_role.items())),
+        "active_by_kind": dict(sorted(active_by_kind.items())),
+        "source_status_counts": dict(sorted(source_status_counts.items())),
+        "breach_by_rule": dict(sorted(breach_by_rule.items())),
+        "examples": examples,
+        "breach_candidates": breach_candidates[:3],
+        "return_home_hint_reasons": return_home_hint_reasons,
     }
 
 
