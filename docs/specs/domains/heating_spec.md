@@ -367,33 +367,32 @@ If `is_long = true`:
 
 ### 6.5 Raw Target Calculation
 
-If phase = `eco_only`:
-- `t_raw = t_min_safety`
+Exact formulas (linear interpolation):
 
-If phase = `cruise`:
-- `t_raw = t_min_safety`
+```
+eco_only:   t_raw = t_min_safety
+cruise:     t_raw = t_min_safety
+ramp_down:  t_raw = start_temp + (t_min_safety - start_temp) * (hours_from_start / vacation_ramp_down_h)
+ramp_up:    t_raw = t_min_safety + (vacation_comfort_temp - t_min_safety) * (1 - hours_to_end / vacation_ramp_up_h)
+```
 
-If phase = `ramp_down`:
-- linear interpolation from the captured thermostat setpoint at branch activation to `t_min_safety`
-- ratio = `hours_from_start / vacation_ramp_down_h`
-
-The captured start temperature:
+The captured start temperature (`start_temp`):
 - is taken once when `vacation_curve` becomes the active branch
 - is reused for the full duration of that active branch
 - is cleared when the branch stops being active
-
-If phase = `ramp_up`:
-- linear interpolation from `t_min_safety` to the configured return preheat target (`vacation_comfort_temp`)
-- ratio = `1 - (hours_to_end / vacation_ramp_up_h)`
 
 If timing data is invalid (`total_hours <= 0`):
 - fail safe to `t_min_safety`
 
 ### 6.6 Quantization
 
-The computed target is quantized to the thermostat step:
+The computed target is quantized to the thermostat step using `round()` (not floor or ceiling):
 
-- `target = round(t_raw / temperature_step) * temperature_step`
+```
+target = round(t_raw / temperature_step) * temperature_step
+```
+
+Default `temperature_step = 0.5°C` if not configured.
 
 ### 6.7 Scheduler handoff semantics
 
@@ -435,11 +434,15 @@ Before applying a setpoint:
 ### 7.1 Manual Override Guard
 
 If either of these is active:
-- Heima manual hold
-- a thermostat preset recognized as a manual-hold override
+- `heima_heating_manual_hold` binary sensor is `on` (Heima-managed hold entity)
+- the climate entity's `preset_mode` attribute matches one of: `hold`, `manual`, `manualhold`, `override`, `permanenthold`, `temporaryhold` (case-insensitive)
+
+Then:
 - no apply is sent
 - diagnostics must record the block reason
 - an event may be emitted (`heating.manual_override_blocked`)
+
+Detection uses `preset_mode` (standard HA climate attribute). The binary sensor fallback is checked when `preset_mode` is unavailable.
 
 ### 7.2 Small Delta Guard
 

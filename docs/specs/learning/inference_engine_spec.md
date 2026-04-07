@@ -241,6 +241,11 @@ class ILearningModule(Protocol):
         Online phase. Read internal model + context, emit signals.
         Synchronous. Must be O(1) — no I/O, no heavy compute.
         Called once per eval cycle, before domain evaluation.
+
+        Contract: if called before the first analyze() completes, MUST return [].
+        No internal state is required before analysis. The base class default
+        (HeimaLearningModule.infer) already returns [] — subclasses that override
+        infer() must honor this contract.
         """
 
     def diagnostics(self) -> dict[str, Any]:
@@ -286,6 +291,10 @@ class SnapshotStore:
         Append snapshot if it differs from the last recorded one.
         Evicts oldest if at MAX_RECORDS. Evicts TTL-expired on load and append.
         Uses async_delay_save(fn, delay=30) for batched writes.
+
+        TTL semantics: TTL is computed from snapshot.ts (creation timestamp),
+        NOT from the time of last async_load(). A snapshot created 89 days ago
+        is evicted on the 90th day regardless of when it was last read.
         """
 
     async def async_query(
@@ -547,6 +556,27 @@ class SignalRouter:
 TTL is enforced by comparing `signal.ttl_s` against elapsed time since the signal was
 created. Signals created in the same cycle are always fresh. Signals from a previous cycle
 that were cached (see §9 on caching) are checked on each use.
+
+### 8b. Signal Conflict Resolution
+
+**Problem**: two `ILearningModule` instances emit signals of the same subclass (e.g., `HouseStateSignal`) with different `predicted_state` values, both with `confidence ≥ 0.60`.
+
+**Resolution policy** (normative):
+
+1. **Highest confidence wins** — among conflicting signals of the same subclass and same domain target, the signal with the highest `confidence` is used. SignalRouter already sorts each bucket by `confidence desc`; consumers SHOULD use `signals[0]`.
+
+2. **Tie-breaking — conservative wins** — if two signals have equal confidence, the more conservative `Importance` level wins:
+   - `OBSERVE` beats `SUGGEST` beats `ASSERT`
+   - This prevents an ambiguous situation from triggering assertive domain behavior.
+
+3. **Conflict logging requirement** — when two or more signals in the same bucket have `confidence ≥ 0.60` and different predicted values, the `SignalRouter` MUST log a `WARNING`:
+   ```
+   SignalRouter: conflict on <SignalType> — <N> signals, top confidence=<X>, winner=<module_id>
+   ```
+
+4. **No merge** — signals are never averaged or merged. Only one signal is consumed per domain target per cycle.
+
+5. **Scope** — conflict resolution applies per `(signal_subclass, domain_target)` tuple. Signals targeting different domains (e.g., `HouseStateSignal` vs `HeatingSignal`) do not conflict.
 
 ---
 

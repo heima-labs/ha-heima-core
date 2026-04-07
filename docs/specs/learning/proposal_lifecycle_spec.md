@@ -50,6 +50,60 @@ Lifecycle applies equally to learned and admin-authored proposals. The `origin` 
 orthogonal to its review `status`; the same lifecycle rules should work for both unless a specific
 plugin family documents a stricter exception.
 
+## 2b. ProposalLifecycleHooks Interface
+
+The delegation contract between `ProposalEngine` and each plugin family is defined by `ProposalLifecycleHooks`, a frozen dataclass with 4 typed callable fields.
+
+### Type signatures
+
+```python
+LifecycleIdentityKey           = Callable[[ReactionProposal], str]
+LifecycleFollowupSlotKey       = Callable[[ReactionProposal], str]
+LifecycleFallbackFollowupMatch = Callable[
+    [list[ReactionProposal], ReactionProposal, str],
+    tuple[int, ReactionProposal] | None,
+]
+LifecycleShouldSuppressFollowup = Callable[[ReactionProposal, ReactionProposal], bool]
+
+@dataclass(frozen=True)
+class ProposalLifecycleHooks:
+    identity_key:             LifecycleIdentityKey
+    followup_slot_key:        LifecycleFollowupSlotKey       | None = None
+    fallback_followup_match:  LifecycleFallbackFollowupMatch | None = None
+    should_suppress_followup: LifecycleShouldSuppressFollowup | None = None
+```
+
+### Hook semantics and defaults
+
+| Hook | Required | Description | Default if None |
+|------|----------|-------------|-----------------|
+| `identity_key(proposal) → str` | **Yes** | Returns the logical identity key for this proposal. Defines "same behavioral slot". | — (must be provided) |
+| `followup_slot_key(proposal) → str` | No | Returns the slot key used to look up an existing accepted reaction for follow-up comparison. | Skip follow-up logic entirely |
+| `fallback_followup_match(existing_list, candidate, slot_key) → (index, proposal) \| None` | No | Custom matcher when exact `slot_key` lookup fails. Returns the best match from `existing_list`, or `None`. | Return `None` (no match) |
+| `should_suppress_followup(candidate, accepted) → bool` | No | Returns `True` if the candidate represents minor drift over the accepted reaction and should be suppressed instead of surfaced as a `tuning_suggestion`. | Return `False` (always surface) |
+
+### Invariants maintained by ProposalEngine unconditionally
+
+These invariants hold regardless of what plugin hooks return:
+
+1. **No accepted-proposal reopening**: an `accepted` proposal is never automatically reverted to `pending`, regardless of new evidence.
+2. **No identity collision across plugin families**: each `LearningPatternPluginDescriptor` has an isolated proposal namespace. Identity keys are scoped per plugin — two plugins returning the same string cannot collide.
+3. **Dedup is identity-based, not reaction_type-based**: `ProposalEngine` uses `identity_key()` result for dedup/refresh, never hardcodes on `reaction_type`.
+4. **Missing `identity_key` is a registration error**: a `ProposalLifecycleHooks` without `identity_key` MUST NOT be registered. Registration fails at startup.
+5. **Refresh does not change review status**: updating evidence fields on a `pending` proposal does not require user re-review. Status changes only via explicit user actions (accept/reject).
+
+### Built-in factory functions
+
+```python
+presence_lifecycle_hooks()              → ProposalLifecycleHooks
+heating_lifecycle_hooks()               → ProposalLifecycleHooks
+lighting_lifecycle_hooks()              → ProposalLifecycleHooks (all 4 hooks)
+security_presence_simulation_lifecycle_hooks() → ProposalLifecycleHooks
+composite_room_assist_lifecycle_hooks(policy) → ProposalLifecycleHooks
+```
+
+---
+
 ## 3. Persisted States
 
 Persisted proposal `status` remains:
@@ -176,6 +230,22 @@ Composite proposal quality clarification:
   - small threshold delta only
 - the exact “small threshold delta” and comparable payload-drift tolerances SHOULD be modeled as
   configurable lifecycle policy, even if v1 ships with built-in defaults
+
+### 4.4b Scene Signature Algorithm
+
+`scene_signature` is a deterministic coarse fingerprint of the lighting configuration in a proposal's `entity_steps`.
+
+**Algorithm:**
+1. For each entity step, compute bucketed values:
+   - `brightness_bucket = (brightness // 32) * 32`  (step = 32, range 0–255)
+   - `color_temp_bucket = (color_temp_kelvin // 250) * 250`  (step = 250K)
+   - `rgb_color`: included as-is (no bucketing)
+2. Sort steps deterministically by `entity_id`.
+3. Produce a stable string representation of the sorted bucketed steps.
+
+**Rationale:** bucketing at step=32 for brightness and step=250K for color temperature tolerates minor sensor/user drift without producing false mismatches. Materially different scenes (different rooms, different on/off patterns, significantly different color temperatures) still produce distinct signatures.
+
+**Not included in signature:** `confidence`, `scheduled_min`, `observations_count`, `weeks_observed` — these are evidence fields, not identity fields.
 
 ### 4.4 Lighting time bucket
 

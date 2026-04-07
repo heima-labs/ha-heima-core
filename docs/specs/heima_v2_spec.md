@@ -257,6 +257,16 @@ class DomainResultBag:
 
 Domains access dependencies via `domain_results.require("house_state")` etc. Type-narrowing (casting to a concrete result type) is the plugin's responsibility.
 
+**CanonicalState vs DomainResultBag coherence rule:**
+
+A domain plugin may read from both `canonical_state` (previous cycle) and `domain_results` (current cycle). When the two diverge:
+
+- `canonical_state` is the authoritative view **during evaluation** — it reflects the last committed state and is stable across the entire cycle.
+- `domain_results` contains the current-cycle output of upstream domains, which has not yet been committed to `CanonicalState`.
+- If a plugin needs the "stable last known state", it MUST read from `canonical_state`.
+- If a plugin needs the "freshest current-cycle output of an upstream domain", it reads from `domain_results.require(...)`.
+- **Never merge or average the two views** — treat them as distinct temporal snapshots.
+
 ### §5.5 Core vs Built-in Plugins vs Third-Party Plugins
 
 | Category | Examples | Characteristics |

@@ -42,10 +42,13 @@ class _EntityPattern:
         }
 
 
+@dataclass
 class SecurityPresenceSimulationAnalyzer:
     """Emit one bounded learned proposal for vacation presence simulation."""
 
-    analyzer_id = "SecurityPresenceSimulationAnalyzer"
+    analyzer_id: str = "SecurityPresenceSimulationAnalyzer"
+    min_weeks: int = _MIN_WEEKS
+    min_occurrences: int = _MIN_OCCURRENCES
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         raw = await event_store.async_query(event_type="lighting")
@@ -53,7 +56,7 @@ class SecurityPresenceSimulationAnalyzer:
         if not events:
             return []
 
-        patterns = _build_entity_patterns(events)
+        patterns = _build_entity_patterns(events, self.min_weeks, self.min_occurrences)
         if not patterns:
             return []
 
@@ -162,7 +165,11 @@ def _is_security_presence_source_event(event: Any) -> bool:
     return bool(entity_id and room_id and action in {"on", "off"})
 
 
-def _build_entity_patterns(events: list[Any]) -> list[_EntityPattern]:
+def _build_entity_patterns(
+    events: list[Any],
+    min_weeks: int = _MIN_WEEKS,
+    min_occurrences: int = _MIN_OCCURRENCES,
+) -> list[_EntityPattern]:
     grouped: dict[tuple[str, str, str, int], list[Any]] = {}
     for event in events:
         data = dict(getattr(event, "data", {}) or {})
@@ -174,10 +181,10 @@ def _build_entity_patterns(events: list[Any]) -> list[_EntityPattern]:
 
     patterns: list[_EntityPattern] = []
     for (room_id, entity_id, action, weekday), group in grouped.items():
-        if len(group) < _MIN_OCCURRENCES:
+        if len(group) < min_occurrences:
             continue
         weeks_observed = _weeks_observed(group)
-        if weeks_observed < _MIN_WEEKS:
+        if weeks_observed < min_weeks:
             continue
         minutes = sorted(int(event.context.minute_of_day) for event in group)
         median_min = minutes[len(minutes) // 2]

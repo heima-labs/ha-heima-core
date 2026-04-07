@@ -31,6 +31,7 @@ Related practical guides live outside this tree:
 - `core/runtime_scheduler_spec.md` — runtime timer scheduler
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
+- `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 
 ## Domains
 
@@ -61,6 +62,18 @@ Related practical guides live outside this tree:
 - `rfc/heima_v2_emotion_ieq_research_note.md`
 - `rfc/heima_spec_v1.md`
 - `rfc/heima_spec_v1_1_behavior_framework.md`
+
+## DAG Evolution Note
+
+**v1** uses a **hardcoded DAG** defined in `engine.py`. Domain evaluation order is fixed:
+`InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply`.
+No plugin registration mechanism exists in v1.
+
+**v2** (RFC — `heima_v2_spec.md`) introduces a **declarative DAG** with `depends_on` and topological sort.
+Core domains (People, Occupancy, HouseState) remain fixed-order; plugin domains are sorted by dependency graph.
+
+These are **not alternative implementations**. v2 replaces v1 when implemented and scheduled.
+Until then, the v1 hardcoded order is the only runtime contract.
 
 ## Compatibility Notes
 

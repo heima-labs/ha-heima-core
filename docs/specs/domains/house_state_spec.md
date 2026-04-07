@@ -172,9 +172,10 @@ Target meaning:
 - "the house plausibly left the sleeping phase"
 
 Default built-in rule:
-- `sleep_window == off`
-  OR
-- `media_active == on`
+- `anyone_home == on`
+  AND one of:
+  - `sleep_window == off`
+  - `media_active == on`
 
 ### 6.3 `work_candidate`
 
@@ -203,10 +204,11 @@ Target meaning:
 
 Default built-in rule:
 - `anyone_home == on`
-- `sleeping` is not effective
 - one of:
   - `relax_mode == on`
   - `media_active == on`
+
+Note on sleeping suppression: `relax_candidate` does **not** exclude sleeping at the candidate evaluation level. Suppression of `relax` when `sleeping` is effective is handled in the state machine resolver (§8.2: "if sleeping is active, relax is suppressed"). This avoids a race condition during the sleeping→relax transition, where the candidate would flip before the resolver has confirmed the transition.
 
 `relax_mode` is considered stronger evidence than passive media activity.
 Explicit `relax_mode` may activate `relax` immediately, while passive media-based relax
@@ -218,6 +220,8 @@ must satisfy the configured enter timer.
 
 The home substate layer uses explicit enter/exit thresholds. This behavior is already implemented
 on `main`.
+
+All timer values are in **minutes**. The runtime converts them to seconds internally (multiply by 60).
 
 Default timers:
 - `sleep_enter_min = 10`

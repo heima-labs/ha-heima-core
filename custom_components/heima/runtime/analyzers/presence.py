@@ -16,6 +16,7 @@ class PresencePatternAnalyzer:
     """Detect repeated arrival windows from stored presence events."""
 
     min_arrivals: int = 5
+    min_weeks: int = 2
     pre_condition_min: int = 20
     window_half_min: int = 15
 
@@ -31,7 +32,10 @@ class PresencePatternAnalyzer:
             day_samples = sorted(
                 e.context.minute_of_day for e in arrivals if e.context.weekday == weekday
             )
+            day_events = [e for e in arrivals if e.context.weekday == weekday]
             if len(day_samples) < self.min_arrivals:
+                continue
+            if _weeks_observed(day_events) < self.min_weeks:
                 continue
 
             median = day_samples[len(day_samples) // 2]
@@ -64,9 +68,7 @@ class PresencePatternAnalyzer:
                             plugin_family="presence",
                             weekday=weekday,
                             observations_count=len(day_samples),
-                            weeks_observed=_weeks_observed(
-                                [e for e in arrivals if e.context.weekday == weekday]
-                            ),
+                            weeks_observed=_weeks_observed(day_events),
                             median_arrival_min=median,
                             iqr_min=iqr,
                         ),

@@ -43,6 +43,7 @@ class _EntityPattern:
         }
 
 
+@dataclass
 class LightingPatternAnalyzer:
     """Detect recurring lighting configurations per (room, weekday) from stored events.
 
@@ -51,6 +52,9 @@ class LightingPatternAnalyzer:
       2. Scene candidate grouping: entities in same room with similar scheduled_min
       3. One ReactionProposal per scene candidate
     """
+
+    min_weeks: int = _MIN_WEEKS
+    min_occurrences: int = _MIN_OCCURRENCES
 
     @property
     def analyzer_id(self) -> str:
@@ -79,9 +83,9 @@ class LightingPatternAnalyzer:
 
         patterns: list[_EntityPattern] = []
         for (entity_id, action, weekday), group in entity_groups.items():
-            if len(group) < _MIN_OCCURRENCES:
+            if len(group) < self.min_occurrences:
                 continue
-            if not _spans_min_weeks(group):
+            if not _spans_min_weeks(group, self.min_weeks):
                 continue
 
             room_id = group[0].data.get("room_id", "")
@@ -93,7 +97,7 @@ class LightingPatternAnalyzer:
             median = samples[n // 2]
             iqr = samples[(3 * n) // 4] - samples[n // 4]
             weeks_observed = _weeks_observed(group)
-            if _is_minimal_evidence_group(len(group), weeks_observed, iqr):
+            if _is_minimal_evidence_group(len(group), weeks_observed, iqr, self.min_weeks, self.min_occurrences):
                 continue
             base_confidence = max(0.3, 1.0 - iqr / 120.0)
             evidence_factor = min(1.0, len(group) / 8.0)
@@ -211,14 +215,20 @@ class LightingPatternAnalyzer:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _spans_min_weeks(events: list[HeimaEvent]) -> bool:
-    return _weeks_observed(events) >= _MIN_WEEKS
+def _spans_min_weeks(events: list[HeimaEvent], min_weeks: int = _MIN_WEEKS) -> bool:
+    return _weeks_observed(events) >= min_weeks
 
 
-def _is_minimal_evidence_group(observations_count: int, weeks_observed: int, iqr_min: int) -> bool:
+def _is_minimal_evidence_group(
+    observations_count: int,
+    weeks_observed: int,
+    iqr_min: int,
+    min_weeks: int = _MIN_WEEKS,
+    min_occurrences: int = _MIN_OCCURRENCES,
+) -> bool:
     return (
-        observations_count <= _MIN_OCCURRENCES
-        and weeks_observed <= _MIN_WEEKS
+        observations_count <= min_occurrences
+        and weeks_observed <= min_weeks
         and iqr_min > _MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE
     )
 

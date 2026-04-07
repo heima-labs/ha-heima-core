@@ -138,6 +138,7 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
         set_analyzers=MagicMock(),
+        set_learning_plugin_registry=MagicMock(),
     )
     coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
     coordinator._resubscribe_state_changes = MagicMock()
@@ -164,6 +165,7 @@ async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_ins
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
         set_analyzers=MagicMock(),
+        set_learning_plugin_registry=MagicMock(),
     )
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator.entry = SimpleNamespace(entry_id="entry-1", options={"learning": {}, "rooms": []})
@@ -193,6 +195,7 @@ async def test_coordinator_runtime_reload_updates_learning_plugin_registry_and_a
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
         set_analyzers=MagicMock(),
+        set_learning_plugin_registry=MagicMock(),
     )
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator.entry = SimpleNamespace(
