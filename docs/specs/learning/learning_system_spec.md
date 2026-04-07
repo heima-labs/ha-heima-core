@@ -157,18 +157,186 @@ Based on the literature, a pattern is considered reliable only when it has been 
 number of times across a sufficient time span. Producing proposals too early is worse than producing
 none (false positives cause user distrust that is hard to recover from — Alexa research confirms this).
 
-**Heima rules (apply to all analyzers):**
+**Heima baseline policy:**
 
 | Condition | Threshold | Rationale |
 |---|---|---|
-| Minimum occurrences per pattern key | ≥ 5 | ARM minimum support; used by `PresencePatternAnalyzer` |
+| Minimum occurrences per pattern key | ≥ 5 | ARM minimum support; good default for repeated routines |
 | Minimum distinct weeks spanned | ≥ 2 | Prevents a single-week anomaly from triggering a proposal |
 | Minimum confidence to surface proposal | ≥ 0.4 | `ProposalEngine.min_confidence` filter |
 | Recommended observation period before first useful proposal | 3–4 weeks | Literature consensus (CASAS, MIT PlaceLab, industry) |
 
-The `min_arrivals=5` in `PresencePatternAnalyzer` satisfies the occurrence threshold.
-The week-span check is added for `LightingPatternAnalyzer` (see §P9) and should be retrofitted to
-existing analyzers in a future iteration.
+These are defaults, not a requirement that every analyzer hardcode the same constants forever.
+
+Domain policy rule:
+- the minimum observation window SHOULD be configurable per domain / plugin family
+- the canonical configuration shape SHOULD allow at least:
+  - `learning.<family>.min_occurrences`
+  - `learning.<family>.min_weeks`
+- analyzers MAY keep family-specific defaults, but SHOULD read from policy/config overrides rather
+  than scattering unrelated hardcoded thresholds
+- the absence of an override means "use the family default", not "disable the gate"
+
+Semantics of `min_weeks`:
+- `min_weeks` is a quality gate on proposal emission, not an identity field
+- `weeks_observed` SHOULD continue to appear in `learning_diagnostics` as explainability / evidence
+- analyzers MAY also use `weeks_observed` as a moderate confidence multiplier after the gate passes
+- `min_weeks` and `weeks_observed` are therefore related but not interchangeable
+
+Current implementation note:
+- event-pattern analyzers such as `PresencePatternAnalyzer`, `LightingPatternAnalyzer`, composite
+  cross-domain analyzers, and `SecurityPresenceSimulationAnalyzer` already use a real distinct-weeks
+  emission gate
+- other analyzers may still expose `weeks_observed` as evidence without yet enforcing a configurable
+  `min_weeks` gate; this is acceptable temporarily but SHOULD be made explicit and aligned over time
+
+Recommended runtime shape:
+- configuration source SHOULD remain under the existing `learning` options tree
+- analyzers SHOULD NOT read arbitrary nested config keys ad hoc
+- instead, runtime SHOULD build one typed learning policy layer from `learning_config`, in the same
+  spirit already used for composite quality/lifecycle policy
+
+Canonical configuration shape:
+```yaml
+learning:
+  presence:
+    min_occurrences: 5
+    min_weeks: 2
+  lighting:
+    min_occurrences: 5
+    min_weeks: 2
+  composite:
+    min_occurrences: 5
+    min_weeks: 2
+  security_presence_simulation:
+    min_occurrences: 4
+    min_weeks: 2
+  heating:
+    min_events: 10
+    min_eco_sessions: 3
+    min_weeks: 2
+```
+
+Canonical policy model:
+- runtime SHOULD expose a typed policy object per family, for example:
+  - `PresenceLearningPolicy`
+  - `LightingLearningPolicy`
+  - `CompositeLearningPolicy`
+  - `SecurityPresenceSimulationLearningPolicy`
+  - `HeatingLearningPolicy`
+- the builder SHOULD:
+  - apply family defaults
+  - validate/coerce config overrides
+  - keep parsing/default logic centralized
+- analyzers SHOULD depend on the typed policy object, not on raw config dictionaries
+
+Family mapping guidance:
+- `presence`
+  - `min_occurrences`
+  - `min_weeks`
+- `lighting`
+  - `min_occurrences`
+  - `min_weeks`
+- `composite`
+  - `min_occurrences`
+  - `min_weeks`
+  - plus existing quality/lifecycle policy overrides
+- `security_presence_simulation`
+  - `min_occurrences`
+  - `min_weeks`
+- `heating`
+  - `min_events`
+  - `min_eco_sessions`
+  - optional `min_weeks`
+
+Heating alignment rule:
+- `HeatingPatternAnalyzer` MAY remain temporarily asymmetric while only exposing `weeks_observed`
+  as evidence
+- however, if the family is meant to participate in domain-configurable observation windows, it
+  SHOULD adopt the same policy model explicitly instead of remaining an undocumented exception
+
+Recommended implementation path:
+- introduce a dedicated module such as:
+  - `custom_components/heima/runtime/analyzers/policy.py`
+- the module SHOULD define:
+  - one typed dataclass per family
+  - one top-level `LearningPolicyBundle`
+  - one builder function such as `learning_policy_from_config(learning_config)`
+
+Recommended bundle shape:
+```python
+@dataclass(frozen=True)
+class PresenceLearningPolicy:
+    min_occurrences: int = 5
+    min_weeks: int = 2
+
+@dataclass(frozen=True)
+class LightingLearningPolicy:
+    min_occurrences: int = 5
+    min_weeks: int = 2
+
+@dataclass(frozen=True)
+class CompositeLearningPolicy:
+    min_occurrences: int = 5
+    min_weeks: int = 2
+
+@dataclass(frozen=True)
+class SecurityPresenceSimulationLearningPolicy:
+    min_occurrences: int = 4
+    min_weeks: int = 2
+
+@dataclass(frozen=True)
+class HeatingLearningPolicy:
+    min_events: int = 10
+    min_eco_sessions: int = 3
+    min_weeks: int = 2
+
+@dataclass(frozen=True)
+class LearningPolicyBundle:
+    presence: PresenceLearningPolicy = PresenceLearningPolicy()
+    lighting: LightingLearningPolicy = LightingLearningPolicy()
+    composite: CompositeLearningPolicy = CompositeLearningPolicy()
+    security_presence_simulation: SecurityPresenceSimulationLearningPolicy = (
+        SecurityPresenceSimulationLearningPolicy()
+    )
+    heating: HeatingLearningPolicy = HeatingLearningPolicy()
+```
+
+Builder responsibilities:
+- read raw `learning_config`
+- coerce integers and reject invalid negative/zero values where not allowed
+- apply family defaults when a subtree is absent
+- keep unknown keys non-fatal unless a stricter validation phase is introduced later
+- coexist cleanly with existing policy builders such as:
+  - `composite_quality_policy_from_learning_config(...)`
+  - `composite_lifecycle_policy_from_learning_config(...)`
+
+Registry integration guidance:
+- `create_builtin_learning_plugin_registry(...)` SHOULD build the policy bundle once
+- analyzer construction SHOULD then become explicit, e.g.:
+  - `PresencePatternAnalyzer(policy=policies.presence)`
+  - `LightingPatternAnalyzer(policy=policies.lighting)`
+  - `CompositePatternCatalogAnalyzer(..., policy=policies.composite, ...)`
+  - `SecurityPresenceSimulationAnalyzer(policy=policies.security_presence_simulation)`
+  - `HeatingPatternAnalyzer(policy=policies.heating)`
+- analyzers MAY preserve their existing constructor fields temporarily, but the registry SHOULD be
+  the canonical injection point for family learning policy
+
+Migration guidance:
+1. Add policy module and tests for coercion/defaults.
+2. Wire registry to build the bundle once from `learning_config`.
+3. Update `PresencePatternAnalyzer`, `LightingPatternAnalyzer`, and
+   `SecurityPresenceSimulationAnalyzer` to read policy values instead of local constants.
+4. Update composite catalog definitions to source `min_occurrences` / `min_weeks` from policy rather
+   than only from static catalog constants.
+5. Decide whether `HeatingPatternAnalyzer` adopts `min_weeks` as a true gate or remains an explicit
+   documented exception.
+6. Only after runtime wiring is stable, expose the new family subtrees in options/config UX.
+
+Non-goals for the first slice:
+- no need to make every policy knob user-facing immediately
+- no requirement to remove all analyzer-local constants in one patch
+- no change to proposal identity semantics; `min_weeks` remains evidence quality, not identity
 
 ### 0.4 Decision: propose-then-confirm, never auto-execute
 

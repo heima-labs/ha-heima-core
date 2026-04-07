@@ -8,6 +8,7 @@ from typing import Any
 
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
+from .policy import SecurityPresenceSimulationLearningPolicy
 from ..event_store import EventStore
 
 _MIN_OCCURRENCES = 4
@@ -49,6 +50,13 @@ class SecurityPresenceSimulationAnalyzer:
     analyzer_id: str = "SecurityPresenceSimulationAnalyzer"
     min_weeks: int = _MIN_WEEKS
     min_occurrences: int = _MIN_OCCURRENCES
+    policy: SecurityPresenceSimulationLearningPolicy | None = None
+
+    def __post_init__(self) -> None:
+        if self.policy is None:
+            return
+        self.min_weeks = int(self.policy.min_weeks)
+        self.min_occurrences = int(self.policy.min_occurrences)
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         raw = await event_store.async_query(event_type="lighting")

@@ -9,6 +9,7 @@ from typing import Any
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
+from .policy import LightingLearningPolicy
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 _MIN_OCCURRENCES = 5
@@ -55,6 +56,13 @@ class LightingPatternAnalyzer:
 
     min_weeks: int = _MIN_WEEKS
     min_occurrences: int = _MIN_OCCURRENCES
+    policy: LightingLearningPolicy | None = None
+
+    def __post_init__(self) -> None:
+        if self.policy is None:
+            return
+        self.min_weeks = int(self.policy.min_weeks)
+        self.min_occurrences = int(self.policy.min_occurrences)
 
     @property
     def analyzer_id(self) -> str:

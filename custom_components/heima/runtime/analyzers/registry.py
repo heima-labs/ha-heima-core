@@ -19,6 +19,7 @@ from .lifecycle import (
     security_presence_simulation_lifecycle_hooks,
 )
 from .lighting import LightingPatternAnalyzer
+from .policy import learning_policy_from_config
 from .presence import PresencePatternAnalyzer
 from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 
@@ -190,6 +191,7 @@ def create_builtin_learning_plugin_registry(
 ) -> LearningPluginRegistry:
     """Create the built-in learning plugin registry used by Heima v1."""
     registry = LearningPluginRegistry()
+    policies = learning_policy_from_config(learning_config)
     registry.register(
         descriptor=LearningPatternPluginDescriptor(
             plugin_id="builtin.presence_preheat",
@@ -201,7 +203,7 @@ def create_builtin_learning_plugin_registry(
             supports_admin_authored=False,
             admin_authored_templates=(),
         ),
-        analyzer=PresencePatternAnalyzer(),
+        analyzer=PresencePatternAnalyzer(policy=policies.presence),
         enabled=_is_enabled("presence", enabled_families),
     )
     registry.register(
@@ -239,7 +241,7 @@ def create_builtin_learning_plugin_registry(
                 ),
             ),
         ),
-        analyzer=LightingPatternAnalyzer(),
+        analyzer=LightingPatternAnalyzer(policy=policies.lighting),
         enabled=_is_enabled("lighting", enabled_families),
     )
     registry.register(
@@ -305,7 +307,9 @@ def create_builtin_learning_plugin_registry(
                 ),
             ),
         ),
-        analyzer=SecurityPresenceSimulationAnalyzer(),
+        analyzer=SecurityPresenceSimulationAnalyzer(
+            policy=policies.security_presence_simulation
+        ),
         enabled=_is_enabled("security_presence_simulation", enabled_families),
     )
     return registry

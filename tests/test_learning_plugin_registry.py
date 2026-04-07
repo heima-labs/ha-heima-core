@@ -7,6 +7,7 @@ from custom_components.heima.runtime.analyzers import (
     builtin_learning_pattern_plugins,
     create_builtin_learning_plugin_registry,
 )
+from custom_components.heima.runtime.analyzers.policy import learning_policy_from_config
 
 
 def test_builtin_learning_pattern_plugins_exposes_default_learning_plugins():
@@ -255,6 +256,54 @@ def test_builtin_learning_plugin_registry_passes_composite_lifecycle_policy():
     assert policy.room_darkness_primary_threshold_max_gap == 15.0
     assert policy.room_darkness_brightness_max_gap == 24
     assert policy.room_darkness_color_temp_max_gap == 180
+
+
+def test_learning_policy_from_config_uses_defaults_and_family_aliases():
+    policies = learning_policy_from_config(
+        {
+            "presence": {"min_occurrences": 7, "min_weeks": 3},
+            "lighting": {"min_occurrences": 6},
+            "composite": {"min_weeks": 4},
+            "security_presence_simulation": {"min_occurrences": 5, "min_weeks": 3},
+            "heating": {"min_events": 12, "min_eco_sessions": 4, "min_weeks": 5},
+        }
+    )
+
+    assert policies.presence.min_occurrences == 7
+    assert policies.presence.min_weeks == 3
+    assert policies.lighting.min_occurrences == 6
+    assert policies.lighting.min_weeks == 2
+    assert policies.composite_room_assist.min_occurrences == 5
+    assert policies.composite_room_assist.min_weeks == 4
+    assert policies.security_presence_simulation.min_occurrences == 5
+    assert policies.security_presence_simulation.min_weeks == 3
+    assert policies.heating.min_events == 12
+    assert policies.heating.min_eco_sessions == 4
+    assert policies.heating.min_weeks == 5
+
+
+def test_builtin_learning_plugin_registry_passes_family_learning_policies():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "presence": {"min_occurrences": 7, "min_weeks": 3},
+            "lighting": {"min_occurrences": 6, "min_weeks": 4},
+            "security_presence_simulation": {"min_occurrences": 5, "min_weeks": 3},
+        }
+    )
+
+    analyzers = {analyzer.analyzer_id: analyzer for analyzer in registry.analyzers()}
+
+    presence = analyzers["PresencePatternAnalyzer"]
+    assert presence.min_arrivals == 7  # noqa: SLF001
+    assert presence.min_weeks == 3  # noqa: SLF001
+
+    lighting = analyzers["LightingPatternAnalyzer"]
+    assert lighting.min_occurrences == 6  # noqa: SLF001
+    assert lighting.min_weeks == 4  # noqa: SLF001
+
+    security_presence = analyzers["SecurityPresenceSimulationAnalyzer"]
+    assert security_presence.min_occurrences == 5  # noqa: SLF001
+    assert security_presence.min_weeks == 3  # noqa: SLF001
 
 
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():

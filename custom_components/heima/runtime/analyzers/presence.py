@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
+from .policy import PresenceLearningPolicy
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -19,6 +20,13 @@ class PresencePatternAnalyzer:
     min_weeks: int = 2
     pre_condition_min: int = 20
     window_half_min: int = 15
+    policy: PresenceLearningPolicy | None = None
+
+    def __post_init__(self) -> None:
+        if self.policy is None:
+            return
+        self.min_arrivals = int(self.policy.min_occurrences)
+        self.min_weeks = int(self.policy.min_weeks)
 
     @property
     def analyzer_id(self) -> str:
