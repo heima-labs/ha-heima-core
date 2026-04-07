@@ -31,7 +31,9 @@ class _SecurityStepsMixin:
                 errors={"security_state_entity": "required"},
             )
 
-        self._update_options({OPT_SECURITY: user_input})
+        payload = dict(current)
+        payload.update(user_input)
+        self._update_options({OPT_SECURITY: payload})
         return await self.async_step_init()
 
     def _security_menu_summary(self) -> str:
@@ -45,14 +47,20 @@ class _SecurityStepsMixin:
             configured_total = int(summary.get("configured_total") or 0)
             ready_tonight_total = int(summary.get("ready_tonight_total") or 0)
             blocked_total = int(summary.get("blocked_total") or 0)
+            camera_count = len(security.get("camera_evidence_sources", []) or [])
             if configured_total > 0:
                 return (
                     f"simulazioni {configured_total}"
                     f" | pronte {ready_tonight_total}"
                     f" | bloccate {blocked_total}"
+                    + (f" | camere {camera_count}" if camera_count > 0 else "")
                 )
         if security.get("enabled") and security.get("security_state_entity"):
-            return str(security["security_state_entity"])
+            suffix = ""
+            camera_count = len(security.get("camera_evidence_sources", []) or [])
+            if camera_count > 0:
+                suffix = f" | cameras {camera_count}"
+            return f"{security['security_state_entity']}{suffix}"
         return "—"
 
     def _security_schema(self, defaults: dict[str, Any]) -> vol.Schema:

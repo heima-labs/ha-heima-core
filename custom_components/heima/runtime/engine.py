@@ -48,6 +48,7 @@ from .domains.lighting import LightingDomain
 from .domains.occupancy import OccupancyDomain
 from .domains.people import PeopleDomain
 from .domains.security import SecurityDomain
+from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
 from .normalization.service import InputNormalizer
 from .snapshot import DecisionSnapshot
 from .scheduler import ScheduledRuntimeJob
@@ -89,6 +90,7 @@ class HeimaEngine:
         self._last_engine_enabled_state: bool | None = None
         self._normalizer = InputNormalizer(hass)
         self._events_domain = EventsDomain(hass)
+        self._security_camera_evidence_provider = SecurityCameraEvidenceProvider(hass, self._normalizer)
         self._people_domain = PeopleDomain(hass, self._normalizer)
         self._occupancy_domain = OccupancyDomain(hass, self._normalizer)
         self._calendar_domain = CalendarDomain(hass)
@@ -236,6 +238,7 @@ class HeimaEngine:
 
     def _reset_domains_for_reload(self, changed_keys: set[str] | None) -> None:
         if changed_keys is None:
+            self._security_camera_evidence_provider.reset()
             self._people_domain.reset()
             self._occupancy_domain.reset()
             self._calendar_domain.reset()
@@ -257,6 +260,7 @@ class HeimaEngine:
         if OPT_HEATING in changed:
             self._heating_domain.reset()
         if OPT_SECURITY in changed:
+            self._security_camera_evidence_provider.reset()
             self._security_domain.reset()
 
     # ------------------------------------------------------------------
@@ -559,6 +563,9 @@ class HeimaEngine:
         now = datetime.now(timezone.utc).isoformat()
         self._timed_rechecks = {}
 
+        security_cfg = dict(options.get(OPT_SECURITY, {}))
+        security_camera_evidence = self._security_camera_evidence_provider.compute(security_cfg)
+
         self._people_domain._normalizer = self._normalizer  # keep in sync if tests swap normalizer
         people_result = self._people_domain.compute(
             options, self._state, self._events_domain
@@ -584,10 +591,23 @@ class HeimaEngine:
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
 
-        security_cfg = dict(options.get(OPT_SECURITY, {}))
         security_state, security_reason = self._security_domain.compute(
             security_cfg=security_cfg,
             state=self._state,
+        )
+        self._state.set_sensor_attributes(
+            "heima_security_state",
+            {
+                **(self._state.get_sensor_attributes("heima_security_state") or {}),
+                "camera_evidence": security_camera_evidence.as_dict(),
+            },
+        )
+        self._state.set_sensor_attributes(
+            "heima_security_reason",
+            {
+                **(self._state.get_sensor_attributes("heima_security_reason") or {}),
+                "camera_evidence": security_camera_evidence.as_dict(),
+            },
         )
 
         self._house_state_domain._normalizer = self._normalizer  # keep in sync
@@ -1181,6 +1201,33 @@ class HeimaEngine:
                 issues.append("security: enabled but security_state_entity is not configured")
             elif self._hass.states.get(entity_id) is None:
                 issues.append(f"security: security_state_entity '{entity_id}' not found in HA")
+        camera_sources = security_cfg.get("camera_evidence_sources", [])
+        if isinstance(camera_sources, list):
+            for idx, raw_source in enumerate(camera_sources):
+                if not isinstance(raw_source, dict):
+                    issues.append(f"security: camera_evidence_sources[{idx}] is not an object")
+                    continue
+                if not bool(raw_source.get("enabled", True)):
+                    continue
+                source_id = str(raw_source.get("id") or "").strip()
+                role = str(raw_source.get("role") or "").strip()
+                source_label = f" ('{source_id}')" if source_id else ""
+                if not source_id:
+                    issues.append(f"security: camera_evidence_sources[{idx}] missing id")
+                if not role:
+                    issues.append(f"security: camera_evidence_sources[{idx}]{source_label} missing role")
+                entity_fields = ("motion_entity", "person_entity", "vehicle_entity", "contact_entity")
+                if not any(str(raw_source.get(field) or "").strip() for field in entity_fields):
+                    issues.append(
+                        f"security: camera_evidence_sources[{idx}]{source_label} has no bound entities"
+                    )
+                for field in entity_fields:
+                    entity_id = str(raw_source.get(field) or "").strip()
+                    if entity_id and self._hass.states.get(entity_id) is None:
+                        issues.append(
+                            f"security: camera_evidence_sources[{idx}]{source_label} "
+                            f"{field} '{entity_id}' not found in HA"
+                        )
 
         return issues
 
@@ -1260,6 +1307,7 @@ class HeimaEngine:
             "calendar": self._calendar_domain.diagnostics(),
             "lighting": self._lighting_domain.diagnostics(),
             "heating": self._heating_domain.diagnostics(),
+            "security_camera_evidence": self._security_camera_evidence_provider.diagnostics(),
             "security": self._security_domain.diagnostics(),
             "house_state": self._house_state_domain.diagnostics(),
             "presence": self._people_domain.diagnostics(),

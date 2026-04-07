@@ -168,6 +168,47 @@ async def test_save_preserves_configured_reactions_and_labels():
 
 
 @pytest.mark.asyncio
+async def test_security_step_preserves_camera_evidence_sources():
+    flow = _flow(
+        {
+            "security": {
+                "enabled": True,
+                "security_state_entity": "alarm_control_panel.home",
+                "armed_away_value": "armed_away",
+                "armed_home_value": "armed_home",
+                "camera_evidence_sources": [
+                    {
+                        "id": "garage_cam",
+                        "enabled": True,
+                        "role": "garage",
+                        "person_entity": "binary_sensor.garage_person",
+                    }
+                ],
+            }
+        }
+    )
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["security"]["camera_evidence_sources"] == [
+        {
+            "id": "garage_cam",
+            "enabled": True,
+            "role": "garage",
+            "person_entity": "binary_sensor.garage_person",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
     flow = _flow(
         {
