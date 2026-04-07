@@ -42,6 +42,23 @@ views:
           - entity: binary_sensor.test_heima_mqtt_motion
           - entity: sensor.test_heima_mqtt_presence_score
 
+      - type: entities
+        title: Camera Evidence Sources
+        show_header_toggle: false
+        entities:
+          - entity: input_boolean.test_heima_camera_entry_person_raw
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: input_boolean.test_heima_camera_entry_motion_raw
+          - entity: binary_sensor.test_heima_camera_entry_motion
+          - entity: input_boolean.test_heima_front_door_contact_raw
+          - entity: binary_sensor.test_heima_front_door_contact
+          - entity: input_boolean.test_heima_camera_garage_person_raw
+          - entity: binary_sensor.test_heima_camera_garage_person
+          - entity: input_boolean.test_heima_camera_garage_vehicle_raw
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
+          - entity: input_boolean.test_heima_garage_door_contact_raw
+          - entity: binary_sensor.test_heima_garage_door_contact
+
       - type: thermostat
         entity: climate.test_heima_thermostat
         name: Fake Thermostat
@@ -106,6 +123,34 @@ views:
             tap_action:
               action: call-service
               service: script.test_heima_mqtt_publish_demo
+
+          - type: button
+            name: Clear Camera Evidence
+            icon: mdi:cctv-off
+            tap_action:
+              action: call-service
+              service: script.test_heima_camera_clear
+
+          - type: button
+            name: Entry Arrival
+            icon: mdi:door-open
+            tap_action:
+              action: call-service
+              service: script.test_heima_camera_entry_arrival
+
+          - type: button
+            name: Garage Arrival
+            icon: mdi:garage-open
+            tap_action:
+              action: call-service
+              service: script.test_heima_camera_garage_arrival
+
+          - type: button
+            name: Garage Person Alert
+            icon: mdi:cctv
+            tap_action:
+              action: call-service
+              service: script.test_heima_camera_garage_person_alert
 
   - title: Heima Runtime
     path: heima-runtime

@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import OPT_SECURITY
-from ._common import _entity_selector
+from ._common import _entity_selector, _object_selector
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
@@ -76,6 +76,10 @@ class _SecurityStepsMixin:
                 vol.Optional(
                     "armed_home_value", default=defaults.get("armed_home_value", "armed_home")
                 ): cv.string,
+                vol.Optional(
+                    "camera_evidence_sources",
+                    default=defaults.get("camera_evidence_sources", []),
+                ): _object_selector(),
             }
         )
         return self._with_suggested(schema, defaults)

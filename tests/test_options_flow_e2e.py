@@ -209,6 +209,46 @@ async def test_security_step_preserves_camera_evidence_sources():
 
 
 @pytest.mark.asyncio
+async def test_security_step_accepts_camera_evidence_sources_from_user_input():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": [
+                {
+                    "id": "entry_cam",
+                    "display_name": "Front Door Camera",
+                    "enabled": True,
+                    "role": "entry",
+                    "person_entity": "binary_sensor.front_cam_person",
+                    "contact_entity": "binary_sensor.front_door_contact",
+                    "return_home_contributor": True,
+                    "security_priority": "high",
+                }
+            ],
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["security"]["camera_evidence_sources"] == [
+        {
+            "id": "entry_cam",
+            "display_name": "Front Door Camera",
+            "enabled": True,
+            "role": "entry",
+            "person_entity": "binary_sensor.front_cam_person",
+            "contact_entity": "binary_sensor.front_door_contact",
+            "return_home_contributor": True,
+            "security_priority": "high",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
     flow = _flow(
         {
