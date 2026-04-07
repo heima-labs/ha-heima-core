@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.heima.runtime.domains.security_camera_evidence import (
     SecurityCameraEvidenceProvider,
 )
@@ -337,3 +339,70 @@ def test_security_camera_evidence_trace_surfaces_return_home_hint_reasons():
             "contact_active": False,
         }
     ]
+
+
+def test_security_camera_evidence_does_not_generate_breach_candidate_when_disarmed():
+    hass = _fake_hass(
+        {
+            "alarm_control_panel.home": "disarmed",
+            "binary_sensor.front_cam_person": "on",
+        }
+    )
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            options={
+                "security": {
+                    "enabled": True,
+                    "security_state_entity": "alarm_control_panel.home",
+                    "camera_evidence_sources": [
+                        {
+                            "id": "front_door_cam",
+                            "enabled": True,
+                            "role": "entry",
+                            "person_entity": "binary_sensor.front_cam_person",
+                        }
+                    ],
+                }
+            }
+        ),
+    )
+    engine._build_default_state()
+
+    engine._compute_snapshot(reason="test")
+
+    trace = engine.diagnostics()["security"]["camera_evidence_trace"]
+    assert trace["breach_candidates"] == []
+
+
+@pytest.mark.asyncio
+async def test_security_camera_evidence_missing_entity_emits_config_invalid() -> None:
+    hass = _fake_hass({"alarm_control_panel.home": "disarmed"})
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            options={
+                "security": {
+                    "enabled": True,
+                    "security_state_entity": "alarm_control_panel.home",
+                    "camera_evidence_sources": [
+                        {
+                            "id": "front_door_cam",
+                            "enabled": True,
+                            "role": "entry",
+                            "person_entity": "binary_sensor.front_cam_person",
+                        }
+                    ],
+                }
+            }
+        ),
+    )
+    engine._build_default_state()
+
+    await engine.async_evaluate(reason="test")
+
+    payloads = [p for _, p in engine._hass.bus.events if p.get("type") == "system.config_invalid"]
+    assert len(payloads) == 1
+    assert any(
+        "binary_sensor.front_cam_person" in issue for issue in payloads[0]["context"]["issues"]
+    )
