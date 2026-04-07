@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from .base import IPatternAnalyzer
-from .cross_domain import CompositePatternCatalogAnalyzer
+from .cross_domain import CompositePatternCatalogAnalyzer, DEFAULT_COMPOSITE_PATTERN_CATALOG
 from .cross_domain import composite_quality_policy_from_learning_config
 from .heating import HeatingPatternAnalyzer
 from .lifecycle import (
@@ -19,7 +19,7 @@ from .lifecycle import (
     security_presence_simulation_lifecycle_hooks,
 )
 from .lighting import LightingPatternAnalyzer
-from .policy import learning_policy_from_config
+from .policy import composite_catalog_with_policy, learning_policy_from_config
 from .presence import PresencePatternAnalyzer
 from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 
@@ -217,7 +217,7 @@ def create_builtin_learning_plugin_registry(
             supports_admin_authored=False,
             admin_authored_templates=(),
         ),
-        analyzer=HeatingPatternAnalyzer(),
+        analyzer=HeatingPatternAnalyzer(policy=policies.heating),
         enabled=_is_enabled("heating", enabled_families),
     )
     registry.register(
@@ -282,6 +282,10 @@ def create_builtin_learning_plugin_registry(
             ),
         ),
         analyzer=CompositePatternCatalogAnalyzer(
+            catalog=composite_catalog_with_policy(
+                DEFAULT_COMPOSITE_PATTERN_CATALOG,
+                policies.composite_room_assist,
+            ),
             quality_policy=composite_quality_policy_from_learning_config(learning_config)
         ),
         enabled=_is_enabled("composite_room_assist", enabled_families),

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
+from .policy import HeatingLearningPolicy
 
 _MIN_EVENTS = 10
 _MIN_ECO_SESSIONS = 3
@@ -16,8 +18,23 @@ _ECO_AWAY_MINUTES = 120  # 2 hours minimum away
 _ECO_REHEAT_WINDOW_MINUTES = 360  # 6 hours after return
 
 
+@dataclass
 class HeatingPatternAnalyzer:
     """Detect heating preferences and eco opportunities from stored heating events."""
+
+    preference_min_events: int = _MIN_EVENTS
+    preference_min_weeks: int = 2
+    eco_min_sessions: int = _MIN_ECO_SESSIONS
+    eco_min_weeks: int = 2
+    policy: HeatingLearningPolicy | None = None
+
+    def __post_init__(self) -> None:
+        if self.policy is None:
+            return
+        self.preference_min_events = int(self.policy.preference_min_events)
+        self.preference_min_weeks = int(self.policy.preference_min_weeks)
+        self.eco_min_sessions = int(self.policy.eco_min_sessions)
+        self.eco_min_weeks = int(self.policy.eco_min_weeks)
 
     @property
     def analyzer_id(self) -> str:
@@ -54,7 +71,10 @@ class HeatingPatternAnalyzer:
 
         proposals = []
         for hs, temps in by_state.items():
-            if len(temps) < _MIN_EVENTS:
+            if len(temps) < self.preference_min_events:
+                continue
+            weeks_observed = _weeks_observed(by_state_events[hs])
+            if weeks_observed < self.preference_min_weeks:
                 continue
             s = sorted(temps)
             median = s[len(s) // 2]
@@ -84,7 +104,7 @@ class HeatingPatternAnalyzer:
                             plugin_family="heating",
                             house_state=hs,
                             observations_count=len(temps),
-                            weeks_observed=_weeks_observed(by_state_events[hs]),
+                            weeks_observed=weeks_observed,
                             median_target_temperature=median,
                             spread_c=round(spread, 2),
                             correlated_signal_keys=sorted(signal_correlations.keys()),
@@ -103,7 +123,11 @@ class HeatingPatternAnalyzer:
         house_state_events: list[HeimaEvent],
     ) -> list[ReactionProposal]:
         """Detect reheating after a verified away session using house-state transitions."""
-        if len(heating_events) < _MIN_ECO_SESSIONS or not house_state_events:
+        if len(heating_events) < self.eco_min_sessions or not house_state_events:
+            return []
+
+        eco_weeks_observed = _eco_weeks_observed(house_state_events)
+        if eco_weeks_observed < self.eco_min_weeks:
             return []
 
         eco_sessions = 0
@@ -118,7 +142,7 @@ class HeatingPatternAnalyzer:
             if reheated:
                 eco_sessions += 1
 
-        if eco_sessions < _MIN_ECO_SESSIONS:
+        if eco_sessions < self.eco_min_sessions:
             return []
 
         eco_targets = [
@@ -148,15 +172,15 @@ class HeatingPatternAnalyzer:
                     "reaction_class": "HeatingEcoReaction",
                     "eco_sessions_observed": eco_sessions,
                     "eco_target_temperature": eco_target_temperature,
-                    "learning_diagnostics": build_learning_diagnostics(
-                        pattern_id="heating_eco",
-                        analyzer_id=self.analyzer_id,
-                        reaction_type="heating_eco",
-                        plugin_family="heating",
-                        eco_sessions_observed=eco_sessions,
-                        eco_target_temperature=eco_target_temperature,
-                        weeks_observed=_eco_weeks_observed(house_state_events),
-                    ),
+                        "learning_diagnostics": build_learning_diagnostics(
+                            pattern_id="heating_eco",
+                            analyzer_id=self.analyzer_id,
+                            reaction_type="heating_eco",
+                            plugin_family="heating",
+                            eco_sessions_observed=eco_sessions,
+                            eco_target_temperature=eco_target_temperature,
+                            weeks_observed=eco_weeks_observed,
+                        ),
                     "steps": [],
                 },
             )

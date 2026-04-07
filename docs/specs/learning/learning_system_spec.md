@@ -212,9 +212,10 @@ learning:
     min_occurrences: 4
     min_weeks: 2
   heating:
-    min_events: 10
-    min_eco_sessions: 3
-    min_weeks: 2
+    preference_min_events: 10
+    preference_min_weeks: 2
+    eco_min_sessions: 3
+    eco_min_weeks: 2
 ```
 
 Canonical policy model:
@@ -245,15 +246,16 @@ Family mapping guidance:
   - `min_occurrences`
   - `min_weeks`
 - `heating`
-  - `min_events`
-  - `min_eco_sessions`
-  - optional `min_weeks`
+  - `preference_min_events`
+  - `preference_min_weeks`
+  - `eco_min_sessions`
+  - `eco_min_weeks`
 
 Heating alignment rule:
-- `HeatingPatternAnalyzer` MAY remain temporarily asymmetric while only exposing `weeks_observed`
-  as evidence
-- however, if the family is meant to participate in domain-configurable observation windows, it
-  SHOULD adopt the same policy model explicitly instead of remaining an undocumented exception
+- `HeatingPatternAnalyzer` SHOULD use distinct observation-window thresholds for its two learning
+  paths rather than one generic `min_weeks`
+- `heating_preference` and `heating_eco` are both eligible for domain-configurable observation
+  windows, but they do not need to share identical minima
 
 Recommended implementation path:
 - introduce a dedicated module such as:
@@ -287,9 +289,10 @@ class SecurityPresenceSimulationLearningPolicy:
 
 @dataclass(frozen=True)
 class HeatingLearningPolicy:
-    min_events: int = 10
-    min_eco_sessions: int = 3
-    min_weeks: int = 2
+    preference_min_events: int = 10
+    preference_min_weeks: int = 2
+    eco_min_sessions: int = 3
+    eco_min_weeks: int = 2
 
 @dataclass(frozen=True)
 class LearningPolicyBundle:

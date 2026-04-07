@@ -277,9 +277,10 @@ def test_learning_policy_from_config_uses_defaults_and_family_aliases():
     assert policies.composite_room_assist.min_weeks == 4
     assert policies.security_presence_simulation.min_occurrences == 5
     assert policies.security_presence_simulation.min_weeks == 3
-    assert policies.heating.min_events == 12
-    assert policies.heating.min_eco_sessions == 4
-    assert policies.heating.min_weeks == 5
+    assert policies.heating.preference_min_events == 12
+    assert policies.heating.preference_min_weeks == 5
+    assert policies.heating.eco_min_sessions == 4
+    assert policies.heating.eco_min_weeks == 5
 
 
 def test_builtin_learning_plugin_registry_passes_family_learning_policies():
@@ -304,6 +305,46 @@ def test_builtin_learning_plugin_registry_passes_family_learning_policies():
     security_presence = analyzers["SecurityPresenceSimulationAnalyzer"]
     assert security_presence.min_occurrences == 5  # noqa: SLF001
     assert security_presence.min_weeks == 3  # noqa: SLF001
+
+
+def test_builtin_learning_plugin_registry_passes_composite_family_learning_policy():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "composite": {"min_occurrences": 7, "min_weeks": 4},
+        }
+    )
+
+    composite = next(
+        analyzer
+        for analyzer in registry.analyzers()
+        if analyzer.analyzer_id == "CompositePatternCatalogAnalyzer"
+    )
+    assert composite._catalog  # noqa: SLF001
+    assert all(item.min_occurrences == 7 for item in composite._catalog)  # noqa: SLF001
+    assert all(item.min_weeks == 4 for item in composite._catalog)  # noqa: SLF001
+
+
+def test_builtin_learning_plugin_registry_passes_heating_family_learning_policy():
+    registry = create_builtin_learning_plugin_registry(
+        learning_config={
+            "heating": {
+                "preference_min_events": 12,
+                "preference_min_weeks": 4,
+                "eco_min_sessions": 5,
+                "eco_min_weeks": 3,
+            }
+        }
+    )
+
+    heating = next(
+        analyzer
+        for analyzer in registry.analyzers()
+        if analyzer.analyzer_id == "HeatingPatternAnalyzer"
+    )
+    assert heating.preference_min_events == 12  # noqa: SLF001
+    assert heating.preference_min_weeks == 4  # noqa: SLF001
+    assert heating.eco_min_sessions == 5  # noqa: SLF001
+    assert heating.eco_min_weeks == 3  # noqa: SLF001
 
 
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
