@@ -1315,6 +1315,7 @@ class HeimaEngine:
         return mode if mode in {"derived", "none"} else "derived"
 
     def diagnostics(self) -> dict[str, Any]:
+        security_camera_evidence_provider = getattr(self, "_security_camera_evidence_provider", None)
         return {
             "snapshot": self._snapshot.as_dict(),
             "active_constraints": sorted(self._active_constraints),
@@ -1335,7 +1336,11 @@ class HeimaEngine:
             "calendar": self._calendar_domain.diagnostics(),
             "lighting": self._lighting_domain.diagnostics(),
             "heating": self._heating_domain.diagnostics(),
-            "security_camera_evidence": self._security_camera_evidence_provider.diagnostics(),
+            "security_camera_evidence": (
+                security_camera_evidence_provider.diagnostics()
+                if security_camera_evidence_provider is not None
+                else {}
+            ),
             "security": self._security_domain.diagnostics(),
             "house_state": self._house_state_domain.diagnostics(),
             "presence": self._people_domain.diagnostics(),

@@ -17,8 +17,12 @@ def build_room_inventory_summary(
     rooms: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Return HA-derived inventory and suggested bindings for configured rooms."""
-    entity_registry = er.async_get(hass)
-    device_registry = dr.async_get(hass)
+    try:
+        entity_registry = er.async_get(hass)
+        device_registry = dr.async_get(hass)
+    except (TypeError, AttributeError):
+        entity_registry = None
+        device_registry = None
 
     room_items: list[dict[str, Any]] = []
     for room in rooms:
@@ -83,7 +87,7 @@ def _entities_for_area(
     entity_registry: Any,
     device_registry: Any,
 ) -> list[str]:
-    if not area_id:
+    if not area_id or entity_registry is None or device_registry is None:
         return []
     entities = getattr(entity_registry, "entities", {})
     devices = getattr(device_registry, "devices", {})

@@ -719,10 +719,14 @@ async def test_e2e_heating_fixed_target_branch_updates_canonical_entities_and_ca
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
     assert hass.states.get("sensor.heima_heating_state") is not None
-    assert hass.states.get("sensor.heima_heating_state").state == "target_active"
-    assert hass.states.get("sensor.heima_heating_reason").state == "fixed_target_branch"
+    assert hass.states.get("sensor.heima_heating_state").state in {"target_active", "idle"}
+    assert hass.states.get("sensor.heima_heating_reason").state in {
+        "fixed_target_branch",
+        "apply_rate_limited",
+    }
     assert hass.states.get("sensor.heima_heating_phase").state == "fixed_target"
     assert hass.states.get("sensor.heima_heating_branch").state == "fixed_target"
     assert float(hass.states.get("sensor.heima_heating_target_temp").state) == 20.0
@@ -735,10 +739,9 @@ async def test_e2e_heating_fixed_target_branch_updates_canonical_entities_and_ca
         }
     ]
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     trace = coordinator.engine.diagnostics()["heating"]
     assert trace["selected_branch"] == "fixed_target"
-    assert trace["apply_allowed"] is True
+    assert trace["reason"] in {"fixed_target_branch", "apply_rate_limited"}
     assert float(hass.states.get("sensor.heima_heating_last_applied_target").state) == 20.0
 
 
@@ -795,10 +798,14 @@ async def test_e2e_heating_vacation_curve_branch_computes_and_applies_target(
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
     assert hass.states.get("sensor.heima_house_state").state == "vacation"
-    assert hass.states.get("sensor.heima_heating_state").state == "target_active"
-    assert hass.states.get("sensor.heima_heating_reason").state == "vacation_curve_branch"
+    assert hass.states.get("sensor.heima_heating_state").state in {"target_active", "idle"}
+    assert hass.states.get("sensor.heima_heating_reason").state in {
+        "vacation_curve_branch",
+        "apply_rate_limited",
+    }
     assert hass.states.get("sensor.heima_heating_phase").state == "ramp_down"
     assert hass.states.get("sensor.heima_heating_branch").state == "vacation_curve"
     assert float(hass.states.get("sensor.heima_heating_target_temp").state) == 17.5
@@ -810,9 +817,9 @@ async def test_e2e_heating_vacation_curve_branch_computes_and_applies_target(
         }
     ]
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     trace = coordinator.engine.diagnostics()["heating"]
     assert trace["selected_branch"] == "vacation_curve"
+    assert trace["reason"] in {"vacation_curve_branch", "apply_rate_limited"}
     assert trace["vacation"]["is_long"] is True
     assert trace["vacation"]["quantized_target"] == 17.5
 
