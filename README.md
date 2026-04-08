@@ -46,12 +46,27 @@ Implemented modules:
 - Config Flow and Options Flow
 - Event pipeline with notification routing (recipients, groups, legacy routes)
 - Reactive Behavior Engine (Phase 7 R0–R5): SnapshotBuffer, HeimaReaction, ConsecutiveStateReaction, PresencePatternReaction, ILearningBackend / NaiveLearningBackend, mute/unmute commands, `heima_reactions_active` sensor
+- Security-owned capabilities such as:
+  - `security_presence_simulation`
+  - `security_camera_evidence`
+- Monitoring and operability surfaces:
+  - daily operations
+  - investigation/debug
+  - weekly learning review
+  - CLI audit / snapshot / compare tooling
 
 See `docs/DEVELOPMENT_PLAN.md` for milestone status and `docs/specs/INDEX.md` for the full spec index.
 
 Practical guides:
 - `docs/guides/scene_and_script_usage.md` — when to use `scene.*` vs `script.*`
 - `docs/guides/plugin_authoring.md` — how to add Learning Pattern Plugins and Reaction Plugins
+- `docs/guides/options_flow_configuration_guide.md` — how to configure Heima through the Options Flow
+- `docs/guides/heima_operations_guide.md` — how to monitor Heima over time and review health / learning progress
+
+Practical reference surfaces:
+- `docs/examples/heima_dashboard_production.yaml` — generic low-noise daily operations dashboard
+- `docs/examples/heima_dashboard_debug.yaml` — generic debug/investigation dashboard
+- `docs/examples/ha_test_instance/docker/ha_config/dashboards/heima_test_lab_dashboard.yaml` — validated fake-house dashboard for live testing and operator review
 
 ## Install (HACS custom repo)
 - Add this repository as a custom repository in HACS (Integration)
@@ -65,6 +80,39 @@ See `docs/specs/INDEX.md` and the versioned spec files.
 ## Guides
 - `docs/guides/scene_and_script_usage.md`
 - `docs/guides/plugin_authoring.md`
+- `docs/guides/options_flow_configuration_guide.md`
+- `docs/guides/heima_operations_guide.md`
+
+## Monitoring And Operations
+
+For day-to-day operations and periodic review, the main CLI tools are:
+
+```bash
+source scripts/.env
+python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
+python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
+```
+
+For longitudinal review:
+
+```bash
+source scripts/.env
+python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --snapshot-out tmp/heima_ops_snapshot.json
+python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --review --compare-to tmp/heima_ops_snapshot.json
+```
+
+See:
+- `docs/guides/heima_operations_guide.md`
+- `scripts/README.md`
+
+## Test House
+
+This repository includes a maintained fake-house lab for live validation and product debugging.
+
+Key entry points:
+- `docs/examples/ha_test_instance/README.md`
+- `scripts/live_tests/006_restore_learning_fixtures.sh`
+- `docs/examples/ha_test_instance/docker/ha_config/dashboards/heima_test_lab_dashboard.yaml`
 
 ## Development
 - Install dev dependencies: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`
