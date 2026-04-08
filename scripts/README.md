@@ -46,6 +46,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
   - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). Per `learning`, `reactions` e `lighting` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati, collisioni lighting per slot e pending tuning lighting.
   - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati, collisioni lighting per slot e overview lighting-specifica su configured/pending/tuning.
   - `ops_audit.py`: summary operativo compatto per monitoring continuo (health, house state, learning backlog, reactions, security, camera evidence, security presence).
+    Può anche esportare uno snapshot JSON stabile con `--snapshot-out <path>` per review longitudinali.
   - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
@@ -102,6 +103,7 @@ python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --secti
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section lighting
 python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
+python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --snapshot-out /tmp/heima_ops_snapshot.json
 ```
 
 - Per un check rapido giornaliero su produzione:

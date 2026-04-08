@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import sys
 from typing import Any
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -75,11 +76,99 @@ def _top_pending_examples(families: dict[str, Any]) -> list[str]:
     return [label for _, label in examples[:3]]
 
 
+def _build_snapshot(
+    *,
+    entry_id: str,
+    verdict: str,
+    snapshot: dict[str, Any],
+    house_state: dict[str, Any],
+    learning: dict[str, Any],
+    reactions: dict[str, Any],
+    security_presence: dict[str, Any],
+    camera_evidence: dict[str, Any],
+    config_issues: int,
+    event_total: int,
+    emitted_total: int,
+    dropped_total: int,
+    active_family_total: int,
+    pending_total: int,
+    stale_pending: int,
+    pending_family_names: list[str],
+    top_pending: list[str],
+    configured_reaction_total: int,
+    learned_reaction_total: int,
+    breach_candidate_total: int,
+    active_camera_evidence: int,
+    security_ready_total: int,
+    security_waiting_total: int,
+    security_blocked_total: int,
+    security_muted_total: int,
+    issues: list[tuple[str, str]],
+) -> dict[str, Any]:
+    issues_payload = [{"severity": severity, "message": message} for severity, message in issues]
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "entry_id": entry_id,
+        "verdict": verdict,
+        "health": {
+            "house_state": snapshot.get("house_state") or "",
+            "security_state": snapshot.get("security_state") or "",
+            "anyone_home": bool(snapshot.get("anyone_home", False)),
+            "people_count": int(snapshot.get("people_count", 0) or 0),
+            "config_issue_total": config_issues,
+            "event_total": event_total,
+            "event_emit_total": emitted_total,
+            "event_drop_total": dropped_total,
+            "last_reason": snapshot.get("notes") or "",
+        },
+        "house_state": {
+            "state": house_state.get("state") or "",
+            "reason": house_state.get("reason") or "",
+            "path": house_state.get("resolution_path") or "",
+            "winning_reason": house_state.get("winning_reason") or "",
+            "pending_candidate": house_state.get("pending_candidate") or "",
+            "pending_remaining_s": house_state.get("pending_remaining_s"),
+        },
+        "learning": {
+            "enabled_families": list(learning.get("enabled_plugin_families") or []),
+            "family_count": int(learning.get("family_count", 0) or 0),
+            "active_family_total": active_family_total,
+            "proposal_total": int(learning.get("proposal_total", 0) or 0),
+            "pending_total": pending_total,
+            "stale_pending_total": stale_pending,
+            "pending_families": pending_family_names,
+            "top_pending": top_pending,
+        },
+        "runtime_value": {
+            "configured_reaction_total": configured_reaction_total,
+            "learned_origin_reaction_total": learned_reaction_total,
+            "camera_active_evidence_total": active_camera_evidence,
+            "camera_breach_candidate_total": breach_candidate_total,
+            "security_presence_ready_total": security_ready_total,
+            "security_presence_waiting_total": security_waiting_total,
+            "security_presence_blocked_total": security_blocked_total,
+            "security_presence_muted_total": security_muted_total,
+        },
+        "security": {
+            "camera_source_status": _as_dict(camera_evidence.get("source_status_counts")),
+            "blocked_by_class": _as_dict(security_presence.get("blocked_by_class")),
+        },
+        "reactions": {
+            "by_origin": _as_dict(reactions.get("by_origin")),
+            "by_author_kind": _as_dict(reactions.get("by_author_kind")),
+            "by_template_id": _as_dict(reactions.get("by_template_id")),
+        },
+        "issues": issues_payload,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima operations audit")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--show-json", action="store_true")
+    parser.add_argument("--snapshot-out", help="Write a stable JSON audit snapshot to this path")
     args = parser.parse_args()
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
@@ -140,6 +229,34 @@ def main() -> int:
     )
     _add_issue(breach_candidate_total > 0, "critical", f"{breach_candidate_total} active security breach candidate(s)", issues)
     verdict = _audit_verdict(issues)
+    snapshot_payload = _build_snapshot(
+        entry_id=entry_id,
+        verdict=verdict,
+        snapshot=snapshot,
+        house_state=house_state,
+        learning=learning,
+        reactions=reactions,
+        security_presence=security_presence,
+        camera_evidence=camera_evidence,
+        config_issues=config_issues,
+        event_total=event_total,
+        emitted_total=emitted_total,
+        dropped_total=dropped_total,
+        active_family_total=active_family_total,
+        pending_total=pending_total,
+        stale_pending=stale_pending,
+        pending_family_names=pending_family_names,
+        top_pending=top_pending,
+        configured_reaction_total=configured_reaction_total,
+        learned_reaction_total=learned_reaction_total,
+        breach_candidate_total=breach_candidate_total,
+        active_camera_evidence=active_camera_evidence,
+        security_ready_total=security_ready_total,
+        security_waiting_total=security_waiting_total,
+        security_blocked_total=security_blocked_total,
+        security_muted_total=security_muted_total,
+        issues=issues,
+    )
 
     _print_header("Health")
     print(f"verdict: {verdict}")
@@ -210,6 +327,12 @@ def main() -> int:
     if args.show_json:
         _print_header("RAW PLUGINS")
         print(json.dumps(plugins, indent=2, ensure_ascii=False))
+
+    if args.snapshot_out:
+        out_path = Path(args.snapshot_out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(snapshot_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"\nSNAPSHOT: {out_path}")
 
     return 0
 
