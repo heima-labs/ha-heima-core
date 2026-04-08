@@ -97,6 +97,8 @@ Examples:
 
 Normative rule:
 - suggestions MUST NOT be treated as active Heima config until the admin confirms or edits them
+- `suggested_lighting_entities` are inventory context first; they do not by themselves configure room
+  lighting behavior
 
 ---
 
@@ -142,6 +144,10 @@ Recommended edit view additions:
   - suggested occupancy sources
   - suggested learning sources
   - suggested lights
+- explicit lighting handoff:
+  - the `Rooms` flow SHOULD make it clear that suggested lights belong to room inventory context
+  - the admin SHOULD be able to jump from the selected room into the corresponding
+    `Lighting Rooms` configuration for that same room
 
 Recommended workflow:
 1. Heima shows synced HA inventory
@@ -155,6 +161,14 @@ Normative rule:
   - suggested bindings
 
 Those are different states.
+
+Normative clarification for lights:
+- `occupancy_sources` and `learning_sources` are configured directly in `Rooms`
+- suggested lights shown in `Rooms` are not a third room-binding field
+- room lighting scenes and manual-hold behavior remain configured under `Lighting Rooms`
+- therefore the `Rooms` UX SHOULD expose suggested lights as:
+  - room inventory context
+  - and a navigation bridge to `Lighting Rooms`
 
 ---
 
@@ -217,6 +231,12 @@ First implementation slice:
 - expose suggested occupancy / learning / lighting bindings in diagnostics
 - show suggestions in `Rooms` edit flow
 - keep active config separate and explicit
+
+Next UX slice:
+- remove any ambiguity that suggested lights are directly editable inside `Rooms`
+- add a room-scoped handoff from `Rooms` to `Lighting Rooms`
+- keep the same room selected across that handoff so the admin can immediately configure
+  scene/manual-hold behavior for the room whose inventory they were reviewing
 
 That slice already improves:
 - transparency

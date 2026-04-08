@@ -1077,9 +1077,36 @@ async def test_rooms_edit_accepts_selected_label_from_ui():
 
     result = await flow.async_step_rooms_edit({"room": "Living [new]"})
 
-    assert result["type"] == "form"
-    assert result["step_id"] == "rooms_edit_form"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "rooms_edit_actions"
     assert flow._editing_room_id == "living"
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_actions_can_open_lighting_config_for_same_room():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "ha_sync_status": "configured",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ]
+        }
+    )
+    flow._editing_room_id = "living"
+
+    result = await flow.async_step_rooms_edit_lighting()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "lighting_rooms_edit_form"
+    assert flow._editing_lighting_room_id == "living"
 
 
 @pytest.mark.asyncio

@@ -151,6 +151,14 @@
         },
         "submit": "OK"
       },
+      "rooms_edit_actions": {
+        "title": "Edit Room",
+        "description": "Selected room: {room_label}",
+        "menu_options": {
+          "rooms_edit_form": "Room details",
+          "rooms_edit_lighting": "Configure room lighting"
+        }
+      },
       "rooms_edit_form": {
         "title": "Edit Room",
         "description": "Linked HA area: {area_label}\nHA entities found in room: {inventory_entity_total}\nSuggested occupancy sources: {suggested_occupancy}\nSuggested learning sources: {suggested_learning}\nSuggested lights: {suggested_lighting}\nConfigured bindings outside area: {configured_mismatch}",

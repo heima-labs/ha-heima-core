@@ -1676,6 +1676,32 @@ calcolate, con un algoritmo molto più semplice.
 direttamente tramite il service `light.turn_on`/`light.turn_off`. La logica è self-contained e non
 dipende dalla configurazione scene dell'utente.
 
+### P9.2b Product direction: scheduled lighting is not the default smart-room model
+
+`lighting_scene_schedule` remains a valid learned family, but it SHOULD NOT be treated as the
+default smart-lighting strategy for ordinary occupied rooms.
+
+Reason:
+- fixed weekday/time replay ignores current room occupancy
+- fixed weekday/time replay ignores current room brightness / lux
+- fixed weekday/time replay is sensitive to seasonality, weather, and daylight drift
+
+Normative product rule:
+- for normal room lighting automation, Heima SHOULD prefer situation-aware learned reactions over
+  pure scheduled replay
+- the preferred room-lighting learning direction is:
+  - room occupied
+  - room dark / lux below threshold
+  - replay the observed lighting response
+
+`lighting_scene_schedule` remains appropriate mainly for:
+- decorative or ambient routines
+- strongly schedule-owned behaviors
+- future security / presence-simulation profiles
+
+It SHOULD be considered a weaker fit for ordinary “use the room and turn lights on when needed”
+behavior.
+
 ### P9.3 Output proposal
 
 Una proposta per `SceneCandidate` (= per stanza × giorno × cluster orario):
@@ -1820,6 +1846,18 @@ Le lighting reaction non dovrebbero bypassare i guardrail operativi del dominio 
   - `lighting.manual_hold:<room_id>`
 
 Questo è un guardrail runtime, non un cambio del modello di learning.
+
+#### Policy position for ordinary room lighting
+
+Normative policy direction:
+- `LightingScheduleReaction` SHOULD remain available as a supported reaction family
+- but the learning/review product SHOULD not present it as the primary learned automation for
+  normal occupied rooms
+- when equivalent or better room-scoped composite evidence exists, proposal policy SHOULD prefer
+  `room_darkness_lighting_assist`
+
+This keeps scheduled replay as a valid but narrower tool, rather than the default lighting
+intelligence model.
 
 #### ApplyStep — uno per entità
 
@@ -2300,6 +2338,16 @@ Normative product rule:
 - if the observed response includes stable brightness information, the replay contract SHOULD
   preserve it
 
+Normative product positioning:
+- for ordinary room lighting learning, `room_darkness_lighting_assist` SHOULD be the preferred
+  learned proposal family over `lighting_scene_schedule`
+- this family models the more correct causal shape:
+  - room occupied
+  - room dark enough
+  - lights turned on in response
+- review UX SHOULD therefore treat it as the canonical “smart room lighting” learned proposal
+  family
+
 ### P10.11.2 `room_darkness_lighting_assist` proposal shape
 
 The first proposal shape SHOULD remain reviewable and explicit.
@@ -2328,6 +2376,30 @@ Review diagnostics SHOULD also preserve:
 - matched outdoor corroboration entities when present
 - matched follow-up light entities
 - whether replay brightness was learned from stable observed follow-up samples
+
+### P10.11.3 Follow-up direction: vacancy-driven lights-off
+
+After the lights-on assist family, the next preferred room-lighting learning family SHOULD be a
+vacancy-driven lights-off assist.
+
+Target behavioral shape:
+- room was occupied
+- room lights are on
+- room becomes not occupied
+- the “not occupied” condition remains stable for `X` minutes
+- Heima turns the room lights off
+
+Tentative proposal family:
+- `room_vacancy_lighting_off`
+
+Tentative accepted reaction target:
+- `RoomLightingVacancyOffReaction`
+
+Normative direction:
+- this family SHOULD be modeled as a room-scoped situational reaction, not as a fixed-time replay
+- the off-delay `X` SHOULD be learned or tunable, not hardcoded globally
+- it SHOULD become the preferred complement to `room_darkness_lighting_assist` for ordinary room
+  lighting behavior
 
 ### P10.12 Explainability requirement
 

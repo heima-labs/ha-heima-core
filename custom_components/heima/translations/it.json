@@ -151,6 +151,14 @@
         },
         "submit": "OK"
       },
+      "rooms_edit_actions": {
+        "title": "Modifica Stanza",
+        "description": "Stanza selezionata: {room_label}",
+        "menu_options": {
+          "rooms_edit_form": "Dettagli stanza",
+          "rooms_edit_lighting": "Configura illuminazione stanza"
+        }
+      },
       "rooms_edit_form": {
         "title": "Modifica Stanza",
         "description": "Area HA collegata: {area_label}\nEntity HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti learning suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}",

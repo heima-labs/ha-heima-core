@@ -105,7 +105,25 @@ class _RoomsStepsMixin:
         self._editing_room_id = self._resolve_choice_value(
             self._room_choice_map(rooms), user_input.get("room")
         )
-        return await self.async_step_rooms_edit_form()
+        return await self.async_step_rooms_edit_actions()
+
+    async def async_step_rooms_edit_actions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        room_id = str(getattr(self, "_editing_room_id", "") or "").strip()
+        if not room_id:
+            return await self.async_step_rooms_menu()
+
+        room = self._find_by_key(self._rooms(), "room_id", room_id) or {}
+        room_label = str(room.get("display_name") or room_id).strip()
+        return self.async_show_menu(
+            step_id="rooms_edit_actions",
+            menu_options=[
+                "rooms_edit_form",
+                "rooms_edit_lighting",
+            ],
+            description_placeholders={"room_label": room_label},
+        )
 
     async def async_step_rooms_edit_form(
         self, user_input: dict[str, Any] | None = None
@@ -154,6 +172,15 @@ class _RoomsStepsMixin:
         self._store_list(OPT_ROOMS, updated)
         self._editing_room_id = None
         return await self.async_step_rooms_menu()
+
+    async def async_step_rooms_edit_lighting(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        room_id = str(getattr(self, "_editing_room_id", "") or "").strip()
+        if not room_id:
+            return await self.async_step_rooms_menu()
+        self._editing_lighting_room_id = room_id
+        return await self.async_step_lighting_rooms_edit_form()
 
     async def async_step_rooms_remove(
         self, user_input: dict[str, Any] | None = None

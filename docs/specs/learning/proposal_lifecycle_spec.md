@@ -177,6 +177,13 @@ Built-in proposals should converge on these identity keys:
 - `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>`
 - `room_darkness_lighting_assist|room=<room_id>|primary=<primary_signal_name>`
 
+Product-direction clarification:
+- `lighting_scene_schedule` remains a valid lifecycle family
+- but for ordinary room lighting, product policy SHOULD prefer situation-aware room-scoped
+  families such as `room_darkness_lighting_assist`
+- scheduled lighting SHOULD therefore be treated as a narrower family, not as the default learned
+  room-lighting proposal type
+
 Composite domain clarification for the next iteration:
 - the current composite identity remains intentionally coarse and room-scoped
 - before the composite domain becomes fully domain-strong, identity SHOULD be reviewed so that:

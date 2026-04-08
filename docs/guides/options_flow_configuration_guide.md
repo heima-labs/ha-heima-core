@@ -269,6 +269,11 @@ Recommended:
 - if you do not need special separation, keep them aligned with `occupancy_sources`
 - add extra learning sources only if they improve room-level learning materially
 
+Room inventory note:
+- the `Rooms` form may also show suggested lights from the HA-backed room inventory
+- those lights are inventory context, not a third editable room-binding field
+- use `Lighting Rooms` to configure room scenes / lighting behavior for that room
+
 ### `logic`
 Useful values:
 - `any_of`
@@ -311,6 +316,10 @@ Fields:
 Recommended approach:
 - start with `scene_evening` and `scene_off`
 - add `scene_relax` and `scene_night` only where they really matter
+
+UX connection:
+- when reviewing a room in `Rooms`, suggested lights should help you confirm the room inventory
+- the actual room-lighting configuration still lives in `Lighting Rooms`
 
 Do not try to fill every scene slot in every room just for completeness.
 
