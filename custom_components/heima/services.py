@@ -244,9 +244,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             reaction_type = _require_target_value(params or target, "reaction_type")
             unmatched_ids: list[str] = []
             for coordinator in coordinators:
-                unmatched_ids.extend(
-                    coordinator.engine.unmute_reactions_by_type(reaction_type)
-                )
+                unmatched_ids.extend(coordinator.engine.unmute_reactions_by_type(reaction_type))
             if not unmatched_ids:
                 raise ServiceValidationError(
                     f"No configured reactions found for reaction_type '{reaction_type}'"
