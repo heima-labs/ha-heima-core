@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Any, Callable, cast
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
@@ -82,7 +83,7 @@ class RuntimeScheduler:
                     "last_fired_at_monotonic": self._last_fired_at.get(job.job_id),
                 }
             )
-        pending.sort(key=lambda item: item["due_monotonic"])
+        pending.sort(key=lambda item: cast(float, item["due_monotonic"]))
         return {"pending_jobs": pending}
 
     def _schedule(self, job: ScheduledRuntimeJob) -> None:
@@ -95,6 +96,8 @@ class RuntimeScheduler:
             self._unsubs.pop(job.job_id, None)
             self._jobs.pop(job.job_id, None)
             self._last_fired_at[job.job_id] = time.monotonic()
-            self._hass.async_create_task(self._on_job_due(job.job_id))
+            self._hass.async_create_task(
+                cast(Coroutine[Any, Any, None], self._on_job_due(job.job_id))
+            )
 
         self._unsubs[job.job_id] = async_call_later(self._hass, delay, _handle_due)

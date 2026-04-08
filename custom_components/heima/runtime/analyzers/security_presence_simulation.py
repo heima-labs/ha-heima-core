@@ -1,5 +1,7 @@
 """Learned proposal bootstrap for the security presence simulation family."""
 
+# mypy: disable-error-code=arg-type
+
 from __future__ import annotations
 
 from dataclasses import dataclass

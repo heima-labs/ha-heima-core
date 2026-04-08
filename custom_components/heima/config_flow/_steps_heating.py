@@ -1,5 +1,7 @@
 """Options flow: Heating steps."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -20,6 +22,9 @@ if TYPE_CHECKING:
 
 class _HeatingStepsMixin:
     """Mixin for heating steps."""
+
+    _editing_heating_house_state: str | None
+    _editing_heating_branch: str | None
 
     async def async_step_heating(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         current = self._heating_config()

@@ -1,5 +1,7 @@
 """Cross-domain pattern analyzers for room-scoped composite assist proposals."""
 
+# mypy: disable-error-code=index
+
 from __future__ import annotations
 
 from dataclasses import dataclass

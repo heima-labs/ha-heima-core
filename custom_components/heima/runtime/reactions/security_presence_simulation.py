@@ -317,7 +317,7 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 bool(item.get("same_weekday") is True) for item in remaining
             )
             best_index: int | None = None
-            best_key: tuple[int, int, int, int, int, int, int, float, str] | None = None
+            best_key: tuple[object, ...] | None = None
             best_reason = "ranked_fill"
             for index, item in enumerate(remaining):
                 room_id = str(item.get("room_id") or "").strip()

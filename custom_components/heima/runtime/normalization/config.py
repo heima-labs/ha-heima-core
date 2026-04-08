@@ -120,16 +120,16 @@ def normalize_source_weights(value: Any) -> dict[str, float]:
     if value in (None, ""):
         return {}
     if isinstance(value, dict):
-        result: dict[str, float] = {}
+        normalized: dict[str, float] = {}
         for entity_id, weight in value.items():
             entity_key = str(entity_id).strip()
             if not entity_key:
                 continue
             try:
-                result[entity_key] = float(weight)
+                normalized[entity_key] = float(weight)
             except (TypeError, ValueError):
                 continue
-        return result
+        return normalized
 
     result: dict[str, float] = {}
     text = str(value)
@@ -212,7 +212,10 @@ def validate_weighted_fusion_fields(
 
     if "weight_threshold" in payload:
         try:
-            threshold = float(payload.get("weight_threshold"))
+            raw_threshold = payload.get("weight_threshold")
+            if raw_threshold is None:
+                raise TypeError
+            threshold = float(raw_threshold)
         except (TypeError, ValueError):
             errors["weight_threshold"] = "invalid_number"
         else:

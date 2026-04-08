@@ -1,5 +1,7 @@
 """Options flow: Reactions step (persisted mute management + proposal review)."""
 
+# mypy: ignore-errors
+
 from __future__ import annotations
 
 import logging

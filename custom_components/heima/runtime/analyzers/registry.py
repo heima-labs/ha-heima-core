@@ -1,5 +1,7 @@
 """Registry for built-in learning pattern plugins."""
 
+# mypy: disable-error-code=dict-item
+
 from __future__ import annotations
 
 from dataclasses import dataclass

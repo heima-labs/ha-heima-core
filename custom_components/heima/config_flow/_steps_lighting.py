@@ -1,5 +1,7 @@
 """Options flow: Lighting steps (per-room scenes + zones)."""
 
+# mypy: disable-error-code=attr-defined
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

@@ -231,10 +231,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         if command == "mute_reaction_type":
             reaction_type = _require_target_value(params or target, "reaction_type")
-            matched: list[str] = []
+            matched_ids: list[str] = []
             for coordinator in coordinators:
-                matched.extend(coordinator.engine.mute_reactions_by_type(reaction_type))
-            if not matched:
+                matched_ids.extend(coordinator.engine.mute_reactions_by_type(reaction_type))
+            if not matched_ids:
                 raise ServiceValidationError(
                     f"No configured reactions found for reaction_type '{reaction_type}'"
                 )
@@ -242,10 +242,12 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         if command == "unmute_reaction_type":
             reaction_type = _require_target_value(params or target, "reaction_type")
-            matched: list[str] = []
+            unmatched_ids: list[str] = []
             for coordinator in coordinators:
-                matched.extend(coordinator.engine.unmute_reactions_by_type(reaction_type))
-            if not matched:
+                unmatched_ids.extend(
+                    coordinator.engine.unmute_reactions_by_type(reaction_type)
+                )
+            if not unmatched_ids:
                 raise ServiceValidationError(
                     f"No configured reactions found for reaction_type '{reaction_type}'"
                 )

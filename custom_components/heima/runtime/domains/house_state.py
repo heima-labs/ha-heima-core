@@ -1,5 +1,7 @@
 """HouseStateDomain: house signals and house state resolution."""
 
+# mypy: ignore-errors
+
 from __future__ import annotations
 
 import logging

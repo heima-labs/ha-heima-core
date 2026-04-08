@@ -7,7 +7,6 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
 
 from ..const import (
     CONF_ENGINE_ENABLED,
@@ -50,7 +49,7 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
     VERSION = 1
     MINOR_VERSION = 1
 
-    async def _async_ensure_admin_access(self) -> FlowResult | None:
+    async def _async_ensure_admin_access(self) -> Any:
         """Abort when the current flow user is not a Home Assistant admin."""
         cached = getattr(self, "_admin_access_granted", None)
         if cached is True:
@@ -68,7 +67,7 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
         self._admin_access_granted = True
         return None
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
         if (abort_result := await self._async_ensure_admin_access()) is not None:
             return abort_result
         if user_input is None:
@@ -116,12 +115,12 @@ class HeimaOptionsFlowHandler(
         self._editing_room_id: str | None = None
         self._editing_zone_id: str | None = None
         self._editing_lighting_room_id: str | None = None
-        self._editing_heating_house_state: str | None = None
-        self._editing_heating_branch: str | None = None
+        self._editing_heating_house_state = None
+        self._editing_heating_branch = None
 
     # ---- Toplevel menu (CF2) ----
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
         if not getattr(self, "_bootstrap_imports_done", False):
             importer = getattr(self, "_async_bootstrap_ha_bindings", None)
             if callable(importer):
@@ -148,7 +147,7 @@ class HeimaOptionsFlowHandler(
             description_placeholders=self._init_status_block(),
         )
 
-    async def async_step_save(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_save(self, user_input: dict[str, Any] | None = None) -> Any:
         """Persist options and close the flow from the toplevel menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 

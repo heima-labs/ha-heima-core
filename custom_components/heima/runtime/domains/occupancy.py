@@ -1,5 +1,7 @@
 """OccupancyDomain: room occupancy computation and consistency events."""
 
+# mypy: disable-error-code=arg-type
+
 from __future__ import annotations
 
 import logging

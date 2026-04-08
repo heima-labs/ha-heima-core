@@ -96,7 +96,7 @@ async def _async_cleanup_stale_entities(hass: HomeAssistant, entry: ConfigEntry)
     rename_pairs: list[tuple[str, str]] = []
 
     for reg_entry in registry.entities.values():
-        config_entry_ids = reg_entry.config_entry_id or []
+        config_entry_ids: list[str] | str = reg_entry.config_entry_id or []
         if isinstance(config_entry_ids, str):
             config_entry_ids = [config_entry_ids]
         if entry.entry_id not in set(config_entry_ids):

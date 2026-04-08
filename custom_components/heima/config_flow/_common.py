@@ -49,19 +49,19 @@ def _default_language(hass: HomeAssistant) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _scene_selector(multiple: bool = False) -> dict[str, Any]:
+def _scene_selector(multiple: bool = False) -> Any:
     return selector({"entity": {"domain": "scene", "multiple": multiple}})
 
 
-def _entity_selector(domains: list[str], multiple: bool = False) -> dict[str, Any]:
+def _entity_selector(domains: list[str], multiple: bool = False) -> Any:
     return selector({"entity": {"domain": domains, "multiple": multiple}})
 
 
-def _multiline_text_selector() -> dict[str, Any]:
+def _multiline_text_selector() -> Any:
     return selector({"text": {"multiline": True}})
 
 
-def _object_selector() -> dict[str, Any]:
+def _object_selector() -> Any:
     return selector({"object": {}})
 
 

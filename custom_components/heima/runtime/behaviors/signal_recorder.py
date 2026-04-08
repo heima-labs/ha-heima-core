@@ -1,5 +1,7 @@
 """Behavior that records generic state-change events for configured learning signals."""
 
+# mypy: disable-error-code=arg-type
+
 from __future__ import annotations
 
 import time

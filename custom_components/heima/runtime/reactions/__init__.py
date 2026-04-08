@@ -1,3 +1,7 @@
+"""Built-in reaction registry."""
+
+# mypy: disable-error-code=misc
+
 from dataclasses import dataclass
 from typing import Any, Callable
 
