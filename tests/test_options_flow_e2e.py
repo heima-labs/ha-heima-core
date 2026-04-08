@@ -580,6 +580,51 @@ async def test_rooms_flow_persists_separate_learning_sources():
 
 
 @pytest.mark.asyncio
+async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_sources": ["binary_sensor.studio_motion"],
+                    "learning_sources": [],
+                }
+            ]
+        }
+    )
+    flow._editing_room_id = "studio"
+    entity_registry = SimpleNamespace(
+        entities={
+            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
+            "e3": SimpleNamespace(entity_id="light.studio_main", area_id="", device_id="device-1"),
+        }
+    )
+    device_registry = SimpleNamespace(devices={"device-1": SimpleNamespace(area_id="studio")})
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    result = await flow.async_step_rooms_edit_form()
+
+    assert result["type"] == "form"
+    placeholders = result["description_placeholders"]
+    assert placeholders["area_label"] == "studio"
+    assert placeholders["inventory_entity_total"] == "3"
+    assert placeholders["suggested_occupancy"] == "binary_sensor.studio_motion"
+    assert placeholders["suggested_learning"] == "sensor.studio_lux"
+    assert placeholders["suggested_lighting"] == "light.studio_main"
+    assert placeholders["configured_mismatch"] == "—"
+
+
+@pytest.mark.asyncio
 async def test_people_add_rejects_person_not_present_in_ha():
     flow = _flow()
 

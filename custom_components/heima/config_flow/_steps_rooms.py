@@ -10,6 +10,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.util import slugify
 
 from ..const import OPT_ROOMS
+from ..room_inventory import build_room_inventory_summary
 from ..room_sources import (
     normalize_room_signal_config,
     room_occupancy_source_entity_ids,
@@ -102,14 +103,19 @@ class _RoomsStepsMixin:
         if user_input is None:
             existing = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
             return self.async_show_form(
-                step_id="rooms_edit_form", data_schema=self._room_schema(existing)
+                step_id="rooms_edit_form",
+                data_schema=self._room_schema(existing),
+                description_placeholders=self._room_inventory_placeholders(existing),
             )
 
         user_input = self._normalize_room_payload(user_input)
         errors = self._validate_room_payload(user_input, is_edit=True)
         if errors:
             return self.async_show_form(
-                step_id="rooms_edit_form", data_schema=self._room_schema(user_input), errors=errors
+                step_id="rooms_edit_form",
+                data_schema=self._room_schema(user_input),
+                errors=errors,
+                description_placeholders=self._room_inventory_placeholders(user_input),
             )
 
         existing_room = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
@@ -119,6 +125,7 @@ class _RoomsStepsMixin:
                 step_id="rooms_edit_form",
                 data_schema=self._room_schema(user_input),
                 errors={"area_id": "area_sync_failed"},
+                description_placeholders=self._room_inventory_placeholders(user_input),
             )
         updated = []
         for room in rooms:
@@ -358,6 +365,32 @@ class _RoomsStepsMixin:
         if status == "orphaned":
             return f"{label} [orphaned]"
         return label
+
+    def _room_inventory_placeholders(self, room: dict[str, Any]) -> dict[str, str]:
+        try:
+            summary = build_room_inventory_summary(self.hass, [room])
+            item = list(summary.get("rooms") or [{}])[0]
+        except Exception:
+            item = {}
+        area_label = str(item.get("area_id") or "—")
+        inventory_entity_total = str(int(item.get("inventory_entity_total") or 0))
+        suggested_occupancy = self._format_inventory_list(item.get("suggested_occupancy_sources"))
+        suggested_learning = self._format_inventory_list(item.get("suggested_learning_sources"))
+        suggested_lighting = self._format_inventory_list(item.get("suggested_lighting_entities"))
+        mismatches = self._format_inventory_list(item.get("configured_sources_not_in_area"))
+        return {
+            "area_label": area_label,
+            "inventory_entity_total": inventory_entity_total,
+            "suggested_occupancy": suggested_occupancy,
+            "suggested_learning": suggested_learning,
+            "suggested_lighting": suggested_lighting,
+            "configured_mismatch": mismatches,
+        }
+
+    @staticmethod
+    def _format_inventory_list(values: Any) -> str:
+        items = [str(item) for item in list(values or []) if str(item)]
+        return ", ".join(items) if items else "—"
 
     async def _async_ensure_room_area(
         self, payload: dict[str, Any], existing_room: dict[str, Any] | None = None

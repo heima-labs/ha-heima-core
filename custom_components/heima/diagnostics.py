@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.redact import async_redact_data
 
 from .const import DIAGNOSTICS_REDACT_KEYS, DOMAIN
+from .room_inventory import build_room_inventory_summary
 from .runtime.analyzers import builtin_learning_pattern_plugin_descriptors
 from .runtime.reactions import create_builtin_reaction_plugin_registry
 
@@ -56,6 +57,10 @@ async def async_get_config_entry_diagnostics(
                 ),
                 "ha_backed_reconciliation_summary": _ha_backed_reconciliation_summary_diagnostics(
                     coordinator
+                ),
+                "ha_backed_room_inventory_summary": _ha_backed_room_inventory_summary_diagnostics(
+                    hass,
+                    entry,
                 ),
                 "security_presence_summary": _security_presence_summary_diagnostics(
                     coordinator
@@ -120,6 +125,17 @@ def _ha_backed_reconciliation_summary_diagnostics(coordinator: Any) -> dict[str,
         return {}
     summary = getattr(coordinator, "ha_backed_reconciliation_summary", {})
     return dict(summary or {})
+
+
+def _ha_backed_room_inventory_summary_diagnostics(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    try:
+        rooms = list(dict(entry.options).get("rooms") or [])
+        return build_room_inventory_summary(hass, rooms)
+    except Exception:
+        return {}
 
 
 def _learning_summary_diagnostics(

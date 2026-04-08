@@ -185,6 +185,7 @@
       },
       "rooms_edit_form": {
         "title": "Modifica Stanza",
+        "description": "Area HA collegata: {area_label}\nEntity HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti learning suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}",
         "data": {
           "room_id": "Room id",
           "display_name": "Nome visualizzato",

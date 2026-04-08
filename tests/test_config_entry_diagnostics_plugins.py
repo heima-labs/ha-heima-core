@@ -809,3 +809,60 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
             "confidence": 0.83,
         }
     ]
+
+
+async def test_config_entry_diagnostics_exposes_ha_backed_room_inventory_summary(monkeypatch) -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=SimpleNamespace(get_sensor=lambda _key: None),
+    )
+    coordinator._proposal_engine = SimpleNamespace(
+        diagnostics=lambda: {"total": 0, "pending": 0, "pending_stale": 0, "proposals": []}
+    )
+    entity_registry = SimpleNamespace(
+        entities={
+            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
+            "e3": SimpleNamespace(entity_id="light.studio_main", area_id="", device_id="device-1"),
+        }
+    )
+    device_registry = SimpleNamespace(devices={"device-1": SimpleNamespace(area_id="studio")})
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_sources": ["binary_sensor.studio_motion"],
+                    "learning_sources": [],
+                }
+            ]
+        },
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["ha_backed_room_inventory_summary"]
+
+    assert summary["total_rooms"] == 1
+    room = summary["rooms"][0]
+    assert room["room_id"] == "studio"
+    assert room["inventory_entity_total"] == 3
+    assert room["suggested_occupancy_sources"] == ["binary_sensor.studio_motion"]
+    assert room["suggested_learning_sources"] == ["sensor.studio_lux"]
+    assert room["suggested_lighting_entities"] == ["light.studio_main"]
