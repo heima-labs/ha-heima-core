@@ -7,6 +7,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.helpers import area_registry as ar
 
 from ..const import (
     CONF_ENGINE_ENABLED,
@@ -28,6 +29,7 @@ from ..const import (
     OPT_ROOMS,
     OPT_SECURITY,
 )
+from ..reconciliation import reconcile_ha_backed_options
 from ._common import _default_language, _default_timezone
 from ._steps_calendar import _CalendarStepsMixin
 from ._steps_general import _GeneralStepsMixin
@@ -126,6 +128,7 @@ class HeimaOptionsFlowHandler(
             if callable(importer):
                 await importer()
             self._bootstrap_imports_done = True
+        self._sync_ha_backed_bindings()
         return self.async_show_menu(
             step_id="init",
             menu_options=[
@@ -164,6 +167,15 @@ class HeimaOptionsFlowHandler(
         if config_entries is not None and config_entry is not None:
             config_entries.async_update_entry(config_entry, options=dict(self.options))
 
+    def _sync_ha_backed_bindings(self) -> None:
+        updated_options, _, changed = reconcile_ha_backed_options(
+            dict(self.options),
+            ha_people=self._ha_people_inventory(),
+            ha_areas=self._ha_area_inventory(),
+        )
+        if changed:
+            self._update_options(updated_options)
+
     # ---- Shared state helpers ----
 
     def _people_named(self) -> list[dict[str, Any]]:
@@ -177,6 +189,42 @@ class HeimaOptionsFlowHandler(
 
     def _lighting_zones(self) -> list[dict[str, Any]]:
         return list(self.options.get(OPT_LIGHTING_ZONES, []))
+
+    def _ha_people_inventory(self) -> list[dict[str, str]]:
+        states = getattr(self.hass, "states", None)
+        async_all = getattr(states, "async_all", None)
+        if not callable(async_all):
+            return []
+        try:
+            all_states = list(async_all())
+        except TypeError:
+            all_states = list(async_all("person"))
+        people: list[dict[str, str]] = []
+        for state in all_states:
+            entity_id = str(getattr(state, "entity_id", "")).strip()
+            if not entity_id.startswith("person."):
+                continue
+            name = str(
+                getattr(state, "name", None)
+                or getattr(state, "attributes", {}).get("friendly_name")
+                or entity_id.split(".", 1)[1]
+            ).strip()
+            people.append({"entity_id": entity_id, "display_name": name})
+        return people
+
+    def _ha_area_inventory(self) -> list[dict[str, str]]:
+        try:
+            area_reg = ar.async_get(self.hass)
+        except Exception:
+            return []
+        lister = getattr(area_reg, "async_list_areas", None)
+        if not callable(lister):
+            return []
+        return [
+            {"area_id": str(area.id), "display_name": str(area.name)}
+            for area in lister()
+            if getattr(area, "id", None)
+        ]
 
     def _heating_config(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_HEATING, {}))
@@ -457,6 +505,16 @@ class HeimaOptionsFlowHandler(
             if item.get(key) == value:
                 return item
         return None
+
+    def _resolve_choice_value(self, choice_map: dict[str, str], selection: Any) -> str:
+        raw = str(selection or "").strip()
+        if not raw:
+            return ""
+        if raw in choice_map:
+            return str(choice_map[raw] or "").strip()
+        if raw in choice_map.values():
+            return raw
+        return raw
 
     def _store_list(self, key: str, items: list[dict[str, Any]]) -> None:
         self._update_options({key: items})

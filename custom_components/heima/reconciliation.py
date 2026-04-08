@@ -41,21 +41,13 @@ def _reconcile_people(
         for item in ha_people
         if str(item.get("entity_id") or "").strip()
     }
-    existing_entities = {
-        str(person.get("person_entity") or "").strip()
-        for person in people
-        if str(person.get("person_entity") or "").strip()
-    }
-    existing_slugs = {
-        str(person.get("slug") or "").strip()
-        for person in people
-        if str(person.get("slug") or "").strip()
-    }
-
     reconciled: list[dict[str, Any]] = []
+    claimed_entities: set[str] = set()
+    claimed_slugs: set[str] = set()
     orphaned: list[str] = []
     for person in people:
         item = dict(person)
+        slug = str(item.get("slug") or "").strip()
         person_entity = str(item.get("person_entity") or "").strip()
         if not person_entity:
             matched_person_entity = _match_person_entity_for_person(item, inventory)
@@ -76,19 +68,33 @@ def _reconcile_people(
         else:
             item["ha_sync_status"] = "orphaned"
             orphaned.append(str(item.get("slug") or person_entity or "unknown"))
+        merged = False
+        for index, existing in enumerate(reconciled):
+            if not _people_records_overlap(existing, item):
+                continue
+            reconciled[index] = _merge_people_records(existing, item)
+            merged = True
+            break
+        if merged:
+            continue
         reconciled.append(item)
+        if slug:
+            claimed_slugs.add(slug)
+        if person_entity:
+            claimed_entities.add(person_entity)
 
     new_people: list[str] = []
     for person_entity, display_name in inventory.items():
-        if person_entity in existing_entities:
+        if person_entity in claimed_entities:
             continue
         slug = person_entity.split(".", 1)[1]
-        if slug in existing_slugs:
+        if slug in claimed_slugs:
             suffix = 2
-            while f"{slug}_{suffix}" in existing_slugs:
+            while f"{slug}_{suffix}" in claimed_slugs:
                 suffix += 1
             slug = f"{slug}_{suffix}"
-        existing_slugs.add(slug)
+        claimed_slugs.add(slug)
+        claimed_entities.add(person_entity)
         new_people.append(display_name or slug)
         reconciled.append(
             {
@@ -121,6 +127,79 @@ def _reconcile_people(
             ),
         },
     )
+
+
+def _people_records_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_slug = str(left.get("slug") or "").strip()
+    right_slug = str(right.get("slug") or "").strip()
+    left_entity = str(left.get("person_entity") or "").strip()
+    right_entity = str(right.get("person_entity") or "").strip()
+    return bool(
+        (left_entity and right_entity and left_entity == right_entity)
+        or (left_slug and right_slug and left_slug == right_slug)
+    )
+
+
+def _merge_people_records(primary: dict[str, Any], secondary: dict[str, Any]) -> dict[str, Any]:
+    keep, merge = _preferred_people_record(primary, secondary)
+    result = dict(keep)
+
+    if not str(result.get("person_entity") or "").strip() and str(merge.get("person_entity") or "").strip():
+        result["person_entity"] = str(merge.get("person_entity") or "").strip()
+
+    if not str(result.get("display_name") or "").strip() and str(merge.get("display_name") or "").strip():
+        result["display_name"] = str(merge.get("display_name") or "").strip()
+
+    for field in (
+        "presence_method",
+        "sources",
+        "group_strategy",
+        "required",
+        "weight_threshold",
+        "source_weights",
+        "arrive_hold_s",
+        "leave_hold_s",
+        "enable_override",
+        "ha_source_name",
+    ):
+        if field not in result and field in merge:
+            result[field] = merge[field]
+
+    result["source"] = "ha_person_registry"
+    result["heima_reviewed"] = bool(primary.get("heima_reviewed")) or bool(
+        secondary.get("heima_reviewed")
+    )
+    if result["heima_reviewed"]:
+        result["ha_sync_status"] = "configured"
+    elif str(result.get("person_entity") or "").strip():
+        result["ha_sync_status"] = "new"
+    else:
+        result["ha_sync_status"] = "orphaned"
+    return result
+
+
+def _preferred_people_record(
+    left: dict[str, Any], right: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    left_reviewed = bool(left.get("heima_reviewed"))
+    right_reviewed = bool(right.get("heima_reviewed"))
+    if left_reviewed != right_reviewed:
+        return (left, right) if left_reviewed else (right, left)
+
+    left_status = str(left.get("ha_sync_status") or "").strip()
+    right_status = str(right.get("ha_sync_status") or "").strip()
+    if left_status != right_status:
+        left_rank = 0 if left_status == "configured" else 1 if left_status == "orphaned" else 2
+        right_rank = 0 if right_status == "configured" else 1 if right_status == "orphaned" else 2
+        return (left, right) if left_rank <= right_rank else (right, left)
+
+    left_slug = str(left.get("slug") or "").strip()
+    right_slug = str(right.get("slug") or "").strip()
+    left_has_suffix = "_" in left_slug
+    right_has_suffix = "_" in right_slug
+    if left_has_suffix != right_has_suffix:
+        return (left, right) if not left_has_suffix else (right, left)
+    return left, right
 
 
 def _match_person_entity_for_person(

@@ -130,3 +130,35 @@ def test_reconcile_people_auto_links_missing_person_entity_by_slug_match():
     assert person["person_entity"] == "person.alex"
     assert person["ha_sync_status"] == "new"
     assert summary["people"]["orphaned_total"] == 0
+
+
+def test_reconcile_people_deduplicates_legacy_and_auto_import_placeholder():
+    updated, summary, changed = reconcile_ha_backed_options(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "",
+                    "presence_method": "ha_person",
+                    "person_entity": "",
+                    "heima_reviewed": True,
+                },
+                {
+                    "slug": "stefano_2",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                    "ha_sync_status": "new",
+                    "heima_reviewed": False,
+                },
+            ]
+        },
+        ha_people=[{"entity_id": "person.stefano", "display_name": "Stefano"}],
+        ha_areas=[],
+    )
+
+    assert changed is True
+    assert [person["slug"] for person in updated["people_named"]] == ["stefano"]
+    assert updated["people_named"][0]["person_entity"] == "person.stefano"
+    assert updated["people_named"][0]["display_name"] == "Stefano"
+    assert summary["people"]["total"] == 1

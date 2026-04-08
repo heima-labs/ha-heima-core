@@ -36,14 +36,18 @@ class _PeopleStepsMixin:
         importer = getattr(super(), "_async_bootstrap_ha_bindings", None)
         if callable(importer):
             await importer()
-        self._import_people_from_ha_if_empty()
+        sync_bindings = getattr(self, "_sync_ha_backed_bindings", None)
+        if callable(sync_bindings):
+            sync_bindings()
 
     # ---- Named people menu ----
 
     async def async_step_people_menu(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
-        self._import_people_from_ha_if_empty()
+        sync_bindings = getattr(self, "_sync_ha_backed_bindings", None)
+        if callable(sync_bindings):
+            sync_bindings()
         return self.async_show_menu(
             step_id="people_menu",
             menu_options=[
@@ -56,29 +60,6 @@ class _PeopleStepsMixin:
             description_placeholders={"summary": self._people_menu_summary()},
         )
 
-    async def async_step_people_add(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
-        errors: dict[str, str] = {}
-        if user_input is None:
-            return self.async_show_form(step_id="people_add", data_schema=self._people_schema())
-
-        user_input = self._normalize_people_payload(user_input)
-        errors = self._validate_people_payload(user_input, is_edit=False)
-        if errors:
-            return self.async_show_form(
-                step_id="people_add", data_schema=self._people_schema(user_input), errors=errors
-            )
-
-        people = self._people_named()
-        people.append(user_input)
-        people[-1]["source"] = "ha_person_registry"
-        people[-1]["ha_source_name"] = str(
-            people[-1].get("display_name") or people[-1].get("slug") or ""
-        )
-        people[-1]["ha_sync_status"] = "configured"
-        people[-1]["heima_reviewed"] = True
-        self._store_list(OPT_PEOPLE_NAMED, people)
-        return await self.async_step_people_menu()
-
     async def async_step_people_edit(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
@@ -90,7 +71,9 @@ class _PeopleStepsMixin:
             schema = vol.Schema({vol.Required("person"): vol.In(self._people_choice_map(people))})
             return self.async_show_form(step_id="people_edit", data_schema=schema)
 
-        self._editing_person_slug = user_input.get("person")
+        self._editing_person_slug = self._resolve_choice_value(
+            self._people_choice_map(people), user_input.get("person")
+        )
         return await self.async_step_people_edit_form()
 
     async def async_step_people_edit_form(
@@ -122,52 +105,12 @@ class _PeopleStepsMixin:
                 user_input["ha_sync_status"] = "configured"
                 user_input["heima_reviewed"] = True
                 updated.append(user_input)
+            elif self._is_mergeable_people_duplicate(person, user_input):
+                continue
             else:
                 updated.append(person)
         self._store_list(OPT_PEOPLE_NAMED, updated)
         self._editing_person_slug = None
-        return await self.async_step_people_menu()
-
-    async def async_step_people_remove(
-        self, user_input: dict[str, Any] | None = None
-    ) -> "FlowResult":
-        people = self._people_named()
-        if not people:
-            return await self.async_step_people_menu()
-
-        if user_input is None:
-            schema = vol.Schema({vol.Required("person"): vol.In(self._people_choice_map(people))})
-            return self.async_show_form(step_id="people_remove", data_schema=schema)
-
-        self._removing_person_slug = user_input.get("person")
-        return await self.async_step_people_remove_confirm()
-
-    async def async_step_people_remove_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> "FlowResult":
-        slug = getattr(self, "_removing_person_slug", None)
-        if not slug:
-            return await self.async_step_people_menu()
-
-        people = self._people_named()
-        existing = self._find_by_key(people, "slug", slug) or {}
-        person_label = existing.get("display_name") or slug
-
-        if user_input is None:
-            schema = vol.Schema({vol.Required("confirm", default=False): bool})
-            return self.async_show_form(
-                step_id="people_remove_confirm",
-                data_schema=schema,
-                description_placeholders={"person_label": person_label},
-            )
-
-        if not bool(user_input.get("confirm")):
-            self._removing_person_slug = None
-            return await self.async_step_people_menu()
-
-        updated = [p for p in people if p.get("slug") != slug]
-        self._store_list(OPT_PEOPLE_NAMED, updated)
-        self._removing_person_slug = None
         return await self.async_step_people_menu()
 
     async def async_step_people_anonymous(
@@ -299,11 +242,15 @@ class _PeopleStepsMixin:
         if slug.startswith("heima_"):
             errors["slug"] = "reserved_prefix"
 
-        existing_slugs = {p["slug"] for p in self._people_named()}
-        if not is_edit:
-            if slug in existing_slugs:
-                errors["slug"] = "duplicate"
-        elif slug in (existing_slugs - {self._editing_person_slug}):
+        other_people = [
+            person
+            for person in self._people_named()
+            if not is_edit or str(person.get("slug") or "") != str(self._editing_person_slug or "")
+        ]
+        duplicate_slug_people = [
+            person for person in other_people if str(person.get("slug") or "").strip() == slug
+        ]
+        if duplicate_slug_people and not self._all_people_mergeable(duplicate_slug_people, payload):
             errors["slug"] = "duplicate"
 
         method = payload.get("presence_method")
@@ -313,18 +260,14 @@ class _PeopleStepsMixin:
         elif person_entity not in self._ha_person_entity_ids():
             errors["person_entity"] = "unknown_person"
 
-        existing_person_entities = {
-            str(p.get("person_entity") or "").strip()
-            for p in self._people_named()
-            if str(p.get("person_entity") or "").strip()
-        }
-        if is_edit:
-            existing_person = self._find_by_key(
-                self._people_named(), "slug", self._editing_person_slug or ""
-            )
-            existing_entity = str((existing_person or {}).get("person_entity") or "").strip()
-            existing_person_entities.discard(existing_entity)
-        if person_entity and person_entity in existing_person_entities:
+        duplicate_entity_people = [
+            person
+            for person in other_people
+            if str(person.get("person_entity") or "").strip() == person_entity and person_entity
+        ]
+        if duplicate_entity_people and not self._all_people_mergeable(
+            duplicate_entity_people, payload
+        ):
             errors["person_entity"] = "duplicate_person_entity"
 
         if method == "quorum":
@@ -344,6 +287,28 @@ class _PeopleStepsMixin:
                     )
                 )
         return errors
+
+    def _all_people_mergeable(
+        self, candidates: list[dict[str, Any]], payload: dict[str, Any]
+    ) -> bool:
+        return bool(candidates) and all(
+            self._is_mergeable_people_duplicate(candidate, payload) for candidate in candidates
+        )
+
+    @staticmethod
+    def _is_mergeable_people_duplicate(candidate: dict[str, Any], payload: dict[str, Any]) -> bool:
+        candidate_slug = str(candidate.get("slug") or "").strip()
+        candidate_entity = str(candidate.get("person_entity") or "").strip()
+        payload_slug = str(payload.get("slug") or "").strip()
+        payload_entity = str(payload.get("person_entity") or "").strip()
+        if not (
+            (candidate_slug and candidate_slug == payload_slug)
+            or (candidate_entity and candidate_entity == payload_entity)
+        ):
+            return False
+        return str(candidate.get("ha_sync_status") or "").strip() == "new" and not bool(
+            candidate.get("heima_reviewed")
+        )
 
     # ---- Normalization (called by base _finalize_options too) ----
 
@@ -382,34 +347,6 @@ class _PeopleStepsMixin:
 
     def _ha_person_entity_ids(self) -> set[str]:
         return {str(getattr(state, "entity_id", "")).strip() for state in self._ha_person_states()}
-
-    def _import_people_from_ha_if_empty(self) -> None:
-        if self._people_named():
-            return
-        imported: list[dict[str, Any]] = []
-        for state in self._ha_person_states():
-            entity_id = str(getattr(state, "entity_id", "")).strip()
-            if not entity_id:
-                continue
-            slug = entity_id.split(".", 1)[1]
-            display_name = str(
-                getattr(state, "name", None)
-                or getattr(state, "attributes", {}).get("friendly_name")
-                or slug
-            )
-            imported.append(
-                {
-                    "slug": slug,
-                    "display_name": display_name,
-                    "presence_method": "ha_person",
-                    "person_entity": entity_id,
-                    "arrive_hold_s": 10,
-                    "leave_hold_s": 120,
-                    "enable_override": False,
-                }
-            )
-        if imported:
-            self._store_list(OPT_PEOPLE_NAMED, imported)
 
     def _normalize_people_anonymous_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload)

@@ -801,12 +801,49 @@ async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monk
     assert placeholders["suggested_lighting"] == "light.studio_main"
     assert placeholders["configured_mismatch"] == "—"
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
-    assert "use_suggested_occupancy_sources" in schema_keys
-    assert "use_suggested_learning_sources" in schema_keys
+    assert "use_suggested_occupancy_sources" not in schema_keys
+    assert "use_suggested_learning_sources" not in schema_keys
 
 
 @pytest.mark.asyncio
-async def test_rooms_edit_form_can_apply_suggested_inventory_bindings(monkeypatch):
+async def test_rooms_edit_form_orders_learning_before_occupancy_logic(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_mode": "derived",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                    "on_dwell_s": 5,
+                    "off_dwell_s": 120,
+                    "max_on_s": None,
+                }
+            ]
+        }
+    )
+    flow._editing_room_id = "studio"
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: SimpleNamespace(entities={}),
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: SimpleNamespace(devices={}),
+    )
+
+    result = await flow.async_step_rooms_edit_form()
+
+    ordered_keys = [str(key.schema) for key in result["data_schema"].schema]
+    assert ordered_keys.index("learning_sources") < ordered_keys.index("occupancy_sources")
+    assert ordered_keys.index("occupancy_sources") < ordered_keys.index("logic")
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_form_persists_explicit_inventory_bindings(monkeypatch):
     flow = _flow(
         {
             "rooms": [
@@ -850,10 +887,8 @@ async def test_rooms_edit_form_can_apply_suggested_inventory_bindings(monkeypatc
             "display_name": "Studio",
             "area_id": "studio",
             "occupancy_mode": "derived",
-            "occupancy_sources": [],
-            "learning_sources": [],
-            "use_suggested_occupancy_sources": True,
-            "use_suggested_learning_sources": True,
+            "occupancy_sources": ["binary_sensor.studio_motion"],
+            "learning_sources": ["sensor.studio_lux"],
             "logic": "any_of",
             "on_dwell_s": 5,
             "off_dwell_s": 120,
@@ -886,6 +921,30 @@ async def test_people_edit_shows_status_labels_for_imported_people():
 
 
 @pytest.mark.asyncio
+async def test_people_edit_accepts_selected_label_from_ui():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                    "ha_sync_status": "new",
+                }
+            ]
+        },
+        states=[_state("person.stefano", "Stefano")],
+    )
+
+    result = await flow.async_step_people_edit({"person": "Stefano [new]"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "people_edit_form"
+    assert flow._editing_person_slug == "stefano"
+
+
+@pytest.mark.asyncio
 async def test_people_menu_does_not_expose_add_or_remove_actions():
     flow = _flow(states=[_state("person.alex", "Alex")])
 
@@ -896,6 +955,74 @@ async def test_people_menu_does_not_expose_add_or_remove_actions():
     assert "people_remove" not in result["menu_options"]
     assert "people_edit" in result["menu_options"]
     assert "people_debug_aliases" in result["menu_options"]
+
+
+@pytest.mark.asyncio
+async def test_people_edit_form_absorbs_auto_imported_duplicate_placeholder():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "",
+                    "ha_sync_status": "orphaned",
+                    "heima_reviewed": True,
+                },
+                {
+                    "slug": "stefano_2",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                    "ha_sync_status": "new",
+                    "heima_reviewed": False,
+                },
+            ]
+        },
+        states=[_state("person.stefano", "Stefano")],
+    )
+    flow._editing_person_slug = "stefano"
+
+    result = await flow.async_step_people_edit_form(
+        {
+            "slug": "stefano",
+            "display_name": "Stefano",
+            "presence_method": "ha_person",
+            "person_entity": "person.stefano",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert [person["slug"] for person in flow.options["people_named"]] == ["stefano"]
+    assert flow.options["people_named"][0]["person_entity"] == "person.stefano"
+    assert flow.options["people_named"][0]["ha_sync_status"] == "configured"
+
+
+@pytest.mark.asyncio
+async def test_people_menu_reconciles_legacy_person_before_edit():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "",
+                    "presence_method": "ha_person",
+                    "person_entity": "",
+                    "ha_sync_status": "orphaned",
+                    "heima_reviewed": True,
+                }
+            ]
+        },
+        states=[_state("person.stefano", "Stefano")],
+    )
+
+    result = await flow.async_step_people_menu()
+
+    assert result["type"] == "menu"
+    assert flow.options["people_named"][0]["display_name"] == "Stefano"
+    assert flow.options["people_named"][0]["person_entity"] == "person.stefano"
+    assert flow.options["people_named"][0]["ha_sync_status"] == "configured"
 
 
 def test_people_menu_summary_includes_new_and_orphaned_labels():
@@ -931,6 +1058,28 @@ async def test_rooms_edit_shows_status_labels_for_imported_rooms():
 
     assert "Living [new]" in options
     assert "Studio [configured]" in options
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_accepts_selected_label_from_ui():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "ha_sync_status": "new",
+                }
+            ]
+        }
+    )
+
+    result = await flow.async_step_rooms_edit({"room": "Living [new]"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "rooms_edit_form"
+    assert flow._editing_room_id == "living"
 
 
 @pytest.mark.asyncio
