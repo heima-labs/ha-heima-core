@@ -2142,6 +2142,121 @@ async def test_reactions_edit_form_can_disable_configured_reaction():
 
 
 @pytest.mark.asyncio
+async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_fields():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_type": "room_darkness_lighting_assist",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_threshold": 90.0,
+                        "primary_threshold_mode": "below",
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_main",
+                                "action": "on",
+                                "brightness": 144,
+                                "color_temp_kelvin": 2900,
+                                "rgb_color": None,
+                            }
+                        ],
+                    }
+                },
+                "labels": {"r1": "Studio darkness"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_entities" in schema_keys
+    assert "primary_threshold" in schema_keys
+    assert "light_entities" in schema_keys
+    assert "action" in schema_keys
+    assert "pre_condition_min" not in schema_keys
+    assert "action_entities" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_updates_room_lighting_assist_config():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_type": "room_darkness_lighting_assist",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_threshold": 90.0,
+                        "primary_threshold_mode": "below",
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_main",
+                                "action": "on",
+                                "brightness": 144,
+                                "color_temp_kelvin": 2900,
+                                "rgb_color": None,
+                            }
+                        ],
+                    }
+                },
+                "labels": {"r1": "Studio darkness"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": False,
+            "primary_signal_entities": ["sensor.studio_lux", "sensor.studio_window_lux"],
+            "primary_threshold": 120.0,
+            "light_entities": ["light.studio_main", "light.studio_spot"],
+            "action": "on",
+            "brightness": 180,
+            "color_temp_kelvin": 3000,
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["enabled"] is False
+    assert stored["primary_signal_entities"] == [
+        "sensor.studio_lux",
+        "sensor.studio_window_lux",
+    ]
+    assert stored["primary_threshold"] == 120.0
+    assert stored["entity_steps"] == [
+        {
+            "entity_id": "light.studio_main",
+            "action": "on",
+            "brightness": 180,
+            "color_temp_kelvin": 3000,
+            "rgb_color": None,
+        },
+        {
+            "entity_id": "light.studio_spot",
+            "action": "on",
+            "brightness": 180,
+            "color_temp_kelvin": 3000,
+            "rgb_color": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_can_delete_configured_reaction_and_unmute_it():
     flow = _flow(
         {

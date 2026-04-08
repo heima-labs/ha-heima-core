@@ -652,6 +652,17 @@ class _ReactionsStepsMixin:
         muted = list(reactions_cfg.get("muted", []))
         labels_map: dict[str, str] = reactions_cfg.get("labels", {})
         cfg = dict(configured.get(pid, {}))
+        reaction_class = str(cfg.get("reaction_class") or "").strip()
+
+        if reaction_class == "RoomLightingAssistReaction":
+            return await self._async_step_reactions_edit_room_lighting_assist(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
 
         if user_input is None:
             current_steps = cfg.get("steps", [])
@@ -693,6 +704,125 @@ class _ReactionsStepsMixin:
         cfg["steps"] = steps
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_room_lighting_assist(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a room darkness lighting assist reaction using its real config contract."""
+        current_steps = [
+            step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
+        ]
+        current_entities = [
+            str(step.get("entity_id") or "").strip()
+            for step in current_steps
+            if str(step.get("entity_id") or "").strip()
+        ]
+        first_step = current_steps[0] if current_steps else {}
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "primary_signal_entities": list(cfg.get("primary_signal_entities", [])),
+            "primary_threshold": float(cfg.get("primary_threshold", 120.0) or 120.0),
+            "light_entities": current_entities,
+            "action": str(first_step.get("action") or "on").strip() or "on",
+            "brightness": int(first_step.get("brightness") or 190),
+            "color_temp_kelvin": int(first_step.get("color_temp_kelvin") or 2850),
+            "delete_reaction": False,
+        }
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_lighting_assist_schema(defaults),
+                description_placeholders={"reaction_description": label},
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        errors: dict[str, str] = {}
+        primary_signal_entities = self._normalize_multi_value(
+            user_input.get("primary_signal_entities")
+        )
+        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
+        action = str(user_input.get("action") or "on").strip() or "on"
+
+        if not primary_signal_entities:
+            errors["primary_signal_entities"] = "required"
+        if not light_entities:
+            errors["light_entities"] = "required"
+
+        try:
+            primary_threshold = float(user_input.get("primary_threshold") or 0)
+            if primary_threshold <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["primary_threshold"] = "invalid_number"
+            primary_threshold = defaults["primary_threshold"]
+
+        brightness: int | None = None
+        color_temp_kelvin: int | None = None
+        if action == "on":
+            try:
+                brightness = int(user_input.get("brightness") or 0)
+                if brightness < 1 or brightness > 255:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["brightness"] = "invalid_number"
+            try:
+                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
+                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["color_temp_kelvin"] = "invalid_number"
+
+        if errors:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_lighting_assist_schema(
+                    {
+                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_threshold": primary_threshold,
+                        "light_entities": light_entities,
+                        "action": action,
+                        "brightness": user_input.get("brightness", defaults["brightness"]),
+                        "color_temp_kelvin": user_input.get(
+                            "color_temp_kelvin", defaults["color_temp_kelvin"]
+                        ),
+                        "delete_reaction": bool(user_input.get("delete_reaction", False)),
+                    }
+                ),
+                errors=errors,
+                description_placeholders={"reaction_description": label},
+            )
+
+        cfg["enabled"] = bool(user_input.get("enabled", True))
+        cfg["primary_signal_entities"] = primary_signal_entities
+        cfg["primary_threshold"] = primary_threshold
+        cfg["entity_steps"] = [
+            {
+                "entity_id": entity_id,
+                "action": action,
+                "brightness": brightness if action == "on" else None,
+                "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
+                "rgb_color": None,
+            }
+            for entity_id in light_entities
+        ]
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._update_options({OPT_REACTIONS: reactions_cfg})
@@ -1176,6 +1306,33 @@ class _ReactionsStepsMixin:
                     vol.Optional("color_temp_kelvin", default=2850): vol.All(
                         vol.Coerce(int), vol.Range(min=1500, max=9000)
                     ),
+                }
+            ),
+            defaults,
+        )
+
+    def _reactions_edit_room_lighting_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        action_options = self._admin_authored_lighting_action_options()
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Optional("enabled", default=True): bool,
+                    vol.Required("primary_signal_entities"): _entity_selector(
+                        ["sensor", "binary_sensor"], multiple=True
+                    ),
+                    vol.Required("primary_threshold", default=120.0): vol.Coerce(float),
+                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
+                    vol.Required("action", default="on"): vol.In(action_options),
+                    vol.Optional("brightness", default=190): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=255)
+                    ),
+                    vol.Optional("color_temp_kelvin", default=2850): vol.All(
+                        vol.Coerce(int), vol.Range(min=1500, max=9000)
+                    ),
+                    vol.Optional("delete_reaction", default=False): bool,
                 }
             ),
             defaults,

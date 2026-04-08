@@ -508,6 +508,12 @@
         "description": "{reaction_description}",
         "data": {
           "enabled": "Enabled",
+          "primary_signal_entities": "Lux sensors",
+          "primary_threshold": "Lux threshold",
+          "light_entities": "Lights to control",
+          "action": "Light action",
+          "brightness": "Brightness",
+          "color_temp_kelvin": "Color temperature (K)",
           "action_entities": "Scenes or scripts to activate",
           "pre_condition_min": "Lead time (minutes)",
           "delete_reaction": "Delete this reaction"

@@ -508,6 +508,12 @@
         "description": "{reaction_description}",
         "data": {
           "enabled": "Abilitata",
+          "primary_signal_entities": "Sensori lux",
+          "primary_threshold": "Soglia lux",
+          "light_entities": "Luci da comandare",
+          "action": "Azione luci",
+          "brightness": "Luminosita",
+          "color_temp_kelvin": "Temperatura colore (K)",
           "action_entities": "Scene o script da attivare",
           "pre_condition_min": "Anticipo (minuti)",
           "delete_reaction": "Elimina questa reazione"
