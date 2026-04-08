@@ -146,9 +146,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
 
 
 def test_builtin_learning_plugin_registry_can_disable_families():
-    registry = create_builtin_learning_plugin_registry(
-        enabled_families={"presence", "lighting"}
-    )
+    registry = create_builtin_learning_plugin_registry(enabled_families={"presence", "lighting"})
 
     assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
         "PresencePatternAnalyzer",

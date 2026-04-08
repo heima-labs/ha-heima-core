@@ -155,21 +155,25 @@ class LightingScheduleReaction(HeimaReaction):
                     params["rgb_color"] = cfg["rgb_color"]
                 elif cfg.get("color_temp_kelvin") is not None:
                     params["color_temp_kelvin"] = cfg["color_temp_kelvin"]
-                steps.append(ApplyStep(
-                    domain="lighting",
-                    target=self._room_id,
-                    action="light.turn_on",
-                    params=params,
-                    reason=f"lighting_schedule:{self._reaction_id}",
-                ))
+                steps.append(
+                    ApplyStep(
+                        domain="lighting",
+                        target=self._room_id,
+                        action="light.turn_on",
+                        params=params,
+                        reason=f"lighting_schedule:{self._reaction_id}",
+                    )
+                )
             else:
-                steps.append(ApplyStep(
-                    domain="lighting",
-                    target=self._room_id,
-                    action="light.turn_off",
-                    params={"entity_id": entity_id},
-                    reason=f"lighting_schedule:{self._reaction_id}",
-                ))
+                steps.append(
+                    ApplyStep(
+                        domain="lighting",
+                        target=self._room_id,
+                        action="light.turn_off",
+                        params={"entity_id": entity_id},
+                        reason=f"lighting_schedule:{self._reaction_id}",
+                    )
+                )
         return steps
 
     def diagnostics(self) -> dict[str, Any]:
@@ -253,19 +257,13 @@ def present_admin_authored_lighting_schedule_details(
     if weekday not in (None, ""):
         weekday_label = flow._weekday_label(weekday, language)  # noqa: SLF001
         details.append(
-            f"Giorno pianificato: {weekday_label}"
-            if is_it
-            else f"Scheduled day: {weekday_label}"
+            f"Giorno pianificato: {weekday_label}" if is_it else f"Scheduled day: {weekday_label}"
         )
 
     scheduled_min = cfg.get("scheduled_min")
     if isinstance(scheduled_min, (int, float)):
         hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
-        details.append(
-            f"Orario pianificato: {hhmm}"
-            if is_it
-            else f"Scheduled time: {hhmm}"
-        )
+        details.append(f"Orario pianificato: {hhmm}" if is_it else f"Scheduled time: {hhmm}")
 
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
@@ -290,9 +288,7 @@ def present_learned_lighting_schedule_details(
     scheduled_min = cfg.get("scheduled_min")
     if isinstance(scheduled_min, (int, float)):
         hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
-        details.append(
-            f"Orario proposto: {hhmm}" if is_it else f"Proposed time: {hhmm}"
-        )
+        details.append(f"Orario proposto: {hhmm}" if is_it else f"Proposed time: {hhmm}")
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
         details.append(
@@ -433,16 +429,12 @@ def _lighting_entity_step_diffs(
         current_brightness = current.get("brightness")
         proposed_brightness = proposed.get("brightness")
         if current_brightness != proposed_brightness:
-            field_diffs.append(
-                f"brightness {current_brightness} -> {proposed_brightness}"
-            )
+            field_diffs.append(f"brightness {current_brightness} -> {proposed_brightness}")
 
         current_kelvin = current.get("color_temp_kelvin")
         proposed_kelvin = proposed.get("color_temp_kelvin")
         if current_kelvin != proposed_kelvin:
-            field_diffs.append(
-                f"kelvin {current_kelvin} -> {proposed_kelvin}"
-            )
+            field_diffs.append(f"kelvin {current_kelvin} -> {proposed_kelvin}")
 
         if field_diffs:
             details.append(f"{entity_id}: {'; '.join(field_diffs)}")

@@ -30,9 +30,16 @@ class _FakeHass:
 
 def _minimal_ctx() -> EventContext:
     return EventContext(
-        weekday=0, minute_of_day=480, month=3,
-        house_state="home", occupants_count=1, occupied_rooms=(),
-        outdoor_lux=None, outdoor_temp=None, weather_condition=None, signals={},
+        weekday=0,
+        minute_of_day=480,
+        month=3,
+        house_state="home",
+        occupants_count=1,
+        occupied_rooms=(),
+        outdoor_lux=None,
+        outdoor_temp=None,
+        weather_condition=None,
+        signals={},
     )
 
 
@@ -110,4 +117,3 @@ async def test_event_recorder_no_events_for_stable_snapshot():
         await asyncio.gather(*hass.tasks)
 
     assert store.events == []
-

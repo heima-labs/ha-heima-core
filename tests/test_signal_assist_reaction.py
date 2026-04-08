@@ -18,7 +18,9 @@ def _snapshot(*, occupied_rooms: list[str], ts: str) -> DecisionSnapshot:
 
 
 def _set_state(hass, entity_id: str, state: str) -> None:
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=state) if eid == entity_id else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=state) if eid == entity_id else None
+    )
 
 
 def test_signal_assist_reaction_fires_on_humidity_burst_without_temp_requirement():
@@ -38,10 +40,12 @@ def test_signal_assist_reaction_fires_on_humidity_burst_without_temp_requirement
     assert reaction.evaluate([_snapshot(occupied_rooms=["bathroom"], ts=ts1)]) == []
 
     _set_state(hass, "sensor.bathroom_humidity", "64")
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["bathroom"], ts=ts1),
-        _snapshot(occupied_rooms=["bathroom"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["bathroom"], ts=ts1),
+            _snapshot(occupied_rooms=["bathroom"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].action == "script.turn_on"
 
@@ -52,7 +56,9 @@ def test_signal_assist_reaction_waits_for_temperature_corroboration():
         "sensor.bathroom_humidity": "55",
         "sensor.bathroom_temperature": "21.0",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="bathroom",
@@ -70,16 +76,23 @@ def test_signal_assist_reaction_waits_for_temperature_corroboration():
     assert reaction.evaluate([_snapshot(occupied_rooms=["bathroom"], ts=ts1)]) == []
 
     states["sensor.bathroom_humidity"] = "64"
-    assert reaction.evaluate([
-        _snapshot(occupied_rooms=["bathroom"], ts=ts1),
-        _snapshot(occupied_rooms=["bathroom"], ts=ts2),
-    ]) == []
+    assert (
+        reaction.evaluate(
+            [
+                _snapshot(occupied_rooms=["bathroom"], ts=ts1),
+                _snapshot(occupied_rooms=["bathroom"], ts=ts2),
+            ]
+        )
+        == []
+    )
 
     states["sensor.bathroom_temperature"] = "22.0"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["bathroom"], ts=ts2),
-        _snapshot(occupied_rooms=["bathroom"], ts=ts3),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["bathroom"], ts=ts2),
+            _snapshot(occupied_rooms=["bathroom"], ts=ts3),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].action == "script.turn_on"
 
@@ -90,7 +103,9 @@ def test_signal_assist_reaction_supports_generic_primary_and_corroboration_signa
         "sensor.studio_temperature": "24.0",
         "sensor.studio_humidity": "50.0",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="studio",
@@ -111,16 +126,23 @@ def test_signal_assist_reaction_supports_generic_primary_and_corroboration_signa
     assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)]) == []
 
     states["sensor.studio_temperature"] = "25.8"
-    assert reaction.evaluate([
-        _snapshot(occupied_rooms=["studio"], ts=ts1),
-        _snapshot(occupied_rooms=["studio"], ts=ts2),
-    ]) == []
+    assert (
+        reaction.evaluate(
+            [
+                _snapshot(occupied_rooms=["studio"], ts=ts1),
+                _snapshot(occupied_rooms=["studio"], ts=ts2),
+            ]
+        )
+        == []
+    )
 
     states["sensor.studio_humidity"] = "56.0"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["studio"], ts=ts2),
-        _snapshot(occupied_rooms=["studio"], ts=ts3),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["studio"], ts=ts2),
+            _snapshot(occupied_rooms=["studio"], ts=ts3),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.cool_room"
 
@@ -130,7 +152,9 @@ def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger
     states = {
         "sensor.office_temperature": "24.0",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="office",
@@ -146,10 +170,12 @@ def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger
     assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
 
     states["sensor.office_temperature"] = "25.6"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["office"], ts=ts1),
-        _snapshot(occupied_rooms=["office"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["office"], ts=ts1),
+            _snapshot(occupied_rooms=["office"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.cool_office"
 
@@ -157,7 +183,9 @@ def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger
 def test_signal_assist_reaction_supports_above_mode():
     hass = MagicMock()
     states = {"sensor.office_co2": "780.0"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="office",
@@ -165,7 +193,9 @@ def test_signal_assist_reaction_supports_above_mode():
         primary_threshold=800.0,
         primary_threshold_mode="above",
         primary_signal_name="co2",
-        steps=[ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")],
+        steps=[
+            ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")
+        ],
         followup_window_s=0,
     )
     ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
@@ -174,10 +204,12 @@ def test_signal_assist_reaction_supports_above_mode():
     assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
 
     states["sensor.office_co2"] = "820.0"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["office"], ts=ts1),
-        _snapshot(occupied_rooms=["office"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["office"], ts=ts1),
+            _snapshot(occupied_rooms=["office"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.ventilate_office"
 
@@ -185,7 +217,9 @@ def test_signal_assist_reaction_supports_above_mode():
 def test_signal_assist_reaction_supports_switch_on_mode():
     hass = MagicMock()
     states = {"binary_sensor.projector_active": "off"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="living",
@@ -193,7 +227,9 @@ def test_signal_assist_reaction_supports_switch_on_mode():
         primary_threshold=1.0,
         primary_threshold_mode="switch_on",
         primary_signal_name="projector",
-        steps=[ApplyStep(domain="script", target="script.projector_scene", action="script.turn_on")],
+        steps=[
+            ApplyStep(domain="script", target="script.projector_scene", action="script.turn_on")
+        ],
         followup_window_s=0,
     )
     ts1 = datetime(2026, 3, 20, 21, 0, tzinfo=timezone.utc).isoformat()
@@ -201,10 +237,12 @@ def test_signal_assist_reaction_supports_switch_on_mode():
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
     states["binary_sensor.projector_active"] = "on"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["living"], ts=ts1),
-        _snapshot(occupied_rooms=["living"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["living"], ts=ts1),
+            _snapshot(occupied_rooms=["living"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.projector_scene"
 
@@ -212,7 +250,9 @@ def test_signal_assist_reaction_supports_switch_on_mode():
 def test_signal_assist_reaction_supports_switch_off_mode():
     hass = MagicMock()
     states = {"binary_sensor.projector_active": "on"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="living",
@@ -228,10 +268,12 @@ def test_signal_assist_reaction_supports_switch_off_mode():
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
     states["binary_sensor.projector_active"] = "off"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["living"], ts=ts1),
-        _snapshot(occupied_rooms=["living"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["living"], ts=ts1),
+            _snapshot(occupied_rooms=["living"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.restore_lights"
 
@@ -239,7 +281,9 @@ def test_signal_assist_reaction_supports_switch_off_mode():
 def test_signal_assist_reaction_supports_state_change_mode():
     hass = MagicMock()
     states = {"binary_sensor.window_open": "off"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomSignalAssistReaction(
         hass=hass,
         room_id="studio",
@@ -255,9 +299,11 @@ def test_signal_assist_reaction_supports_state_change_mode():
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)]) == []
     states["binary_sensor.window_open"] = "on"
-    steps = reaction.evaluate([
-        _snapshot(occupied_rooms=["studio"], ts=ts1),
-        _snapshot(occupied_rooms=["studio"], ts=ts2),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["studio"], ts=ts1),
+            _snapshot(occupied_rooms=["studio"], ts=ts2),
+        ]
+    )
     assert len(steps) == 1
     assert steps[0].target == "script.window_changed"

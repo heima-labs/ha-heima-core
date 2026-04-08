@@ -99,7 +99,9 @@ def _presence_policy_from_raw(raw: dict[str, Any]) -> PresenceLearningPolicy:
     default = DEFAULT_LEARNING_POLICY_BUNDLE.presence
     family = _family_raw(raw, "presence")
     return PresenceLearningPolicy(
-        min_occurrences=_coerce_positive_int(family.get("min_occurrences"), default.min_occurrences),
+        min_occurrences=_coerce_positive_int(
+            family.get("min_occurrences"), default.min_occurrences
+        ),
         min_weeks=_coerce_positive_int(family.get("min_weeks"), default.min_weeks),
     )
 
@@ -108,7 +110,9 @@ def _lighting_policy_from_raw(raw: dict[str, Any]) -> LightingLearningPolicy:
     default = DEFAULT_LEARNING_POLICY_BUNDLE.lighting
     family = _family_raw(raw, "lighting")
     return LightingLearningPolicy(
-        min_occurrences=_coerce_positive_int(family.get("min_occurrences"), default.min_occurrences),
+        min_occurrences=_coerce_positive_int(
+            family.get("min_occurrences"), default.min_occurrences
+        ),
         min_weeks=_coerce_positive_int(family.get("min_weeks"), default.min_weeks),
     )
 
@@ -117,7 +121,9 @@ def _composite_policy_from_raw(raw: dict[str, Any]) -> CompositeLearningPolicy:
     default = DEFAULT_LEARNING_POLICY_BUNDLE.composite_room_assist
     family = _family_raw(raw, "composite_room_assist", aliases=("composite",))
     return CompositeLearningPolicy(
-        min_occurrences=_coerce_positive_int(family.get("min_occurrences"), default.min_occurrences),
+        min_occurrences=_coerce_positive_int(
+            family.get("min_occurrences"), default.min_occurrences
+        ),
         min_weeks=_coerce_positive_int(family.get("min_weeks"), default.min_weeks),
     )
 
@@ -128,7 +134,9 @@ def _security_presence_policy_from_raw(
     default = DEFAULT_LEARNING_POLICY_BUNDLE.security_presence_simulation
     family = _family_raw(raw, "security_presence_simulation")
     return SecurityPresenceSimulationLearningPolicy(
-        min_occurrences=_coerce_positive_int(family.get("min_occurrences"), default.min_occurrences),
+        min_occurrences=_coerce_positive_int(
+            family.get("min_occurrences"), default.min_occurrences
+        ),
         min_weeks=_coerce_positive_int(family.get("min_weeks"), default.min_weeks),
     )
 

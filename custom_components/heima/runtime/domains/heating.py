@@ -97,24 +97,34 @@ class HeatingDomain:
             return
 
         climate_entity = str(heating_cfg.get("climate_entity", "")).strip()
-        apply_mode = str(heating_cfg.get("apply_mode", "delegate_to_scheduler") or "delegate_to_scheduler")
+        apply_mode = str(
+            heating_cfg.get("apply_mode", "delegate_to_scheduler") or "delegate_to_scheduler"
+        )
         hvac_mode_override = heating_cfg.get("hvac_mode") or None
         branches = heating_cfg.get("override_branches", {})
         branch_cfg = dict(branches.get(house_state, {})) if isinstance(branches, dict) else {}
         branch_type = str(branch_cfg.get("branch", "disabled") or "disabled")
-        previous_selected_branch = str(self._heating_trace.get("selected_branch", "disabled") or "disabled")
+        previous_selected_branch = str(
+            self._heating_trace.get("selected_branch", "disabled") or "disabled"
+        )
         manual_guard_enabled = bool(heating_cfg.get("manual_override_guard", True))
         manual_hold = bool(state.get_binary("heima_heating_manual_hold"))
-        temperature_step = self._coerce_positive_float(heating_cfg.get("temperature_step"), default=0.5)
+        temperature_step = self._coerce_positive_float(
+            heating_cfg.get("temperature_step"), default=0.5
+        )
         current_setpoint = self._current_climate_setpoint(climate_entity)
         observed_source = self._infer_observed_source(
             current_setpoint=current_setpoint,
             temperature_step=temperature_step,
         )
         observed_provenance = self._observed_provenance(observed_source=observed_source)
-        outdoor_temperature = self._coerce_float_from_entity(heating_cfg.get("outdoor_temperature_entity"))
+        outdoor_temperature = self._coerce_float_from_entity(
+            heating_cfg.get("outdoor_temperature_entity")
+        )
         climate_preset_mode = self._coerce_text(self._state_attr(climate_entity, "preset_mode"))
-        climate_manual_override = self._heating_climate_manual_override_detected(climate_preset_mode)
+        climate_manual_override = self._heating_climate_manual_override_detected(
+            climate_preset_mode
+        )
         manual_override_active = manual_hold or climate_manual_override
         manual_override_source = (
             "heima_manual_hold"
@@ -140,7 +150,9 @@ class HeatingDomain:
             phase = "scheduler_delegate"
         elif branch_type == "fixed_target":
             phase = "fixed_target"
-            target_temperature = self._coerce_positive_float(branch_cfg.get("target_temperature"), default=None)
+            target_temperature = self._coerce_positive_float(
+                branch_cfg.get("target_temperature"), default=None
+            )
             if target_temperature is None:
                 heating_state = "inactive"
                 reason = "invalid_target_temperature"
@@ -157,7 +169,9 @@ class HeatingDomain:
                     branch_reason="fixed_target_branch",
                     target_temperature=target_temperature,
                     apply_mode=apply_mode,
-                    manual_override_active=manual_override_active if manual_guard_enabled else False,
+                    manual_override_active=manual_override_active
+                    if manual_guard_enabled
+                    else False,
                     current_setpoint=current_setpoint,
                     temperature_step=temperature_step,
                 )
@@ -196,7 +210,9 @@ class HeatingDomain:
                     branch_reason="vacation_curve_branch",
                     target_temperature=target_temperature,
                     apply_mode=apply_mode,
-                    manual_override_active=manual_override_active if manual_guard_enabled else False,
+                    manual_override_active=manual_override_active
+                    if manual_guard_enabled
+                    else False,
                     current_setpoint=current_setpoint,
                     temperature_step=temperature_step,
                 )
@@ -347,7 +363,11 @@ class HeatingDomain:
         elif selected_branch != "vacation_curve":
             self._heating_last_reported_phase = None
 
-        if apply_allowed and target_temperature is not None and self._heating_last_reported_target != target_temperature:
+        if (
+            apply_allowed
+            and target_temperature is not None
+            and self._heating_last_reported_target != target_temperature
+        ):
             events.queue_event(
                 HeimaEvent(
                     type="heating.target_changed",
@@ -409,7 +429,10 @@ class HeatingDomain:
                 )
             )
 
-        if reason == "vacation_bindings_unavailable" and previous_reason != "vacation_bindings_unavailable":
+        if (
+            reason == "vacation_bindings_unavailable"
+            and previous_reason != "vacation_bindings_unavailable"
+        ):
             events.queue_event(
                 HeimaEvent(
                     type="heating.vacation_bindings_unavailable",
@@ -459,7 +482,9 @@ class HeatingDomain:
     ) -> float | None:
         candidates: list[float] = []
         if phase == "ramp_down":
-            remaining_h = float(vacation_meta["ramp_down_h"]) - float(vacation_meta["hours_from_start"])
+            remaining_h = float(vacation_meta["ramp_down_h"]) - float(
+                vacation_meta["hours_from_start"]
+            )
             if remaining_h > 0:
                 candidates.append(remaining_h * 3600)
             exact_change = HeatingDomain._heating_vacation_next_quantized_change_delay_s(
@@ -506,7 +531,8 @@ class HeatingDomain:
             if ramp_down_h <= 0:
                 return None
             slope_per_hour = (
-                float(vacation_meta.get("min_safety", 0.0)) - float(vacation_meta.get("start_temp", 0.0))
+                float(vacation_meta.get("min_safety", 0.0))
+                - float(vacation_meta.get("start_temp", 0.0))
             ) / ramp_down_h
         elif phase == "ramp_up":
             ramp_up_h = float(vacation_meta.get("ramp_up_h", 0.0))
@@ -560,8 +586,13 @@ class HeatingDomain:
         )
         if diff is not None and diff < temperature_step:
             return ("idle", "small_delta_skip", False, True, True, False)
-        if self._heating_last_target_temp == target_temperature and self._heating_last_apply_ts is not None:
-            if (time.monotonic() - self._heating_last_apply_ts) < _HEATING_MIN_SECONDS_BETWEEN_APPLIES:
+        if (
+            self._heating_last_target_temp == target_temperature
+            and self._heating_last_apply_ts is not None
+        ):
+            if (
+                time.monotonic() - self._heating_last_apply_ts
+            ) < _HEATING_MIN_SECONDS_BETWEEN_APPLIES:
                 return ("idle", "apply_rate_limited", False, True, False, True)
         return ("target_active", branch_reason, True, False, False, False)
 
@@ -574,22 +605,38 @@ class HeatingDomain:
         temperature_step: float,
         start_temperature: float | None,
     ) -> tuple[float | None, str, dict[str, Any], str | None]:
-        hours_from = self._coerce_float_from_entity(heating_cfg.get("vacation_hours_from_start_entity"))
+        hours_from = self._coerce_float_from_entity(
+            heating_cfg.get("vacation_hours_from_start_entity")
+        )
         hours_to = self._coerce_float_from_entity(heating_cfg.get("vacation_hours_to_end_entity"))
         total_hours = self._coerce_float_from_entity(heating_cfg.get("vacation_total_hours_entity"))
         explicit_is_long = self._coerce_bool_from_entity(heating_cfg.get("vacation_is_long_entity"))
-        ramp_down = self._coerce_non_negative_float(branch_cfg.get("vacation_ramp_down_h"), default=None)
-        ramp_up = self._coerce_non_negative_float(branch_cfg.get("vacation_ramp_up_h"), default=None)
+        ramp_down = self._coerce_non_negative_float(
+            branch_cfg.get("vacation_ramp_down_h"), default=None
+        )
+        ramp_up = self._coerce_non_negative_float(
+            branch_cfg.get("vacation_ramp_up_h"), default=None
+        )
         min_total_hours_for_ramp = self._coerce_non_negative_float(
             branch_cfg.get("vacation_min_total_hours_for_ramp"), default=None
         )
         min_temp = self._coerce_positive_float(branch_cfg.get("vacation_min_temp"), default=None)
-        return_preheat_temp = self._coerce_positive_float(branch_cfg.get("vacation_comfort_temp"), default=None)
+        return_preheat_temp = self._coerce_positive_float(
+            branch_cfg.get("vacation_comfort_temp"), default=None
+        )
         start_temp = self._coerce_positive_float(start_temperature, default=None)
 
         if None in (
-            hours_from, hours_to, total_hours, ramp_down, ramp_up,
-            min_total_hours_for_ramp, min_temp, return_preheat_temp, start_temp, outdoor_temperature,
+            hours_from,
+            hours_to,
+            total_hours,
+            ramp_down,
+            ramp_up,
+            min_total_hours_for_ramp,
+            min_temp,
+            return_preheat_temp,
+            start_temp,
+            outdoor_temperature,
         ):
             return (None, "vacation_curve", {}, "vacation_bindings_unavailable")
 
@@ -598,7 +645,9 @@ class HeatingDomain:
             if explicit_is_long is not None
             else bool(total_hours >= min_total_hours_for_ramp)
         )
-        min_safety = self._heating_vacation_min_safety(min_temp=min_temp, outdoor_temperature=outdoor_temperature)
+        min_safety = self._heating_vacation_min_safety(
+            min_temp=min_temp, outdoor_temperature=outdoor_temperature
+        )
 
         if not is_long:
             phase = "eco_only"
@@ -662,7 +711,14 @@ class HeatingDomain:
         normalized = preset_mode.casefold().replace(" ", "").replace("_", "").replace("-", "")
         if normalized in {"", "none", "null", "schedule", "scheduled", "auto"}:
             return False
-        return normalized in {"hold", "manual", "manualhold", "override", "permanenthold", "temporaryhold"}
+        return normalized in {
+            "hold",
+            "manual",
+            "manualhold",
+            "override",
+            "permanenthold",
+            "temporaryhold",
+        }
 
     def _state_attr(self, entity_id: str | None, attr_name: str) -> Any:
         if not entity_id:

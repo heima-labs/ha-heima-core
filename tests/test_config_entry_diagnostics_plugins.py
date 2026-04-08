@@ -42,8 +42,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     assert any(
         item["plugin_id"] == "builtin.lighting_routines"
         and item["supports_admin_authored"] is True
-        and item["admin_authored_templates"][0]["template_id"]
-        == "lighting.scene_schedule.basic"
+        and item["admin_authored_templates"][0]["template_id"] == "lighting.scene_schedule.basic"
         and item["admin_authored_templates"][0]["implemented"] is True
         for item in learning
     )
@@ -381,7 +380,7 @@ async def test_config_entry_diagnostics_exposes_calendar_summary() -> None:
                 is_wfh_today=True,
                 is_office_today=False,
                 next_vacation=next_vacation,
-            )
+            ),
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -489,7 +488,9 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
-    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+    entry = SimpleNamespace(
+        entry_id="entry-1", title="Heima", version=1, minor_version=0, options={}
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["security_presence_summary"]
@@ -521,7 +522,9 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     assert summary["ready_examples"][0]["tonight_plan_preview"][0]["room_id"] == "living"
     assert summary["ready_examples"][0]["excluded_sources"][0]["room_id"] == "kitchen"
     assert len(summary["waiting_for_darkness_examples"]) == 1
-    assert summary["waiting_for_darkness_examples"][0]["operational_state"] == "waiting_for_darkness"
+    assert (
+        summary["waiting_for_darkness_examples"][0]["operational_state"] == "waiting_for_darkness"
+    )
     assert summary["waiting_for_darkness_examples"][0]["selected_sources"][0]["room_id"] == "studio"
     assert summary["waiting_for_darkness_examples"][0]["excluded_sources"][0]["room_id"] == "studio"
     assert summary["insufficient_evidence_examples"] == []
@@ -540,7 +543,9 @@ async def test_config_entry_diagnostics_exposes_muted_security_presence_summary(
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
-    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+    entry = SimpleNamespace(
+        entry_id="entry-1", title="Heima", version=1, minor_version=0, options={}
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["security_presence_summary"]
@@ -616,7 +621,9 @@ async def test_config_entry_diagnostics_exposes_security_camera_evidence_summary
         _state=SimpleNamespace(get_sensor=lambda key: None),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
-    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+    entry = SimpleNamespace(
+        entry_id="entry-1", title="Heima", version=1, minor_version=0, options={}
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["security_camera_evidence_summary"]
@@ -771,7 +778,9 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
-    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+    entry = SimpleNamespace(
+        entry_id="entry-1", title="Heima", version=1, minor_version=0, options={}
+    )
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     composite = diagnostics["runtime"]["plugins"]["composite_summary"]
@@ -811,7 +820,9 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
     ]
 
 
-async def test_config_entry_diagnostics_exposes_ha_backed_room_inventory_summary(monkeypatch) -> None:
+async def test_config_entry_diagnostics_exposes_ha_backed_room_inventory_summary(
+    monkeypatch,
+) -> None:
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
@@ -822,7 +833,9 @@ async def test_config_entry_diagnostics_exposes_ha_backed_room_inventory_summary
     )
     entity_registry = SimpleNamespace(
         entities={
-            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e1": SimpleNamespace(
+                entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None
+            ),
             "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
             "e3": SimpleNamespace(entity_id="light.studio_main", area_id="", device_id="device-1"),
         }

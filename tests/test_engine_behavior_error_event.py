@@ -74,4 +74,3 @@ async def test_behavior_exception_emits_system_behavior_error_event():
     assert last["context"]["component"] == "behavior"
     assert last["context"]["behavior"] == "boom_behavior"
     assert last["context"]["hook"] == "on_snapshot"
-

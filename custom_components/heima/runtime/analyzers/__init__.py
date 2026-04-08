@@ -28,6 +28,7 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
     """Return minimal metadata for built-in Learning Pattern Plugins."""
     return create_builtin_learning_plugin_registry().descriptors()
 
+
 __all__ = [
     "IPatternAnalyzer",
     "ReactionProposal",

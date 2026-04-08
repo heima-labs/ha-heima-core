@@ -51,14 +51,17 @@ class CompositeEpisode:
 class RoomScopedCompositeMatcher:
     """Detect repeated room-scoped patterns from normalized Heima events."""
 
-    def detect(self, *, room_id: str, events: list[HeimaEvent], spec: CompositePatternSpec) -> list[CompositeEpisode]:
+    def detect(
+        self, *, room_id: str, events: list[HeimaEvent], spec: CompositePatternSpec
+    ) -> list[CompositeEpisode]:
         primary_events = [event for event in events if spec.primary.predicate(event)]
         corroboration_buckets = {
             signal.name: [event for event in events if signal.predicate(event)]
             for signal in spec.corroborations
         }
         followup_events = [
-            event for event in events
+            event
+            for event in events
             if spec.followup is not None and spec.followup.predicate(event)
         ]
 
@@ -83,7 +86,9 @@ class RoomScopedCompositeMatcher:
                         {
                             subject_entity_id(candidate)
                             for candidate in corroboration_buckets.get(signal.name, [])
-                            if within_window(ts, parse_event_ts(candidate), spec.correlation_window_s)
+                            if within_window(
+                                ts, parse_event_ts(candidate), spec.correlation_window_s
+                            )
                             and _signal_matches_event(candidate, signal)
                             and subject_entity_id(candidate)
                         }
@@ -103,12 +108,7 @@ class RoomScopedCompositeMatcher:
                 and subject_entity_id(candidate)
             )
             followup_entities = tuple(
-                sorted(
-                    {
-                        subject_entity_id(candidate)
-                        for candidate in matched_followups
-                    }
-                )
+                sorted({subject_entity_id(candidate) for candidate in matched_followups})
             )
 
             episodes.append(

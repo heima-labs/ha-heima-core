@@ -53,7 +53,9 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
         if not slug:
             continue
         binaries.append(_b(_k(f"heima_person_{slug}_home"), f"Heima Person {label} Home"))
-        sensors.append(_s(_k(f"heima_person_{slug}_confidence"), f"Heima Person {label} Confidence"))
+        sensors.append(
+            _s(_k(f"heima_person_{slug}_confidence"), f"Heima Person {label} Confidence")
+        )
         sensors.append(_s(_k(f"heima_person_{slug}_source"), f"Heima Person {label} Source"))
         if person.get("enable_override"):
             selects.append(
@@ -77,7 +79,10 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
                     _b(_k(f"heima_person_{alias_key}_home"), f"Heima Person {label} Home")
                 )
                 sensors.append(
-                    _s(_k(f"heima_person_{alias_key}_confidence"), f"Heima Person {label} Confidence")
+                    _s(
+                        _k(f"heima_person_{alias_key}_confidence"),
+                        f"Heima Person {label} Confidence",
+                    )
                 )
                 sensors.append(
                     _s(_k(f"heima_person_{alias_key}_source"), f"Heima Person {label} Source")
@@ -123,9 +128,15 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
     sensors.append(_s(_k("heima_house_state"), "Heima House State"))
     sensors.append(_s(_k("heima_house_state_reason"), "Heima House State Reason"))
     sensors.append(_s(_k("heima_house_state_path"), "Heima House State Path"))
-    sensors.append(_s(_k("heima_house_state_active_candidates"), "Heima House State Active Candidates"))
-    sensors.append(_s(_k("heima_house_state_pending_candidate"), "Heima House State Pending Candidate"))
-    sensors.append(_s(_k("heima_house_state_pending_remaining_s"), "Heima House State Pending Remaining S"))
+    sensors.append(
+        _s(_k("heima_house_state_active_candidates"), "Heima House State Active Candidates")
+    )
+    sensors.append(
+        _s(_k("heima_house_state_pending_candidate"), "Heima House State Pending Candidate")
+    )
+    sensors.append(
+        _s(_k("heima_house_state_pending_remaining_s"), "Heima House State Pending Remaining S")
+    )
 
     # Lighting
     for zone in options.get(OPT_LIGHTING_ZONES, []):
@@ -160,16 +171,16 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
         sensors.append(_s(_k("heima_heating_branch"), "Heima Heating Branch"))
         sensors.append(_s(_k("heima_heating_target_temp"), "Heima Heating Target Temp"))
         sensors.append(_s(_k("heima_heating_current_setpoint"), "Heima Heating Current Setpoint"))
-        sensors.append(_s(_k("heima_heating_last_applied_target"), "Heima Heating Last Applied Target"))
+        sensors.append(
+            _s(_k("heima_heating_last_applied_target"), "Heima Heating Last Applied Target")
+        )
         binaries.append(_b(_k("heima_heating_manual_hold"), "Heima Heating Manual Hold"))
         binaries.append(_b(_k("heima_heating_applying_guard"), "Heima Heating Applying Guard"))
 
     # Security
     security = options.get(OPT_SECURITY, {})
     if security:
-        selects.append(
-            _sel(_k("heima_security_intent"), "Heima Security Intent", SECURITY_INTENTS)
-        )
+        selects.append(_sel(_k("heima_security_intent"), "Heima Security Intent", SECURITY_INTENTS))
         sensors.append(_s(_k("heima_security_state"), "Heima Security State"))
         sensors.append(_s(_k("heima_security_reason"), "Heima Security Reason"))
 

@@ -57,7 +57,9 @@ def test_context_builder_time_fields():
 def test_context_builder_house_state_and_occupancy():
     hass = _FakeHass()
     builder = ContextBuilder(hass)
-    ctx = builder.build(_snapshot(house_state="relax", people_count=2, occupied_rooms=["living", "kitchen"]))
+    ctx = builder.build(
+        _snapshot(house_state="relax", people_count=2, occupied_rooms=["living", "kitchen"])
+    )
     assert ctx.house_state == "relax"
     assert ctx.occupants_count == 2
     assert set(ctx.occupied_rooms) == {"living", "kitchen"}
@@ -92,14 +94,19 @@ def test_context_builder_outdoor_temp_fallback_from_weather():
 
 
 def test_context_builder_outdoor_temp_prefers_dedicated_over_weather():
-    hass = _FakeHass({
-        "sensor.outdoor_temp": _FakeState("15.0"),
-        "weather.home": _FakeState("sunny", {"temperature": 20.0}),
-    })
-    builder = ContextBuilder(hass, {
-        "outdoor_temp_entity": "sensor.outdoor_temp",
-        "weather_entity": "weather.home",
-    })
+    hass = _FakeHass(
+        {
+            "sensor.outdoor_temp": _FakeState("15.0"),
+            "weather.home": _FakeState("sunny", {"temperature": 20.0}),
+        }
+    )
+    builder = ContextBuilder(
+        hass,
+        {
+            "outdoor_temp_entity": "sensor.outdoor_temp",
+            "weather_entity": "weather.home",
+        },
+    )
     ctx = builder.build(_snapshot())
     assert ctx.outdoor_temp == 15.0  # dedicated wins
 
@@ -112,13 +119,18 @@ def test_context_builder_weather_condition():
 
 
 def test_context_builder_signals():
-    hass = _FakeHass({
-        "media_player.projector": _FakeState("playing"),
-        "binary_sensor.tv": _FakeState("on"),
-    })
-    builder = ContextBuilder(hass, {
-        "context_signal_entities": ["media_player.projector", "binary_sensor.tv"],
-    })
+    hass = _FakeHass(
+        {
+            "media_player.projector": _FakeState("playing"),
+            "binary_sensor.tv": _FakeState("on"),
+        }
+    )
+    builder = ContextBuilder(
+        hass,
+        {
+            "context_signal_entities": ["media_player.projector", "binary_sensor.tv"],
+        },
+    )
     ctx = builder.build(_snapshot())
     assert ctx.signals["media_player.projector"] == "playing"
     assert ctx.signals["binary_sensor.tv"] == "on"

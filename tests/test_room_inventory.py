@@ -90,7 +90,14 @@ def test_build_room_inventory_summary_handles_room_without_area(monkeypatch):
 
     summary = build_room_inventory_summary(
         hass,
-        [{"room_id": "studio", "display_name": "Studio", "occupancy_sources": [], "learning_sources": []}],
+        [
+            {
+                "room_id": "studio",
+                "display_name": "Studio",
+                "occupancy_sources": [],
+                "learning_sources": [],
+            }
+        ],
     )
 
     room = summary["rooms"][0]

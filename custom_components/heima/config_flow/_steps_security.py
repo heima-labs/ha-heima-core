@@ -125,7 +125,9 @@ class _SecurityStepsMixin:
     @staticmethod
     def _camera_evidence_sources_to_editor(value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
-            return {str(k): dict(v) for k, v in value.items() if str(k).strip() and isinstance(v, dict)}
+            return {
+                str(k): dict(v) for k, v in value.items() if str(k).strip() and isinstance(v, dict)
+            }
         if not isinstance(value, list):
             return {}
         editor: dict[str, Any] = {}

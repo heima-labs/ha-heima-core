@@ -13,7 +13,9 @@ from .base import HeimaBehavior
 class EventRecorderBehavior(HeimaBehavior):
     """Observe DecisionSnapshot transitions and append HeimaEvents."""
 
-    def __init__(self, hass: HomeAssistant, store: EventStore, context_builder: ContextBuilder) -> None:
+    def __init__(
+        self, hass: HomeAssistant, store: EventStore, context_builder: ContextBuilder
+    ) -> None:
         self._hass = hass
         self._store = store
         self._context_builder = context_builder

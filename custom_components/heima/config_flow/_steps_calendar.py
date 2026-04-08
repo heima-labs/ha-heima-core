@@ -45,13 +45,20 @@ class _CalendarStepsMixin:
         if user_input is None:
             return self.async_show_form(
                 step_id="calendar",
-                data_schema=self._with_suggested(schema, {
-                    "calendar_entities": calendar_cfg.get("calendar_entities") or [],
-                    "lookahead_days": int(calendar_cfg.get("lookahead_days") or DEFAULT_CALENDAR_LOOKAHEAD_DAYS),
-                    "cache_ttl_hours": int(calendar_cfg.get("cache_ttl_hours") or DEFAULT_CALENDAR_CACHE_TTL_HOURS),
-                    "calendar_keywords": _keywords_default(calendar_cfg),
-                    "priority_text": _priority_default(calendar_cfg),
-                }),
+                data_schema=self._with_suggested(
+                    schema,
+                    {
+                        "calendar_entities": calendar_cfg.get("calendar_entities") or [],
+                        "lookahead_days": int(
+                            calendar_cfg.get("lookahead_days") or DEFAULT_CALENDAR_LOOKAHEAD_DAYS
+                        ),
+                        "cache_ttl_hours": int(
+                            calendar_cfg.get("cache_ttl_hours") or DEFAULT_CALENDAR_CACHE_TTL_HOURS
+                        ),
+                        "calendar_keywords": _keywords_default(calendar_cfg),
+                        "priority_text": _priority_default(calendar_cfg),
+                    },
+                ),
             )
 
         entities = user_input.get("calendar_entities") or []
@@ -73,18 +80,30 @@ class _CalendarStepsMixin:
             elif isinstance(kws, str):
                 normalised[cat] = [k.strip() for k in kws.split(",") if k.strip()]
 
-        priority = [p.strip().lower() for p in str(user_input.get("priority_text") or "").split(",") if p.strip()]
+        priority = [
+            p.strip().lower()
+            for p in str(user_input.get("priority_text") or "").split(",")
+            if p.strip()
+        ]
         for cat in normalised:
             if cat not in priority:
                 priority.append(cat)
 
-        self._update_options({OPT_CALENDAR: {
-            "calendar_entities": list(entities),
-            "lookahead_days": int(user_input.get("lookahead_days") or DEFAULT_CALENDAR_LOOKAHEAD_DAYS),
-            "cache_ttl_hours": int(user_input.get("cache_ttl_hours") or DEFAULT_CALENDAR_CACHE_TTL_HOURS),
-            "calendar_keywords": normalised,
-            "category_priority": priority,
-        }})
+        self._update_options(
+            {
+                OPT_CALENDAR: {
+                    "calendar_entities": list(entities),
+                    "lookahead_days": int(
+                        user_input.get("lookahead_days") or DEFAULT_CALENDAR_LOOKAHEAD_DAYS
+                    ),
+                    "cache_ttl_hours": int(
+                        user_input.get("cache_ttl_hours") or DEFAULT_CALENDAR_CACHE_TTL_HOURS
+                    ),
+                    "calendar_keywords": normalised,
+                    "category_priority": priority,
+                }
+            }
+        )
         return await self.async_step_init()
 
     def _calendar_menu_summary(self) -> str:
@@ -113,11 +132,7 @@ class _CalendarStepsMixin:
             next_vacation = getattr(calendar_result, "next_vacation", None)
             if next_vacation is not None:
                 summary = str(getattr(next_vacation, "summary", "") or "").strip() or "-"
-                return (
-                    f"prossima vacation: {summary}"
-                    if is_it
-                    else f"next vacation: {summary}"
-                )
+                return f"prossima vacation: {summary}" if is_it else f"next vacation: {summary}"
 
         calendar = dict(self.options.get(OPT_CALENDAR, {}))
         entities = list(calendar.get("calendar_entities") or [])
@@ -129,8 +144,12 @@ class _CalendarStepsMixin:
         return vol.Schema(
             {
                 vol.Optional("calendar_entities"): _entity_selector(["calendar"], multiple=True),
-                vol.Optional("lookahead_days"): selector({"number": {"min": 1, "max": 30, "mode": "box"}}),
-                vol.Optional("cache_ttl_hours"): selector({"number": {"min": 1, "max": 24, "mode": "box"}}),
+                vol.Optional("lookahead_days"): selector(
+                    {"number": {"min": 1, "max": 30, "mode": "box"}}
+                ),
+                vol.Optional("cache_ttl_hours"): selector(
+                    {"number": {"min": 1, "max": 24, "mode": "box"}}
+                ),
                 vol.Optional("calendar_keywords"): _object_selector(),
                 vol.Optional("priority_text"): cv.string,
             }

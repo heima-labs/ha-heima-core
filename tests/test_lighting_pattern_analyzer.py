@@ -75,15 +75,31 @@ def _multi_week_events(
     color_temp_kelvin: int | None = None,
 ) -> list[HeimaEvent]:
     evts = [
-        _lighting(entity_id=entity_id, room_id=room_id, action=action, weekday=weekday,
-                  minute=minute, source=source, ts=_WEEK1_TS,
-                  brightness=brightness, color_temp_kelvin=color_temp_kelvin)
+        _lighting(
+            entity_id=entity_id,
+            room_id=room_id,
+            action=action,
+            weekday=weekday,
+            minute=minute,
+            source=source,
+            ts=_WEEK1_TS,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+        )
         for _ in range(n_week1)
     ]
     evts += [
-        _lighting(entity_id=entity_id, room_id=room_id, action=action, weekday=weekday,
-                  minute=minute, source=source, ts=_WEEK2_TS,
-                  brightness=brightness, color_temp_kelvin=color_temp_kelvin)
+        _lighting(
+            entity_id=entity_id,
+            room_id=room_id,
+            action=action,
+            weekday=weekday,
+            minute=minute,
+            source=source,
+            ts=_WEEK2_TS,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+        )
         for _ in range(n_week2)
     ]
     return evts
@@ -92,6 +108,7 @@ def _multi_week_events(
 # ---------------------------------------------------------------------------
 # Gate tests
 # ---------------------------------------------------------------------------
+
 
 async def test_lighting_analyzer_requires_min_occurrences():
     """Fewer than 5 events per entity → no proposal."""
@@ -124,11 +141,13 @@ async def test_lighting_analyzer_emits_proposal_when_both_gates_pass():
 # Proposal structure
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_analyzer_proposal_config_fields():
     """suggested_reaction_config has room_id, weekday, scheduled_min, entity_steps."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
-        3, 2,
+        3,
+        2,
         entity_id="light.kitchen_spot",
         room_id="kitchen",
         action="off",
@@ -163,7 +182,8 @@ async def test_lighting_analyzer_entity_steps_contain_attributes():
     """On-entity step aggregates brightness and color_temp from events."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
-        3, 2,
+        3,
+        2,
         entity_id="light.living_main",
         room_id="living",
         action="on",
@@ -202,6 +222,7 @@ async def test_lighting_analyzer_fingerprint_set():
 # ---------------------------------------------------------------------------
 # Scene grouping
 # ---------------------------------------------------------------------------
+
 
 async def test_lighting_analyzer_groups_same_room_into_one_proposal():
     """Two entities in the same room at the same time → 1 proposal, 2 entity_steps."""
@@ -271,6 +292,7 @@ async def test_lighting_analyzer_different_rooms_separate_proposals():
 # Confidence
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_analyzer_confidence_tight_schedule():
     """Tight IQR → high confidence."""
     analyzer = LightingPatternAnalyzer()
@@ -315,7 +337,10 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
         "2026-03-16T08:05:00+00:00",
         "2026-03-16T08:10:00+00:00",
     ]
-    spread = [_lighting(minute=minute, ts=ts) for minute, ts in zip(spread_minutes, spread_timestamps, strict=True)]
+    spread = [
+        _lighting(minute=minute, ts=ts)
+        for minute, ts in zip(spread_minutes, spread_timestamps, strict=True)
+    ]
     spread_p = await analyzer.analyze(_StoreStub(spread))  # type: ignore[arg-type]
 
     assert tight_p and spread_p
@@ -326,10 +351,9 @@ async def test_lighting_analyzer_confidence_rewards_more_evidence():
     """Same tight schedule but more observations/weeks -> slightly higher confidence."""
     analyzer = LightingPatternAnalyzer()
     minimal = _multi_week_events(3, 2, minute=1200)
-    richer = (
-        _multi_week_events(3, 2, minute=1200)
-        + [_lighting(minute=1200, ts="2026-03-16T08:00:00+00:00") for _ in range(3)]
-    )
+    richer = _multi_week_events(3, 2, minute=1200) + [
+        _lighting(minute=1200, ts="2026-03-16T08:00:00+00:00") for _ in range(3)
+    ]
 
     minimal_p = await analyzer.analyze(_StoreStub(minimal))  # type: ignore[arg-type]
     richer_p = await analyzer.analyze(_StoreStub(richer))  # type: ignore[arg-type]
@@ -366,7 +390,9 @@ async def test_lighting_analyzer_keeps_wide_iqr_when_evidence_is_richer():
         "2026-03-16T08:05:00+00:00",
         "2026-03-16T08:10:00+00:00",
     ]
-    events = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
+    events = [
+        _lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)
+    ]
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
 
@@ -404,6 +430,7 @@ async def test_lighting_analyzer_window_half_min_spread_cluster():
 # Filtering
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_analyzer_ignores_non_user_source():
     """Events with source != 'user' are excluded."""
     analyzer = LightingPatternAnalyzer()
@@ -418,13 +445,15 @@ async def test_lighting_analyzer_ignores_invalid_action():
     evts = []
     for i in range(5):
         ts = _WEEK1_TS if i < 3 else _WEEK2_TS
-        evts.append(HeimaEvent(
-            ts=ts,
-            event_type="lighting",
-            context=_ctx(),
-            source="user",
-            data={"entity_id": "light.living_main", "room_id": "living", "action": "dim"},
-        ))
+        evts.append(
+            HeimaEvent(
+                ts=ts,
+                event_type="lighting",
+                context=_ctx(),
+                source="user",
+                data={"entity_id": "light.living_main", "room_id": "living", "action": "dim"},
+            )
+        )
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
@@ -435,13 +464,15 @@ async def test_lighting_analyzer_ignores_missing_entity_id():
     evts = []
     for i in range(5):
         ts = _WEEK1_TS if i < 3 else _WEEK2_TS
-        evts.append(HeimaEvent(
-            ts=ts,
-            event_type="lighting",
-            context=_ctx(),
-            source="user",
-            data={"room_id": "living", "action": "on"},  # no entity_id
-        ))
+        evts.append(
+            HeimaEvent(
+                ts=ts,
+                event_type="lighting",
+                context=_ctx(),
+                source="user",
+                data={"room_id": "living", "action": "on"},  # no entity_id
+            )
+        )
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
@@ -457,11 +488,13 @@ async def test_lighting_analyzer_empty_store():
 # Description
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_analyzer_description_contains_room_and_weekday():
     """Proposal description mentions room_id and weekday name."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
-        3, 2,
+        3,
+        2,
         entity_id="light.bedroom_main",
         room_id="bedroom",
         weekday=6,

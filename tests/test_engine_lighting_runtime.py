@@ -508,7 +508,9 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
 @pytest.mark.asyncio
 async def test_execute_apply_plan_ignores_script_turn_on_service_race():
     options = {}
-    engine = _build_engine(options, {"script.preheat_home": "off"}, fail_services={("script", "turn_on")})
+    engine = _build_engine(
+        options, {"script.preheat_home": "off"}, fail_services={("script", "turn_on")}
+    )
     plan = SimpleNamespace(
         steps=[
             ApplyStep(
@@ -548,7 +550,9 @@ async def test_scene_missing_event_includes_expected_scene_context():
     _ = engine._build_apply_plan(snapshot)
     await engine._emit_queued_events()
 
-    event_payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    event_payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
     scene_missing = [p for p in event_payloads if p["type"] == "lighting.scene_missing"]
     assert scene_missing, "Expected lighting.scene_missing event"
     assert scene_missing[-1]["context"]["room"] == "studio"
@@ -708,7 +712,9 @@ async def test_security_armed_away_but_home_event_emitted():
     _ = engine._compute_snapshot(reason="test")
     await engine._emit_queued_events()
 
-    event_payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    event_payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
     security_events = [p for p in event_payloads if p["type"] == "security.armed_away_but_home"]
     assert security_events, "Expected security.armed_away_but_home event"
     assert security_events[-1]["context"]["security_state"] == "armed_away"

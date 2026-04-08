@@ -62,4 +62,3 @@ def build_observation(
         available=bool(available),
         reason=reason,
     )
-

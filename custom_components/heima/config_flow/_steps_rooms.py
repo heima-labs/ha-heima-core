@@ -79,7 +79,9 @@ class _RoomsStepsMixin:
             )
         rooms = self._rooms()
         user_input["source"] = "ha_area_registry"
-        user_input["ha_source_name"] = str(user_input.get("display_name") or user_input.get("room_id") or "")
+        user_input["ha_source_name"] = str(
+            user_input.get("display_name") or user_input.get("room_id") or ""
+        )
         user_input["ha_sync_status"] = "configured"
         user_input["heima_reviewed"] = True
         rooms.append(user_input)
@@ -98,7 +100,9 @@ class _RoomsStepsMixin:
         self._editing_room_id = user_input.get("room")
         return await self.async_step_rooms_edit_form()
 
-    async def async_step_rooms_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_rooms_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         rooms = self._rooms()
         if user_input is None:
             existing = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
@@ -145,7 +149,9 @@ class _RoomsStepsMixin:
         self._editing_room_id = None
         return await self.async_step_rooms_menu()
 
-    async def async_step_rooms_remove(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_rooms_remove(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         rooms = self._rooms()
         if not rooms:
             return await self.async_step_rooms_menu()
@@ -195,7 +201,9 @@ class _RoomsStepsMixin:
         """Persist options and close the flow from Rooms menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 
-    async def async_step_rooms_import_areas(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_rooms_import_areas(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Import HA areas as rooms (merge with existing)."""
         self._import_rooms_from_areas_if_empty(only_when_empty=False)
         return await self.async_step_rooms_menu()
@@ -252,6 +260,7 @@ class _RoomsStepsMixin:
         defaults["learning_sources"] = room_learning_source_entity_ids(defaults)
         defaults["source_weights"] = _format_source_weights(defaults.get("source_weights"))
         from homeassistant.helpers.selector import selector as _sel
+
         schema_dict: dict[Any, Any] = {
             vol.Required("room_id", default=defaults.get("room_id", "")): cv.string,
             vol.Optional("display_name", default=defaults.get("display_name", "")): cv.string,
@@ -270,7 +279,9 @@ class _RoomsStepsMixin:
             vol.Optional("source_weights"): _multiline_text_selector(),
             vol.Optional("on_dwell_s", default=defaults.get("on_dwell_s", 5)): cv.positive_int,
             vol.Optional("off_dwell_s", default=defaults.get("off_dwell_s", 120)): cv.positive_int,
-            vol.Optional("max_on_s", default=defaults.get("max_on_s")): vol.Any(None, cv.positive_int),
+            vol.Optional("max_on_s", default=defaults.get("max_on_s")): vol.Any(
+                None, cv.positive_int
+            ),
         }
         if include_suggestion_actions:
             schema_dict[vol.Optional("use_suggested_occupancy_sources", default=False)] = bool
@@ -284,7 +295,9 @@ class _RoomsStepsMixin:
         errors: dict[str, str] = {}
         room_id = payload.get("room_id", "")
         if is_edit:
-            errors.update(self._error_if_immutable_changed(payload, "room_id", self._editing_room_id))
+            errors.update(
+                self._error_if_immutable_changed(payload, "room_id", self._editing_room_id)
+            )
         if not room_id:
             errors["room_id"] = "required"
         elif not _is_valid_slug(room_id):
@@ -307,7 +320,9 @@ class _RoomsStepsMixin:
                 errors["area_id"] = "unknown_area"
             existing_area_ids = {r.get("area_id") for r in self._rooms() if r.get("area_id")}
             if is_edit:
-                existing_room = self._find_by_key(self._rooms(), "room_id", self._editing_room_id or "")
+                existing_room = self._find_by_key(
+                    self._rooms(), "room_id", self._editing_room_id or ""
+                )
                 existing_area_id = existing_room.get("area_id") if existing_room else None
                 existing_area_ids.discard(existing_area_id)
             if area_id in existing_area_ids:
@@ -346,9 +361,13 @@ class _RoomsStepsMixin:
         if "learning_sources" in data:
             data["learning_sources"] = self._normalize_multi_value(data.get("learning_sources"))
         if "use_suggested_occupancy_sources" in payload:
-            data["use_suggested_occupancy_sources"] = bool(payload.get("use_suggested_occupancy_sources"))
+            data["use_suggested_occupancy_sources"] = bool(
+                payload.get("use_suggested_occupancy_sources")
+            )
         if "use_suggested_learning_sources" in payload:
-            data["use_suggested_learning_sources"] = bool(payload.get("use_suggested_learning_sources"))
+            data["use_suggested_learning_sources"] = bool(
+                payload.get("use_suggested_learning_sources")
+            )
         data = normalize_room_signal_config(data)
         occupancy_mode = str(data.get("occupancy_mode", "") or "").strip()
         if occupancy_mode not in ROOM_OCCUPANCY_MODES:

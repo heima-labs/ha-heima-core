@@ -257,10 +257,7 @@ async def test_room_weighted_quorum_uses_configured_source_weights_in_trace(monk
     trace = engine.diagnostics()["occupancy"]["room_trace"]["room"]
     assert trace["configured_source_weights"]["binary_sensor.room_presence_a"] == 0.8
     assert trace["effective_source_weights"]["binary_sensor.room_presence_a"] == 0.8
-    contributions = {
-        item["entity_id"]: item
-        for item in trace["source_weight_contributions"]
-    }
+    contributions = {item["entity_id"]: item for item in trace["source_weight_contributions"]}
     assert contributions["binary_sensor.room_presence_a"]["weight"] == 0.8
     assert contributions["binary_sensor.room_presence_a"]["contributes_to_on"] is True
 

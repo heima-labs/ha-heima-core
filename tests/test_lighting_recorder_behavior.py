@@ -154,6 +154,7 @@ def _behavior(
 # Core recording logic
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_recorder_records_user_on():
     """User turning a light on → HeimaEvent with action='on'."""
     hass = _FakeHass()
@@ -198,7 +199,9 @@ async def test_lighting_recorder_captures_brightness_and_color_temp():
     b = _behavior(hass, store)
 
     event_data = _state_event(
-        "light.living_main", "on", old_state="off",
+        "light.living_main",
+        "on",
+        old_state="off",
         attributes={"brightness": 128, "color_temp_kelvin": 3000},
     )
     await b._handle_state_changed(_FakeEvent(event_data))
@@ -215,7 +218,9 @@ async def test_lighting_recorder_captures_rgb_color():
     b = _behavior(hass, store)
 
     event_data = _state_event(
-        "light.living_main", "on", old_state="off",
+        "light.living_main",
+        "on",
+        old_state="off",
         attributes={"rgb_color": [255, 100, 50]},
     )
     await b._handle_state_changed(_FakeEvent(event_data))
@@ -295,6 +300,7 @@ async def test_lighting_recorder_ignores_unavailable_state():
 async def test_lighting_recorder_ignores_heima_applied_within_ttl():
     """If Heima applied the room within 5s, state change is attributed to Heima."""
     import time
+
     hass = _FakeHass()
     store = _FakeStore()
     # Simulate recent Heima apply for "living"
@@ -311,6 +317,7 @@ async def test_lighting_recorder_ignores_heima_applied_within_ttl():
 async def test_lighting_recorder_records_after_heima_ttl_expired():
     """If Heima apply was more than 5s ago, the change is attributed to user."""
     import time
+
     hass = _FakeHass()
     store = _FakeStore()
     stale_apply_state = {"rooms": {"living": time.monotonic() - 10.0}, "entities": {}}
@@ -567,6 +574,7 @@ async def test_lighting_recorder_uses_expected_domains_with_room_scope():
 # Lifecycle: async_setup / async_teardown
 # ---------------------------------------------------------------------------
 
+
 async def test_lighting_recorder_teardown_unsubscribes():
     """async_teardown cancels the state_changed listener."""
     hass = _FakeHass()
@@ -636,9 +644,7 @@ async def test_lighting_recorder_on_options_reloaded_unsubscribes_when_map_becom
 def test_lighting_recorder_build_map_uses_entity_area(monkeypatch):
     hass = _FakeHass()
     store = _FakeStore()
-    entry = _FakeEntry(
-        rooms=[{"room_id": "living", "area_id": "soggiorno"}]
-    )
+    entry = _FakeEntry(rooms=[{"room_id": "living", "area_id": "soggiorno"}])
     b = LightingRecorderBehavior(
         hass,  # type: ignore[arg-type]
         store,  # type: ignore[arg-type]
@@ -673,9 +679,7 @@ def test_lighting_recorder_build_map_uses_entity_area(monkeypatch):
 def test_lighting_recorder_build_map_falls_back_to_device_area(monkeypatch):
     hass = _FakeHass()
     store = _FakeStore()
-    entry = _FakeEntry(
-        rooms=[{"room_id": "living", "area_id": "soggiorno"}]
-    )
+    entry = _FakeEntry(rooms=[{"room_id": "living", "area_id": "soggiorno"}])
     b = LightingRecorderBehavior(
         hass,  # type: ignore[arg-type]
         store,  # type: ignore[arg-type]

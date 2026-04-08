@@ -22,7 +22,7 @@ def _minute_of_day(dt: datetime) -> int:
 
 @dataclass
 class _ArrivalRecord:
-    weekday: int       # 0 = Monday, 6 = Sunday
+    weekday: int  # 0 = Monday, 6 = Sunday
     minute_of_day: int  # 0–1439 (local time)
 
 

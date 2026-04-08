@@ -43,10 +43,7 @@ class HeatingRecorderBehavior(HeimaBehavior):
 
         if snapshot.heating_setpoint is None:
             return
-        if (
-            snapshot.heating_setpoint == prev_setpoint
-            and snapshot.house_state == prev_house_state
-        ):
+        if snapshot.heating_setpoint == prev_setpoint and snapshot.house_state == prev_house_state:
             return
 
         context = self._context_builder.build(snapshot)

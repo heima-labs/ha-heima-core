@@ -92,7 +92,9 @@ class HeimaEngine:
         self._last_engine_enabled_state: bool | None = None
         self._normalizer = InputNormalizer(hass)
         self._events_domain = EventsDomain(hass)
-        self._security_camera_evidence_provider = SecurityCameraEvidenceProvider(hass, self._normalizer)
+        self._security_camera_evidence_provider = SecurityCameraEvidenceProvider(
+            hass, self._normalizer
+        )
         self._people_domain = PeopleDomain(hass, self._normalizer)
         self._occupancy_domain = OccupancyDomain(hass, self._normalizer)
         self._calendar_domain = CalendarDomain(hass)
@@ -286,7 +288,9 @@ class HeimaEngine:
             try:
                 behavior.reset_learning_state()
             except Exception:
-                _LOGGER.exception("Behavior %s raised in reset_learning_state", behavior.behavior_id)
+                _LOGGER.exception(
+                    "Behavior %s raised in reset_learning_state", behavior.behavior_id
+                )
                 self._queue_behavior_error_event(
                     component="behavior",
                     object_id=behavior.behavior_id,
@@ -297,7 +301,9 @@ class HeimaEngine:
             try:
                 reaction.reset_learning_state()
             except Exception:
-                _LOGGER.exception("Reaction %s raised in reset_learning_state", reaction.reaction_id)
+                _LOGGER.exception(
+                    "Reaction %s raised in reset_learning_state", reaction.reaction_id
+                )
                 self._queue_behavior_error_event(
                     component="reaction",
                     object_id=reaction.reaction_id,
@@ -362,7 +368,9 @@ class HeimaEngine:
     def _rebuild_configured_reactions(self) -> None:
         """Instantiate reactions from accepted proposals stored in options."""
         # Remove previously configured reactions
-        self._reactions = [r for r in self._reactions if r.reaction_id not in self._configured_reaction_ids]
+        self._reactions = [
+            r for r in self._reactions if r.reaction_id not in self._configured_reaction_ids
+        ]
         self._configured_reaction_ids = set()
 
         configured: dict = dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {})
@@ -396,9 +404,7 @@ class HeimaEngine:
         enabled: bool,
         source: str,
     ) -> tuple[str, str | None, str | None]:
-        return self._house_state_domain.set_override(
-            mode=mode, enabled=enabled, source=source
-        )
+        return self._house_state_domain.set_override(mode=mode, enabled=enabled, source=source)
 
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
@@ -418,7 +424,10 @@ class HeimaEngine:
         await self._emit_lighting_hold_events()
         await self._emit_queued_events()
 
-        if self._last_engine_enabled_state is None or self._last_engine_enabled_state != self._options.engine_enabled:
+        if (
+            self._last_engine_enabled_state is None
+            or self._last_engine_enabled_state != self._options.engine_enabled
+        ):
             if not self._options.engine_enabled:
                 await self._emit_event_obj(
                     HeimaEvent(
@@ -546,7 +555,8 @@ class HeimaEngine:
         self._state.sensors = {desc.key: None for desc in registry.sensors}
         self._state.sensor_attributes = {}
         self._state.selects = {
-            desc.key: self._state.selects.get(desc.key, desc.options[0]) for desc in registry.selects
+            desc.key: self._state.selects.get(desc.key, desc.options[0])
+            for desc in registry.selects
         }
 
         if "heima_people_count" in self._state.sensors:
@@ -677,11 +687,15 @@ class HeimaEngine:
         active_candidates = list(resolution_trace.get("active_candidates", []) or [])
         self._state.set_sensor("heima_house_state", house_state)
         self._state.set_sensor("heima_house_state_reason", house_reason)
-        self._state.set_sensor("heima_house_state_path", resolution_trace.get("resolution_path") or "")
+        self._state.set_sensor(
+            "heima_house_state_path", resolution_trace.get("resolution_path") or ""
+        )
         self._state.set_sensor("heima_house_state_active_candidates", ",".join(active_candidates))
         self._state.set_sensor(
             "heima_house_state_pending_candidate",
-            pending_candidate if resolution_trace.get("decision", {}).get("action") == "pending" else "",
+            pending_candidate
+            if resolution_trace.get("decision", {}).get("action") == "pending"
+            else "",
         )
         self._state.set_sensor(
             "heima_house_state_pending_remaining_s",
@@ -800,7 +814,9 @@ class HeimaEngine:
             "due_monotonic": deadline,
         }
 
-    def _compute_lighting_intents(self, house_state: str, occupied_rooms: list[str]) -> dict[str, str]:
+    def _compute_lighting_intents(
+        self, house_state: str, occupied_rooms: list[str]
+    ) -> dict[str, str]:
         options = dict(self._entry.options)
         room_configs = self._room_configs()
         return self._lighting_domain.compute_intents(
@@ -958,9 +974,7 @@ class HeimaEngine:
                 key=f"system.behavior_error.{component}.{object_id}.{hook}",
                 severity="warn",
                 title="Behavior hook error",
-                message=(
-                    f"{component.title()} '{object_id}' raised in hook '{hook}'."
-                ),
+                message=(f"{component.title()} '{object_id}' raised in hook '{hook}'."),
                 context={
                     "component": component,
                     "behavior": object_id,
@@ -1002,7 +1016,9 @@ class HeimaEngine:
                         self._heating_domain.mark_applied(
                             applied_temp,
                             source=step.source,
-                            origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
+                            origin_reaction_id=(
+                                reaction.reaction_id if reaction is not None else None
+                            ),
                             origin_reaction_class=(
                                 reaction.__class__.__name__ if reaction is not None else None
                             ),
@@ -1034,9 +1050,11 @@ class HeimaEngine:
                     {"entity_id": script_entity},
                     blocking=False,
                 )
-                expected_subject_ids = tuple(
-                    self._lighting_domain.expected_room_light_entities(room_id)
-                ) if room_id else ()
+                expected_subject_ids = (
+                    tuple(self._lighting_domain.expected_room_light_entities(room_id))
+                    if room_id
+                    else ()
+                )
                 self._recent_script_applies[script_entity] = ScriptApplyBatch(
                     script_entity=script_entity,
                     room_id=room_id,
@@ -1100,6 +1118,7 @@ class HeimaEngine:
     def _sync_reactions_sensor(self) -> None:
         """Serialize current reaction state to the heima_reactions_active sensor."""
         import json
+
         payload: dict[str, Any] = {}
         for reaction in self._reactions:
             rid = reaction.reaction_id
@@ -1134,11 +1153,7 @@ class HeimaEngine:
             "last_tuning_origin",
             "last_tuning_followup_kind",
         )
-        return {
-            key: cfg[key]
-            for key in keys
-            if key in cfg and cfg[key] not in ("", [])
-        }
+        return {key: cfg[key] for key in keys if key in cfg and cfg[key] not in ("", [])}
 
     def _lighting_apply_mode(self) -> str:
         mode = str(
@@ -1218,7 +1233,9 @@ class HeimaEngine:
             climate_entity = str(heating_cfg.get("climate_entity", "") or "").strip()
             if apply_mode == "set_temperature":
                 if not climate_entity:
-                    issues.append("heating: apply_mode is set_temperature but climate_entity is not configured")
+                    issues.append(
+                        "heating: apply_mode is set_temperature but climate_entity is not configured"
+                    )
                 elif self._hass.states.get(climate_entity) is None:
                     issues.append(f"heating: climate_entity '{climate_entity}' not found in HA")
 
@@ -1243,8 +1260,15 @@ class HeimaEngine:
                 if not source_id:
                     issues.append(f"security: camera_evidence_sources[{idx}] missing id")
                 if not role:
-                    issues.append(f"security: camera_evidence_sources[{idx}]{source_label} missing role")
-                entity_fields = ("motion_entity", "person_entity", "vehicle_entity", "contact_entity")
+                    issues.append(
+                        f"security: camera_evidence_sources[{idx}]{source_label} missing role"
+                    )
+                entity_fields = (
+                    "motion_entity",
+                    "person_entity",
+                    "vehicle_entity",
+                    "contact_entity",
+                )
                 if not any(str(raw_source.get(field) or "").strip() for field in entity_fields):
                     issues.append(
                         f"security: camera_evidence_sources[{idx}]{source_label} has no bound entities"
@@ -1279,7 +1303,9 @@ class HeimaEngine:
         )
 
     # Backward-compat class-level alias for tests that reference the static method on HeimaEngine
-    _heating_vacation_recheck_delay_s = staticmethod(HeatingDomain._heating_vacation_recheck_delay_s)
+    _heating_vacation_recheck_delay_s = staticmethod(
+        HeatingDomain._heating_vacation_recheck_delay_s
+    )
 
     def _compute_house_signal(self, trace_key: str, entity_ids: list[str]) -> bool:
         """Backward-compat wrapper delegating to HouseStateDomain."""
@@ -1293,7 +1319,9 @@ class HeimaEngine:
         return self._normalizer.presence(entity_id).state == "on"
 
     def _is_on_any(self, entity_ids: list[str]) -> bool:
-        return any(self._normalizer.boolean_signal(entity_id).state == "on" for entity_id in entity_ids)
+        return any(
+            self._normalizer.boolean_signal(entity_id).state == "on" for entity_id in entity_ids
+        )
 
     def _apply_snapshot_to_canonical_state(self, snapshot: DecisionSnapshot) -> None:
         for zone_id in list(snapshot.lighting_intents.keys()):
@@ -1315,7 +1343,9 @@ class HeimaEngine:
         return mode if mode in {"derived", "none"} else "derived"
 
     def diagnostics(self) -> dict[str, Any]:
-        security_camera_evidence_provider = getattr(self, "_security_camera_evidence_provider", None)
+        security_camera_evidence_provider = getattr(
+            self, "_security_camera_evidence_provider", None
+        )
         return {
             "snapshot": self._snapshot.as_dict(),
             "active_constraints": sorted(self._active_constraints),

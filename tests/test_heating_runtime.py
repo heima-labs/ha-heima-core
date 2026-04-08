@@ -238,7 +238,10 @@ def test_house_state_diagnostics_are_exposed_as_state_entities_and_attributes():
     assert engine.state.get_sensor("heima_house_state") == "home"
     assert engine.state.get_sensor("heima_house_state_reason") == "default"
     assert engine.state.get_sensor("heima_house_state_path") == "home_substate"
-    assert engine.state.get_sensor("heima_house_state_active_candidates") == "wake_candidate,work_candidate"
+    assert (
+        engine.state.get_sensor("heima_house_state_active_candidates")
+        == "wake_candidate,work_candidate"
+    )
     assert engine.state.get_sensor("heima_house_state_pending_candidate") == "work_candidate"
     pending_remaining = engine.state.get_sensor("heima_house_state_pending_remaining_s")
     assert isinstance(pending_remaining, float)
@@ -414,7 +417,10 @@ def test_fixed_target_branch_blocks_on_climate_manual_preset_override():
     engine = _build_engine(
         options,
         {
-            "climate.test_thermostat": ("heat", {"temperature": 18.0, "preset_mode": "PermanentHold"}),
+            "climate.test_thermostat": (
+                "heat",
+                {"temperature": 18.0, "preset_mode": "PermanentHold"},
+            ),
         },
     )
 
@@ -493,28 +499,28 @@ def test_heating_vacation_recheck_delay_prefers_next_quantized_target_change():
 async def test_vacation_curve_branch_computes_target_and_executes_apply():
     options = _with_house_signal_binding(
         {
-        "heating": {
-            "climate_entity": "climate.test_thermostat",
-            "apply_mode": "set_temperature",
-            "temperature_step": 0.5,
-            "manual_override_guard": True,
-            "outdoor_temperature_entity": "sensor.outdoor_temp",
-            "vacation_hours_from_start_entity": "sensor.vacation_from",
-            "vacation_hours_to_end_entity": "sensor.vacation_to",
-            "vacation_total_hours_entity": "sensor.vacation_total",
-            "vacation_is_long_entity": "binary_sensor.vacation_long",
-            "override_branches": {
-                "vacation": {
-                    "branch": "vacation_curve",
-                    "vacation_ramp_down_h": 8.0,
-                    "vacation_ramp_up_h": 10.0,
-                    "vacation_min_temp": 16.5,
-                    "vacation_comfort_temp": 19.5,
-                    "vacation_min_total_hours_for_ramp": 24.0,
-                }
-            },
-        }
-    },
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "outdoor_temperature_entity": "sensor.outdoor_temp",
+                "vacation_hours_from_start_entity": "sensor.vacation_from",
+                "vacation_hours_to_end_entity": "sensor.vacation_to",
+                "vacation_total_hours_entity": "sensor.vacation_total",
+                "vacation_is_long_entity": "binary_sensor.vacation_long",
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            }
+        },
         vacation_mode="input_boolean.vacation_mode",
     )
     engine = _build_engine(
@@ -612,28 +618,28 @@ def test_vacation_curve_captures_start_temperature_on_branch_activation_and_reus
 async def test_heating_runtime_emits_phase_and_target_events_for_vacation_curve():
     options = _with_house_signal_binding(
         {
-        "heating": {
-            "climate_entity": "climate.test_thermostat",
-            "apply_mode": "set_temperature",
-            "temperature_step": 0.5,
-            "manual_override_guard": True,
-            "outdoor_temperature_entity": "sensor.outdoor_temp",
-            "vacation_hours_from_start_entity": "sensor.vacation_from",
-            "vacation_hours_to_end_entity": "sensor.vacation_to",
-            "vacation_total_hours_entity": "sensor.vacation_total",
-            "vacation_is_long_entity": "binary_sensor.vacation_long",
-            "override_branches": {
-                "vacation": {
-                    "branch": "vacation_curve",
-                    "vacation_ramp_down_h": 8.0,
-                    "vacation_ramp_up_h": 10.0,
-                    "vacation_min_temp": 16.5,
-                    "vacation_comfort_temp": 19.5,
-                    "vacation_min_total_hours_for_ramp": 24.0,
-                }
-            },
-        }
-    },
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "outdoor_temperature_entity": "sensor.outdoor_temp",
+                "vacation_hours_from_start_entity": "sensor.vacation_from",
+                "vacation_hours_to_end_entity": "sensor.vacation_to",
+                "vacation_total_hours_entity": "sensor.vacation_total",
+                "vacation_is_long_entity": "binary_sensor.vacation_long",
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            }
+        },
         vacation_mode="input_boolean.vacation_mode",
     )
     engine = _build_engine(
@@ -653,7 +659,9 @@ async def test_heating_runtime_emits_phase_and_target_events_for_vacation_curve(
 
     event_types = [event_type for event_type, _ in engine._hass.bus.events]
     assert "heima_event" in event_types
-    payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
     types = [payload["type"] for payload in payloads]
     assert "heating.vacation_phase_changed" in types
     assert "heating.target_changed" in types
@@ -663,29 +671,29 @@ async def test_heating_runtime_emits_phase_and_target_events_for_vacation_curve(
 async def test_heating_runtime_emits_branch_changed_event_on_transition():
     options = _with_house_signal_binding(
         {
-        "heating": {
-            "climate_entity": "climate.test_thermostat",
-            "apply_mode": "set_temperature",
-            "temperature_step": 0.5,
-            "manual_override_guard": True,
-            "override_branches": {
-                "away": {"branch": "fixed_target", "target_temperature": 18.0},
-                "vacation": {
-                    "branch": "vacation_curve",
-                    "vacation_ramp_down_h": 8.0,
-                    "vacation_ramp_up_h": 10.0,
-                    "vacation_min_temp": 16.5,
-                    "vacation_comfort_temp": 19.5,
-                    "vacation_min_total_hours_for_ramp": 24.0,
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "override_branches": {
+                    "away": {"branch": "fixed_target", "target_temperature": 18.0},
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    },
                 },
-            },
-            "outdoor_temperature_entity": "sensor.outdoor_temp",
-            "vacation_hours_from_start_entity": "sensor.vacation_from",
-            "vacation_hours_to_end_entity": "sensor.vacation_to",
-            "vacation_total_hours_entity": "sensor.vacation_total",
-            "vacation_is_long_entity": "binary_sensor.vacation_long",
-        }
-    },
+                "outdoor_temperature_entity": "sensor.outdoor_temp",
+                "vacation_hours_from_start_entity": "sensor.vacation_from",
+                "vacation_hours_to_end_entity": "sensor.vacation_to",
+                "vacation_total_hours_entity": "sensor.vacation_total",
+                "vacation_is_long_entity": "binary_sensor.vacation_long",
+            }
+        },
         vacation_mode="input_boolean.vacation_mode",
     )
     engine = _build_engine(
@@ -704,7 +712,9 @@ async def test_heating_runtime_emits_branch_changed_event_on_transition():
     engine._hass.states._values["input_boolean.vacation_mode"] = "on"
     await engine.async_evaluate(reason="vacation")
 
-    payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
     branch_events = [payload for payload in payloads if payload["type"] == "heating.branch_changed"]
 
     assert len(branch_events) == 1
@@ -739,31 +749,35 @@ async def test_heating_runtime_emits_manual_override_blocked_event_once_per_tran
     await engine.async_evaluate(reason="test")
     await engine.async_evaluate(reason="test-repeat")
 
-    payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
-    blocked = [payload for payload in payloads if payload["type"] == "heating.manual_override_blocked"]
+    payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
+    blocked = [
+        payload for payload in payloads if payload["type"] == "heating.manual_override_blocked"
+    ]
     assert len(blocked) == 1
 
 
 def test_vacation_curve_without_required_bindings_is_inactive():
     options = _with_house_signal_binding(
         {
-        "heating": {
-            "climate_entity": "climate.test_thermostat",
-            "apply_mode": "set_temperature",
-            "temperature_step": 0.5,
-            "manual_override_guard": True,
-            "override_branches": {
-                "vacation": {
-                    "branch": "vacation_curve",
-                    "vacation_ramp_down_h": 8.0,
-                    "vacation_ramp_up_h": 10.0,
-                    "vacation_min_temp": 16.5,
-                    "vacation_comfort_temp": 19.5,
-                    "vacation_min_total_hours_for_ramp": 24.0,
-                }
-            },
-        }
-    },
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            }
+        },
         vacation_mode="input_boolean.vacation_mode",
     )
     engine = _build_engine(
@@ -788,23 +802,23 @@ def test_vacation_curve_without_required_bindings_is_inactive():
 async def test_heating_runtime_emits_vacation_bindings_unavailable_event_once_per_transition():
     options = _with_house_signal_binding(
         {
-        "heating": {
-            "climate_entity": "climate.test_thermostat",
-            "apply_mode": "set_temperature",
-            "temperature_step": 0.5,
-            "manual_override_guard": True,
-            "override_branches": {
-                "vacation": {
-                    "branch": "vacation_curve",
-                    "vacation_ramp_down_h": 8.0,
-                    "vacation_ramp_up_h": 10.0,
-                    "vacation_min_temp": 16.5,
-                    "vacation_comfort_temp": 19.5,
-                    "vacation_min_total_hours_for_ramp": 24.0,
-                }
-            },
-        }
-    },
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            }
+        },
         vacation_mode="input_boolean.vacation_mode",
     )
     engine = _build_engine(
@@ -818,8 +832,14 @@ async def test_heating_runtime_emits_vacation_bindings_unavailable_event_once_pe
     await engine.async_evaluate(reason="test")
     await engine.async_evaluate(reason="test-repeat")
 
-    payloads = [payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
-    unavailable = [payload for payload in payloads if payload["type"] == "heating.vacation_bindings_unavailable"]
+    payloads = [
+        payload for event_type, payload in engine._hass.bus.events if event_type == "heima_event"
+    ]
+    unavailable = [
+        payload
+        for payload in payloads
+        if payload["type"] == "heating.vacation_bindings_unavailable"
+    ]
     assert len(unavailable) == 1
 
 

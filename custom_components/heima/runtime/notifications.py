@@ -139,7 +139,9 @@ class HeimaEventPipeline:
 
         self._deferred_route_deliveries = remaining
 
-    async def _deliver_or_defer_route(self, *, event: HeimaEvent, route: str, is_retry: bool) -> None:
+    async def _deliver_or_defer_route(
+        self, *, event: HeimaEvent, route: str, is_retry: bool
+    ) -> None:
         delivered = await self._try_deliver_route(event=event, route=route, is_retry=is_retry)
         if delivered:
             return
@@ -165,7 +167,9 @@ class HeimaEventPipeline:
         except ServiceNotFound:
             # Race condition: service disappeared between availability check and call.
             self._stats.notify_route_unavailable += 1
-            _LOGGER.warning("Heima notify route missing at dispatch time (deferred): notify.%s", route)
+            _LOGGER.warning(
+                "Heima notify route missing at dispatch time (deferred): notify.%s", route
+            )
             return False
         except (vol.Invalid, ServiceValidationError):
             # Some notify services use strict schemas. Try progressively smaller payloads.
@@ -193,14 +197,14 @@ class HeimaEventPipeline:
 
             self._schema_incompatible_routes.add(route)
             self._stats.notify_route_errors += 1
-            _LOGGER.warning(
-                "Heima notify route disabled due incompatible schema: notify.%s", route
-            )
+            _LOGGER.warning("Heima notify route disabled due incompatible schema: notify.%s", route)
             return True
         except Exception:  # pragma: no cover - defensive runtime protection
             self._stats.notify_route_errors += 1
             _LOGGER.exception("Heima notify route dispatch failed for notify.%s", route)
-            return True  # considered handled; do not block setup or loop forever on persistent errors
+            return (
+                True  # considered handled; do not block setup or loop forever on persistent errors
+            )
 
         self._stats.notify_route_delivered += 1
         if is_retry:

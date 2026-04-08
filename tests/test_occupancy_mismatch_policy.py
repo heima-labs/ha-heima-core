@@ -58,9 +58,9 @@ def _base_options_with_person_and_rooms(num_rooms: int, notifications: dict) -> 
     for i in range(num_rooms):
         rooms.append(
             {
-                "room_id": f"room{i+1}",
+                "room_id": f"room{i + 1}",
                 "occupancy_mode": "derived",
-                "sources": [f"binary_sensor.room{i+1}_presence"],
+                "sources": [f"binary_sensor.room{i + 1}_presence"],
                 "logic": "any_of",
             }
         )
@@ -77,7 +77,11 @@ async def _eval(engine: HeimaEngine):
 
 
 def _event_types(engine: HeimaEngine) -> list[str]:
-    return [payload["type"] for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    return [
+        payload["type"]
+        for event_type, payload in engine._hass.bus.events
+        if event_type == "heima_event"
+    ]
 
 
 @pytest.mark.asyncio

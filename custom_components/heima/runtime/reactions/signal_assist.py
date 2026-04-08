@@ -170,7 +170,9 @@ class RoomSignalAssistReaction(HeimaReaction):
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
-            "pending_episode": self._pending_episode_ts.isoformat() if self._pending_episode_ts else None,
+            "pending_episode": self._pending_episode_ts.isoformat()
+            if self._pending_episode_ts
+            else None,
         }
 
     def _is_cooled_down(self) -> bool:
@@ -356,9 +358,7 @@ def present_admin_authored_room_signal_assist_details(
     steps = cfg.get("steps")
     if isinstance(steps, list) and steps:
         details.append(
-            f"Azioni configurate: {len(steps)}"
-            if is_it
-            else f"Configured actions: {len(steps)}"
+            f"Azioni configurate: {len(steps)}" if is_it else f"Configured actions: {len(steps)}"
         )
     return details
 
@@ -394,9 +394,7 @@ def present_learned_room_signal_assist_details(
     steps = cfg.get("steps")
     if isinstance(steps, list) and steps:
         details.append(
-            f"Azioni proposte: {len(steps)}"
-            if is_it
-            else f"Proposed actions: {len(steps)}"
+            f"Azioni proposte: {len(steps)}" if is_it else f"Proposed actions: {len(steps)}"
         )
     return details
 
@@ -412,7 +410,9 @@ def present_tuning_room_signal_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
-    current_threshold = target_cfg.get("primary_threshold", target_cfg.get("primary_rise_threshold"))
+    current_threshold = target_cfg.get(
+        "primary_threshold", target_cfg.get("primary_rise_threshold")
+    )
     proposed_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
         if str(current_threshold) != str(proposed_threshold):
@@ -452,7 +452,10 @@ def present_tuning_room_signal_assist_details(
     proposed_corroboration_threshold = cfg.get(
         "corroboration_threshold", cfg.get("corroboration_rise_threshold")
     )
-    if current_corroboration_threshold not in (None, "") and proposed_corroboration_threshold not in (
+    if current_corroboration_threshold not in (
+        None,
+        "",
+    ) and proposed_corroboration_threshold not in (
         None,
         "",
     ):
@@ -466,7 +469,9 @@ def present_tuning_room_signal_assist_details(
                 )
             )
 
-    current_corroboration_mode = str(target_cfg.get("corroboration_threshold_mode") or "rise").strip()
+    current_corroboration_mode = str(
+        target_cfg.get("corroboration_threshold_mode") or "rise"
+    ).strip()
     proposed_corroboration_mode = str(cfg.get("corroboration_threshold_mode") or "rise").strip()
     if current_corroboration_mode != proposed_corroboration_mode:
         current_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001

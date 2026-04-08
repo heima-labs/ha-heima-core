@@ -42,7 +42,9 @@ class _HeatingStepsMixin:
         self._update_options({OPT_HEATING: payload})
         return await self.async_step_heating_branches_menu()
 
-    async def async_step_heating_branches_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branches_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return self.async_show_menu(
             step_id="heating_branches_menu",
             menu_options=[
@@ -52,7 +54,9 @@ class _HeatingStepsMixin:
             description_placeholders={"summary": self._heating_menu_summary()},
         )
 
-    async def async_step_heating_branches_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branches_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         if user_input is None:
             schema = vol.Schema({vol.Required("house_state"): vol.In(HEATING_HOUSE_STATES)})
             return self.async_show_form(step_id="heating_branches_edit", data_schema=schema)
@@ -63,7 +67,9 @@ class _HeatingStepsMixin:
         self._editing_heating_house_state = house_state
         return await self.async_step_heating_branch_select()
 
-    async def async_step_heating_branch_select(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branch_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Step 1: select branch type only."""
         house_state = self._editing_heating_house_state
         if not house_state:
@@ -85,7 +91,9 @@ class _HeatingStepsMixin:
         self._editing_heating_branch = branch
         return await self.async_step_heating_branch_edit_form()
 
-    async def async_step_heating_branch_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branch_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Step 2: parameters for the selected branch type."""
         house_state = self._editing_heating_house_state
         branch = self._editing_heating_branch
@@ -127,7 +135,9 @@ class _HeatingStepsMixin:
         self._update_options({OPT_HEATING: heating})
         return await self.async_step_heating_branches_menu()
 
-    async def async_step_heating_branches_save(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_heating_branches_save(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return await self.async_step_init()
 
     # ---- Schema ----

@@ -34,7 +34,9 @@ class PresencePatternAnalyzer:
 
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         events = await event_store.async_query(event_type="presence")
-        arrivals = [e for e in events if isinstance(e, HeimaEvent) and e.data.get("transition") == "arrive"]
+        arrivals = [
+            e for e in events if isinstance(e, HeimaEvent) and e.data.get("transition") == "arrive"
+        ]
         proposals: list[ReactionProposal] = []
         for weekday in range(7):
             day_samples = sorted(
@@ -58,9 +60,7 @@ class PresencePatternAnalyzer:
                     reaction_type="presence_preheat",
                     description=(
                         f"{_WEEKDAY_NAMES[weekday]}: typical arrival around "
-                        f"{self._hhmm(median)}"
-                        + (f" (± {iqr // 2} min)" if iqr > 0 else "")
-                        + "."
+                        f"{self._hhmm(median)}" + (f" (± {iqr // 2} min)" if iqr > 0 else "") + "."
                     ),
                     confidence=float(confidence),
                     suggested_reaction_config={

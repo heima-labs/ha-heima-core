@@ -34,7 +34,9 @@ def _step() -> ApplyStep:
     return ApplyStep(domain="heating", target="climate.t", action="climate.set_temperature")
 
 
-def _reaction(min_arrivals: int = 1, window_half_min: int = 30, pre_condition_min: int = 10) -> PresencePatternReaction:
+def _reaction(
+    min_arrivals: int = 1, window_half_min: int = 30, pre_condition_min: int = 10
+) -> PresencePatternReaction:
     return PresencePatternReaction(
         steps=[_step()],
         min_arrivals=min_arrivals,
@@ -130,7 +132,7 @@ def test_window_uses_weekday_filter():
     r = PresencePatternReaction(steps=[], min_arrivals=1, window_half_min=10)
     r._arrivals = [
         _ArrivalRecord(0, 1080),  # Monday
-        _ArrivalRecord(2, 600),   # Wednesday
+        _ArrivalRecord(2, 600),  # Wednesday
     ]
     # Monday window should exist
     w_mon = r._get_typical_window(0)
@@ -160,9 +162,7 @@ def test_pre_condition_triggers_when_in_window():
     now_dt = _local_now()
     if _minute_of_day(now_dt) + 10 >= 1440:
         pytest.skip("too close to midnight — arrival would wrap to next day")
-    r = PresencePatternReaction(
-        steps=[], min_arrivals=1, window_half_min=60, pre_condition_min=10
-    )
+    r = PresencePatternReaction(steps=[], min_arrivals=1, window_half_min=60, pre_condition_min=10)
     weekday = now_dt.weekday()
     target_minute = _minute_of_day(now_dt) + 10
     r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=target_minute)]
@@ -170,17 +170,13 @@ def test_pre_condition_triggers_when_in_window():
 
 
 def test_pre_condition_false_when_pattern_not_established():
-    r = PresencePatternReaction(
-        steps=[], min_arrivals=5, window_half_min=30, pre_condition_min=10
-    )
+    r = PresencePatternReaction(steps=[], min_arrivals=5, window_half_min=30, pre_condition_min=10)
     # No arrivals recorded → pattern not established
     assert r._should_pre_condition(_now_ts()) is False
 
 
 def test_pre_condition_false_when_outside_window():
-    r = PresencePatternReaction(
-        steps=[], min_arrivals=1, window_half_min=5, pre_condition_min=10
-    )
+    r = PresencePatternReaction(steps=[], min_arrivals=1, window_half_min=5, pre_condition_min=10)
     now_dt = _local_now()
     weekday = now_dt.weekday()
     # Place arrival 120 minutes from now → well outside window_half_min=5
@@ -190,9 +186,7 @@ def test_pre_condition_false_when_outside_window():
 
 
 def test_pre_condition_false_wrong_weekday():
-    r = PresencePatternReaction(
-        steps=[], min_arrivals=1, window_half_min=60, pre_condition_min=10
-    )
+    r = PresencePatternReaction(steps=[], min_arrivals=1, window_half_min=60, pre_condition_min=10)
     now_dt = _local_now()
     # Place arrival on the next weekday
     other_weekday = (now_dt.weekday() + 1) % 7
@@ -301,7 +295,9 @@ def test_diagnostics_after_arrivals():
 
 
 def test_reset_learning_state_clears_arrivals_and_counters():
-    r = PresencePatternReaction(steps=[_step()], min_arrivals=1, window_half_min=60, pre_condition_min=10)
+    r = PresencePatternReaction(
+        steps=[_step()], min_arrivals=1, window_half_min=60, pre_condition_min=10
+    )
     now_dt = _local_now()
     weekday = now_dt.weekday()
     r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=_minute_of_day(now_dt) + 10)]
@@ -324,6 +320,7 @@ def test_diagnostics_no_learning_key_without_backend():
 
 def test_diagnostics_has_learning_key_with_backend():
     from custom_components.heima.runtime.reactions.learning import NaiveLearningBackend
+
     b = NaiveLearningBackend()
     r = PresencePatternReaction(steps=[_step()], learning_backend=b)
     assert "learning" in r.diagnostics()
@@ -336,17 +333,20 @@ def test_diagnostics_has_learning_key_with_backend():
 
 def test_minute_of_day_midnight():
     from datetime import timezone as tz_
+
     dt = datetime(2026, 1, 1, 0, 0, tzinfo=tz_.utc)
     assert _minute_of_day(dt) == 0
 
 
 def test_minute_of_day_noon():
     from datetime import timezone as tz_
+
     dt = datetime(2026, 1, 1, 12, 30, tzinfo=tz_.utc)
     assert _minute_of_day(dt) == 12 * 60 + 30
 
 
 def test_minute_of_day_end_of_day():
     from datetime import timezone as tz_
+
     dt = datetime(2026, 1, 1, 23, 59, tzinfo=tz_.utc)
     assert _minute_of_day(dt) == 23 * 60 + 59

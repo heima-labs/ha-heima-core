@@ -71,7 +71,9 @@ def validate_signal_set_strategy_fields(
     contract: SignalSetStrategyContract,
 ) -> dict[str, str]:
     """Validate strategy fields using a reusable strategy contract."""
-    strategy = str(payload.get(strategy_key, contract.default_strategy) or contract.default_strategy)
+    strategy = str(
+        payload.get(strategy_key, contract.default_strategy) or contract.default_strategy
+    )
     if strategy not in contract.allowed_strategies:
         payload = dict(payload)
         payload[strategy_key] = contract.default_strategy

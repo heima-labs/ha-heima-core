@@ -16,7 +16,9 @@ from custom_components.heima.runtime.reactions.composite import (
 def test_runtime_composite_matcher_marks_ready_on_primary_only_pattern():
     hass = MagicMock()
     states = {"sensor.bathroom_humidity": "55"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     matcher = RuntimeCompositeMatcher(hass)
     spec = RuntimeCompositePatternSpec(
         primary=RuntimeCompositeSignalSpec(
@@ -44,7 +46,9 @@ def test_runtime_composite_matcher_waits_for_required_corroboration():
         "sensor.bathroom_humidity": "55",
         "sensor.bathroom_temperature": "21.0",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     matcher = RuntimeCompositeMatcher(hass)
     spec = RuntimeCompositePatternSpec(
         primary=RuntimeCompositeSignalSpec(

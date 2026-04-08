@@ -47,8 +47,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine = HeimaEngine(hass, entry)
         self._event_store = EventStore(hass)
         self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
-        self.engine.register_behavior(EventRecorderBehavior(hass, self._event_store, self._context_builder))
-        self.engine.register_behavior(HeatingRecorderBehavior(hass, self._event_store, self._context_builder))
+        self.engine.register_behavior(
+            EventRecorderBehavior(hass, self._event_store, self._context_builder)
+        )
+        self.engine.register_behavior(
+            HeatingRecorderBehavior(hass, self._event_store, self._context_builder)
+        )
         self.engine.register_behavior(
             LightingReactionGuardBehavior(self.engine.state, dict(entry.options))
         )
@@ -122,7 +126,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         if changed:
-            await self.engine.async_reload_options(self.entry, changed_keys={"people_named", "rooms"})
+            await self.engine.async_reload_options(
+                self.entry, changed_keys={"people_named", "rooms"}
+            )
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
         self._schedule_proposal_tick()
@@ -243,8 +249,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             severity="info",
             title="House-state override changed",
             message=(
-                f"House-state override {action}: "
-                f"{previous or 'none'} -> {current or 'none'}."
+                f"House-state override {action}: {previous or 'none'} -> {current or 'none'}."
             ),
             context={
                 "previous": previous,
@@ -331,10 +336,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         # Distribute events: first half in week-2, second half in week-1
         n_week1 = count // 2
         n_week2 = count - n_week1
-        offsets = (
-            [timedelta(weeks=-2)] * n_week1
-            + [timedelta(weeks=-1)] * n_week2
-        )
+        offsets = [timedelta(weeks=-2)] * n_week1 + [timedelta(weeks=-1)] * n_week2
 
         ctx = EventContext(
             weekday=weekday,
@@ -405,7 +407,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 return
             self.hass.async_create_task(self._async_handle_state_changed(str(entity_id)))
 
-        self._unsub_state_changed = self.hass.bus.async_listen("state_changed", _handle_state_changed)
+        self._unsub_state_changed = self.hass.bus.async_listen(
+            "state_changed", _handle_state_changed
+        )
 
     def _schedule_proposal_tick(self) -> None:
         self._cancel_proposal_tick()
@@ -493,7 +497,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         people_summary = dict(summary.get("people") or {})
         rooms_summary = dict(summary.get("rooms") or {})
 
-        new_people = [str(item) for item in list(people_summary.get("new_labels") or []) if str(item)]
+        new_people = [
+            str(item) for item in list(people_summary.get("new_labels") or []) if str(item)
+        ]
         new_rooms = [str(item) for item in list(rooms_summary.get("new_labels") or []) if str(item)]
         orphaned_people = [
             str(item) for item in list(people_summary.get("orphaned_labels") or []) if str(item)

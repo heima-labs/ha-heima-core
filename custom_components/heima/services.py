@@ -235,7 +235,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
             for coordinator in coordinators:
                 matched.extend(coordinator.engine.mute_reactions_by_type(reaction_type))
             if not matched:
-                raise ServiceValidationError(f"No configured reactions found for reaction_type '{reaction_type}'")
+                raise ServiceValidationError(
+                    f"No configured reactions found for reaction_type '{reaction_type}'"
+                )
             return
 
         if command == "unmute_reaction_type":
@@ -244,7 +246,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
             for coordinator in coordinators:
                 matched.extend(coordinator.engine.unmute_reactions_by_type(reaction_type))
             if not matched:
-                raise ServiceValidationError(f"No configured reactions found for reaction_type '{reaction_type}'")
+                raise ServiceValidationError(
+                    f"No configured reactions found for reaction_type '{reaction_type}'"
+                )
             return
 
         if command == "learning_reset":
@@ -262,14 +266,18 @@ async def async_register_services(hass: HomeAssistant) -> None:
             entity_id = str(p.get("entity_id") or "")
             room_id = str(p.get("room_id") or "")
             if not entity_id or not room_id:
-                raise ServiceValidationError("seed_lighting_events requires 'entity_id' and 'room_id' in params")
+                raise ServiceValidationError(
+                    "seed_lighting_events requires 'entity_id' and 'room_id' in params"
+                )
             action = str(p.get("action") or "on").strip().lower()
             if action not in {"on", "off"}:
                 raise ServiceValidationError("seed_lighting_events action must be 'on' or 'off'")
             weekday = int(p.get("weekday", 0))
             minute = int(p.get("minute", 1200))
             brightness = int(p["brightness"]) if p.get("brightness") is not None else None
-            color_temp_kelvin = int(p["color_temp_kelvin"]) if p.get("color_temp_kelvin") is not None else None
+            color_temp_kelvin = (
+                int(p["color_temp_kelvin"]) if p.get("color_temp_kelvin") is not None else None
+            )
             count = int(p.get("count", 6))
             total = 0
             for coordinator in coordinators:

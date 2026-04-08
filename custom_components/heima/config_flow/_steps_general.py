@@ -47,14 +47,18 @@ class _GeneralStepsMixin:
         if errors:
             return self.async_show_form(step_id="general", data_schema=schema, errors=errors)
 
-        self._update_options({
-            CONF_ENGINE_ENABLED: user_input.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED),
-            CONF_TIMEZONE: timezone_value,
-            CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, _default_language(self.hass)),
-            OPT_LIGHTING_APPLY_MODE: user_input.get(OPT_LIGHTING_APPLY_MODE, DEFAULT_LIGHTING_APPLY_MODE),
-            OPT_HOUSE_SIGNALS: self._normalize_general_house_signals(user_input),
-            OPT_HOUSE_STATE_CONFIG: self._normalize_house_state_config(user_input),
-        })
+        self._update_options(
+            {
+                CONF_ENGINE_ENABLED: user_input.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED),
+                CONF_TIMEZONE: timezone_value,
+                CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, _default_language(self.hass)),
+                OPT_LIGHTING_APPLY_MODE: user_input.get(
+                    OPT_LIGHTING_APPLY_MODE, DEFAULT_LIGHTING_APPLY_MODE
+                ),
+                OPT_HOUSE_SIGNALS: self._normalize_general_house_signals(user_input),
+                OPT_HOUSE_STATE_CONFIG: self._normalize_house_state_config(user_input),
+            }
+        )
         return await self.async_step_init()
 
     def _general_schema(self) -> vol.Schema:
@@ -85,9 +89,9 @@ class _GeneralStepsMixin:
             ("relax_mode", "relax_mode_entity"),
             ("work_window", "work_window_entity"),
         ):
-            schema_map[
-                vol.Optional(label_key, default=house_signals.get(signal_name))
-            ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"])
+            schema_map[vol.Optional(label_key, default=house_signals.get(signal_name))] = (
+                _entity_selector(["input_boolean", "binary_sensor", "sensor"])
+            )
         schema_map[
             vol.Optional(
                 "media_active_entities",

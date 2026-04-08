@@ -20,9 +20,9 @@ class EventContext:
     """
 
     # --- Time (always present, derived from local datetime) ---
-    weekday: int           # 0=Monday … 6=Sunday
-    minute_of_day: int     # 0–1439 (local time)
-    month: int             # 1–12 (season proxy)
+    weekday: int  # 0=Monday … 6=Sunday
+    minute_of_day: int  # 0–1439 (local time)
+    month: int  # 1–12 (season proxy)
 
     # --- Aggregated house state (always present) ---
     house_state: str
@@ -34,7 +34,7 @@ class EventContext:
     # --- External environment (None if sensor not configured) ---
     outdoor_lux: float | None
     outdoor_temp: float | None
-    weather_condition: str | None    # "sunny", "cloudy", "rainy", …
+    weather_condition: str | None  # "sunny", "cloudy", "rainy", …
 
     # --- Strong signals: user-configured entities, max 10, entity_id → state ---
     signals: dict[str, str]
@@ -63,8 +63,12 @@ class EventContext:
             occupants_count=int(raw.get("occupants_count", 0)),
             occupied_rooms=tuple(raw.get("occupied_rooms", [])),
             outdoor_lux=float(raw["outdoor_lux"]) if raw.get("outdoor_lux") is not None else None,
-            outdoor_temp=float(raw["outdoor_temp"]) if raw.get("outdoor_temp") is not None else None,
-            weather_condition=str(raw["weather_condition"]) if raw.get("weather_condition") else None,
+            outdoor_temp=float(raw["outdoor_temp"])
+            if raw.get("outdoor_temp") is not None
+            else None,
+            weather_condition=str(raw["weather_condition"])
+            if raw.get("weather_condition")
+            else None,
             signals={str(k): str(v) for k, v in raw.get("signals", {}).items()},
         )
 
@@ -210,6 +214,7 @@ class EventStore:
 
     def diagnostics(self) -> dict[str, Any]:
         from collections import Counter
+
         type_counts = Counter(e.event_type for e in self._events)
         return {
             "total_events": len(self._events),
@@ -283,9 +288,7 @@ class EventStore:
                 subject_id=str(raw.get("subject_id") or ""),
                 room_id=str(raw["room_id"]) if raw.get("room_id") is not None else None,
                 correlation_id=(
-                    str(raw["correlation_id"])
-                    if raw.get("correlation_id") is not None
-                    else None
+                    str(raw["correlation_id"]) if raw.get("correlation_id") is not None else None
                 ),
             )
         except (KeyError, TypeError, ValueError):
@@ -298,7 +301,9 @@ class EventStore:
             return {"transition": str(raw.get("transition", "arrive"))}
         if event_type == "heating":
             raw_env = raw.get("env", {})
-            signals = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
+            signals = (
+                {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
+            )
             return {
                 "temperature_set": float(raw.get("temperature_set", 0.0)),
                 "signals": signals,  # env migrated to signals

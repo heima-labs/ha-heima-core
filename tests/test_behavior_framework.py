@@ -16,6 +16,7 @@ from custom_components.heima.runtime.snapshot import DecisionSnapshot
 def test_behavior_id_defaults_to_class_name():
     class MyBehavior(HeimaBehavior):
         pass
+
     assert MyBehavior().behavior_id == "MyBehavior"
 
 
@@ -72,6 +73,7 @@ class _FaultyBehavior(HeimaBehavior):
 def _make_engine():
     """Return a minimal HeimaEngine with mocked HA dependencies."""
     from custom_components.heima.runtime.engine import HeimaEngine
+
     hass = MagicMock()
     hass.states.get.return_value = None
     hass.services.async_services.return_value = {}

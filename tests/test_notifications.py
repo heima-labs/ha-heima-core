@@ -16,7 +16,9 @@ class _FakeBus:
 
 
 class _FakeServices:
-    def __init__(self, available: dict[str, object] | None = None, fail_once: set[str] | None = None):
+    def __init__(
+        self, available: dict[str, object] | None = None, fail_once: set[str] | None = None
+    ):
         self.calls = []
         self.available = dict(available or {})
         self.fail_once = set(fail_once or set())
@@ -217,7 +219,9 @@ async def test_event_pipeline_resolves_recipient_aliases_and_groups():
         rate_limit_per_key_s=0,
     )
 
-    called_services = [service for domain, service, _data, _blocking in services.calls if domain == "notify"]
+    called_services = [
+        service for domain, service, _data, _blocking in services.calls if domain == "notify"
+    ]
     assert called_services == [
         "mobile_app_legacy",
         "mobile_app_phone_stefano",

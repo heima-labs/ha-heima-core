@@ -22,6 +22,7 @@ def _step() -> ApplyStep:
 def _snap(anyone_home: bool = False) -> DecisionSnapshot:
     base = DecisionSnapshot.empty()
     from dataclasses import replace
+
     ts = datetime.now(timezone.utc).isoformat()
     return replace(base, anyone_home=anyone_home, ts=ts)
 
@@ -45,11 +46,14 @@ def _make_engine():
         engine._reactions = []
         engine._muted_reactions = set()
         from custom_components.heima.runtime.snapshot_buffer import SnapshotBuffer
+
         engine._snapshot_buffer = SnapshotBuffer()
         from custom_components.heima.runtime.state_store import CanonicalState
+
         engine._state = CanonicalState()
         engine._state.sensors = {"heima_reactions_active": "{}"}
         from custom_components.heima.runtime.domains.events import EventsDomain
+
         engine._events_domain = EventsDomain(hass)
 
     return engine
@@ -328,6 +332,7 @@ def test_diagnostics_includes_muted_reactions():
     engine._snapshot = DecisionSnapshot.empty()
     engine._active_constraints = set()
     from custom_components.heima.runtime.contracts import ApplyPlan
+
     engine._apply_plan = ApplyPlan.empty()
     engine._behaviors = []
     engine._lighting_domain = MagicMock()

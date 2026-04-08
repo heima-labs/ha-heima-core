@@ -99,8 +99,7 @@ class LightingDomain:
         return {
             "zone_trace": dict(self._lighting_zone_trace),
             "room_trace": {
-                room_id: list(items)
-                for room_id, items in self._lighting_room_trace.items()
+                room_id: list(items) for room_id, items in self._lighting_room_trace.items()
             },
             "conflicts_last_eval": list(self._lighting_conflicts_last_eval),
             "last_scene_by_room": dict(self._lighting_last_scene),
@@ -303,16 +302,12 @@ class LightingDomain:
                     continue
                 decision["room_mapping_found"] = True
 
-                scene_entity, scene_resolution = pick_scene_for_intent_with_trace(
-                    room_map, intent
-                )
+                scene_entity, scene_resolution = pick_scene_for_intent_with_trace(room_map, intent)
                 decision["scene_entity"] = scene_entity
                 decision["scene_resolution"] = scene_resolution
                 if not scene_entity:
                     if intent == "off":
-                        area_id = str(
-                            room_configs.get(room_id, {}).get("area_id") or ""
-                        ).strip()
+                        area_id = str(room_configs.get(room_id, {}).get("area_id") or "").strip()
                         if area_id:
                             action_fingerprint = f"light.turn_off:area:{area_id}"
                             if not self._should_apply_scene(room_id, action_fingerprint):
@@ -346,10 +341,7 @@ class LightingDomain:
                             key=f"lighting.scene_missing.{room_id}.{intent}",
                             severity="warn",
                             title="Lighting scene missing",
-                            message=(
-                                f"No mapped scene for room '{room_id}' "
-                                f"and intent '{intent}'"
-                            ),
+                            message=(f"No mapped scene for room '{room_id}' and intent '{intent}'"),
                             context={
                                 "room": room_id,
                                 "intent": intent,

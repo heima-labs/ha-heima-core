@@ -80,4 +80,3 @@ class NormalizationFusionRegistry:
             strategy_cfg=dict(strategy_cfg or {}),
             context=dict(context or {}),
         )
-

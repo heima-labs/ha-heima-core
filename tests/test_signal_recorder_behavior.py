@@ -144,7 +144,9 @@ async def test_signal_recorder_records_tracked_signal_state_change():
     behavior._refresh_config()
 
     await behavior._handle_state_changed(
-        _state_event("sensor.bathroom_humidity", "68", "55", attributes={"unit_of_measurement": "%"})
+        _state_event(
+            "sensor.bathroom_humidity", "68", "55", attributes={"unit_of_measurement": "%"}
+        )
     )
     await hass.flush()
 
@@ -380,7 +382,9 @@ async def test_signal_recorder_async_setup_subscribes_when_tracked_entities_exis
 async def test_signal_recorder_on_options_reloaded_updates_tracked_entities():
     hass = _FakeHass()
     store = _FakeStore()
-    behavior = _behavior(hass, store, options={"learning": {"context_signal_entities": ["sensor.old"]}})
+    behavior = _behavior(
+        hass, store, options={"learning": {"context_signal_entities": ["sensor.old"]}}
+    )
     behavior._refresh_config()
 
     behavior.on_options_reloaded(

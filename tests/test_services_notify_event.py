@@ -291,7 +291,9 @@ async def test_heima_command_mute_reaction_type_calls_engine(monkeypatch):
         bus=_FakeBus(),
         states=_FakeStates(),
     )
-    coordinator = SimpleNamespace(engine=SimpleNamespace(mute_reactions_by_type=MagicMock(return_value=["sec1"])))
+    coordinator = SimpleNamespace(
+        engine=SimpleNamespace(mute_reactions_by_type=MagicMock(return_value=["sec1"]))
+    )
 
     await async_register_services(hass)
     monkeypatch.setattr(
@@ -310,7 +312,9 @@ async def test_heima_command_mute_reaction_type_calls_engine(monkeypatch):
         )
     )
 
-    coordinator.engine.mute_reactions_by_type.assert_called_once_with("vacation_presence_simulation")
+    coordinator.engine.mute_reactions_by_type.assert_called_once_with(
+        "vacation_presence_simulation"
+    )
 
 
 @pytest.mark.asyncio
@@ -322,7 +326,9 @@ async def test_heima_command_unmute_reaction_type_calls_engine(monkeypatch):
         bus=_FakeBus(),
         states=_FakeStates(),
     )
-    coordinator = SimpleNamespace(engine=SimpleNamespace(unmute_reactions_by_type=MagicMock(return_value=["sec1"])))
+    coordinator = SimpleNamespace(
+        engine=SimpleNamespace(unmute_reactions_by_type=MagicMock(return_value=["sec1"]))
+    )
 
     await async_register_services(hass)
     monkeypatch.setattr(
@@ -341,7 +347,9 @@ async def test_heima_command_unmute_reaction_type_calls_engine(monkeypatch):
         )
     )
 
-    coordinator.engine.unmute_reactions_by_type.assert_called_once_with("vacation_presence_simulation")
+    coordinator.engine.unmute_reactions_by_type.assert_called_once_with(
+        "vacation_presence_simulation"
+    )
 
 
 @pytest.mark.asyncio
@@ -395,7 +403,9 @@ async def test_heima_command_upsert_configured_reactions_calls_coordinator(monke
 @pytest.mark.asyncio
 async def test_heima_command_recompute_now_requests_evaluation(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     coordinator = SimpleNamespace(async_request_evaluation=AsyncMock())
 
     await async_register_services(hass)
@@ -413,7 +423,9 @@ async def test_heima_command_recompute_now_requests_evaluation(monkeypatch):
 @pytest.mark.asyncio
 async def test_heima_command_set_lighting_intent_updates_matching_select(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))
     engine._build_default_state()
     engine.state.set_select("heima_lighting_intent_living", "auto")
@@ -442,7 +454,9 @@ async def test_heima_command_set_lighting_intent_updates_matching_select(monkeyp
 @pytest.mark.asyncio
 async def test_heima_command_set_security_intent_updates_select(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"security": {"enabled": True}}))
     engine._build_default_state()
     engine.state.set_select("heima_security_intent", "disarmed")
@@ -471,8 +485,15 @@ async def test_heima_command_set_security_intent_updates_select(monkeypatch):
 @pytest.mark.asyncio
 async def test_heima_command_set_room_lighting_hold_updates_binary(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
-    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"lighting_zones": [{"zone_id": "living", "rooms": ["studio"]}]}))
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            options={"lighting_zones": [{"zone_id": "living", "rooms": ["studio"]}]}
+        ),
+    )
     engine._build_default_state()
     engine.state.set_binary("heima_lighting_hold_studio", False)
     coordinator = _FakeCoordinator(engine)
@@ -500,7 +521,9 @@ async def test_heima_command_set_room_lighting_hold_updates_binary(monkeypatch):
 @pytest.mark.asyncio
 async def test_heima_command_seed_lighting_events_rejects_invalid_action(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     coordinator = SimpleNamespace(async_seed_lighting_events=AsyncMock(return_value=0))
 
     await async_register_services(hass)
@@ -529,7 +552,9 @@ async def test_heima_command_seed_lighting_events_rejects_invalid_action(monkeyp
 @pytest.mark.asyncio
 async def test_heima_command_upsert_configured_reactions_rejects_invalid_payload(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     coordinator = SimpleNamespace(async_upsert_configured_reactions=AsyncMock())
 
     await async_register_services(hass)
@@ -554,8 +579,15 @@ async def test_heima_command_upsert_configured_reactions_rejects_invalid_payload
 @pytest.mark.asyncio
 async def test_heima_set_override_person_updates_override_select(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
-    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"people_named": [{"slug": "alex", "presence_method": "manual"}]}))
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            options={"people_named": [{"slug": "alex", "presence_method": "manual"}]}
+        ),
+    )
     engine._build_default_state()
     engine.state.set_select("heima_person_alex_override", "auto")
     coordinator = _FakeCoordinator(engine)
@@ -575,7 +607,9 @@ async def test_heima_set_override_person_updates_override_select(monkeypatch):
 @pytest.mark.asyncio
 async def test_heima_set_override_rejects_unknown_scope(monkeypatch):
     services = _FakeServicesRegistry()
-    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
     coordinator = SimpleNamespace()
 
     await async_register_services(hass)

@@ -157,8 +157,7 @@ def test_notifications_payload_parses_recipients_groups_and_route_targets():
         {
             "routes": ["mobile_app_legacy"],
             "recipients": (
-                "stefano=mobile_app_phone_stefano,mobile_app_mac_stefano\n"
-                "laura=mobile_app_laura"
+                "stefano=mobile_app_phone_stefano,mobile_app_mac_stefano\nlaura=mobile_app_laura"
             ),
             "recipient_groups": "family=stefano,laura\ninvalid=missing",
             "route_targets": "family\nstefano\nmissing",

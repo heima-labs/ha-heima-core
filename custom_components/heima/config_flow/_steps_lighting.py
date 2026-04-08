@@ -23,7 +23,9 @@ class _LightingStepsMixin:
 
     # ---- Lighting: per-room scenes ----
 
-    async def async_step_lighting_rooms_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_rooms_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return self.async_show_menu(
             step_id="lighting_rooms_menu",
             menu_options=[
@@ -34,7 +36,9 @@ class _LightingStepsMixin:
             description_placeholders={"summary": self._lighting_menu_summary()},
         )
 
-    async def async_step_lighting_rooms_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_rooms_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         room_ids = self._room_ids()
         if not room_ids:
             return await self.async_step_lighting_zones_menu()
@@ -46,7 +50,9 @@ class _LightingStepsMixin:
         self._editing_lighting_room_id = user_input.get("room")
         return await self.async_step_lighting_rooms_edit_form()
 
-    async def async_step_lighting_rooms_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_rooms_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         if user_input is None:
             existing = self._find_by_key(
                 self._lighting_rooms(), "room_id", self._editing_lighting_room_id or ""
@@ -74,10 +80,14 @@ class _LightingStepsMixin:
         self._editing_lighting_room_id = None
         return await self.async_step_lighting_rooms_menu()
 
-    async def async_step_lighting_rooms_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_rooms_next(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return await self.async_step_lighting_zones_menu()
 
-    async def async_step_lighting_rooms_save(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_rooms_save(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Persist options and close the flow from Lighting Rooms menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 
@@ -126,7 +136,9 @@ class _LightingStepsMixin:
         data["enable_manual_hold"] = bool(data.get("enable_manual_hold", True))
         return data
 
-    def _lighting_room_inventory_placeholders(self, lighting_room: dict[str, Any]) -> dict[str, str]:
+    def _lighting_room_inventory_placeholders(
+        self, lighting_room: dict[str, Any]
+    ) -> dict[str, str]:
         room_id = str(lighting_room.get("room_id") or "").strip()
         room_cfg = self._find_by_key(self._rooms(), "room_id", room_id) or {"room_id": room_id}
         try:
@@ -148,7 +160,9 @@ class _LightingStepsMixin:
 
     # ---- Lighting: zones ----
 
-    async def async_step_lighting_zones_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return self.async_show_menu(
             step_id="lighting_zones_menu",
             menu_options=[
@@ -160,7 +174,9 @@ class _LightingStepsMixin:
             ],
         )
 
-    async def async_step_lighting_zones_add(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         if user_input is None:
             return self.async_show_form(
                 step_id="lighting_zones_add", data_schema=self._lighting_zone_schema()
@@ -180,7 +196,9 @@ class _LightingStepsMixin:
         self._store_list(OPT_LIGHTING_ZONES, zones)
         return await self.async_step_lighting_zones_menu()
 
-    async def async_step_lighting_zones_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         zones = self._lighting_zones()
         if not zones:
             return await self.async_step_lighting_zones_menu()
@@ -192,7 +210,9 @@ class _LightingStepsMixin:
         self._editing_zone_id = user_input.get("zone")
         return await self.async_step_lighting_zones_edit_form()
 
-    async def async_step_lighting_zones_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         zones = self._lighting_zones()
         if user_input is None:
             existing = self._find_by_key(zones, "zone_id", self._editing_zone_id or "") or {}
@@ -220,7 +240,9 @@ class _LightingStepsMixin:
         self._editing_zone_id = None
         return await self.async_step_lighting_zones_menu()
 
-    async def async_step_lighting_zones_remove(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_remove(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         zones = self._lighting_zones()
         if not zones:
             return await self.async_step_lighting_zones_menu()
@@ -260,10 +282,14 @@ class _LightingStepsMixin:
         self._removing_zone_id = None
         return await self.async_step_lighting_zones_menu()
 
-    async def async_step_lighting_zones_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_next(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return await self.async_step_init()
 
-    async def async_step_lighting_zones_save(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_lighting_zones_save(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Persist options and close the flow from Lighting Zones menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 
@@ -280,11 +306,15 @@ class _LightingStepsMixin:
         )
         return self._with_suggested(schema, defaults)
 
-    def _validate_lighting_zone_payload(self, payload: dict[str, Any], is_edit: bool) -> dict[str, str]:
+    def _validate_lighting_zone_payload(
+        self, payload: dict[str, Any], is_edit: bool
+    ) -> dict[str, str]:
         errors: dict[str, str] = {}
         zone_id = payload.get("zone_id", "")
         if is_edit:
-            errors.update(self._error_if_immutable_changed(payload, "zone_id", self._editing_zone_id))
+            errors.update(
+                self._error_if_immutable_changed(payload, "zone_id", self._editing_zone_id)
+            )
         if not zone_id:
             errors["zone_id"] = "required"
         elif not _is_valid_slug(zone_id):

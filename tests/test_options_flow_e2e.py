@@ -18,8 +18,7 @@ from custom_components.heima.runtime.analyzers.base import ReactionProposal
 class _FakeAreaRegistry:
     def __init__(self, areas: list[tuple[str, str]] | None = None) -> None:
         self.areas = {
-            area_id: SimpleNamespace(id=area_id, name=name)
-            for area_id, name in (areas or [])
+            area_id: SimpleNamespace(id=area_id, name=name) for area_id, name in (areas or [])
         }
 
     def async_list_areas(self):
@@ -88,8 +87,6 @@ def _flow(
     flow.hass = _fake_hass(is_admin=is_admin, states=states)
     flow.context = {"user_id": "user-1"}
     return flow
-
-
 
 
 @pytest.mark.asyncio
@@ -776,7 +773,9 @@ async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monk
     flow._editing_room_id = "studio"
     entity_registry = SimpleNamespace(
         entities={
-            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e1": SimpleNamespace(
+                entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None
+            ),
             "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
             "e3": SimpleNamespace(entity_id="light.studio_main", area_id="", device_id="device-1"),
         }
@@ -829,7 +828,9 @@ async def test_rooms_edit_form_can_apply_suggested_inventory_bindings(monkeypatc
     flow._editing_room_id = "studio"
     entity_registry = SimpleNamespace(
         entities={
-            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e1": SimpleNamespace(
+                entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None
+            ),
             "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
         }
     )
@@ -1255,7 +1256,9 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -1333,7 +1336,9 @@ def test_proposals_step_summary_includes_pending_count_and_top_labels():
 
 def test_init_status_block_uses_operational_calendar_summary_when_runtime_available():
     next_vacation = SimpleNamespace(summary="Ferie agosto")
-    flow = _flow(options={"language": "it", "calendar": {"calendar_entities": ["calendar.personal"]}})
+    flow = _flow(
+        options={"language": "it", "calendar": {"calendar_entities": ["calendar.personal"]}}
+    )
     flow.hass.data = {
         DOMAIN: {
             "entry-1": {
@@ -1423,7 +1428,9 @@ def test_calendar_menu_summary_falls_back_to_configured_entities():
 
 def test_calendar_menu_summary_uses_next_vacation_when_runtime_available():
     next_vacation = SimpleNamespace(summary="Summer break")
-    flow = _flow(options={"language": "en", "calendar": {"calendar_entities": ["calendar.personal"]}})
+    flow = _flow(
+        options={"language": "en", "calendar": {"calendar_entities": ["calendar.personal"]}}
+    )
     flow.hass.data = {
         DOMAIN: {
             "entry-1": {
@@ -1498,7 +1505,9 @@ async def test_proposals_step_shows_guided_review_placeholders():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
@@ -1507,7 +1516,10 @@ async def test_proposals_step_shows_guided_review_placeholders():
     placeholders = result["description_placeholders"]
     assert placeholders["current_position"] == "1/1"
     assert "Mercoledì: arrivo tipico" in placeholders["proposal_label"]
-    assert "Pattern osservato: Wednesday: typical arrival around 12:38." in placeholders["proposal_details"]
+    assert (
+        "Pattern osservato: Wednesday: typical arrival around 12:38."
+        in placeholders["proposal_details"]
+    )
     assert "Evidenza: 5 osservazioni, 2 settimane" in placeholders["proposal_details"]
 
 
@@ -1527,7 +1539,9 @@ async def test_proposals_step_tolerates_legacy_non_dict_config():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
@@ -1593,14 +1607,22 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
     assert placeholders["proposal_label"].startswith("Affinamento luci: Luci living")
-    assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
-    assert "Automazione target: Luci living — Lunedì ~20:00 (1 entità)" in placeholders["proposal_details"]
+    assert (
+        "Tipo proposta: affinamento di una automazione esistente"
+        in placeholders["proposal_details"]
+    )
+    assert (
+        "Automazione target: Luci living — Lunedì ~20:00 (1 entità)"
+        in placeholders["proposal_details"]
+    )
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
     assert "Delta luci:" in placeholders["proposal_details"]
@@ -1610,7 +1632,9 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
         in placeholders["proposal_details"]
     )
     assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
-    assert "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+    assert (
+        "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1677,13 +1701,20 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento assist: Assist bathroom · humidity")
-    assert "Tipo proposta: affinamento di una automazione esistente" in placeholders["proposal_details"]
+    assert placeholders["proposal_label"].startswith(
+        "Affinamento assist: Assist bathroom · humidity"
+    )
+    assert (
+        "Tipo proposta: affinamento di una automazione esistente"
+        in placeholders["proposal_details"]
+    )
     assert "Automazione target: Assist bathroom" in placeholders["proposal_details"]
     assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
     assert "Soglia primaria: 8.0 -> 9.5" in placeholders["proposal_details"]
@@ -1757,13 +1788,17 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
     assert placeholders["proposal_label"].startswith("Affinamento luce: Luci living · room_lux")
-    assert "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
+    assert (
+        "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
+    )
     assert "Soglia: 120.0 -> 90.0" in placeholders["proposal_details"]
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
     assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
@@ -1795,7 +1830,9 @@ async def test_proposals_step_marks_lighting_discovery_as_new_automation():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals()
 
@@ -1848,9 +1885,7 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1210,
-            "entity_steps": [
-                {"entity_id": "light.living_main", "action": "on", "brightness": 180}
-            ],
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 180}],
             "steps": [],
         },
     )
@@ -1859,7 +1894,9 @@ async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -1893,14 +1930,19 @@ async def test_proposals_step_skip_advances_to_next_proposal():
         reaction_type="lighting_scene_schedule",
         description="Second",
         confidence=0.9,
-        suggested_reaction_config={"room_id": "living", "reaction_class": "LightingScheduleReaction"},
+        suggested_reaction_config={
+            "room_id": "living",
+            "reaction_class": "LightingScheduleReaction",
+        },
     )
     proposal_engine = SimpleNamespace(
         pending_proposals=lambda: [proposal_1, proposal_2],
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "skip"})
 
@@ -1929,7 +1971,10 @@ async def test_admin_authored_create_marks_security_presence_simulation_unavaila
     options = result["data_schema"].schema["template_id"].container
     assert "security.vacation_presence_simulation.basic" in options
     assert "non disponibile" in options["security.vacation_presence_simulation.basic"].lower()
-    assert "routine luci già accettate" in result["description_placeholders"]["availability_notes"].lower()
+    assert (
+        "routine luci già accettate"
+        in result["description_placeholders"]["availability_notes"].lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -2006,8 +2051,13 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
     assert created.origin == "admin_authored"
     assert created.reaction_type == "vacation_presence_simulation"
     assert created.identity_key == "vacation_presence_simulation|scope=home"
-    assert created.suggested_reaction_config["reaction_class"] == "VacationPresenceSimulationReaction"
-    assert created.suggested_reaction_config["admin_authored_template_id"] == "security.vacation_presence_simulation.basic"
+    assert (
+        created.suggested_reaction_config["reaction_class"] == "VacationPresenceSimulationReaction"
+    )
+    assert (
+        created.suggested_reaction_config["admin_authored_template_id"]
+        == "security.vacation_presence_simulation.basic"
+    )
     assert created.suggested_reaction_config["dynamic_policy"] is True
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
@@ -2061,15 +2111,24 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     created = pending[0]
     assert created.origin == "admin_authored"
     assert created.reaction_type == "lighting_scene_schedule"
-    assert created.suggested_reaction_config["admin_authored_template_id"] == "lighting.scene_schedule.basic"
+    assert (
+        created.suggested_reaction_config["admin_authored_template_id"]
+        == "lighting.scene_schedule.basic"
+    )
     assert created.identity_key.startswith(
         "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
     )
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
     assert "Bozza admin: Luci living" in result["description_placeholders"]["proposal_label"]
-    assert "Origine: bozza richiesta dall'amministratore" in result["description_placeholders"]["proposal_details"]
-    assert "Template: lighting.scene_schedule.basic" in result["description_placeholders"]["proposal_details"]
+    assert (
+        "Origine: bozza richiesta dall'amministratore"
+        in result["description_placeholders"]["proposal_details"]
+    )
+    assert (
+        "Template: lighting.scene_schedule.basic"
+        in result["description_placeholders"]["proposal_details"]
+    )
     assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
 
 
@@ -2172,15 +2231,23 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     created = pending[0]
     assert created.origin == "admin_authored"
     assert created.reaction_type == "room_signal_assist"
-    assert created.suggested_reaction_config["admin_authored_template_id"] == "room.signal_assist.basic"
-    assert created.suggested_reaction_config["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert (
+        created.suggested_reaction_config["admin_authored_template_id"]
+        == "room.signal_assist.basic"
+    )
+    assert created.suggested_reaction_config["primary_signal_entities"] == [
+        "sensor.bathroom_humidity"
+    ]
     assert created.suggested_reaction_config["corroboration_signal_entities"] == [
         "sensor.bathroom_temperature"
     ]
     assert created.suggested_reaction_config["steps"][0]["action"] == "script.turn_on"
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Assist bathroom · humidity" in result["description_placeholders"]["proposal_label"]
+    assert (
+        "Bozza admin: Assist bathroom · humidity"
+        in result["description_placeholders"]["proposal_label"]
+    )
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.signal_assist.basic" in details
     assert "Segnale primario: humidity" in details
@@ -2247,7 +2314,10 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert len(created.suggested_reaction_config["entity_steps"]) == 2
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Bozza admin: Luci studio · room_lux" in result["description_placeholders"]["proposal_label"]
+    assert (
+        "Bozza admin: Luci studio · room_lux"
+        in result["description_placeholders"]["proposal_label"]
+    )
     details = result["description_placeholders"]["proposal_details"]
     assert "Template: room.darkness_lighting_assist.basic" in details
     assert "Segnale primario: room_lux" in details
@@ -2281,7 +2351,9 @@ async def test_admin_authored_accept_persists_reaction_provenance():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -2352,7 +2424,9 @@ async def test_admin_authored_room_signal_assist_accept_skips_action_configurati
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -2392,7 +2466,9 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -2431,7 +2507,9 @@ async def test_admin_authored_security_presence_simulation_accept_skips_action_c
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
@@ -2477,7 +2555,9 @@ async def test_proposal_configure_action_resumes_guided_review():
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}}
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
     flow._proposal_review_queue = ["proposal-1", "proposal-2"]
 
     result = await flow.async_step_proposals({"review_action": "accept"})
@@ -2752,7 +2832,9 @@ def test_init_status_block_includes_pending_proposals_summary(monkeypatch):
     flow = _flow()
     monkeypatch.setattr(flow, "_proposal_review_summary", lambda: "3")
     monkeypatch.setattr(flow, "_tuning_pending_summary", lambda: "1")
-    monkeypatch.setattr(flow, "_composite_menu_summary", lambda: "stanze 2 | attive 1 | review 1 | tuning 1")
+    monkeypatch.setattr(
+        flow, "_composite_menu_summary", lambda: "stanze 2 | attive 1 | review 1 | tuning 1"
+    )
 
     placeholders = flow._init_status_block()
 

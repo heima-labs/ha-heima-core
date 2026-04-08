@@ -131,7 +131,9 @@ async def test_heating_recorder_reads_signal_entities():
     }
     hass = _FakeHass(states=states)
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store, _builder(hass, signal_entities=["sensor.outdoor_temp"]))  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(
+        hass, store, _builder(hass, signal_entities=["sensor.outdoor_temp"])
+    )  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))
     if hass.tasks:
@@ -144,7 +146,9 @@ async def test_heating_recorder_reads_signal_entities():
 async def test_heating_recorder_skips_unavailable_entity():
     hass = _FakeHass(states={})
     store = _FakeStore()
-    behavior = HeatingRecorderBehavior(hass, store, _builder(hass, signal_entities=["sensor.missing"]))  # type: ignore[arg-type]
+    behavior = HeatingRecorderBehavior(
+        hass, store, _builder(hass, signal_entities=["sensor.missing"])
+    )  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))
     if hass.tasks:

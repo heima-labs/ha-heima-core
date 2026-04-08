@@ -196,8 +196,7 @@ class CalendarDomain:
 
         next_vacation: CalendarEvent | None = None
         future_vacations = [
-            e for e in upcoming_events
-            if e.category == "vacation" and e.start.date() > today
+            e for e in upcoming_events if e.category == "vacation" and e.start.date() > today
         ]
         if future_vacations:
             next_vacation = min(future_vacations, key=lambda e: e.start)
@@ -217,6 +216,7 @@ class CalendarDomain:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _resolve_classification_config(
     calendar_cfg: dict[str, Any],

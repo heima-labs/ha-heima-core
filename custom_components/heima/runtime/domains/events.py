@@ -95,9 +95,7 @@ class EventsDomain:
                 severity="info",
                 title="Anonymous presence detected" if is_on else "Anonymous presence cleared",
                 message=(
-                    "Anonymous presence detected."
-                    if is_on
-                    else "Anonymous presence cleared."
+                    "Anonymous presence detected." if is_on else "Anonymous presence cleared."
                 ),
                 context=context,
             )
@@ -130,9 +128,7 @@ class EventsDomain:
         prefix = str(event_type or "").split(".", 1)[0]
         return prefix or "system"
 
-    def enabled_event_categories(
-        self, notifications_config: dict[str, Any]
-    ) -> set[str]:
+    def enabled_event_categories(self, notifications_config: dict[str, Any]) -> set[str]:
         raw = notifications_config.get("enabled_event_categories")
         if raw is None:
             return set(DEFAULT_ENABLED_EVENT_CATEGORIES) | {"system"}
@@ -140,9 +136,7 @@ class EventsDomain:
         enabled.add("system")  # system is always enabled by spec
         return enabled
 
-    def event_enabled(
-        self, event: HeimaEvent, notifications_config: dict[str, Any]
-    ) -> bool:
+    def event_enabled(self, event: HeimaEvent, notifications_config: dict[str, Any]) -> bool:
         category = self.event_category(event.type)
         if category == "system":
             return True
@@ -174,9 +168,7 @@ class EventsDomain:
         queued = list(self._pending_events)
         self._pending_events.clear()
         for event in queued:
-            await self.async_emit_event_obj(
-                event, notifications_config=notifications_config
-            )
+            await self.async_emit_event_obj(event, notifications_config=notifications_config)
 
         self._sync_event_sensors(state)
 
@@ -207,9 +199,7 @@ class EventsDomain:
             recipient_groups=recipient_groups,
             route_targets=route_targets,
             dedup_window_s=int(notifications_config.get("dedup_window_s", 60)),
-            rate_limit_per_key_s=int(
-                notifications_config.get("rate_limit_per_key_s", 300)
-            ),
+            rate_limit_per_key_s=int(notifications_config.get("rate_limit_per_key_s", 300)),
         )
 
     def _normalized_routing_inputs(
@@ -218,7 +208,9 @@ class EventsDomain:
         """Extract routing inputs from notifications config."""
         recipients = dict(notifications_config.get("recipients", {}))
         recipient_groups = dict(notifications_config.get("recipient_groups", {}))
-        route_targets = [str(t) for t in list(notifications_config.get("route_targets", [])) if str(t)]
+        route_targets = [
+            str(t) for t in list(notifications_config.get("route_targets", [])) if str(t)
+        ]
         return recipients, recipient_groups, route_targets
 
     # ------------------------------------------------------------------
@@ -265,8 +257,6 @@ class EventsDomain:
                     "suppressed_by_key": stats.get("suppressed_by_key", {}),
                     "last_event": last_event,
                     "raw_json": json.dumps(stats, sort_keys=True),
-                    "suppressed_event_categories": dict(
-                        self._suppressed_event_categories
-                    ),
+                    "suppressed_event_categories": dict(self._suppressed_event_categories),
                 },
             )

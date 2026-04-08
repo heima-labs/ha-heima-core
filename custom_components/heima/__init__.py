@@ -64,10 +64,16 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator.last_options_snapshot = new
 
     if is_structural:
-        _LOGGER.debug("Structural options changed (%s), reloading entry %s", changed & STRUCTURAL_OPTION_KEYS, entry.entry_id)
+        _LOGGER.debug(
+            "Structural options changed (%s), reloading entry %s",
+            changed & STRUCTURAL_OPTION_KEYS,
+            entry.entry_id,
+        )
         await hass.config_entries.async_reload(entry.entry_id)
     else:
-        _LOGGER.debug("Runtime options changed (%s), reloading coordinator %s", changed, entry.entry_id)
+        _LOGGER.debug(
+            "Runtime options changed (%s), reloading coordinator %s", changed, entry.entry_id
+        )
         await coordinator.async_reload_options(changed_keys=changed)
 
 

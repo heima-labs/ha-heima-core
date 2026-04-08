@@ -88,7 +88,9 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
         return self.async_create_entry(title="Heima", data={}, options=options)
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "HeimaOptionsFlowHandler":
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "HeimaOptionsFlowHandler":
         return HeimaOptionsFlowHandler(config_entry)
 
 
@@ -196,7 +198,9 @@ class HeimaOptionsFlowHandler(
         is_it = lang.startswith("it")
         engine_on = self.options.get(CONF_ENGINE_ENABLED, True)
         return {
-            "engine_status": ("attivo" if engine_on else "disabilitato") if is_it else ("enabled" if engine_on else "disabled"),
+            "engine_status": ("attivo" if engine_on else "disabilitato")
+            if is_it
+            else ("enabled" if engine_on else "disabled"),
             "people_summary": self._people_menu_summary(),
             "rooms_summary": self._rooms_menu_summary(),
             "lighting_summary": self._lighting_menu_summary(),
@@ -304,8 +308,7 @@ class HeimaOptionsFlowHandler(
         lighting_tuning = [
             proposal
             for proposal in lighting_pending
-            if str(getattr(proposal, "followup_kind", "") or "").strip()
-            == "tuning_suggestion"
+            if str(getattr(proposal, "followup_kind", "") or "").strip() == "tuning_suggestion"
         ]
 
         configured = dict(self._reactions_options().get("configured", {}))
@@ -355,8 +358,7 @@ class HeimaOptionsFlowHandler(
         composite_tuning = [
             proposal
             for proposal in composite_pending
-            if str(getattr(proposal, "followup_kind", "") or "").strip()
-            == "tuning_suggestion"
+            if str(getattr(proposal, "followup_kind", "") or "").strip() == "tuning_suggestion"
         ]
 
         configured = dict(self._reactions_options().get("configured", {}))
@@ -426,8 +428,7 @@ class HeimaOptionsFlowHandler(
         tuning = [
             proposal
             for proposal in pending
-            if str(getattr(proposal, "followup_kind", "") or "").strip()
-            == "tuning_suggestion"
+            if str(getattr(proposal, "followup_kind", "") or "").strip() == "tuning_suggestion"
         ]
         if not tuning:
             return "0"
@@ -450,9 +451,7 @@ class HeimaOptionsFlowHandler(
     def _store_list(self, key: str, items: list[dict[str, Any]]) -> None:
         self._update_options({key: items})
 
-    def _with_suggested(
-        self, schema: vol.Schema, defaults: dict[str, Any] | None
-    ) -> vol.Schema:
+    def _with_suggested(self, schema: vol.Schema, defaults: dict[str, Any] | None) -> vol.Schema:
         """Populate form values without turning optional cleared fields into sticky defaults."""
         return self.add_suggested_values_to_schema(schema, defaults or {})
 

@@ -50,7 +50,9 @@ def _ctx(weekday: int = 0, minute: int = 480, house_state: str = "home") -> Even
     )
 
 
-def _presence(ts: str, transition: str = "arrive", weekday: int = 0, minute: int = 480) -> HeimaEvent:
+def _presence(
+    ts: str, transition: str = "arrive", weekday: int = 0, minute: int = 480
+) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
         event_type="presence",

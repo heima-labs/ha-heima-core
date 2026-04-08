@@ -117,7 +117,9 @@ class SecurityDomain:
                 source = configured_sources.get(record.source_id, {})
                 role = str(record.role or source.get("role") or "")
                 kinds = set(source.get("active_kinds", [])) if isinstance(source, dict) else set()
-                contact_active = bool(source.get("contact_active")) if isinstance(source, dict) else False
+                contact_active = (
+                    bool(source.get("contact_active")) if isinstance(source, dict) else False
+                )
 
                 if role == "entry" and record.kind == "person":
                     candidates.append(
@@ -162,7 +164,9 @@ class SecurityDomain:
             "active_evidence": [item.as_dict() for item in active_evidence],
             "source_status_counts": camera_evidence.as_dict().get("source_status_counts", {}),
             "return_home_hint": bool(camera_evidence.return_home_hint),
-            "return_home_hint_reasons": [dict(item) for item in camera_evidence.return_home_hint_reasons],
+            "return_home_hint_reasons": [
+                dict(item) for item in camera_evidence.return_home_hint_reasons
+            ],
             "breach_candidates": list(deduped),
         }
         state.set_sensor_attributes(
@@ -231,7 +235,9 @@ class SecurityDomain:
             self._normalizer.boolean_value(
                 has_anonymous_evidence,
                 source_key="security:anonymous_presence_evidence",
-                reason="anonymous_presence_on" if has_anonymous_evidence else "anonymous_presence_off",
+                reason="anonymous_presence_on"
+                if has_anonymous_evidence
+                else "anonymous_presence_off",
             ),
         ]
         corroboration = self._normalizer.derive(
@@ -303,7 +309,9 @@ class SecurityDomain:
 
     @staticmethod
     def _mismatch_config(notifications_cfg: dict[str, Any]) -> dict[str, Any]:
-        policy = str(notifications_cfg.get("security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY))
+        policy = str(
+            notifications_cfg.get("security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY)
+        )
         if policy not in {"off", "smart", "strict"}:
             policy = DEFAULT_SECURITY_MISMATCH_POLICY
         event_mode = str(
@@ -318,7 +326,9 @@ class SecurityDomain:
             "policy": policy,
             "event_mode": event_mode,
             "persist_s": int(
-                notifications_cfg.get("security_mismatch_persist_s", DEFAULT_SECURITY_MISMATCH_PERSIST_S)
+                notifications_cfg.get(
+                    "security_mismatch_persist_s", DEFAULT_SECURITY_MISMATCH_PERSIST_S
+                )
             ),
         }
 

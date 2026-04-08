@@ -54,7 +54,9 @@ def _arrive_multi_week(minutes: list[int], weekday: int = 0) -> list[HeimaEvent]
 
 async def test_presence_analyzer_requires_min_arrivals():
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
-    proposals = await analyzer.analyze(_StoreStub([_arrive(480), _arrive(490), _arrive(500), _arrive(510)]))  # type: ignore[arg-type]
+    proposals = await analyzer.analyze(
+        _StoreStub([_arrive(480), _arrive(490), _arrive(500), _arrive(510)])
+    )  # type: ignore[arg-type]
     assert proposals == []
 
 

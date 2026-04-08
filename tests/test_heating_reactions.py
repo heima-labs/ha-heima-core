@@ -29,10 +29,12 @@ def test_heating_preference_reaction_fires_on_house_state_entry():
         reaction_id="hp1",
     )
 
-    steps = reaction.evaluate([
-        _snap(house_state="away", heating_setpoint=16.0),
-        _snap(house_state="home", heating_setpoint=19.0),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snap(house_state="away", heating_setpoint=16.0),
+            _snap(house_state="home", heating_setpoint=19.0),
+        ]
+    )
 
     assert len(steps) == 1
     assert steps[0].domain == "heating"
@@ -48,10 +50,12 @@ def test_heating_preference_reaction_no_repeat_within_same_state():
         target_temperature=21.5,
     )
 
-    steps = reaction.evaluate([
-        _snap(house_state="home", heating_setpoint=19.0),
-        _snap(house_state="home", heating_setpoint=19.0),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snap(house_state="home", heating_setpoint=19.0),
+            _snap(house_state="home", heating_setpoint=19.0),
+        ]
+    )
 
     assert steps == []
 
@@ -63,10 +67,12 @@ def test_heating_eco_reaction_fires_on_away_entry():
         reaction_id="eco1",
     )
 
-    steps = reaction.evaluate([
-        _snap(house_state="home", heating_setpoint=21.0),
-        _snap(house_state="away", heating_setpoint=20.0),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snap(house_state="home", heating_setpoint=21.0),
+            _snap(house_state="away", heating_setpoint=20.0),
+        ]
+    )
 
     assert len(steps) == 1
     assert steps[0].domain == "heating"
@@ -79,9 +85,11 @@ def test_heating_eco_reaction_skips_if_already_at_target():
         eco_target_temperature=16.0,
     )
 
-    steps = reaction.evaluate([
-        _snap(house_state="home", heating_setpoint=21.0),
-        _snap(house_state="away", heating_setpoint=16.0),
-    ])
+    steps = reaction.evaluate(
+        [
+            _snap(house_state="home", heating_setpoint=21.0),
+            _snap(house_state="away", heating_setpoint=16.0),
+        ]
+    )
 
     assert steps == []

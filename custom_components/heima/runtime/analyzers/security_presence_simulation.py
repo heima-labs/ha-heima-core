@@ -353,9 +353,7 @@ def _median_int(values: list[Any]) -> int | None:
 
 def _mode_rgb(values: list[Any]) -> list[int] | None:
     candidates = [
-        tuple(value)
-        for value in values
-        if isinstance(value, (list, tuple)) and len(value) == 3
+        tuple(value) for value in values if isinstance(value, (list, tuple)) and len(value) == 3
     ]
     if not candidates:
         return None

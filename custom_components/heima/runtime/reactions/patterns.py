@@ -46,5 +46,5 @@ class ConsecutiveMatchDetector:
         """Return True if the last `consecutive_n` snapshots all match the predicate."""
         if len(history) < self._consecutive_n:
             return False
-        window = history[-self._consecutive_n:]
+        window = history[-self._consecutive_n :]
         return all(self._predicate(s) for s in window)

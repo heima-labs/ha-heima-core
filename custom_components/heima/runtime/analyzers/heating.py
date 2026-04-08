@@ -46,7 +46,9 @@ class HeatingPatternAnalyzer:
         if not heating_events:
             return []
         raw_house_state = await event_store.async_query(event_type="house_state")
-        house_state_events: list[HeimaEvent] = [e for e in raw_house_state if isinstance(e, HeimaEvent)]
+        house_state_events: list[HeimaEvent] = [
+            e for e in raw_house_state if isinstance(e, HeimaEvent)
+        ]
 
         proposals: list[ReactionProposal] = []
         proposals.extend(self._pattern_b_preference(heating_events))
@@ -152,11 +154,7 @@ class HeatingPatternAnalyzer:
             and event.source == "heima"
             and event.data.get("temperature_set") is not None
         ]
-        eco_target_temperature = (
-            sorted(eco_targets)[len(eco_targets) // 2]
-            if eco_targets
-            else 16.0
-        )
+        eco_target_temperature = sorted(eco_targets)[len(eco_targets) // 2] if eco_targets else 16.0
 
         return [
             ReactionProposal(
@@ -172,21 +170,23 @@ class HeatingPatternAnalyzer:
                     "reaction_class": "HeatingEcoReaction",
                     "eco_sessions_observed": eco_sessions,
                     "eco_target_temperature": eco_target_temperature,
-                        "learning_diagnostics": build_learning_diagnostics(
-                            pattern_id="heating_eco",
-                            analyzer_id=self.analyzer_id,
-                            reaction_type="heating_eco",
-                            plugin_family="heating",
-                            eco_sessions_observed=eco_sessions,
-                            eco_target_temperature=eco_target_temperature,
-                            weeks_observed=eco_weeks_observed,
-                        ),
+                    "learning_diagnostics": build_learning_diagnostics(
+                        pattern_id="heating_eco",
+                        analyzer_id=self.analyzer_id,
+                        reaction_type="heating_eco",
+                        plugin_family="heating",
+                        eco_sessions_observed=eco_sessions,
+                        eco_target_temperature=eco_target_temperature,
+                        weeks_observed=eco_weeks_observed,
+                    ),
                     "steps": [],
                 },
             )
         ]
 
-    def _away_sessions(self, house_state_events: list[HeimaEvent]) -> list[tuple[datetime, datetime]]:
+    def _away_sessions(
+        self, house_state_events: list[HeimaEvent]
+    ) -> list[tuple[datetime, datetime]]:
         sessions: list[tuple[datetime, datetime]] = []
         active_away_start: datetime | None = None
 

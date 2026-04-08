@@ -62,9 +62,7 @@ async def async_get_config_entry_diagnostics(
                     hass,
                     entry,
                 ),
-                "security_presence_summary": _security_presence_summary_diagnostics(
-                    coordinator
-                ),
+                "security_presence_summary": _security_presence_summary_diagnostics(coordinator),
                 "composite_summary": _composite_summary_diagnostics(
                     proposal_diagnostics,
                     coordinator,
@@ -175,9 +173,7 @@ def _learning_summary_diagnostics(
             {
                 "plugin_family": family,
                 "proposal_types": proposal_types,
-                "supports_admin_authored": bool(
-                    plugin.get("supports_admin_authored") is True
-                ),
+                "supports_admin_authored": bool(plugin.get("supports_admin_authored") is True),
                 "admin_authored_templates": _template_ids(
                     plugin.get("admin_authored_templates") or []
                 ),
@@ -305,7 +301,9 @@ def _enrich_proposals_with_followups(
             configured_by_identity.setdefault(identity_key, (str(reaction_id), dict(cfg)))
             slot_key = _lighting_slot_key_from_identity(identity_key)
             if slot_key:
-                configured_by_lighting_slot.setdefault(slot_key, []).append((str(reaction_id), dict(cfg)))
+                configured_by_lighting_slot.setdefault(slot_key, []).append(
+                    (str(reaction_id), dict(cfg))
+                )
 
     if not configured_by_identity and not configured_by_lighting_slot:
         return proposal_diagnostics
@@ -361,7 +359,9 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
     engine = getattr(coordinator, "engine", None)
     if engine is None:
         return {}
-    payload = engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None  # noqa: SLF001
+    payload = (
+        engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None
+    )  # noqa: SLF001
     if not isinstance(payload, str) or not payload.strip():
         return {
             "total": 0,
@@ -415,14 +415,10 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
                 by_lighting_slot.setdefault(slot_key, []).append(str(reaction_id))
 
     identity_collisions = {
-        key: sorted(ids)
-        for key, ids in sorted(by_identity_key.items())
-        if len(ids) > 1
+        key: sorted(ids) for key, ids in sorted(by_identity_key.items()) if len(ids) > 1
     }
     lighting_slot_collisions = {
-        key: sorted(ids)
-        for key, ids in sorted(by_lighting_slot.items())
-        if len(ids) > 1
+        key: sorted(ids) for key, ids in sorted(by_lighting_slot.items()) if len(ids) > 1
     }
 
     return {
@@ -463,7 +459,9 @@ def _lighting_summary_diagnostics(
             "id": proposal.get("id"),
             "label": str(proposal.get("description") or "").strip(),
             "room_id": room_id,
-            "slot_key": _lighting_slot_key_from_identity(str(proposal.get("identity_key") or "").strip()),
+            "slot_key": _lighting_slot_key_from_identity(
+                str(proposal.get("identity_key") or "").strip()
+            ),
             "confidence": proposal.get("confidence"),
         }
         if str(proposal.get("followup_kind") or "") == "tuning_suggestion":
@@ -617,8 +615,12 @@ def _house_state_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     }
 
     return {
-        "state": getattr(state, "get_sensor", lambda _k: None)("heima_house_state") if state is not None else None,
-        "reason": getattr(state, "get_sensor", lambda _k: None)("heima_house_state_reason") if state is not None else None,
+        "state": getattr(state, "get_sensor", lambda _k: None)("heima_house_state")
+        if state is not None
+        else None,
+        "reason": getattr(state, "get_sensor", lambda _k: None)("heima_house_state_reason")
+        if state is not None
+        else None,
         "resolution_path": resolution_trace.get("resolution_path"),
         "winning_reason": resolution_trace.get("winning_reason"),
         "sticky_retention": bool(resolution_trace.get("sticky_retention")),
@@ -703,14 +705,10 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
             blocked_by_class[reason_class] = blocked_by_class.get(reason_class, 0) + 1
 
         allowed_rooms = [
-            str(item).strip()
-            for item in list(cfg.get("allowed_rooms") or [])
-            if str(item).strip()
+            str(item).strip() for item in list(cfg.get("allowed_rooms") or []) if str(item).strip()
         ]
         source_rooms = [
-            str(item).strip()
-            for item in list(cfg.get("source_rooms") or [])
-            if str(item).strip()
+            str(item).strip() for item in list(cfg.get("source_rooms") or []) if str(item).strip()
         ]
         for room_id in allowed_rooms:
             configured_by_room[room_id] = configured_by_room.get(room_id, 0) + 1
@@ -773,15 +771,21 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
                 if isinstance(item, dict)
             ],
         }
-        if (plan_count > 0 or blocked_reason == "awaiting_next_planned_activation") and len(ready_examples) < 3:
+        if (plan_count > 0 or blocked_reason == "awaiting_next_planned_activation") and len(
+            ready_examples
+        ) < 3:
             ready_examples.append(dict(example))
         if blocked_reason == "outside_not_dark" and len(waiting_for_darkness_examples) < 3:
             waiting_for_darkness_examples.append(dict(example))
-        if blocked_reason in {
-            "insufficient_learned_evidence",
-            "insufficient_source_strength",
-            "no_suitable_recent_sources",
-        } and len(insufficient_evidence_examples) < 3:
+        if (
+            blocked_reason
+            in {
+                "insufficient_learned_evidence",
+                "insufficient_source_strength",
+                "no_suitable_recent_sources",
+            }
+            and len(insufficient_evidence_examples) < 3
+        ):
             insufficient_evidence_examples.append(dict(example))
 
     return {
@@ -807,7 +811,9 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
 
 def _security_camera_evidence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     engine = getattr(coordinator, "engine", None) if coordinator is not None else None
-    diagnostics = engine.diagnostics() if engine is not None and hasattr(engine, "diagnostics") else {}
+    diagnostics = (
+        engine.diagnostics() if engine is not None and hasattr(engine, "diagnostics") else {}
+    )
     section = dict(diagnostics.get("security_camera_evidence") or {})
 
     configured_sources = [
@@ -816,9 +822,7 @@ def _security_camera_evidence_summary_diagnostics(coordinator: Any) -> dict[str,
         if isinstance(item, dict)
     ]
     active_evidence = [
-        dict(item)
-        for item in list(section.get("active_evidence") or [])
-        if isinstance(item, dict)
+        dict(item) for item in list(section.get("active_evidence") or []) if isinstance(item, dict)
     ]
     unavailable_sources = [
         dict(item)
@@ -1153,13 +1157,27 @@ def _composite_example_label(
         return ""
 
     if reaction_type == "room_signal_assist":
-        return f"Assist {room_id} · {primary_signal_name}" if primary_signal_name else f"Assist {room_id}"
+        return (
+            f"Assist {room_id} · {primary_signal_name}"
+            if primary_signal_name
+            else f"Assist {room_id}"
+        )
     if reaction_type == "room_darkness_lighting_assist":
-        return f"Luci {room_id} · {primary_signal_name}" if primary_signal_name else f"Luci {room_id}"
+        return (
+            f"Luci {room_id} · {primary_signal_name}" if primary_signal_name else f"Luci {room_id}"
+        )
     if reaction_type == "room_cooling_assist":
-        return f"Cooling {room_id} · {primary_signal_name}" if primary_signal_name else f"Cooling {room_id}"
+        return (
+            f"Cooling {room_id} · {primary_signal_name}"
+            if primary_signal_name
+            else f"Cooling {room_id}"
+        )
     if reaction_type == "room_air_quality_assist":
-        return f"Air quality {room_id} · {primary_signal_name}" if primary_signal_name else f"Air quality {room_id}"
+        return (
+            f"Air quality {room_id} · {primary_signal_name}"
+            if primary_signal_name
+            else f"Air quality {room_id}"
+        )
     return ""
 
 

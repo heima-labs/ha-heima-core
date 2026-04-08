@@ -77,7 +77,9 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         self._source_rooms = list(source_rooms)
         self._source_profiles = list(source_profiles)
         self._last_blocked_reason = (
-            "insufficient_learned_evidence" if not self._source_reaction_ids else "waiting_for_snapshot"
+            "insufficient_learned_evidence"
+            if not self._source_reaction_ids
+            else "waiting_for_snapshot"
         )
         self._fired_event_ids_by_date: dict[str, set[str]] = {}
         self._fire_count = 0
@@ -233,7 +235,9 @@ class VacationPresenceSimulationReaction(HeimaReaction):
     def reset_learning_state(self) -> None:
         self._fired_event_ids_by_date = {}
         self._last_blocked_reason = (
-            "insufficient_learned_evidence" if not self._source_reaction_ids else "waiting_for_snapshot"
+            "insufficient_learned_evidence"
+            if not self._source_reaction_ids
+            else "waiting_for_snapshot"
         )
         self._fire_count = 0
         self._last_fired_ts = None
@@ -309,7 +313,9 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         selection_reasons[str(first.get("reaction_id") or "")] = "top_ranked_seed"
 
         while remaining and len(selected) < budget:
-            same_weekday_available = any(bool(item.get("same_weekday") is True) for item in remaining)
+            same_weekday_available = any(
+                bool(item.get("same_weekday") is True) for item in remaining
+            )
             best_index: int | None = None
             best_key: tuple[int, int, int, int, int, int, int, float, str] | None = None
             best_reason = "ranked_fill"
@@ -319,19 +325,14 @@ class VacationPresenceSimulationReaction(HeimaReaction):
                 sequence_coherence_score = self._sequence_coherence_score(item, selected)
                 evening_shape_score = self._evening_shape_score(item, selected)
                 temporal_companion_score = self._temporal_companion_score(item, selected)
-                progresses_evening = (
-                    int(item.get("scheduled_min") or 0)
-                    > max(int(chosen.get("scheduled_min") or 0) for chosen in selected)
+                progresses_evening = int(item.get("scheduled_min") or 0) > max(
+                    int(chosen.get("scheduled_min") or 0) for chosen in selected
                 )
                 backward_same_weekday_penalty = (
-                    1
-                    if bool(item.get("same_weekday") is True) and not progresses_evening
-                    else 0
+                    1 if bool(item.get("same_weekday") is True) and not progresses_evening else 0
                 )
                 same_weekday_progressive = (
-                    1
-                    if bool(item.get("same_weekday") is True) and progresses_evening
-                    else 0
+                    1 if bool(item.get("same_weekday") is True) and progresses_evening else 0
                 )
                 same_weekday_companion = (
                     1
@@ -392,7 +393,11 @@ class VacationPresenceSimulationReaction(HeimaReaction):
 
         ordered = sorted(
             selected,
-            key=lambda item: (int(item["scheduled_min"]), -float(item.get("score") or 0.0), item["reaction_id"]),
+            key=lambda item: (
+                int(item["scheduled_min"]),
+                -float(item.get("score") or 0.0),
+                item["reaction_id"],
+            ),
         )
         return ordered, selection_reasons
 
@@ -417,7 +422,9 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return 0
 
         candidate_min = int(candidate.get("scheduled_min") or 0)
-        latest_selected_min = max(int(item.get("scheduled_min") or 0) for item in selected_same_room)
+        latest_selected_min = max(
+            int(item.get("scheduled_min") or 0) for item in selected_same_room
+        )
         if candidate_min < latest_selected_min:
             return 0
 
@@ -501,8 +508,12 @@ class VacationPresenceSimulationReaction(HeimaReaction):
             return []
         grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
         for item in profiles:
-            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(item.get("created_at"))
-            observation_key = observed_at.date().isoformat() if observed_at is not None else "unknown"
+            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(
+                item.get("created_at")
+            )
+            observation_key = (
+                observed_at.date().isoformat() if observed_at is not None else "unknown"
+            )
             group_key = (observation_key, int(item.get("weekday") or 0))
             grouped.setdefault(group_key, []).append(item)
         samples: list[int] = []
@@ -647,8 +658,12 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         for item in self._source_profiles:
             if int(item.get("weekday") or 0) != weekday:
                 continue
-            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(item.get("created_at"))
-            observation_key = observed_at.date().isoformat() if observed_at is not None else "unknown"
+            observed_at = _parse_dt_local(item.get("updated_at")) or _parse_dt_local(
+                item.get("created_at")
+            )
+            observation_key = (
+                observed_at.date().isoformat() if observed_at is not None else "unknown"
+            )
             group_key = (observation_key, weekday)
             grouped.setdefault(group_key, []).append(item)
         samples: list[int] = []
@@ -908,11 +923,17 @@ class VacationPresenceSimulationReaction(HeimaReaction):
         return None
 
     def _current_house_state(self) -> str:
-        state = self._hass.states.get("sensor.heima_house_state") if self._hass is not None else None
+        state = (
+            self._hass.states.get("sensor.heima_house_state") if self._hass is not None else None
+        )
         return str(getattr(state, "state", "") or "").strip()
 
     def _current_anyone_home(self) -> bool:
-        state = self._hass.states.get("binary_sensor.heima_anyone_home") if self._hass is not None else None
+        state = (
+            self._hass.states.get("binary_sensor.heima_anyone_home")
+            if self._hass is not None
+            else None
+        )
         raw = str(getattr(state, "state", "") or "").strip().lower()
         return raw == "on"
 
@@ -997,10 +1018,16 @@ def build_vacation_presence_simulation_reaction(
     """Build the persisted policy reaction for the security family."""
     try:
         enabled = bool(cfg.get("enabled", True))
-        allowed_rooms = [str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()]
-        allowed_entities = [str(item).strip() for item in cfg.get("allowed_entities", []) or [] if str(item).strip()]
+        allowed_rooms = [
+            str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()
+        ]
+        allowed_entities = [
+            str(item).strip() for item in cfg.get("allowed_entities", []) or [] if str(item).strip()
+        ]
         requires_dark_outside = bool(cfg.get("requires_dark_outside", True))
-        simulation_aggressiveness = str(cfg.get("simulation_aggressiveness", "medium") or "medium").strip()
+        simulation_aggressiveness = str(
+            cfg.get("simulation_aggressiveness", "medium") or "medium"
+        ).strip()
         if simulation_aggressiveness not in {"low", "medium", "high"}:
             simulation_aggressiveness = "medium"
         min_jitter_override_min = _optional_int(cfg.get("min_jitter_override_min"))
@@ -1044,7 +1071,9 @@ def present_vacation_presence_simulation_label(
     cfg: dict[str, Any],
     labels_map: dict[str, str],
 ) -> str | None:
-    scope = ", ".join(str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip())
+    scope = ", ".join(
+        str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()
+    )
     if scope:
         return f"Simulazione presenza vacation · {scope}"
     return "Simulazione presenza vacation"
@@ -1058,14 +1087,14 @@ def present_admin_authored_vacation_presence_simulation_details(
 ) -> list[str]:
     details = ["Tipo: policy dinamica security-driven"]
     rooms = [str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()]
-    entities = [str(item).strip() for item in cfg.get("allowed_entities", []) or [] if str(item).strip()]
+    entities = [
+        str(item).strip() for item in cfg.get("allowed_entities", []) or [] if str(item).strip()
+    ]
     if rooms:
         details.append(f"Stanze consentite: {', '.join(rooms)}")
     if entities:
         details.append(f"Entità consentite: {', '.join(entities)}")
-    details.append(
-        "Profilo di esecuzione: derivato da lighting reactions accettate recenti"
-    )
+    details.append("Profilo di esecuzione: derivato da lighting reactions accettate recenti")
     if bool(cfg.get("requires_dark_outside", True)):
         details.append("Buio richiesto: sì")
     if bool(cfg.get("skip_if_presence_detected", True)):
@@ -1085,9 +1114,7 @@ def present_learned_vacation_presence_simulation_details(
     rooms = [str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()]
     if rooms:
         details.append(
-            f"Stanze apprese: {', '.join(rooms)}"
-            if is_it
-            else f"Learned rooms: {', '.join(rooms)}"
+            f"Stanze apprese: {', '.join(rooms)}" if is_it else f"Learned rooms: {', '.join(rooms)}"
         )
     source_profile_count = diagnostics.get("source_profile_count")
     if isinstance(source_profile_count, int):
@@ -1099,8 +1126,7 @@ def present_learned_vacation_presence_simulation_details(
     weekdays = diagnostics.get("weekdays")
     if isinstance(weekdays, list) and weekdays:
         labels = [
-            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][int(item) % 7]
-            for item in weekdays
+            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][int(item) % 7] for item in weekdays
         ]
         details.append(
             f"Giorni coperti: {', '.join(labels)}"
@@ -1285,10 +1311,7 @@ def _closest_scheduled_gap_min(candidate: dict[str, Any], selected: list[dict[st
     scheduled_min = int(candidate.get("scheduled_min") or 0)
     if not selected:
         return 24 * 60
-    gaps = [
-        abs(scheduled_min - int(item.get("scheduled_min") or 0))
-        for item in selected
-    ]
+    gaps = [abs(scheduled_min - int(item.get("scheduled_min") or 0)) for item in selected]
     return min(gaps) if gaps else 24 * 60
 
 
@@ -1310,7 +1333,9 @@ def _ts_score(value: Any) -> float:
     if not text:
         return 0.0
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).timestamp()
+        return (
+            datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).timestamp()
+        )
     except ValueError:
         return 0.0
 

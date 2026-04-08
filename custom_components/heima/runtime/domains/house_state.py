@@ -115,9 +115,7 @@ class HouseStateDomain:
         if action != "noop":
             self._house_state_override = current
             self._house_state_override_set_by = source
-            self._house_state_override_last_change_ts = datetime.now(
-                timezone.utc
-            ).isoformat()
+            self._house_state_override_last_change_ts = datetime.now(timezone.utc).isoformat()
 
         return action, previous, current
 
@@ -145,9 +143,7 @@ class HouseStateDomain:
         )
         guest_mode = self._compute_house_signal(
             "guest_mode",
-            [house_signal_entities["guest_mode"]]
-            if "guest_mode" in house_signal_entities
-            else [],
+            [house_signal_entities["guest_mode"]] if "guest_mode" in house_signal_entities else [],
         )
         sleep_window = self._compute_house_signal(
             "sleep_window",
@@ -157,9 +153,7 @@ class HouseStateDomain:
         )
         relax_mode = self._compute_house_signal(
             "relax_mode",
-            [house_signal_entities["relax_mode"]]
-            if "relax_mode" in house_signal_entities
-            else [],
+            [house_signal_entities["relax_mode"]] if "relax_mode" in house_signal_entities else [],
         )
         work_window = self._compute_house_signal(
             "work_window",
@@ -282,9 +276,7 @@ class HouseStateDomain:
             "override_active": override_active,
             "sticky_retention": bool(resolution_detail.get("action") == "retain"),
             "home_substate_candidate": (
-                house_state
-                if house_state in {"sleeping", "relax", "working", "home"}
-                else None
+                house_state if house_state in {"sleeping", "relax", "working", "home"} else None
             ),
             "active_candidates": [
                 name for name, trace in self._candidate_trace.items() if bool(trace.get("state"))
@@ -368,10 +360,9 @@ class HouseStateDomain:
         sleep_requires_media_off = bool(house_state_cfg.get("sleep_requires_media_off", True))
         sleep_allowed_by_media = (not sleep_requires_media_off) or (not media_active)
         sleep_charging_min_count = house_state_cfg.get("sleep_charging_min_count")
-        sleep_allowed_by_charging = (
-            sleep_charging_min_count is None
-            or int(charging_evidence.get("active_count", 0)) >= int(sleep_charging_min_count)
-        )
+        sleep_allowed_by_charging = sleep_charging_min_count is None or int(
+            charging_evidence.get("active_count", 0)
+        ) >= int(sleep_charging_min_count)
         relax_reason = (
             "anyone_home+relax_mode"
             if bool(anyone_home and relax_mode)
@@ -411,9 +402,7 @@ class HouseStateDomain:
             "wake_candidate": {
                 "state": bool(anyone_home and ((not sleep_window) or media_active)),
                 "reason": (
-                    "anyone_home+media_active"
-                    if media_active
-                    else "anyone_home+sleep_window_off"
+                    "anyone_home+media_active" if media_active else "anyone_home+sleep_window_off"
                 ),
                 "inputs": {
                     "anyone_home": anyone_home,
@@ -424,9 +413,7 @@ class HouseStateDomain:
             },
             "work_candidate": {
                 "state": bool(
-                    anyone_home
-                    and work_window
-                    and bool(workday_evidence.get("is_workday", True))
+                    anyone_home and work_window and bool(workday_evidence.get("is_workday", True))
                 ),
                 "reason": (
                     "anyone_home+work_window+workday"
@@ -532,7 +519,13 @@ class HouseStateDomain:
             return False
         if str(entity_id).startswith("media_player."):
             return lowered in _MEDIA_ACTIVE_STATES
-        return lowered in _MEDIA_ACTIVE_STATES or lowered in {"open", "occupied", "detected", "true", "1"}
+        return lowered in _MEDIA_ACTIVE_STATES or lowered in {
+            "open",
+            "occupied",
+            "detected",
+            "true",
+            "1",
+        }
 
     def _update_candidate_trace(
         self,
@@ -555,9 +548,7 @@ class HouseStateDomain:
                 self._candidate_since[candidate] = since
                 self._candidate_since_monotonic[candidate] = since_monotonic
             duration_s = (
-                max(0.0, now_monotonic - since_monotonic)
-                if since_monotonic is not None
-                else 0.0
+                max(0.0, now_monotonic - since_monotonic) if since_monotonic is not None else 0.0
             )
             updated[candidate] = {
                 "state": current,
@@ -603,12 +594,9 @@ class HouseStateDomain:
             else:
                 if exit_s is None:
                     status = "inactive"
-                elif (
-                    inactive_for < float(exit_s)
-                    and (
-                        (candidate == "wake_candidate" and current_house_state == "sleeping")
-                        or (candidate == "relax_candidate" and current_house_state == "relax")
-                    )
+                elif inactive_for < float(exit_s) and (
+                    (candidate == "wake_candidate" and current_house_state == "sleeping")
+                    or (candidate == "relax_candidate" and current_house_state == "relax")
                 ):
                     status = "pending_exit_guard"
                 else:
@@ -699,28 +687,40 @@ class HouseStateDomain:
                     delay_s=sleep_exit_s - wake_for,
                     label="sleep_exit_threshold",
                 )
-                return "sleeping", "sleep_sticky_until_wake", {
-                    "action": "retain",
-                    "source_candidate": "wake_candidate",
-                    "retained_state": "sleeping",
-                    "pending_kind": "exit_threshold",
-                    "pending_remaining_s": sleep_exit_s - wake_for,
-                }
+                return (
+                    "sleeping",
+                    "sleep_sticky_until_wake",
+                    {
+                        "action": "retain",
+                        "source_candidate": "wake_candidate",
+                        "retained_state": "sleeping",
+                        "pending_kind": "exit_threshold",
+                        "pending_remaining_s": sleep_exit_s - wake_for,
+                    },
+                )
             if not wake_on:
-                return "sleeping", "sleep_sticky_until_wake", {
-                    "action": "retain",
-                    "source_candidate": "wake_candidate",
-                    "retained_state": "sleeping",
-                    "pending_kind": "wait_for_candidate",
-                }
+                return (
+                    "sleeping",
+                    "sleep_sticky_until_wake",
+                    {
+                        "action": "retain",
+                        "source_candidate": "wake_candidate",
+                        "retained_state": "sleeping",
+                        "pending_kind": "wait_for_candidate",
+                    },
+                )
 
         sleep_for = self._candidate_active_for("sleep_candidate", now_monotonic)
         if sleep_on and sleep_for >= sleep_enter_s:
-            return "sleeping", "sleep_candidate_confirmed", {
-                "action": "enter",
-                "source_candidate": "sleep_candidate",
-                "entered_state": "sleeping",
-            }
+            return (
+                "sleeping",
+                "sleep_candidate_confirmed",
+                {
+                    "action": "enter",
+                    "source_candidate": "sleep_candidate",
+                    "entered_state": "sleeping",
+                },
+            )
         if sleep_on and sleep_for < sleep_enter_s:
             self._schedule_candidate_recheck(
                 schedule_recheck=schedule_recheck,
@@ -728,29 +728,43 @@ class HouseStateDomain:
                 delay_s=sleep_enter_s - sleep_for,
                 label="sleep_enter_threshold",
             )
-            return "home", "default", {
-                "action": "pending",
-                "source_candidate": "sleep_candidate",
-                "pending_kind": "enter_threshold",
-                "pending_remaining_s": sleep_enter_s - sleep_for,
-            }
+            return (
+                "home",
+                "default",
+                {
+                    "action": "pending",
+                    "source_candidate": "sleep_candidate",
+                    "pending_kind": "enter_threshold",
+                    "pending_remaining_s": sleep_enter_s - sleep_for,
+                },
+            )
 
         if current == "relax":
             if relax_on:
-                relax_reason = str(self._candidate_trace.get("relax_candidate", {}).get("reason", ""))
+                relax_reason = str(
+                    self._candidate_trace.get("relax_candidate", {}).get("reason", "")
+                )
                 if relax_reason == "anyone_home+relax_mode":
-                    return "relax", "relax_explicit_signal", {
+                    return (
+                        "relax",
+                        "relax_explicit_signal",
+                        {
+                            "action": "retain",
+                            "source_candidate": "relax_candidate",
+                            "retained_state": "relax",
+                            "retention_reason": "explicit_signal",
+                        },
+                    )
+                return (
+                    "relax",
+                    "relax_candidate_active",
+                    {
                         "action": "retain",
                         "source_candidate": "relax_candidate",
                         "retained_state": "relax",
-                        "retention_reason": "explicit_signal",
-                    }
-                return "relax", "relax_candidate_active", {
-                    "action": "retain",
-                    "source_candidate": "relax_candidate",
-                    "retained_state": "relax",
-                    "retention_reason": "candidate_still_active",
-                }
+                        "retention_reason": "candidate_still_active",
+                    },
+                )
             relax_off_for = self._candidate_inactive_for("relax_candidate", now_monotonic)
             if relax_off_for < relax_exit_s:
                 self._schedule_candidate_recheck(
@@ -759,58 +773,82 @@ class HouseStateDomain:
                     delay_s=relax_exit_s - relax_off_for,
                     label="relax_exit_threshold",
                 )
-                return "relax", "relax_sticky_exit_guard", {
-                    "action": "retain",
-                    "source_candidate": "relax_candidate",
-                    "retained_state": "relax",
-                    "pending_kind": "exit_threshold",
-                    "pending_remaining_s": relax_exit_s - relax_off_for,
-                }
+                return (
+                    "relax",
+                    "relax_sticky_exit_guard",
+                    {
+                        "action": "retain",
+                        "source_candidate": "relax_candidate",
+                        "retained_state": "relax",
+                        "pending_kind": "exit_threshold",
+                        "pending_remaining_s": relax_exit_s - relax_off_for,
+                    },
+                )
 
         if relax_on:
             relax_reason = str(self._candidate_trace.get("relax_candidate", {}).get("reason", ""))
             if relax_reason == "anyone_home+relax_mode":
-                return "relax", "relax_explicit_signal", {
-                    "action": "enter",
-                    "source_candidate": "relax_candidate",
-                    "entered_state": "relax",
-                    "entry_mode": "explicit_signal",
-                }
+                return (
+                    "relax",
+                    "relax_explicit_signal",
+                    {
+                        "action": "enter",
+                        "source_candidate": "relax_candidate",
+                        "entered_state": "relax",
+                        "entry_mode": "explicit_signal",
+                    },
+                )
             relax_for = self._candidate_active_for("relax_candidate", now_monotonic)
             if relax_for >= relax_enter_s:
-                return "relax", "relax_candidate_confirmed", {
-                    "action": "enter",
-                    "source_candidate": "relax_candidate",
-                    "entered_state": "relax",
-                }
+                return (
+                    "relax",
+                    "relax_candidate_confirmed",
+                    {
+                        "action": "enter",
+                        "source_candidate": "relax_candidate",
+                        "entered_state": "relax",
+                    },
+                )
             self._schedule_candidate_recheck(
                 schedule_recheck=schedule_recheck,
                 candidate="relax_candidate",
                 delay_s=relax_enter_s - relax_for,
                 label="relax_enter_threshold",
             )
-            return "home", "default", {
-                "action": "pending",
-                "source_candidate": "relax_candidate",
-                "pending_kind": "enter_threshold",
-                "pending_remaining_s": relax_enter_s - relax_for,
-            }
+            return (
+                "home",
+                "default",
+                {
+                    "action": "pending",
+                    "source_candidate": "relax_candidate",
+                    "pending_kind": "enter_threshold",
+                    "pending_remaining_s": relax_enter_s - relax_for,
+                },
+            )
 
         if current == "working" and work_on:
-            return "working", "work_candidate_confirmed", {
-                "action": "retain",
-                "source_candidate": "work_candidate",
-                "retained_state": "working",
-                "retention_reason": "candidate_still_active",
-            }
+            return (
+                "working",
+                "work_candidate_confirmed",
+                {
+                    "action": "retain",
+                    "source_candidate": "work_candidate",
+                    "retained_state": "working",
+                    "retention_reason": "candidate_still_active",
+                },
+            )
 
         work_for = self._candidate_active_for("work_candidate", now_monotonic)
         if work_on and work_for >= work_enter_s:
-            return "working", "work_candidate_confirmed", {
-                "action": "enter",
-                "source_candidate": "work_candidate",
-                "entered_state": "working",
-            }
+            return (
+                "working",
+                "work_candidate_confirmed",
+                {
+                    "action": "enter",
+                    "source_candidate": "work_candidate",
+                    "entered_state": "working",
+                },
+            )
         if work_on and work_for < work_enter_s:
             self._schedule_candidate_recheck(
                 schedule_recheck=schedule_recheck,
@@ -818,21 +856,27 @@ class HouseStateDomain:
                 delay_s=work_enter_s - work_for,
                 label="work_enter_threshold",
             )
-            return "home", "default", {
-                "action": "pending",
-                "source_candidate": "work_candidate",
-                "pending_kind": "enter_threshold",
-                "pending_remaining_s": work_enter_s - work_for,
-            }
+            return (
+                "home",
+                "default",
+                {
+                    "action": "pending",
+                    "source_candidate": "work_candidate",
+                    "pending_kind": "enter_threshold",
+                    "pending_remaining_s": work_enter_s - work_for,
+                },
+            )
 
-        return "home", "default", {
-            "action": "fallback_home",
-        }
+        return (
+            "home",
+            "default",
+            {
+                "action": "fallback_home",
+            },
+        )
 
     def _compute_house_signal(self, trace_key: str, entity_ids: list[str]) -> bool:
-        observations = [
-            self._normalizer.boolean_signal(entity_id) for entity_id in entity_ids
-        ]
+        observations = [self._normalizer.boolean_signal(entity_id) for entity_id in entity_ids]
         fused = self._normalizer.derive(
             kind="boolean_signal",
             inputs=observations,

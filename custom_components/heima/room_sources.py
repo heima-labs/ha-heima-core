@@ -10,7 +10,11 @@ def normalize_entity_id_list(raw_entities: Any) -> list[str]:
     if raw_entities is None:
         return []
     if isinstance(raw_entities, dict):
-        return [str(key).strip() for key, enabled in raw_entities.items() if enabled and str(key).strip()]
+        return [
+            str(key).strip()
+            for key, enabled in raw_entities.items()
+            if enabled and str(key).strip()
+        ]
     if isinstance(raw_entities, (list, tuple, set)):
         return [str(entity_id).strip() for entity_id in raw_entities if str(entity_id).strip()]
     if isinstance(raw_entities, str):

@@ -39,7 +39,9 @@ except ImportError:
 class _NotificationsStepsMixin:
     """Mixin for notifications step."""
 
-    async def async_step_notifications(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_notifications(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         current = dict(self.options.get(OPT_NOTIFICATIONS, {}))
         if user_input is None:
             return self.async_show_form(
@@ -69,7 +71,9 @@ class _NotificationsStepsMixin:
                 ): _NON_NEGATIVE_INT,
                 vol.Optional(
                     "occupancy_mismatch_policy",
-                    default=defaults.get("occupancy_mismatch_policy", DEFAULT_OCCUPANCY_MISMATCH_POLICY),
+                    default=defaults.get(
+                        "occupancy_mismatch_policy", DEFAULT_OCCUPANCY_MISMATCH_POLICY
+                    ),
                 ): vol.In(OCCUPANCY_MISMATCH_POLICIES),
                 vol.Optional(
                     "occupancy_mismatch_min_derived_rooms",
@@ -86,7 +90,9 @@ class _NotificationsStepsMixin:
                 ): _NON_NEGATIVE_INT,
                 vol.Optional(
                     "security_mismatch_policy",
-                    default=defaults.get("security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY),
+                    default=defaults.get(
+                        "security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY
+                    ),
                 ): vol.In(SECURITY_MISMATCH_POLICIES),
                 vol.Optional(
                     "security_mismatch_event_mode",
@@ -148,7 +154,9 @@ class _NotificationsStepsMixin:
         data["occupancy_mismatch_persist_s"] = int(
             data.get("occupancy_mismatch_persist_s", DEFAULT_OCCUPANCY_MISMATCH_PERSIST_S)
         )
-        security_policy = str(data.get("security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY))
+        security_policy = str(
+            data.get("security_mismatch_policy", DEFAULT_SECURITY_MISMATCH_POLICY)
+        )
         if security_policy not in SECURITY_MISMATCH_POLICIES:
             security_policy = DEFAULT_SECURITY_MISMATCH_POLICY
         data["security_mismatch_policy"] = security_policy

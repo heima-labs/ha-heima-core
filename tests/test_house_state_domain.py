@@ -23,7 +23,9 @@ def _fake_state(current_house_state: str | None = None):
     )
 
 
-def test_house_state_diagnostics_expose_candidate_and_resolution_trace(monkeypatch: pytest.MonkeyPatch):
+def test_house_state_diagnostics_expose_candidate_and_resolution_trace(
+    monkeypatch: pytest.MonkeyPatch,
+):
     hass = _fake_hass()
     normalizer = InputNormalizer(hass)
     domain = HouseStateDomain(hass, normalizer)
@@ -143,8 +145,13 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
         "relax_enter_min": 3,
         "relax_exit_min": 11,
     }
-    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_requires_media_off"] is False
-    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2
+    assert (
+        diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_requires_media_off"]
+        is False
+    )
+    assert (
+        diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_charging_min_count"] == 2
+    )
 
 
 def test_house_state_signal_trace_marks_unknown_as_treated_false(monkeypatch: pytest.MonkeyPatch):
@@ -229,7 +236,9 @@ def test_house_state_sleep_candidate_requires_charging_threshold(monkeypatch: py
     assert sleep_trace["inputs"]["sleep_charging_requirement_met"] is False
 
 
-def test_house_state_sleep_candidate_enters_when_charging_threshold_met(monkeypatch: pytest.MonkeyPatch):
+def test_house_state_sleep_candidate_enters_when_charging_threshold_met(
+    monkeypatch: pytest.MonkeyPatch,
+):
     def _get(entity_id: str):
         if entity_id == "binary_sensor.sleep_window":
             return SimpleNamespace(state="on", attributes={})
@@ -355,7 +364,10 @@ def test_house_state_sleep_candidate_blocked_when_media_active(monkeypatch: pyte
     diagnostics = domain.diagnostics()
     assert diagnostics["candidate_trace"]["sleep_candidate"]["state"] is False
     assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["media_active"] is True
-    assert diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_media_requirement_met"] is False
+    assert (
+        diagnostics["candidate_trace"]["sleep_candidate"]["inputs"]["sleep_media_requirement_met"]
+        is False
+    )
     assert diagnostics["candidate_trace"]["wake_candidate"]["state"] is True
     assert diagnostics["candidate_trace"]["wake_candidate"]["reason"] == "anyone_home+media_active"
 
@@ -389,10 +401,15 @@ def test_house_state_work_candidate_blocked_by_calendar_office(monkeypatch: pyte
     assert result.house_state == "home"
     diagnostics = domain.diagnostics()
     assert diagnostics["candidate_trace"]["work_candidate"]["state"] is False
-    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "calendar_office"
+    assert (
+        diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"]
+        == "calendar_office"
+    )
 
 
-def test_house_state_work_candidate_uses_workday_entity_when_calendar_neutral(monkeypatch: pytest.MonkeyPatch):
+def test_house_state_work_candidate_uses_workday_entity_when_calendar_neutral(
+    monkeypatch: pytest.MonkeyPatch,
+):
     def _get(entity_id: str):
         if entity_id == "binary_sensor.work_window":
             return SimpleNamespace(state="on", attributes={})
@@ -423,11 +440,19 @@ def test_house_state_work_candidate_uses_workday_entity_when_calendar_neutral(mo
     )
     diagnostics = domain.diagnostics()
     assert diagnostics["candidate_trace"]["work_candidate"]["state"] is False
-    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "workday_entity"
-    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["is_workday"] is False
+    assert (
+        diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"]
+        == "workday_entity"
+    )
+    assert (
+        diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["is_workday"]
+        is False
+    )
 
 
-def test_house_state_work_candidate_calendar_wfh_overrides_workday_entity(monkeypatch: pytest.MonkeyPatch):
+def test_house_state_work_candidate_calendar_wfh_overrides_workday_entity(
+    monkeypatch: pytest.MonkeyPatch,
+):
     def _get(entity_id: str):
         if entity_id == "binary_sensor.work_window":
             return SimpleNamespace(state="on", attributes={})
@@ -459,7 +484,10 @@ def test_house_state_work_candidate_calendar_wfh_overrides_workday_entity(monkey
     )
     diagnostics = domain.diagnostics()
     assert diagnostics["candidate_trace"]["work_candidate"]["state"] is True
-    assert diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"] == "calendar_wfh"
+    assert (
+        diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"]
+        == "calendar_wfh"
+    )
 
     monotonic += (5 * 60) + 1
     result = domain.compute(

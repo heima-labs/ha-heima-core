@@ -91,10 +91,7 @@ def test_no_configured_entries_noop():
 def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
     registry = create_builtin_reaction_plugin_registry()
 
-    assert {
-        descriptor.reaction_class
-        for descriptor in registry.descriptors()
-    } == {
+    assert {descriptor.reaction_class for descriptor in registry.descriptors()} == {
         "PresencePatternReaction",
         "LightingScheduleReaction",
         "HeatingPreferenceReaction",
@@ -119,13 +116,9 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "RoomLightingAssistReaction",
         "VacationPresenceSimulationReaction",
     ]
-    assert descriptors[-1].supported_config_contracts == (
-        "vacation_presence_simulation",
-    )
+    assert descriptors[-1].supported_config_contracts == ("vacation_presence_simulation",)
     assert descriptors[-1].supports_normalizer is False
-    assert descriptors[-2].supported_config_contracts == (
-        "room_darkness_lighting_assist",
-    )
+    assert descriptors[-2].supported_config_contracts == ("room_darkness_lighting_assist",)
     assert descriptors[-2].supports_normalizer is False
     assert descriptors[-3].supported_config_contracts == (
         "room_signal_assist",
@@ -136,13 +129,15 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
 
 
 def test_presence_reaction_built_and_registered():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "proposal-abc": _presence_cfg(weekday=1, median_arrival_min=480),
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "proposal-abc": _presence_cfg(weekday=1, median_arrival_min=480),
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
 
     assert len(engine._reactions) == 1
@@ -153,13 +148,15 @@ def test_presence_reaction_built_and_registered():
 
 
 def test_reaction_pre_seeded_with_synthetic_arrivals():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "p1": _presence_cfg(weekday=2, median_arrival_min=540, min_arrivals=5),
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": _presence_cfg(weekday=2, median_arrival_min=540, min_arrivals=5),
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
 
     r = engine._reactions[0]
@@ -170,14 +167,17 @@ def test_reaction_pre_seeded_with_synthetic_arrivals():
 
 
 def test_unknown_reaction_class_skipped(caplog):
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "p1": {"reaction_class": "UnknownReaction", "weekday": 0},
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": {"reaction_class": "UnknownReaction", "weekday": 0},
+                }
             }
         }
-    })
+    )
     import logging
+
     with caplog.at_level(logging.DEBUG, logger="custom_components.heima.runtime.engine"):
         engine._rebuild_configured_reactions()
 
@@ -186,17 +186,20 @@ def test_unknown_reaction_class_skipped(caplog):
 
 
 def test_malformed_config_skipped(caplog):
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "bad": {
-                    "reaction_class": "PresencePatternReaction",
-                    # missing weekday and median_arrival_min
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "bad": {
+                        "reaction_class": "PresencePatternReaction",
+                        # missing weekday and median_arrival_min
+                    },
+                }
             }
         }
-    })
+    )
     import logging
+
     with caplog.at_level(logging.WARNING, logger="custom_components.heima.runtime.engine"):
         engine._rebuild_configured_reactions()
 
@@ -206,13 +209,15 @@ def test_malformed_config_skipped(caplog):
 
 def test_rebuild_replaces_previous_configured_reactions():
     """Calling rebuild twice should not accumulate duplicates."""
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
     assert len(engine._reactions) == 1
 
@@ -222,13 +227,15 @@ def test_rebuild_replaces_previous_configured_reactions():
 
 def test_non_configured_reactions_preserved_on_rebuild():
     """Code-registered reactions must survive rebuild."""
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+                }
             }
         }
-    })
+    )
     # Manually register a non-configured reaction
     manual = PresencePatternReaction(steps=[], reaction_id="manual_react")
     engine._reactions.append(manual)
@@ -241,14 +248,16 @@ def test_non_configured_reactions_preserved_on_rebuild():
 
 
 def test_multiple_weekday_proposals_all_registered():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                f"p{d}": _presence_cfg(weekday=d, median_arrival_min=480 + d * 10)
-                for d in range(3)
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    f"p{d}": _presence_cfg(weekday=d, median_arrival_min=480 + d * 10)
+                    for d in range(3)
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
     assert len(engine._reactions) == 3
     assert len(engine._configured_reaction_ids) == 3
@@ -284,13 +293,17 @@ def test_disabled_configured_reaction_is_not_rebuilt():
 
 
 def test_heating_preference_reaction_built_and_registered():
-    engine = _make_engine(options=_heating_options({
-        "hp1": {
-            "reaction_class": "HeatingPreferenceReaction",
-            "house_state": "home",
-            "target_temperature": 21.5,
-        }
-    }))
+    engine = _make_engine(
+        options=_heating_options(
+            {
+                "hp1": {
+                    "reaction_class": "HeatingPreferenceReaction",
+                    "house_state": "home",
+                    "target_temperature": 21.5,
+                }
+            }
+        )
+    )
     engine._rebuild_configured_reactions()
 
     assert len(engine._reactions) == 1
@@ -300,49 +313,51 @@ def test_heating_preference_reaction_built_and_registered():
 
 
 def test_vacation_presence_simulation_reaction_bootstraps_source_profile_from_recent_lighting_reactions():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "allowed_rooms": ["living"],
-                    "allowed_entities": ["light.living_main"],
-                },
-                "light-old": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 0,
-                    "scheduled_min": 1140,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-30T09:00:00+00:00",
-                },
-                "light-new": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 1,
-                    "scheduled_min": 1200,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-30T11:00:00+00:00",
-                },
-                "light-other-room": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 1,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-30T12:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "allowed_rooms": ["living"],
+                        "allowed_entities": ["light.living_main"],
+                    },
+                    "light-old": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1140,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-30T09:00:00+00:00",
+                    },
+                    "light-new": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-30T11:00:00+00:00",
+                    },
+                    "light-other-room": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 1,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-30T12:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
 
     engine._rebuild_configured_reactions()
 
@@ -356,37 +371,43 @@ def test_vacation_presence_simulation_reaction_bootstraps_source_profile_from_re
 
 
 def test_vacation_presence_simulation_reaction_uses_learned_source_profiles_from_config():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "learned_source_profiles": [
-                        {
-                            "reaction_id": "learned:living:0:1110:on",
-                            "room_id": "living",
-                            "weekday": 0,
-                            "scheduled_min": 1110,
-                            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                            "action_kind": "on",
-                            "updated_at": "2026-04-01T20:00:00+00:00",
-                        },
-                        {
-                            "reaction_id": "learned:living:0:1320:off",
-                            "room_id": "living",
-                            "weekday": 0,
-                            "scheduled_min": 1320,
-                            "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                            "action_kind": "off",
-                            "updated_at": "2026-04-01T22:00:00+00:00",
-                        },
-                    ],
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "learned_source_profiles": [
+                            {
+                                "reaction_id": "learned:living:0:1110:on",
+                                "room_id": "living",
+                                "weekday": 0,
+                                "scheduled_min": 1110,
+                                "entity_steps": [
+                                    {"entity_id": "light.living_main", "action": "on"}
+                                ],
+                                "action_kind": "on",
+                                "updated_at": "2026-04-01T20:00:00+00:00",
+                            },
+                            {
+                                "reaction_id": "learned:living:0:1320:off",
+                                "room_id": "living",
+                                "weekday": 0,
+                                "scheduled_min": 1320,
+                                "entity_steps": [
+                                    {"entity_id": "light.living_main", "action": "off"}
+                                ],
+                                "action_kind": "off",
+                                "updated_at": "2026-04-01T22:00:00+00:00",
+                            },
+                        ],
+                    },
+                }
             }
         }
-    })
+    )
 
     engine._rebuild_configured_reactions()
 
@@ -401,28 +422,30 @@ def test_vacation_presence_simulation_reaction_uses_learned_source_profiles_from
 
 
 def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_until_plan_exists():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "requires_dark_outside": True,
-                    "skip_if_presence_detected": True,
-                },
-                "light-src": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 1,
-                    "scheduled_min": 1200,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "requires_dark_outside": True,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                    },
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
 
     reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
@@ -444,29 +467,33 @@ def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_unti
 
 
 def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_job():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-src": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [
+                            {"entity_id": "light.living_main", "action": "on", "brightness": 120}
+                        ],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -498,29 +525,33 @@ def test_vacation_presence_simulation_reaction_schedules_next_darkness_relative_
 
 
 def test_vacation_presence_simulation_reaction_does_not_schedule_when_not_in_vacation():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-src": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [
+                            {"entity_id": "light.living_main", "action": "on", "brightness": 120}
+                        ],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -549,29 +580,33 @@ def test_vacation_presence_simulation_reaction_does_not_schedule_when_not_in_vac
 
 
 def test_vacation_presence_simulation_reaction_does_not_schedule_when_presence_returns():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-src": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [
+                            {"entity_id": "light.living_main", "action": "on", "brightness": 120}
+                        ],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -600,48 +635,54 @@ def test_vacation_presence_simulation_reaction_does_not_schedule_when_presence_r
 
 
 def test_vacation_presence_simulation_reaction_derives_tonight_anchor_from_next_setting_after_sunset():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                    "allowed_rooms": ["living", "studio"],
-                    "allowed_entities": [
-                        "light.test_heima_living_main",
-                        "light.test_heima_living_spot",
-                        "light.test_heima_studio_main",
-                    ],
-                    "learned_source_profiles": [
-                        {
-                            "reaction_id": "learned:studio:6:1080:on",
-                            "room_id": "studio",
-                            "weekday": 6,
-                            "scheduled_min": 1080,
-                            "entity_steps": [{"entity_id": "light.test_heima_studio_main", "action": "on"}],
-                            "action_kind": "on",
-                            "updated_at": "2026-04-05T18:00:00+00:00",
-                        },
-                        {
-                            "reaction_id": "learned:living:6:1170:on",
-                            "room_id": "living",
-                            "weekday": 6,
-                            "scheduled_min": 1170,
-                            "entity_steps": [{"entity_id": "light.test_heima_living_main", "action": "on"}],
-                            "action_kind": "on",
-                            "updated_at": "2026-04-05T19:30:00+00:00",
-                        },
-                    ],
-                    "max_events_per_evening_override": 2,
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                        "allowed_rooms": ["living", "studio"],
+                        "allowed_entities": [
+                            "light.test_heima_living_main",
+                            "light.test_heima_living_spot",
+                            "light.test_heima_studio_main",
+                        ],
+                        "learned_source_profiles": [
+                            {
+                                "reaction_id": "learned:studio:6:1080:on",
+                                "room_id": "studio",
+                                "weekday": 6,
+                                "scheduled_min": 1080,
+                                "entity_steps": [
+                                    {"entity_id": "light.test_heima_studio_main", "action": "on"}
+                                ],
+                                "action_kind": "on",
+                                "updated_at": "2026-04-05T18:00:00+00:00",
+                            },
+                            {
+                                "reaction_id": "learned:living:6:1170:on",
+                                "room_id": "living",
+                                "weekday": 6,
+                                "scheduled_min": 1170,
+                                "entity_steps": [
+                                    {"entity_id": "light.test_heima_living_main", "action": "on"}
+                                ],
+                                "action_kind": "on",
+                                "updated_at": "2026-04-05T19:30:00+00:00",
+                            },
+                        ],
+                        "max_events_per_evening_override": 2,
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -684,29 +725,33 @@ def test_vacation_presence_simulation_reaction_derives_tonight_anchor_from_next_
 
 
 def test_vacation_presence_simulation_reaction_fires_derived_plan_step_when_due():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-src": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [
+                            {"entity_id": "light.living_main", "action": "on", "brightness": 120}
+                        ],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -748,29 +793,31 @@ def test_vacation_presence_simulation_reaction_fires_derived_plan_step_when_due(
 
 
 def test_vacation_presence_simulation_reaction_excludes_stale_sources_from_tonight_plan():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-stale": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-11-01T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-stale": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-11-01T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -810,39 +857,41 @@ def test_vacation_presence_simulation_reaction_excludes_stale_sources_from_tonig
 
 
 def test_vacation_presence_simulation_reaction_exposes_tonight_plan_preview():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "high",
-                    "skip_if_presence_detected": True,
-                },
-                "light-src-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-src-2": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 5,
-                    "scheduled_min": 1250,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "high",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-src-2": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 5,
+                        "scheduled_min": 1250,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -872,51 +921,53 @@ def test_vacation_presence_simulation_reaction_exposes_tonight_plan_preview():
 
 
 def test_vacation_presence_simulation_reaction_prefers_same_weekday_recent_sources():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-same-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-03T10:00:00+00:00",
-                },
-                "light-other-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 4,
-                    "scheduled_min": 1200,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T11:00:00+00:00",
-                },
-                "light-older-other-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 4,
-                    "scheduled_min": 1220,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-02-01T11:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-same-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-03T10:00:00+00:00",
+                    },
+                    "light-other-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 4,
+                        "scheduled_min": 1200,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T11:00:00+00:00",
+                    },
+                    "light-older-other-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 4,
+                        "scheduled_min": 1220,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-02-01T11:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -944,29 +995,31 @@ def test_vacation_presence_simulation_reaction_prefers_same_weekday_recent_sourc
 
 
 def test_vacation_presence_simulation_reaction_skips_single_weak_source():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "skip_if_presence_detected": True,
-                },
-                "light-weak": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 3,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-02-10T10:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-weak": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 3,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-02-10T10:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1004,51 +1057,53 @@ def test_vacation_presence_simulation_reaction_skips_single_weak_source():
 
 
 def test_vacation_presence_simulation_reaction_prefers_room_closeout_off_event():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-living-on": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-living-off": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1320,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
-                "light-kitchen-on": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 5,
-                    "scheduled_min": 1230,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T08:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-living-on": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-living-off": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1320,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                    "light-kitchen-on": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 5,
+                        "scheduled_min": 1230,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T08:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1071,55 +1126,60 @@ def test_vacation_presence_simulation_reaction_prefers_room_closeout_off_event()
 
     preview = diagnostics["tonight_plan_preview"]
     assert len(preview) == 2
-    assert [item["source_reaction_id"] for item in preview] == ["light-living-on", "light-living-off"]
+    assert [item["source_reaction_id"] for item in preview] == [
+        "light-living-on",
+        "light-living-off",
+    ]
 
 
 def test_vacation_presence_simulation_reaction_prefers_plausible_closeout_duration():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-living-on": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-living-off-plausible": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1280,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
-                "light-living-off-late": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1425,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T08:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-living-on": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-living-off-plausible": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1280,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                    "light-living-off-late": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1425,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T08:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1150,91 +1210,93 @@ def test_vacation_presence_simulation_reaction_prefers_plausible_closeout_durati
 
 
 def test_vacation_presence_simulation_reaction_prefers_observed_room_dwell_target():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-living-on-current": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-living-off-observed-short": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1250,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:30:00+00:00",
-                },
-                "light-living-off-static-mid": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1280,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
-                "light-living-on-historical-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1180,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-28T10:00:00+00:00",
-                },
-                "light-living-off-historical-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1215,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-28T10:30:00+00:00",
-                },
-                "light-living-on-historical-2": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1190,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-21T10:00:00+00:00",
-                },
-                "light-living-off-historical-2": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1228,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-21T10:35:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-living-on-current": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-living-off-observed-short": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1250,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:30:00+00:00",
+                    },
+                    "light-living-off-static-mid": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1280,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                    "light-living-on-historical-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1180,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-28T10:00:00+00:00",
+                    },
+                    "light-living-off-historical-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1215,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-28T10:30:00+00:00",
+                    },
+                    "light-living-on-historical-2": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1190,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-21T10:00:00+00:00",
+                    },
+                    "light-living-off-historical-2": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1228,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "off"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-21T10:35:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1265,52 +1327,54 @@ def test_vacation_presence_simulation_reaction_prefers_observed_room_dwell_targe
 
 
 def test_vacation_presence_simulation_reaction_exposes_selected_and_excluded_source_trace():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "max_events_per_evening_override": 1,
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-selected": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-excluded": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1230,
-                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
-                "light-too-old": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1215,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-11-01T09:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "max_events_per_evening_override": 1,
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-selected": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-excluded": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1230,
+                        "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                    "light-too-old": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1215,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-11-01T09:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1341,41 +1405,43 @@ def test_vacation_presence_simulation_reaction_exposes_selected_and_excluded_sou
 
 
 def test_vacation_presence_simulation_reaction_enforces_min_gap_between_close_events():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "high",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-src-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-src-2": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 5,
-                    "scheduled_min": 1215,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "high",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-src-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-src-2": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 5,
+                        "scheduled_min": 1215,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1404,51 +1470,53 @@ def test_vacation_presence_simulation_reaction_enforces_min_gap_between_close_ev
 
 
 def test_vacation_presence_simulation_reaction_prefers_room_diversity_in_tonight_plan():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-living-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1210,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T10:00:00+00:00",
-                },
-                "light-living-2": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1225,
-                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T09:00:00+00:00",
-                },
-                "light-kitchen-1": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "kitchen",
-                    "weekday": 5,
-                    "scheduled_min": 1240,
-                    "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-04T08:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-living-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1210,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T10:00:00+00:00",
+                    },
+                    "light-living-2": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1225,
+                        "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T09:00:00+00:00",
+                    },
+                    "light-kitchen-1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "kitchen",
+                        "weekday": 5,
+                        "scheduled_min": 1240,
+                        "entity_steps": [{"entity_id": "light.kitchen_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-04T08:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1475,51 +1543,53 @@ def test_vacation_presence_simulation_reaction_prefers_room_diversity_in_tonight
 
 
 def test_vacation_presence_simulation_reaction_prefers_same_weekday_temporal_companion():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-seed-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1080,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T10:00:00+00:00",
-                },
-                "light-companion-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1170,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T09:00:00+00:00",
-                },
-                "light-closer-other-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1120,
-                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T11:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-seed-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1080,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T10:00:00+00:00",
+                    },
+                    "light-companion-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1170,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T09:00:00+00:00",
+                    },
+                    "light-closer-other-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1120,
+                        "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T11:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1550,51 +1620,53 @@ def test_vacation_presence_simulation_reaction_prefers_same_weekday_temporal_com
 
 
 def test_vacation_presence_simulation_reaction_rejects_backward_same_weekday_companion():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-seed-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1080,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T10:00:00+00:00",
-                },
-                "light-backward-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1040,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-03-01T09:30:00+00:00",
-                },
-                "light-forward-other-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1120,
-                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T11:00:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-seed-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1080,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T10:00:00+00:00",
+                    },
+                    "light-backward-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1040,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-03-01T09:30:00+00:00",
+                    },
+                    "light-forward-other-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1120,
+                        "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T11:00:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1625,91 +1697,93 @@ def test_vacation_presence_simulation_reaction_rejects_backward_same_weekday_com
 
 
 def test_vacation_presence_simulation_reaction_prefers_observed_evening_shape():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "security-presence": {
-                    "reaction_class": "VacationPresenceSimulationReaction",
-                    "reaction_type": "vacation_presence_simulation",
-                    "enabled": True,
-                    "simulation_aggressiveness": "medium",
-                    "min_jitter_override_min": 0,
-                    "max_jitter_override_min": 0,
-                    "skip_if_presence_detected": True,
-                },
-                "light-seed-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1080,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T10:00:00+00:00",
-                },
-                "light-far-sunday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1320,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T09:00:00+00:00",
-                },
-                "light-shaped-other-weekday": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 5,
-                    "scheduled_min": 1170,
-                    "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2026-04-05T11:00:00+00:00",
-                },
-                "light-historical-shape-1a": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1080,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-12-29T10:00:00+00:00",
-                },
-                "light-historical-shape-1b": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1175,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-12-29T10:20:00+00:00",
-                },
-                "light-historical-shape-2a": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "studio",
-                    "weekday": 6,
-                    "scheduled_min": 1070,
-                    "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-12-22T10:00:00+00:00",
-                },
-                "light-historical-shape-2b": {
-                    "reaction_class": "LightingScheduleReaction",
-                    "reaction_type": "lighting_scene_schedule",
-                    "room_id": "living",
-                    "weekday": 6,
-                    "scheduled_min": 1160,
-                    "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                    "source_template_id": "lighting.scene_schedule.basic",
-                    "updated_at": "2025-12-22T10:15:00+00:00",
-                },
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 0,
+                        "max_jitter_override_min": 0,
+                        "skip_if_presence_detected": True,
+                    },
+                    "light-seed-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1080,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T10:00:00+00:00",
+                    },
+                    "light-far-sunday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T09:00:00+00:00",
+                    },
+                    "light-shaped-other-weekday": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 5,
+                        "scheduled_min": 1170,
+                        "entity_steps": [{"entity_id": "light.living_floor", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2026-04-05T11:00:00+00:00",
+                    },
+                    "light-historical-shape-1a": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1080,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-12-29T10:00:00+00:00",
+                    },
+                    "light-historical-shape-1b": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1175,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-12-29T10:20:00+00:00",
+                    },
+                    "light-historical-shape-2a": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1070,
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-12-22T10:00:00+00:00",
+                    },
+                    "light-historical-shape-2b": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "room_id": "living",
+                        "weekday": 6,
+                        "scheduled_min": 1160,
+                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+                        "source_template_id": "lighting.scene_schedule.basic",
+                        "updated_at": "2025-12-22T10:15:00+00:00",
+                    },
+                }
             }
         }
-    })
+    )
     engine._hass.states.get.side_effect = lambda entity_id: (
         _FakeState(
             "below_horizon",
@@ -1740,12 +1814,16 @@ def test_vacation_presence_simulation_reaction_prefers_observed_evening_shape():
 
 
 def test_heating_eco_reaction_built_and_registered():
-    engine = _make_engine(options=_heating_options({
-        "he1": {
-            "reaction_class": "HeatingEcoReaction",
-            "eco_target_temperature": 16.0,
-        }
-    }))
+    engine = _make_engine(
+        options=_heating_options(
+            {
+                "he1": {
+                    "reaction_class": "HeatingEcoReaction",
+                    "eco_target_temperature": 16.0,
+                }
+            }
+        )
+    )
     engine._rebuild_configured_reactions()
 
     assert len(engine._reactions) == 1
@@ -1755,23 +1833,31 @@ def test_heating_eco_reaction_built_and_registered():
 
 
 def test_room_signal_assist_reaction_built_and_registered():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "sa1": {
-                    "reaction_class": "RoomSignalAssistReaction",
-                    "room_id": "bathroom",
-                    "trigger_signal_entities": ["sensor.bathroom_humidity"],
-                    "temperature_signal_entities": ["sensor.bathroom_temperature"],
-                    "humidity_rise_threshold": 8.0,
-                    "temperature_rise_threshold": 0.8,
-                    "correlation_window_s": 600,
-                    "followup_window_s": 900,
-                    "steps": [{"domain": "script", "target": "script.fan_on", "action": "script.turn_on"}],
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "sa1": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "trigger_signal_entities": ["sensor.bathroom_humidity"],
+                        "temperature_signal_entities": ["sensor.bathroom_temperature"],
+                        "humidity_rise_threshold": 8.0,
+                        "temperature_rise_threshold": 0.8,
+                        "correlation_window_s": 600,
+                        "followup_window_s": 900,
+                        "steps": [
+                            {
+                                "domain": "script",
+                                "target": "script.fan_on",
+                                "action": "script.turn_on",
+                            }
+                        ],
+                    }
                 }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
 
     assert len(engine._reactions) == 1
@@ -1781,23 +1867,31 @@ def test_room_signal_assist_reaction_built_and_registered():
 
 
 def test_room_signal_assist_reaction_builds_generic_signal_config():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "sa2": {
-                    "reaction_class": "RoomSignalAssistReaction",
-                    "room_id": "studio",
-                    "primary_signal_entities": ["sensor.studio_temperature"],
-                    "primary_rise_threshold": 1.5,
-                    "primary_signal_name": "temperature",
-                    "corroboration_signal_entities": ["sensor.studio_humidity"],
-                    "corroboration_rise_threshold": 5.0,
-                    "corroboration_signal_name": "humidity",
-                    "steps": [{"domain": "script", "target": "script.cool_room", "action": "script.turn_on"}],
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "sa2": {
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "studio",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                        "primary_rise_threshold": 1.5,
+                        "primary_signal_name": "temperature",
+                        "corroboration_signal_entities": ["sensor.studio_humidity"],
+                        "corroboration_rise_threshold": 5.0,
+                        "corroboration_signal_name": "humidity",
+                        "steps": [
+                            {
+                                "domain": "script",
+                                "target": "script.cool_room",
+                                "action": "script.turn_on",
+                            }
+                        ],
+                    }
                 }
             }
         }
-    })
+    )
 
     engine._rebuild_configured_reactions()
 
@@ -1838,29 +1932,31 @@ def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_lega
 
 
 def test_room_lighting_assist_reaction_built_and_registered():
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "la1": {
-                    "reaction_class": "RoomLightingAssistReaction",
-                    "room_id": "living",
-                    "primary_signal_entities": ["sensor.living_room_lux"],
-                    "primary_threshold": 120.0,
-                    "primary_signal_name": "room_lux",
-                    "primary_threshold_mode": "below",
-                    "entity_steps": [
-                        {
-                            "entity_id": "light.living_main",
-                            "action": "on",
-                            "brightness": 144,
-                            "color_temp_kelvin": 2900,
-                            "rgb_color": None,
-                        }
-                    ],
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "la1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "room_id": "living",
+                        "primary_signal_entities": ["sensor.living_room_lux"],
+                        "primary_threshold": 120.0,
+                        "primary_signal_name": "room_lux",
+                        "primary_threshold_mode": "below",
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.living_main",
+                                "action": "on",
+                                "brightness": 144,
+                                "color_temp_kelvin": 2900,
+                                "rgb_color": None,
+                            }
+                        ],
+                    }
                 }
             }
         }
-    })
+    )
 
     engine._rebuild_configured_reactions()
 
@@ -1872,14 +1968,16 @@ def test_room_lighting_assist_reaction_built_and_registered():
 
 def test_rebuild_clears_removed_proposals():
     """If a proposal is removed from options, its reaction should be removed."""
-    engine = _make_engine(options={
-        "reactions": {
-            "configured": {
-                "p1": _presence_cfg(weekday=0, median_arrival_min=480),
-                "p2": _presence_cfg(weekday=1, median_arrival_min=500),
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": _presence_cfg(weekday=0, median_arrival_min=480),
+                    "p2": _presence_cfg(weekday=1, median_arrival_min=500),
+                }
             }
         }
-    })
+    )
     engine._rebuild_configured_reactions()
     assert len(engine._reactions) == 2
 

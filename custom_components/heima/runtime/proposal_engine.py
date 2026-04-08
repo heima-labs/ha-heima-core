@@ -62,7 +62,9 @@ class ProposalEngine:
     def register_analyzer(self, analyzer: IPatternAnalyzer) -> None:
         self._analyzers.append(analyzer)
 
-    def set_analyzers(self, analyzers: list[IPatternAnalyzer] | tuple[IPatternAnalyzer, ...]) -> None:
+    def set_analyzers(
+        self, analyzers: list[IPatternAnalyzer] | tuple[IPatternAnalyzer, ...]
+    ) -> None:
         self._analyzers = list(analyzers)
 
     def set_learning_plugin_registry(self, registry: LearningPluginRegistry) -> None:
@@ -97,7 +99,9 @@ class ProposalEngine:
                 proposals = await analyzer.analyze(self._event_store)
             except Exception:  # noqa: BLE001
                 self._last_analyzer_failures += 1
-                _LOGGER.exception("Learning analyzer '%s' failed during analyze()", analyzer.analyzer_id)
+                _LOGGER.exception(
+                    "Learning analyzer '%s' failed during analyze()", analyzer.analyzer_id
+                )
                 continue
             if not isinstance(proposals, list):
                 try:
@@ -177,7 +181,8 @@ class ProposalEngine:
                         target_reaction_class=(
                             candidate.target_reaction_class
                             or str(
-                                _safe_dict(accepted.suggested_reaction_config).get("reaction_class") or ""
+                                _safe_dict(accepted.suggested_reaction_config).get("reaction_class")
+                                or ""
                             )
                         ),
                         target_reaction_origin=(
@@ -255,9 +260,7 @@ class ProposalEngine:
         return updated.proposal_id
 
     def pending_proposals(self) -> list[ReactionProposal]:
-        return self._sort_proposals(
-            [p for p in self._proposals if p.status == "pending"]
-        )
+        return self._sort_proposals([p for p in self._proposals if p.status == "pending"])
 
     def proposal_by_identity_key(self, identity_key: str) -> ReactionProposal | None:
         target = identity_key.strip()
@@ -301,7 +304,9 @@ class ProposalEngine:
             "analyzer_output_errors": self._last_analyzer_output_errors,
             "pending": len(self.pending_proposals()),
             "pending_stale": sum(
-                1 for proposal in ordered if proposal.status == "pending" and self._is_stale(proposal)
+                1
+                for proposal in ordered
+                if proposal.status == "pending" and self._is_stale(proposal)
             ),
             "stale_after_s": int(self._stale_after.total_seconds()),
             "prune_pending_stale_after_s": int(self._prune_pending_stale_after.total_seconds()),

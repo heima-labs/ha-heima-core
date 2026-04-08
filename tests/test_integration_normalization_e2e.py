@@ -241,7 +241,9 @@ async def test_e2e_people_debug_alias_person_tracks_target_person_entity(
     await hass.async_block_till_done()
 
     assert hass.states.get("binary_sensor.heima_person_demo_alex_home").state == "on"
-    assert hass.states.get("sensor.heima_person_demo_alex_source").state == "debug_alias:person.alex"
+    assert (
+        hass.states.get("sensor.heima_person_demo_alex_source").state == "debug_alias:person.alex"
+    )
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     trace = coordinator.engine.diagnostics()["presence"]["group_trace"]["person_debug:demo_alex"]
@@ -453,7 +455,7 @@ async def test_e2e_camera_return_home_hint_sets_anonymous_presence_and_anyone_ho
                         "return_home_contributor": True,
                     }
                 ],
-            }
+            },
         }
     )
     entry.add_to_hass(hass)
@@ -477,7 +479,9 @@ async def test_e2e_camera_return_home_hint_sets_anonymous_presence_and_anyone_ho
     assert hass.states.get("binary_sensor.heima_anyone_home").state == "on"
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    trace = coordinator.engine.diagnostics()["presence"]["group_trace"]["anonymous_return_home_hint"]
+    trace = coordinator.engine.diagnostics()["presence"]["group_trace"][
+        "anonymous_return_home_hint"
+    ]
     assert trace["active"] is True
     assert trace["used_for_anonymous_presence"] is True
     assert trace["reasons"][0]["reason"] == "entry_person_detected"
@@ -681,7 +685,9 @@ async def test_e2e_set_mode_forces_and_clears_final_house_state_override(
     await hass.async_block_till_done()
 
     assert hass.states.get("sensor.heima_house_state").state == "away"
-    assert coordinator.engine.diagnostics()["house_state"]["override"]["house_state_override"] is None
+    assert (
+        coordinator.engine.diagnostics()["house_state"]["override"]["house_state_override"] is None
+    )
 
 
 @pytest.mark.asyncio
@@ -773,11 +779,11 @@ async def test_e2e_heating_vacation_curve_branch_computes_and_applies_target(
                     "override_branches": {
                         "vacation": {
                             "branch": "vacation_curve",
-                        "vacation_ramp_down_h": 8.0,
-                        "vacation_ramp_up_h": 10.0,
-                        "vacation_min_temp": 16.5,
-                        "vacation_comfort_temp": 19.5,
-                        "vacation_min_total_hours_for_ramp": 24.0,
+                            "vacation_ramp_down_h": 8.0,
+                            "vacation_ramp_up_h": 10.0,
+                            "vacation_min_temp": 16.5,
+                            "vacation_comfort_temp": 19.5,
+                            "vacation_min_total_hours_for_ramp": 24.0,
                         }
                     },
                 }
@@ -995,13 +1001,13 @@ async def test_e2e_heating_vacation_curve_registers_and_fires_scheduler_recheck(
                     "override_branches": {
                         "vacation": {
                             "branch": "vacation_curve",
-                        "vacation_ramp_down_h": 8.0,
-                        "vacation_ramp_up_h": 10.0,
-                        "vacation_min_temp": 16.5,
-                        "vacation_comfort_temp": 19.5,
-                        "vacation_min_total_hours_for_ramp": 24.0,
+                            "vacation_ramp_down_h": 8.0,
+                            "vacation_ramp_up_h": 10.0,
+                            "vacation_min_temp": 16.5,
+                            "vacation_comfort_temp": 19.5,
+                            "vacation_min_total_hours_for_ramp": 24.0,
                         }
-                    }
+                    },
                 },
             },
             vacation_mode="input_boolean.vacation_mode",

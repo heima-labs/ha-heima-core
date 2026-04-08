@@ -245,7 +245,9 @@ def _composite_should_suppress_followup(
         return False
 
     if candidate.reaction_type == "room_signal_assist":
-        return _room_signal_assist_should_suppress_followup(candidate_cfg, accepted_cfg, policy=policy)
+        return _room_signal_assist_should_suppress_followup(
+            candidate_cfg, accepted_cfg, policy=policy
+        )
     if candidate.reaction_type == "room_darkness_lighting_assist":
         return _room_darkness_lighting_assist_should_suppress_followup(
             candidate_cfg,
@@ -284,10 +286,13 @@ def _room_signal_assist_should_suppress_followup(
         > policy.room_signal_primary_threshold_max_gap
     ):
         return False
-    if _numeric_gap(
-        candidate_cfg.get("corroboration_threshold"),
-        accepted_cfg.get("corroboration_threshold"),
-    ) > policy.room_signal_corroboration_threshold_max_gap:
+    if (
+        _numeric_gap(
+            candidate_cfg.get("corroboration_threshold"),
+            accepted_cfg.get("corroboration_threshold"),
+        )
+        > policy.room_signal_corroboration_threshold_max_gap
+    ):
         return False
     return True
 

@@ -205,7 +205,10 @@ class LightingRecorderBehavior(HeimaBehavior):
                 if not isinstance(payload, dict):
                     continue
                 applied_ts = payload.get("applied_ts")
-                if not isinstance(applied_ts, (int, float)) or (now - applied_ts) >= _HEIMA_APPLY_TTL_S:
+                if (
+                    not isinstance(applied_ts, (int, float))
+                    or (now - applied_ts) >= _HEIMA_APPLY_TTL_S
+                ):
                     continue
                 expected_subject_ids = payload.get("expected_subject_ids")
                 if isinstance(expected_subject_ids, list) and expected_subject_ids:
@@ -238,7 +241,10 @@ class LightingRecorderBehavior(HeimaBehavior):
                 if not isinstance(payload, dict):
                     continue
                 applied_ts = payload.get("applied_ts")
-                if not isinstance(applied_ts, (int, float)) or (now - applied_ts) >= _HEIMA_APPLY_TTL_S:
+                if (
+                    not isinstance(applied_ts, (int, float))
+                    or (now - applied_ts) >= _HEIMA_APPLY_TTL_S
+                ):
                     continue
                 expected_subject_ids = payload.get("expected_subject_ids")
                 if isinstance(expected_subject_ids, list) and expected_subject_ids:
@@ -267,7 +273,9 @@ class LightingRecorderBehavior(HeimaBehavior):
 
         rooms = apply_state.get("rooms", {}) if isinstance(apply_state, dict) else apply_state
         room_apply_ts = rooms.get(room_id, 0.0) if isinstance(rooms, dict) else 0.0
-        return isinstance(room_apply_ts, (int, float)) and (now - room_apply_ts) < _HEIMA_APPLY_TTL_S
+        return (
+            isinstance(room_apply_ts, (int, float)) and (now - room_apply_ts) < _HEIMA_APPLY_TTL_S
+        )
 
     # ------------------------------------------------------------------
     # Entity → room mapping

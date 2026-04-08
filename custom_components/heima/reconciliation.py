@@ -62,7 +62,8 @@ def _reconcile_people(
             ha_name = inventory[person_entity]
             previous_ha_name = str(item.get("ha_source_name") or "").strip()
             if not str(item.get("display_name") or "").strip() or (
-                not bool(item.get("heima_reviewed")) and str(item.get("display_name") or "").strip() in {"", previous_ha_name}
+                not bool(item.get("heima_reviewed"))
+                and str(item.get("display_name") or "").strip() in {"", previous_ha_name}
             ):
                 item["display_name"] = ha_name
             item["ha_source_name"] = ha_name
@@ -152,7 +153,8 @@ def _reconcile_rooms(
             ha_name = inventory[area_id]
             previous_ha_name = str(item.get("ha_source_name") or "").strip()
             if not str(item.get("display_name") or "").strip() or (
-                not bool(item.get("heima_reviewed")) and str(item.get("display_name") or "").strip() in {"", previous_ha_name}
+                not bool(item.get("heima_reviewed"))
+                and str(item.get("display_name") or "").strip() in {"", previous_ha_name}
             ):
                 item["display_name"] = ha_name
             item["ha_source_name"] = ha_name

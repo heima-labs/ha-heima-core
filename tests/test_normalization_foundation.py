@@ -44,7 +44,9 @@ def _hass(values: dict[str, str] | None = None):
 
 
 def test_input_normalizer_presence_behaviour_preserving_truthy_and_numeric():
-    normalizer = InputNormalizer(_hass({"binary_sensor.motion": "on", "sensor.count": "2", "sensor.zero": "0"}))
+    normalizer = InputNormalizer(
+        _hass({"binary_sensor.motion": "on", "sensor.count": "2", "sensor.zero": "0"})
+    )
     assert normalizer.presence("binary_sensor.motion").state == "on"
     assert normalizer.presence("sensor.count").state == "on"
     off_obs = normalizer.presence("sensor.zero")

@@ -19,14 +19,19 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: HeimaCoordinator = data["coordinator"]
     registry = build_registry(entry)
-    entities = [HeimaGenericBinarySensor(coordinator, entry, desc.key, desc.name) for desc in registry.binary_sensors]
+    entities = [
+        HeimaGenericBinarySensor(coordinator, entry, desc.key, desc.name)
+        for desc in registry.binary_sensors
+    ]
     async_add_entities(entities)
 
 
 class HeimaGenericBinarySensor(HeimaEntity, BinarySensorEntity):
     """Generic canonical binary sensor."""
 
-    def __init__(self, coordinator: HeimaCoordinator, entry: ConfigEntry, key: str, name: str) -> None:
+    def __init__(
+        self, coordinator: HeimaCoordinator, entry: ConfigEntry, key: str, name: str
+    ) -> None:
         super().__init__(coordinator, entry)
         normalized_key = key if key.startswith("heima_") else f"heima_{key}"
         self._key = normalized_key

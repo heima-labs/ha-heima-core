@@ -88,20 +88,12 @@ class LearningPluginRegistry:
         )
 
     def analyzers(self, *, enabled_only: bool = True) -> tuple[IPatternAnalyzer, ...]:
-        return tuple(
-            item.analyzer
-            for item in self._plugins
-            if item.enabled or not enabled_only
-        )
+        return tuple(item.analyzer for item in self._plugins if item.enabled or not enabled_only)
 
     def descriptors(
         self, *, enabled_only: bool = False
     ) -> tuple[LearningPatternPluginDescriptor, ...]:
-        return tuple(
-            item.descriptor
-            for item in self._plugins
-            if item.enabled or not enabled_only
-        )
+        return tuple(item.descriptor for item in self._plugins if item.enabled or not enabled_only)
 
     def admin_authored_descriptors(
         self, *, enabled_only: bool = True
@@ -109,8 +101,7 @@ class LearningPluginRegistry:
         return tuple(
             item.descriptor
             for item in self._plugins
-            if item.descriptor.supports_admin_authored
-            and (item.enabled or not enabled_only)
+            if item.descriptor.supports_admin_authored and (item.enabled or not enabled_only)
         )
 
     def admin_authored_templates(
@@ -289,7 +280,7 @@ def create_builtin_learning_plugin_registry(
                 DEFAULT_COMPOSITE_PATTERN_CATALOG,
                 policies.composite_room_assist,
             ),
-            quality_policy=composite_quality_policy_from_learning_config(learning_config)
+            quality_policy=composite_quality_policy_from_learning_config(learning_config),
         ),
         enabled=_is_enabled("composite_room_assist", enabled_families),
     )
@@ -314,9 +305,7 @@ def create_builtin_learning_plugin_registry(
                 ),
             ),
         ),
-        analyzer=SecurityPresenceSimulationAnalyzer(
-            policy=policies.security_presence_simulation
-        ),
+        analyzer=SecurityPresenceSimulationAnalyzer(policy=policies.security_presence_simulation),
         enabled=_is_enabled("security_presence_simulation", enabled_families),
     )
     return registry
@@ -329,7 +318,7 @@ def _is_enabled(plugin_family: str, enabled_families: set[str] | None) -> bool:
 
 
 def _template_diagnostics(
-    templates: tuple[AdminAuthoredTemplateDescriptor, ...]
+    templates: tuple[AdminAuthoredTemplateDescriptor, ...],
 ) -> list[dict[str, str]]:
     return [
         {

@@ -21,8 +21,4 @@ def build_learning_diagnostics(
         "plugin_family": plugin_family,
     }
     diagnostics.update(fields)
-    return {
-        key: value
-        for key, value in diagnostics.items()
-        if value not in (None, "", [])
-    }
+    return {key: value for key, value in diagnostics.items() if value not in (None, "", [])}

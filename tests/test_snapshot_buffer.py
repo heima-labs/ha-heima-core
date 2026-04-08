@@ -12,6 +12,7 @@ def _snap(house_state: str = "unknown") -> DecisionSnapshot:
     s = DecisionSnapshot.empty()
     # DecisionSnapshot is frozen; rebuild with the desired house_state
     from dataclasses import replace
+
     return replace(s, house_state=house_state)
 
 

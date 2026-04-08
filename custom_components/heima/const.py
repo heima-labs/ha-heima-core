@@ -65,13 +65,15 @@ DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
 
 # Keys whose change requires a full HA entry reload (entity sets are rebuilt from them).
 # All other keys are "runtime" — handled by coordinator.async_reload_options().
-STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset({
-    OPT_PEOPLE_NAMED,
-    OPT_PEOPLE_ANON,
-    OPT_PEOPLE_DEBUG_ALIASES,
-    OPT_ROOMS,
-    OPT_LIGHTING_ZONES,
-})
+STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset(
+    {
+        OPT_PEOPLE_NAMED,
+        OPT_PEOPLE_ANON,
+        OPT_PEOPLE_DEBUG_ALIASES,
+        OPT_ROOMS,
+        OPT_LIGHTING_ZONES,
+    }
+)
 
 DEFAULT_ENGINE_ENABLED = True
 DEFAULT_LIGHTING_APPLY_MODE = "scene"

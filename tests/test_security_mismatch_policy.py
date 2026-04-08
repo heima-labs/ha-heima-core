@@ -40,14 +40,20 @@ class _FakeServices:
 
 
 def _engine(options: dict, state_values: dict[str, str] | None = None) -> HeimaEngine:
-    hass = SimpleNamespace(states=_FakeStates(state_values), bus=_FakeBus(), services=_FakeServices())
+    hass = SimpleNamespace(
+        states=_FakeStates(state_values), bus=_FakeBus(), services=_FakeServices()
+    )
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options=options))
     engine._build_default_state()
     return engine
 
 
 def _event_types(engine: HeimaEngine) -> list[str]:
-    return [payload["type"] for event_type, payload in engine._hass.bus.events if event_type == "heima_event"]
+    return [
+        payload["type"]
+        for event_type, payload in engine._hass.bus.events
+        if event_type == "heima_event"
+    ]
 
 
 async def _eval(engine: HeimaEngine):

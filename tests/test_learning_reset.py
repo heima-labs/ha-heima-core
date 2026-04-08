@@ -132,7 +132,9 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
         async_reload_options=AsyncMock(),
         health=SimpleNamespace(ok=True, reason="ok"),
         snapshot=SimpleNamespace(house_state="home"),
-        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+        state=SimpleNamespace(
+            get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""
+        ),
     )
     coordinator._proposal_engine = SimpleNamespace(
         async_run=AsyncMock(),
@@ -173,7 +175,9 @@ async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_ins
         async_reload_options=AsyncMock(),
         health=SimpleNamespace(ok=True, reason="ok"),
         snapshot=SimpleNamespace(house_state="home"),
-        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+        state=SimpleNamespace(
+            get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""
+        ),
     )
     coordinator._proposal_engine = proposal_engine
     coordinator._context_builder = SimpleNamespace(update_config=MagicMock())
@@ -206,7 +210,9 @@ async def test_coordinator_runtime_reload_updates_learning_plugin_registry_and_a
         async_reload_options=AsyncMock(),
         health=SimpleNamespace(ok=True, reason="ok"),
         snapshot=SimpleNamespace(house_state="home"),
-        state=SimpleNamespace(get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""),
+        state=SimpleNamespace(
+            get_sensor=lambda key: "default" if key == "heima_house_state_reason" else ""
+        ),
     )
     coordinator._proposal_engine = proposal_engine
     coordinator._learning_plugin_registry = initial_registry

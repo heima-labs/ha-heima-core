@@ -85,9 +85,7 @@ class OccupancyDomain:
             room_id = room.get("room_id")
             if not room_id:
                 continue
-            is_occupied, occ_trace = self._compute_room_occupancy(
-                room, schedule_recheck, events
-            )
+            is_occupied, occ_trace = self._compute_room_occupancy(room, schedule_recheck, events)
             prev_value = state.get_binary(f"heima_occupancy_{room_id}")
             state.set_binary(f"heima_occupancy_{room_id}", is_occupied)
             state.set_sensor(
@@ -129,8 +127,7 @@ class OccupancyDomain:
         derived_rooms = [
             str(room.get("room_id"))
             for room in options.get(OPT_ROOMS, [])
-            if room.get("room_id")
-            and self._room_occupancy_mode(room) == "derived"
+            if room.get("room_id") and self._room_occupancy_mode(room) == "derived"
         ]
         derived_room_count = len(derived_rooms)
         persist_s = mismatch_cfg["persist_s"]
@@ -346,9 +343,7 @@ class OccupancyDomain:
             "plugin_id": fused.plugin_id,
             "used_plugin_fallback": fused.reason == "plugin_error_fallback",
             "configured_source_weights": (
-                dict(room_cfg.get("source_weights", {}))
-                if logic == "weighted_quorum"
-                else {}
+                dict(room_cfg.get("source_weights", {})) if logic == "weighted_quorum" else {}
             ),
             "effective_source_weights": dict(fused.evidence.get("weights", {}))
             if isinstance(fused.evidence, dict)
@@ -358,9 +353,7 @@ class OccupancyDomain:
                     "entity_id": obs.source_entity_id,
                     "state": obs.state,
                     "weight": (
-                        fused.evidence.get("weights", {}).get(
-                            obs.source_entity_id or "", 1.0
-                        )
+                        fused.evidence.get("weights", {}).get(obs.source_entity_id or "", 1.0)
                         if isinstance(fused.evidence, dict)
                         else 1.0
                     ),

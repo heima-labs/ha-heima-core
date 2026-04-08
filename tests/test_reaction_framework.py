@@ -48,6 +48,7 @@ def test_diagnostics_returns_empty_dict():
 
 def _make_engine():
     from custom_components.heima.runtime.engine import HeimaEngine
+
     hass = MagicMock()
     hass.states.get.return_value = None
     hass.services.async_services.return_value = {}
@@ -156,7 +157,9 @@ def test_multiple_reactions_steps_merged():
 
 def test_source_tag_does_not_overwrite_other_fields():
     engine = _make_engine()
-    original = ApplyStep(domain="heating", target="climate.t", action="climate.set_temperature", reason="test")
+    original = ApplyStep(
+        domain="heating", target="climate.t", action="climate.set_temperature", reason="test"
+    )
     engine.register_reaction(_StepCapture(original))
     result = engine._dispatch_reactions([])
     assert result[0].domain == "heating"
@@ -171,6 +174,8 @@ def test_source_tag_does_not_overwrite_other_fields():
 
 def test_diagnostics_includes_reactions():
     engine = _make_engine()
-    engine.register_reaction(_StepCapture(ApplyStep(domain="lighting", target="x", action="light.turn_off")))
+    engine.register_reaction(
+        _StepCapture(ApplyStep(domain="lighting", target="x", action="light.turn_off"))
+    )
     diag = engine.diagnostics()
     assert "_StepCapture" in diag["reactions"]

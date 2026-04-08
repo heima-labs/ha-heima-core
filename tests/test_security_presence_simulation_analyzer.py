@@ -69,7 +69,9 @@ def _lighting(
     )
 
 
-def _multi_week(room_id: str, entity_id: str, action: str, weekday: int, minute: int) -> list[HeimaEvent]:
+def _multi_week(
+    room_id: str, entity_id: str, action: str, weekday: int, minute: int
+) -> list[HeimaEvent]:
     return [
         *[
             _lighting(
@@ -109,7 +111,10 @@ async def test_security_presence_simulation_analyzer_emits_home_scoped_proposal(
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "vacation_presence_simulation"
-    assert proposal.fingerprint == "SecurityPresenceSimulationAnalyzer|vacation_presence_simulation|scope=home"
+    assert (
+        proposal.fingerprint
+        == "SecurityPresenceSimulationAnalyzer|vacation_presence_simulation|scope=home"
+    )
     cfg = proposal.suggested_reaction_config
     assert cfg["reaction_class"] == "VacationPresenceSimulationReaction"
     assert cfg["dynamic_policy"] is True
@@ -146,10 +151,7 @@ async def test_security_presence_simulation_analyzer_excludes_vacation_events():
     assert len(proposals) == 1
     cfg = proposals[0].suggested_reaction_config
     assert cfg["allowed_rooms"] == ["living"]
-    assert all(
-        item["room_id"] == "living"
-        for item in cfg["learned_source_profiles"]
-    )
+    assert all(item["room_id"] == "living" for item in cfg["learned_source_profiles"])
 
 
 async def test_security_presence_simulation_analyzer_requires_sufficient_profile_mix():

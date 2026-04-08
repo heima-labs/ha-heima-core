@@ -194,8 +194,7 @@ async def _analyze_definition(
     state_changes = await event_store.async_query(event_type="state_change")
     lighting_events = await event_store.async_query(event_type="lighting")
     events = [
-        e for e in [*state_changes, *lighting_events]
-        if isinstance(e, HeimaEvent) and e.room_id
+        e for e in [*state_changes, *lighting_events] if isinstance(e, HeimaEvent) and e.room_id
     ]
     if not events:
         return []
@@ -342,9 +341,7 @@ def _composite_confidence(
     count = len(confirmed)
     weeks = _episode_week_count(confirmed)
     corroboration_ratio = (
-        _corroborated_ratio(confirmed, corroboration_key)
-        if corroboration_key
-        else 0.0
+        _corroborated_ratio(confirmed, corroboration_key) if corroboration_key else 0.0
     )
 
     confidence = base
@@ -400,9 +397,7 @@ def _stable_entities_from_corroboration(
         return []
     for episode in confirmed:
         matched = {
-            entity_id
-            for entity_id in episode.corroboration_matches.get(key, ())
-            if entity_id
+            entity_id for entity_id in episode.corroboration_matches.get(key, ()) if entity_id
         }
         for entity_id in matched:
             counts[entity_id] = counts.get(entity_id, 0) + 1
@@ -460,7 +455,9 @@ def _dominant_composite_candidates(
     for proposal in proposals:
         slot_key = _composite_slot_key(proposal)
         current = by_slot.get(slot_key)
-        if current is None or _composite_candidate_rank(proposal) > _composite_candidate_rank(current):
+        if current is None or _composite_candidate_rank(proposal) > _composite_candidate_rank(
+            current
+        ):
             by_slot[slot_key] = proposal
     return sorted(
         by_slot.values(),
@@ -475,9 +472,7 @@ def _dominant_composite_candidates(
 def _composite_slot_key(proposal: ReactionProposal) -> str:
     cfg = _safe_dict(proposal.suggested_reaction_config)
     primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
-    return (
-        f"{proposal.reaction_type}|room={cfg.get('room_id')}|primary={primary_signal}"
-    )
+    return f"{proposal.reaction_type}|room={cfg.get('room_id')}|primary={primary_signal}"
 
 
 def _composite_candidate_rank(proposal: ReactionProposal) -> tuple[float, int, int, str]:
@@ -595,7 +590,9 @@ def _build_darkness_lighting_assist_config(
 ) -> dict[str, Any]:
     lux_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
     entity_steps = _aggregate_lighting_followup_steps(confirmed, quality_policy=quality_policy)
-    followup_entities = sorted({step["entity_id"] for step in entity_steps if step.get("entity_id")})
+    followup_entities = sorted(
+        {step["entity_id"] for step in entity_steps if step.get("entity_id")}
+    )
     return {
         "reaction_class": "RoomLightingAssistReaction",
         "room_id": room_id,
@@ -623,9 +620,7 @@ def _build_default_diagnostics(
     confirmed: list,
     quality_policy: CompositeProposalQualityPolicy,
 ) -> dict[str, Any]:
-    corroboration_signal_names = [
-        signal.name for signal in definition.matcher_spec.corroborations
-    ]
+    corroboration_signal_names = [signal.name for signal in definition.matcher_spec.corroborations]
     primary_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
     corroboration_entities = sorted(
         {
@@ -637,12 +632,7 @@ def _build_default_diagnostics(
         }
     )
     followup_entities = sorted(
-        {
-            entity_id
-            for ep in confirmed
-            for entity_id in ep.followup_entities
-            if entity_id
-        }
+        {entity_id for ep in confirmed for entity_id in ep.followup_entities if entity_id}
     )
     return build_learning_diagnostics(
         pattern_id=definition.pattern_id,
@@ -663,9 +653,7 @@ def _build_default_diagnostics(
         episodes_detected=len(episodes),
         episodes_confirmed=len(confirmed),
         weeks_observed=_episode_week_count(episodes),
-        corroborated_episodes=sum(
-            1 for ep in confirmed if any(ep.corroboration_matches.values())
-        ),
+        corroborated_episodes=sum(1 for ep in confirmed if any(ep.corroboration_matches.values())),
         followup_entity_min_ratio=quality_policy.followup_entity_min_ratio,
         followup_entity_min_episodes=quality_policy.followup_entity_min_episodes,
         corroboration_promote_min_ratio=quality_policy.corroboration_promote_min_ratio,
@@ -795,8 +783,8 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_cooling,
-    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_cooling_assist_config(
-        room_id, confirmed, quality_policy
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: (
+        _build_cooling_assist_config(room_id, confirmed, quality_policy)
     ),
     confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
@@ -830,8 +818,8 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_air_quality,
-    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_air_quality_assist_config(
-        room_id, confirmed, quality_policy
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: (
+        _build_air_quality_assist_config(room_id, confirmed, quality_policy)
     ),
     confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
@@ -865,8 +853,8 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     min_occurrences=_MIN_OCCURRENCES,
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_darkness_lighting,
-    suggested_config_builder=lambda room_id, confirmed, quality_policy: _build_darkness_lighting_assist_config(
-        room_id, confirmed, quality_policy
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: (
+        _build_darkness_lighting_assist_config(room_id, confirmed, quality_policy)
     ),
     confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
@@ -967,8 +955,14 @@ def _aggregate_lighting_followup_steps(
             continue
         last = group[-1]
         action = str(last.data.get("action") or "on")
-        brightness = _median_int([e.data.get("brightness") for e in group]) if action == "on" else None
-        color_temp = _median_int([e.data.get("color_temp_kelvin") for e in group]) if action == "on" else None
+        brightness = (
+            _median_int([e.data.get("brightness") for e in group]) if action == "on" else None
+        )
+        color_temp = (
+            _median_int([e.data.get("color_temp_kelvin") for e in group])
+            if action == "on"
+            else None
+        )
         rgb = _mode_rgb([e.data.get("rgb_color") for e in group]) if action == "on" else None
         steps.append(
             {
@@ -991,10 +985,7 @@ def _median_int(values: list[Any]) -> int | None:
 
 
 def _mode_rgb(values: list[Any]) -> list[int] | None:
-    candidates = [
-        tuple(v) for v in values
-        if isinstance(v, (list, tuple)) and len(v) == 3
-    ]
+    candidates = [tuple(v) for v in values if isinstance(v, (list, tuple)) and len(v) == 3]
     if not candidates:
         return None
     counts: dict[tuple[int, int, int], int] = {}

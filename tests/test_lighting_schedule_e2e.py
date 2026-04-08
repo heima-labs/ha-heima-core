@@ -75,15 +75,29 @@ def _seed_events(
     n_week2: int = 2,
 ) -> list[HeimaEvent]:
     evts = [
-        _lighting_event(entity_id=entity_id, room_id=room_id, action=action,
-                        weekday=weekday, minute=minute, brightness=brightness,
-                        color_temp_kelvin=color_temp_kelvin, ts=_WEEK1_TS)
+        _lighting_event(
+            entity_id=entity_id,
+            room_id=room_id,
+            action=action,
+            weekday=weekday,
+            minute=minute,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+            ts=_WEEK1_TS,
+        )
         for _ in range(n_week1)
     ]
     evts += [
-        _lighting_event(entity_id=entity_id, room_id=room_id, action=action,
-                        weekday=weekday, minute=minute, brightness=brightness,
-                        color_temp_kelvin=color_temp_kelvin, ts=_WEEK2_TS)
+        _lighting_event(
+            entity_id=entity_id,
+            room_id=room_id,
+            action=action,
+            weekday=weekday,
+            minute=minute,
+            brightness=brightness,
+            color_temp_kelvin=color_temp_kelvin,
+            ts=_WEEK2_TS,
+        )
         for _ in range(n_week2)
     ]
     return evts
@@ -127,6 +141,7 @@ def _snapshot(house_state: str = "home") -> DecisionSnapshot:
 # 1. Store → Analyzer
 # ---------------------------------------------------------------------------
 
+
 async def test_e2e_analyzer_produces_proposal_with_entity_steps():
     """Seeding store with ≥5 events across ≥2 weeks → proposal with entity_steps."""
     store = _StoreStub(_seed_events())
@@ -158,8 +173,12 @@ async def test_e2e_analyzer_scene_grouping():
 
 async def test_e2e_analyzer_scene_grouping_collapses_duplicate_entity_steps():
     """A grouped scene keeps one normalized step per entity_id."""
-    on_events = _seed_events(entity_id="light.living_main", room_id="living", action="on", minute=1200)
-    off_events = _seed_events(entity_id="light.living_main", room_id="living", action="off", minute=1205)
+    on_events = _seed_events(
+        entity_id="light.living_main", room_id="living", action="on", minute=1200
+    )
+    off_events = _seed_events(
+        entity_id="light.living_main", room_id="living", action="off", minute=1205
+    )
     store = _StoreStub(on_events + off_events)
     analyzer = LightingPatternAnalyzer()
     proposals = await analyzer.analyze(store)  # type: ignore[arg-type]
@@ -172,6 +191,7 @@ async def test_e2e_analyzer_scene_grouping_collapses_duplicate_entity_steps():
 # ---------------------------------------------------------------------------
 # 2. Analyzer → ProposalEngine: run, dedup, confidence update
 # ---------------------------------------------------------------------------
+
 
 async def test_e2e_proposal_engine_run(monkeypatch):
     """ProposalEngine stores proposal and deduplicates on re-run."""
@@ -219,6 +239,7 @@ async def test_e2e_proposal_engine_accepted_not_overwritten(monkeypatch):
 # 3. Reaction instantiation from accepted proposal config
 # ---------------------------------------------------------------------------
 
+
 def _make_reaction(
     *,
     room_id: str = "living",
@@ -229,10 +250,20 @@ def _make_reaction(
 ) -> LightingScheduleReaction:
     if entity_steps is None:
         entity_steps = [
-            {"entity_id": "light.living_main", "action": "on",
-             "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
-            {"entity_id": "light.living_spot", "action": "off",
-             "brightness": None, "color_temp_kelvin": None, "rgb_color": None},
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
+            {
+                "entity_id": "light.living_spot",
+                "action": "off",
+                "brightness": None,
+                "color_temp_kelvin": None,
+                "rgb_color": None,
+            },
         ]
     return LightingScheduleReaction(
         room_id=room_id,
@@ -254,8 +285,13 @@ def test_e2e_reaction_instantiation_from_config():
         "window_half_min": 10,
         "house_state_filter": None,
         "entity_steps": [
-            {"entity_id": "light.kitchen_spot", "action": "on",
-             "brightness": 200, "color_temp_kelvin": 2700, "rgb_color": None},
+            {
+                "entity_id": "light.kitchen_spot",
+                "action": "on",
+                "brightness": 200,
+                "color_temp_kelvin": 2700,
+                "rgb_color": None,
+            },
         ],
     }
     reaction = LightingScheduleReaction(
@@ -278,12 +314,16 @@ def test_e2e_reaction_instantiation_from_config():
 # 4. evaluate() → ApplySteps + debounce
 # ---------------------------------------------------------------------------
 
+
 def _make_hass_mock_for_weekday(weekday: int, hour: int, minute: int):
     """Patch dt_util.now() to return a specific weekday/time."""
     from datetime import datetime, timezone
     from unittest.mock import patch
+
     dt = datetime(2026, 3, 2 + weekday, hour, minute, 0, tzinfo=timezone.utc)
-    return patch("custom_components.heima.runtime.reactions.lighting_schedule.dt_util.now", return_value=dt)
+    return patch(
+        "custom_components.heima.runtime.reactions.lighting_schedule.dt_util.now", return_value=dt
+    )
 
 
 def test_e2e_reaction_evaluate_returns_steps_in_window():
@@ -340,7 +380,13 @@ def test_e2e_reaction_evaluate_wraps_from_previous_day_before_midnight():
         scheduled_min=5,
         window_half_min=10,
         entity_steps=[
-            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
         ],
         reaction_id="midnight-wrap",
     )
@@ -361,7 +407,13 @@ def test_e2e_reaction_debounce_uses_occurrence_day_across_midnight():
         scheduled_min=5,
         window_half_min=10,
         entity_steps=[
-            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
         ],
         reaction_id="midnight-debounce",
     )
@@ -387,7 +439,13 @@ def test_e2e_reaction_evaluate_wraps_to_next_day_after_midnight():
         scheduled_min=23 * 60 + 55,
         window_half_min=10,
         entity_steps=[
-            {"entity_id": "light.living_main", "action": "on", "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
         ],
         reaction_id="late-wrap",
     )
@@ -407,8 +465,13 @@ def test_e2e_reaction_evaluate_house_state_filter_mismatch():
         window_half_min=10,
         house_state_filter="home",
         entity_steps=[
-            {"entity_id": "light.living_main", "action": "on",
-             "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 128,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
         ],
     )
     history = [_snapshot("away")]
@@ -429,6 +492,7 @@ def test_e2e_reaction_evaluate_empty_history():
 # 5. scheduled_jobs()
 # ---------------------------------------------------------------------------
 
+
 def test_e2e_reaction_scheduled_jobs_due_in_future():
     """scheduled_jobs() returns one job with due_monotonic in the future."""
     reaction = _make_reaction(reaction_id="sched-test")
@@ -444,6 +508,7 @@ def test_e2e_reaction_scheduled_jobs_due_in_future():
 # ---------------------------------------------------------------------------
 # 6. execute_lighting_steps() → HA service calls
 # ---------------------------------------------------------------------------
+
 
 async def test_e2e_execute_lighting_steps_turn_on():
     """execute_lighting_steps() calls light.turn_on with entity_id + brightness + color_temp."""

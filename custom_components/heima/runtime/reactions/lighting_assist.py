@@ -125,7 +125,9 @@ class RoomLightingAssistReaction(HeimaReaction):
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
-            "pending_episode": self._pending_episode_ts.isoformat() if self._pending_episode_ts else None,
+            "pending_episode": self._pending_episode_ts.isoformat()
+            if self._pending_episode_ts
+            else None,
             "steady_condition_active": self._steady_condition_active,
         }
 
@@ -206,17 +208,13 @@ def build_room_lighting_assist_reaction(
     try:
         room_id = str(cfg["room_id"]).strip()
         primary_signal_entities = [
-            str(v).strip()
-            for v in cfg.get("primary_signal_entities", [])
-            if str(v).strip()
+            str(v).strip() for v in cfg.get("primary_signal_entities", []) if str(v).strip()
         ]
         primary_threshold = float(cfg["primary_threshold"])
         primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
         primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
         corroboration_signal_entities = [
-            str(v).strip()
-            for v in cfg.get("corroboration_signal_entities", [])
-            if str(v).strip()
+            str(v).strip() for v in cfg.get("corroboration_signal_entities", []) if str(v).strip()
         ]
         corroboration_threshold = (
             float(cfg["corroboration_threshold"])
@@ -422,7 +420,10 @@ def present_tuning_room_lighting_assist_details(
 
     current_corroboration_threshold = target_cfg.get("corroboration_threshold")
     proposed_corroboration_threshold = cfg.get("corroboration_threshold")
-    if current_corroboration_threshold not in (None, "") and proposed_corroboration_threshold not in (
+    if current_corroboration_threshold not in (
+        None,
+        "",
+    ) and proposed_corroboration_threshold not in (
         None,
         "",
     ):
@@ -436,7 +437,9 @@ def present_tuning_room_lighting_assist_details(
                 )
             )
 
-    current_corroboration_mode = str(target_cfg.get("corroboration_threshold_mode") or "below").strip()
+    current_corroboration_mode = str(
+        target_cfg.get("corroboration_threshold_mode") or "below"
+    ).strip()
     proposed_corroboration_mode = str(cfg.get("corroboration_threshold_mode") or "below").strip()
     if current_corroboration_mode != proposed_corroboration_mode:
         details.append(

@@ -105,7 +105,9 @@ class _FailSafeCaptureNormalizer(_FakeNormalizer):
 
 
 def _engine(state_values: dict[str, str] | None = None) -> HeimaEngine:
-    hass = SimpleNamespace(states=_FakeStates(state_values), services=_FakeServices(), bus=_FakeBus())
+    hass = SimpleNamespace(
+        states=_FakeStates(state_values), services=_FakeServices(), bus=_FakeBus()
+    )
     return HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))
 
 

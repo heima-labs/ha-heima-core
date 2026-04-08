@@ -19,7 +19,9 @@ def _snapshot(*, occupied_rooms: list[str], ts: str) -> DecisionSnapshot:
 def test_room_lighting_assist_reaction_fires_when_room_lux_drops_below_threshold():
     hass = MagicMock()
     states = {"sensor.living_room_lux": "180"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomLightingAssistReaction(
         hass=hass,
         room_id="living",
@@ -60,7 +62,9 @@ def test_room_lighting_assist_reaction_fires_when_room_lux_drops_below_threshold
 def test_room_lighting_assist_reaction_respects_room_occupancy():
     hass = MagicMock()
     states = {"sensor.living_room_lux": "180"}
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomLightingAssistReaction(
         hass=hass,
         room_id="living",
@@ -99,7 +103,9 @@ def test_room_lighting_assist_reaction_fires_when_room_is_already_dark_on_entry(
         "sensor.living_room_lux": "40",
         "light.living_main": "off",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomLightingAssistReaction(
         hass=hass,
         room_id="living",
@@ -133,7 +139,9 @@ def test_room_lighting_assist_reaction_does_not_refire_while_same_dark_episode_p
         "sensor.living_room_lux": "40",
         "light.living_main": "off",
     }
-    hass.states.get.side_effect = lambda eid: SimpleNamespace(state=states[eid]) if eid in states else None
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state=states[eid]) if eid in states else None
+    )
     reaction = RoomLightingAssistReaction(
         hass=hass,
         room_id="living",

@@ -45,7 +45,9 @@ def pick_scene_for_intent(room_map: dict[str, Any], intent: str) -> str | None:
     return scene
 
 
-def pick_scene_for_intent_with_trace(room_map: dict[str, Any], intent: str) -> tuple[str | None, str]:
+def pick_scene_for_intent_with_trace(
+    room_map: dict[str, Any], intent: str
+) -> tuple[str | None, str]:
     """Select scene id and return how it was resolved (direct/fallback/missing)."""
     direct = _scene(room_map, intent)
     if direct:

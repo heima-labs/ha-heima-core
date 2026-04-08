@@ -102,9 +102,7 @@ class ReactionPluginRegistry:
 
     def __init__(self, plugins: tuple[RegisteredReactionPlugin, ...]) -> None:
         self._plugins = plugins
-        self._plugins_by_class = {
-            plugin.descriptor.reaction_class: plugin for plugin in plugins
-        }
+        self._plugins_by_class = {plugin.descriptor.reaction_class: plugin for plugin in plugins}
 
     def plugin_for(self, reaction_class: str) -> RegisteredReactionPlugin | None:
         return self._plugins_by_class.get(str(reaction_class or ""))
@@ -125,9 +123,7 @@ class ReactionPluginRegistry:
             {
                 "reaction_class": plugin.descriptor.reaction_class,
                 "reaction_id_strategy": plugin.descriptor.reaction_id_strategy,
-                "supported_config_contracts": list(
-                    plugin.descriptor.supported_config_contracts
-                ),
+                "supported_config_contracts": list(plugin.descriptor.supported_config_contracts),
                 "supports_normalizer": plugin.descriptor.supports_normalizer,
                 "supports_presenter": plugin.presenter_hooks is not None,
             }
@@ -256,6 +252,7 @@ def builtin_reaction_plugin_builders() -> dict[str, ReactionPluginBuilder]:
 def builtin_reaction_plugin_descriptors() -> tuple[ReactionPluginDescriptor, ...]:
     """Legacy helper: return minimal metadata for built-in Reaction Plugins."""
     return create_builtin_reaction_plugin_registry().descriptors()
+
 
 __all__ = [
     "HeimaReaction",

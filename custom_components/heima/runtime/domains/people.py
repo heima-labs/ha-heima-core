@@ -26,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 class PeopleResult:
     """Result of PeopleDomain.compute()."""
 
-    home_people: list[str]       # slugs of named people who are home
+    home_people: list[str]  # slugs of named people who are home
     anon_home: bool
     anon_confidence: int
     anon_source: str
@@ -75,9 +75,7 @@ class PeopleDomain:
             slug = person.get("slug")
             if not slug:
                 continue
-            is_home, source, confidence = self._compute_named_person_presence(
-                person, state
-            )
+            is_home, source, confidence = self._compute_named_person_presence(person, state)
             prev_is_home = state.get_binary(f"heima_person_{slug}_home")
             state.set_binary(f"heima_person_{slug}_home", is_home)
             state.set_sensor(f"heima_person_{slug}_source", source)
@@ -165,7 +163,9 @@ class PeopleDomain:
                 anon_source = "camera_return_home_hint"
                 anon_weight = max(
                     1,
-                    int(anon_cfg.get("anonymous_count_weight", 1)) if anon_cfg.get("enabled") else 1,
+                    int(anon_cfg.get("anonymous_count_weight", 1))
+                    if anon_cfg.get("enabled")
+                    else 1,
                 )
                 prev_anon_home = state.get_binary("heima_anonymous_presence")
                 state.set_binary("heima_anonymous_presence", anon_home)
@@ -302,14 +302,12 @@ class PeopleDomain:
                 "required": int(required),
                 "weight_threshold": (
                     float(weight_threshold)
-                    if group_strategy == "weighted_quorum"
-                    and weight_threshold not in (None, "")
+                    if group_strategy == "weighted_quorum" and weight_threshold not in (None, "")
                     else None
                 ),
                 "configured_source_weights": (
                     dict(source_weights)
-                    if group_strategy == "weighted_quorum"
-                    and isinstance(source_weights, dict)
+                    if group_strategy == "weighted_quorum" and isinstance(source_weights, dict)
                     else {}
                 ),
                 "active_count": active_count,

@@ -159,8 +159,12 @@ async def test_heating_analyzer_eco_pattern():
         home_ts = (base + timedelta(days=i * 7, hours=3)).isoformat()
         events.append(_house_state_event(from_state="home", to_state="away", ts=away_ts))
         events.append(_house_state_event(from_state="away", to_state="home", ts=home_ts))
-        events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
-        events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
+        events.append(
+            _heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima")
+        )
+        events.append(
+            _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
+        )
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     eco_proposals = [p for p in proposals if p.reaction_type == "heating_eco"]
@@ -182,8 +186,12 @@ async def test_heating_analyzer_no_eco_without_house_state_sessions():
     for i in range(3):
         away_ts = (base + timedelta(days=i * 7)).isoformat()
         home_ts = (base + timedelta(days=i * 7, hours=3)).isoformat()
-        events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
-        events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
+        events.append(
+            _heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima")
+        )
+        events.append(
+            _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
+        )
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     assert not [p for p in proposals if p.reaction_type == "heating_eco"]
@@ -206,17 +214,21 @@ async def test_heating_analyzer_signal_correlation():
     analyzer = HeatingPatternAnalyzer()
     events = []
     for i in range(10):
-        events.append(_heating_event(
-            temperature_set=22.0,
-            ts=_WEEK_TIMESTAMPS[i % len(_WEEK_TIMESTAMPS)],
-            signals={"sensor.outdoor_temp": "5"},
-        ))
+        events.append(
+            _heating_event(
+                temperature_set=22.0,
+                ts=_WEEK_TIMESTAMPS[i % len(_WEEK_TIMESTAMPS)],
+                signals={"sensor.outdoor_temp": "5"},
+            )
+        )
     for i in range(10):
-        events.append(_heating_event(
-            temperature_set=19.0,
-            ts=_WEEK_TIMESTAMPS[i % len(_WEEK_TIMESTAMPS)],
-            signals={"sensor.outdoor_temp": "20"},
-        ))
+        events.append(
+            _heating_event(
+                temperature_set=19.0,
+                ts=_WEEK_TIMESTAMPS[i % len(_WEEK_TIMESTAMPS)],
+                signals={"sensor.outdoor_temp": "20"},
+            )
+        )
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
@@ -242,8 +254,12 @@ async def test_heating_analyzer_eco_requires_min_weeks():
         home_ts = (base + timedelta(days=i, hours=3)).isoformat()
         events.append(_house_state_event(from_state="home", to_state="away", ts=away_ts))
         events.append(_house_state_event(from_state="away", to_state="home", ts=home_ts))
-        events.append(_heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima"))
-        events.append(_heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user"))
+        events.append(
+            _heating_event(house_state="away", temperature_set=16.0, ts=away_ts, source="heima")
+        )
+        events.append(
+            _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
+        )
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     assert not [p for p in proposals if p.reaction_type == "heating_eco"]

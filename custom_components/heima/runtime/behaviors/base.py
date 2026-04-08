@@ -36,9 +36,7 @@ class HeimaBehavior:
         behavior-internal state. Must NOT modify snapshot (it is frozen).
         """
 
-    def apply_filter(
-        self, plan: "ApplyPlan", snapshot: "DecisionSnapshot"
-    ) -> "ApplyPlan":
+    def apply_filter(self, plan: "ApplyPlan", snapshot: "DecisionSnapshot") -> "ApplyPlan":
         """Called after the apply plan is built (and after constraints filter).
 
         Return the plan (possibly modified) or the same plan unchanged.

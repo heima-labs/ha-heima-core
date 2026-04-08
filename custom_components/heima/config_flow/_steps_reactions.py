@@ -185,8 +185,7 @@ class _ReactionsStepsMixin:
                         "light_entities": entity_ids,
                         "action": action,
                         "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin
-                        or defaults["color_temp_kelvin"],
+                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
                     }
                 ),
                 errors={"base": "duplicate"},
@@ -209,7 +208,9 @@ class _ReactionsStepsMixin:
             return await self.async_step_init()
         available, reason = self._admin_authored_template_availability(template.template_id)
         if not available:
-            schema = vol.Schema({vol.Required("template_id"): vol.In(self._admin_authored_template_options())})
+            schema = vol.Schema(
+                {vol.Required("template_id"): vol.In(self._admin_authored_template_options())}
+            )
             return self.async_show_form(
                 step_id="admin_authored_create",
                 data_schema=schema,
@@ -387,7 +388,8 @@ class _ReactionsStepsMixin:
                     {
                         "room_id": room_id or defaults["room_id"],
                         "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+                        "primary_signal_name": primary_signal_name
+                        or defaults["primary_signal_name"],
                         "primary_threshold_mode": primary_threshold_mode,
                         "primary_threshold": primary_threshold,
                         "corroboration_signal_entities": corroboration_signal_entities,
@@ -526,7 +528,8 @@ class _ReactionsStepsMixin:
                     {
                         "room_id": room_id or defaults["room_id"],
                         "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+                        "primary_signal_name": primary_signal_name
+                        or defaults["primary_signal_name"],
                         "primary_threshold": primary_threshold,
                         "light_entities": entity_ids,
                         "action": action or defaults["action"],
@@ -571,8 +574,7 @@ class _ReactionsStepsMixin:
                         "light_entities": entity_ids,
                         "action": action,
                         "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin
-                        or defaults["color_temp_kelvin"],
+                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
                     }
                 ),
                 errors={"base": "duplicate"},
@@ -631,9 +633,7 @@ class _ReactionsStepsMixin:
         }
 
         if user_input is None:
-            schema = vol.Schema(
-                {vol.Required("reaction"): vol.In(reaction_labels)}
-            )
+            schema = vol.Schema({vol.Required("reaction"): vol.In(reaction_labels)})
             return self.async_show_form(step_id="reactions_edit", data_schema=schema)
 
         self._editing_reaction_id = user_input.get("reaction")
@@ -665,7 +665,9 @@ class _ReactionsStepsMixin:
 
         if user_input is None:
             current_steps = cfg.get("steps", [])
-            current_entities = [s["target"] for s in current_steps if isinstance(s, dict) and "target" in s]
+            current_entities = [
+                s["target"] for s in current_steps if isinstance(s, dict) and "target" in s
+            ]
             current_pre = cfg.get("pre_condition_min", 20)
             schema = vol.Schema(
                 {
@@ -907,7 +909,9 @@ class _ReactionsStepsMixin:
             return self.async_show_form(
                 step_id="proposals",
                 data_schema=schema,
-                description_placeholders=self._proposal_review_placeholders(pending, current, len(queue)),
+                description_placeholders=self._proposal_review_placeholders(
+                    pending, current, len(queue)
+                ),
             )
 
         action = str(user_input.get("review_action") or "skip").strip().lower()
@@ -1037,9 +1041,8 @@ class _ReactionsStepsMixin:
         configured = dict(_safe_mapping(existing_config))
         configured.update(cfg)
 
-        is_followup = (
-            proposal.followup_kind == "tuning_suggestion"
-            and bool(_safe_mapping(existing_config))
+        is_followup = proposal.followup_kind == "tuning_suggestion" and bool(
+            _safe_mapping(existing_config)
         )
         if is_followup:
             if proposal.updated_at:
@@ -1088,9 +1091,7 @@ class _ReactionsStepsMixin:
             implemented_only=True,
         )
 
-    def _admin_authored_template_availability(
-        self, template_id: str
-    ) -> tuple[bool, str]:
+    def _admin_authored_template_availability(self, template_id: str) -> tuple[bool, str]:
         template_id = str(template_id or "").strip()
         if not template_id:
             return False, ""
@@ -1142,9 +1143,7 @@ class _ReactionsStepsMixin:
             for item in learning_cfg.get("enabled_plugin_families") or []
             if str(item).strip()
         }
-        return create_builtin_learning_plugin_registry(
-            enabled_families=enabled_families or None
-        )
+        return create_builtin_learning_plugin_registry(enabled_families=enabled_families or None)
 
     @staticmethod
     def _coerce_optional_int(value: Any) -> int | None:
@@ -1205,12 +1204,24 @@ class _ReactionsStepsMixin:
                     ): bool,
                     vol.Required(
                         "simulation_aggressiveness",
-                        default=str(defaults.get("simulation_aggressiveness", "medium") or "medium"),
+                        default=str(
+                            defaults.get("simulation_aggressiveness", "medium") or "medium"
+                        ),
                     ): vol.In(aggressiveness),
-                    vol.Optional("min_jitter_override_min", default=defaults.get("min_jitter_override_min")): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional("max_jitter_override_min", default=defaults.get("max_jitter_override_min")): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional("max_events_per_evening_override", default=defaults.get("max_events_per_evening_override")): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional("latest_end_time_override", default=str(defaults.get("latest_end_time_override", "") or "")): str,
+                    vol.Optional(
+                        "min_jitter_override_min", default=defaults.get("min_jitter_override_min")
+                    ): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional(
+                        "max_jitter_override_min", default=defaults.get("max_jitter_override_min")
+                    ): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional(
+                        "max_events_per_evening_override",
+                        default=defaults.get("max_events_per_evening_override"),
+                    ): vol.Any(None, vol.Coerce(int)),
+                    vol.Optional(
+                        "latest_end_time_override",
+                        default=str(defaults.get("latest_end_time_override", "") or ""),
+                    ): str,
                     vol.Required(
                         "skip_if_presence_detected",
                         default=bool(defaults.get("skip_if_presence_detected", True)),
@@ -1262,9 +1273,7 @@ class _ReactionsStepsMixin:
                         ["sensor", "binary_sensor"], multiple=True
                     ),
                     vol.Required("primary_signal_name", default="humidity"): str,
-                    vol.Required("primary_threshold_mode", default="rise"): vol.In(
-                        threshold_modes
-                    ),
+                    vol.Required("primary_threshold_mode", default="rise"): vol.In(threshold_modes),
                     vol.Required("primary_threshold", default=8.0): vol.Coerce(float),
                     vol.Optional("corroboration_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
@@ -1339,10 +1348,7 @@ class _ReactionsStepsMixin:
 
     def _weekday_options(self) -> dict[str, str]:
         language = self._flow_language()
-        return {
-            str(index): self._weekday_label(index, language)
-            for index in range(7)
-        }
+        return {str(index): self._weekday_label(index, language) for index in range(7)}
 
     def _build_admin_authored_lighting_schedule_proposal(
         self,
@@ -1462,9 +1468,7 @@ class _ReactionsStepsMixin:
         color_temp_kelvin: int | None,
     ) -> ReactionProposal:
         template_id = "room.darkness_lighting_assist.basic"
-        identity_key = (
-            f"room_darkness_lighting_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
-        )
+        identity_key = f"room_darkness_lighting_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
         entity_steps = [
             {
                 "entity_id": entity_id,
@@ -1639,7 +1643,9 @@ class _ReactionsStepsMixin:
         position = total - queue_len + 1
         remaining = max(total - position, 0)
         return {
-            "summary": self._proposals_step_summary(proposals, current=current, remaining=remaining),
+            "summary": self._proposals_step_summary(
+                proposals, current=current, remaining=remaining
+            ),
             "current_position": f"{position}/{total}",
             "proposal_label": self._proposal_review_title(current),
             "proposal_details": self._proposal_review_details(current),
@@ -1739,16 +1745,12 @@ class _ReactionsStepsMixin:
         last_seen = _format_last_seen(proposal.last_observed_at)
         if last_seen:
             details.append(
-                f"Osservata l'ultima volta: {last_seen}"
-                if is_it
-                else f"Last seen: {last_seen}"
+                f"Osservata l'ultima volta: {last_seen}" if is_it else f"Last seen: {last_seen}"
             )
 
         room_id = str(cfg.get("room_id") or "").strip()
         if room_id:
-            details.append(
-                f"Stanza: {room_id}" if is_it else f"Applies to room: {room_id}"
-            )
+            details.append(f"Stanza: {room_id}" if is_it else f"Applies to room: {room_id}")
         house_state = str(cfg.get("house_state") or "").strip()
         if house_state:
             details.append(
@@ -1768,9 +1770,7 @@ class _ReactionsStepsMixin:
 
         presenter = self._reaction_presenter_for_cfg(cfg)
         if presenter is not None and presenter.learned_review_details is not None:
-            details.extend(
-                presenter.learned_review_details(self, proposal, cfg, language)
-            )
+            details.extend(presenter.learned_review_details(self, proposal, cfg, language))
 
         return "\n".join(details)
 
@@ -1840,9 +1840,7 @@ class _ReactionsStepsMixin:
             details.append("Origin: draft requested by the administrator")
 
         if template_id:
-            details.append(
-                f"Template: {template_id}"
-            )
+            details.append(f"Template: {template_id}")
 
         details.append("Stato UX: bozza" if is_it else "UX state: draft")
         details.append(
@@ -1856,9 +1854,7 @@ class _ReactionsStepsMixin:
             details.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
         presenter = self._reaction_presenter_for_cfg(cfg)
         if presenter is not None and presenter.admin_authored_review_details is not None:
-            details.extend(
-                presenter.admin_authored_review_details(self, proposal, cfg, language)
-            )
+            details.extend(presenter.admin_authored_review_details(self, proposal, cfg, language))
 
         return details
 
@@ -1889,12 +1885,16 @@ class _ReactionsStepsMixin:
         weekday = cfg.get("weekday")
 
         if proposal.reaction_type == "room_cooling_assist" and room_id:
-            return f"Raffrescamento {room_id}" if language.startswith("it") else f"Cooling {room_id}"
+            return (
+                f"Raffrescamento {room_id}" if language.startswith("it") else f"Cooling {room_id}"
+            )
         if proposal.reaction_type == "room_air_quality_assist" and room_id:
             return f"Aria {room_id}" if language.startswith("it") else f"Air quality {room_id}"
         if proposal.reaction_type == "heating_preference" and house_state:
             return (
-                f"Riscaldamento {house_state}" if language.startswith("it") else f"Heating {house_state}"
+                f"Riscaldamento {house_state}"
+                if language.startswith("it")
+                else f"Heating {house_state}"
             )
         if proposal.reaction_type == "presence_preheat" and weekday not in (None, ""):
             day = self._weekday_label(weekday, language)
@@ -1959,7 +1959,12 @@ class _ReactionsStepsMixin:
                 reaction_min = int(reaction_cfg.get("scheduled_min") or 0)
                 ranked.append(
                     (
-                        (-overlap, symmetric_diff, abs(proposal_min - reaction_min), str(reaction_id)),
+                        (
+                            -overlap,
+                            symmetric_diff,
+                            abs(proposal_min - reaction_min),
+                            str(reaction_id),
+                        ),
                         str(reaction_id),
                         reaction_cfg,
                     )
@@ -1983,7 +1988,10 @@ class _ReactionsStepsMixin:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         reaction_type = proposal.reaction_type
         reaction_class = str(cfg.get("reaction_class") or "").strip()
-        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+        if (
+            reaction_type != "lighting_scene_schedule"
+            and reaction_class != "LightingScheduleReaction"
+        ):
             return ""
         scheduled_min = cfg.get("scheduled_min")
         bucket = None
@@ -1998,7 +2006,10 @@ class _ReactionsStepsMixin:
     def _lighting_followup_slot_key_from_cfg(cfg: dict[str, Any]) -> str:
         reaction_type = str(cfg.get("reaction_type") or "").strip()
         reaction_class = str(cfg.get("reaction_class") or "").strip()
-        if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+        if (
+            reaction_type != "lighting_scene_schedule"
+            and reaction_class != "LightingScheduleReaction"
+        ):
             return ""
         scheduled_min = cfg.get("scheduled_min")
         bucket = None

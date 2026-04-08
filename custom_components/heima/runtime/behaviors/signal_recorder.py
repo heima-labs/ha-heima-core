@@ -163,7 +163,11 @@ class SignalRecorderBehavior(HeimaBehavior):
         entity_to_room = dict(room_sources)
         for entry in entity_registry.entities.values():
             entity_area = entry.area_id
-            if entry.entity_id in self._tracked_entities and entity_area and entity_area in area_to_room:
+            if (
+                entry.entity_id in self._tracked_entities
+                and entity_area
+                and entity_area in area_to_room
+            ):
                 entity_to_room.setdefault(entry.entity_id, area_to_room[entity_area])
         return entity_to_room
 

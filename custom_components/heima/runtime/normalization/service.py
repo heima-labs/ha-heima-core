@@ -190,7 +190,9 @@ class InputNormalizer:
             reason=reason,
         )
 
-    def security(self, entity_id: str | None, mapping_cfg: dict[str, Any] | None = None) -> NormalizedObservation:
+    def security(
+        self, entity_id: str | None, mapping_cfg: dict[str, Any] | None = None
+    ) -> NormalizedObservation:
         mapping_cfg = dict(mapping_cfg or {})
         raw = self._read_state(entity_id)
         if not entity_id:
@@ -267,7 +269,9 @@ class InputNormalizer:
         except Exception as err:
             self._derive_plugin_errors += 1
             self._derive_fallback_unknown += 1
-            self._derive_plugin_error_counts[plugin_id] = self._derive_plugin_error_counts.get(plugin_id, 0) + 1
+            self._derive_plugin_error_counts[plugin_id] = (
+                self._derive_plugin_error_counts.get(plugin_id, 0) + 1
+            )
             self._last_plugin_error = {
                 "plugin_id": plugin_id,
                 "kind": kind,
@@ -288,7 +292,9 @@ class InputNormalizer:
             "result_state": result.state,
             "result_reason": result.reason,
             "used_fallback": result.reason == "plugin_error_fallback",
-            "fallback_state": result.evidence.get("fallback") if isinstance(result.evidence, dict) else None,
+            "fallback_state": result.evidence.get("fallback")
+            if isinstance(result.evidence, dict)
+            else None,
         }
         return result
 

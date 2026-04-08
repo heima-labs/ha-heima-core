@@ -38,7 +38,9 @@ class _PeopleStepsMixin:
 
     # ---- Named people menu ----
 
-    async def async_step_people_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         self._import_people_from_ha_if_empty()
         return self.async_show_menu(
             step_id="people_menu",
@@ -69,13 +71,17 @@ class _PeopleStepsMixin:
         people = self._people_named()
         people.append(user_input)
         people[-1]["source"] = "ha_person_registry"
-        people[-1]["ha_source_name"] = str(people[-1].get("display_name") or people[-1].get("slug") or "")
+        people[-1]["ha_source_name"] = str(
+            people[-1].get("display_name") or people[-1].get("slug") or ""
+        )
         people[-1]["ha_sync_status"] = "configured"
         people[-1]["heima_reviewed"] = True
         self._store_list(OPT_PEOPLE_NAMED, people)
         return await self.async_step_people_menu()
 
-    async def async_step_people_edit(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         people = self._people_named()
         if not people:
             return await self.async_step_people_menu()
@@ -87,7 +93,9 @@ class _PeopleStepsMixin:
         self._editing_person_slug = user_input.get("person")
         return await self.async_step_people_edit_form()
 
-    async def async_step_people_edit_form(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         people = self._people_named()
         if user_input is None:
             existing = self._find_by_key(people, "slug", self._editing_person_slug or "") or {}
@@ -99,7 +107,9 @@ class _PeopleStepsMixin:
         errors = self._validate_people_payload(user_input, is_edit=True)
         if errors:
             return self.async_show_form(
-                step_id="people_edit_form", data_schema=self._people_schema(user_input), errors=errors
+                step_id="people_edit_form",
+                data_schema=self._people_schema(user_input),
+                errors=errors,
             )
 
         updated = []
@@ -118,7 +128,9 @@ class _PeopleStepsMixin:
         self._editing_person_slug = None
         return await self.async_step_people_menu()
 
-    async def async_step_people_remove(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_remove(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         people = self._people_named()
         if not people:
             return await self.async_step_people_menu()
@@ -158,14 +170,18 @@ class _PeopleStepsMixin:
         self._removing_person_slug = None
         return await self.async_step_people_menu()
 
-    async def async_step_people_anonymous(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_anonymous(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         current = dict(self.options.get(OPT_PEOPLE_ANON, {}))
         if user_input is None:
             return self.async_show_form(
                 step_id="people_anonymous", data_schema=self._people_anonymous_schema(current)
             )
 
-        self._update_options({OPT_PEOPLE_ANON: self._normalize_people_anonymous_payload(user_input)})
+        self._update_options(
+            {OPT_PEOPLE_ANON: self._normalize_people_anonymous_payload(user_input)}
+        )
         return await self.async_step_people_menu()
 
     async def async_step_people_debug_aliases(
@@ -183,10 +199,14 @@ class _PeopleStepsMixin:
         self._update_options({OPT_PEOPLE_DEBUG_ALIASES: payload})
         return await self.async_step_people_menu()
 
-    async def async_step_people_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_next(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         return await self.async_step_init()
 
-    async def async_step_people_save(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+    async def async_step_people_save(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
         """Persist options and close the flow from People menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 
@@ -212,8 +232,12 @@ class _PeopleStepsMixin:
                 vol.Optional("required", default=defaults.get("required", 1)): cv.positive_int,
                 vol.Optional("weight_threshold"): vol.Coerce(float),
                 vol.Optional("source_weights"): _multiline_text_selector(),
-                vol.Optional("arrive_hold_s", default=defaults.get("arrive_hold_s", 10)): cv.positive_int,
-                vol.Optional("leave_hold_s", default=defaults.get("leave_hold_s", 120)): cv.positive_int,
+                vol.Optional(
+                    "arrive_hold_s", default=defaults.get("arrive_hold_s", 10)
+                ): cv.positive_int,
+                vol.Optional(
+                    "leave_hold_s", default=defaults.get("leave_hold_s", 120)
+                ): cv.positive_int,
                 vol.Optional(
                     "enable_override", default=defaults.get("enable_override", False)
                 ): bool,
@@ -239,8 +263,12 @@ class _PeopleStepsMixin:
                 vol.Optional(
                     "anonymous_count_weight", default=defaults.get("anonymous_count_weight", 1)
                 ): cv.positive_int,
-                vol.Optional("arrive_hold_s", default=defaults.get("arrive_hold_s", 10)): cv.positive_int,
-                vol.Optional("leave_hold_s", default=defaults.get("leave_hold_s", 120)): cv.positive_int,
+                vol.Optional(
+                    "arrive_hold_s", default=defaults.get("arrive_hold_s", 10)
+                ): cv.positive_int,
+                vol.Optional(
+                    "leave_hold_s", default=defaults.get("leave_hold_s", 120)
+                ): cv.positive_int,
             }
         )
         return self._with_suggested(schema, defaults)
@@ -261,7 +289,9 @@ class _PeopleStepsMixin:
         errors: dict[str, str] = {}
         slug = payload.get("slug", "")
         if is_edit:
-            errors.update(self._error_if_immutable_changed(payload, "slug", self._editing_person_slug))
+            errors.update(
+                self._error_if_immutable_changed(payload, "slug", self._editing_person_slug)
+            )
         if not slug:
             errors["slug"] = "required"
         elif not _is_valid_slug(slug):
@@ -289,7 +319,9 @@ class _PeopleStepsMixin:
             if str(p.get("person_entity") or "").strip()
         }
         if is_edit:
-            existing_person = self._find_by_key(self._people_named(), "slug", self._editing_person_slug or "")
+            existing_person = self._find_by_key(
+                self._people_named(), "slug", self._editing_person_slug or ""
+            )
             existing_entity = str((existing_person or {}).get("person_entity") or "").strip()
             existing_person_entities.discard(existing_entity)
         if person_entity and person_entity in existing_person_entities:
@@ -342,7 +374,11 @@ class _PeopleStepsMixin:
             all_states = list(async_all())
         except TypeError:
             all_states = list(async_all("person"))
-        return [state for state in all_states if str(getattr(state, "entity_id", "")).startswith("person.")]
+        return [
+            state
+            for state in all_states
+            if str(getattr(state, "entity_id", "")).startswith("person.")
+        ]
 
     def _ha_person_entity_ids(self) -> set[str]:
         return {str(getattr(state, "entity_id", "")).strip() for state in self._ha_person_states()}
@@ -356,7 +392,11 @@ class _PeopleStepsMixin:
             if not entity_id:
                 continue
             slug = entity_id.split(".", 1)[1]
-            display_name = str(getattr(state, "name", None) or getattr(state, "attributes", {}).get("friendly_name") or slug)
+            display_name = str(
+                getattr(state, "name", None)
+                or getattr(state, "attributes", {}).get("friendly_name")
+                or slug
+            )
             imported.append(
                 {
                     "slug": slug,

@@ -14,7 +14,7 @@ from .policy import LightingLearningPolicy
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 _MIN_OCCURRENCES = 5
 _MIN_WEEKS = 2
-_SCENE_GROUP_WINDOW_MIN = 15   # max gap between entity scheduled_mins to merge into one scene
+_SCENE_GROUP_WINDOW_MIN = 15  # max gap between entity scheduled_mins to merge into one scene
 _MIN_ATTR_SAMPLES = _MIN_OCCURRENCES // 2  # min non-None values to trust an aggregated attribute
 _MAX_IQR_MIN_FOR_MINIMAL_EVIDENCE = 30
 
@@ -71,8 +71,7 @@ class LightingPatternAnalyzer:
     async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
         raw = await event_store.async_query(event_type="lighting")
         events: list[HeimaEvent] = [
-            e for e in raw
-            if isinstance(e, HeimaEvent) and e.source == "user"
+            e for e in raw if isinstance(e, HeimaEvent) and e.source == "user"
         ]
         if not events:
             return []
@@ -105,7 +104,9 @@ class LightingPatternAnalyzer:
             median = samples[n // 2]
             iqr = samples[(3 * n) // 4] - samples[n // 4]
             weeks_observed = _weeks_observed(group)
-            if _is_minimal_evidence_group(len(group), weeks_observed, iqr, self.min_weeks, self.min_occurrences):
+            if _is_minimal_evidence_group(
+                len(group), weeks_observed, iqr, self.min_weeks, self.min_occurrences
+            ):
                 continue
             base_confidence = max(0.3, 1.0 - iqr / 120.0)
             evidence_factor = min(1.0, len(group) / 8.0)
@@ -113,9 +114,7 @@ class LightingPatternAnalyzer:
             confidence = round(
                 max(
                     0.3,
-                    base_confidence
-                    * (0.85 + 0.15 * evidence_factor)
-                    * (0.9 + 0.1 * weeks_factor),
+                    base_confidence * (0.85 + 0.15 * evidence_factor) * (0.9 + 0.1 * weeks_factor),
                 ),
                 3,
             )
@@ -124,20 +123,22 @@ class LightingPatternAnalyzer:
             color_temp = _median_int([e.data.get("color_temp_kelvin") for e in group])
             rgb = _mode_rgb([e.data.get("rgb_color") for e in group])
 
-            patterns.append(_EntityPattern(
-                entity_id=entity_id,
-                action=action,
-                weekday=weekday,
-                room_id=room_id,
-                scheduled_min=median,
-                confidence=float(confidence),
-                observations_count=len(group),
-                weeks_observed=weeks_observed,
-                iqr_min=iqr,
-                brightness=brightness if action == "on" else None,
-                color_temp_kelvin=color_temp if action == "on" else None,
-                rgb_color=rgb if action == "on" else None,
-            ))
+            patterns.append(
+                _EntityPattern(
+                    entity_id=entity_id,
+                    action=action,
+                    weekday=weekday,
+                    room_id=room_id,
+                    scheduled_min=median,
+                    confidence=float(confidence),
+                    observations_count=len(group),
+                    weeks_observed=weeks_observed,
+                    iqr_min=iqr,
+                    brightness=brightness if action == "on" else None,
+                    color_temp_kelvin=color_temp if action == "on" else None,
+                    rgb_color=rgb if action == "on" else None,
+                )
+            )
 
         if not patterns:
             return []
@@ -168,53 +169,59 @@ class LightingPatternAnalyzer:
                 cluster_mins = [p.scheduled_min for p in cluster]
                 n = len(cluster_mins)
                 scheduled_min = sorted(cluster_mins)[n // 2]
-                normalized_cluster = _normalize_cluster_patterns(cluster, scheduled_min=scheduled_min)
+                normalized_cluster = _normalize_cluster_patterns(
+                    cluster, scheduled_min=scheduled_min
+                )
                 confidence = sum(p.confidence for p in normalized_cluster) / len(normalized_cluster)
                 entity_steps = [p.as_entity_step() for p in normalized_cluster]
                 window_half_min = _cluster_window_half_min(normalized_cluster)
 
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
-                fingerprint = f"{self.analyzer_id}|lighting_scene_schedule|{room_id}|{weekday}|{fp_min}"
+                fingerprint = (
+                    f"{self.analyzer_id}|lighting_scene_schedule|{room_id}|{weekday}|{fp_min}"
+                )
 
-                proposals.append(ReactionProposal(
-                    analyzer_id=self.analyzer_id,
-                    reaction_type="lighting_scene_schedule",
-                    description=_describe(room_id, weekday, scheduled_min, entity_steps),
-                    confidence=round(confidence, 3),
-                    suggested_reaction_config={
-                        "reaction_class": "LightingScheduleReaction",
-                        "room_id": room_id,
-                        "weekday": weekday,
-                        "scheduled_min": scheduled_min,
-                        "window_half_min": window_half_min,
-                        "house_state_filter": None,
-                        "entity_steps": entity_steps,
-                        "learning_diagnostics": build_learning_diagnostics(
-                            pattern_id="lighting_scene_schedule",
-                            analyzer_id=self.analyzer_id,
-                            reaction_type="lighting_scene_schedule",
-                            plugin_family="lighting",
-                            room_id=room_id,
-                            weekday=weekday,
-                            cluster_entities=sorted(
-                                step.get("entity_id", "")
-                                for step in entity_steps
-                                if step.get("entity_id")
+                proposals.append(
+                    ReactionProposal(
+                        analyzer_id=self.analyzer_id,
+                        reaction_type="lighting_scene_schedule",
+                        description=_describe(room_id, weekday, scheduled_min, entity_steps),
+                        confidence=round(confidence, 3),
+                        suggested_reaction_config={
+                            "reaction_class": "LightingScheduleReaction",
+                            "room_id": room_id,
+                            "weekday": weekday,
+                            "scheduled_min": scheduled_min,
+                            "window_half_min": window_half_min,
+                            "house_state_filter": None,
+                            "entity_steps": entity_steps,
+                            "learning_diagnostics": build_learning_diagnostics(
+                                pattern_id="lighting_scene_schedule",
+                                analyzer_id=self.analyzer_id,
+                                reaction_type="lighting_scene_schedule",
+                                plugin_family="lighting",
+                                room_id=room_id,
+                                weekday=weekday,
+                                cluster_entities=sorted(
+                                    step.get("entity_id", "")
+                                    for step in entity_steps
+                                    if step.get("entity_id")
+                                ),
+                                observations_count=sum(
+                                    pattern.observations_count for pattern in normalized_cluster
+                                ),
+                                weeks_observed=min(
+                                    pattern.weeks_observed for pattern in normalized_cluster
+                                ),
+                                iqr_min=max(pattern.iqr_min for pattern in normalized_cluster),
+                                scheduled_min=scheduled_min,
+                                entity_steps_count=len(entity_steps),
                             ),
-                            observations_count=sum(
-                                pattern.observations_count for pattern in normalized_cluster
-                            ),
-                            weeks_observed=min(
-                                pattern.weeks_observed for pattern in normalized_cluster
-                            ),
-                            iqr_min=max(pattern.iqr_min for pattern in normalized_cluster),
-                            scheduled_min=scheduled_min,
-                            entity_steps_count=len(entity_steps),
-                        ),
-                    },
-                    fingerprint=fingerprint,
-                ))
+                        },
+                        fingerprint=fingerprint,
+                    )
+                )
 
         return proposals
 
@@ -222,6 +229,7 @@ class LightingPatternAnalyzer:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _spans_min_weeks(events: list[HeimaEvent], min_weeks: int = _MIN_WEEKS) -> bool:
     return _weeks_observed(events) >= min_weeks
@@ -262,10 +270,7 @@ def _median_int(values: list) -> int | None:
 
 
 def _mode_rgb(values: list) -> list[int] | None:
-    candidates = [
-        tuple(v) for v in values
-        if isinstance(v, (list, tuple)) and len(v) == 3
-    ]
+    candidates = [tuple(v) for v in values if isinstance(v, (list, tuple)) and len(v) == 3]
     if len(candidates) < _MIN_ATTR_SAMPLES:
         return None
     counts: dict[tuple, int] = {}
@@ -319,10 +324,7 @@ def _describe(room_id: str, weekday: int, scheduled_min: int, entity_steps: list
             parts.append(f"{name} on{suffix}")
         else:
             parts.append(f"{name} off")
-    return (
-        f"{room_id}: {_WEEKDAY_NAMES[weekday]} ~{_hhmm(scheduled_min)} — "
-        + ", ".join(parts)
-    )
+    return f"{room_id}: {_WEEKDAY_NAMES[weekday]} ~{_hhmm(scheduled_min)} — " + ", ".join(parts)
 
 
 def _cluster_window_half_min(cluster: list[_EntityPattern]) -> int:

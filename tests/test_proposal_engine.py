@@ -120,7 +120,9 @@ def _admin_authored_proposal() -> ReactionProposal:
     )
 
 
-def _composite_proposal(*, reaction_type: str, room_id: str, primary_signal_name: str) -> ReactionProposal:
+def _composite_proposal(
+    *, reaction_type: str, room_id: str, primary_signal_name: str
+) -> ReactionProposal:
     return ReactionProposal(
         analyzer_id="CompositePatternCatalogAnalyzer",
         reaction_type=reaction_type,
@@ -241,7 +243,10 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
     await engine2.async_initialize()
 
     assert len(engine2._proposals) == 1
-    assert engine2._proposals[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    assert (
+        engine2._proposals[0].fingerprint
+        == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    )
     assert engine2._proposals[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
 
@@ -302,7 +307,9 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
     assert pending[0].confidence == 0.9
 
 
-async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fingerprint(monkeypatch):
+async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fingerprint(
+    monkeypatch,
+):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     analyzer = _AnalyzerStub(
@@ -418,8 +425,12 @@ async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypa
     engine1.register_analyzer(
         _AnalyzerStub(
             [
-                _lighting_proposal(conf=0.7, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1),
-                _lighting_proposal(conf=0.8, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2),
+                _lighting_proposal(
+                    conf=0.7, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1
+                ),
+                _lighting_proposal(
+                    conf=0.8, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2
+                ),
             ]
         )
     )
@@ -432,8 +443,12 @@ async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypa
     await engine2.async_initialize()
     analyzer = _AnalyzerStub(
         [
-            _lighting_proposal(conf=0.9, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1),
-            _lighting_proposal(conf=0.95, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2),
+            _lighting_proposal(
+                conf=0.9, room_id="living", weekday=0, scheduled_min=1200, fingerprint=fp1
+            ),
+            _lighting_proposal(
+                conf=0.95, room_id="bedroom", weekday=0, scheduled_min=1200, fingerprint=fp2
+            ),
         ]
     )
     engine2.register_analyzer(analyzer)
@@ -641,7 +656,11 @@ async def test_reaction_proposal_from_dict_preserves_admin_authored_origin(monke
                     "confidence": 1.0,
                     "origin": "admin_authored",
                     "status": "pending",
-                    "suggested_reaction_config": {"room_id": "living", "weekday": 0, "scheduled_min": 1200},
+                    "suggested_reaction_config": {
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                    },
                 }
             ]
         }
@@ -835,13 +854,15 @@ async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypa
 
     stored = engine._store._data
     assert isinstance(stored, dict)
-    proposals = (((stored.get("data") or {}).get("proposals")) or [])
+    proposals = ((stored.get("data") or {}).get("proposals")) or []
     assert len(proposals) == 1
     assert proposals[0]["proposal_id"] == proposal_id
     assert proposals[0]["status"] == "accepted"
 
 
-async def test_proposal_engine_shutdown_persisted_state_reloads_with_single_followup_pending(monkeypatch):
+async def test_proposal_engine_shutdown_persisted_state_reloads_with_single_followup_pending(
+    monkeypatch,
+):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     engine1.register_analyzer(_AnalyzerStub([_proposal(conf=0.7, weekday=2)]))
@@ -942,7 +963,9 @@ async def test_proposal_engine_uses_plugin_lifecycle_hooks_for_identity(monkeypa
             proposal_types=("presence_preheat",),
             reaction_targets=("PresencePatternReaction",),
             lifecycle_hooks=ProposalLifecycleHooks(
-                identity_key=lambda proposal: f"custom|weekday={proposal.suggested_reaction_config.get('weekday')}"
+                identity_key=lambda proposal: (
+                    f"custom|weekday={proposal.suggested_reaction_config.get('weekday')}"
+                )
             ),
         ),
         analyzer=_AnalyzerStub([]),

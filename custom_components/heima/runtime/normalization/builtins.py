@@ -132,10 +132,18 @@ class BooleanSetFusionPlugin:
 
         if self.strategy_name == "any_of":
             state = "on" if on_count > 0 else ("off" if unknown_count == 0 else "unknown")
-            reason = "any_on" if on_count > 0 else ("all_off" if unknown_count == 0 else "unknown_inputs")
+            reason = (
+                "any_on"
+                if on_count > 0
+                else ("all_off" if unknown_count == 0 else "unknown_inputs")
+            )
         elif self.strategy_name == "all_of":
             state = "off" if off_count > 0 else ("on" if unknown_count == 0 else "unknown")
-            reason = "any_off" if off_count > 0 else ("all_on" if unknown_count == 0 else "unknown_inputs")
+            reason = (
+                "any_off"
+                if off_count > 0
+                else ("all_on" if unknown_count == 0 else "unknown_inputs")
+            )
         elif self.strategy_name == "quorum":
             required = max(1, int(strategy_cfg.get("required", 1)))
             if on_count >= required:
@@ -150,7 +158,11 @@ class BooleanSetFusionPlugin:
         else:
             raise ValueError(f"Unsupported built-in boolean fusion strategy: {self.strategy_name}")
 
-        confidence = int((on_count / max(1, len(inputs))) * 100) if state == "on" else (100 if state == "off" else 0)
+        confidence = (
+            int((on_count / max(1, len(inputs))) * 100)
+            if state == "on"
+            else (100 if state == "off" else 0)
+        )
         return _mk_derived(
             kind=kind,
             state=state,
@@ -216,7 +228,9 @@ class WeightedQuorumFusionPlugin:
 
         on_weight = sum(weight for obs, weight in weighted_inputs if obs.state == "on")
         off_weight = sum(weight for obs, weight in weighted_inputs if obs.state == "off")
-        unknown_weight = sum(weight for obs, weight in weighted_inputs if obs.state not in {"on", "off"})
+        unknown_weight = sum(
+            weight for obs, weight in weighted_inputs if obs.state not in {"on", "off"}
+        )
 
         if on_weight >= threshold_value:
             state = "on"

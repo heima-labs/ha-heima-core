@@ -68,9 +68,13 @@ class RuntimeCompositeMatcher:
         pending_since: datetime | None,
         spec: RuntimeCompositePatternSpec,
     ) -> RuntimeCompositeMatch:
-        primary_triggered = self._observe_signal(now=now, spec=spec.primary, window_s=spec.correlation_window_s)
+        primary_triggered = self._observe_signal(
+            now=now, spec=spec.primary, window_s=spec.correlation_window_s
+        )
         corroborations_triggered = {
-            signal.name: self._observe_signal(now=now, spec=signal, window_s=spec.correlation_window_s)
+            signal.name: self._observe_signal(
+                now=now, spec=signal, window_s=spec.correlation_window_s
+            )
             for signal in spec.corroborations
         }
 
@@ -93,9 +97,15 @@ class RuntimeCompositeMatcher:
         if primary_triggered and not spec.corroborations:
             ready = True
         elif next_pending is not None:
-            required_ok = all(corroborations_triggered.get(signal.name, False) for signal in required_signals)
-            optional_ok = True if not optional_signals else any(
-                corroborations_triggered.get(signal.name, False) for signal in optional_signals
+            required_ok = all(
+                corroborations_triggered.get(signal.name, False) for signal in required_signals
+            )
+            optional_ok = (
+                True
+                if not optional_signals
+                else any(
+                    corroborations_triggered.get(signal.name, False) for signal in optional_signals
+                )
             )
             if required_ok and optional_ok:
                 ready = True

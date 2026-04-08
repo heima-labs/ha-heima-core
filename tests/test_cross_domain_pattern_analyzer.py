@@ -170,7 +170,9 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.description.startswith("bathroom: humidity assist")
     assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
     assert proposal.suggested_reaction_config["room_id"] == "bathroom"
-    assert proposal.suggested_reaction_config["trigger_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert proposal.suggested_reaction_config["trigger_signal_entities"] == [
+        "sensor.bathroom_humidity"
+    ]
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.bathroom_humidity"
     ]
@@ -186,9 +188,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["corroboration_signal_name"] == "temperature"
     assert proposal.suggested_reaction_config["corroboration_threshold_mode"] == "rise"
     assert proposal.suggested_reaction_config["corroboration_threshold"] == 0.8
-    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
-        "fan.bathroom_fan"
-    ]
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.bathroom_fan"]
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "room_signal_assist"
@@ -256,9 +256,7 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     assert proposal.suggested_reaction_config["corroboration_signal_entities"] == [
         "sensor.studio_humidity"
     ]
-    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
-        "fan.studio_fan"
-    ]
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.studio_fan"]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["pattern_id"] == "room_cooling_assist"
     assert diagnostics["analyzer_id"] == "RoomCoolingPatternAnalyzer"
@@ -422,9 +420,7 @@ async def test_cross_domain_analyzer_filters_sparse_followup_entities_by_ratio()
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     proposal = proposals[0]
-    assert proposal.suggested_reaction_config["observed_followup_entities"] == [
-        "fan.bathroom_fan"
-    ]
+    assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.bathroom_fan"]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
     assert diagnostics["followup_entity_min_ratio"] == 0.5
     assert diagnostics["followup_entity_min_episodes"] == 3

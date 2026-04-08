@@ -155,7 +155,9 @@ class SecurityCameraEvidenceProvider:
                 contact_observation = self._normalizer.boolean_signal(contact_entity)
                 if contact_observation.available and contact_observation.state == "on":
                     contact_active = True
-                    contact_last_seen_ts = self._entity_last_seen_ts(contact_entity) or contact_observation.ts
+                    contact_last_seen_ts = (
+                        self._entity_last_seen_ts(contact_entity) or contact_observation.ts
+                    )
                 elif not contact_observation.available:
                     unavailable_sources.append(
                         {
