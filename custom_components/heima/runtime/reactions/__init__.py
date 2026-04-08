@@ -37,6 +37,7 @@ from .lighting_schedule import (
 from .lighting_vacancy_off import (
     RoomLightingVacancyOffReaction,
     build_room_lighting_vacancy_off_reaction,
+    present_admin_authored_room_lighting_vacancy_off_details,
     present_learned_room_lighting_vacancy_off_details,
     present_room_lighting_vacancy_off_label,
     present_room_lighting_vacancy_off_proposal_label,
@@ -243,6 +244,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 reaction_label_from_config=present_room_lighting_vacancy_off_label,
                 proposal_human_label=present_room_lighting_vacancy_off_proposal_label,
                 proposal_review_title=present_room_lighting_vacancy_off_review_title,
+                admin_authored_review_details=present_admin_authored_room_lighting_vacancy_off_details,
                 learned_review_details=present_learned_room_lighting_vacancy_off_details,
             ),
         ),

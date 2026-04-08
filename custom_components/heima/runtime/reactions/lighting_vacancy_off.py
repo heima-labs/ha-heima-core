@@ -200,6 +200,15 @@ def present_learned_room_lighting_vacancy_off_details(
     return details
 
 
+def present_admin_authored_room_lighting_vacancy_off_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    return present_learned_room_lighting_vacancy_off_details(flow, proposal, cfg, language)
+
+
 def present_room_lighting_vacancy_off_proposal_label(
     flow: Any,
     proposal: Any,
@@ -210,7 +219,9 @@ def present_room_lighting_vacancy_off_proposal_label(
     room_id = str(cfg.get("room_id") or "").strip()
     if not room_id:
         return None
-    return f"Spegni {room_id} per assenza" if language.startswith("it") else f"Vacancy off {room_id}"
+    return (
+        f"Spegni {room_id} per assenza" if language.startswith("it") else f"Vacancy off {room_id}"
+    )
 
 
 def present_room_lighting_vacancy_off_review_title(
@@ -226,7 +237,11 @@ def present_room_lighting_vacancy_off_review_title(
     base = present_room_lighting_vacancy_off_proposal_label(None, proposal, cfg, language)
     if not base:
         return None
-    return f"Nuovo spegnimento luci: {base}" if language.startswith("it") else f"New lights-off automation: {base}"
+    return (
+        f"Nuovo spegnimento luci: {base}"
+        if language.startswith("it")
+        else f"New lights-off automation: {base}"
+    )
 
 
 def _parse_snapshot_epoch(ts: str | None) -> float | None:

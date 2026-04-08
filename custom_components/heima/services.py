@@ -47,6 +47,7 @@ SET_OVERRIDE_SCHEMA = vol.Schema(
 )
 
 SUPPORTED_COMMANDS = {
+    "dev_reload",
     "recompute_now",
     "learning_run",
     "set_lighting_intent",
@@ -97,6 +98,18 @@ async def _evaluate_all(coordinators: list[HeimaCoordinator], reason: str) -> No
         await coordinator.async_request_evaluation(reason=reason)
 
 
+async def _reload_entries(hass: HomeAssistant, coordinators: list[HeimaCoordinator]) -> None:
+    entry_ids: list[str] = []
+    for coordinator in coordinators:
+        entry_id = str(coordinator.entry.entry_id)
+        if entry_id and entry_id not in entry_ids:
+            entry_ids.append(entry_id)
+    if not entry_ids:
+        raise ServiceValidationError("No active Heima config entries found for target")
+    for entry_id in entry_ids:
+        await hass.config_entries.async_reload(entry_id)
+
+
 async def _set_select_and_evaluate(
     coordinators: list[HeimaCoordinator],
     *,
@@ -144,6 +157,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
         coordinators = _coordinators_for_target(hass, target)
         if not coordinators:
             raise ServiceValidationError("No active Heima config entries found for target")
+
+        if command == "dev_reload":
+            await _reload_entries(hass, coordinators)
+            return
 
         if command == "recompute_now":
             await _evaluate_all(coordinators, reason="service:recompute_now")

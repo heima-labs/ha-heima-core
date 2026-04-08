@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 class _RoomsStepsMixin:
     """Mixin for rooms steps."""
 
+    _editing_lighting_room_id: str | None
+
     async def _async_bootstrap_ha_bindings(self) -> None:
         importer = getattr(super(), "_async_bootstrap_ha_bindings", None)
         if callable(importer):

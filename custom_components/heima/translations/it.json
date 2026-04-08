@@ -424,6 +424,16 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_vacancy_lighting_off": {
+        "title": "Nuovo spegnimento luci per assenza",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "light_entities": "Luci da spegnere",
+          "vacancy_delay_min": "Ritardo spegnimento (min)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Revisione Proposte",
         "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",

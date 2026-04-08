@@ -424,6 +424,16 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_vacancy_lighting_off": {
+        "title": "New vacancy lights-off assist",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Room",
+          "light_entities": "Lights to turn off",
+          "vacancy_delay_min": "Lights-off delay (min)"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Review Proposals",
         "description": "Heima detected recurring patterns. Review one proposal at a time and decide whether to accept, reject, or skip it.\n\nQueue: {current_position}\n\nCurrent proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",

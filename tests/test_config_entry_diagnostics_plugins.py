@@ -161,10 +161,12 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert composite["admin_authored_templates"] == [
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "room.vacancy_lighting_off.basic",
     ]
     assert composite["implemented_admin_authored_templates"] == [
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "room.vacancy_lighting_off.basic",
     ]
     assert composite["unimplemented_admin_authored_templates"] == []
 

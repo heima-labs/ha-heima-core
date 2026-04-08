@@ -421,6 +421,34 @@ async def test_heima_command_recompute_now_requests_evaluation(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_heima_command_dev_reload_reloads_unique_entry_ids(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+        config_entries=SimpleNamespace(async_reload=AsyncMock()),
+    )
+    coordinator_a = SimpleNamespace(entry=SimpleNamespace(entry_id="entry-a"))
+    coordinator_b = SimpleNamespace(entry=SimpleNamespace(entry_id="entry-b"))
+    duplicate_a = SimpleNamespace(entry=SimpleNamespace(entry_id="entry-a"))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator_a, duplicate_a, coordinator_b],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(SimpleNamespace(data={"command": "dev_reload", "target": {}, "params": {}}))
+
+    hass.config_entries.async_reload.assert_any_await("entry-a")
+    hass.config_entries.async_reload.assert_any_await("entry-b")
+    assert hass.config_entries.async_reload.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_heima_command_set_lighting_intent_updates_matching_select(monkeypatch):
     services = _FakeServicesRegistry()
     hass = SimpleNamespace(

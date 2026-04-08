@@ -590,6 +590,97 @@ class _ReactionsStepsMixin:
         self._proposal_review_queue = [proposal_id]
         return await self.async_step_proposals()
 
+    async def async_step_admin_authored_room_vacancy_lighting_off(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored vacancy lights-off proposal."""
+        template = self._admin_authored_template("room.vacancy_lighting_off.basic")
+        room_ids = self._room_ids()
+        if template is None or not room_ids:
+            return await self.async_step_init()
+
+        defaults = {
+            "room_id": room_ids[0],
+            "light_entities": [],
+            "vacancy_delay_min": 5,
+        }
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_room_vacancy_lighting_off",
+                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        room_id = str(user_input.get("room_id") or "").strip()
+        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not entity_ids:
+            errors["light_entities"] = "required"
+
+        try:
+            vacancy_delay_min = int(user_input.get("vacancy_delay_min") or 0)
+            if vacancy_delay_min < 1 or vacancy_delay_min > 180:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["vacancy_delay_min"] = "invalid_number"
+            vacancy_delay_min = int(defaults["vacancy_delay_min"])
+
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_room_vacancy_lighting_off",
+                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
+                    {
+                        "room_id": room_id or defaults["room_id"],
+                        "light_entities": entity_ids,
+                        "vacancy_delay_min": vacancy_delay_min,
+                    }
+                ),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal = self._build_admin_authored_room_vacancy_lighting_off_proposal(
+            room_id=room_id,
+            entity_ids=entity_ids,
+            vacancy_delay_min=vacancy_delay_min,
+        )
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        if proposal_engine is None:
+            return await self.async_step_init()
+
+        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
+        if existing is not None and existing.status != "pending":
+            return self.async_show_form(
+                step_id="admin_authored_room_vacancy_lighting_off",
+                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
+                    {
+                        "room_id": room_id,
+                        "light_entities": entity_ids,
+                        "vacancy_delay_min": vacancy_delay_min,
+                    }
+                ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        proposal_id = await proposal_engine.async_submit_proposal(proposal)
+        self._proposal_review_queue = [proposal_id]
+        return await self.async_step_proposals()
+
     async def async_step_reactions(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         """Show registered reactions and allow toggling persisted mute state."""
         reaction_labels = self._get_registered_reaction_labels()
@@ -1321,6 +1412,24 @@ class _ReactionsStepsMixin:
             defaults,
         )
 
+    def _admin_authored_room_vacancy_lighting_off_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("room_id"): vol.In(room_options),
+                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
+                    vol.Required("vacancy_delay_min", default=5): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=180)
+                    ),
+                }
+            ),
+            defaults,
+        )
+
     def _reactions_edit_room_lighting_assist_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
@@ -1505,6 +1614,48 @@ class _ReactionsStepsMixin:
                 "corroboration_signal_name": "corroboration",
                 "corroboration_threshold_mode": "below",
                 "correlation_window_s": 600,
+                "followup_window_s": 900,
+                "entity_steps": entity_steps,
+                "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
+    def _build_admin_authored_room_vacancy_lighting_off_proposal(
+        self,
+        *,
+        room_id: str,
+        entity_ids: list[str],
+        vacancy_delay_min: int,
+    ) -> ReactionProposal:
+        template_id = "room.vacancy_lighting_off.basic"
+        identity_key = f"room_vacancy_lighting_off|room={room_id}"
+        entity_steps = [
+            {
+                "entity_id": entity_id,
+                "action": "off",
+                "brightness": None,
+                "color_temp_kelvin": None,
+                "rgb_color": None,
+            }
+            for entity_id in entity_ids
+        ]
+        description = (
+            f"{room_id}: when vacancy persists for {vacancy_delay_min} minutes, "
+            f"turn off {len(entity_steps)} light{'s' if len(entity_steps) != 1 else ''}"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredRoomVacancyLightingOffTemplate",
+            reaction_type="room_vacancy_lighting_off",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_class": "RoomLightingVacancyOffReaction",
+                "room_id": room_id,
+                "vacancy_delay_s": int(vacancy_delay_min) * 60,
                 "followup_window_s": 900,
                 "entity_steps": entity_steps,
                 "plugin_family": "composite_room_assist",

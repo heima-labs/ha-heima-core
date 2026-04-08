@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 class _LightingStepsMixin:
     """Mixin for lighting steps."""
 
+    _editing_lighting_room_id: str | None
+
     # ---- Lighting: per-room scenes ----
 
     async def async_step_lighting_rooms_menu(

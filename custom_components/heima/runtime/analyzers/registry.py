@@ -280,6 +280,15 @@ def create_builtin_learning_plugin_registry(
                     implemented=True,
                     flow_step_id="admin_authored_room_darkness_lighting_assist",
                 ),
+                AdminAuthoredTemplateDescriptor(
+                    template_id="room.vacancy_lighting_off.basic",
+                    reaction_type="room_vacancy_lighting_off",
+                    title="Vacancy Lights Off",
+                    description="Create a room lighting assist that turns lights off after vacancy persists.",
+                    config_schema_id="room_vacancy_lighting_off.basic.v1",
+                    implemented=True,
+                    flow_step_id="admin_authored_room_vacancy_lighting_off",
+                ),
             ),
         ),
         analyzer=CompositePatternCatalogAnalyzer(

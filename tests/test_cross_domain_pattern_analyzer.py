@@ -646,7 +646,13 @@ async def test_catalog_analyzer_emits_room_vacancy_lighting_off_proposal():
     assert proposal.suggested_reaction_config["room_id"] == "living"
     assert proposal.suggested_reaction_config["vacancy_delay_s"] == 180
     assert proposal.suggested_reaction_config["entity_steps"] == [
-        {"entity_id": "light.living_main", "action": "off", "brightness": None, "color_temp_kelvin": None, "rgb_color": None}
+        {
+            "entity_id": "light.living_main",
+            "action": "off",
+            "brightness": None,
+            "color_temp_kelvin": None,
+            "rgb_color": None,
+        }
     ]
 
 

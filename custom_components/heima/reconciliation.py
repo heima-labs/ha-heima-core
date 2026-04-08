@@ -144,10 +144,16 @@ def _merge_people_records(primary: dict[str, Any], secondary: dict[str, Any]) ->
     keep, merge = _preferred_people_record(primary, secondary)
     result = dict(keep)
 
-    if not str(result.get("person_entity") or "").strip() and str(merge.get("person_entity") or "").strip():
+    if (
+        not str(result.get("person_entity") or "").strip()
+        and str(merge.get("person_entity") or "").strip()
+    ):
         result["person_entity"] = str(merge.get("person_entity") or "").strip()
 
-    if not str(result.get("display_name") or "").strip() and str(merge.get("display_name") or "").strip():
+    if (
+        not str(result.get("display_name") or "").strip()
+        and str(merge.get("display_name") or "").strip()
+    ):
         result["display_name"] = str(merge.get("display_name") or "").strip()
 
     for field in (

@@ -2486,6 +2486,68 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal_and_opens_review():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_vacancy_lighting_off(
+        {
+            "room_id": "studio",
+            "light_entities": ["light.studio_main", "light.studio_spot"],
+            "vacancy_delay_min": 7,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    created = pending[0]
+    assert created.origin == "admin_authored"
+    assert created.reaction_type == "room_vacancy_lighting_off"
+    assert (
+        created.suggested_reaction_config["admin_authored_template_id"]
+        == "room.vacancy_lighting_off.basic"
+    )
+    assert created.suggested_reaction_config["vacancy_delay_s"] == 420
+    assert len(created.suggested_reaction_config["entity_steps"]) == 2
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert (
+        "Bozza admin: Spegni studio per assenza"
+        in result["description_placeholders"]["proposal_label"]
+    )
+    details = result["description_placeholders"]["proposal_details"]
+    assert "Template: room.vacancy_lighting_off.basic" in details
+    assert "Ritardo spegnimento: 7 minuti" in details
+    assert "Luci proposte: 2" in details
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_accept_persists_reaction_provenance():
     flow = _flow()
     proposal = ReactionProposal(
@@ -2638,6 +2700,47 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
     assert stored["origin"] == "admin_authored"
     assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
     assert len(stored["entity_steps"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_vacancy_lighting_off_accept_skips_action_configuration():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-room-vacancy-admin",
+        analyzer_id="AdminAuthoredRoomVacancyLightingOffTemplate",
+        reaction_type="room_vacancy_lighting_off",
+        description="studio: when vacancy persists for 7 minutes, turn off 2 lights",
+        confidence=1.0,
+        origin="admin_authored",
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingVacancyOffReaction",
+            "room_id": "studio",
+            "vacancy_delay_s": 420,
+            "entity_steps": [
+                {"entity_id": "light.studio_main", "action": "off"},
+                {"entity_id": "light.studio_spot", "action": "off"},
+            ],
+            "admin_authored_template_id": "room.vacancy_lighting_off.basic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["proposal-room-vacancy-admin"]
+    assert stored["origin"] == "admin_authored"
+    assert stored["source_template_id"] == "room.vacancy_lighting_off.basic"
+    assert stored["reaction_class"] == "RoomLightingVacancyOffReaction"
+    assert stored["vacancy_delay_s"] == 420
 
 
 @pytest.mark.asyncio
