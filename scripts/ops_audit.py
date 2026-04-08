@@ -228,6 +228,66 @@ def _print_compare(previous: dict[str, Any], current: dict[str, Any]) -> None:
     )
 
 
+def _review_lines(snapshot_payload: dict[str, Any], previous: dict[str, Any] | None = None) -> list[str]:
+    health = _as_dict(snapshot_payload.get("health"))
+    learning = _as_dict(snapshot_payload.get("learning"))
+    runtime_value = _as_dict(snapshot_payload.get("runtime_value"))
+    issues = _as_list(snapshot_payload.get("issues"))
+
+    healthy_signals: list[str] = []
+    red_flags: list[str] = []
+
+    if int(health.get("config_issue_total", 0) or 0) == 0:
+        healthy_signals.append("no config issues detected")
+    if int(learning.get("active_family_total", 0) or 0) > 0:
+        healthy_signals.append(
+            f"{int(learning.get('active_family_total', 0) or 0)} learning family active"
+        )
+    if int(runtime_value.get("configured_reaction_total", 0) or 0) > 0:
+        healthy_signals.append(
+            f"{int(runtime_value.get('configured_reaction_total', 0) or 0)} configured reactions present"
+        )
+    if int(runtime_value.get("camera_breach_candidate_total", 0) or 0) > 0:
+        red_flags.append(
+            f"{int(runtime_value.get('camera_breach_candidate_total', 0) or 0)} active security breach candidates"
+        )
+    if int(learning.get("stale_pending_total", 0) or 0) > 0:
+        red_flags.append(
+            f"{int(learning.get('stale_pending_total', 0) or 0)} stale pending proposals"
+        )
+    for item in issues:
+        issue = _as_dict(item)
+        severity = str(issue.get("severity") or "")
+        message = str(issue.get("message") or "").strip()
+        if severity in {"warning", "critical"} and message:
+            red_flags.append(message)
+
+    lines = [
+        f"review_verdict: {snapshot_payload.get('verdict') or '-'}",
+        f"generated_at: {snapshot_payload.get('generated_at') or '-'}",
+        "healthy_signals: " + (", ".join(sorted(set(healthy_signals))) if healthy_signals else "-"),
+        "red_flags: " + (", ".join(sorted(set(red_flags))) if red_flags else "-"),
+        "pending_families: "
+        + (", ".join(_as_list(learning.get("pending_families"))) if _as_list(learning.get("pending_families")) else "-"),
+        "top_pending: "
+        + (" | ".join(_as_list(learning.get("top_pending"))) if _as_list(learning.get("top_pending")) else "-"),
+    ]
+
+    if previous is not None:
+        prev_learning = _as_dict(previous.get("learning"))
+        prev_runtime = _as_dict(previous.get("runtime_value"))
+        lines.extend(
+            [
+                f"compare_verdict: {(previous.get('verdict') or '-')} -> {(snapshot_payload.get('verdict') or '-')}",
+                f"pending_total_delta: {_compare_int(prev_learning, learning, 'pending_total'):+d}",
+                f"active_family_total_delta: {_compare_int(prev_learning, learning, 'active_family_total'):+d}",
+                f"configured_reaction_total_delta: {_compare_int(prev_runtime, runtime_value, 'configured_reaction_total'):+d}",
+            ]
+        )
+
+    return lines
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima operations audit")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
@@ -235,6 +295,7 @@ def main() -> int:
     parser.add_argument("--show-json", action="store_true")
     parser.add_argument("--snapshot-out", help="Write a stable JSON audit snapshot to this path")
     parser.add_argument("--compare-to", help="Compare the current audit snapshot against a previous snapshot file")
+    parser.add_argument("--review", action="store_true", help="Print a compact operator review summary")
     args = parser.parse_args()
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
@@ -390,6 +451,8 @@ def main() -> int:
     else:
         print("none")
 
+    previous_snapshot: dict[str, Any] | None = None
+
     if args.show_json:
         _print_header("RAW PLUGINS")
         print(json.dumps(plugins, indent=2, ensure_ascii=False))
@@ -401,8 +464,13 @@ def main() -> int:
         print(f"\nSNAPSHOT: {out_path}")
 
     if args.compare_to:
-        previous = _load_snapshot(args.compare_to)
-        _print_compare(previous, snapshot_payload)
+        previous_snapshot = _load_snapshot(args.compare_to)
+        _print_compare(previous_snapshot, snapshot_payload)
+
+    if args.review:
+        _print_header("Review")
+        for line in _review_lines(snapshot_payload, previous_snapshot):
+            print(line)
 
     return 0
 
