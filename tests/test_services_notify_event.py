@@ -5,9 +5,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.heima.const import DOMAIN, SERVICE_COMMAND, SERVICE_SET_MODE
+from homeassistant.exceptions import ServiceValidationError
+
+from custom_components.heima.const import DOMAIN, SERVICE_COMMAND, SERVICE_SET_MODE, SERVICE_SET_OVERRIDE
 from custom_components.heima.runtime.engine import HeimaEngine
-from custom_components.heima.services import async_register_services
+from custom_components.heima.services import (
+    _coordinators_for_target,
+    _validate_command,
+    async_register_services,
+)
 
 
 class _FakeStateObj:
@@ -106,6 +112,24 @@ class _FakeCoordinator:
         )
         await self.engine.async_evaluate(reason=f"service:set_mode:{mode}:{enabled}")
         return action
+
+
+def test_validate_command_rejects_unknown_command():
+    with pytest.raises(ServiceValidationError):
+        _validate_command("definitely_unknown")
+
+
+def test_coordinators_for_target_filters_by_entry_id(monkeypatch):
+    c1 = SimpleNamespace(entry=SimpleNamespace(entry_id="entry-a"))
+    c2 = SimpleNamespace(entry=SimpleNamespace(entry_id="entry-b"))
+    hass = SimpleNamespace()
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: iter([c1, c2]),
+    )
+
+    assert _coordinators_for_target(hass, {}) == [c1, c2]
+    assert _coordinators_for_target(hass, {"entry_id": "entry-b"}) == [c2]
 
 
 @pytest.mark.asyncio
@@ -362,3 +386,200 @@ async def test_heima_command_upsert_configured_reactions_calls_coordinator(monke
         }
     }
     assert coordinator.last_label_updates == {"r-collision": "Collision reaction"}
+
+
+@pytest.mark.asyncio
+async def test_heima_command_recompute_now_requests_evaluation(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    coordinator = SimpleNamespace(async_request_evaluation=AsyncMock())
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(SimpleNamespace(data={"command": "recompute_now", "target": {}, "params": {}}))
+
+    coordinator.async_request_evaluation.assert_awaited_once_with(reason="service:recompute_now")
+
+
+@pytest.mark.asyncio
+async def test_heima_command_set_lighting_intent_updates_matching_select(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))
+    engine._build_default_state()
+    engine.state.set_select("heima_lighting_intent_living", "auto")
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "set_lighting_intent",
+                "target": {"zone_id": "living"},
+                "params": {"intent": "scene_evening"},
+            }
+        )
+    )
+
+    assert engine.state.get_select("heima_lighting_intent_living") == "scene_evening"
+
+
+@pytest.mark.asyncio
+async def test_heima_command_set_security_intent_updates_select(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"security": {"enabled": True}}))
+    engine._build_default_state()
+    engine.state.set_select("heima_security_intent", "disarmed")
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "set_security_intent",
+                "target": {},
+                "params": {"intent": "armed_away"},
+            }
+        )
+    )
+
+    assert engine.state.get_select("heima_security_intent") == "armed_away"
+
+
+@pytest.mark.asyncio
+async def test_heima_command_set_room_lighting_hold_updates_binary(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"lighting_zones": [{"zone_id": "living", "rooms": ["studio"]}]}))
+    engine._build_default_state()
+    engine.state.set_binary("heima_lighting_hold_studio", False)
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "set_room_lighting_hold",
+                "target": {"room_id": "studio"},
+                "params": {"state": True},
+            }
+        )
+    )
+
+    assert engine.state.get_binary("heima_lighting_hold_studio") is True
+
+
+@pytest.mark.asyncio
+async def test_heima_command_seed_lighting_events_rejects_invalid_action(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    coordinator = SimpleNamespace(async_seed_lighting_events=AsyncMock(return_value=0))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    with pytest.raises(ServiceValidationError):
+        await handler(
+            SimpleNamespace(
+                data={
+                    "command": "seed_lighting_events",
+                    "target": {},
+                    "params": {
+                        "entity_id": "light.living_main",
+                        "room_id": "living",
+                        "action": "blink",
+                    },
+                }
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_heima_command_upsert_configured_reactions_rejects_invalid_payload(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    coordinator = SimpleNamespace(async_upsert_configured_reactions=AsyncMock())
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    with pytest.raises(ServiceValidationError):
+        await handler(
+            SimpleNamespace(
+                data={
+                    "command": "upsert_configured_reactions",
+                    "target": {},
+                    "params": {"configured": {}, "labels": []},
+                }
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_heima_set_override_person_updates_override_select(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"people_named": [{"slug": "alex", "presence_method": "manual"}]}))
+    engine._build_default_state()
+    engine.state.set_select("heima_person_alex_override", "auto")
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_SET_OVERRIDE)
+    await handler(SimpleNamespace(data={"scope": "person", "id": "alex", "override": "force_home"}))
+
+    assert engine.state.get_select("heima_person_alex_override") == "force_home"
+
+
+@pytest.mark.asyncio
+async def test_heima_set_override_rejects_unknown_scope(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates())
+    coordinator = SimpleNamespace()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_SET_OVERRIDE)
+    with pytest.raises(ServiceValidationError):
+        await handler(SimpleNamespace(data={"scope": "unknown", "id": "x", "override": True}))
