@@ -394,3 +394,85 @@ views:
           - `python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
 
           Note: `sensor.heima_reactions_active` is a compact indicator only. If it falls back to `unknown`, inspect `diagnostics.py --section reactions` instead of relying on the sensor state.
+
+  - title: Heima Learning Review
+    path: heima-learning-review
+    icon: mdi:school-outline
+    cards:
+      - type: markdown
+        content: |
+          ## Heima Learning Review
+          Use this page for slower weekly review, not for day-to-day operations.
+
+          Focus on:
+          - whether enabled families are producing useful evidence
+          - whether proposals are accumulating or staying stale
+          - whether learned capabilities are turning into configured runtime value
+
+      - type: entities
+        title: Learning Baseline
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_event_store
+          - type: attribute
+            entity: sensor.heima_event_store
+            attribute: lighting
+            name: Lighting events
+          - type: attribute
+            entity: sensor.heima_event_store
+            attribute: state_change
+            name: State-change events
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_last_event
+
+      - type: entities
+        title: Runtime Outcome
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: sensor.heima_heating_state
+          - entity: sensor.heima_heating_reason
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+
+      - type: entities
+        title: Family-Specific Review
+        show_header_toggle: false
+        entities:
+          - entity: select.heima_security_intent
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: sensor.heima_anonymous_presence_source
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
+          - entity: alarm_control_panel.test_heima_alarm
+
+      - type: history-graph
+        title: Proposal And Runtime Trend (7d)
+        hours_to_show: 168
+        refresh_interval: 300
+        entities:
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_security_state
+
+      - type: markdown
+        content: |
+          Recommended weekly review commands:
+          - `python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+          - `python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section learning`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section proposals`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section reactions`
+
+          Healthy review:
+          - some families active, but not noisy
+          - pending proposals understandable and not stale
+          - configured reactions present for capabilities that matter
+
+          Red flags:
+          - long periods with zero useful evidence growth
+          - stale pending proposals
+          - configured capabilities that never become operational

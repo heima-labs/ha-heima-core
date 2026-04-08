@@ -362,6 +362,41 @@ def main() -> int:
 
     families = dict(summary.get("families") or {})
     if families:
+        active_families: list[str] = []
+        quiet_families: list[str] = []
+        accepted_families: list[str] = []
+        pending_families: list[str] = []
+        admin_authorable_families: list[str] = []
+
+        for family in sorted(families):
+            item = dict(families[family] or {})
+            total = int(item.get("total", 0) or 0)
+            pending = int(item.get("pending", 0) or 0)
+            accepted = int(item.get("accepted", 0) or 0)
+            admin_authorable = bool(item.get("admin_authorable", False))
+            if total > 0:
+                active_families.append(family)
+            else:
+                quiet_families.append(family)
+            if pending > 0:
+                pending_families.append(family)
+            if accepted > 0:
+                accepted_families.append(family)
+            if admin_authorable:
+                admin_authorable_families.append(family)
+
+        _print_header("Weekly Review Signals")
+        print("active families: " + (", ".join(active_families) if active_families else "-"))
+        print("quiet enabled families: " + (", ".join(quiet_families) if quiet_families else "-"))
+        print("families with pending proposals: " + (", ".join(pending_families) if pending_families else "-"))
+        print("families with accepted proposals: " + (", ".join(accepted_families) if accepted_families else "-"))
+        print(
+            "admin-authorable families: "
+            + (", ".join(admin_authorable_families) if admin_authorable_families else "-")
+        )
+        print(f"configured learned-origin reactions: {dict(reaction_summary.get('by_origin') or {}).get('learned', 0)}")
+
+    if families:
         _print_header("By Family")
         for family in sorted(families):
             item = dict(families[family] or {})
