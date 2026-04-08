@@ -6,3 +6,8 @@ homeassistant==2025.1.0
 # first compatible 2025.1.x range and avoid drifting into newer, incompatible
 # harness releases.
 pytest-homeassistant-custom-component>=0.13.196,<0.13.226
+
+# Code quality tools
+pytest-cov
+ruff
+mypy

@@ -2,6 +2,18 @@
 
 Heima is an intent-driven home intelligence engine for Home Assistant.
 
+## Who is Heima for?
+
+Heima is designed around three distinct roles:
+
+**Developer** — writes new learning plugins and reaction plugins. Defines what patterns the home can detect and what behaviors it can propose. Does not interact with the running instance.
+
+**Admin** — configures the integration, reviews learning proposals in plain language, and decides which behaviors to activate. The admin may be the same person who lives in the home, or an external consultant who sets things up once and steps back. Either way, the admin is the only person who needs to understand Heima's configuration surface.
+
+**Inhabitant** — lives in the home. Interacts with lights, heating, and presence as usual. Never touches configuration. The home adapts to them, not the other way around.
+
+This separation is intentional. Most home automation systems conflate all three roles and force everyone into the developer seat. Heima's goal is to make that unnecessary.
+
 ## What Heima is (and is not)
 
 Heima's goal is to make the home **truly smart**: invisible to those who live in it, yet functional and aware.

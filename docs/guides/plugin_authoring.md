@@ -1,6 +1,10 @@
 # Heima Guide: Authoring Learning and Reaction Plugins
 
-This guide explains how to add new behavior to Heima using the current plugin-oriented model.
+Heima separates three roles: **developer**, **admin**, and **inhabitant**.
+
+As a developer, your job is to extend what Heima can learn and propose. You write plugins that detect patterns in observed home behavior and generate proposals that the admin reviews. The inhabitant never sees any of this — they just live in the home.
+
+This guide covers the developer surface: how to add learning plugins and reaction plugins.
 
 This is a practical guide, not a normative spec.
 

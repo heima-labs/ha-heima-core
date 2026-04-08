@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# F = pyflakes, E/W = pycodestyle, I = isort
+select = ["F", "E", "W", "I"]
+
+# E501: line too long — gestito da formatter, non da linter
+# E402: module-level import not at top — comune in HA per TYPE_CHECKING guard
+# F401 in __init__.py: spesso sono re-export intenzionali
+ignore = ["E501", "E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# I test usano spesso variabili assegnate per side-effect (F841)
+# e import che sembrano inutilizzati perché usati come fixture
+"tests/**/*.py" = ["F841"]
+
+# __init__.py: F401 import unused può essere un re-export intenzionale
+"*/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+# Strict progressivo: attiva solo le check più utili senza bloccare la CI
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
