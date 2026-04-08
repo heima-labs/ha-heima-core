@@ -178,28 +178,42 @@ views:
         show_header_toggle: false
         entities:
           - entity: binary_sensor.heima_occupancy_studio
-          - entity: binary_sensor.heima_occupancy_living_room
+          - entity: binary_sensor.heima_occupancy_soggiorno
+          - entity: binary_sensor.heima_occupancy_bagno
           - entity: binary_sensor.heima_anonymous_presence
-          - entity: sensor.heima_anonymous_presence_confidence
-          - entity: sensor.heima_anonymous_presence_source
-
-      - type: entities
-        title: Lighting
-        show_header_toggle: false
-        entities:
-          - entity: sensor.heima_lighting_apply_mode
-          - entity: select.heima_lighting_intent_living_zone
-          - entity: binary_sensor.heima_lighting_hold_living_room
+          - entity: sensor.heima_anonymous_confidence
+          - entity: sensor.heima_anonymous_source
+          - entity: sensor.heima_occupancy_studio_source
+          - entity: sensor.heima_occupancy_soggiorno_source
+          - entity: sensor.heima_occupancy_bagno_source
 
       - type: entities
         title: Heating
         show_header_toggle: false
         entities:
-          - entity: sensor.heima_heating_apply_mode
+          - entity: climate.test_heima_thermostat
+          - entity: sensor.heima_heating_state
           - entity: sensor.heima_heating_branch
-          - entity: sensor.heima_heating_target_temperature
-          - entity: sensor.heima_heating_last_command_result
-          - entity: sensor.heima_heating_last_command_reason
+          - entity: sensor.heima_heating_reason
+          - entity: sensor.heima_heating_phase
+          - entity: sensor.heima_heating_target_temp
+          - entity: sensor.heima_heating_current_setpoint
+          - entity: sensor.heima_heating_last_applied_target
+          - entity: binary_sensor.heima_heating_manual_hold
+          - entity: binary_sensor.heima_heating_applying_guard
+
+      - type: entities
+        title: Security + Camera Evidence
+        show_header_toggle: false
+        entities:
+          - entity: alarm_control_panel.test_heima_alarm
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: select.heima_security_intent
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: binary_sensor.test_heima_camera_entry_motion
+          - entity: binary_sensor.test_heima_camera_garage_person
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
 
       - type: entities
         title: Learning
@@ -225,5 +239,68 @@ views:
         entities:
           - entity: sensor.heima_house_state
           - entity: sensor.heima_heating_branch
-          - entity: sensor.heima_heating_target_temperature
+          - entity: sensor.heima_heating_target_temp
           - entity: binary_sensor.heima_anyone_home
+
+  - title: Heima Monitoring
+    path: heima-monitoring
+    icon: mdi:chart-line
+    cards:
+      - type: markdown
+        content: |
+          ## Heima Monitoring
+          Operational monitoring view for the fake house.
+
+          Use this page to check if Heima is healthy, learning, reacting, and reading camera/security context correctly over time.
+
+      - type: entities
+        title: Daily Operations
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: sensor.heima_house_state_path
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: sensor.heima_last_event
+
+      - type: entities
+        title: Learning And Runtime Value
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_event_stats
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_house_state_pending_candidate
+          - entity: sensor.heima_house_state_pending_remaining_s
+
+      - type: entities
+        title: Camera Evidence Readout
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: binary_sensor.test_heima_camera_entry_motion
+          - entity: binary_sensor.test_heima_camera_garage_person
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: sensor.heima_anonymous_source
+
+      - type: history-graph
+        title: Monitoring Trend (12h)
+        hours_to_show: 12
+        refresh_interval: 30
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_reaction_proposals
+          - entity: binary_sensor.heima_anyone_home
+
+      - type: markdown
+        content: |
+          Deeper inspection:
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section engine`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_camera_evidence`
+          - `python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
