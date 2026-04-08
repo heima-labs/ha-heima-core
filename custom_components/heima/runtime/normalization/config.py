@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 WEIGHTED_QUORUM_STRATEGIES = {"weighted_quorum"}
 SIGNAL_SET_PLUGIN_IDS = {
     "any_of": "builtin.any_of",

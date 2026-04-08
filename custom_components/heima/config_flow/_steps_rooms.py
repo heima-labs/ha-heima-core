@@ -5,16 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import config_validation as cv
 from homeassistant.util import slugify
 
 from ..const import OPT_ROOMS
 from ..room_inventory import build_room_inventory_summary
 from ..room_sources import (
     normalize_room_signal_config,
-    room_occupancy_source_entity_ids,
     room_learning_source_entity_ids,
+    room_occupancy_source_entity_ids,
 )
 from ..runtime.normalization.config import (
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,

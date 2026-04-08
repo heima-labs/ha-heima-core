@@ -6,7 +6,7 @@ import asyncio
 
 from custom_components.heima.runtime.behaviors.heating_recorder import HeatingRecorderBehavior
 from custom_components.heima.runtime.context_builder import ContextBuilder
-from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
+from custom_components.heima.runtime.event_store import HeimaEvent
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 

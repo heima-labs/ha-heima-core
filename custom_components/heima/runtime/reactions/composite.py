@@ -8,7 +8,6 @@ from typing import Callable, Literal
 
 from homeassistant.core import HomeAssistant
 
-
 StateReader = Callable[[str], str | None]
 ThresholdMode = Literal[
     "rise",

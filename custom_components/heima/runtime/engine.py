@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, replace as dataclass_replace
+from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -20,8 +21,8 @@ from ..const import (
     DEFAULT_OCCUPANCY_MISMATCH_POLICY,
     OPT_CALENDAR,
     OPT_HEATING,
-    OPT_HOUSE_STATE_CONFIG,
     OPT_HOUSE_SIGNALS,
+    OPT_HOUSE_STATE_CONFIG,
     OPT_LIGHTING_APPLY_MODE,
     OPT_LIGHTING_ROOMS,
     OPT_LIGHTING_ZONES,
@@ -38,9 +39,6 @@ from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
-from .reactions import create_builtin_reaction_plugin_registry
-from .reactions.base import HeimaReaction
-from .snapshot_buffer import SnapshotBuffer
 from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
 from .domains.heating import HeatingDomain
@@ -51,8 +49,11 @@ from .domains.people import PeopleDomain
 from .domains.security import SecurityDomain
 from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
 from .normalization.service import InputNormalizer
-from .snapshot import DecisionSnapshot
+from .reactions import create_builtin_reaction_plugin_registry
+from .reactions.base import HeimaReaction
 from .scheduler import ScheduledRuntimeJob
+from .snapshot import DecisionSnapshot
+from .snapshot_buffer import SnapshotBuffer
 from .state_store import CanonicalState
 
 _LOGGER = logging.getLogger(__name__)

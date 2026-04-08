@@ -5,7 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.heima.runtime.engine import HeimaEngine
-from custom_components.heima.runtime.normalization import InputNormalizer, NormalizationFusionRegistry
+from custom_components.heima.runtime.normalization import (
+    InputNormalizer,
+    NormalizationFusionRegistry,
+)
 
 
 class _ExplodingAnyOfPlugin:

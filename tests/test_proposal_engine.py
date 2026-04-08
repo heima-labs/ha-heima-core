@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.analyzers.lifecycle import ProposalLifecycleHooks
 from custom_components.heima.runtime.analyzers.registry import (
     LearningPatternPluginDescriptor,
     LearningPluginRegistry,
 )
-from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.proposal_engine import ProposalEngine
 
 

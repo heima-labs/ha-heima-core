@@ -7,9 +7,11 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.heima.const import DOMAIN, SERVICE_SET_MODE
-from custom_components.heima.runtime.normalization import InputNormalizer, NormalizationFusionRegistry
-from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.domains.heating import HeatingDomain
+from custom_components.heima.runtime.normalization import (
+    InputNormalizer,
+    NormalizationFusionRegistry,
+)
 from custom_components.heima.services import async_register_services
 
 

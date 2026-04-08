@@ -11,7 +11,6 @@ from custom_components.heima.runtime.reactions.builtin import ConsecutiveStateRe
 from custom_components.heima.runtime.reactions.patterns import ConsecutiveMatchDetector
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

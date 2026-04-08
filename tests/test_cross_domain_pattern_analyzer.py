@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from custom_components.heima.runtime.analyzers.cross_domain import (
-    CompositeProposalQualityPolicy,
-    CompositePatternCatalogAnalyzer,
     DEFAULT_COMPOSITE_PATTERN_CATALOG,
+    CompositePatternCatalogAnalyzer,
+    CompositeProposalQualityPolicy,
     CrossDomainPatternAnalyzer,
     RoomCoolingPatternAnalyzer,
 )

@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from .base import IPatternAnalyzer
-from .cross_domain import CompositePatternCatalogAnalyzer, DEFAULT_COMPOSITE_PATTERN_CATALOG
-from .cross_domain import composite_quality_policy_from_learning_config
+from .cross_domain import (
+    DEFAULT_COMPOSITE_PATTERN_CATALOG,
+    CompositePatternCatalogAnalyzer,
+    composite_quality_policy_from_learning_config,
+)
 from .heating import HeatingPatternAnalyzer
 from .lifecycle import (
     ProposalLifecycleHooks,

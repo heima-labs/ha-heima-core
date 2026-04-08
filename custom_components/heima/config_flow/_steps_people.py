@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
-from ..const import OPT_PEOPLE_DEBUG_ALIASES, OPT_PEOPLE_NAMED, OPT_PEOPLE_ANON
+from ..const import OPT_PEOPLE_ANON, OPT_PEOPLE_DEBUG_ALIASES, OPT_PEOPLE_NAMED
 from ..runtime.normalization.config import (
     GROUP_PRESENCE_STRATEGY_CONTRACT,
     normalize_signal_set_strategy_fields,

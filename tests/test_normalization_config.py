@@ -5,12 +5,12 @@ from custom_components.heima.runtime.normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,
     SECURITY_CORROBORATION_STRATEGY_CONTRACT,
-    build_signal_set_strategy_cfg_for_contract,
     build_signal_set_strategy_cfg,
-    normalize_source_weights,
+    build_signal_set_strategy_cfg_for_contract,
     normalize_signal_set_strategy_fields,
-    validate_signal_set_strategy_fields,
+    normalize_source_weights,
     normalize_weighted_fusion_fields,
+    validate_signal_set_strategy_fields,
     validate_weighted_fusion_fields,
 )
 

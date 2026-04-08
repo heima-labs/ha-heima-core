@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine, _constraint_blocker
-
 
 # ---------------------------------------------------------------------------
 # _compute_active_constraints

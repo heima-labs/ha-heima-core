@@ -3,7 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from custom_components.heima.runtime.engine import HeimaEngine
-from custom_components.heima.runtime.normalization.contracts import DerivedObservation, build_observation
+from custom_components.heima.runtime.normalization.contracts import (
+    DerivedObservation,
+    build_observation,
+)
 
 
 class _FakeStates:

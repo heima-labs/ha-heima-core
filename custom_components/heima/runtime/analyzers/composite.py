@@ -8,7 +8,6 @@ from typing import Callable, Literal
 
 from ..event_store import HeimaEvent
 
-
 EventPredicate = Callable[[HeimaEvent], bool]
 ThresholdMode = Literal["rise", "drop", "below"]
 

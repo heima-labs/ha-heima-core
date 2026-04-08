@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import datetime
-import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol

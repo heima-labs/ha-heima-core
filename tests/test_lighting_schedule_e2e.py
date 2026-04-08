@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
+from unittest.mock import MagicMock
 
 from custom_components.heima.runtime.analyzers.lighting import LightingPatternAnalyzer
-from custom_components.heima.runtime.analyzers.base import ReactionProposal
-from custom_components.heima.runtime.proposal_engine import ProposalEngine
-from custom_components.heima.runtime.reactions.lighting_schedule import LightingScheduleReaction
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
+from custom_components.heima.runtime.proposal_engine import ProposalEngine
+from custom_components.heima.runtime.reactions.lighting_schedule import LightingScheduleReaction
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 # ---------------------------------------------------------------------------

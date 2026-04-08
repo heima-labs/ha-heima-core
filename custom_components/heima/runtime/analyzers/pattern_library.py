@@ -7,7 +7,6 @@ from typing import Any, Callable
 
 from .composite import CompositePatternSpec
 
-
 DescriptionBuilder = Callable[[str, int, int], str]
 SuggestedConfigBuilder = Callable[[str, list[Any], Any], dict[str, Any]]
 ConfidenceBuilder = Callable[[list[Any], Any], float]

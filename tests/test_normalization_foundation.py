@@ -4,9 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from custom_components.heima.runtime.normalization import InputNormalizer, NormalizationFusionRegistry
+from custom_components.heima.runtime.normalization import (
+    InputNormalizer,
+    NormalizationFusionRegistry,
+)
 from custom_components.heima.runtime.normalization.builtins import register_builtin_fusion_plugins
-from custom_components.heima.runtime.normalization.contracts import DerivedObservation, build_observation
+from custom_components.heima.runtime.normalization.contracts import (
+    DerivedObservation,
+    build_observation,
+)
 
 
 class _ExplodingFusionPlugin:

@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
-from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
+from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.reactions.base import HeimaReaction
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
-
 
 # ---------------------------------------------------------------------------
 # HeimaReaction base class

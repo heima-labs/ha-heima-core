@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 from custom_components.heima.runtime.behaviors.event_recorder import EventRecorderBehavior
-from custom_components.heima.runtime.context_builder import ContextBuilder
 from custom_components.heima.runtime.event_store import EventContext
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 

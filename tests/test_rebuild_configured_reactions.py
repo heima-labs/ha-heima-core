@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.reactions import (
     builtin_reaction_plugin_descriptors,
     create_builtin_reaction_plugin_registry,
 )
-from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
+from custom_components.heima.runtime.reactions.heating import (
+    HeatingEcoReaction,
+    HeatingPreferenceReaction,
+)
 from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
 from custom_components.heima.runtime.reactions.security_presence_simulation import (
@@ -25,7 +24,6 @@ from custom_components.heima.runtime.reactions.signal_assist import (
     normalize_room_signal_assist_config,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
-
 
 # ---------------------------------------------------------------------------
 # Helpers

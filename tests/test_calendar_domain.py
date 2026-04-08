@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,11 +14,6 @@ from custom_components.heima.runtime.domains.calendar import (
     _parse_dt_or_date,
     _resolve_classification_config,
 )
-from custom_components.heima.const import (
-    DEFAULT_CALENDAR_CATEGORY_PRIORITY,
-    DEFAULT_CALENDAR_KEYWORDS,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -286,8 +280,9 @@ def test_compute_next_vacation_from_cache():
     today = _now().date()
     future1 = today + timedelta(days=5)
     future2 = today + timedelta(days=10)
-    from custom_components.heima.runtime.domains.calendar import CalendarEvent
     from datetime import date as date_type
+
+    from custom_components.heima.runtime.domains.calendar import CalendarEvent
     def _dt(d: date_type) -> datetime:
         return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
 
@@ -429,8 +424,8 @@ async def test_async_maybe_refresh_handles_service_error_gracefully():
 # ---------------------------------------------------------------------------
 
 def test_house_state_wfh_sets_working_after_persistence(monkeypatch: pytest.MonkeyPatch):
-    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.domains.calendar import CalendarResult
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
 
     hass = SimpleNamespace(
@@ -472,8 +467,8 @@ def test_house_state_wfh_sets_working_after_persistence(monkeypatch: pytest.Monk
 
 
 def test_house_state_office_suppresses_working():
-    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.domains.calendar import CalendarResult
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
 
     hass = SimpleNamespace(
@@ -500,8 +495,8 @@ def test_house_state_office_suppresses_working():
 
 
 def test_house_state_vacation_from_calendar():
-    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.domains.calendar import CalendarResult
+    from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
 
     hass = SimpleNamespace(
@@ -575,9 +570,9 @@ def _make_hass_with_calendar_state(entity_id: str, summary: str) -> SimpleNamesp
 
 
 def _run_pipeline(hass, entity_id: str, anyone_home: bool = False) -> "any":
+    from custom_components.heima.runtime.domains.events import EventsDomain
     from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
-    from custom_components.heima.runtime.domains.events import EventsDomain
 
     calendar = CalendarDomain(hass)
     cal_result = calendar.compute({"calendar_entities": [entity_id]})
@@ -613,9 +608,9 @@ def test_pipeline_wfh_drives_working_after_persistence(monkeypatch: pytest.Monke
     result = _run_pipeline(hass, "calendar.work", anyone_home=True)
     assert result.house_state == "home"
 
+    from custom_components.heima.runtime.domains.events import EventsDomain
     from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
-    from custom_components.heima.runtime.domains.events import EventsDomain
 
     calendar = CalendarDomain(hass)
     cal_result = calendar.compute({"calendar_entities": ["calendar.work"]})
@@ -656,9 +651,9 @@ def test_pipeline_custom_sick_does_not_alter_house_state():
     assert cal_result.is_wfh_today is False
     assert cal_result.is_office_today is False
 
+    from custom_components.heima.runtime.domains.events import EventsDomain
     from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
-    from custom_components.heima.runtime.domains.events import EventsDomain
     normalizer = InputNormalizer(hass)
     hs_domain = HouseStateDomain(hass, normalizer)
     events = EventsDomain(hass)
@@ -701,9 +696,9 @@ def test_pipeline_allday_vacation_from_cache_entity_off():
     cal_result = calendar.compute({"calendar_entities": ["calendar.personal"]})
     assert cal_result.is_vacation_active is True
 
+    from custom_components.heima.runtime.domains.events import EventsDomain
     from custom_components.heima.runtime.domains.house_state import HouseStateDomain
     from custom_components.heima.runtime.normalization.service import InputNormalizer
-    from custom_components.heima.runtime.domains.events import EventsDomain
     normalizer = InputNormalizer(hass)
     hs_domain = HouseStateDomain(hass, normalizer)
     events = EventsDomain(hass)

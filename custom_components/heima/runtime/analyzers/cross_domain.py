@@ -7,12 +7,12 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
-from .learning_diagnostics import build_learning_diagnostics
 from .composite import (
     CompositePatternSpec,
     CompositeSignalSpec,
     RoomScopedCompositeMatcher,
 )
+from .learning_diagnostics import build_learning_diagnostics
 from .pattern_library import CompositeLearningPatternDefinition
 
 _MIN_OCCURRENCES = 5

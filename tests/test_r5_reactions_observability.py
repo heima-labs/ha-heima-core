@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
-import pytest
-
-from custom_components.heima.runtime.reactions.builtin import ConsecutiveStateReaction
-from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
 from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.reactions.builtin import ConsecutiveStateReaction
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,8 +28,9 @@ def _snap(anyone_home: bool = False) -> DecisionSnapshot:
 
 def _make_engine():
     """Create a minimal HeimaEngine with mocked HA dependencies."""
+    from unittest.mock import patch
+
     from custom_components.heima.runtime.engine import HeimaEngine
-    from unittest.mock import MagicMock, patch
 
     hass = MagicMock()
     hass.states.get.return_value = None
@@ -333,7 +330,6 @@ def test_diagnostics_includes_muted_reactions():
     from custom_components.heima.runtime.contracts import ApplyPlan
     engine._apply_plan = ApplyPlan.empty()
     engine._behaviors = []
-    from unittest.mock import MagicMock
     engine._lighting_domain = MagicMock()
     engine._lighting_domain.diagnostics.return_value = {}
     engine._heating_domain = MagicMock()

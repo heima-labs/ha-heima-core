@@ -11,13 +11,13 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from ...const import DEFAULT_HOUSE_STATE_CONFIG, OPT_HOUSE_STATE_CONFIG
-from .calendar import CalendarResult
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
 )
 from ..normalization.service import InputNormalizer
 from ..policy import resolve_house_state
+from .calendar import CalendarResult
 from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)

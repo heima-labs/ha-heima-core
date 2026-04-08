@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from custom_components.heima.runtime.reactions.heating import HeatingEcoReaction, HeatingPreferenceReaction
+from custom_components.heima.runtime.reactions.heating import (
+    HeatingEcoReaction,
+    HeatingPreferenceReaction,
+)
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 

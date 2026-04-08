@@ -15,7 +15,6 @@ from custom_components.heima.runtime.reactions.presence import (
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

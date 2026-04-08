@@ -15,9 +15,9 @@ from .lighting_assist import (
     build_room_lighting_assist_reaction,
     present_admin_authored_room_lighting_assist_details,
     present_learned_room_lighting_assist_details,
+    present_room_lighting_assist_label,
     present_room_lighting_assist_proposal_label,
     present_room_lighting_assist_review_title,
-    present_room_lighting_assist_label,
     present_tuning_room_lighting_assist_details,
 )
 from .lighting_schedule import (
@@ -25,9 +25,9 @@ from .lighting_schedule import (
     build_lighting_schedule_reaction,
     present_admin_authored_lighting_schedule_details,
     present_learned_lighting_schedule_details,
+    present_lighting_schedule_label,
     present_lighting_schedule_proposal_label,
     present_lighting_schedule_review_title,
-    present_lighting_schedule_label,
     present_tuning_lighting_schedule_details,
 )
 from .patterns import ConsecutiveMatchDetector, IPatternDetector
@@ -35,17 +35,6 @@ from .presence import (
     PresencePatternReaction,
     build_presence_pattern_reaction,
     present_presence_pattern_label,
-)
-from .signal_assist import (
-    RoomSignalAssistReaction,
-    build_room_signal_assist_reaction,
-    normalize_room_signal_assist_config,
-    present_admin_authored_room_signal_assist_details,
-    present_learned_room_signal_assist_details,
-    present_room_signal_assist_proposal_label,
-    present_room_signal_assist_review_title,
-    present_room_signal_assist_label,
-    present_tuning_room_signal_assist_details,
 )
 from .security_presence_simulation import (
     VacationPresenceSimulationReaction,
@@ -55,6 +44,17 @@ from .security_presence_simulation import (
     present_vacation_presence_simulation_label,
     present_vacation_presence_simulation_proposal_label,
     present_vacation_presence_simulation_review_title,
+)
+from .signal_assist import (
+    RoomSignalAssistReaction,
+    build_room_signal_assist_reaction,
+    normalize_room_signal_assist_config,
+    present_admin_authored_room_signal_assist_details,
+    present_learned_room_signal_assist_details,
+    present_room_signal_assist_label,
+    present_room_signal_assist_proposal_label,
+    present_room_signal_assist_review_title,
+    present_tuning_room_signal_assist_details,
 )
 
 ReactionPluginBuilder = Callable[[Any, str, dict[str, Any]], HeimaReaction | None]

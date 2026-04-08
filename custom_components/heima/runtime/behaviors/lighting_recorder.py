@@ -275,8 +275,8 @@ class LightingRecorderBehavior(HeimaBehavior):
 
     def _build_entity_room_map(self) -> dict[str, str]:
         """Map light entity_ids to room_ids via entity area, then device area."""
-        from homeassistant.helpers.entity_registry import async_get as async_get_er
         from homeassistant.helpers.device_registry import async_get as async_get_dr
+        from homeassistant.helpers.entity_registry import async_get as async_get_er
 
         area_to_room: dict[str, str] = {}
         for room in self._entry.options.get("rooms", []):

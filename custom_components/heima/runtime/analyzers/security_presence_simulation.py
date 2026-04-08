@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from ..event_store import EventStore
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import SecurityPresenceSimulationLearningPolicy
-from ..event_store import EventStore
 
 _MIN_OCCURRENCES = 4
 _MIN_WEEKS = 2
