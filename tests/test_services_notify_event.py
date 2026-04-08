@@ -4,10 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.heima.const import DOMAIN, SERVICE_COMMAND, SERVICE_SET_MODE, SERVICE_SET_OVERRIDE
+from custom_components.heima.const import (
+    DOMAIN,
+    SERVICE_COMMAND,
+    SERVICE_SET_MODE,
+    SERVICE_SET_OVERRIDE,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.services import (
     _coordinators_for_target,
