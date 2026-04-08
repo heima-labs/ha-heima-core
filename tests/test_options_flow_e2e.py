@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
-from custom_components.heima.const import DOMAIN
+from custom_components.heima.const import (
+    DEFAULT_CALENDAR_CACHE_TTL_HOURS,
+    DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
+    DOMAIN,
+)
 from custom_components.heima.runtime.analyzers import create_builtin_learning_plugin_registry
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
@@ -1227,6 +1231,94 @@ def test_init_status_block_uses_operational_calendar_summary_when_runtime_availa
     placeholders = flow._init_status_block()
 
     assert placeholders["calendar_summary"] == "WFH oggi"
+
+
+@pytest.mark.asyncio
+async def test_calendar_step_uses_defaults_when_config_missing():
+    flow = _flow(options={"language": "it"})
+
+    result = await flow.async_step_calendar()
+
+    assert result["type"] == "form"
+
+    saved = await flow.async_step_calendar(
+        {
+            "calendar_entities": [],
+            "lookahead_days": DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
+            "cache_ttl_hours": DEFAULT_CALENDAR_CACHE_TTL_HOURS,
+            "calendar_keywords": {},
+            "priority_text": "",
+        }
+    )
+
+    assert saved["type"] == "menu"
+    assert flow.options["calendar"]["lookahead_days"] == DEFAULT_CALENDAR_LOOKAHEAD_DAYS
+    assert flow.options["calendar"]["cache_ttl_hours"] == DEFAULT_CALENDAR_CACHE_TTL_HOURS
+
+
+@pytest.mark.asyncio
+async def test_calendar_step_normalizes_keywords_and_extends_priority():
+    flow = _flow(options={"language": "it"})
+
+    result = await flow.async_step_calendar(
+        {
+            "calendar_entities": "calendar.personal",
+            "lookahead_days": 5,
+            "cache_ttl_hours": 3,
+            "calendar_keywords": {
+                "vacation": "mare, ferie",
+                "medical": ["dentista", " visita ", ""],
+            },
+            "priority_text": "medical",
+        }
+    )
+
+    assert result["type"] == "menu"
+    calendar = flow.options["calendar"]
+    assert calendar["calendar_entities"] == ["calendar.personal"]
+    assert calendar["lookahead_days"] == 5
+    assert calendar["cache_ttl_hours"] == 3
+    assert calendar["calendar_keywords"] == {
+        "vacation": ["mare", "ferie"],
+        "medical": ["dentista", "visita"],
+    }
+    assert calendar["category_priority"] == ["medical", "vacation"]
+
+
+def test_calendar_menu_summary_falls_back_to_configured_entities():
+    flow = _flow(
+        options={
+            "language": "en",
+            "calendar": {"calendar_entities": ["calendar.personal", "calendar.work"]},
+        }
+    )
+
+    assert flow._calendar_menu_summary() == "2: calendar.personal, calendar.work"
+
+
+def test_calendar_menu_summary_uses_next_vacation_when_runtime_available():
+    next_vacation = SimpleNamespace(summary="Summer break")
+    flow = _flow(options={"language": "en", "calendar": {"calendar_entities": ["calendar.personal"]}})
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    engine=SimpleNamespace(
+                        _state=SimpleNamespace(
+                            calendar_result=SimpleNamespace(
+                                is_vacation_active=False,
+                                is_office_today=False,
+                                is_wfh_today=False,
+                                next_vacation=next_vacation,
+                            )
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    assert flow._calendar_menu_summary() == "next vacation: Summer break"
 
 
 def test_init_status_block_uses_operational_security_presence_summary_when_runtime_available():
