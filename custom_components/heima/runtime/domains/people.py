@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from ...const import OPT_PEOPLE_ANON, OPT_PEOPLE_NAMED
+from ...const import OPT_PEOPLE_ANON, OPT_PEOPLE_DEBUG_ALIASES, OPT_PEOPLE_NAMED
 from ...room_sources import normalize_entity_id_list
 from ..normalization.config import (
     GROUP_PRESENCE_STRATEGY_CONTRACT,
@@ -91,6 +91,30 @@ class PeopleDomain:
             )
             if is_home:
                 home_people.append(slug)
+
+        debug_aliases_cfg = options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
+        if isinstance(debug_aliases_cfg, dict) and bool(debug_aliases_cfg.get("enabled")):
+            aliases = debug_aliases_cfg.get("aliases", {})
+            if isinstance(aliases, dict):
+                for alias_slug, alias_cfg in aliases.items():
+                    if not str(alias_slug).strip() or not isinstance(alias_cfg, dict):
+                        continue
+                    is_home, source, confidence = self._compute_debug_alias_presence(
+                        str(alias_slug).strip(), alias_cfg, state
+                    )
+                    prev_is_home = state.get_binary(f"heima_person_{alias_slug}_home")
+                    state.set_binary(f"heima_person_{alias_slug}_home", is_home)
+                    state.set_sensor(f"heima_person_{alias_slug}_source", source)
+                    state.set_sensor(f"heima_person_{alias_slug}_confidence", confidence)
+                    events.queue_people_transition_event(
+                        slug=str(alias_slug).strip(),
+                        prev_is_home=prev_is_home,
+                        is_home=is_home,
+                        source=source,
+                        confidence=confidence,
+                    )
+                    if is_home:
+                        home_people.append(str(alias_slug).strip())
 
         anon_cfg = options.get(OPT_PEOPLE_ANON, {})
         anon_home = False
@@ -214,6 +238,33 @@ class PeopleDomain:
             return is_home, "quorum", confidence
 
         return False, "manual", 0
+
+    def _compute_debug_alias_presence(
+        self, alias_slug: str, alias_cfg: dict[str, Any], state: CanonicalState
+    ) -> tuple[bool, str, int]:
+        mode = str(alias_cfg.get("mode") or "alias_person").strip()
+        if mode == "synthetic":
+            synthetic_state = str(alias_cfg.get("synthetic_state") or "away").strip().lower()
+            is_home = synthetic_state in {"home", "on", "true", "present"}
+            trace_key = f"person_debug:{alias_slug}"
+            self._group_presence_trace[trace_key] = {
+                "mode": "synthetic",
+                "synthetic_state": synthetic_state,
+                "is_home": is_home,
+            }
+            return is_home, "debug_synthetic", 100 if is_home else 0
+
+        person_entity = str(alias_cfg.get("person_entity") or "").strip()
+        if not person_entity:
+            return False, "debug_alias_missing_target", 0
+        is_home = self._normalizer.presence(person_entity).state == "on"
+        trace_key = f"person_debug:{alias_slug}"
+        self._group_presence_trace[trace_key] = {
+            "mode": "alias_person",
+            "person_entity": person_entity,
+            "is_home": is_home,
+        }
+        return is_home, f"debug_alias:{person_entity}", 100 if is_home else 0
 
     def _compute_group_presence(
         self,

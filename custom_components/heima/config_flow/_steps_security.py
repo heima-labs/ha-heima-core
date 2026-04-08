@@ -21,7 +21,11 @@ class _SecurityStepsMixin:
         current = dict(self.options.get(OPT_SECURITY, {}))
         if user_input is None:
             return self.async_show_form(
-                step_id="security", data_schema=self._security_schema(current)
+                step_id="security",
+                data_schema=self._security_schema(current),
+                description_placeholders={
+                    "camera_sources_help": self._security_camera_evidence_help()
+                },
             )
 
         if user_input.get("enabled") and not user_input.get("security_state_entity"):
@@ -29,6 +33,9 @@ class _SecurityStepsMixin:
                 step_id="security",
                 data_schema=self._security_schema(user_input),
                 errors={"security_state_entity": "required"},
+                description_placeholders={
+                    "camera_sources_help": self._security_camera_evidence_help()
+                },
             )
 
         payload = dict(current)
@@ -88,6 +95,32 @@ class _SecurityStepsMixin:
             }
         )
         return self._with_suggested(schema, defaults)
+
+    def _security_camera_evidence_help(self) -> str:
+        language = str(getattr(self, "_flow_language", lambda: "en")() or "en").lower()
+        if language.startswith("it"):
+            return (
+                "Formato atteso per ogni camera: "
+                "{id, display_name?, enabled, role, motion_entity?, person_entity?, "
+                "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?}.\n"
+                "Ruoli consigliati: entry, garage.\n"
+                "Esempio: "
+                '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
+                '"person_entity": "binary_sensor.front_cam_person", '
+                '"contact_entity": "binary_sensor.front_door_contact", '
+                '"return_home_contributor": true, "security_priority": "high"}}'
+            )
+        return (
+            "Expected shape for each camera source: "
+            "{id, display_name?, enabled, role, motion_entity?, person_entity?, "
+            "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?}.\n"
+            "Recommended roles: entry, garage.\n"
+            "Example: "
+            '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
+            '"person_entity": "binary_sensor.front_cam_person", '
+            '"contact_entity": "binary_sensor.front_door_contact", '
+            '"return_home_contributor": true, "security_priority": "high"}}'
+        )
 
     @staticmethod
     def _camera_evidence_sources_to_editor(value: Any) -> dict[str, Any]:

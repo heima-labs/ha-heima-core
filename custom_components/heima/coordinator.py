@@ -6,11 +6,13 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .models import HeimaRuntimeState
+from .reconciliation import reconcile_ha_backed_options
 from .runtime.analyzers import (
     create_builtin_learning_plugin_registry,
 )
@@ -84,6 +86,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             entry_id=entry.entry_id,
             on_job_due=self._async_handle_scheduled_job,
         )
+        self._ha_backed_reconciliation_summary: dict[str, object] = {}
         self.data = HeimaRuntimeState(
             health_ok=True,
             health_reason="booting",
@@ -114,9 +117,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def async_initialize(self) -> None:
         """Initialize runtime and publish base state."""
+        summary, changed = await self._async_reconcile_ha_backed_objects()
         await self._event_store.async_load()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
+        if changed:
+            await self.engine.async_reload_options(self.entry, changed_keys={"people_named", "rooms"})
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
         self._schedule_proposal_tick()
@@ -130,6 +136,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_decision="initialized",
             last_action="",
         )
+        if changed:
+            await self._async_emit_reconciliation_events(summary)
         await self.async_refresh()
 
     def _get_learning_config(self, entry: ConfigEntry) -> dict:
@@ -169,6 +177,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_action="",
         )
         await self.async_refresh()
+
+    @property
+    def ha_backed_reconciliation_summary(self) -> dict[str, object]:
+        return dict(self._ha_backed_reconciliation_summary)
 
     async def async_request_evaluation(self, reason: str) -> None:
         """Request an evaluation cycle."""
@@ -389,11 +401,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         @callback
         def _handle_state_changed(event: Event) -> None:
             entity_id = event.data.get("entity_id")
-            if entity_id not in tracked_entities:
+            if entity_id not in tracked_entities and not str(entity_id or "").startswith("person."):
                 return
-            self.hass.async_create_task(
-                self.async_request_evaluation(reason=f"state_changed:{entity_id}")
-            )
+            self.hass.async_create_task(self._async_handle_state_changed(str(entity_id)))
 
         self._unsub_state_changed = self.hass.bus.async_listen("state_changed", _handle_state_changed)
 
@@ -413,11 +423,121 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_run_proposal_tick(self) -> None:
         try:
+            summary, changed = await self._async_reconcile_ha_backed_objects()
+            if changed:
+                await self._async_emit_reconciliation_events(summary)
             await self._proposal_engine.async_run()
             self._write_event_store_sensor()
             await self.async_refresh()
         finally:
             self._schedule_proposal_tick()
+
+    async def _async_handle_state_changed(self, entity_id: str) -> None:
+        summary, changed = await self._async_reconcile_ha_backed_objects()
+        if changed:
+            await self._async_emit_reconciliation_events(summary)
+            return
+        if entity_id in self.engine.tracked_entity_ids():
+            await self.async_request_evaluation(reason=f"state_changed:{entity_id}")
+
+    async def _async_reconcile_ha_backed_objects(self) -> tuple[dict[str, object], bool]:
+        options = dict(self.entry.options)
+        updated_options, summary, changed = reconcile_ha_backed_options(
+            options,
+            ha_people=self._ha_people_inventory(),
+            ha_areas=self._ha_area_inventory(),
+        )
+        self._ha_backed_reconciliation_summary = summary
+        if changed:
+            self.hass.config_entries.async_update_entry(self.entry, options=updated_options)
+            self.last_options_snapshot = dict(updated_options)
+        return summary, changed
+
+    def _ha_people_inventory(self) -> list[dict[str, str]]:
+        states = getattr(self.hass, "states", None)
+        async_all = getattr(states, "async_all", None)
+        if not callable(async_all):
+            return []
+        try:
+            all_states = list(async_all())
+        except TypeError:
+            all_states = list(async_all("person"))
+        people: list[dict[str, str]] = []
+        for state in all_states:
+            entity_id = str(getattr(state, "entity_id", "")).strip()
+            if not entity_id.startswith("person."):
+                continue
+            name = str(
+                getattr(state, "name", None)
+                or getattr(state, "attributes", {}).get("friendly_name")
+                or entity_id.split(".", 1)[1]
+            ).strip()
+            people.append({"entity_id": entity_id, "display_name": name})
+        return people
+
+    def _ha_area_inventory(self) -> list[dict[str, str]]:
+        try:
+            area_reg = ar.async_get(self.hass)
+        except Exception:
+            return []
+        lister = getattr(area_reg, "async_list_areas", None)
+        if not callable(lister):
+            return []
+        return [
+            {"area_id": str(area.id), "display_name": str(area.name)}
+            for area in lister()
+            if getattr(area, "id", None)
+        ]
+
+    async def _async_emit_reconciliation_events(self, summary: dict[str, object]) -> None:
+        people_summary = dict(summary.get("people") or {})
+        rooms_summary = dict(summary.get("rooms") or {})
+
+        new_people = [str(item) for item in list(people_summary.get("new_labels") or []) if str(item)]
+        new_rooms = [str(item) for item in list(rooms_summary.get("new_labels") or []) if str(item)]
+        orphaned_people = [
+            str(item) for item in list(people_summary.get("orphaned_labels") or []) if str(item)
+        ]
+        orphaned_rooms = [
+            str(item) for item in list(rooms_summary.get("orphaned_labels") or []) if str(item)
+        ]
+
+        if new_people:
+            await self.engine.async_emit_external_event(
+                event_type="system.new_person_discovered",
+                key=f"system.new_person_discovered:{','.join(sorted(new_people))}",
+                severity="info",
+                title="New Home Assistant person discovered",
+                message=f"Heima discovered {len(new_people)} new Home Assistant person(s): {', '.join(new_people)}.",
+                context={"people": new_people, "reconciliation": "ha_backed_people_rooms"},
+            )
+        if new_rooms:
+            await self.engine.async_emit_external_event(
+                event_type="system.new_room_discovered",
+                key=f"system.new_room_discovered:{','.join(sorted(new_rooms))}",
+                severity="info",
+                title="New Home Assistant room discovered",
+                message=f"Heima discovered {len(new_rooms)} new Home Assistant room(s): {', '.join(new_rooms)}.",
+                context={"rooms": new_rooms, "reconciliation": "ha_backed_people_rooms"},
+            )
+        if orphaned_people:
+            await self.engine.async_emit_external_event(
+                event_type="system.person_binding_orphaned",
+                key=f"system.person_binding_orphaned:{','.join(sorted(orphaned_people))}",
+                severity="warning",
+                title="Heima person binding orphaned",
+                message=f"Heima found {len(orphaned_people)} orphaned person binding(s): {', '.join(orphaned_people)}.",
+                context={"people": orphaned_people, "reconciliation": "ha_backed_people_rooms"},
+            )
+        if orphaned_rooms:
+            await self.engine.async_emit_external_event(
+                event_type="system.room_binding_orphaned",
+                key=f"system.room_binding_orphaned:{','.join(sorted(orphaned_rooms))}",
+                severity="warning",
+                title="Heima room binding orphaned",
+                message=f"Heima found {len(orphaned_rooms)} orphaned room binding(s): {', '.join(orphaned_rooms)}.",
+                context={"rooms": orphaned_rooms, "reconciliation": "ha_backed_people_rooms"},
+            )
 
     def _write_proposals_sensor(self, pending_count: int, attributes: dict) -> None:
         self.engine.state.set_sensor("heima_reaction_proposals", pending_count)

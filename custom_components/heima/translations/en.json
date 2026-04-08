@@ -71,6 +71,7 @@
           "people_edit": "Edit person",
           "people_remove": "Remove person",
           "people_anonymous": "Anonymous presence",
+          "people_debug_aliases": "Debug aliases",
           "people_save": "Save and close",
           "people_next": "Next"
         }
@@ -119,6 +120,14 @@
         },
         "submit": "OK"
       },
+      "people_remove_confirm": {
+        "title": "Confirm Person Removal",
+        "description": "Remove {person_label}?",
+        "data": {
+          "confirm": "Confirm removal"
+        },
+        "submit": "OK"
+      },
       "people_anonymous": {
         "title": "Anonymous Presence",
         "data": {
@@ -128,6 +137,15 @@
           "anonymous_count_weight": "Count weight",
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)"
+        },
+        "submit": "OK"
+      },
+      "people_debug_aliases": {
+        "title": "People Debug Aliases",
+        "description": "{debug_aliases_help}",
+        "data": {
+          "enabled": "Enable debug aliases",
+          "aliases": "Alias mapping"
         },
         "submit": "OK"
       },
@@ -184,6 +202,14 @@
         "title": "Remove Room",
         "data": {
           "room": "Room"
+        },
+        "submit": "OK"
+      },
+      "rooms_remove_confirm": {
+        "title": "Confirm Room Removal",
+        "description": "Remove {room_label}? The linked Home Assistant area will also be removed.",
+        "data": {
+          "confirm": "Confirm removal"
         },
         "submit": "OK"
       },
@@ -257,6 +283,14 @@
         },
         "submit": "OK"
       },
+      "lighting_zones_remove_confirm": {
+        "title": "Confirm Zone Removal",
+        "description": "Remove {zone_label}?",
+        "data": {
+          "confirm": "Confirm removal"
+        },
+        "submit": "OK"
+      },
       "heating": {
         "title": "Heating",
         "data": {
@@ -275,11 +309,13 @@
       },
       "security": {
         "title": "Security",
+        "description": "Configure the house security binding and optional camera-derived evidence sources.\n\n{camera_sources_help}",
         "data": {
           "enabled": "Enable security checks",
           "security_state_entity": "Security state entity",
           "armed_away_value": "Armed away value",
-          "armed_home_value": "Armed home value"
+          "armed_home_value": "Armed home value",
+          "camera_evidence_sources": "Camera evidence sources (object mapping: source_id -> config)"
         },
         "submit": "OK"
       },
@@ -471,8 +507,17 @@
         "title": "Edit reaction actions",
         "description": "{reaction_description}",
         "data": {
+          "enabled": "Enabled",
           "action_entities": "Scenes or scripts to activate",
-          "pre_condition_min": "Lead time (minutes)"
+          "pre_condition_min": "Lead time (minutes)",
+          "delete_reaction": "Delete this reaction"
+        }
+      },
+      "reactions_delete_confirm": {
+        "title": "Confirm Reaction Removal",
+        "description": "Remove {reaction_description}?",
+        "data": {
+          "confirm": "Confirm removal"
         }
       }
     },
@@ -481,9 +526,13 @@
       "duplicate": "Already exists",
       "template_unavailable": "Template unavailable",
       "invalid_required": "Required count must be less than or equal to sources",
+      "unknown_person": "Selected Home Assistant person was not found",
+      "duplicate_person_entity": "This Home Assistant person is already mapped",
       "reserved_prefix": "Value cannot start with 'heima_'",
       "invalid_time_zone": "Invalid timezone",
       "invalid_slug": "Invalid slug",
+      "unknown_area": "Selected Home Assistant area was not found",
+      "area_sync_failed": "Heima could not create or link the Home Assistant area",
       "invalid_number": "Enter a valid positive number",
       "invalid_hhmm": "Enter a valid time in HH:MM format",
       "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings"

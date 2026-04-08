@@ -206,6 +206,79 @@ async def test_e2e_person_quorum_updates_home_sensor_and_group_trace(
 
 
 @pytest.mark.asyncio
+async def test_e2e_people_debug_alias_person_tracks_target_person_entity(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(
+        {
+            "people_debug_aliases": {
+                "enabled": True,
+                "aliases": {
+                    "demo_alex": {
+                        "mode": "alias_person",
+                        "person_entity": "person.alex",
+                        "display_name": "Demo Alex",
+                    }
+                },
+            }
+        }
+    )
+    entry.add_to_hass(hass)
+
+    hass.states.async_set("person.alex", "not_home")
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_person_demo_alex_home") is not None
+    assert hass.states.get("binary_sensor.heima_person_demo_alex_home").state == "off"
+
+    hass.states.async_set("person.alex", "home")
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_person_demo_alex_home").state == "on"
+    assert hass.states.get("sensor.heima_person_demo_alex_source").state == "debug_alias:person.alex"
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    trace = coordinator.engine.diagnostics()["presence"]["group_trace"]["person_debug:demo_alex"]
+    assert trace["mode"] == "alias_person"
+    assert trace["person_entity"] == "person.alex"
+    assert trace["is_home"] is True
+
+
+@pytest.mark.asyncio
+async def test_e2e_people_debug_synthetic_alias_contributes_to_anyone_home(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(
+        {
+            "people_debug_aliases": {
+                "enabled": True,
+                "aliases": {
+                    "guest_test": {
+                        "mode": "synthetic",
+                        "display_name": "Guest Test",
+                        "synthetic_state": "home",
+                    }
+                },
+            }
+        }
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_person_guest_test_home").state == "on"
+    assert hass.states.get("sensor.heima_people_count").state == "1"
+    assert hass.states.get("binary_sensor.heima_anyone_home").state == "on"
+    assert hass.states.get("sensor.heima_people_home_list").state == "guest_test"
+
+
+@pytest.mark.asyncio
 async def test_e2e_person_weighted_quorum_uses_weights_and_group_trace(
     hass: HomeAssistant,
     enable_custom_integrations,

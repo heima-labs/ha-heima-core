@@ -642,13 +642,14 @@ class _ReactionsStepsMixin:
     async def async_step_reactions_edit_form(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
-        """Edit action_entities and pre_condition_min for the selected reaction."""
+        """Edit, disable, or request deletion of the selected configured reaction."""
         pid = getattr(self, "_editing_reaction_id", None)
         if not pid:
             return await self.async_step_init()
 
         reactions_cfg = dict(self._reactions_options())
         configured = dict(reactions_cfg.get("configured", {}))
+        muted = list(reactions_cfg.get("muted", []))
         labels_map: dict[str, str] = reactions_cfg.get("labels", {})
         cfg = dict(configured.get(pid, {}))
 
@@ -658,30 +659,85 @@ class _ReactionsStepsMixin:
             current_pre = cfg.get("pre_condition_min", 20)
             schema = vol.Schema(
                 {
+                    vol.Optional("enabled", default=bool(cfg.get("enabled", True))): bool,
                     vol.Optional("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
                     vol.Optional("pre_condition_min", default=current_pre): vol.All(
                         vol.Coerce(int), vol.Range(min=1, max=120)
                     ),
+                    vol.Optional("delete_reaction", default=False): bool,
                 }
             )
             label = self._reaction_label_from_config(pid, cfg, labels_map)
             return self.async_show_form(
                 step_id="reactions_edit_form",
                 data_schema=self.add_suggested_values_to_schema(
-                    schema, {"action_entities": current_entities, "pre_condition_min": current_pre}
+                    schema,
+                    {
+                        "enabled": bool(cfg.get("enabled", True)),
+                        "action_entities": current_entities,
+                        "pre_condition_min": current_pre,
+                        "delete_reaction": False,
+                    },
                 ),
                 description_placeholders={"reaction_description": label},
             )
 
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
         entities = self._normalize_multi_value(user_input.get("action_entities"))
         steps = self._action_entities_to_steps(entities)
         cfg["steps"] = steps
+        cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def async_step_reactions_delete_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Confirm deletion of a configured reaction."""
+        pid = getattr(self, "_deleting_reaction_id", None)
+        if not pid:
+            return await self.async_step_init()
+
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        labels_map: dict[str, str] = reactions_cfg.get("labels", {})
+        muted = list(reactions_cfg.get("muted", []))
+        cfg = dict(configured.get(pid, {}))
+        if not cfg:
+            self._deleting_reaction_id = None
+            self._editing_reaction_id = None
+            return await self.async_step_init()
+
+        reaction_label = self._reaction_label_from_config(pid, cfg, labels_map)
+        if user_input is None:
+            schema = vol.Schema({vol.Required("confirm", default=False): bool})
+            return self.async_show_form(
+                step_id="reactions_delete_confirm",
+                data_schema=schema,
+                description_placeholders={"reaction_description": reaction_label},
+            )
+
+        if not bool(user_input.get("confirm")):
+            self._deleting_reaction_id = None
+            return await self.async_step_reactions_edit_form()
+
+        configured.pop(pid, None)
+        labels_map.pop(pid, None)
+        muted = [rid for rid in muted if rid != pid]
+        reactions_cfg["configured"] = configured
+        reactions_cfg["labels"] = labels_map
+        reactions_cfg["muted"] = muted
+        self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._deleting_reaction_id = None
         self._editing_reaction_id = None
         return await self.async_step_init()
 

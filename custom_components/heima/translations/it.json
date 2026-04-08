@@ -71,6 +71,7 @@
           "people_edit": "Modifica persona",
           "people_remove": "Rimuovi persona",
           "people_anonymous": "Presenza anonima",
+          "people_debug_aliases": "Alias debug",
           "people_save": "Salva e chiudi",
           "people_next": "Avanti"
         }
@@ -119,6 +120,14 @@
         },
         "submit": "OK"
       },
+      "people_remove_confirm": {
+        "title": "Conferma Rimozione Persona",
+        "description": "Rimuovere {person_label}?",
+        "data": {
+          "confirm": "Conferma rimozione"
+        },
+        "submit": "OK"
+      },
       "people_anonymous": {
         "title": "Presenza Anonima",
         "data": {
@@ -128,6 +137,15 @@
           "anonymous_count_weight": "Peso conteggio",
           "arrive_hold_s": "Hold arrivo (s)",
           "leave_hold_s": "Hold uscita (s)"
+        },
+        "submit": "OK"
+      },
+      "people_debug_aliases": {
+        "title": "Alias Debug Persone",
+        "description": "{debug_aliases_help}",
+        "data": {
+          "enabled": "Abilita alias debug",
+          "aliases": "Mappa alias"
         },
         "submit": "OK"
       },
@@ -184,6 +202,14 @@
         "title": "Rimuovi Stanza",
         "data": {
           "room": "Stanza"
+        },
+        "submit": "OK"
+      },
+      "rooms_remove_confirm": {
+        "title": "Conferma Rimozione Stanza",
+        "description": "Rimuovere {room_label}? Verrà rimossa anche l'area collegata in Home Assistant.",
+        "data": {
+          "confirm": "Conferma rimozione"
         },
         "submit": "OK"
       },
@@ -257,6 +283,14 @@
         },
         "submit": "OK"
       },
+      "lighting_zones_remove_confirm": {
+        "title": "Conferma Rimozione Zona",
+        "description": "Rimuovere {zone_label}?",
+        "data": {
+          "confirm": "Conferma rimozione"
+        },
+        "submit": "OK"
+      },
       "heating": {
         "title": "Riscaldamento",
         "data": {
@@ -275,11 +309,13 @@
       },
       "security": {
         "title": "Sicurezza",
+        "description": "Configura il binding dello stato sicurezza della casa e, opzionalmente, le sorgenti di evidenza derivate da telecamera.\n\n{camera_sources_help}",
         "data": {
           "enabled": "Abilita controlli sicurezza",
           "security_state_entity": "Entita stato sicurezza",
           "armed_away_value": "Valore armed away",
-          "armed_home_value": "Valore armed home"
+          "armed_home_value": "Valore armed home",
+          "camera_evidence_sources": "Sorgenti camera evidence (mappa oggetto: source_id -> config)"
         },
         "submit": "OK"
       },
@@ -471,8 +507,17 @@
         "title": "Modifica azioni reazione",
         "description": "{reaction_description}",
         "data": {
+          "enabled": "Abilitata",
           "action_entities": "Scene o script da attivare",
-          "pre_condition_min": "Anticipo (minuti)"
+          "pre_condition_min": "Anticipo (minuti)",
+          "delete_reaction": "Elimina questa reazione"
+        }
+      },
+      "reactions_delete_confirm": {
+        "title": "Conferma Rimozione Reazione",
+        "description": "Rimuovere {reaction_description}?",
+        "data": {
+          "confirm": "Conferma rimozione"
         }
       }
     },
@@ -481,9 +526,13 @@
       "duplicate": "Gia esistente",
       "template_unavailable": "Template non disponibile",
       "invalid_required": "Il numero richiesto deve essere minore o uguale alle sorgenti",
+      "unknown_person": "La persona Home Assistant selezionata non esiste",
+      "duplicate_person_entity": "Questa persona Home Assistant è già collegata",
       "reserved_prefix": "Il valore non puo iniziare con 'heima_'",
       "invalid_time_zone": "Fuso orario non valido",
       "invalid_slug": "Slug non valido",
+      "unknown_area": "L'area Home Assistant selezionata non esiste",
+      "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
       "invalid_number": "Inserisci un numero positivo valido",
       "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
       "missing_vacation_bindings": "La configurazione generale del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna"

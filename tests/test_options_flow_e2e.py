@@ -11,7 +11,57 @@ from custom_components.heima.runtime.analyzers import create_builtin_learning_pl
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
 
-def _fake_hass(*, is_admin: bool = True):
+class _FakeAreaRegistry:
+    def __init__(self, areas: list[tuple[str, str]] | None = None) -> None:
+        self.areas = {
+            area_id: SimpleNamespace(id=area_id, name=name)
+            for area_id, name in (areas or [])
+        }
+
+    def async_list_areas(self):
+        return list(self.areas.values())
+
+    def async_get_area(self, area_id: str):
+        return self.areas.get(area_id)
+
+    def async_create(self, name: str):
+        area_id = name.lower().replace(" ", "_")
+        area = SimpleNamespace(id=area_id, name=name)
+        self.areas[area_id] = area
+        return area
+
+    def async_update(self, area_id: str, *, name: str):
+        area = self.areas[area_id]
+        updated = SimpleNamespace(id=area.id, name=name)
+        self.areas[area_id] = updated
+        return updated
+
+    def async_delete(self, area_id: str):
+        self.areas.pop(area_id, None)
+
+
+class _FakeStates:
+    def __init__(self, states: list[SimpleNamespace] | None = None) -> None:
+        self._states = list(states or [])
+
+    def async_all(self):
+        return list(self._states)
+
+    def get(self, entity_id: str):
+        for state in self._states:
+            if getattr(state, "entity_id", None) == entity_id:
+                return state
+        return None
+
+
+def _state(entity_id: str, friendly_name: str | None = None) -> SimpleNamespace:
+    attrs = {}
+    if friendly_name is not None:
+        attrs["friendly_name"] = friendly_name
+    return SimpleNamespace(entity_id=entity_id, attributes=attrs, name=friendly_name or entity_id)
+
+
+def _fake_hass(*, is_admin: bool = True, states: list[SimpleNamespace] | None = None):
     async def _async_get_user(user_id: str):
         return SimpleNamespace(id=user_id, is_admin=is_admin)
 
@@ -20,12 +70,18 @@ def _fake_hass(*, is_admin: bool = True):
         config=SimpleNamespace(time_zone="Europe/Rome", language="it"),
         data={},
         auth=SimpleNamespace(async_get_user=_async_get_user),
+        states=_FakeStates(states),
     )
 
 
-def _flow(options: dict | None = None, *, is_admin: bool = True) -> HeimaOptionsFlowHandler:
+def _flow(
+    options: dict | None = None,
+    *,
+    is_admin: bool = True,
+    states: list[SimpleNamespace] | None = None,
+) -> HeimaOptionsFlowHandler:
     flow = HeimaOptionsFlowHandler(SimpleNamespace(options=options or {}, entry_id="entry-1"))
-    flow.hass = _fake_hass(is_admin=is_admin)
+    flow.hass = _fake_hass(is_admin=is_admin, states=states)
     flow.context = {"user_id": "user-1"}
     return flow
 
@@ -59,6 +115,66 @@ async def test_rooms_flow_persists_actuation_only_room_with_save_and_close():
     assert room["occupancy_mode"] == "none"
     assert room["occupancy_sources"] == []
     assert room["learning_sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_init_bootstraps_people_from_ha_person_entities():
+    flow = _flow(states=[_state("person.alex", "Alex"), _state("person.laura", "Laura")])
+
+    result = await flow.async_step_init()
+
+    assert result["type"] == "menu"
+    assert [p["slug"] for p in flow.options["people_named"]] == ["alex", "laura"]
+    assert flow.options["people_named"][0]["person_entity"] == "person.alex"
+
+
+@pytest.mark.asyncio
+async def test_init_bootstraps_rooms_from_ha_areas(monkeypatch):
+    flow = _flow()
+    area_reg = _FakeAreaRegistry([("living", "Living"), ("studio", "Studio")])
+    monkeypatch.setattr(
+        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        lambda hass: area_reg,
+    )
+
+    result = await flow.async_step_init()
+
+    assert result["type"] == "menu"
+    assert [r["room_id"] for r in flow.options["rooms"]] == ["living", "studio"]
+
+
+def test_people_menu_summary_prefers_ha_backed_status_counts():
+    flow = _flow(
+        {
+            "people_named": [
+                {"slug": "alex", "ha_sync_status": "new"},
+                {"slug": "laura", "ha_sync_status": "configured"},
+                {"slug": "old", "ha_sync_status": "orphaned"},
+            ]
+        }
+    )
+
+    summary = flow._people_menu_summary()
+
+    assert "nuove 1" in summary
+    assert "configurate 1" in summary
+    assert "orfane 1" in summary
+
+
+def test_rooms_menu_summary_prefers_ha_backed_status_counts():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "ha_sync_status": "new"},
+                {"room_id": "studio", "ha_sync_status": "configured"},
+            ]
+        }
+    )
+
+    summary = flow._rooms_menu_summary()
+
+    assert "nuove 1" in summary
+    assert "configurate 1" in summary
 
 
 @pytest.mark.asyncio
@@ -282,6 +398,61 @@ async def test_security_step_normalizes_object_editor_camera_sources():
 
 
 @pytest.mark.asyncio
+async def test_security_step_shows_camera_evidence_help_text():
+    flow = _flow()
+
+    result = await flow.async_step_security()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "security"
+    help_text = result["description_placeholders"]["camera_sources_help"]
+    assert "entry" in help_text
+    assert "garage" in help_text
+    assert "person_entity" in help_text
+    assert "security_priority" in help_text
+
+
+@pytest.mark.asyncio
+async def test_people_debug_aliases_step_persists_alias_mapping():
+    flow = _flow()
+
+    result = await flow.async_step_people_debug_aliases(
+        {
+            "enabled": True,
+            "aliases": {
+                "demo_alex": {
+                    "mode": "alias_person",
+                    "person_entity": "person.alex",
+                    "display_name": "Demo Alex",
+                },
+                "guest_test": {
+                    "mode": "synthetic",
+                    "display_name": "Guest Test",
+                    "synthetic_state": "home",
+                },
+            },
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["people_debug_aliases"] == {
+        "enabled": True,
+        "aliases": {
+            "demo_alex": {
+                "mode": "alias_person",
+                "person_entity": "person.alex",
+                "display_name": "Demo Alex",
+            },
+            "guest_test": {
+                "mode": "synthetic",
+                "display_name": "Guest Test",
+                "synthetic_state": "home",
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
 async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
     flow = _flow(
         {
@@ -389,6 +560,202 @@ async def test_rooms_flow_persists_separate_learning_sources():
     room = saved["data"]["rooms"][0]
     assert room["occupancy_sources"] == ["binary_sensor.motion"]
     assert room["learning_sources"] == ["sensor.studio_lux", "switch.studio_fan"]
+
+
+@pytest.mark.asyncio
+async def test_people_add_rejects_person_not_present_in_ha():
+    flow = _flow()
+
+    result = await flow.async_step_people_add(
+        {
+            "slug": "alex",
+            "display_name": "Alex",
+            "presence_method": "ha_person",
+            "person_entity": "person.alex",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"person_entity": "unknown_person"}
+
+
+@pytest.mark.asyncio
+async def test_people_add_rejects_duplicate_ha_person_binding():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "alex",
+                    "display_name": "Alex",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.alex",
+                }
+            ]
+        },
+        states=[_state("person.alex", "Alex")],
+    )
+
+    result = await flow.async_step_people_add(
+        {
+            "slug": "alex_2",
+            "display_name": "Alex 2",
+            "presence_method": "ha_person",
+            "person_entity": "person.alex",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"person_entity": "duplicate_person_entity"}
+
+
+@pytest.mark.asyncio
+async def test_people_edit_shows_status_labels_for_imported_people():
+    flow = _flow(
+        {
+            "people_named": [
+                {"slug": "alex", "display_name": "Alex", "ha_sync_status": "new"},
+                {"slug": "laura", "display_name": "Laura", "ha_sync_status": "orphaned"},
+            ]
+        }
+    )
+
+    result = await flow.async_step_people_edit()
+    options = result["data_schema"].schema["person"].container
+
+    assert "Alex [new]" in options
+    assert "Laura [orphaned]" in options
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_shows_status_labels_for_imported_rooms():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "ha_sync_status": "new"},
+                {"room_id": "studio", "display_name": "Studio", "ha_sync_status": "configured"},
+            ]
+        }
+    )
+
+    result = await flow.async_step_rooms_edit()
+    options = result["data_schema"].schema["room"].container
+
+    assert "Living [new]" in options
+    assert "Studio [configured]" in options
+
+
+@pytest.mark.asyncio
+async def test_rooms_add_creates_linked_ha_area_when_missing(monkeypatch):
+    flow = _flow()
+    area_reg = _FakeAreaRegistry()
+    monkeypatch.setattr(
+        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        lambda hass: area_reg,
+    )
+
+    result = await flow.async_step_rooms_add(
+        {
+            "room_id": "living",
+            "display_name": "Living",
+            "occupancy_mode": "none",
+            "occupancy_sources": [],
+            "learning_sources": [],
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["rooms"][0]["area_id"] == "living"
+    assert area_reg.async_get_area("living").name == "Living"
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_updates_linked_ha_area_name(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                    "on_dwell_s": 5,
+                    "off_dwell_s": 120,
+                    "max_on_s": None,
+                }
+            ]
+        }
+    )
+    area_reg = _FakeAreaRegistry([("living", "Living")])
+    monkeypatch.setattr(
+        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        lambda hass: area_reg,
+    )
+    flow._editing_room_id = "living"
+
+    result = await flow.async_step_rooms_edit_form(
+        {
+            "room_id": "living",
+            "display_name": "Living Room",
+            "area_id": "living",
+            "occupancy_mode": "none",
+            "occupancy_sources": [],
+            "learning_sources": [],
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert area_reg.async_get_area("living").name == "Living Room"
+    assert flow.options["rooms"][0]["display_name"] == "Living Room"
+
+
+@pytest.mark.asyncio
+async def test_rooms_remove_requires_confirmation_and_deletes_linked_ha_area(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                    "on_dwell_s": 5,
+                    "off_dwell_s": 120,
+                    "max_on_s": None,
+                }
+            ]
+        }
+    )
+    area_reg = _FakeAreaRegistry([("living", "Living")])
+    monkeypatch.setattr(
+        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        lambda hass: area_reg,
+    )
+
+    result = await flow.async_step_rooms_remove({"room": "living"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "rooms_remove_confirm"
+    assert "living" in area_reg.areas
+
+    confirmed = await flow.async_step_rooms_remove_confirm({"confirm": True})
+
+    assert confirmed["type"] == "menu"
+    assert flow.options["rooms"] == []
+    assert "living" not in area_reg.areas
 
 
 @pytest.mark.asyncio
@@ -1736,6 +2103,142 @@ async def test_proposal_configure_action_resumes_guided_review():
     assert resumed["type"] == "form"
     assert resumed["step_id"] == "proposals"
     assert "Luci living" in resumed["description_placeholders"]["proposal_label"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_can_disable_configured_reaction():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "enabled": True,
+                        "steps": [{"service": "scene.turn_on", "target": "scene.relax"}],
+                        "pre_condition_min": 20,
+                    }
+                },
+                "labels": {"r1": "Living lights"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": False,
+            "action_entities": ["scene.relax"],
+            "pre_condition_min": 15,
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["enabled"] is False
+    assert stored["pre_condition_min"] == 15
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_can_delete_configured_reaction_and_unmute_it():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "enabled": True,
+                        "steps": [{"service": "scene.turn_on", "target": "scene.relax"}],
+                        "pre_condition_min": 20,
+                    }
+                },
+                "labels": {"r1": "Living lights"},
+                "muted": ["r1"],
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "action_entities": [],
+            "pre_condition_min": 20,
+            "delete_reaction": True,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_delete_confirm"
+
+    confirmed = await flow.async_step_reactions_delete_confirm({"confirm": True})
+
+    assert confirmed["type"] == "menu"
+    assert confirmed["step_id"] == "init"
+    assert "r1" not in flow.options["reactions"]["configured"]
+    assert "r1" not in flow.options["reactions"]["labels"]
+    assert "r1" not in flow.options["reactions"]["muted"]
+
+
+@pytest.mark.asyncio
+async def test_people_remove_requires_confirmation():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "alex",
+                    "display_name": "Alex",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.alex",
+                }
+            ]
+        }
+    )
+
+    result = await flow.async_step_people_remove({"person": "alex"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "people_remove_confirm"
+
+    confirmed = await flow.async_step_people_remove_confirm({"confirm": True})
+
+    assert confirmed["type"] == "menu"
+    assert flow.options["people_named"] == []
+
+
+@pytest.mark.asyncio
+async def test_lighting_zone_remove_requires_confirmation():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ],
+            "lighting_zones": [
+                {"zone_id": "living_zone", "display_name": "Living Zone", "rooms": ["living"]}
+            ],
+        }
+    )
+
+    result = await flow.async_step_lighting_zones_remove({"zone": "living_zone"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "lighting_zones_remove_confirm"
+
+    confirmed = await flow.async_step_lighting_zones_remove_confirm({"confirm": True})
+
+    assert confirmed["type"] == "menu"
+    assert flow.options["lighting_zones"] == []
 
 
 def test_init_status_block_includes_pending_proposals_summary(monkeypatch):

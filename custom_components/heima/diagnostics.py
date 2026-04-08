@@ -54,6 +54,9 @@ async def async_get_config_entry_diagnostics(
                 "security_camera_evidence_summary": _security_camera_evidence_summary_diagnostics(
                     coordinator
                 ),
+                "ha_backed_reconciliation_summary": _ha_backed_reconciliation_summary_diagnostics(
+                    coordinator
+                ),
                 "security_presence_summary": _security_presence_summary_diagnostics(
                     coordinator
                 ),
@@ -110,6 +113,13 @@ def _reaction_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
         if registry is not None and hasattr(registry, "diagnostics"):
             return list(registry.diagnostics())
     return create_builtin_reaction_plugin_registry().diagnostics()
+
+
+def _ha_backed_reconciliation_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    summary = getattr(coordinator, "ha_backed_reconciliation_summary", {})
+    return dict(summary or {})
 
 
 def _learning_summary_diagnostics(

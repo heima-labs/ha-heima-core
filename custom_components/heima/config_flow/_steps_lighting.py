@@ -211,9 +211,35 @@ class _LightingStepsMixin:
             schema = vol.Schema({vol.Required("zone"): vol.In([z["zone_id"] for z in zones])})
             return self.async_show_form(step_id="lighting_zones_remove", data_schema=schema)
 
-        zone_id = user_input.get("zone")
+        self._removing_zone_id = user_input.get("zone")
+        return await self.async_step_lighting_zones_remove_confirm()
+
+    async def async_step_lighting_zones_remove_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        zone_id = getattr(self, "_removing_zone_id", None)
+        if not zone_id:
+            return await self.async_step_lighting_zones_menu()
+
+        zones = self._lighting_zones()
+        existing = self._find_by_key(zones, "zone_id", zone_id) or {}
+        zone_label = existing.get("display_name") or zone_id
+
+        if user_input is None:
+            schema = vol.Schema({vol.Required("confirm", default=False): bool})
+            return self.async_show_form(
+                step_id="lighting_zones_remove_confirm",
+                data_schema=schema,
+                description_placeholders={"zone_label": zone_label},
+            )
+
+        if not bool(user_input.get("confirm")):
+            self._removing_zone_id = None
+            return await self.async_step_lighting_zones_menu()
+
         updated = [z for z in zones if z.get("zone_id") != zone_id]
         self._store_list(OPT_LIGHTING_ZONES, updated)
+        self._removing_zone_id = None
         return await self.async_step_lighting_zones_menu()
 
     async def async_step_lighting_zones_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":

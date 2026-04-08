@@ -18,6 +18,7 @@ CONF_LANGUAGE = "language"
 
 OPT_PEOPLE_NAMED = "people_named"
 OPT_PEOPLE_ANON = "people_anonymous"
+OPT_PEOPLE_DEBUG_ALIASES = "people_debug_aliases"
 OPT_ROOMS = "rooms"
 OPT_LIGHTING_ROOMS = "lighting_rooms"
 OPT_LIGHTING_ZONES = "lighting_zones"
@@ -67,6 +68,7 @@ DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
 STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset({
     OPT_PEOPLE_NAMED,
     OPT_PEOPLE_ANON,
+    OPT_PEOPLE_DEBUG_ALIASES,
     OPT_ROOMS,
     OPT_LIGHTING_ZONES,
 })

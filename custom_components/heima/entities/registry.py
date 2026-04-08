@@ -12,6 +12,7 @@ from ..const import (
     OPT_LIGHTING_ROOMS,
     OPT_LIGHTING_ZONES,
     OPT_PEOPLE_ANON,
+    OPT_PEOPLE_DEBUG_ALIASES,
     OPT_PEOPLE_NAMED,
     OPT_ROOMS,
     OPT_SECURITY,
@@ -63,6 +64,25 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
                     ["auto", "force_home", "force_away"],
                 )
             )
+
+    debug_aliases_cfg = options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
+    if isinstance(debug_aliases_cfg, dict) and debug_aliases_cfg.get("enabled"):
+        aliases = debug_aliases_cfg.get("aliases", {})
+        if isinstance(aliases, dict):
+            for alias_slug, raw in aliases.items():
+                if not str(alias_slug).strip() or not isinstance(raw, dict):
+                    continue
+                alias_key = str(alias_slug).strip()
+                label = _label(raw.get("display_name") or alias_key)
+                binaries.append(
+                    _b(_k(f"heima_person_{alias_key}_home"), f"Heima Person {label} Home")
+                )
+                sensors.append(
+                    _s(_k(f"heima_person_{alias_key}_confidence"), f"Heima Person {label} Confidence")
+                )
+                sensors.append(
+                    _s(_k(f"heima_person_{alias_key}_source"), f"Heima Person {label} Source")
+                )
 
     binaries.append(_b(_k("heima_anyone_home"), "Heima Anyone Home"))
     sensors.append(_s(_k("heima_people_count"), "Heima People Count"))

@@ -34,6 +34,7 @@ Related practical guides live outside this tree:
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
+- `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX
 
 ## Domains
 

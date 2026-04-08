@@ -256,6 +256,35 @@ def test_multiple_weekday_proposals_all_registered():
     assert len(engine._configured_reaction_ids) == 3
 
 
+def test_disabled_configured_reaction_is_not_rebuilt():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "disabled-lighting": {
+                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_type": "lighting_scene_schedule",
+                        "enabled": False,
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "steps": [{"service": "scene.turn_on", "target": "scene.relax"}],
+                    },
+                    "enabled-presence": _presence_cfg(weekday=1, median_arrival_min=480),
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    ids = {reaction.reaction_id for reaction in engine._reactions}
+    assert "enabled-presence" in ids
+    assert "disabled-lighting" not in ids
+    assert "enabled-presence" in engine._configured_reaction_ids
+    assert "disabled-lighting" not in engine._configured_reaction_ids
+
+
 def test_heating_preference_reaction_built_and_registered():
     engine = _make_engine(options=_heating_options({
         "hp1": {

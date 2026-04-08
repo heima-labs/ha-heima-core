@@ -22,6 +22,7 @@ from ..const import (
     OPT_LIGHTING_ZONES,
     OPT_NOTIFICATIONS,
     OPT_PEOPLE_ANON,
+    OPT_PEOPLE_DEBUG_ALIASES,
     OPT_PEOPLE_NAMED,
     OPT_REACTIONS,
     OPT_ROOMS,
@@ -118,6 +119,11 @@ class HeimaOptionsFlowHandler(
     # ---- Toplevel menu (CF2) ----
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        if not getattr(self, "_bootstrap_imports_done", False):
+            importer = getattr(self, "_async_bootstrap_ha_bindings", None)
+            if callable(importer):
+                await importer()
+            self._bootstrap_imports_done = True
         return self.async_show_menu(
             step_id="init",
             menu_options=[
@@ -205,6 +211,22 @@ class HeimaOptionsFlowHandler(
         people = self._people_named()
         if not people:
             return "—"
+        counts = self._ha_backed_status_counts(people)
+        if any(counts.values()):
+            lang = str(self.options.get(CONF_LANGUAGE, "it"))
+            if lang.startswith("it"):
+                return (
+                    f"totale {len(people)}"
+                    f" | nuove {counts['new']}"
+                    f" | configurate {counts['configured']}"
+                    f" | orfane {counts['orphaned']}"
+                )
+            return (
+                f"total {len(people)}"
+                f" | new {counts['new']}"
+                f" | configured {counts['configured']}"
+                f" | orphaned {counts['orphaned']}"
+            )
         names = [p.get("display_name") or p.get("slug", "") for p in people]
         return f"{len(people)}: {', '.join(names)}"
 
@@ -212,8 +234,32 @@ class HeimaOptionsFlowHandler(
         rooms = self._rooms()
         if not rooms:
             return "—"
+        counts = self._ha_backed_status_counts(rooms)
+        if any(counts.values()):
+            lang = str(self.options.get(CONF_LANGUAGE, "it"))
+            if lang.startswith("it"):
+                return (
+                    f"totale {len(rooms)}"
+                    f" | nuove {counts['new']}"
+                    f" | configurate {counts['configured']}"
+                    f" | orfane {counts['orphaned']}"
+                )
+            return (
+                f"total {len(rooms)}"
+                f" | new {counts['new']}"
+                f" | configured {counts['configured']}"
+                f" | orphaned {counts['orphaned']}"
+            )
         names = [r.get("display_name") or r.get("room_id", "") for r in rooms]
         return f"{len(rooms)}: {', '.join(names)}"
+
+    def _ha_backed_status_counts(self, items: list[dict[str, Any]]) -> dict[str, int]:
+        counts = {"new": 0, "configured": 0, "orphaned": 0}
+        for item in items:
+            status = str(item.get("ha_sync_status") or "").strip()
+            if status in counts:
+                counts[status] += 1
+        return counts
 
     def _lighting_menu_summary(self) -> str:
         configured_rooms = len(self._lighting_rooms())
@@ -445,6 +491,10 @@ class HeimaOptionsFlowHandler(
         if OPT_PEOPLE_ANON in options:
             options[OPT_PEOPLE_ANON] = self._normalize_people_anonymous_payload(
                 options.get(OPT_PEOPLE_ANON, {})
+            )
+        if OPT_PEOPLE_DEBUG_ALIASES in options:
+            options[OPT_PEOPLE_DEBUG_ALIASES] = self._normalize_people_debug_aliases_payload(
+                options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
             )
         if OPT_HEATING in options:
             options[OPT_HEATING] = self._normalize_heating_payload(options.get(OPT_HEATING, {}))

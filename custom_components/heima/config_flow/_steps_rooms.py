@@ -36,7 +36,14 @@ if TYPE_CHECKING:
 class _RoomsStepsMixin:
     """Mixin for rooms steps."""
 
+    async def _async_bootstrap_ha_bindings(self) -> None:
+        importer = getattr(super(), "_async_bootstrap_ha_bindings", None)
+        if callable(importer):
+            await importer()
+        self._import_rooms_from_areas_if_empty()
+
     async def async_step_rooms_menu(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
+        self._import_rooms_from_areas_if_empty()
         return self.async_show_menu(
             step_id="rooms_menu",
             menu_options=[
@@ -62,7 +69,18 @@ class _RoomsStepsMixin:
                 step_id="rooms_add", data_schema=self._room_schema(user_input), errors=errors
             )
 
+        user_input = await self._async_ensure_room_area(user_input)
+        if not user_input.get("area_id"):
+            return self.async_show_form(
+                step_id="rooms_add",
+                data_schema=self._room_schema(user_input),
+                errors={"area_id": "area_sync_failed"},
+            )
         rooms = self._rooms()
+        user_input["source"] = "ha_area_registry"
+        user_input["ha_source_name"] = str(user_input.get("display_name") or user_input.get("room_id") or "")
+        user_input["ha_sync_status"] = "configured"
+        user_input["heima_reviewed"] = True
         rooms.append(user_input)
         self._store_list(OPT_ROOMS, rooms)
         return await self.async_step_rooms_menu()
@@ -73,7 +91,7 @@ class _RoomsStepsMixin:
             return await self.async_step_rooms_menu()
 
         if user_input is None:
-            schema = vol.Schema({vol.Required("room"): vol.In([r["room_id"] for r in rooms])})
+            schema = vol.Schema({vol.Required("room"): vol.In(self._room_choice_map(rooms))})
             return self.async_show_form(step_id="rooms_edit", data_schema=schema)
 
         self._editing_room_id = user_input.get("room")
@@ -94,9 +112,23 @@ class _RoomsStepsMixin:
                 step_id="rooms_edit_form", data_schema=self._room_schema(user_input), errors=errors
             )
 
+        existing_room = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
+        user_input = await self._async_ensure_room_area(user_input, existing_room=existing_room)
+        if not user_input.get("area_id"):
+            return self.async_show_form(
+                step_id="rooms_edit_form",
+                data_schema=self._room_schema(user_input),
+                errors={"area_id": "area_sync_failed"},
+            )
         updated = []
         for room in rooms:
             if room.get("room_id") == self._editing_room_id:
+                user_input["source"] = "ha_area_registry"
+                user_input["ha_source_name"] = str(
+                    user_input.get("display_name") or user_input.get("room_id") or ""
+                )
+                user_input["ha_sync_status"] = "configured"
+                user_input["heima_reviewed"] = True
                 updated.append(user_input)
             else:
                 updated.append(room)
@@ -110,14 +142,41 @@ class _RoomsStepsMixin:
             return await self.async_step_rooms_menu()
 
         if user_input is None:
-            schema = vol.Schema({vol.Required("room"): vol.In([r["room_id"] for r in rooms])})
+            schema = vol.Schema({vol.Required("room"): vol.In(self._room_choice_map(rooms))})
             return self.async_show_form(step_id="rooms_remove", data_schema=schema)
 
-        room_id = user_input.get("room")
+        self._removing_room_id = user_input.get("room")
+        return await self.async_step_rooms_remove_confirm()
+
+    async def async_step_rooms_remove_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        room_id = getattr(self, "_removing_room_id", None)
+        if not room_id:
+            return await self.async_step_rooms_menu()
+
+        rooms = self._rooms()
+        existing = self._find_by_key(rooms, "room_id", room_id) or {}
+        room_label = existing.get("display_name") or room_id
+
+        if user_input is None:
+            schema = vol.Schema({vol.Required("confirm", default=False): bool})
+            return self.async_show_form(
+                step_id="rooms_remove_confirm",
+                data_schema=schema,
+                description_placeholders={"room_label": room_label},
+            )
+
+        if not bool(user_input.get("confirm")):
+            self._removing_room_id = None
+            return await self.async_step_rooms_menu()
+
         updated = [r for r in rooms if r.get("room_id") != room_id]
         self._store_list(OPT_ROOMS, updated)
+        await self._async_delete_room_area(existing)
         self._remove_lighting_room_mapping(room_id)
         self._remove_room_from_zones(room_id)
+        self._removing_room_id = None
         return await self.async_step_rooms_menu()
 
     async def async_step_rooms_next(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
@@ -129,12 +188,25 @@ class _RoomsStepsMixin:
 
     async def async_step_rooms_import_areas(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         """Import HA areas as rooms (merge with existing)."""
-        area_reg = ar.async_get(self.hass)
+        self._import_rooms_from_areas_if_empty(only_when_empty=False)
+        return await self.async_step_rooms_menu()
+
+    def _import_rooms_from_areas_if_empty(self, *, only_when_empty: bool = True) -> None:
+        """Import HA areas as rooms (merge with existing)."""
+        if only_when_empty and self._rooms():
+            return
+        try:
+            area_reg = ar.async_get(self.hass)
+        except Exception:
+            return
+        lister = getattr(area_reg, "async_list_areas", None)
+        if not callable(lister):
+            return
         rooms = self._rooms()
         existing_room_ids = {r.get("room_id") for r in rooms}
         existing_area_ids = {r.get("area_id") for r in rooms if r.get("area_id")}
 
-        for area in area_reg.async_list_areas():
+        for area in lister():
             if area.id in existing_area_ids:
                 continue
             room_id = slugify(area.name)
@@ -157,7 +229,6 @@ class _RoomsStepsMixin:
             existing_room_ids.add(room_id)
 
         self._store_list(OPT_ROOMS, rooms)
-        return await self.async_step_rooms_menu()
 
     # ---- Schema ----
 
@@ -214,6 +285,10 @@ class _RoomsStepsMixin:
 
         area_id = payload.get("area_id")
         if area_id:
+            area_reg = self._area_registry()
+            area = self._get_area(area_reg, area_id) if area_reg is not None else None
+            if area_reg is not None and area is None:
+                errors["area_id"] = "unknown_area"
             existing_area_ids = {r.get("area_id") for r in self._rooms() if r.get("area_id")}
             if is_edit:
                 existing_room = self._find_by_key(self._rooms(), "room_id", self._editing_room_id or "")
@@ -247,6 +322,9 @@ class _RoomsStepsMixin:
         data["display_name"] = str(data.get("display_name", "") or "").strip()
         if data.get("area_id"):
             data["area_id"] = str(data["area_id"])
+        for key in ("source", "ha_source_name", "ha_sync_status", "heima_reviewed"):
+            if key in payload:
+                data[key] = payload[key]
         if "occupancy_sources" in data:
             data["occupancy_sources"] = self._normalize_multi_value(data.get("occupancy_sources"))
         if "learning_sources" in data:
@@ -262,3 +340,99 @@ class _RoomsStepsMixin:
             contract=ROOM_OCCUPANCY_STRATEGY_CONTRACT,
         )
         return data
+
+    def _room_choice_map(self, rooms: list[dict[str, Any]]) -> dict[str, str]:
+        return {
+            self._room_choice_label(room): str(room.get("room_id") or "")
+            for room in rooms
+            if str(room.get("room_id") or "").strip()
+        }
+
+    def _room_choice_label(self, room: dict[str, Any]) -> str:
+        label = str(room.get("display_name") or room.get("room_id") or "").strip()
+        status = str(room.get("ha_sync_status") or "").strip()
+        if status == "new":
+            return f"{label} [new]"
+        if status == "configured":
+            return f"{label} [configured]"
+        if status == "orphaned":
+            return f"{label} [orphaned]"
+        return label
+
+    async def _async_ensure_room_area(
+        self, payload: dict[str, Any], existing_room: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        data = dict(payload)
+        area_reg = self._area_registry()
+        if area_reg is None:
+            return data
+        area_name = str(data.get("display_name") or data.get("room_id") or "").strip()
+        requested_area_id = str(data.get("area_id") or "").strip() or None
+        existing_area_id = str((existing_room or {}).get("area_id") or "").strip() or None
+
+        if requested_area_id:
+            area = self._get_area(area_reg, requested_area_id)
+            if area is not None and area_name and getattr(area, "name", None) != area_name:
+                self._update_area(area_reg, requested_area_id, area_name)
+            data["area_id"] = requested_area_id
+            return data
+
+        if existing_area_id:
+            area = self._get_area(area_reg, existing_area_id)
+            if area is not None and area_name and getattr(area, "name", None) != area_name:
+                self._update_area(area_reg, existing_area_id, area_name)
+            data["area_id"] = existing_area_id
+            return data
+
+        created = self._create_area(area_reg, area_name or str(data.get("room_id") or "").strip())
+        if created is not None:
+            data["area_id"] = getattr(created, "id", None)
+        return data
+
+    async def _async_delete_room_area(self, room: dict[str, Any]) -> None:
+        area_id = str(room.get("area_id") or "").strip()
+        if not area_id:
+            return
+        area_reg = self._area_registry()
+        if area_reg is None:
+            return
+        self._delete_area(area_reg, area_id)
+
+    def _area_registry(self) -> Any | None:
+        try:
+            return ar.async_get(self.hass)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_area(area_reg: Any, area_id: str) -> Any | None:
+        getter = getattr(area_reg, "async_get_area", None)
+        if callable(getter):
+            return getter(area_id)
+        lister = getattr(area_reg, "async_list_areas", None)
+        if callable(lister):
+            for area in lister():
+                if getattr(area, "id", None) == area_id:
+                    return area
+        return None
+
+    @staticmethod
+    def _create_area(area_reg: Any, name: str) -> Any | None:
+        creator = getattr(area_reg, "async_create", None)
+        if callable(creator):
+            return creator(name)
+        return None
+
+    @staticmethod
+    def _update_area(area_reg: Any, area_id: str, name: str) -> Any | None:
+        updater = getattr(area_reg, "async_update", None)
+        if callable(updater):
+            return updater(area_id, name=name)
+        return None
+
+    @staticmethod
+    def _delete_area(area_reg: Any, area_id: str) -> Any | None:
+        deleter = getattr(area_reg, "async_delete", None)
+        if callable(deleter):
+            return deleter(area_id)
+        return None

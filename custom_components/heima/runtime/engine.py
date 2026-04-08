@@ -27,6 +27,7 @@ from ..const import (
     OPT_LIGHTING_ZONES,
     OPT_NOTIFICATIONS,
     OPT_PEOPLE_ANON,
+    OPT_PEOPLE_DEBUG_ALIASES,
     OPT_PEOPLE_NAMED,
     OPT_REACTIONS,
     OPT_ROOMS,
@@ -365,6 +366,8 @@ class HeimaEngine:
 
         configured: dict = dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {})
         for proposal_id, cfg in configured.items():
+            if not bool(dict(cfg or {}).get("enabled", True)):
+                continue
             reaction_class = cfg.get("reaction_class")
             builder = self._reaction_plugin_registry.builder_for(str(reaction_class or ""))
             if builder is None:
@@ -469,6 +472,17 @@ class HeimaEngine:
                 tracked.add(str(entity))
             for source in person.get("sources", []):
                 tracked.add(str(source))
+
+        debug_aliases_cfg = options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
+        if isinstance(debug_aliases_cfg, dict) and debug_aliases_cfg.get("enabled"):
+            aliases = debug_aliases_cfg.get("aliases", {})
+            if isinstance(aliases, dict):
+                for raw in aliases.values():
+                    if not isinstance(raw, dict):
+                        continue
+                    entity = raw.get("person_entity")
+                    if entity:
+                        tracked.add(str(entity))
 
         anon = options.get(OPT_PEOPLE_ANON, {})
         for source in anon.get("sources", []):
