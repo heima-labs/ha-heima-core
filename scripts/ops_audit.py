@@ -163,12 +163,78 @@ def _build_snapshot(
     }
 
 
+def _load_snapshot(path_str: str) -> dict[str, Any]:
+    path = Path(path_str)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def _compare_lists(previous: list[Any], current: list[Any]) -> tuple[list[str], list[str]]:
+    prev_set = {str(item) for item in previous}
+    cur_set = {str(item) for item in current}
+    added = sorted(cur_set - prev_set)
+    removed = sorted(prev_set - cur_set)
+    return added, removed
+
+
+def _compare_int(previous: dict[str, Any], current: dict[str, Any], key: str) -> int:
+    return int(current.get(key, 0) or 0) - int(previous.get(key, 0) or 0)
+
+
+def _print_compare(previous: dict[str, Any], current: dict[str, Any]) -> None:
+    prev_health = _as_dict(previous.get("health"))
+    cur_health = _as_dict(current.get("health"))
+    prev_learning = _as_dict(previous.get("learning"))
+    cur_learning = _as_dict(current.get("learning"))
+    prev_runtime = _as_dict(previous.get("runtime_value"))
+    cur_runtime = _as_dict(current.get("runtime_value"))
+
+    pending_added, pending_removed = _compare_lists(
+        _as_list(prev_learning.get("pending_families")),
+        _as_list(cur_learning.get("pending_families")),
+    )
+
+    prev_active_total = int(prev_learning.get("active_family_total", 0) or 0)
+    cur_active_total = int(cur_learning.get("active_family_total", 0) or 0)
+
+    _print_header("Compare")
+    print(f"previous_generated_at: {previous.get('generated_at') or '-'}")
+    print(f"current_generated_at: {current.get('generated_at') or '-'}")
+    print(f"verdict: {previous.get('verdict') or '-'} -> {current.get('verdict') or '-'}")
+    print(f"config_issue_delta: {_compare_int(prev_health, cur_health, 'config_issue_total'):+d}")
+    print(f"event_total_delta: {_compare_int(prev_health, cur_health, 'event_total'):+d}")
+    print(f"active_family_total_delta: {cur_active_total - prev_active_total:+d}")
+    print(f"pending_total_delta: {_compare_int(prev_learning, cur_learning, 'pending_total'):+d}")
+    print(f"stale_pending_total_delta: {_compare_int(prev_learning, cur_learning, 'stale_pending_total'):+d}")
+    print(
+        "pending_families_added: "
+        + (", ".join(pending_added) if pending_added else "-")
+    )
+    print(
+        "pending_families_removed: "
+        + (", ".join(pending_removed) if pending_removed else "-")
+    )
+    print(
+        f"configured_reaction_total_delta: {_compare_int(prev_runtime, cur_runtime, 'configured_reaction_total'):+d}"
+    )
+    print(
+        f"learned_origin_reaction_total_delta: {_compare_int(prev_runtime, cur_runtime, 'learned_origin_reaction_total'):+d}"
+    )
+    print(
+        f"camera_breach_candidate_total_delta: {_compare_int(prev_runtime, cur_runtime, 'camera_breach_candidate_total'):+d}"
+    )
+    print(
+        f"security_presence_blocked_total_delta: {_compare_int(prev_runtime, cur_runtime, 'security_presence_blocked_total'):+d}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima operations audit")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--show-json", action="store_true")
     parser.add_argument("--snapshot-out", help="Write a stable JSON audit snapshot to this path")
+    parser.add_argument("--compare-to", help="Compare the current audit snapshot against a previous snapshot file")
     args = parser.parse_args()
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
@@ -333,6 +399,10 @@ def main() -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(snapshot_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"\nSNAPSHOT: {out_path}")
+
+    if args.compare_to:
+        previous = _load_snapshot(args.compare_to)
+        _print_compare(previous, snapshot_payload)
 
     return 0
 
