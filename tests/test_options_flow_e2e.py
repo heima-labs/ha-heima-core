@@ -177,6 +177,23 @@ def test_rooms_menu_summary_prefers_ha_backed_status_counts():
     assert "configurate 1" in summary
 
 
+def test_rooms_menu_summary_includes_new_and_orphaned_labels():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "ha_sync_status": "new"},
+                {"room_id": "studio", "display_name": "Studio", "ha_sync_status": "orphaned"},
+                {"room_id": "bathroom", "display_name": "Bathroom", "ha_sync_status": "configured"},
+            ]
+        }
+    )
+
+    summary = flow._rooms_menu_summary()
+
+    assert "nuove: Living" in summary
+    assert "orfane: Studio" in summary
+
+
 @pytest.mark.asyncio
 async def test_general_flow_persists_house_signal_bindings():
     flow = _flow()

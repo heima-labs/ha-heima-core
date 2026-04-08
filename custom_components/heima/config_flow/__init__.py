@@ -237,19 +237,30 @@ class HeimaOptionsFlowHandler(
         counts = self._ha_backed_status_counts(rooms)
         if any(counts.values()):
             lang = str(self.options.get(CONF_LANGUAGE, "it"))
+            labels = self._ha_backed_status_labels(rooms)
             if lang.startswith("it"):
-                return (
+                summary = (
                     f"totale {len(rooms)}"
                     f" | nuove {counts['new']}"
                     f" | configurate {counts['configured']}"
                     f" | orfane {counts['orphaned']}"
                 )
-            return (
+                if labels["new"]:
+                    summary += f" | nuove: {', '.join(labels['new'])}"
+                if labels["orphaned"]:
+                    summary += f" | orfane: {', '.join(labels['orphaned'])}"
+                return summary
+            summary = (
                 f"total {len(rooms)}"
                 f" | new {counts['new']}"
                 f" | configured {counts['configured']}"
                 f" | orphaned {counts['orphaned']}"
             )
+            if labels["new"]:
+                summary += f" | new: {', '.join(labels['new'])}"
+            if labels["orphaned"]:
+                summary += f" | orphaned: {', '.join(labels['orphaned'])}"
+            return summary
         names = [r.get("display_name") or r.get("room_id", "") for r in rooms]
         return f"{len(rooms)}: {', '.join(names)}"
 
@@ -260,6 +271,23 @@ class HeimaOptionsFlowHandler(
             if status in counts:
                 counts[status] += 1
         return counts
+
+    def _ha_backed_status_labels(self, items: list[dict[str, Any]]) -> dict[str, list[str]]:
+        labels: dict[str, list[str]] = {"new": [], "configured": [], "orphaned": []}
+        for item in items:
+            status = str(item.get("ha_sync_status") or "").strip()
+            if status not in labels:
+                continue
+            label = str(
+                item.get("display_name")
+                or item.get("room_id")
+                or item.get("slug")
+                or item.get("person_entity")
+                or ""
+            ).strip()
+            if label:
+                labels[status].append(label)
+        return labels
 
     def _lighting_menu_summary(self) -> str:
         configured_rooms = len(self._lighting_rooms())

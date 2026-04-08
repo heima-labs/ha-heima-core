@@ -83,3 +83,27 @@ def test_reconcile_preserves_reviewed_objects_as_configured():
     assert updated["rooms"][0]["ha_sync_status"] == "configured"
     assert summary["people"]["configured_total"] == 1
     assert summary["rooms"]["configured_total"] == 1
+
+
+def test_reconcile_rooms_auto_links_missing_area_id_by_room_id_match():
+    updated, summary, changed = reconcile_ha_backed_options(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "heima_reviewed": False,
+                }
+            ]
+        },
+        ha_people=[],
+        ha_areas=[{"area_id": "studio", "display_name": "Studio"}],
+    )
+
+    assert changed is True
+    room = updated["rooms"][0]
+    assert room["area_id"] == "studio"
+    assert room["ha_sync_status"] == "new"
+    assert summary["rooms"]["orphaned_total"] == 0

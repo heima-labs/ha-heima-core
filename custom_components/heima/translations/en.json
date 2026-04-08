@@ -156,7 +156,7 @@
           "rooms_add": "Add room",
           "rooms_edit": "Edit room",
           "rooms_remove": "Remove room",
-          "rooms_import_areas": "Import HA areas",
+          "rooms_import_areas": "Rescan Home Assistant",
           "rooms_save": "Save and close",
           "rooms_next": "Next"
         }

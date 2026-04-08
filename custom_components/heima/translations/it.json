@@ -156,7 +156,7 @@
           "rooms_add": "Aggiungi stanza",
           "rooms_edit": "Modifica stanza",
           "rooms_remove": "Rimuovi stanza",
-          "rooms_import_areas": "Importa aree HA",
+          "rooms_import_areas": "Riscansiona Home Assistant",
           "rooms_save": "Salva e chiudi",
           "rooms_next": "Avanti"
         }

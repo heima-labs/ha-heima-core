@@ -71,6 +71,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         self._last_fired_ts: float | None = None
         self._fire_count = 0
         self._suppressed_count = 0
+        self._steady_condition_active = False
 
     @property
     def reaction_id(self) -> str:
@@ -81,6 +82,7 @@ class RoomLightingAssistReaction(HeimaReaction):
             return []
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
+            self._steady_condition_active = False
             return []
 
         now = parse_snapshot_ts(snapshot.ts)
@@ -93,7 +95,10 @@ class RoomLightingAssistReaction(HeimaReaction):
             spec=self._pattern,
         )
         self._pending_episode_ts = result.pending_since
-        if not result.ready:
+        steady_ready = self._steady_ready()
+        should_fire = result.ready or steady_ready
+        if not should_fire:
+            self._steady_condition_active = False
             return []
         if not self._is_cooled_down():
             self._suppressed_count += 1
@@ -102,6 +107,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         self._pending_episode_ts = None
         self._last_fired_ts = time.monotonic()
         self._fire_count += 1
+        self._steady_condition_active = steady_ready
         return self._build_steps()
 
     def reset_learning_state(self) -> None:
@@ -110,6 +116,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         self._last_fired_ts = None
         self._fire_count = 0
         self._suppressed_count = 0
+        self._steady_condition_active = False
 
     def diagnostics(self) -> dict[str, Any]:
         return {
@@ -119,6 +126,7 @@ class RoomLightingAssistReaction(HeimaReaction):
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
             "pending_episode": self._pending_episode_ts.isoformat() if self._pending_episode_ts else None,
+            "steady_condition_active": self._steady_condition_active,
         }
 
     def _is_cooled_down(self) -> bool:
@@ -161,6 +169,32 @@ class RoomLightingAssistReaction(HeimaReaction):
                     )
                 )
         return steps
+
+    def _steady_ready(self) -> bool:
+        if not _signal_condition_matches_now(
+            hass=self._hass,
+            entity_ids=self._pattern.primary.entity_ids,
+            threshold=self._pattern.primary.threshold,
+            threshold_mode=self._pattern.primary.threshold_mode,
+        ):
+            return False
+        if self._steady_condition_active:
+            return False
+        return self._entity_steps_need_apply()
+
+    def _entity_steps_need_apply(self) -> bool:
+        for cfg in self._entity_steps:
+            entity_id = str(cfg.get("entity_id") or "").strip()
+            desired_action = str(cfg.get("action") or "").strip()
+            if not entity_id or desired_action not in {"on", "off"}:
+                continue
+            state = self._hass.states.get(entity_id)
+            current = str(state.state).strip().lower() if state is not None else ""
+            if desired_action == "on" and current != "on":
+                return True
+            if desired_action == "off" and current != "off":
+                return True
+        return False
 
 
 def build_room_lighting_assist_reaction(
@@ -234,6 +268,38 @@ def present_room_lighting_assist_label(
         return " — ".join(parts)
     except (TypeError, ValueError):
         return labels_map.get(reaction_id)
+
+
+def _signal_condition_matches_now(
+    *,
+    hass: HomeAssistant,
+    entity_ids: tuple[str, ...],
+    threshold: float,
+    threshold_mode: str,
+) -> bool:
+    for entity_id in entity_ids:
+        state = hass.states.get(entity_id)
+        if state is None:
+            continue
+        raw = str(state.state).strip()
+        raw_norm = raw.lower()
+        numeric = _parse_numeric_state(raw)
+        if threshold_mode == "below" and numeric is not None and numeric <= threshold:
+            return True
+        if threshold_mode == "above" and numeric is not None and numeric >= threshold:
+            return True
+        if threshold_mode == "switch_on" and raw_norm == "on":
+            return True
+        if threshold_mode == "switch_off" and raw_norm == "off":
+            return True
+    return False
+
+
+def _parse_numeric_state(raw: str) -> float | None:
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def present_admin_authored_room_lighting_assist_details(

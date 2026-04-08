@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.util import slugify
+
 from .const import OPT_PEOPLE_NAMED, OPT_ROOMS
 
 
@@ -140,6 +142,11 @@ def _reconcile_rooms(
     for room in rooms:
         item = dict(room)
         area_id = str(item.get("area_id") or "").strip()
+        if not area_id:
+            matched_area_id = _match_area_id_for_room(item, inventory)
+            if matched_area_id:
+                area_id = matched_area_id
+                item["area_id"] = matched_area_id
         item["source"] = "ha_area_registry"
         if area_id and area_id in inventory:
             ha_name = inventory[area_id]
@@ -201,3 +208,23 @@ def _reconcile_rooms(
             ),
         },
     )
+
+
+def _match_area_id_for_room(room: dict[str, Any], inventory: dict[str, str]) -> str | None:
+    room_id = str(room.get("room_id") or "").strip()
+    display_name = str(room.get("display_name") or "").strip()
+    candidates = []
+    if room_id:
+        candidates.append(room_id)
+        candidates.append(slugify(room_id))
+    if display_name:
+        candidates.append(slugify(display_name))
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate = str(candidate or "").strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate in inventory:
+            return candidate
+    return None
