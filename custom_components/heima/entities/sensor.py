@@ -33,6 +33,7 @@ class HeimaGenericSensor(HeimaEntity, SensorEntity):
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_{normalized_key}"
         self._attr_suggested_object_id = normalized_key
+        self.entity_id = f"sensor.{normalized_key}"
 
     @property
     def native_value(self):

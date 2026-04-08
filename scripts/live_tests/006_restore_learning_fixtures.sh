@@ -26,6 +26,9 @@ fi
 echo "Stopping Home Assistant lab container '$DEV_CONTAINER_NAME' before fixture restore..."
 "$DOCKER_BIN" stop "$DEV_CONTAINER_NAME" >/dev/null
 
+echo "Scrubbing Heima entity registry for a clean lab restart..."
+python3 "$REPO_ROOT/scripts/scrub_test_lab_entity_registry.py"
+
 echo "Generating learning fixture storage..."
 python3 "$REPO_ROOT/scripts/generate_learning_fixtures.py" --storage-dir "$STORAGE_DIR"
 

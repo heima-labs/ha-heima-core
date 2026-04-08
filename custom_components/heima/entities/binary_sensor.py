@@ -33,6 +33,7 @@ class HeimaGenericBinarySensor(HeimaEntity, BinarySensorEntity):
         self._attr_name = name
         self._attr_unique_id = f"{entry.entry_id}_{normalized_key}"
         self._attr_suggested_object_id = normalized_key
+        self.entity_id = f"binary_sensor.{normalized_key}"
 
     @property
     def is_on(self):
