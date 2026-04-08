@@ -15,6 +15,7 @@ from .composite import (
     RoomScopedCompositeMatcher,
 )
 from .learning_diagnostics import build_learning_diagnostics
+from .lighting_vacancy import median_vacancy_delay_s
 from .pattern_library import CompositeLearningPatternDefinition
 
 _MIN_OCCURRENCES = 5
@@ -186,6 +187,45 @@ class CompositePatternCatalogAnalyzer:
         return _dominant_composite_candidates(proposals)
 
 
+async def rooms_with_confirmed_pattern_evidence(
+    event_store: EventStore,
+    *,
+    pattern_id: str,
+) -> set[str]:
+    """Return rooms whose event history already satisfies a catalog pattern."""
+
+    matcher = RoomScopedCompositeMatcher()
+    definition = _definition_by_pattern_id(pattern_id)
+    state_changes = await event_store.async_query(event_type="state_change")
+    lighting_events = await event_store.async_query(event_type="lighting")
+    room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
+    events = [
+        event
+        for event in [*state_changes, *lighting_events, *room_occupancy_events]
+        if isinstance(event, HeimaEvent) and event.room_id
+    ]
+    if not events:
+        return set()
+
+    by_room: dict[str, list[HeimaEvent]] = {}
+    for event in events:
+        by_room.setdefault(str(event.room_id), []).append(event)
+
+    confirmed_rooms: set[str] = set()
+    for room_id, room_events in by_room.items():
+        room_events.sort(key=lambda event: event.ts)
+        episodes = matcher.detect(room_id=room_id, events=room_events, spec=definition.matcher_spec)
+        if len(episodes) < definition.min_occurrences or not _spans_min_weeks(
+            episodes, min_weeks=definition.min_weeks
+        ):
+            continue
+        confirmed = [episode for episode in episodes if episode.followup_entities]
+        if len(confirmed) < definition.min_occurrences:
+            continue
+        confirmed_rooms.add(room_id)
+    return confirmed_rooms
+
+
 async def _analyze_definition(
     *,
     event_store: EventStore,
@@ -195,8 +235,11 @@ async def _analyze_definition(
 ) -> list[ReactionProposal]:
     state_changes = await event_store.async_query(event_type="state_change")
     lighting_events = await event_store.async_query(event_type="lighting")
+    room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
     events = [
-        e for e in [*state_changes, *lighting_events] if isinstance(e, HeimaEvent) and e.room_id
+        e
+        for e in [*state_changes, *lighting_events, *room_occupancy_events]
+        if isinstance(e, HeimaEvent) and e.room_id
     ]
     if not events:
         return []
@@ -305,6 +348,20 @@ def _is_user_lighting_on_event(event: HeimaEvent) -> bool:
     if event.source != "user":
         return False
     return str(event.data.get("action") or "") == "on"
+
+
+def _is_user_lighting_off_event(event: HeimaEvent) -> bool:
+    if event.event_type != "lighting":
+        return False
+    if event.source != "user":
+        return False
+    return str(event.data.get("action") or "") == "off"
+
+
+def _is_room_vacancy_event(event: HeimaEvent) -> bool:
+    if event.event_type != "room_occupancy":
+        return False
+    return str(event.data.get("transition") or "").strip() == "vacant"
 
 
 def _is_cooling_followup_event(event: HeimaEvent) -> bool:
@@ -614,6 +671,30 @@ def _build_darkness_lighting_assist_config(
     }
 
 
+def _build_vacancy_lighting_off_config(
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> dict[str, Any]:
+    entity_steps = [
+        step
+        for step in _aggregate_lighting_followup_steps(confirmed, quality_policy=quality_policy)
+        if str(step.get("action") or "").strip() == "off"
+    ]
+    followup_entities = sorted(
+        {step["entity_id"] for step in entity_steps if step.get("entity_id")}
+    )
+    return {
+        "reaction_class": "RoomLightingVacancyOffReaction",
+        "room_id": room_id,
+        "vacancy_delay_s": median_vacancy_delay_s(confirmed),
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "entity_steps": entity_steps,
+        "episodes_observed": len(confirmed),
+        "observed_followup_entities": followup_entities,
+    }
+
+
 def _build_default_diagnostics(
     *,
     room_id: str,
@@ -708,6 +789,15 @@ def _describe_darkness_lighting(room_id: str, observed: int, corroborated: int) 
     return (
         f"{room_id}: darkness lighting assist — when the room becomes too dark while occupied, "
         f"you usually turn on lights with a similar brightness "
+        f"({observed} observed episodes)."
+    )
+
+
+def _describe_vacancy_lighting_off(room_id: str, observed: int, corroborated: int) -> str:
+    del corroborated
+    return (
+        f"{room_id}: vacancy lights-off assist — when the room stays vacant, "
+        f"you usually turn lights off after a short delay "
         f"({observed} observed episodes)."
     )
 
@@ -867,11 +957,46 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
 )
 
 
+_ROOM_VACANCY_LIGHTING_OFF_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_vacancy_lighting_off",
+    analyzer_id="CompositePatternCatalogAnalyzer",
+    reaction_type="room_vacancy_lighting_off",
+    fingerprint_key="room_vacancy",
+    matcher_spec=CompositePatternSpec(
+        primary=CompositeSignalSpec(
+            name="room_vacancy",
+            predicate=_is_room_vacancy_event,
+            min_delta=None,
+        ),
+        followup=CompositeSignalSpec(
+            name="lighting_replay_off",
+            predicate=_is_user_lighting_off_event,
+        ),
+        require_room_occupancy=False,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+    ),
+    min_occurrences=_MIN_OCCURRENCES,
+    min_weeks=_MIN_WEEKS,
+    description_builder=_describe_vacancy_lighting_off,
+    suggested_config_builder=lambda room_id, confirmed, quality_policy: (
+        _build_vacancy_lighting_off_config(room_id, confirmed, quality_policy)
+    ),
+    confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
+        confirmed,
+        base=0.42,
+        cap=0.92,
+        quality_policy=quality_policy,
+    ),
+)
+
+
 DEFAULT_COMPOSITE_PATTERN_CATALOG: tuple[CompositeLearningPatternDefinition, ...] = (
     _ROOM_SIGNAL_ASSIST_PATTERN,
     _ROOM_COOLING_PATTERN,
     _ROOM_AIR_QUALITY_PATTERN,
     _ROOM_DARKNESS_LIGHTING_PATTERN,
+    _ROOM_VACANCY_LIGHTING_OFF_PATTERN,
 )
 
 

@@ -44,12 +44,28 @@ def _lighting(
     brightness: int | None = None,
     color_temp_kelvin: int | None = None,
     rgb_color: list | None = None,
+    occupied_rooms: tuple[str, ...] | None = None,
 ) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
         event_type="lighting",
-        context=_ctx(weekday=weekday, minute=minute),
+        context=EventContext(
+            weekday=weekday,
+            minute_of_day=minute,
+            month=3,
+            house_state="home",
+            occupants_count=1,
+            occupied_rooms=occupied_rooms if occupied_rooms is not None else (),
+            outdoor_lux=None,
+            outdoor_temp=None,
+            weather_condition=None,
+            signals={},
+        ),
         source=source,
+        domain="light",
+        subject_type="entity",
+        subject_id=entity_id,
+        room_id=room_id,
         data={
             "entity_id": entity_id,
             "room_id": room_id,
@@ -57,6 +73,48 @@ def _lighting(
             "brightness": brightness,
             "color_temp_kelvin": color_temp_kelvin,
             "rgb_color": rgb_color,
+        },
+    )
+
+
+def _state_change(
+    *,
+    entity_id: str,
+    room_id: str,
+    old_state: str,
+    new_state: str,
+    weekday: int = 0,
+    minute: int = 1200,
+    ts: str = _WEEK1_TS,
+    device_class: str | None = None,
+    unit_of_measurement: str | None = None,
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="state_change",
+        context=EventContext(
+            weekday=weekday,
+            minute_of_day=minute,
+            month=3,
+            house_state="home",
+            occupants_count=1,
+            occupied_rooms=(room_id,),
+            outdoor_lux=None,
+            outdoor_temp=None,
+            weather_condition=None,
+            signals={},
+        ),
+        source="unknown",
+        domain=entity_id.split(".", 1)[0],
+        subject_type="entity",
+        subject_id=entity_id,
+        room_id=room_id,
+        data={
+            "entity_id": entity_id,
+            "old_state": old_state,
+            "new_state": new_state,
+            "device_class": device_class,
+            "unit_of_measurement": unit_of_measurement,
         },
     )
 
@@ -135,6 +193,46 @@ async def test_lighting_analyzer_emits_proposal_when_both_gates_pass():
     p = proposals[0]
     assert p.reaction_type == "lighting_scene_schedule"
     assert p.analyzer_id == "LightingPatternAnalyzer"
+
+
+async def test_lighting_analyzer_suppresses_schedule_when_darkness_assist_is_confirmed():
+    analyzer = LightingPatternAnalyzer()
+    evidence_pairs = [
+        ("2026-03-04T17:58:00+00:00", "2026-03-04T18:00:00+00:00"),
+        ("2026-03-11T17:58:00+00:00", "2026-03-11T18:00:00+00:00"),
+        ("2026-03-18T17:58:00+00:00", "2026-03-18T18:00:00+00:00"),
+        ("2026-03-25T17:58:00+00:00", "2026-03-25T18:00:00+00:00"),
+        ("2026-04-01T17:58:00+00:00", "2026-04-01T18:00:00+00:00"),
+    ]
+    events: list[HeimaEvent] = []
+    for lux_ts, light_ts in evidence_pairs:
+        events.extend(
+            [
+                _state_change(
+                    entity_id="sensor.bedroom_lux",
+                    room_id="bedroom",
+                    old_state="180",
+                    new_state="95",
+                    weekday=2,
+                    minute=17 * 60 + 58,
+                    ts=lux_ts,
+                    device_class="illuminance",
+                ),
+                _lighting(
+                    entity_id="light.bedroom_main",
+                    room_id="bedroom",
+                    action="on",
+                    weekday=2,
+                    minute=18 * 60,
+                    ts=light_ts,
+                    brightness=255,
+                    occupied_rooms=("bedroom",),
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert proposals == []
 
 
 # ---------------------------------------------------------------------------

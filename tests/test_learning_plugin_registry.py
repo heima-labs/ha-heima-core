@@ -44,10 +44,12 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room_cooling_assist",
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
+        "room_vacancy_lighting_off",
     )
     assert descriptors[-2].reaction_targets == (
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
+        "RoomLightingVacancyOffReaction",
     )
     assert descriptors[0].supports_admin_authored is False
     assert descriptors[0].admin_authored_templates == ()
@@ -114,10 +116,12 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             "room_cooling_assist",
             "room_air_quality_assist",
             "room_darkness_lighting_assist",
+            "room_vacancy_lighting_off",
         ],
         "reaction_targets": [
             "RoomSignalAssistReaction",
             "RoomLightingAssistReaction",
+            "RoomLightingVacancyOffReaction",
         ],
         "has_lifecycle_hooks": True,
         "supports_admin_authored": True,

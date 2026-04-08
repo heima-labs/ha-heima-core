@@ -8,6 +8,7 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal
+from .cross_domain import rooms_with_confirmed_pattern_evidence
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import LightingLearningPolicy
 
@@ -75,6 +76,10 @@ class LightingPatternAnalyzer:
         ]
         if not events:
             return []
+        darkness_assist_rooms = await rooms_with_confirmed_pattern_evidence(
+            event_store,
+            pattern_id="room_darkness_lighting_assist",
+        )
 
         # ------------------------------------------------------------------
         # Phase 1 — entity-level pattern detection
@@ -152,6 +157,8 @@ class LightingPatternAnalyzer:
 
         proposals: list[ReactionProposal] = []
         for (room_id, weekday), room_patterns in room_weekday.items():
+            if room_id in darkness_assist_rooms:
+                continue
             sorted_patterns = sorted(room_patterns, key=lambda p: p.scheduled_min)
 
             # Gap-based clustering

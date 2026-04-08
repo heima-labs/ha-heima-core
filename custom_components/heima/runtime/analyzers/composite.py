@@ -76,7 +76,10 @@ class RoomScopedCompositeMatcher:
                 continue
             delta = numeric_delta(event)
             if delta is None:
-                continue
+                if spec.primary.min_delta is None:
+                    delta = 0.0
+                else:
+                    continue
             if not _signal_matches_event(event, spec.primary):
                 continue
 

@@ -250,8 +250,13 @@ def create_builtin_learning_plugin_registry(
                 "room_cooling_assist",
                 "room_air_quality_assist",
                 "room_darkness_lighting_assist",
+                "room_vacancy_lighting_off",
             ),
-            reaction_targets=("RoomSignalAssistReaction", "RoomLightingAssistReaction"),
+            reaction_targets=(
+                "RoomSignalAssistReaction",
+                "RoomLightingAssistReaction",
+                "RoomLightingVacancyOffReaction",
+            ),
             lifecycle_hooks=composite_room_assist_lifecycle_hooks(
                 policy=composite_lifecycle_policy_from_learning_config(learning_config)
             ),

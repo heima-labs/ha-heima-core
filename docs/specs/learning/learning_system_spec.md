@@ -1693,6 +1693,11 @@ Normative product rule:
   - room occupied
   - room dark / lux below threshold
   - replay the observed lighting response
+- if a room already has enough confirmed evidence for `room_darkness_lighting_assist`, the
+  scheduled-lighting analyzer SHOULD NOT emit a `lighting_scene_schedule` proposal for that room
+  from the same evidence window
+- this suppression is about ordinary room-lighting proposals only; it MUST NOT invalidate the
+  `lighting_scene_schedule` reaction contract itself
 
 `lighting_scene_schedule` remains appropriate mainly for:
 - decorative or ambient routines
@@ -2400,6 +2405,16 @@ Normative direction:
 - the off-delay `X` SHOULD be learned or tunable, not hardcoded globally
 - it SHOULD become the preferred complement to `room_darkness_lighting_assist` for ordinary room
   lighting behavior
+
+Prerequisite event-model requirement:
+- before this family is implemented, the learning event model SHOULD expose explicit room-occupancy
+  transition events so that “room became vacant” is observable as its own episode boundary
+- relying only on `occupied_rooms` embedded in unrelated events is not sufficient for a robust
+  vacancy-off learner
+- the preferred transition event shape is:
+  - `event_type="room_occupancy"`
+  - `room_id`
+  - `transition="occupied" | "vacant"`
 
 ### P10.12 Explainability requirement
 

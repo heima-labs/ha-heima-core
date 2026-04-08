@@ -89,6 +89,7 @@ class HeimaEvent:
 
     data payloads by event_type:
       presence:    {"transition": "arrive"|"depart"}
+      room_occupancy: {"room_id": str, "transition": "occupied"|"vacant"}
       heating:     {"temperature_set": float}
       house_state: {"from_state": str, "to_state": str}
       lighting:    {"room_id": str, "action": "on"|"off", "scene": str|None,

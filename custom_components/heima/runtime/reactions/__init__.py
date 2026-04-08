@@ -34,6 +34,14 @@ from .lighting_schedule import (
     present_lighting_schedule_review_title,
     present_tuning_lighting_schedule_details,
 )
+from .lighting_vacancy_off import (
+    RoomLightingVacancyOffReaction,
+    build_room_lighting_vacancy_off_reaction,
+    present_learned_room_lighting_vacancy_off_details,
+    present_room_lighting_vacancy_off_label,
+    present_room_lighting_vacancy_off_proposal_label,
+    present_room_lighting_vacancy_off_review_title,
+)
 from .patterns import ConsecutiveMatchDetector, IPatternDetector
 from .presence import (
     PresencePatternReaction,
@@ -221,6 +229,21 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 admin_authored_review_details=present_admin_authored_room_lighting_assist_details,
                 learned_review_details=present_learned_room_lighting_assist_details,
                 tuning_review_details=present_tuning_room_lighting_assist_details,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
+                reaction_class="RoomLightingVacancyOffReaction",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("room_vacancy_lighting_off",),
+                supports_normalizer=False,
+            ),
+            builder=build_room_lighting_vacancy_off_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_room_lighting_vacancy_off_label,
+                proposal_human_label=present_room_lighting_vacancy_off_proposal_label,
+                proposal_review_title=present_room_lighting_vacancy_off_review_title,
+                learned_review_details=present_learned_room_lighting_vacancy_off_details,
             ),
         ),
         RegisteredReactionPlugin(

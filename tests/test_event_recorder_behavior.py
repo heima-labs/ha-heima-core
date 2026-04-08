@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from custom_components.heima.runtime.behaviors.event_recorder import EventRecorderBehavior
 from custom_components.heima.runtime.event_store import EventContext
@@ -117,3 +118,35 @@ async def test_event_recorder_no_events_for_stable_snapshot():
         await asyncio.gather(*hass.tasks)
 
     assert store.events == []
+
+
+async def test_event_recorder_records_room_occupancy_transitions():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = EventRecorderBehavior(hass, store, _FakeContextBuilder())  # type: ignore[arg-type]
+
+    first = replace(
+        _snapshot(ts="2026-03-10T09:00:00+00:00", anyone_home=True, house_state="home"),
+        occupied_rooms=["studio"],
+    )
+    second = replace(
+        _snapshot(ts="2026-03-10T09:05:00+00:00", anyone_home=True, house_state="home"),
+        occupied_rooms=["studio", "kitchen"],
+    )
+    third = replace(
+        _snapshot(ts="2026-03-10T09:10:00+00:00", anyone_home=True, house_state="home"),
+        occupied_rooms=["kitchen"],
+    )
+
+    behavior.on_snapshot(first)
+    behavior.on_snapshot(second)
+    behavior.on_snapshot(third)
+    if hass.tasks:
+        await asyncio.gather(*hass.tasks)
+
+    transitions = [
+        (event.room_id, event.data["transition"])
+        for event in store.events
+        if event.event_type == "room_occupancy"
+    ]
+    assert transitions == [("kitchen", "occupied"), ("studio", "vacant")]

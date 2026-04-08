@@ -183,6 +183,9 @@ Product-direction clarification:
   families such as `room_darkness_lighting_assist`
 - scheduled lighting SHOULD therefore be treated as a narrower family, not as the default learned
   room-lighting proposal type
+- when a room already qualifies for `room_darkness_lighting_assist`, the preferred suppression
+  point for a redundant `lighting_scene_schedule` candidate SHOULD be the analyzer stage rather
+  than lifecycle collision handling
 
 Composite domain clarification for the next iteration:
 - the current composite identity remains intentionally coarse and room-scoped

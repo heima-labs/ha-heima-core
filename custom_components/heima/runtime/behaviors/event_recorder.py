@@ -33,6 +33,29 @@ class EventRecorderBehavior(HeimaBehavior):
 
         context = self._context_builder.build(snapshot)
 
+        previous_rooms = set(previous.occupied_rooms)
+        current_rooms = set(snapshot.occupied_rooms)
+        for room_id in sorted(current_rooms - previous_rooms):
+            event = HeimaEvent(
+                ts=snapshot.ts,
+                event_type="room_occupancy",
+                context=context,
+                source=None,
+                room_id=room_id,
+                data={"room_id": room_id, "transition": "occupied"},
+            )
+            self._hass.async_create_task(self._store.async_append(event))
+        for room_id in sorted(previous_rooms - current_rooms):
+            event = HeimaEvent(
+                ts=snapshot.ts,
+                event_type="room_occupancy",
+                context=context,
+                source=None,
+                room_id=room_id,
+                data={"room_id": room_id, "transition": "vacant"},
+            )
+            self._hass.async_create_task(self._store.async_append(event))
+
         if previous.anyone_home != snapshot.anyone_home:
             transition = "arrive" if snapshot.anyone_home else "depart"
             event = HeimaEvent(

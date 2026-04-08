@@ -599,13 +599,55 @@ def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
         "room_cooling_assist",
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
+        "room_vacancy_lighting_off",
     }
     assert reaction_types == {
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
+        "room_vacancy_lighting_off",
     }
+
+
+async def test_catalog_analyzer_emits_room_vacancy_lighting_off_proposal():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base = datetime(2026, 3, 1, 18, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        vacancy_ts = (base + timedelta(days=i * 7)).isoformat()
+        off_ts = (base + timedelta(days=i * 7, minutes=3)).isoformat()
+        events.extend(
+            [
+                HeimaEvent(
+                    ts=vacancy_ts,
+                    event_type="room_occupancy",
+                    context=_ctx(room="living", minute=18 * 60),
+                    source=None,
+                    room_id="living",
+                    data={"room_id": "living", "transition": "vacant"},
+                ),
+                _lighting_event(
+                    entity_id="light.living_main",
+                    room="living",
+                    ts=off_ts,
+                    action="off",
+                    brightness=None,
+                    color_temp_kelvin=None,
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    vacancy = [p for p in proposals if p.reaction_type == "room_vacancy_lighting_off"]
+    assert len(vacancy) == 1
+    proposal = vacancy[0]
+    assert proposal.suggested_reaction_config["reaction_class"] == "RoomLightingVacancyOffReaction"
+    assert proposal.suggested_reaction_config["room_id"] == "living"
+    assert proposal.suggested_reaction_config["vacancy_delay_s"] == 180
+    assert proposal.suggested_reaction_config["entity_steps"] == [
+        {"entity_id": "light.living_main", "action": "off", "brightness": None, "color_temp_kelvin": None, "rgb_color": None}
+    ]
 
 
 async def test_catalog_analyzer_emits_both_current_v1_patterns():
