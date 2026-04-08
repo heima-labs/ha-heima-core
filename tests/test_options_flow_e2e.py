@@ -302,6 +302,40 @@ async def test_save_preserves_configured_reactions_and_labels():
 
 
 @pytest.mark.asyncio
+async def test_reactions_step_preserves_configured_reactions_and_labels_when_updating_muted():
+    flow = _flow(
+        {
+            "reactions": {
+                "muted": ["reaction-1"],
+                "configured": {
+                    "reaction-1": {
+                        "reaction_class": "VacationPresenceSimulationReaction",
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                    }
+                },
+                "labels": {"reaction-1": "Presence simulation"},
+            }
+        }
+    )
+
+    result = await flow.async_step_reactions({"muted_reactions": []})
+
+    assert result["type"] == "menu"
+    assert flow.options["reactions"] == {
+        "muted": [],
+        "configured": {
+            "reaction-1": {
+                "reaction_class": "VacationPresenceSimulationReaction",
+                "reaction_type": "vacation_presence_simulation",
+                "enabled": True,
+            }
+        },
+        "labels": {"reaction-1": "Presence simulation"},
+    }
+
+
+@pytest.mark.asyncio
 async def test_security_step_preserves_camera_evidence_sources():
     flow = _flow(
         {
@@ -2483,6 +2517,112 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert "Segnale primario: room_lux" in details
     assert "Soglia buio: 120.0" in details
     assert "Luci configurate: 2" in details
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_allows_historical_non_pending_duplicate():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    pending: list[ReactionProposal] = []
+
+    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
+        pending[:] = [proposal]
+        return proposal.proposal_id
+
+    historical = SimpleNamespace(status="accepted")
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: list(pending),
+        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
+        proposal_by_identity_key=lambda identity_key: historical,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 1
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_configured_identity():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+            "reactions": {
+                "configured": {
+                    "reaction-1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "source_proposal_identity_key": (
+                            "room_darkness_lighting_assist|room=studio|primary=room_lux"
+                        ),
+                    }
+                }
+            },
+        }
+    )
+
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [],
+        async_submit_proposal=AsyncMock(),
+        proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 0
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["errors"]["base"] == "duplicate"
 
 
 @pytest.mark.asyncio

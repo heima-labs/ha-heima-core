@@ -27,6 +27,27 @@ _LOGGER = logging.getLogger(__name__)
 class _ReactionsStepsMixin:
     """Mixin for reactions step."""
 
+    def _admin_authored_identity_conflicts(
+        self,
+        proposal: ReactionProposal,
+        proposal_engine: Any,
+    ) -> bool:
+        """Block only active duplicates, not historical accepted/rejected proposals."""
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            return False
+
+        existing = proposal_engine.proposal_by_identity_key(identity_key)
+        if existing is not None and str(getattr(existing, "status", "") or "").strip() == "pending":
+            return True
+
+        configured = dict(self._reactions_options().get("configured", {}))
+        for raw in configured.values():
+            reaction_cfg = _safe_mapping(raw)
+            if str(reaction_cfg.get("source_proposal_identity_key") or "").strip() == identity_key:
+                return True
+        return False
+
     async def async_step_admin_authored_create(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
@@ -175,8 +196,7 @@ class _ReactionsStepsMixin:
         if proposal_engine is None:
             return await self.async_step_init()
 
-        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
-        if existing is not None and existing.status != "pending":
+        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
             return self.async_show_form(
                 step_id="admin_authored_lighting_schedule",
                 data_schema=self._admin_authored_lighting_schedule_schema(
@@ -286,8 +306,7 @@ class _ReactionsStepsMixin:
         if proposal_engine is None:
             return await self.async_step_init()
 
-        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
-        if existing is not None and existing.status != "pending":
+        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
                 data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
@@ -426,8 +445,7 @@ class _ReactionsStepsMixin:
         if proposal_engine is None:
             return await self.async_step_init()
 
-        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
-        if existing is not None and existing.status != "pending":
+        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
                 data_schema=self._admin_authored_room_signal_assist_schema(
@@ -563,8 +581,7 @@ class _ReactionsStepsMixin:
         if proposal_engine is None:
             return await self.async_step_init()
 
-        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
-        if existing is not None and existing.status != "pending":
+        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
@@ -659,8 +676,7 @@ class _ReactionsStepsMixin:
         if proposal_engine is None:
             return await self.async_step_init()
 
-        existing = proposal_engine.proposal_by_identity_key(proposal.identity_key)
-        if existing is not None and existing.status != "pending":
+        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
             return self.async_show_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
                 data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
@@ -680,6 +696,12 @@ class _ReactionsStepsMixin:
         proposal_id = await proposal_engine.async_submit_proposal(proposal)
         self._proposal_review_queue = [proposal_id]
         return await self.async_step_proposals()
+
+    def _store_reactions_options(self, updates: dict[str, Any]) -> None:
+        """Persist reaction options without dropping sibling reaction state."""
+        reactions_cfg = dict(self._reactions_options())
+        reactions_cfg.update(updates)
+        self._update_options({OPT_REACTIONS: reactions_cfg})
 
     async def async_step_reactions(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         """Show registered reactions and allow toggling persisted mute state."""
@@ -706,7 +728,7 @@ class _ReactionsStepsMixin:
         muted = self._normalize_multi_value(user_input.get("muted_reactions"))
         # Only persist IDs that are actually registered
         muted = [rid for rid in muted if rid in reaction_labels]
-        self._update_options({OPT_REACTIONS: {"muted": muted}})
+        self._store_reactions_options({"muted": muted})
         return await self.async_step_init()
 
     # ---- Edit configured reaction ----
@@ -800,7 +822,7 @@ class _ReactionsStepsMixin:
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
-        self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._store_reactions_options(reactions_cfg)
         self._editing_reaction_id = None
         return await self.async_step_init()
 
@@ -919,7 +941,7 @@ class _ReactionsStepsMixin:
         ]
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
-        self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._store_reactions_options(reactions_cfg)
         self._editing_reaction_id = None
         return await self.async_step_init()
 
@@ -960,7 +982,7 @@ class _ReactionsStepsMixin:
         reactions_cfg["configured"] = configured
         reactions_cfg["labels"] = labels_map
         reactions_cfg["muted"] = muted
-        self._update_options({OPT_REACTIONS: reactions_cfg})
+        self._store_reactions_options(reactions_cfg)
         self._deleting_reaction_id = None
         self._editing_reaction_id = None
         return await self.async_step_init()
@@ -1046,7 +1068,7 @@ class _ReactionsStepsMixin:
             labels[target_id] = current.description
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
-            self._update_options({OPT_REACTIONS: reactions_cfg})
+            self._store_reactions_options(reactions_cfg)
 
             if self._proposal_requires_action_completion(current):
                 self._pending_action_configs = [target_id]
@@ -1059,7 +1081,7 @@ class _ReactionsStepsMixin:
             labels.pop(current_id, None)
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
-            self._update_options({OPT_REACTIONS: reactions_cfg})
+            self._store_reactions_options(reactions_cfg)
 
         return await self.async_step_proposals() if queue else await self.async_step_init()
 
@@ -1107,7 +1129,7 @@ class _ReactionsStepsMixin:
             cfg["pre_condition_min"] = pre_condition_min
             configured[current_pid] = cfg
             reactions_cfg["configured"] = configured
-            self._update_options({OPT_REACTIONS: reactions_cfg})
+            self._store_reactions_options(reactions_cfg)
 
         # Advance queue
         self._pending_action_configs = pending[1:]
