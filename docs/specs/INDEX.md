@@ -33,6 +33,7 @@ Related practical guides live outside this tree:
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
+- `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
 
 ## Domains
 
