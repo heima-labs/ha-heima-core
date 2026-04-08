@@ -170,8 +170,8 @@ SECURITY_CONFIG = {
     "security_state_entity": "alarm_control_panel.test_heima_alarm",
     "armed_away_value": "armed_away",
     "armed_home_value": "armed_home",
-    "camera_evidence_sources": [
-        {
+    "camera_evidence_sources": {
+        "entry_cam": {
             "id": "entry_cam",
             "display_name": "Front Door Camera",
             "enabled": True,
@@ -182,7 +182,7 @@ SECURITY_CONFIG = {
             "return_home_contributor": True,
             "security_priority": "high",
         },
-        {
+        "garage_cam": {
             "id": "garage_cam",
             "display_name": "Garage Camera",
             "enabled": True,
@@ -193,7 +193,7 @@ SECURITY_CONFIG = {
             "return_home_contributor": True,
             "security_priority": "high",
         },
-    ],
+    },
 }
 
 NOTIFICATIONS_CONFIG = {

@@ -33,6 +33,9 @@ class _SecurityStepsMixin:
 
         payload = dict(current)
         payload.update(user_input)
+        payload["camera_evidence_sources"] = self._normalize_camera_evidence_sources(
+            payload.get("camera_evidence_sources")
+        )
         self._update_options({OPT_SECURITY: payload})
         return await self.async_step_init()
 
@@ -78,8 +81,44 @@ class _SecurityStepsMixin:
                 ): cv.string,
                 vol.Optional(
                     "camera_evidence_sources",
-                    default=defaults.get("camera_evidence_sources", []),
+                    default=self._camera_evidence_sources_to_editor(
+                        defaults.get("camera_evidence_sources", [])
+                    ),
                 ): _object_selector(),
             }
         )
         return self._with_suggested(schema, defaults)
+
+    @staticmethod
+    def _camera_evidence_sources_to_editor(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return {str(k): dict(v) for k, v in value.items() if str(k).strip() and isinstance(v, dict)}
+        if not isinstance(value, list):
+            return {}
+        editor: dict[str, Any] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            source_id = str(item.get("id") or "").strip()
+            if not source_id:
+                continue
+            editor[source_id] = dict(item)
+        return editor
+
+    @staticmethod
+    def _normalize_camera_evidence_sources(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, list):
+            return [dict(item) for item in value if isinstance(item, dict)]
+        if not isinstance(value, dict):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for key, raw in value.items():
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            source_id = str(item.get("id") or key or "").strip()
+            if not source_id:
+                continue
+            item["id"] = source_id
+            normalized.append(item)
+        return normalized
