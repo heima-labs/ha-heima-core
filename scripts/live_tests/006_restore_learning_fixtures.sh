@@ -74,6 +74,12 @@ if [[ -n "$HA_TOKEN" ]]; then
   python3 "$REPO_ROOT/scripts/recover_test_lab_config.py" \
     --ha-url "$HA_URL" \
     --ha-token "$HA_TOKEN" \
+    --section mqtt
+
+  echo "Refreshing room area assignments and room config after restart..."
+  python3 "$REPO_ROOT/scripts/recover_test_lab_config.py" \
+    --ha-url "$HA_URL" \
+    --ha-token "$HA_TOKEN" \
     --section rooms
 
   echo "Refreshing learning signal config after restart..."

@@ -178,14 +178,14 @@ views:
         show_header_toggle: false
         entities:
           - entity: binary_sensor.heima_occupancy_studio
-          - entity: binary_sensor.heima_occupancy_soggiorno
-          - entity: binary_sensor.heima_occupancy_bagno
+          - entity: binary_sensor.heima_occupancy_living
+          - entity: binary_sensor.heima_occupancy_bathroom
           - entity: binary_sensor.heima_anonymous_presence
-          - entity: sensor.heima_anonymous_confidence
-          - entity: sensor.heima_anonymous_source
+          - entity: sensor.heima_anonymous_presence_confidence
+          - entity: sensor.heima_anonymous_presence_source
           - entity: sensor.heima_occupancy_studio_source
-          - entity: sensor.heima_occupancy_soggiorno_source
-          - entity: sensor.heima_occupancy_bagno_source
+          - entity: sensor.heima_occupancy_living_source
+          - entity: sensor.heima_occupancy_bathroom_source
 
       - type: entities
         title: Heating
@@ -286,7 +286,7 @@ views:
           - entity: binary_sensor.test_heima_camera_garage_person
           - entity: binary_sensor.test_heima_camera_garage_vehicle
           - entity: binary_sensor.heima_anonymous_presence
-          - entity: sensor.heima_anonymous_source
+          - entity: sensor.heima_anonymous_presence_source
 
       - type: history-graph
         title: Monitoring Trend (12h)
