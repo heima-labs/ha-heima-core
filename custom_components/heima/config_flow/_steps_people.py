@@ -47,9 +47,7 @@ class _PeopleStepsMixin:
         return self.async_show_menu(
             step_id="people_menu",
             menu_options=[
-                "people_add",
                 "people_edit",
-                "people_remove",
                 "people_anonymous",
                 "people_debug_aliases",
                 "people_save",

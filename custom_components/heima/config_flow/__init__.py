@@ -218,19 +218,30 @@ class HeimaOptionsFlowHandler(
         counts = self._ha_backed_status_counts(people)
         if any(counts.values()):
             lang = str(self.options.get(CONF_LANGUAGE, "it"))
+            labels = self._ha_backed_status_labels(people)
             if lang.startswith("it"):
-                return (
+                summary = (
                     f"totale {len(people)}"
                     f" | nuove {counts['new']}"
                     f" | configurate {counts['configured']}"
                     f" | orfane {counts['orphaned']}"
                 )
-            return (
+                if labels["new"]:
+                    summary += f" | nuove: {', '.join(labels['new'])}"
+                if labels["orphaned"]:
+                    summary += f" | orfane: {', '.join(labels['orphaned'])}"
+                return summary
+            summary = (
                 f"total {len(people)}"
                 f" | new {counts['new']}"
                 f" | configured {counts['configured']}"
                 f" | orphaned {counts['orphaned']}"
             )
+            if labels["new"]:
+                summary += f" | new: {', '.join(labels['new'])}"
+            if labels["orphaned"]:
+                summary += f" | orphaned: {', '.join(labels['orphaned'])}"
+            return summary
         names = [p.get("display_name") or p.get("slug", "") for p in people]
         return f"{len(people)}: {', '.join(names)}"
 

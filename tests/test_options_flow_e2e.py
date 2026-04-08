@@ -868,52 +868,6 @@ async def test_rooms_edit_form_can_apply_suggested_inventory_bindings(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_people_add_rejects_person_not_present_in_ha():
-    flow = _flow()
-
-    result = await flow.async_step_people_add(
-        {
-            "slug": "alex",
-            "display_name": "Alex",
-            "presence_method": "ha_person",
-            "person_entity": "person.alex",
-        }
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"] == {"person_entity": "unknown_person"}
-
-
-@pytest.mark.asyncio
-async def test_people_add_rejects_duplicate_ha_person_binding():
-    flow = _flow(
-        {
-            "people_named": [
-                {
-                    "slug": "alex",
-                    "display_name": "Alex",
-                    "presence_method": "ha_person",
-                    "person_entity": "person.alex",
-                }
-            ]
-        },
-        states=[_state("person.alex", "Alex")],
-    )
-
-    result = await flow.async_step_people_add(
-        {
-            "slug": "alex_2",
-            "display_name": "Alex 2",
-            "presence_method": "ha_person",
-            "person_entity": "person.alex",
-        }
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"] == {"person_entity": "duplicate_person_entity"}
-
-
-@pytest.mark.asyncio
 async def test_people_edit_shows_status_labels_for_imported_people():
     flow = _flow(
         {
@@ -929,6 +883,36 @@ async def test_people_edit_shows_status_labels_for_imported_people():
 
     assert "Alex [new]" in options
     assert "Laura [orphaned]" in options
+
+
+@pytest.mark.asyncio
+async def test_people_menu_does_not_expose_add_or_remove_actions():
+    flow = _flow(states=[_state("person.alex", "Alex")])
+
+    result = await flow.async_step_people_menu()
+
+    assert result["type"] == "menu"
+    assert "people_add" not in result["menu_options"]
+    assert "people_remove" not in result["menu_options"]
+    assert "people_edit" in result["menu_options"]
+    assert "people_debug_aliases" in result["menu_options"]
+
+
+def test_people_menu_summary_includes_new_and_orphaned_labels():
+    flow = _flow(
+        {
+            "people_named": [
+                {"slug": "alex", "display_name": "Alex", "ha_sync_status": "new"},
+                {"slug": "laura", "display_name": "Laura", "ha_sync_status": "orphaned"},
+                {"slug": "mario", "display_name": "Mario", "ha_sync_status": "configured"},
+            ]
+        }
+    )
+
+    summary = flow._people_menu_summary()
+
+    assert "nuove: Alex" in summary
+    assert "orfane: Laura" in summary
 
 
 @pytest.mark.asyncio
@@ -2768,32 +2752,6 @@ async def test_reactions_edit_form_can_delete_configured_reaction_and_unmute_it(
     assert "r1" not in flow.options["reactions"]["configured"]
     assert "r1" not in flow.options["reactions"]["labels"]
     assert "r1" not in flow.options["reactions"]["muted"]
-
-
-@pytest.mark.asyncio
-async def test_people_remove_requires_confirmation():
-    flow = _flow(
-        {
-            "people_named": [
-                {
-                    "slug": "alex",
-                    "display_name": "Alex",
-                    "presence_method": "ha_person",
-                    "person_entity": "person.alex",
-                }
-            ]
-        }
-    )
-
-    result = await flow.async_step_people_remove({"person": "alex"})
-
-    assert result["type"] == "form"
-    assert result["step_id"] == "people_remove_confirm"
-
-    confirmed = await flow.async_step_people_remove_confirm({"confirm": True})
-
-    assert confirmed["type"] == "menu"
-    assert flow.options["people_named"] == []
 
 
 @pytest.mark.asyncio

@@ -67,29 +67,12 @@
         "title": "Persone",
         "description": "Configurate: {summary}",
         "menu_options": {
-          "people_add": "Aggiungi persona",
           "people_edit": "Modifica persona",
-          "people_remove": "Rimuovi persona",
           "people_anonymous": "Presenza anonima",
           "people_debug_aliases": "Alias debug",
           "people_save": "Salva e chiudi",
           "people_next": "Avanti"
         }
-      },
-      "people_add": {
-        "title": "Aggiungi Persona",
-        "data": {
-          "slug": "Slug",
-          "display_name": "Nome visualizzato",
-          "presence_method": "Metodo presenza",
-          "person_entity": "Entita persona",
-          "sources": "Sorgenti",
-          "required": "Sorgenti richieste",
-          "arrive_hold_s": "Hold arrivo (s)",
-          "leave_hold_s": "Hold uscita (s)",
-          "enable_override": "Abilita override"
-        },
-        "submit": "OK"
       },
       "people_edit": {
         "title": "Modifica Persona",
@@ -110,21 +93,6 @@
           "arrive_hold_s": "Hold arrivo (s)",
           "leave_hold_s": "Hold uscita (s)",
           "enable_override": "Abilita override"
-        },
-        "submit": "OK"
-      },
-      "people_remove": {
-        "title": "Rimuovi Persona",
-        "data": {
-          "person": "Persona"
-        },
-        "submit": "OK"
-      },
-      "people_remove_confirm": {
-        "title": "Conferma Rimozione Persona",
-        "description": "Rimuovere {person_label}?",
-        "data": {
-          "confirm": "Conferma rimozione"
         },
         "submit": "OK"
       },

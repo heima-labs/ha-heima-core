@@ -107,3 +107,26 @@ def test_reconcile_rooms_auto_links_missing_area_id_by_room_id_match():
     assert room["area_id"] == "studio"
     assert room["ha_sync_status"] == "new"
     assert summary["rooms"]["orphaned_total"] == 0
+
+
+def test_reconcile_people_auto_links_missing_person_entity_by_slug_match():
+    updated, summary, changed = reconcile_ha_backed_options(
+        {
+            "people_named": [
+                {
+                    "slug": "alex",
+                    "display_name": "Alex",
+                    "presence_method": "ha_person",
+                    "heima_reviewed": False,
+                }
+            ]
+        },
+        ha_people=[{"entity_id": "person.alex", "display_name": "Alex"}],
+        ha_areas=[],
+    )
+
+    assert changed is True
+    person = updated["people_named"][0]
+    assert person["person_entity"] == "person.alex"
+    assert person["ha_sync_status"] == "new"
+    assert summary["people"]["orphaned_total"] == 0

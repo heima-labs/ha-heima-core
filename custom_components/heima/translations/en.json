@@ -67,29 +67,12 @@
         "title": "People",
         "description": "Configured: {summary}",
         "menu_options": {
-          "people_add": "Add person",
           "people_edit": "Edit person",
-          "people_remove": "Remove person",
           "people_anonymous": "Anonymous presence",
           "people_debug_aliases": "Debug aliases",
           "people_save": "Save and close",
           "people_next": "Next"
         }
-      },
-      "people_add": {
-        "title": "Add Person",
-        "data": {
-          "slug": "Slug",
-          "display_name": "Display name",
-          "presence_method": "Presence method",
-          "person_entity": "Person entity",
-          "sources": "Sources",
-          "required": "Required sources",
-          "arrive_hold_s": "Arrive hold (s)",
-          "leave_hold_s": "Leave hold (s)",
-          "enable_override": "Enable override"
-        },
-        "submit": "OK"
       },
       "people_edit": {
         "title": "Edit Person",
@@ -110,21 +93,6 @@
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)",
           "enable_override": "Enable override"
-        },
-        "submit": "OK"
-      },
-      "people_remove": {
-        "title": "Remove Person",
-        "data": {
-          "person": "Person"
-        },
-        "submit": "OK"
-      },
-      "people_remove_confirm": {
-        "title": "Confirm Person Removal",
-        "description": "Remove {person_label}?",
-        "data": {
-          "confirm": "Confirm removal"
         },
         "submit": "OK"
       },

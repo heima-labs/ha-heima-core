@@ -57,6 +57,11 @@ def _reconcile_people(
     for person in people:
         item = dict(person)
         person_entity = str(item.get("person_entity") or "").strip()
+        if not person_entity:
+            matched_person_entity = _match_person_entity_for_person(item, inventory)
+            if matched_person_entity:
+                person_entity = matched_person_entity
+                item["person_entity"] = matched_person_entity
         item["source"] = "ha_person_registry"
         if person_entity and person_entity in inventory:
             ha_name = inventory[person_entity]
@@ -116,6 +121,41 @@ def _reconcile_people(
             ),
         },
     )
+
+
+def _match_person_entity_for_person(
+    person: dict[str, Any],
+    inventory: dict[str, str],
+) -> str | None:
+    slug = str(person.get("slug") or "").strip()
+    display_name = str(person.get("display_name") or "").strip()
+
+    candidates: list[str] = []
+    if slug:
+        candidates.append(slug)
+    if display_name:
+        candidates.append(slugify(display_name))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        matched = f"person.{normalized}"
+        if matched in inventory:
+            return matched
+
+    if display_name:
+        display_name_lower = display_name.casefold()
+        matches = [
+            entity_id
+            for entity_id, ha_display_name in inventory.items()
+            if str(ha_display_name or "").strip().casefold() == display_name_lower
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return None
 
 
 def _reconcile_rooms(
