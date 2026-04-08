@@ -96,9 +96,6 @@ def test_room_with_occupancy_mode_none_is_off_and_does_not_contribute():
         ],
         "lighting_zones": [{"zone_id": "zona_giorno", "rooms": ["soggiorno"]}],
         "lighting_rooms": [{"room_id": "soggiorno"}],
-        "people_named": [
-            {"slug": "p1", "presence_method": "manual", "enable_override": True},
-        ],
     }
     engine = _build_engine(options)
     engine.state.set_select("heima_person_p1_override", "force_home")

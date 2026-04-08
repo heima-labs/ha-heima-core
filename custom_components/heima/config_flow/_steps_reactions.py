@@ -649,7 +649,6 @@ class _ReactionsStepsMixin:
 
         reactions_cfg = dict(self._reactions_options())
         configured = dict(reactions_cfg.get("configured", {}))
-        muted = list(reactions_cfg.get("muted", []))
         labels_map: dict[str, str] = reactions_cfg.get("labels", {})
         cfg = dict(configured.get(pid, {}))
         reaction_class = str(cfg.get("reaction_class") or "").strip()
@@ -1845,9 +1844,7 @@ class _ReactionsStepsMixin:
                 f"Template: {template_id}"
             )
 
-        details.append(
-            f"Stato UX: bozza" if is_it else "UX state: draft"
-        )
+        details.append("Stato UX: bozza" if is_it else "UX state: draft")
         details.append(
             f"Affidabilità: {proposal.confidence:.0%}"
             if is_it
@@ -2169,7 +2166,7 @@ class _ReactionsStepsMixin:
                 window_half = int(cfg.get("window_half_min", 0))
                 hhmm = f"{median_min // 60:02d}:{median_min % 60:02d}"
                 spread = f" (± {window_half} min)" if window_half > 0 else ""
-                day = _WEEKDAY_IT[weekday] if 0 <= weekday <= 6 else str(weekday)
+                day = _ReactionsStepsMixin._weekday_label(weekday, "it")
                 return f"{day}: arrivo alle {hhmm}{spread}"
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
@@ -2180,7 +2177,7 @@ class _ReactionsStepsMixin:
                 scheduled_min = int(cfg["scheduled_min"])
                 room_id = str(cfg.get("room_id", ""))
                 hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
-                day = _WEEKDAY_IT[weekday] if 0 <= weekday <= 6 else str(weekday)
+                day = _ReactionsStepsMixin._weekday_label(weekday, "it")
                 n_steps = len(cfg.get("entity_steps", []))
                 return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
             except (KeyError, TypeError, ValueError, IndexError):

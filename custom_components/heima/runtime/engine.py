@@ -594,8 +594,6 @@ class HeimaEngine:
             self._events_domain,
             camera_evidence=security_camera_evidence,
         )
-        home_people = people_result.home_people
-        anon_home = people_result.anon_home
         anyone_home = people_result.anyone_home
         people_count = people_result.people_count
         people_home_list = people_result.people_home_list

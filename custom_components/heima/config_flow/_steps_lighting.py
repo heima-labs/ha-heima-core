@@ -10,7 +10,6 @@ from homeassistant.helpers import config_validation as cv
 from ..const import OPT_LIGHTING_ROOMS, OPT_LIGHTING_ZONES
 from ..room_inventory import build_room_inventory_summary
 from ._common import (
-    _entity_selector,
     _is_valid_slug,
     _scene_selector,
 )
