@@ -304,3 +304,93 @@ views:
           - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section engine`
           - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_camera_evidence`
           - `python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+
+  - title: Heima Investigation
+    path: heima-investigation
+    icon: mdi:bug-outline
+    cards:
+      - type: markdown
+        content: |
+          ## Heima Investigation
+          Use this page when the daily monitoring view looks odd and you need to understand why Heima decided, or did not decide, something.
+
+          Read the compact summaries here first. Use the CLI diagnostics only if you need the raw nested payloads.
+
+      - type: entities
+        title: State Resolver
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_house_state_reason
+          - entity: sensor.heima_house_state_path
+          - entity: sensor.heima_house_state_pending_candidate
+          - entity: sensor.heima_house_state_pending_remaining_s
+          - entity: sensor.heima_last_event
+          - entity: sensor.heima_event_stats
+
+      - type: entities
+        title: Presence Provenance
+        show_header_toggle: false
+        entities:
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+          - entity: sensor.heima_people_home_list
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: sensor.heima_anonymous_presence_confidence
+          - entity: sensor.heima_anonymous_presence_source
+          - entity: binary_sensor.heima_occupancy_studio
+          - entity: sensor.heima_occupancy_studio_source
+          - entity: binary_sensor.heima_occupancy_living
+          - entity: sensor.heima_occupancy_living_source
+          - entity: binary_sensor.heima_occupancy_bathroom
+          - entity: sensor.heima_occupancy_bathroom_source
+
+      - type: entities
+        title: Security Investigation
+        show_header_toggle: false
+        entities:
+          - entity: alarm_control_panel.test_heima_alarm
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: select.heima_security_intent
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: binary_sensor.test_heima_camera_entry_motion
+          - entity: binary_sensor.test_heima_front_door_contact
+          - entity: binary_sensor.test_heima_camera_garage_person
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
+          - entity: binary_sensor.test_heima_garage_door_contact
+
+      - type: entities
+        title: Learning And Reactions
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_heating_state
+          - entity: sensor.heima_heating_reason
+          - entity: sensor.heima_heating_branch
+
+      - type: history-graph
+        title: Presence And Security Trace (12h)
+        hours_to_show: 12
+        refresh_interval: 30
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_security_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: binary_sensor.heima_anonymous_presence
+          - entity: binary_sensor.test_heima_camera_entry_person
+          - entity: binary_sensor.test_heima_camera_garage_vehicle
+
+      - type: markdown
+        content: |
+          Recommended CLI drill-down:
+          - `python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section engine`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section learning`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section reactions`
+          - `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_camera_evidence`
+          - `python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+
+          Note: `sensor.heima_reactions_active` is a compact indicator only. If it falls back to `unknown`, inspect `diagnostics.py --section reactions` instead of relying on the sensor state.
