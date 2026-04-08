@@ -17,6 +17,7 @@ from ..normalization.config import (
 from ..normalization.service import InputNormalizer
 from ..state_store import CanonicalState
 from .events import EventsDomain
+from .security_camera_evidence import SecurityCameraEvidenceResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class PeopleDomain:
         options: dict[str, Any],
         state: CanonicalState,
         events: EventsDomain,
+        camera_evidence: SecurityCameraEvidenceResult | None = None,
     ) -> PeopleResult:
         named_people = options.get(OPT_PEOPLE_NAMED, [])
         home_people: list[str] = []
@@ -95,6 +97,8 @@ class PeopleDomain:
         anon_confidence = 0
         anon_source = "disabled"
         anon_weight = 0
+        anon_hint_active = False
+        anon_hint_reasons: list[dict[str, Any]] = []
 
         if anon_cfg.get("enabled"):
             anon_sources = normalize_entity_id_list(anon_cfg.get("sources", []))
@@ -123,6 +127,40 @@ class PeopleDomain:
                 weight=int(anon_cfg.get("anonymous_count_weight", 1)),
             )
             _LOGGER.debug("Anonymous presence active_count=%s", active_count)
+
+        if camera_evidence is not None and bool(camera_evidence.return_home_hint):
+            anon_hint_active = True
+            anon_hint_reasons = [
+                dict(item)
+                for item in list(camera_evidence.return_home_hint_reasons or [])
+                if isinstance(item, dict)
+            ]
+            if not anon_home:
+                anon_home = True
+                anon_confidence = 70
+                anon_source = "camera_return_home_hint"
+                anon_weight = max(
+                    1,
+                    int(anon_cfg.get("anonymous_count_weight", 1)) if anon_cfg.get("enabled") else 1,
+                )
+                prev_anon_home = state.get_binary("heima_anonymous_presence")
+                state.set_binary("heima_anonymous_presence", anon_home)
+                state.set_sensor("heima_anonymous_presence_confidence", anon_confidence)
+                state.set_sensor("heima_anonymous_presence_source", anon_source)
+                events.queue_anonymous_transition_event(
+                    prev_is_on=prev_anon_home,
+                    is_on=anon_home,
+                    source=anon_source,
+                    confidence=anon_confidence,
+                    weight=anon_weight,
+                )
+            else:
+                anon_source = anon_source or "camera_return_home_hint"
+        self._group_presence_trace["anonymous_return_home_hint"] = {
+            "active": anon_hint_active,
+            "reasons": anon_hint_reasons,
+            "used_for_anonymous_presence": anon_home and anon_hint_active,
+        }
 
         anyone_home = bool(home_people) or anon_home
         people_count = len(home_people) + anon_weight

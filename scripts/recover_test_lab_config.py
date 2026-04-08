@@ -170,6 +170,30 @@ SECURITY_CONFIG = {
     "security_state_entity": "alarm_control_panel.test_heima_alarm",
     "armed_away_value": "armed_away",
     "armed_home_value": "armed_home",
+    "camera_evidence_sources": {
+        "entry_cam": {
+            "id": "entry_cam",
+            "display_name": "Front Door Camera",
+            "enabled": True,
+            "role": "entry",
+            "motion_entity": "binary_sensor.test_heima_camera_entry_motion",
+            "person_entity": "binary_sensor.test_heima_camera_entry_person",
+            "contact_entity": "binary_sensor.test_heima_front_door_contact",
+            "return_home_contributor": True,
+            "security_priority": "high",
+        },
+        "garage_cam": {
+            "id": "garage_cam",
+            "display_name": "Garage Camera",
+            "enabled": True,
+            "role": "garage",
+            "person_entity": "binary_sensor.test_heima_camera_garage_person",
+            "vehicle_entity": "binary_sensor.test_heima_camera_garage_vehicle",
+            "contact_entity": "binary_sensor.test_heima_garage_door_contact",
+            "return_home_contributor": True,
+            "security_priority": "high",
+        },
+    },
 }
 
 NOTIFICATIONS_CONFIG = {

@@ -42,6 +42,9 @@ def main() -> int:
     house_state_summary = dict(runtime.get("plugins", {}).get("house_state_summary", {}) or {})
     composite_summary = dict(runtime.get("plugins", {}).get("composite_summary", {}) or {})
     security_presence_summary = dict(runtime.get("plugins", {}).get("security_presence_summary", {}) or {})
+    security_camera_evidence_summary = dict(
+        runtime.get("plugins", {}).get("security_camera_evidence_summary", {}) or {}
+    )
 
     _print_header("Learning Audit")
     print(f"entry_id: {entry_id}")
@@ -262,6 +265,46 @@ def main() -> int:
                 "blocked by class: "
                 + ", ".join(f"{key}={value}" for key, value in sorted(blocked_by_class.items()))
             )
+
+    if security_camera_evidence_summary:
+        _print_header("Security Camera Evidence")
+        print(f"configured total: {security_camera_evidence_summary.get('configured_total', 0)}")
+        print(f"active evidence total: {security_camera_evidence_summary.get('active_evidence_total', 0)}")
+        print(f"unavailable total: {security_camera_evidence_summary.get('unavailable_total', 0)}")
+        print(f"breach candidate total: {security_camera_evidence_summary.get('breach_candidate_total', 0)}")
+        print(
+            "return home hint active: "
+            f"{bool(security_camera_evidence_summary.get('return_home_hint_active', False))}"
+        )
+        configured_by_role = dict(security_camera_evidence_summary.get("configured_by_role") or {})
+        if configured_by_role:
+            print(
+                "configured by role: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(configured_by_role.items()))
+            )
+        source_status_counts = dict(security_camera_evidence_summary.get("source_status_counts") or {})
+        if source_status_counts:
+            print(
+                "source status counts: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(source_status_counts.items()))
+            )
+        breach_by_rule = dict(security_camera_evidence_summary.get("breach_by_rule") or {})
+        if breach_by_rule:
+            print(
+                "breach by rule: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(breach_by_rule.items()))
+            )
+        examples = list(security_camera_evidence_summary.get("examples") or [])
+        if examples:
+            print("examples:")
+            for item in examples:
+                print(
+                    "  "
+                    f"{item.get('source_id') or '-'} | "
+                    f"{item.get('role') or '-'} | "
+                    f"{item.get('status') or '-'} | "
+                    f"active={','.join(item.get('active_kinds') or []) or '-'}"
+                )
         operational_state_counts = dict(security_presence_summary.get("operational_state_counts") or {})
         if operational_state_counts:
             print(

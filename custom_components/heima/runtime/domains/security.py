@@ -21,6 +21,7 @@ from ..normalization.config import (
 from ..normalization.service import InputNormalizer
 from ..state_store import CanonicalState
 from .events import EventsDomain
+from .security_camera_evidence import SecurityCameraEvidenceResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class SecurityDomain:
         self._normalizer = normalizer
         self._security_observation_trace: dict[str, Any] = {}
         self._security_corroboration_trace: dict[str, Any] = {}
+        self._camera_evidence_trace: dict[str, Any] = {}
         self._security_armed_away_but_home_since: float | None = None
         self._security_armed_away_but_home_emitted: bool = False
 
@@ -40,6 +42,7 @@ class SecurityDomain:
         """Called on options reload."""
         self._security_observation_trace = {}
         self._security_corroboration_trace = {}
+        self._camera_evidence_trace = {}
         self._security_armed_away_but_home_since = None
         self._security_armed_away_but_home_emitted = False
 
@@ -55,6 +58,7 @@ class SecurityDomain:
         return {
             "observation_trace": dict(self._security_observation_trace),
             "corroboration_trace": dict(self._security_corroboration_trace),
+            "camera_evidence_trace": dict(self._camera_evidence_trace),
         }
 
     # ------------------------------------------------------------------
@@ -91,6 +95,91 @@ class SecurityDomain:
         state.set_sensor("heima_security_state", security_state)
         state.set_sensor("heima_security_reason", security_reason)
         return security_state, security_reason
+
+    def consume_camera_evidence(
+        self,
+        *,
+        security_state: str,
+        camera_evidence: SecurityCameraEvidenceResult,
+        state: CanonicalState,
+    ) -> list[dict[str, Any]]:
+        """Turn provider output into bounded security breach candidates."""
+        active_evidence = list(camera_evidence.active_evidence)
+        configured_sources = {
+            str(item.get("id") or ""): dict(item)
+            for item in camera_evidence.configured_sources
+            if isinstance(item, dict)
+        }
+        candidates: list[dict[str, Any]] = []
+
+        if security_state == "armed_away":
+            for record in active_evidence:
+                source = configured_sources.get(record.source_id, {})
+                role = str(record.role or source.get("role") or "")
+                kinds = set(source.get("active_kinds", [])) if isinstance(source, dict) else set()
+                contact_active = bool(source.get("contact_active")) if isinstance(source, dict) else False
+
+                if role == "entry" and record.kind == "person":
+                    candidates.append(
+                        {
+                            "rule": "armed_away_entry_person",
+                            "severity": "suspicious",
+                            "source_id": record.source_id,
+                            "role": role,
+                            "evidence_kinds": sorted(kinds or {record.kind}),
+                            "contact_active": contact_active,
+                            "reason": "entry_person_detected_while_armed_away",
+                        }
+                    )
+                elif role == "garage" and ({"person", "vehicle"} & kinds) and contact_active:
+                    candidates.append(
+                        {
+                            "rule": "armed_away_garage_open_with_presence",
+                            "severity": "strong",
+                            "source_id": record.source_id,
+                            "role": role,
+                            "evidence_kinds": sorted(kinds),
+                            "contact_active": True,
+                            "reason": "garage_contact_active_with_person_or_vehicle_while_armed_away",
+                        }
+                    )
+                elif role == "indoor_sensitive" and record.kind in {"motion", "person"}:
+                    candidates.append(
+                        {
+                            "rule": "armed_away_indoor_sensitive_activity",
+                            "severity": "strong",
+                            "source_id": record.source_id,
+                            "role": role,
+                            "evidence_kinds": sorted(kinds or {record.kind}),
+                            "contact_active": contact_active,
+                            "reason": "indoor_sensitive_activity_while_armed_away",
+                        }
+                    )
+
+        deduped = self._dedupe_candidates(candidates)
+        self._camera_evidence_trace = {
+            "security_state": security_state,
+            "active_evidence": [item.as_dict() for item in active_evidence],
+            "source_status_counts": camera_evidence.as_dict().get("source_status_counts", {}),
+            "return_home_hint": bool(camera_evidence.return_home_hint),
+            "return_home_hint_reasons": [dict(item) for item in camera_evidence.return_home_hint_reasons],
+            "breach_candidates": list(deduped),
+        }
+        state.set_sensor_attributes(
+            "heima_security_state",
+            {
+                **(state.get_sensor_attributes("heima_security_state") or {}),
+                "camera_breach_candidates": list(deduped),
+            },
+        )
+        state.set_sensor_attributes(
+            "heima_security_reason",
+            {
+                **(state.get_sensor_attributes("heima_security_reason") or {}),
+                "camera_breach_candidates": list(deduped),
+            },
+        )
+        return deduped
 
     # ------------------------------------------------------------------
     # Mismatch detection
@@ -278,3 +367,18 @@ class SecurityDomain:
         if entity_id:
             tracked.add(str(entity_id))
         return tracked
+
+    @staticmethod
+    def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for candidate in candidates:
+            key = (
+                str(candidate.get("rule") or ""),
+                str(candidate.get("source_id") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(dict(candidate))
+        return deduped

@@ -20,6 +20,18 @@ input_boolean:
     name: "Test Heima Bathroom Motion Raw"
   test_heima_anonymous_presence_raw:
     name: "Test Heima Anonymous Presence Raw"
+  test_heima_camera_entry_person_raw:
+    name: "Test Heima Camera Entry Person Raw"
+  test_heima_camera_entry_motion_raw:
+    name: "Test Heima Camera Entry Motion Raw"
+  test_heima_front_door_contact_raw:
+    name: "Test Heima Front Door Contact Raw"
+  test_heima_camera_garage_person_raw:
+    name: "Test Heima Camera Garage Person Raw"
+  test_heima_camera_garage_vehicle_raw:
+    name: "Test Heima Camera Garage Vehicle Raw"
+  test_heima_garage_door_contact_raw:
+    name: "Test Heima Garage Door Contact Raw"
   test_heima_heater_relay_raw:
     name: "Test Heima Heater Relay Raw"
   test_heima_bathroom_fan_raw:
@@ -434,6 +446,30 @@ template:
         unique_id: "test_heima_anonymous_presence"
         device_class: occupancy
         state: "{{ is_state('input_boolean.test_heima_anonymous_presence_raw', 'on') }}"
+      - name: "test_heima_camera_entry_person"
+        unique_id: "test_heima_camera_entry_person"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_camera_entry_person_raw', 'on') }}"
+      - name: "test_heima_camera_entry_motion"
+        unique_id: "test_heima_camera_entry_motion"
+        device_class: motion
+        state: "{{ is_state('input_boolean.test_heima_camera_entry_motion_raw', 'on') }}"
+      - name: "test_heima_front_door_contact"
+        unique_id: "test_heima_front_door_contact"
+        device_class: door
+        state: "{{ is_state('input_boolean.test_heima_front_door_contact_raw', 'on') }}"
+      - name: "test_heima_camera_garage_person"
+        unique_id: "test_heima_camera_garage_person"
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.test_heima_camera_garage_person_raw', 'on') }}"
+      - name: "test_heima_camera_garage_vehicle"
+        unique_id: "test_heima_camera_garage_vehicle"
+        icon: mdi:car
+        state: "{{ is_state('input_boolean.test_heima_camera_garage_vehicle_raw', 'on') }}"
+      - name: "test_heima_garage_door_contact"
+        unique_id: "test_heima_garage_door_contact"
+        device_class: garage_door
+        state: "{{ is_state('input_boolean.test_heima_garage_door_contact_raw', 'on') }}"
     sensor:
       - name: "test_heima_people_score"
         unique_id: "test_heima_people_score"
@@ -662,6 +698,12 @@ script:
             - input_boolean.test_heima_room_living_motion_raw
             - input_boolean.test_heima_room_bathroom_motion_raw
             - input_boolean.test_heima_anonymous_presence_raw
+            - input_boolean.test_heima_camera_entry_person_raw
+            - input_boolean.test_heima_camera_entry_motion_raw
+            - input_boolean.test_heima_front_door_contact_raw
+            - input_boolean.test_heima_camera_garage_person_raw
+            - input_boolean.test_heima_camera_garage_vehicle_raw
+            - input_boolean.test_heima_garage_door_contact_raw
             - input_boolean.test_heima_heater_relay_raw
             - input_boolean.test_heima_bathroom_fan_raw
             - input_boolean.test_heima_studio_fan_raw
@@ -997,3 +1039,48 @@ script:
           entity_id: input_number.test_heima_outdoor_temp
         data:
           value: 1.0
+
+  test_heima_camera_clear:
+    alias: "Test Heima Camera Clear"
+    icon: mdi:cctv-off
+    sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id:
+            - input_boolean.test_heima_camera_entry_person_raw
+            - input_boolean.test_heima_camera_entry_motion_raw
+            - input_boolean.test_heima_front_door_contact_raw
+            - input_boolean.test_heima_camera_garage_person_raw
+            - input_boolean.test_heima_camera_garage_vehicle_raw
+            - input_boolean.test_heima_garage_door_contact_raw
+
+  test_heima_camera_entry_arrival:
+    alias: "Test Heima Camera Entry Arrival"
+    icon: mdi:door-open
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id:
+            - input_boolean.test_heima_camera_entry_person_raw
+            - input_boolean.test_heima_camera_entry_motion_raw
+            - input_boolean.test_heima_front_door_contact_raw
+
+  test_heima_camera_garage_arrival:
+    alias: "Test Heima Camera Garage Arrival"
+    icon: mdi:garage-open
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id:
+            - input_boolean.test_heima_camera_garage_vehicle_raw
+            - input_boolean.test_heima_garage_door_contact_raw
+
+  test_heima_camera_garage_person_alert:
+    alias: "Test Heima Camera Garage Person Alert"
+    icon: mdi:cctv
+    sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id:
+            - input_boolean.test_heima_camera_garage_person_raw
+            - input_boolean.test_heima_garage_door_contact_raw

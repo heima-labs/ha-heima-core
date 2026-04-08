@@ -552,6 +552,90 @@ async def test_config_entry_diagnostics_exposes_muted_security_presence_summary(
     assert summary["examples"][0]["operational_state"] == "muted"
 
 
+async def test_config_entry_diagnostics_exposes_security_camera_evidence_summary() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "security_camera_evidence": {
+                "configured_sources": [
+                    {
+                        "id": "front_door_cam",
+                        "display_name": "Front Door",
+                        "role": "entry",
+                        "status": "active",
+                        "active_kinds": ["person"],
+                        "unavailable_kinds": [],
+                        "contact_active": False,
+                        "last_seen_ts": "2026-04-07T20:10:00+00:00",
+                    },
+                    {
+                        "id": "garage_cam",
+                        "display_name": "Garage",
+                        "role": "garage",
+                        "status": "partial",
+                        "active_kinds": ["vehicle"],
+                        "unavailable_kinds": ["person"],
+                        "contact_active": True,
+                        "last_seen_ts": "2026-04-07T20:12:00+00:00",
+                    },
+                ],
+                "active_evidence": [
+                    {"source_id": "front_door_cam", "role": "entry", "kind": "person"},
+                    {"source_id": "garage_cam", "role": "garage", "kind": "vehicle"},
+                ],
+                "unavailable_sources": [
+                    {"source_id": "garage_cam", "role": "garage", "kind": "person"}
+                ],
+                "source_status_counts": {"active": 1, "partial": 1},
+            },
+            "security": {
+                "camera_evidence_trace": {
+                    "return_home_hint": True,
+                    "return_home_hint_reasons": [
+                        {
+                            "source_id": "front_door_cam",
+                            "role": "entry",
+                            "reason": "entry_person_detected",
+                            "contact_active": False,
+                        }
+                    ],
+                    "breach_candidates": [
+                        {
+                            "rule": "armed_away_entry_person",
+                            "severity": "suspicious",
+                            "source_id": "front_door_cam",
+                            "role": "entry",
+                            "evidence_kinds": ["person"],
+                            "contact_active": False,
+                            "reason": "entry_person_detected_while_armed_away",
+                        }
+                    ],
+                }
+            },
+        },
+        _state=SimpleNamespace(get_sensor=lambda key: None),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(entry_id="entry-1", title="Heima", version=1, minor_version=0, options={})
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["security_camera_evidence_summary"]
+
+    assert summary["configured_total"] == 2
+    assert summary["active_evidence_total"] == 2
+    assert summary["unavailable_total"] == 1
+    assert summary["breach_candidate_total"] == 1
+    assert summary["return_home_hint_active"] is True
+    assert summary["configured_by_role"] == {"entry": 1, "garage": 1}
+    assert summary["active_by_role"] == {"entry": 1, "garage": 1}
+    assert summary["active_by_kind"] == {"person": 1, "vehicle": 1}
+    assert summary["source_status_counts"] == {"active": 1, "partial": 1}
+    assert summary["breach_by_rule"] == {"armed_away_entry_person": 1}
+    assert summary["examples"][0]["source_id"] == "front_door_cam"
+    assert summary["breach_candidates"][0]["source_id"] == "front_door_cam"
+    assert summary["return_home_hint_reasons"][0]["reason"] == "entry_person_detected"
+
+
 async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_identity() -> None:
     coordinator = _CoordinatorStub()
     coordinator._proposal_engine = SimpleNamespace(
