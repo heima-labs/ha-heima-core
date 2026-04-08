@@ -32,6 +32,18 @@ if TYPE_CHECKING:
 class _PeopleStepsMixin:
     """Mixin for people (named + anonymous) steps."""
 
+    _DEBUG_ALIAS_MODES = {"alias_person", "synthetic"}
+    _DEBUG_SYNTHETIC_STATES = {
+        "home",
+        "away",
+        "on",
+        "off",
+        "true",
+        "false",
+        "present",
+        "absent",
+    }
+
     async def _async_bootstrap_ha_bindings(self) -> None:
         importer = getattr(super(), "_async_bootstrap_ha_bindings", None)
         if callable(importer):
@@ -135,6 +147,15 @@ class _PeopleStepsMixin:
             return self.async_show_form(
                 step_id="people_debug_aliases",
                 data_schema=self._people_debug_aliases_schema(current),
+                description_placeholders={"debug_aliases_help": self._people_debug_aliases_help()},
+            )
+
+        errors = self._validate_people_debug_aliases_payload(user_input)
+        if errors:
+            return self.async_show_form(
+                step_id="people_debug_aliases",
+                data_schema=self._people_debug_aliases_schema(user_input),
+                errors=errors,
                 description_placeholders={"debug_aliases_help": self._people_debug_aliases_help()},
             )
 
@@ -357,6 +378,41 @@ class _PeopleStepsMixin:
             contract=GROUP_PRESENCE_STRATEGY_CONTRACT,
         )
         return data
+
+    def _validate_people_debug_aliases_payload(self, payload: dict[str, Any]) -> dict[str, str]:
+        aliases = payload.get("aliases")
+        if aliases in (None, ""):
+            return {}
+        if not isinstance(aliases, dict):
+            return {"aliases": "invalid"}
+
+        known_people = self._ha_person_entity_ids()
+        for alias_slug, raw in aliases.items():
+            alias_slug = str(alias_slug or "").strip()
+            if not alias_slug or not _is_valid_slug(alias_slug):
+                return {"aliases": "invalid_slug"}
+            if alias_slug.startswith("heima_"):
+                return {"aliases": "reserved_prefix"}
+            if not isinstance(raw, dict):
+                return {"aliases": "invalid"}
+
+            mode = str(raw.get("mode") or "alias_person").strip() or "alias_person"
+            if mode not in self._DEBUG_ALIAS_MODES:
+                return {"aliases": "invalid_selection"}
+
+            if mode == "alias_person":
+                person_entity = str(raw.get("person_entity") or "").strip()
+                if not person_entity:
+                    return {"aliases": "required"}
+                if person_entity not in known_people:
+                    return {"aliases": "unknown_person"}
+                continue
+
+            synthetic_state = str(raw.get("synthetic_state") or "away").strip().lower()
+            if synthetic_state not in self._DEBUG_SYNTHETIC_STATES:
+                return {"aliases": "invalid_selection"}
+
+        return {}
 
     def _normalize_people_debug_aliases_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload)

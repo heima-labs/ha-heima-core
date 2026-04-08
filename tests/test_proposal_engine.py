@@ -840,6 +840,29 @@ async def test_proposal_engine_async_submit_proposal_updates_existing_pending_id
     assert pending[0].description == "Updated draft"
 
 
+async def test_proposal_engine_async_submit_proposal_reopens_existing_accepted_identity(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    first = _admin_authored_proposal()
+    proposal_id = await engine.async_submit_proposal(first)
+    assert await engine.async_accept_proposal(proposal_id)
+
+    second = _admin_authored_proposal()
+    second.description = "Reopened draft"
+    reopened_id = await engine.async_submit_proposal(second)
+
+    pending = engine.pending_proposals()
+    assert reopened_id == proposal_id
+    assert len(pending) == 1
+    assert pending[0].proposal_id == proposal_id
+    assert pending[0].status == "pending"
+    assert pending[0].description == "Reopened draft"
+
+
 async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

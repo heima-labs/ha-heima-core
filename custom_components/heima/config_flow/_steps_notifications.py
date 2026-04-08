@@ -50,6 +50,14 @@ class _NotificationsStepsMixin:
                 step_id="notifications", data_schema=self._notifications_schema(current)
             )
 
+        errors = self._validate_notifications_payload(user_input)
+        if errors:
+            return self.async_show_form(
+                step_id="notifications",
+                data_schema=self._notifications_schema(user_input),
+                errors=errors,
+            )
+
         user_input = self._normalize_notifications_payload(user_input)
         self._update_options({OPT_NOTIFICATIONS: user_input})
         return await self.async_step_init()
@@ -118,6 +126,22 @@ class _NotificationsStepsMixin:
         return self._with_suggested(schema, defaults_with_categories)
 
     # ---- Normalization ----
+
+    def _validate_notifications_payload(self, payload: dict[str, Any]) -> dict[str, str]:
+        recipients = _parse_multiline_mapping(payload.get("recipients"))
+        recipient_groups = _parse_multiline_mapping(payload.get("recipient_groups"))
+        route_targets = _parse_multiline_items(payload.get("route_targets"))
+
+        recipient_ids = set(recipients)
+        group_ids = set(recipient_groups)
+        for members in recipient_groups.values():
+            if any(member not in recipient_ids for member in members):
+                return {"recipient_groups": "unknown_recipient"}
+
+        if any(target not in recipient_ids and target not in group_ids for target in route_targets):
+            return {"route_targets": "unknown_target"}
+
+        return {}
 
     def _normalize_notifications_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         from ..const import EVENT_CATEGORIES_TOGGLEABLE as _ETC

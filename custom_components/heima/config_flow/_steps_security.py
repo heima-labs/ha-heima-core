@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import OPT_SECURITY
-from ._common import _entity_selector, _object_selector
+from ._common import _entity_selector, _is_valid_slug, _object_selector
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 class _SecurityStepsMixin:
     """Mixin for security step."""
+
+    _SECURITY_PRIORITIES = {"low", "normal", "high"}
 
     async def async_step_security(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         current = dict(self.options.get(OPT_SECURITY, {}))
@@ -35,6 +37,19 @@ class _SecurityStepsMixin:
                 step_id="security",
                 data_schema=self._security_schema(user_input),
                 errors={"security_state_entity": "required"},
+                description_placeholders={
+                    "camera_sources_help": self._security_camera_evidence_help()
+                },
+            )
+
+        source_errors = self._validate_camera_evidence_sources(
+            user_input.get("camera_evidence_sources")
+        )
+        if source_errors:
+            return self.async_show_form(
+                step_id="security",
+                data_schema=self._security_schema(user_input),
+                errors=source_errors,
                 description_placeholders={
                     "camera_sources_help": self._security_camera_evidence_help()
                 },
@@ -159,3 +174,49 @@ class _SecurityStepsMixin:
             item["id"] = source_id
             normalized.append(item)
         return normalized
+
+    def _validate_camera_evidence_sources(self, value: Any) -> dict[str, str]:
+        if value in (None, "", [], {}):
+            return {}
+
+        sources: list[dict[str, Any]] = []
+        if isinstance(value, list):
+            for item in value:
+                if not isinstance(item, dict):
+                    return {"camera_evidence_sources": "invalid"}
+                sources.append(dict(item))
+        elif isinstance(value, dict):
+            for key, raw in value.items():
+                if not isinstance(raw, dict):
+                    return {"camera_evidence_sources": "invalid"}
+                item = dict(raw)
+                item.setdefault("id", str(key or "").strip())
+                sources.append(item)
+        else:
+            return {"camera_evidence_sources": "invalid"}
+
+        for item in sources:
+            source_id = str(item.get("id") or "").strip()
+            if not source_id or not _is_valid_slug(source_id):
+                return {"camera_evidence_sources": "invalid_slug"}
+
+            role = str(item.get("role") or "").strip()
+            if not role:
+                return {"camera_evidence_sources": "required"}
+
+            security_priority = str(item.get("security_priority") or "").strip()
+            if security_priority and security_priority not in self._SECURITY_PRIORITIES:
+                return {"camera_evidence_sources": "invalid_selection"}
+
+            if not any(
+                str(item.get(field) or "").strip()
+                for field in (
+                    "motion_entity",
+                    "person_entity",
+                    "vehicle_entity",
+                    "contact_entity",
+                )
+            ):
+                return {"camera_evidence_sources": "required"}
+
+        return {}

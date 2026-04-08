@@ -450,6 +450,54 @@ async def test_security_step_normalizes_object_editor_camera_sources():
 
 
 @pytest.mark.asyncio
+async def test_security_step_rejects_camera_source_without_role():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": [
+                {
+                    "id": "entry_cam",
+                    "person_entity": "binary_sensor.front_cam_person",
+                }
+            ],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "security"
+    assert result["errors"]["camera_evidence_sources"] == "required"
+
+
+@pytest.mark.asyncio
+async def test_security_step_rejects_camera_source_without_any_evidence_entity():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": [
+                {
+                    "id": "entry_cam",
+                    "role": "entry",
+                }
+            ],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "security"
+    assert result["errors"]["camera_evidence_sources"] == "required"
+
+
+@pytest.mark.asyncio
 async def test_security_step_shows_camera_evidence_help_text():
     flow = _flow()
 
@@ -466,7 +514,7 @@ async def test_security_step_shows_camera_evidence_help_text():
 
 @pytest.mark.asyncio
 async def test_people_debug_aliases_step_persists_alias_mapping():
-    flow = _flow()
+    flow = _flow(states=[_state("person.alex", "Alex")])
 
     result = await flow.async_step_people_debug_aliases(
         {
@@ -502,6 +550,50 @@ async def test_people_debug_aliases_step_persists_alias_mapping():
             },
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_people_debug_aliases_step_rejects_unknown_person_entity():
+    flow = _flow(states=[_state("person.stefano", "Stefano")])
+
+    result = await flow.async_step_people_debug_aliases(
+        {
+            "enabled": True,
+            "aliases": {
+                "demo_alex": {
+                    "mode": "alias_person",
+                    "person_entity": "person.missing",
+                    "display_name": "Demo Alex",
+                }
+            },
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "people_debug_aliases"
+    assert result["errors"]["aliases"] == "unknown_person"
+
+
+@pytest.mark.asyncio
+async def test_people_debug_aliases_step_rejects_invalid_mode():
+    flow = _flow(states=[_state("person.stefano", "Stefano")])
+
+    result = await flow.async_step_people_debug_aliases(
+        {
+            "enabled": True,
+            "aliases": {
+                "demo_alex": {
+                    "mode": "bad_mode",
+                    "person_entity": "person.stefano",
+                    "display_name": "Demo Alex",
+                }
+            },
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "people_debug_aliases"
+    assert result["errors"]["aliases"] == "invalid_selection"
 
 
 @pytest.mark.asyncio
@@ -603,6 +695,40 @@ async def test_lighting_room_edit_form_exposes_room_lights_inventory(monkeypatch
     assert placeholders["area_label"] == "studio"
     assert placeholders["inventory_entity_total"] == "3"
     assert placeholders["suggested_lighting"] == "light.studio_main, light.studio_spot"
+
+
+@pytest.mark.asyncio
+async def test_notifications_step_rejects_group_members_not_in_recipients():
+    flow = _flow()
+
+    result = await flow.async_step_notifications(
+        {
+            "recipients": {"mobile_alex": "notify.mobile_app_alex"},
+            "recipient_groups": {"family": ["mobile_alex", "mobile_laura"]},
+            "route_targets": ["family"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notifications"
+    assert result["errors"]["recipient_groups"] == "unknown_recipient"
+
+
+@pytest.mark.asyncio
+async def test_notifications_step_rejects_unknown_route_target():
+    flow = _flow()
+
+    result = await flow.async_step_notifications(
+        {
+            "recipients": {"mobile_alex": "notify.mobile_app_alex"},
+            "recipient_groups": {"family": ["mobile_alex"]},
+            "route_targets": ["missing_target"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notifications"
+    assert result["errors"]["route_targets"] == "unknown_target"
 
 
 @pytest.mark.asyncio
@@ -2595,6 +2721,69 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
         pending_proposals=lambda: [],
         async_submit_proposal=AsyncMock(),
         proposal_by_identity_key=lambda identity_key: None,
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=proposal_engine,
+        learning_plugin_registry=create_builtin_learning_plugin_registry(
+            enabled_families={"composite_room_assist"}
+        ),
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert proposal_engine.async_submit_proposal.await_count == 0
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["errors"]["base"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pending_identity_even_if_history_lookup_is_accepted():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    pending_proposal = ReactionProposal(
+        proposal_id="proposal-pending",
+        analyzer_id="AdminAuthoredRoomDarknessLightingTemplate",
+        reaction_type="room_darkness_lighting_assist",
+        description="studio pending darkness assist",
+        confidence=1.0,
+        origin="admin_authored",
+        identity_key="room_darkness_lighting_assist|room=studio|primary=room_lux",
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingAssistReaction",
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
+        },
+    )
+    historical = SimpleNamespace(status="accepted")
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [pending_proposal],
+        async_submit_proposal=AsyncMock(),
+        proposal_by_identity_key=lambda identity_key: historical,
         async_accept_proposal=AsyncMock(),
         async_reject_proposal=AsyncMock(),
     )

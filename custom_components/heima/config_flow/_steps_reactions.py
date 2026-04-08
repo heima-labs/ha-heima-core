@@ -37,9 +37,11 @@ class _ReactionsStepsMixin:
         if not identity_key:
             return False
 
-        existing = proposal_engine.proposal_by_identity_key(identity_key)
-        if existing is not None and str(getattr(existing, "status", "") or "").strip() == "pending":
-            return True
+        pending_fn = getattr(proposal_engine, "pending_proposals", None)
+        pending = pending_fn() if callable(pending_fn) else []
+        for current in list(pending or []):
+            if str(getattr(current, "identity_key", "") or "").strip() == identity_key:
+                return True
 
         configured = dict(self._reactions_options().get("configured", {}))
         for raw in configured.values():
