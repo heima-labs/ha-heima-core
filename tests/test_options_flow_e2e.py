@@ -575,6 +575,131 @@ async def test_lighting_room_edit_form_exposes_room_lights_inventory(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_lighting_rooms_edit_redirects_to_zones_when_no_rooms():
+    flow = _flow({"rooms": []})
+
+    result = await flow.async_step_lighting_rooms_edit()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "lighting_zones_menu"
+
+
+@pytest.mark.asyncio
+async def test_lighting_room_edit_form_rejects_unknown_room():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ]
+        }
+    )
+    flow._editing_lighting_room_id = "studio"
+
+    result = await flow.async_step_lighting_rooms_edit_form(
+        {
+            "room_id": "living",
+            "enable_manual_hold": True,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["room_id"] == "unknown_room"
+
+
+@pytest.mark.asyncio
+async def test_lighting_zones_add_rejects_duplicate_zone_id():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ],
+            "lighting_zones": [
+                {"zone_id": "living_zone", "display_name": "Living Zone", "rooms": ["living"]}
+            ],
+        }
+    )
+
+    result = await flow.async_step_lighting_zones_add(
+        {"zone_id": "living_zone", "display_name": "Again", "rooms": ["living"]}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["zone_id"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_lighting_zones_add_rejects_unknown_rooms():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ]
+        }
+    )
+
+    result = await flow.async_step_lighting_zones_add(
+        {"zone_id": "living_zone", "display_name": "Living Zone", "rooms": ["missing"]}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["rooms"] == "unknown_room"
+
+
+@pytest.mark.asyncio
+async def test_lighting_zone_remove_confirm_cancel_keeps_zone():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ],
+            "lighting_zones": [
+                {"zone_id": "living_zone", "display_name": "Living Zone", "rooms": ["living"]}
+            ],
+        }
+    )
+
+    await flow.async_step_lighting_zones_remove({"zone": "living_zone"})
+    cancelled = await flow.async_step_lighting_zones_remove_confirm({"confirm": False})
+
+    assert cancelled["type"] == "menu"
+    assert flow.options["lighting_zones"] == [
+        {"zone_id": "living_zone", "display_name": "Living Zone", "rooms": ["living"]}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
     flow = _flow()
 
