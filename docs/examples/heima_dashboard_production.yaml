@@ -8,6 +8,7 @@
 # - polished day-to-day operational view
 # - low-noise summary of Heima decisions
 # - room-centric reading instead of runtime-internals-first
+# - generic example, not a test-house-specific dashboard
 
 title: Heima
 path: heima
@@ -21,9 +22,10 @@ sections:
       - type: markdown
         content: |
           ## Heima
-          Operational dashboard for everyday use.
+          Daily operations view for Heima.
 
-          Replace placeholders such as `stefano`, `living_room`, `living_zone`, `studio`, and the sample light entities with your real configuration.
+          Replace placeholders such as `alex`, `living_room`, `living_zone`, `study`, `study_zone`,
+          `light.living_main`, and `light.study_main` with your real configuration.
 
       - type: tile
         entity: sensor.heima_house_state
@@ -57,10 +59,52 @@ sections:
         title: People
         show_header_toggle: false
         entities:
-          - entity: binary_sensor.heima_person_stefano_home
-          - entity: sensor.heima_person_stefano_source
+          - entity: binary_sensor.heima_person_alex_home
+          - entity: sensor.heima_person_alex_source
           - entity: binary_sensor.heima_anonymous_presence
           - entity: sensor.heima_anonymous_presence_source
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Monitoring
+          Daily checks should answer four questions quickly:
+          is the runtime healthy, is learning progressing, are reactions active, and is security context sensible.
+
+      - type: entities
+        title: Runtime Health
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_last_event
+          - entity: sensor.heima_event_stats
+          - entity: sensor.heima_event_store
+          - entity: sensor.heima_house_state_path
+          - entity: sensor.heima_security_reason
+
+      - type: entities
+        title: Learning And Proposals
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_reaction_proposals
+          - entity: sensor.heima_reactions_active
+          - entity: sensor.heima_house_state_pending_candidate
+          - entity: sensor.heima_house_state_pending_remaining_s
+
+      - type: history-graph
+        title: Operational Trend
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_reaction_proposals
+          - entity: binary_sensor.heima_anyone_home
+
+      - type: markdown
+        content: |
+          Use the debug dashboard or diagnostics scripts for deeper inspection:
+          `engine`, `learning`, `reactions`, `security_presence`, `security_camera_evidence`.
 
   - type: grid
     cards:
@@ -76,25 +120,25 @@ sections:
           - entity: binary_sensor.heima_occupancy_living_room
           - entity: binary_sensor.heima_lighting_hold_living_room
           - entity: select.heima_lighting_intent_living_zone
-          - entity: light.soggiorno
-          - entity: light.divano
+          - entity: light.living_main
+          - entity: light.living_accent
 
       - type: entities
-        title: Studio
+        title: Study
         show_header_toggle: false
         entities:
-          - entity: binary_sensor.heima_occupancy_studio
-          - entity: binary_sensor.heima_lighting_hold_studio
-          - entity: select.heima_lighting_intent_work_zone
-          - entity: light.finestra_studio
-          - entity: light.porta_studio
+          - entity: binary_sensor.heima_occupancy_study
+          - entity: binary_sensor.heima_lighting_hold_study
+          - entity: select.heima_lighting_intent_study_zone
+          - entity: light.study_main
+          - entity: light.study_accent
 
       - type: entities
         title: Zone Presence
         show_header_toggle: false
         entities:
           - entity: binary_sensor.heima_occ_zone_living_zone
-          - entity: binary_sensor.heima_occ_zone_work_zone
+          - entity: binary_sensor.heima_occ_zone_study_zone
 
       - type: history-graph
         title: Presence Timeline
@@ -104,7 +148,7 @@ sections:
           - entity: sensor.heima_house_state
           - entity: binary_sensor.heima_anyone_home
           - entity: binary_sensor.heima_occupancy_living_room
-          - entity: binary_sensor.heima_occupancy_studio
+          - entity: binary_sensor.heima_occupancy_study
 
   - type: grid
     cards:
@@ -141,9 +185,9 @@ sections:
         show_header_toggle: false
         entities:
           - entity: select.heima_lighting_intent_living_zone
-          - entity: select.heima_lighting_intent_work_zone
+          - entity: select.heima_lighting_intent_study_zone
           - entity: binary_sensor.heima_lighting_hold_living_room
-          - entity: binary_sensor.heima_lighting_hold_studio
+          - entity: binary_sensor.heima_lighting_hold_study
 
       - type: entities
         title: System Health
@@ -158,10 +202,10 @@ sections:
       - type: markdown
         content: |
           ## Security Presence
-          Surface compatta per `security_presence_simulation`.
+          Compact surface for `security_presence_simulation`.
 
-          Usa questi controlli per mutare o riattivare tutta la family `vacation_presence_simulation`
-          senza cercare gli id interni delle reaction.
+          Use these controls to mute or re-enable the full
+          `vacation_presence_simulation` family without hunting for reaction ids.
 
       - type: entities
         title: Security Presence Context
@@ -211,6 +255,37 @@ sections:
           For tonight plan preview, selected/excluded sources, and blocked-state detail,
           use the debug dashboard or:
           `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_presence`
+
+  - type: grid
+    cards:
+      - type: markdown
+        content: |
+          ## Security Camera Evidence
+          Daily read for entry and garage camera evidence.
+
+          The production dashboard keeps this bounded on purpose.
+          For source status, return-home hints, and breach candidates, use:
+          `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_camera_evidence`
+
+      - type: entities
+        title: Camera Evidence Context
+        show_header_toggle: false
+        entities:
+          - entity: sensor.heima_security_state
+          - entity: sensor.heima_security_reason
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_people_count
+          - entity: sensor.heima_last_event
+
+      - type: history-graph
+        title: Security Timeline
+        hours_to_show: 12
+        refresh_interval: 60
+        entities:
+          - entity: sensor.heima_security_state
+          - entity: binary_sensor.heima_anyone_home
+          - entity: sensor.heima_house_state
+          - entity: sensor.heima_last_event
 
   - type: grid
     cards:
