@@ -91,6 +91,36 @@ if [[ -n "$HA_TOKEN" ]]; then
     --ha-token "$HA_TOKEN" \
     --section learning
 
+  echo "Waiting for camera evidence entities to be available..."
+  camera_entities=(
+    "binary_sensor.test_heima_camera_entry_motion"
+    "binary_sensor.test_heima_camera_entry_person"
+    "binary_sensor.test_heima_front_door_contact"
+    "binary_sensor.test_heima_camera_garage_person"
+    "binary_sensor.test_heima_camera_garage_vehicle"
+    "binary_sensor.test_heima_garage_door_contact"
+  )
+  for entity_id in "${camera_entities[@]}"; do
+    deadline=$((SECONDS + 180))
+    until curl -fsS \
+      -H "Authorization: Bearer ${HA_TOKEN}" \
+      "$HA_URL/api/states/${entity_id}" >/dev/null 2>&1; do
+      if (( SECONDS >= deadline )); then
+        echo "FAIL: ${entity_id} did not become ready after restore" >&2
+        exit 1
+      fi
+      sleep 2
+    done
+  done
+
+  echo "Triggering Heima recompute after the lab baseline is ready..."
+  curl -fsS \
+    -X POST \
+    -H "Authorization: Bearer ${HA_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"command":"recompute_now"}' \
+    "$HA_URL/api/services/heima/command" >/dev/null
+
   echo "Waiting for restored learning baseline to load into diagnostics..."
   deadline=$((SECONDS + 180))
   until python3 - "$HA_URL" "$HA_TOKEN" <<'PY'
