@@ -169,6 +169,8 @@
           "area_id": "Area HA",
           "occupancy_sources": "Sorgenti occupancy",
           "learning_sources": "Sorgenti learning",
+          "use_suggested_occupancy_sources": "Usa sorgenti occupancy suggerite",
+          "use_suggested_learning_sources": "Usa sorgenti learning suggerite",
           "logic": "Logica",
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",

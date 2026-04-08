@@ -622,6 +622,69 @@ async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monk
     assert placeholders["suggested_learning"] == "sensor.studio_lux"
     assert placeholders["suggested_lighting"] == "light.studio_main"
     assert placeholders["configured_mismatch"] == "—"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "use_suggested_occupancy_sources" in schema_keys
+    assert "use_suggested_learning_sources" in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_rooms_edit_form_can_apply_suggested_inventory_bindings(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_mode": "derived",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                    "on_dwell_s": 5,
+                    "off_dwell_s": 120,
+                    "max_on_s": None,
+                }
+            ]
+        }
+    )
+    flow._editing_room_id = "studio"
+    entity_registry = SimpleNamespace(
+        entities={
+            "e1": SimpleNamespace(entity_id="binary_sensor.studio_motion", area_id="studio", device_id=None),
+            "e2": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
+        }
+    )
+    device_registry = SimpleNamespace(devices={})
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    result = await flow.async_step_rooms_edit_form(
+        {
+            "room_id": "studio",
+            "display_name": "Studio",
+            "area_id": "studio",
+            "occupancy_mode": "derived",
+            "occupancy_sources": [],
+            "learning_sources": [],
+            "use_suggested_occupancy_sources": True,
+            "use_suggested_learning_sources": True,
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["rooms"][0]
+    assert stored["occupancy_sources"] == ["binary_sensor.studio_motion"]
+    assert stored["learning_sources"] == ["sensor.studio_lux"]
 
 
 @pytest.mark.asyncio

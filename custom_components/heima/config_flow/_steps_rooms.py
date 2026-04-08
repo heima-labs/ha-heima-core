@@ -104,16 +104,18 @@ class _RoomsStepsMixin:
             existing = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
             return self.async_show_form(
                 step_id="rooms_edit_form",
-                data_schema=self._room_schema(existing),
+                data_schema=self._room_schema(existing, include_suggestion_actions=True),
                 description_placeholders=self._room_inventory_placeholders(existing),
             )
 
+        raw_input = dict(user_input)
         user_input = self._normalize_room_payload(user_input)
+        user_input = self._apply_room_inventory_suggestions(user_input)
         errors = self._validate_room_payload(user_input, is_edit=True)
         if errors:
             return self.async_show_form(
                 step_id="rooms_edit_form",
-                data_schema=self._room_schema(user_input),
+                data_schema=self._room_schema(raw_input, include_suggestion_actions=True),
                 errors=errors,
                 description_placeholders=self._room_inventory_placeholders(user_input),
             )
@@ -123,7 +125,7 @@ class _RoomsStepsMixin:
         if not user_input.get("area_id"):
             return self.async_show_form(
                 step_id="rooms_edit_form",
-                data_schema=self._room_schema(user_input),
+                data_schema=self._room_schema(raw_input, include_suggestion_actions=True),
                 errors={"area_id": "area_sync_failed"},
                 description_placeholders=self._room_inventory_placeholders(user_input),
             )
@@ -239,34 +241,41 @@ class _RoomsStepsMixin:
 
     # ---- Schema ----
 
-    def _room_schema(self, defaults: dict[str, Any] | None = None) -> vol.Schema:
+    def _room_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_suggestion_actions: bool = False,
+    ) -> vol.Schema:
         defaults = dict(defaults or {})
         defaults["occupancy_sources"] = room_occupancy_source_entity_ids(defaults)
         defaults["learning_sources"] = room_learning_source_entity_ids(defaults)
         defaults["source_weights"] = _format_source_weights(defaults.get("source_weights"))
         from homeassistant.helpers.selector import selector as _sel
-        schema = vol.Schema(
-            {
-                vol.Required("room_id", default=defaults.get("room_id", "")): cv.string,
-                vol.Optional("display_name", default=defaults.get("display_name", "")): cv.string,
-                vol.Optional("area_id"): _sel({"area": {}}),
-                vol.Optional(
-                    "occupancy_mode", default=defaults.get("occupancy_mode", "derived")
-                ): vol.In(ROOM_OCCUPANCY_MODES),
-                vol.Optional("occupancy_sources"): _entity_selector(
-                    ["binary_sensor", "sensor"], multiple=True
-                ),
-                vol.Optional("learning_sources"): _entity_selector(
-                    ["binary_sensor", "sensor", "switch"], multiple=True
-                ),
-                vol.Optional("logic", default=defaults.get("logic", "any_of")): vol.In(ROOM_LOGIC),
-                vol.Optional("weight_threshold"): vol.Coerce(float),
-                vol.Optional("source_weights"): _multiline_text_selector(),
-                vol.Optional("on_dwell_s", default=defaults.get("on_dwell_s", 5)): cv.positive_int,
-                vol.Optional("off_dwell_s", default=defaults.get("off_dwell_s", 120)): cv.positive_int,
-                vol.Optional("max_on_s", default=defaults.get("max_on_s")): vol.Any(None, cv.positive_int),
-            }
-        )
+        schema_dict: dict[Any, Any] = {
+            vol.Required("room_id", default=defaults.get("room_id", "")): cv.string,
+            vol.Optional("display_name", default=defaults.get("display_name", "")): cv.string,
+            vol.Optional("area_id"): _sel({"area": {}}),
+            vol.Optional(
+                "occupancy_mode", default=defaults.get("occupancy_mode", "derived")
+            ): vol.In(ROOM_OCCUPANCY_MODES),
+            vol.Optional("occupancy_sources"): _entity_selector(
+                ["binary_sensor", "sensor"], multiple=True
+            ),
+            vol.Optional("learning_sources"): _entity_selector(
+                ["binary_sensor", "sensor", "switch"], multiple=True
+            ),
+            vol.Optional("logic", default=defaults.get("logic", "any_of")): vol.In(ROOM_LOGIC),
+            vol.Optional("weight_threshold"): vol.Coerce(float),
+            vol.Optional("source_weights"): _multiline_text_selector(),
+            vol.Optional("on_dwell_s", default=defaults.get("on_dwell_s", 5)): cv.positive_int,
+            vol.Optional("off_dwell_s", default=defaults.get("off_dwell_s", 120)): cv.positive_int,
+            vol.Optional("max_on_s", default=defaults.get("max_on_s")): vol.Any(None, cv.positive_int),
+        }
+        if include_suggestion_actions:
+            schema_dict[vol.Optional("use_suggested_occupancy_sources", default=False)] = bool
+            schema_dict[vol.Optional("use_suggested_learning_sources", default=False)] = bool
+        schema = vol.Schema(schema_dict)
         return self._with_suggested(schema, defaults)
 
     # ---- Validator ----
@@ -336,6 +345,10 @@ class _RoomsStepsMixin:
             data["occupancy_sources"] = self._normalize_multi_value(data.get("occupancy_sources"))
         if "learning_sources" in data:
             data["learning_sources"] = self._normalize_multi_value(data.get("learning_sources"))
+        if "use_suggested_occupancy_sources" in payload:
+            data["use_suggested_occupancy_sources"] = bool(payload.get("use_suggested_occupancy_sources"))
+        if "use_suggested_learning_sources" in payload:
+            data["use_suggested_learning_sources"] = bool(payload.get("use_suggested_learning_sources"))
         data = normalize_room_signal_config(data)
         occupancy_mode = str(data.get("occupancy_mode", "") or "").strip()
         if occupancy_mode not in ROOM_OCCUPANCY_MODES:
@@ -391,6 +404,18 @@ class _RoomsStepsMixin:
     def _format_inventory_list(values: Any) -> str:
         items = [str(item) for item in list(values or []) if str(item)]
         return ", ".join(items) if items else "—"
+
+    def _apply_room_inventory_suggestions(self, payload: dict[str, Any]) -> dict[str, Any]:
+        data = dict(payload)
+        inventory = build_room_inventory_summary(self.hass, [data])
+        room_items = list(inventory.get("rooms") or [])
+        item = room_items[0] if room_items else {}
+
+        if bool(data.pop("use_suggested_occupancy_sources", False)):
+            data["occupancy_sources"] = list(item.get("suggested_occupancy_sources") or [])
+        if bool(data.pop("use_suggested_learning_sources", False)):
+            data["learning_sources"] = list(item.get("suggested_learning_sources") or [])
+        return data
 
     async def _async_ensure_room_area(
         self, payload: dict[str, Any], existing_room: dict[str, Any] | None = None
