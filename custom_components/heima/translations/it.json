@@ -234,6 +234,7 @@
       },
       "lighting_rooms_edit_form": {
         "title": "Scene Stanza",
+        "description": "Area HA collegata: {area_label}\nEntity HA trovate nella stanza: {inventory_entity_total}\nLuci HA rilevate nella stanza: {suggested_lighting}",
         "data": {
           "room_id": "Room id",
           "scene_evening": "Scena sera",

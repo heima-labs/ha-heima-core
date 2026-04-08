@@ -8,6 +8,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import OPT_LIGHTING_ROOMS, OPT_LIGHTING_ZONES
+from ..room_inventory import build_room_inventory_summary
 from ._common import (
     _entity_selector,
     _is_valid_slug,
@@ -54,6 +55,7 @@ class _LightingStepsMixin:
             return self.async_show_form(
                 step_id="lighting_rooms_edit_form",
                 data_schema=self._lighting_room_schema(existing),
+                description_placeholders=self._lighting_room_inventory_placeholders(existing),
             )
 
         user_input = self._normalize_lighting_room_payload(user_input)
@@ -63,6 +65,7 @@ class _LightingStepsMixin:
                 step_id="lighting_rooms_edit_form",
                 data_schema=self._lighting_room_schema(user_input),
                 errors=errors,
+                description_placeholders=self._lighting_room_inventory_placeholders(user_input),
             )
 
         rooms = self._lighting_rooms()
@@ -123,6 +126,22 @@ class _LightingStepsMixin:
                 data.pop(key, None)
         data["enable_manual_hold"] = bool(data.get("enable_manual_hold", True))
         return data
+
+    def _lighting_room_inventory_placeholders(self, lighting_room: dict[str, Any]) -> dict[str, str]:
+        room_id = str(lighting_room.get("room_id") or "").strip()
+        room_cfg = self._find_by_key(self._rooms(), "room_id", room_id) or {"room_id": room_id}
+        try:
+            summary = build_room_inventory_summary(self.hass, [room_cfg])
+            item = list(summary.get("rooms") or [{}])[0]
+        except Exception:
+            item = {}
+        area_label = str(item.get("area_id") or "—")
+        lights = [str(v) for v in list(item.get("suggested_lighting_entities") or []) if str(v)]
+        return {
+            "area_label": area_label,
+            "suggested_lighting": ", ".join(lights) if lights else "—",
+            "inventory_entity_total": str(int(item.get("inventory_entity_total") or 0)),
+        }
 
     def _remove_lighting_room_mapping(self, room_id: str) -> None:
         rooms = [r for r in self._lighting_rooms() if r.get("room_id") != room_id]

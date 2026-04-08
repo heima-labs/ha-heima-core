@@ -234,6 +234,7 @@
       },
       "lighting_rooms_edit_form": {
         "title": "Room Scenes",
+        "description": "Linked HA area: {area_label}\nHA entities found in room: {inventory_entity_total}\nHA lights found in room: {suggested_lighting}",
         "data": {
           "room_id": "Room id",
           "scene_evening": "Evening scene",

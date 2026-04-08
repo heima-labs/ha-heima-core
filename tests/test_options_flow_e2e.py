@@ -521,6 +521,56 @@ async def test_lighting_room_edit_flow_can_clear_scenes_and_persist_on_save():
 
 
 @pytest.mark.asyncio
+async def test_lighting_room_edit_form_exposes_room_lights_inventory(monkeypatch):
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "occupancy_mode": "none",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                    "logic": "any_of",
+                }
+            ],
+            "lighting_rooms": [
+                {
+                    "room_id": "studio",
+                    "enable_manual_hold": True,
+                }
+            ],
+        }
+    )
+    flow._editing_lighting_room_id = "studio"
+    entity_registry = SimpleNamespace(
+        entities={
+            "e1": SimpleNamespace(entity_id="light.studio_main", area_id="studio", device_id=None),
+            "e2": SimpleNamespace(entity_id="light.studio_spot", area_id="", device_id="device-1"),
+            "e3": SimpleNamespace(entity_id="sensor.studio_lux", area_id="studio", device_id=None),
+        }
+    )
+    device_registry = SimpleNamespace(devices={"device-1": SimpleNamespace(area_id="studio")})
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    result = await flow.async_step_lighting_rooms_edit_form()
+
+    assert result["type"] == "form"
+    placeholders = result["description_placeholders"]
+    assert placeholders["area_label"] == "studio"
+    assert placeholders["inventory_entity_total"] == "3"
+    assert placeholders["suggested_lighting"] == "light.studio_main, light.studio_spot"
+
+
+@pytest.mark.asyncio
 async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
     flow = _flow()
 
