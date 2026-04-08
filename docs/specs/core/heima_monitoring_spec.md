@@ -324,6 +324,19 @@ Acceptance:
 
 - repeated audits can be compared over time without reading full diagnostics dumps
 
+### Ops-A6 Review Packaging
+
+Deliver:
+
+- a bounded review package for maintenance sessions
+- one operator-facing command/output shape that can be pasted into notes or issue threads
+- explicit red-flag and improvement summaries derived from the longitudinal snapshots
+
+Acceptance:
+
+- a weekly or monthly review can be produced without manually stitching together multiple raw outputs
+- the review format highlights health regressions, learning stagnation, and runtime-value gains/losses
+
 ## First Implementation Slice
 
 The first monitoring slice should be:
@@ -352,3 +365,113 @@ The first monitoring implementation should avoid:
 - inventing a separate parallel status model
 - duplicating diagnostics logic into dashboards
 - creating a custom frontend before the summary contract is stable
+
+## Ops-A4+ Plan
+
+The post-v1 monitoring work should continue in three bounded slices.
+
+### Ops-A4 Rich Audit Script
+
+Purpose:
+
+- make `ops_audit.py` strong enough for periodic maintenance use, not just ad-hoc spot checks
+
+Recommended deliverables:
+
+- severity-classified warnings:
+  - `info`
+  - `warning`
+  - `critical`
+- family-specific audit lines for:
+  - `security_presence_simulation`
+  - `security_camera_evidence`
+  - `heating`
+- compact proposal examples:
+  - top pending
+  - stale pending
+  - highest-confidence
+- reaction-value summary:
+  - configured vs muted vs blocked
+  - learned-origin configured reactions
+- explicit audit verdict:
+  - `healthy`
+  - `attention_needed`
+  - `degraded`
+
+Non-goals:
+
+- storing historical snapshots
+- exporting to external systems
+
+### Ops-A5 Longitudinal Monitoring
+
+Purpose:
+
+- allow repeated reviews to be compared over time without diffing raw diagnostics by hand
+
+Recommended deliverables:
+
+- stable JSON snapshot shape for:
+  - current health metrics
+  - learning metrics
+  - runtime-value metrics
+- deterministic file naming for snapshots, for example by date or timestamp
+- a lightweight compare mode that reports:
+  - newly active families
+  - families that became quiet
+  - pending proposal growth
+  - blocked reaction growth
+  - config-issue regressions
+
+Recommended storage shape:
+
+- local file snapshots only
+- no external telemetry dependency
+- no long-term database requirement in v1.x
+
+Non-goals:
+
+- high-resolution timeseries
+- generic metrics backend integration
+
+### Ops-A6 Review Packaging
+
+Purpose:
+
+- turn the longitudinal outputs into a bounded operator review artifact
+
+Recommended deliverables:
+
+- `weekly_review` or similar command mode
+- human-readable summary blocks:
+  - healthy signals
+  - red flags
+  - top pending proposals
+  - configured runtime gains
+  - feature families needing investigation
+- compact copy-pasteable output for:
+  - maintenance notes
+  - issue comments
+  - branch review summaries
+
+Non-goals:
+
+- PDF/report generation
+- external BI dashboards
+
+## Recommended Sequence After Ops-A3
+
+1. `Ops-A4`
+   - strengthen `ops_audit.py`
+   - add explicit verdict + severity model
+2. `Ops-A5`
+   - add snapshot/export shape
+   - add compare mode
+3. `Ops-A6`
+   - add bounded review packaging on top of the stable snapshot model
+
+This ordering is preferred because:
+
+- `Ops-A4` improves immediate operator value with low risk
+- `Ops-A5` defines the durable data shape needed for meaningful comparisons
+- `Ops-A6` should package a review only after the snapshot/compare contract is stable
