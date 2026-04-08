@@ -38,17 +38,17 @@ docker compose up -d
 
 Endpoints:
 - Home Assistant: `http://localhost:8823`
-- MQTT broker: `localhost:1885`
+- MQTT broker: `localhost:1883`
 
 Notes:
 - `custom_components/heima` from this repo is mounted read-only into `/config/custom_components`.
 - First boot requires normal HA onboarding (create user, etc.).
 - Test dashboard is preconfigured in YAML mode and appears in sidebar as `Heima Test Lab`.
 - Lovelace uses the forward-compatible format (`resource_mode: yaml`, no legacy top-level `mode: yaml`).
-- MQTT broker connection must be added from UI:
-  - `Settings -> Devices & Services -> Add Integration -> MQTT`
-  - Broker: `mosquitto`
+- MQTT broker is available in the docker stack:
+  - Host: `mosquitto-test` from inside Home Assistant
   - Port: `1883`
+- The MQTT integration itself must still be configured as a Home Assistant config entry.
 
 ## Prerequisites
 

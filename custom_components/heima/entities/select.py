@@ -44,6 +44,7 @@ class HeimaGenericSelect(HeimaEntity, SelectEntity):
         self._attr_unique_id = f"{entry.entry_id}_{normalized_key}"
         self._attr_suggested_object_id = normalized_key
         self._attr_options = options
+        self.entity_id = f"select.{normalized_key}"
 
     @property
     def current_option(self) -> str | None:

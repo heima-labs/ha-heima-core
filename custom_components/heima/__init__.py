@@ -6,10 +6,12 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
+from .entities.registry import build_registry
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
 
+    await _async_cleanup_stale_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
@@ -77,3 +80,60 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator: HeimaCoordinator = data["coordinator"]
             await coordinator.async_shutdown()
     return unload_ok
+
+
+async def _async_cleanup_stale_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove stale Heima canonical entities left behind by structural option changes."""
+    registry = er.async_get(hass)
+    expected = _expected_entity_index(entry)
+    stale_entity_ids: list[str] = []
+    rename_pairs: list[tuple[str, str]] = []
+
+    for reg_entry in registry.entities.values():
+        config_entry_ids = reg_entry.config_entry_id or []
+        if isinstance(config_entry_ids, str):
+            config_entry_ids = [config_entry_ids]
+        if entry.entry_id not in set(config_entry_ids):
+            continue
+        unique_id = str(reg_entry.unique_id or "")
+        if not unique_id.startswith(f"{entry.entry_id}_heima_"):
+            continue
+        if ".heima_" not in reg_entry.entity_id:
+            continue
+        expected_entity_id = expected.get(unique_id)
+        if expected_entity_id is None:
+            stale_entity_ids.append(reg_entry.entity_id)
+        elif reg_entry.entity_id != expected_entity_id:
+            rename_pairs.append((reg_entry.entity_id, expected_entity_id))
+
+    for entity_id in stale_entity_ids:
+        _LOGGER.debug("Removing stale Heima entity from registry: %s", entity_id)
+        registry.async_remove(entity_id)
+
+    for current_entity_id, expected_entity_id in rename_pairs:
+        _LOGGER.debug(
+            "Renaming Heima entity in registry: %s -> %s",
+            current_entity_id,
+            expected_entity_id,
+        )
+        registry.async_update_entity(current_entity_id, new_entity_id=expected_entity_id)
+
+
+def _expected_entity_index(entry: ConfigEntry) -> dict[str, str]:
+    """Return expected canonical entity ids keyed by unique_id for the current entry."""
+    registry = build_registry(entry)
+    expected: dict[str, str] = {}
+
+    for desc in registry.sensors:
+        key = desc.key if desc.key.startswith("heima_") else f"heima_{desc.key}"
+        expected[f"{entry.entry_id}_{key}"] = f"sensor.{key}"
+
+    for desc in registry.binary_sensors:
+        key = desc.key if desc.key.startswith("heima_") else f"heima_{desc.key}"
+        expected[f"{entry.entry_id}_{key}"] = f"binary_sensor.{key}"
+
+    for desc in registry.selects:
+        key = desc.key if desc.key.startswith("heima_") else f"heima_{desc.key}"
+        expected[f"{entry.entry_id}_{key}"] = f"select.{key}"
+
+    return expected

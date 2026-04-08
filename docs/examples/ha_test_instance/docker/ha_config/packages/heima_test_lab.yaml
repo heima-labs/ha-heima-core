@@ -59,7 +59,7 @@ light:
         unique_id: test_heima_living_main
         value_template: "{{ is_state('input_boolean.test_heima_light_living_main_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_living_main_brightness') | int(180) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_living_main_color_temp') | int(3000) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_living_main_color_temp') | float(3000))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -79,13 +79,22 @@ light:
           target:
             entity_id: input_number.test_heima_light_living_main_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(333))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_living_main_color_temp') | float(3000) }}
+              {% endif %}
       test_heima_living_spot:
         friendly_name: "Test Heima Living Spot"
         unique_id: test_heima_living_spot
         value_template: "{{ is_state('input_boolean.test_heima_light_living_spot_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_living_spot_brightness') | int(96) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_living_spot_color_temp') | int(3200) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_living_spot_color_temp') | float(3200))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -105,13 +114,22 @@ light:
           target:
             entity_id: input_number.test_heima_light_living_spot_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(312))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_living_spot_color_temp') | float(3200) }}
+              {% endif %}
       test_heima_living_floor:
         friendly_name: "Test Heima Living Floor"
         unique_id: test_heima_living_floor
         value_template: "{{ is_state('input_boolean.test_heima_light_living_floor_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_living_floor_brightness') | int(64) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_living_floor_color_temp') | int(2700) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_living_floor_color_temp') | float(2700))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -131,13 +149,22 @@ light:
           target:
             entity_id: input_number.test_heima_light_living_floor_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(370))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_living_floor_color_temp') | float(2700) }}
+              {% endif %}
       test_heima_studio_main:
         friendly_name: "Test Heima Studio Main"
         unique_id: test_heima_studio_main
         value_template: "{{ is_state('input_boolean.test_heima_light_studio_main_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_studio_main_brightness') | int(170) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_studio_main_color_temp') | int(3300) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_studio_main_color_temp') | float(3300))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -157,13 +184,22 @@ light:
           target:
             entity_id: input_number.test_heima_light_studio_main_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(303))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_studio_main_color_temp') | float(3300) }}
+              {% endif %}
       test_heima_studio_spot:
         friendly_name: "Test Heima Studio Spot"
         unique_id: test_heima_studio_spot
         value_template: "{{ is_state('input_boolean.test_heima_light_studio_spot_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_studio_spot_brightness') | int(90) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_studio_spot_color_temp') | int(3600) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_studio_spot_color_temp') | float(3600))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -183,13 +219,22 @@ light:
           target:
             entity_id: input_number.test_heima_light_studio_spot_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(278))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_studio_spot_color_temp') | float(3600) }}
+              {% endif %}
       test_heima_studio_desk:
         friendly_name: "Test Heima Studio Desk"
         unique_id: test_heima_studio_desk
         value_template: "{{ is_state('input_boolean.test_heima_light_studio_desk_raw', 'on') }}"
         level_template: "{{ states('input_number.test_heima_light_studio_desk_brightness') | int(120) }}"
-        temperature_template: "{{ states('input_number.test_heima_light_studio_desk_color_temp') | int(4000) }}"
+        temperature_template: "{{ (1000000 / (states('input_number.test_heima_light_studio_desk_color_temp') | float(4000))) | round(0) }}"
         turn_on:
           action: input_boolean.turn_on
           target:
@@ -209,7 +254,16 @@ light:
           target:
             entity_id: input_number.test_heima_light_studio_desk_color_temp
           data:
-            value: "{{ kelvin if kelvin is defined else color_temp_kelvin if color_temp_kelvin is defined else color_temp }}"
+            value: >-
+              {% if kelvin is defined %}
+                {{ kelvin }}
+              {% elif color_temp_kelvin is defined %}
+                {{ color_temp_kelvin }}
+              {% elif color_temp is defined %}
+                {{ (1000000 / (color_temp | float(250))) | round(0) }}
+              {% else %}
+                {{ states('input_number.test_heima_light_studio_desk_color_temp') | float(4000) }}
+              {% endif %}
 
 input_number:
   test_heima_people_score:

@@ -225,12 +225,29 @@ LEARNING_CONFIG = {
     ],
 }
 
+MQTT_BASELINE = {
+    "broker": "mosquitto-test",
+    "port": 1883,
+}
+
 
 # ---------------------------------------------------------------------------
 # Flow client
 # ---------------------------------------------------------------------------
 
 class HAFlowClient(HAClient):
+    def config_flow_init(self, handler: str) -> dict[str, Any]:
+        data = self.post("/api/config/config_entries/flow", {"handler": handler})
+        if not isinstance(data, dict):
+            raise HAApiError(f"invalid config flow init response for {handler}: {type(data)}")
+        return data
+
+    def config_flow_configure(self, flow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self.post(f"/api/config/config_entries/flow/{flow_id}", payload)
+        if not isinstance(data, dict):
+            raise HAApiError(f"invalid config flow response: {type(data)}")
+        return data
+
     def options_flow_init(self, entry_id: str) -> dict[str, Any]:
         data = self.post("/api/config/config_entries/options/flow", {"handler": entry_id})
         if not isinstance(data, dict):
@@ -489,6 +506,24 @@ def recover_learning(client: HAFlowClient, entry_id: str) -> None:
     _flow_save(client, flow_id)
 
 
+def recover_mqtt(client: HAFlowClient) -> None:
+    print("  → mqtt")
+    existing = [entry for entry in client.list_config_entries() if str(entry.get("domain") or "") == "mqtt"]
+    if existing:
+        title = str(existing[0].get("title") or "")
+        print(f"    mqtt already configured: {title or '<untitled>'}")
+        return
+
+    flow = client.config_flow_init("mqtt")
+    flow_id = str(flow.get("flow_id") or "")
+    if flow.get("type") != "form" or flow.get("step_id") != "broker" or not flow_id:
+        raise RuntimeError(f"unexpected mqtt flow init result: {flow}")
+
+    result = client.config_flow_configure(flow_id, MQTT_BASELINE)
+    if result.get("type") != "create_entry":
+        raise RuntimeError(f"unexpected mqtt flow result: {result}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -503,6 +538,7 @@ def main() -> int:
         "--section",
         choices=[
             "all",
+            "mqtt",
             "general",
             "rooms",
             "people",
@@ -550,6 +586,7 @@ def main() -> int:
             print(f"  WARN: lighting_areas failed ({exc}), continuing without area_ids", file=sys.stderr)
 
     sections = {
+        "mqtt": lambda c, _eid: recover_mqtt(c),
         "general": lambda c, eid: recover_general(c, eid),
         "rooms": lambda c, eid: recover_rooms(c, eid, area_ids),
         "people": lambda c, eid: recover_people(c, eid),

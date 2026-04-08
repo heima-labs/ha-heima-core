@@ -66,6 +66,7 @@ DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
 # All other keys are "runtime" — handled by coordinator.async_reload_options().
 STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset({
     OPT_PEOPLE_NAMED,
+    OPT_PEOPLE_ANON,
     OPT_ROOMS,
     OPT_LIGHTING_ZONES,
 })
