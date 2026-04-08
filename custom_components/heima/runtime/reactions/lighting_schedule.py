@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.util import dt as dt_util

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.helpers import config_validation as cv
 
 from ..const import OPT_HEATING
 from ._common import (
