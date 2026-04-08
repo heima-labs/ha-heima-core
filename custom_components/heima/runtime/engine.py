@@ -482,6 +482,13 @@ class HeimaEngine:
         security_entity = security.get("security_state_entity")
         if security_entity:
             tracked.add(str(security_entity))
+        for source in security.get("camera_evidence_sources", []) or []:
+            if not isinstance(source, dict):
+                continue
+            for key in ("motion_entity", "person_entity", "vehicle_entity", "contact_entity"):
+                value = source.get(key)
+                if value:
+                    tracked.add(str(value))
 
         heating = options.get(OPT_HEATING, {})
         for key in (
@@ -568,7 +575,10 @@ class HeimaEngine:
 
         self._people_domain._normalizer = self._normalizer  # keep in sync if tests swap normalizer
         people_result = self._people_domain.compute(
-            options, self._state, self._events_domain
+            options,
+            self._state,
+            self._events_domain,
+            camera_evidence=security_camera_evidence,
         )
         home_people = people_result.home_people
         anon_home = people_result.anon_home

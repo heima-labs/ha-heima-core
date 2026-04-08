@@ -354,6 +354,61 @@ async def test_e2e_anonymous_weighted_quorum_uses_weights_and_group_trace(
 
 
 @pytest.mark.asyncio
+async def test_e2e_camera_return_home_hint_sets_anonymous_presence_and_anyone_home(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(
+        {
+            "people_anonymous": {
+                "enabled": True,
+                "sources": [],
+                "required": 1,
+                "anonymous_count_weight": 1,
+            },
+            "security": {
+                "enabled": True,
+                "security_state_entity": "alarm_control_panel.home",
+                "camera_evidence_sources": [
+                    {
+                        "id": "front_door_cam",
+                        "enabled": True,
+                        "role": "entry",
+                        "person_entity": "binary_sensor.front_cam_person",
+                        "return_home_contributor": True,
+                    }
+                ],
+            }
+        }
+    )
+    entry.add_to_hass(hass)
+
+    hass.states.async_set("alarm_control_panel.home", "disarmed")
+    hass.states.async_set("binary_sensor.front_cam_person", "off")
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_anonymous_presence").state == "off"
+    assert hass.states.get("binary_sensor.heima_anyone_home").state == "off"
+
+    hass.states.async_set("binary_sensor.front_cam_person", "on")
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_anonymous_presence").state == "on"
+    assert _anon_source_state(hass).state == "camera_return_home_hint"
+    assert hass.states.get("sensor.heima_people_count").state == "1"
+    assert hass.states.get("binary_sensor.heima_anyone_home").state == "on"
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    trace = coordinator.engine.diagnostics()["presence"]["group_trace"]["anonymous_return_home_hint"]
+    assert trace["active"] is True
+    assert trace["used_for_anonymous_presence"] is True
+    assert trace["reasons"][0]["reason"] == "entry_person_detected"
+
+
+@pytest.mark.asyncio
 async def test_e2e_room_occupancy_plugin_failure_uses_fail_safe_off_fallback(
     hass: HomeAssistant,
     enable_custom_integrations,
