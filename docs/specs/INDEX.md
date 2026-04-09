@@ -36,6 +36,7 @@ Related practical guides live outside this tree:
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
 - `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX
 - `core/ha_backed_room_inventory_spec.md` — synced HA-derived room inventory and suggested bindings for the `Rooms` flow
+- `core/people_presence_rules_spec.md` — per-person `presence_rule` contract for presence aggregation (`observer | resident | recurrent`)
 
 ## Domains
 

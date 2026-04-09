@@ -54,6 +54,7 @@ def _reconcile_people(
             if matched_person_entity:
                 person_entity = matched_person_entity
                 item["person_entity"] = matched_person_entity
+        item["presence_rule"] = str(item.get("presence_rule") or "resident").strip() or "resident"
         item["source"] = "ha_person_registry"
         if person_entity and person_entity in inventory:
             ha_name = inventory[person_entity]
@@ -101,6 +102,7 @@ def _reconcile_people(
                 "slug": slug,
                 "display_name": display_name or slug,
                 "presence_method": "ha_person",
+                "presence_rule": "resident",
                 "person_entity": person_entity,
                 "arrive_hold_s": 10,
                 "leave_hold_s": 120,
@@ -158,6 +160,7 @@ def _merge_people_records(primary: dict[str, Any], secondary: dict[str, Any]) ->
 
     for field in (
         "presence_method",
+        "presence_rule",
         "sources",
         "group_strategy",
         "required",

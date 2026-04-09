@@ -12,6 +12,7 @@ def test_reconcile_imports_new_ha_persons_and_rooms():
 
     assert changed is True
     assert updated["people_named"][0]["person_entity"] == "person.alex"
+    assert updated["people_named"][0]["presence_rule"] == "resident"
     assert updated["people_named"][0]["ha_sync_status"] == "new"
     assert updated["rooms"][0]["area_id"] == "living"
     assert updated["rooms"][0]["ha_sync_status"] == "new"
@@ -128,8 +129,34 @@ def test_reconcile_people_auto_links_missing_person_entity_by_slug_match():
     assert changed is True
     person = updated["people_named"][0]
     assert person["person_entity"] == "person.alex"
+    assert person["presence_rule"] == "resident"
     assert person["ha_sync_status"] == "new"
     assert summary["people"]["orphaned_total"] == 0
+
+
+def test_reconcile_people_preserves_reviewed_presence_rule():
+    updated, summary, changed = reconcile_ha_backed_options(
+        {
+            "people_named": [
+                {
+                    "slug": "tablet_home",
+                    "display_name": "Tablet Home",
+                    "presence_method": "ha_person",
+                    "presence_rule": "observer",
+                    "person_entity": "person.tablet_home",
+                    "heima_reviewed": True,
+                    "ha_source_name": "Tablet Home",
+                }
+            ]
+        },
+        ha_people=[{"entity_id": "person.tablet_home", "display_name": "Tablet Home"}],
+        ha_areas=[],
+    )
+
+    assert changed is True
+    assert updated["people_named"][0]["presence_rule"] == "observer"
+    assert updated["people_named"][0]["ha_sync_status"] == "configured"
+    assert summary["people"]["configured_total"] == 1
 
 
 def test_reconcile_people_deduplicates_legacy_and_auto_import_placeholder():

@@ -1157,6 +1157,41 @@ async def test_people_edit_form_absorbs_auto_imported_duplicate_placeholder():
     assert [person["slug"] for person in flow.options["people_named"]] == ["stefano"]
     assert flow.options["people_named"][0]["person_entity"] == "person.stefano"
     assert flow.options["people_named"][0]["ha_sync_status"] == "configured"
+    assert flow.options["people_named"][0]["presence_rule"] == "resident"
+
+
+@pytest.mark.asyncio
+async def test_people_edit_form_persists_presence_rule():
+    flow = _flow(
+        {
+            "people_named": [
+                {
+                    "slug": "tablet_home",
+                    "display_name": "Tablet Home",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.tablet_home",
+                    "presence_rule": "resident",
+                    "ha_sync_status": "configured",
+                    "heima_reviewed": True,
+                }
+            ]
+        },
+        states=[_state("person.tablet_home", "Tablet Home")],
+    )
+    flow._editing_person_slug = "tablet_home"
+
+    result = await flow.async_step_people_edit_form(
+        {
+            "slug": "tablet_home",
+            "display_name": "Tablet Home",
+            "presence_method": "ha_person",
+            "presence_rule": "observer",
+            "person_entity": "person.tablet_home",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["people_named"][0]["presence_rule"] == "observer"
 
 
 @pytest.mark.asyncio

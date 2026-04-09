@@ -26,7 +26,8 @@ _LOGGER = logging.getLogger(__name__)
 class PeopleResult:
     """Result of PeopleDomain.compute()."""
 
-    home_people: list[str]  # slugs of named people who are home
+    home_people: list[str]  # slugs of named people who are home and counted
+    observer_home_people: list[str]  # slugs of named people who are home but excluded
     anon_home: bool
     anon_confidence: int
     anon_source: str
@@ -70,6 +71,7 @@ class PeopleDomain:
     ) -> PeopleResult:
         named_people = options.get(OPT_PEOPLE_NAMED, [])
         home_people: list[str] = []
+        observer_home_people: list[str] = []
 
         for person in named_people:
             slug = person.get("slug")
@@ -88,7 +90,10 @@ class PeopleDomain:
                 confidence=confidence,
             )
             if is_home:
-                home_people.append(slug)
+                if self._presence_rule_counts_toward_aggregates(person):
+                    home_people.append(slug)
+                else:
+                    observer_home_people.append(slug)
 
         debug_aliases_cfg = options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
         if isinstance(debug_aliases_cfg, dict) and bool(debug_aliases_cfg.get("enabled")):
@@ -185,6 +190,11 @@ class PeopleDomain:
             "reasons": anon_hint_reasons,
             "used_for_anonymous_presence": anon_home and anon_hint_active,
         }
+        self._group_presence_trace["presence_rule_summary"] = {
+            "counted_people_home": list(home_people),
+            "observer_people_home": list(observer_home_people),
+            "excluded_observer_count": len(observer_home_people),
+        }
 
         anyone_home = bool(home_people) or anon_home
         people_count = len(home_people) + anon_weight
@@ -192,6 +202,7 @@ class PeopleDomain:
 
         return PeopleResult(
             home_people=home_people,
+            observer_home_people=observer_home_people,
             anon_home=anon_home,
             anon_confidence=anon_confidence,
             anon_source=anon_source,
@@ -200,6 +211,11 @@ class PeopleDomain:
             people_count=people_count,
             people_home_list=people_home_list,
         )
+
+    @staticmethod
+    def _presence_rule_counts_toward_aggregates(person_cfg: dict[str, Any]) -> bool:
+        presence_rule = str(person_cfg.get("presence_rule") or "resident").strip().lower()
+        return presence_rule in {"resident", "recurrent"}
 
     # ------------------------------------------------------------------
     # Internals

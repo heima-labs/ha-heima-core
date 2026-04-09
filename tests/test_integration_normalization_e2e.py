@@ -283,6 +283,45 @@ async def test_e2e_people_debug_synthetic_alias_contributes_to_anyone_home(
 
 
 @pytest.mark.asyncio
+async def test_e2e_observer_person_is_home_but_excluded_from_presence_aggregates(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+):
+    entry = _entry(
+        {
+            "people_named": [
+                {
+                    "slug": "tablet_home",
+                    "display_name": "Tablet Home",
+                    "presence_method": "ha_person",
+                    "presence_rule": "observer",
+                    "person_entity": "person.tablet_home",
+                    "enable_override": False,
+                }
+            ]
+        }
+    )
+    entry.add_to_hass(hass)
+
+    hass.states.async_set("person.tablet_home", "home")
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("binary_sensor.heima_person_tablet_home_home").state == "on"
+    assert hass.states.get("sensor.heima_people_count").state == "0"
+    assert hass.states.get("binary_sensor.heima_anyone_home").state == "off"
+    assert hass.states.get("sensor.heima_people_home_list").state == ""
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    summary = coordinator.engine.diagnostics()["presence"]["group_trace"]["presence_rule_summary"]
+    assert summary["counted_people_home"] == []
+    assert summary["observer_people_home"] == ["tablet_home"]
+    assert summary["excluded_observer_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_e2e_person_weighted_quorum_uses_weights_and_group_trace(
     hass: HomeAssistant,
     enable_custom_integrations,

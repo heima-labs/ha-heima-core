@@ -87,6 +87,7 @@
           "slug": "Slug",
           "display_name": "Nome visualizzato",
           "presence_method": "Metodo presenza",
+          "presence_rule": "Regola presenza",
           "person_entity": "Entita persona",
           "sources": "Sorgenti",
           "required": "Sorgenti richieste",

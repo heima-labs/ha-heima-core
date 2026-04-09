@@ -33,6 +33,7 @@ class _PeopleStepsMixin:
     """Mixin for people (named + anonymous) steps."""
 
     _DEBUG_ALIAS_MODES = {"alias_person", "synthetic"}
+    _PRESENCE_RULES = {"observer", "resident", "recurrent"}
     _DEBUG_SYNTHETIC_STATES = {
         "home",
         "away",
@@ -186,6 +187,9 @@ class _PeopleStepsMixin:
                 vol.Required(
                     "presence_method", default=defaults.get("presence_method", "ha_person")
                 ): vol.In(PRESENCE_METHODS),
+                vol.Optional(
+                    "presence_rule", default=defaults.get("presence_rule", "resident")
+                ): vol.In(self._PRESENCE_RULES),
                 vol.Optional("person_entity"): _entity_selector(["person"]),
                 vol.Optional("sources"): _entity_selector(
                     ["binary_sensor", "sensor", "device_tracker"], multiple=True
@@ -338,6 +342,7 @@ class _PeopleStepsMixin:
         data["slug"] = str(data.get("slug", "")).strip()
         data["display_name"] = str(data.get("display_name", "") or "").strip()
         data["presence_method"] = str(data.get("presence_method", "ha_person"))
+        data["presence_rule"] = str(data.get("presence_rule", "resident") or "resident").strip()
         if data.get("person_entity"):
             data["person_entity"] = str(data["person_entity"])
         for key in ("source", "ha_source_name", "ha_sync_status", "heima_reviewed"):
