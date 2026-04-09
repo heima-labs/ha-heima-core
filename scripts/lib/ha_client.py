@@ -7,6 +7,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 
 class HAApiError(RuntimeError):
@@ -34,7 +35,18 @@ class HAClient:
         *,
         accept_error: bool = False,
     ) -> tuple[int, Any]:
-        url = f"{self.base_url.rstrip('/')}{path}"
+        base_url = str(self.base_url or "").strip()
+        parsed = urlparse(base_url)
+        if not base_url or not parsed.scheme or not parsed.netloc:
+            raise HAApiError(
+                "invalid Home Assistant base URL: pass --ha-url or load scripts/.env first"
+            )
+        if not str(self.token or "").strip():
+            raise HAApiError(
+                "missing Home Assistant token: pass --ha-token or load scripts/.env first"
+            )
+
+        url = f"{base_url.rstrip('/')}{path}"
         cmd = [
             "curl",
             "-sS",
@@ -54,9 +66,7 @@ class HAClient:
             cmd.extend(["-d", json.dumps(payload)])
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if proc.returncode != 0:
-            raise HAApiError(
-                f"curl failed for {method} {path}: {(proc.stderr or '').strip()}"
-            )
+            raise HAApiError(f"curl failed for {method} {path}: {(proc.stderr or '').strip()}")
 
         out = proc.stdout or ""
         if "\n" not in out:
@@ -83,11 +93,15 @@ class HAClient:
         _, data = self.request("GET", path, accept_error=accept_error)
         return data
 
-    def post(self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False) -> Any:
+    def post(
+        self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False
+    ) -> Any:
         _, data = self.request("POST", path, payload, accept_error=accept_error)
         return data
 
-    def patch(self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False) -> Any:
+    def patch(
+        self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False
+    ) -> Any:
         _, data = self.request("PATCH", path, payload, accept_error=accept_error)
         return data
 
@@ -149,7 +163,11 @@ class HAClient:
         ]
         for path in detail_variants:
             status, data = self.request("GET", path, accept_error=True)
-            if status == 200 and isinstance(data, dict) and str(data.get("entry_id") or "") == entry_id:
+            if (
+                status == 200
+                and isinstance(data, dict)
+                and str(data.get("entry_id") or "") == entry_id
+            ):
                 return data
         for entry in self.list_config_entries():
             if str(entry.get("entry_id") or "") == entry_id:
@@ -167,4 +185,3 @@ class HAClient:
                 if entry_id:
                     return entry_id
         raise HAApiError("heima config entry not found")
-

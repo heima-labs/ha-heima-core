@@ -1821,12 +1821,35 @@ def test_init_status_block_uses_operational_security_presence_summary_when_runti
                 "coordinator": SimpleNamespace(
                     engine=SimpleNamespace(
                         _state=SimpleNamespace(
-                            get_sensor=lambda key: (
-                                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":true,"blocked_reason":"","tonight_plan_count":2},'
-                                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"blocked_reason":"outside_not_dark","tonight_plan_count":0}}'
+                            get_sensor=lambda key: 2 if key == "heima_reactions_active" else None,
+                            get_sensor_attributes=lambda key: (
+                                {
+                                    "reactions": {
+                                        "sec1": {
+                                            "reaction_class": "VacationPresenceSimulationReaction",
+                                            "reaction_type": "vacation_presence_simulation",
+                                            "allowed_rooms": ["living"],
+                                            "source_rooms": ["living"],
+                                            "active_tonight": True,
+                                            "blocked_reason": "",
+                                            "tonight_plan_count": 2,
+                                        },
+                                        "sec2": {
+                                            "reaction_class": "VacationPresenceSimulationReaction",
+                                            "reaction_type": "vacation_presence_simulation",
+                                            "allowed_rooms": ["studio"],
+                                            "source_rooms": ["studio"],
+                                            "active_tonight": False,
+                                            "blocked_reason": "outside_not_dark",
+                                            "tonight_plan_count": 0,
+                                        },
+                                    },
+                                    "total": 2,
+                                    "muted_total": 0,
+                                }
                                 if key == "heima_reactions_active"
                                 else None
-                            )
+                            ),
                         )
                     )
                 )

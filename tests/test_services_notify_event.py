@@ -210,8 +210,10 @@ async def test_heima_command_notify_event_uses_pipeline_and_updates_sensors(monk
     stats_state = engine.state.get_sensor("heima_event_stats")
     assert isinstance(stats_state, str)
     assert "emitted=1" in stats_state
+    assert len(stats_state) <= 255
     attrs = engine.state.get_sensor_attributes("heima_event_stats") or {}
     assert attrs.get("last_event", {}).get("type") == "debug.manual_test"
+    assert "raw_json" in attrs
 
 
 @pytest.mark.asyncio

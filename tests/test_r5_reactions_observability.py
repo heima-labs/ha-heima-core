@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -43,6 +42,7 @@ def _make_engine():
         engine = HeimaEngine.__new__(HeimaEngine)
         engine._hass = hass
         engine._entry = entry
+        engine._behaviors = []
         engine._reactions = []
         engine._muted_reactions = set()
         from custom_components.heima.runtime.snapshot_buffer import SnapshotBuffer
@@ -51,7 +51,10 @@ def _make_engine():
         from custom_components.heima.runtime.state_store import CanonicalState
 
         engine._state = CanonicalState()
-        engine._state.sensors = {"heima_reactions_active": "{}"}
+        engine._state.sensors = {"heima_reactions_active": 0}
+        engine._state.sensor_attributes = {
+            "heima_reactions_active": {"reactions": {}, "total": 0, "muted_total": 0}
+        }
         from custom_components.heima.runtime.domains.events import EventsDomain
 
         engine._events_domain = EventsDomain(hass)
@@ -67,8 +70,12 @@ def _make_engine():
 def test_sync_reactions_sensor_empty():
     engine = _make_engine()
     engine._sync_reactions_sensor()
-    val = engine._state.get_sensor("heima_reactions_active")
-    assert val == "{}"
+    assert engine._state.get_sensor("heima_reactions_active") == 0
+    assert engine._state.get_sensor_attributes("heima_reactions_active") == {
+        "reactions": {},
+        "total": 0,
+        "muted_total": 0,
+    }
 
 
 def test_sync_reactions_sensor_shows_registered_reactions():
@@ -81,7 +88,8 @@ def test_sync_reactions_sensor_shows_registered_reactions():
     )
     engine._reactions.append(r)
     engine._sync_reactions_sensor()
-    val = json.loads(engine._state.get_sensor("heima_reactions_active"))
+    assert engine._state.get_sensor("heima_reactions_active") == 1
+    val = engine._state.get_sensor_attributes("heima_reactions_active")["reactions"]
     assert "eco_heating" in val
     assert val["eco_heating"]["muted"] is False
     assert val["eco_heating"]["fire_count"] == 0
@@ -98,8 +106,9 @@ def test_sync_reactions_sensor_shows_muted_true():
     engine._reactions.append(r)
     engine._muted_reactions.add("my_reaction")
     engine._sync_reactions_sensor()
-    val = json.loads(engine._state.get_sensor("heima_reactions_active"))
+    val = engine._state.get_sensor_attributes("heima_reactions_active")["reactions"]
     assert val["my_reaction"]["muted"] is True
+    assert engine._state.get_sensor_attributes("heima_reactions_active")["muted_total"] == 1
 
 
 def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
@@ -128,7 +137,7 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
     engine._reactions.append(r)
 
     engine._sync_reactions_sensor()
-    val = json.loads(engine._state.get_sensor("heima_reactions_active"))
+    val = engine._state.get_sensor_attributes("heima_reactions_active")["reactions"]
     assert val["my_reaction"]["origin"] == "admin_authored"
     assert val["my_reaction"]["reaction_class"] == "LightingScheduleReaction"
     assert val["my_reaction"]["author_kind"] == "admin"
@@ -136,6 +145,47 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
     assert val["my_reaction"]["source_request"] == "template:lighting.scene_schedule.basic"
     assert val["my_reaction"]["source_template_id"] == "lighting.scene_schedule.basic"
     assert val["my_reaction"]["source_proposal_id"] == "proposal-admin"
+
+
+def test_sync_reactions_sensor_keeps_state_compact_for_large_payload():
+    engine = _make_engine()
+    engine._entry.options = {
+        "reactions": {
+            "configured": {
+                f"reaction_{index}": {
+                    "reaction_class": "RoomLightingAssistReaction",
+                    "reaction_type": "room_darkness_lighting_assist",
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_proposal_identity_key": (
+                        f"room_darkness_lighting_assist|room=studio|primary=room_lux_{index}"
+                    ),
+                }
+                for index in range(20)
+            }
+        }
+    }
+    for index in range(20):
+        engine._reactions.append(
+            ConsecutiveStateReaction(
+                predicate=lambda s: True,
+                consecutive_n=1,
+                steps=[],
+                reaction_id=f"reaction_{index}",
+            )
+        )
+
+    engine._sync_reactions_sensor()
+
+    state_value = engine._state.get_sensor("heima_reactions_active")
+    attrs = engine._state.get_sensor_attributes("heima_reactions_active")
+
+    assert state_value == 20
+    assert isinstance(state_value, int)
+    assert len(str(state_value)) < 255
+    assert attrs is not None
+    assert attrs["total"] == 20
+    assert len(attrs["reactions"]) == 20
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +384,6 @@ def test_diagnostics_includes_muted_reactions():
     from custom_components.heima.runtime.contracts import ApplyPlan
 
     engine._apply_plan = ApplyPlan.empty()
-    engine._behaviors = []
     engine._lighting_domain = MagicMock()
     engine._lighting_domain.diagnostics.return_value = {}
     engine._heating_domain = MagicMock()

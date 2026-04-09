@@ -83,14 +83,7 @@ def _make_engine():
     return HeimaEngine(hass, entry)
 
 
-def test_register_behavior_appended():
-    engine = _make_engine()
-    b = _SnapshotCapture()
-    engine.register_behavior(b)
-    assert b in engine._behaviors
-
-
-def test_dispatch_on_snapshot_called(event_loop):
+def test_dispatch_on_snapshot_called():
     engine = _make_engine()
     b = _SnapshotCapture()
     engine.register_behavior(b)
@@ -100,7 +93,7 @@ def test_dispatch_on_snapshot_called(event_loop):
     assert b.snapshots[0] is snapshot
 
 
-def test_dispatch_apply_filter_called(event_loop):
+def test_dispatch_apply_filter_called():
     engine = _make_engine()
     b = _SnapshotCapture()
     engine.register_behavior(b)

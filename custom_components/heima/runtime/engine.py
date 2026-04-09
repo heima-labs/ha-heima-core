@@ -572,7 +572,11 @@ class HeimaEngine:
         if "heima_event_stats" in self._state.sensors:
             self._state.sensors["heima_event_stats"] = "{}"
         if "heima_reactions_active" in self._state.sensors:
-            self._state.sensors["heima_reactions_active"] = "{}"
+            self._state.sensors["heima_reactions_active"] = 0
+            self._state.set_sensor_attributes(
+                "heima_reactions_active",
+                {"reactions": {}, "total": 0, "muted_total": 0},
+            )
         if "heima_reaction_proposals" in self._state.sensors:
             self._state.sensors["heima_reaction_proposals"] = 0
         if "heima_heating_state" in self._state.sensors:
@@ -1116,9 +1120,11 @@ class HeimaEngine:
         self._events_domain.sync_event_sensors(self._state)
 
     def _sync_reactions_sensor(self) -> None:
-        """Serialize current reaction state to the heima_reactions_active sensor."""
-        import json
+        """Publish current reaction state to the heima_reactions_active sensor.
 
+        Keep the sensor state compact to avoid HA's 255-char state limit.
+        Detailed reaction payload lives in sensor attributes.
+        """
         payload: dict[str, Any] = {}
         for reaction in self._reactions:
             rid = reaction.reaction_id
@@ -1131,7 +1137,17 @@ class HeimaEngine:
                 "last_fired_ts": diag.get("last_fired_ts"),
                 **provenance,
             }
-        self._state.set_sensor("heima_reactions_active", json.dumps(payload))
+        self._state.set_sensor("heima_reactions_active", len(payload))
+        self._state.set_sensor_attributes(
+            "heima_reactions_active",
+            {
+                "reactions": payload,
+                "total": len(payload),
+                "muted_total": sum(
+                    1 for reaction_id in payload if reaction_id in self._muted_reactions
+                ),
+            },
+        )
 
     def _configured_reaction_metadata(self, reaction_id: str) -> dict[str, Any]:
         configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))

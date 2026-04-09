@@ -136,7 +136,7 @@ class ProposalEngine:
                     existing,
                     confidence=candidate.confidence,
                     description=candidate.description,
-                    suggested_reaction_config=dict(candidate.suggested_reaction_config),
+                    suggested_reaction_config=_safe_dict(candidate.suggested_reaction_config),
                     updated_at=now,
                     last_observed_at=now,
                     identity_key=identity_key,
@@ -230,6 +230,7 @@ class ProposalEngine:
         if existing_idx is None:
             submitted = replace(
                 proposal,
+                suggested_reaction_config=_safe_dict(proposal.suggested_reaction_config),
                 identity_key=identity_key,
                 last_observed_at=proposal.last_observed_at or now,
             )
@@ -247,7 +248,7 @@ class ProposalEngine:
                 description=proposal.description,
                 confidence=proposal.confidence,
                 origin=proposal.origin,
-                suggested_reaction_config=dict(proposal.suggested_reaction_config),
+                suggested_reaction_config=_safe_dict(proposal.suggested_reaction_config),
                 status="pending",
                 updated_at=now,
                 last_observed_at=proposal.last_observed_at or now,
@@ -270,7 +271,7 @@ class ProposalEngine:
             description=proposal.description,
             confidence=proposal.confidence,
             origin=proposal.origin,
-            suggested_reaction_config=dict(proposal.suggested_reaction_config),
+            suggested_reaction_config=_safe_dict(proposal.suggested_reaction_config),
             updated_at=now,
             last_observed_at=proposal.last_observed_at or now,
             identity_key=identity_key,

@@ -49,6 +49,19 @@ def _local_now() -> datetime:
     return datetime.now(timezone.utc).astimezone()
 
 
+def _seed_arrivals(
+    reaction: PresencePatternReaction,
+    *,
+    weekday: int,
+    minutes: list[int],
+) -> None:
+    for minute in minutes:
+        hour = minute // 60
+        minute_of_hour = minute % 60
+        ts = datetime(2026, 1, 5 + weekday, hour, minute_of_hour).astimezone().isoformat()
+        reaction.evaluate([_snap(False, ts), _snap(True, ts)])
+
+
 # ---------------------------------------------------------------------------
 # Arrival recording
 # ---------------------------------------------------------------------------
@@ -58,27 +71,28 @@ def test_records_arrival_on_false_to_true_transition():
     r = _reaction(min_arrivals=1)
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
-    assert len(r._arrivals) == 1
+    expected_weekday = datetime.fromisoformat(ts).astimezone().weekday()
+    assert len(r.arrivals_for_weekday(expected_weekday)) == 1
 
 
 def test_no_arrival_recorded_when_already_home():
     r = _reaction()
     ts = _now_ts()
     r.evaluate([_snap(True, ts), _snap(True, ts)])
-    assert len(r._arrivals) == 0
+    assert r.diagnostics()["arrivals_count"] == 0
 
 
 def test_no_arrival_recorded_on_single_snapshot():
     r = _reaction()
     r.evaluate([_snap(True)])
-    assert len(r._arrivals) == 0
+    assert r.diagnostics()["arrivals_count"] == 0
 
 
 def test_no_arrival_when_home_to_away():
     r = _reaction()
     ts = _now_ts()
     r.evaluate([_snap(True, ts), _snap(False, ts)])
-    assert len(r._arrivals) == 0
+    assert r.diagnostics()["arrivals_count"] == 0
 
 
 def test_arrival_records_correct_weekday():
@@ -86,7 +100,7 @@ def test_arrival_records_correct_weekday():
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
     expected_weekday = datetime.fromisoformat(ts).astimezone().weekday()
-    assert r._arrivals[0].weekday == expected_weekday
+    assert len(r.arrivals_for_weekday(expected_weekday)) == 1
 
 
 def test_arrival_records_correct_minute_of_day():
@@ -94,7 +108,8 @@ def test_arrival_records_correct_minute_of_day():
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
     expected_dt = datetime.fromisoformat(ts).astimezone()
-    assert r._arrivals[0].minute_of_day == _minute_of_day(expected_dt)
+    weekday = expected_dt.weekday()
+    assert r.arrivals_for_weekday(weekday) == [_minute_of_day(expected_dt)]
 
 
 def test_max_arrivals_evicts_oldest():
@@ -102,7 +117,7 @@ def test_max_arrivals_evicts_oldest():
     ts = _now_ts()
     for _ in range(5):
         r.evaluate([_snap(False, ts), _snap(True, ts)])
-    assert len(r._arrivals) == 3
+    assert r.diagnostics()["arrivals_count"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +180,7 @@ def test_pre_condition_triggers_when_in_window():
     r = PresencePatternReaction(steps=[], min_arrivals=1, window_half_min=60, pre_condition_min=10)
     weekday = now_dt.weekday()
     target_minute = _minute_of_day(now_dt) + 10
-    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=target_minute)]
+    _seed_arrivals(r, weekday=weekday, minutes=[target_minute])
     assert r._should_pre_condition(_now_ts()) is True
 
 
@@ -181,7 +196,7 @@ def test_pre_condition_false_when_outside_window():
     weekday = now_dt.weekday()
     # Place arrival 120 minutes from now → well outside window_half_min=5
     target_minute = (_minute_of_day(now_dt) + 120) % 1440
-    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=target_minute)]
+    _seed_arrivals(r, weekday=weekday, minutes=[target_minute])
     assert r._should_pre_condition(_now_ts()) is False
 
 
@@ -191,7 +206,7 @@ def test_pre_condition_false_wrong_weekday():
     # Place arrival on the next weekday
     other_weekday = (now_dt.weekday() + 1) % 7
     target_minute = _minute_of_day(now_dt) + 10
-    r._arrivals = [_ArrivalRecord(weekday=other_weekday, minute_of_day=target_minute)]
+    _seed_arrivals(r, weekday=other_weekday, minutes=[target_minute])
     # Today's pattern is not established → no fire
     # (next day check only applies near midnight)
     assert r._should_pre_condition(_now_ts()) is False
@@ -212,8 +227,9 @@ def test_evaluate_does_not_fire_before_min_arrivals():
     r = PresencePatternReaction(steps=[_step()], min_arrivals=5)
     now_dt = _local_now()
     weekday = now_dt.weekday()
-    # Inject 4 arrivals (one less than min_arrivals=5)
-    r._arrivals = [_ArrivalRecord(weekday, _minute_of_day(now_dt) + 10)] * 4
+    # Seed 4 arrivals (one less than min_arrivals=5).
+    target_minute = _minute_of_day(now_dt) + 10
+    _seed_arrivals(r, weekday=weekday, minutes=[target_minute] * 4)
     result = r.evaluate([_snap(False)])
     assert result == []
 
@@ -229,7 +245,11 @@ def test_evaluate_fires_when_pre_condition_matches():
         pre_condition_min=10,
     )
     weekday = now_dt.weekday()
-    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=_minute_of_day(now_dt) + 10)]
+    _seed_arrivals(
+        r,
+        weekday=weekday,
+        minutes=[_minute_of_day(now_dt) + 10],
+    )
     result = r.evaluate([_snap(False, _now_ts())])
     assert len(result) == 1
 
@@ -247,11 +267,15 @@ def test_fire_count_increments():
         steps=[_step()], min_arrivals=1, window_half_min=60, pre_condition_min=10
     )
     weekday = now_dt.weekday()
-    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=_minute_of_day(now_dt) + 10)]
+    _seed_arrivals(
+        r,
+        weekday=weekday,
+        minutes=[_minute_of_day(now_dt) + 10],
+    )
     ts = _now_ts()
     r.evaluate([_snap(False, ts)])
     r.evaluate([_snap(False, ts)])
-    assert r._fire_count == 2
+    assert r.diagnostics()["fire_count"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +285,8 @@ def test_fire_count_increments():
 
 def test_arrivals_for_weekday_filters_correctly():
     r = _reaction()
-    r._arrivals = [
-        _ArrivalRecord(0, 1080),
-        _ArrivalRecord(0, 1100),
-        _ArrivalRecord(2, 600),
-    ]
+    _seed_arrivals(r, weekday=0, minutes=[1080, 1100])
+    _seed_arrivals(r, weekday=2, minutes=[600])
     assert r.arrivals_for_weekday(0) == [1080, 1100]
     assert r.arrivals_for_weekday(2) == [600]
     assert r.arrivals_for_weekday(5) == []
@@ -291,7 +312,8 @@ def test_diagnostics_after_arrivals():
     r.evaluate([_snap(False, ts), _snap(True, ts)])
     d = r.diagnostics()
     assert d["arrivals_count"] == 1
-    assert len(d["arrivals_by_weekday"]) == 1
+    expected_weekday = str(datetime.fromisoformat(ts).astimezone().weekday())
+    assert d["arrivals_by_weekday"] == {expected_weekday: 1}
 
 
 def test_reset_learning_state_clears_arrivals_and_counters():
@@ -300,17 +322,22 @@ def test_reset_learning_state_clears_arrivals_and_counters():
     )
     now_dt = _local_now()
     weekday = now_dt.weekday()
-    r._arrivals = [_ArrivalRecord(weekday=weekday, minute_of_day=_minute_of_day(now_dt) + 10)]
-    r._fire_count = 2
-    r._suppressed_count = 1
-    r._last_fired_ts = 123.0
+    _seed_arrivals(
+        r,
+        weekday=weekday,
+        minutes=[_minute_of_day(now_dt) + 10],
+    )
+    ts = _now_ts()
+    r.evaluate([_snap(False, ts)])
+    r.evaluate([_snap(False, ts)])
 
     r.reset_learning_state()
 
-    assert r._arrivals == []
-    assert r._fire_count == 0
-    assert r._suppressed_count == 0
-    assert r._last_fired_ts is None
+    diag = r.diagnostics()
+    assert r.arrivals_for_weekday(weekday) == []
+    assert diag["fire_count"] == 0
+    assert diag["suppressed_count"] == 0
+    assert diag["last_fired_ts"] is None
 
 
 def test_diagnostics_no_learning_key_without_backend():

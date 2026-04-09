@@ -43,7 +43,7 @@ class ReactionProposal:
             "origin": self.origin,
             "followup_kind": self.followup_kind,
             "status": self.status,
-            "suggested_reaction_config": dict(self.suggested_reaction_config),
+            "suggested_reaction_config": _safe_dict(self.suggested_reaction_config),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_observed_at": self.last_observed_at,

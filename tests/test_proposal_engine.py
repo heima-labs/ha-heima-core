@@ -242,12 +242,10 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
     engine2._store._data = engine1._store._data
     await engine2.async_initialize()
 
-    assert len(engine2._proposals) == 1
-    assert (
-        engine2._proposals[0].fingerprint
-        == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
-    )
-    assert engine2._proposals[0].origin == "learned"
+    pending = engine2.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    assert pending[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
 
 
@@ -474,7 +472,11 @@ async def test_pending_proposals_sorted_by_confidence_then_updated_at(monkeypatc
     strongest = _proposal(conf=0.9, weekday=2)
     strongest.proposal_id = "strongest"
     strongest.updated_at = (base - timedelta(minutes=5)).isoformat()
-    engine._proposals = [older, strongest, newer]
+    engine._store._data = {
+        "data": {"proposals": [older.as_dict(), strongest.as_dict(), newer.as_dict()]}
+    }
+
+    await engine.async_initialize()
 
     ordered = engine.pending_proposals()
     assert [p.proposal_id for p in ordered] == ["strongest", "newer", "older"]
@@ -495,7 +497,9 @@ async def test_proposal_engine_diagnostics_include_summary_and_explainability(mo
             "iqr_min": 8,
         },
     }
-    engine._proposals = [proposal]
+    engine._store._data = {"data": {"proposals": [proposal.as_dict()]}}
+
+    await engine.async_initialize()
 
     diagnostics = engine.diagnostics()
     assert diagnostics["pending_stale"] == 0
@@ -521,7 +525,9 @@ async def test_proposal_engine_marks_old_pending_proposal_as_stale(monkeypatch):
     proposal.created_at = old_ts
     proposal.updated_at = old_ts
     proposal.last_observed_at = old_ts
-    engine._proposals = [proposal]
+    engine._store._data = {"data": {"proposals": [proposal.as_dict()]}}
+
+    await engine.async_initialize()
 
     diagnostics = engine.diagnostics()
 
@@ -536,7 +542,9 @@ async def test_proposal_engine_never_marks_accepted_proposal_as_stale(monkeypatc
     engine = ProposalEngine(object(), _EventStoreStub(), stale_after=timedelta(days=1))  # type: ignore[arg-type]
     proposal = _proposal(conf=0.75, weekday=1, status="accepted")
     proposal.last_observed_at = datetime(2026, 3, 1, tzinfo=UTC).isoformat()
-    engine._proposals = [proposal]
+    engine._store._data = {"data": {"proposals": [proposal.as_dict()]}}
+
+    await engine.async_initialize()
 
     diagnostics = engine.diagnostics()
 
@@ -563,20 +571,29 @@ async def test_proposal_engine_prunes_very_old_stale_pending_proposals(monkeypat
 
     analyzer = _AnalyzerStub([recent_pending])
     engine.register_analyzer(analyzer)
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                old_pending.as_dict(),
+                recent_pending.as_dict(),
+                accepted.as_dict(),
+            ]
+        }
+    }
     await engine.async_initialize()
-    engine._proposals = [old_pending, recent_pending, accepted]
 
     await engine.async_run()
 
-    assert len(engine._proposals) == 2
+    diagnostics = engine.diagnostics()
+    assert diagnostics["total"] == 2
     assert all(
         not (
-            proposal.status == "pending"
-            and proposal.last_observed_at == datetime(2026, 1, 1, tzinfo=UTC).isoformat()
+            proposal["status"] == "pending"
+            and proposal["last_observed_at"] == datetime(2026, 1, 1, tzinfo=UTC).isoformat()
         )
-        for proposal in engine._proposals
+        for proposal in diagnostics["proposals"]
     )
-    assert any(proposal.status == "accepted" for proposal in engine._proposals)
+    assert any(proposal["status"] == "accepted" for proposal in diagnostics["proposals"])
 
 
 async def test_proposal_engine_initialize_skips_malformed_storage_records(monkeypatch):
@@ -608,7 +625,8 @@ async def test_proposal_engine_initialize_skips_malformed_storage_records(monkey
 
     await engine.async_initialize()
 
-    assert len(engine._proposals) == 1
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
     diagnostics = engine.diagnostics()
     assert diagnostics["loaded_proposals"] == 1
     assert diagnostics["load_errors"] == 2
@@ -635,8 +653,7 @@ async def test_reaction_proposal_from_dict_sanitizes_invalid_status_and_confiden
 
     await engine.async_initialize()
 
-    assert len(engine._proposals) == 1
-    proposal = engine._proposals[0]
+    proposal = engine.pending_proposals()[0]
     assert proposal.confidence == 0.0
     assert proposal.origin == "learned"
     assert proposal.status == "pending"
@@ -668,8 +685,9 @@ async def test_reaction_proposal_from_dict_preserves_admin_authored_origin(monke
 
     await engine.async_initialize()
 
-    assert len(engine._proposals) == 1
-    assert engine._proposals[0].origin == "admin_authored"
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].origin == "admin_authored"
 
 
 async def test_reaction_proposal_from_dict_sanitizes_non_dict_config(monkeypatch):
@@ -693,8 +711,9 @@ async def test_reaction_proposal_from_dict_sanitizes_non_dict_config(monkeypatch
 
     await engine.async_initialize()
 
-    assert len(engine._proposals) == 1
-    assert engine._proposals[0].suggested_reaction_config == {}
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].suggested_reaction_config == {}
 
 
 async def test_proposal_engine_run_survives_analyzer_exception(monkeypatch):
@@ -767,16 +786,23 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
         _EventStoreStub(),  # type: ignore[arg-type]
         sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
     )
-    engine._proposals = [
-        ReactionProposal(
-            proposal_id="legacy",
-            analyzer_id="PresencePatternAnalyzer",
-            reaction_type="presence_preheat",
-            description="legacy",
-            confidence=0.5,
-            suggested_reaction_config=["bad"],  # type: ignore[arg-type]
-        )
-    ]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                {
+                    "proposal_id": "legacy",
+                    "analyzer_id": "PresencePatternAnalyzer",
+                    "reaction_type": "presence_preheat",
+                    "description": "legacy",
+                    "confidence": 0.5,
+                    "status": "pending",
+                    "suggested_reaction_config": ["bad"],
+                }
+            ]
+        }
+    }
+
+    await engine.async_initialize()
 
     diagnostics = engine.diagnostics()
     engine._write_sensor()
@@ -790,6 +816,33 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
     assert sensor_updates[-1][1]["legacy"]["explainability"] == {}
 
 
+async def test_proposal_engine_run_sanitizes_non_dict_config_on_pending_update(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    analyzer = _AnalyzerStub([_proposal(conf=0.6, weekday=0)])
+    engine.register_analyzer(analyzer)
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    analyzer._proposals = [
+        ReactionProposal(
+            analyzer_id="PresencePatternAnalyzer",
+            reaction_type="presence_preheat",
+            confidence=0.85,
+            description="bad-update",
+            identity_key="presence_preheat|weekday=0",
+            suggested_reaction_config=["bad"],  # type: ignore[arg-type]
+        )
+    ]
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].confidence == 0.85
+    assert pending[0].suggested_reaction_config == {}
+
+
 async def test_proposal_engine_diagnostics_expose_admin_authored_origin(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     sensor_updates = []
@@ -798,14 +851,40 @@ async def test_proposal_engine_diagnostics_expose_admin_authored_origin(monkeypa
         _EventStoreStub(),  # type: ignore[arg-type]
         sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
     )
-    engine._proposals = [_admin_authored_proposal()]
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal_id = await engine.async_submit_proposal(proposal)
 
     diagnostics = engine.diagnostics()
-    engine._write_sensor()
 
     item = diagnostics["proposals"][0]
     assert item["origin"] == "admin_authored"
-    assert sensor_updates[-1][1][engine._proposals[0].proposal_id]["origin"] == "admin_authored"
+    assert sensor_updates[-1][1][proposal_id]["origin"] == "admin_authored"
+
+
+async def test_proposal_engine_sensor_writer_keeps_count_in_state_and_payload_in_attrs(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    await engine.async_initialize()
+    proposal_ids = []
+    for index in range(5):
+        proposal = _admin_authored_proposal()
+        proposal.suggested_reaction_config["scheduled_min"] = 1200 + (index * 30)
+        proposal_ids.append(await engine.async_submit_proposal(proposal))
+
+    count, attrs = sensor_updates[-1]
+    assert count == 5
+    assert isinstance(count, int)
+    assert len(str(count)) < 255
+    assert len(attrs) == 5
+    assert attrs[proposal_ids[0]]["origin"] == "admin_authored"
 
 
 async def test_proposal_engine_async_submit_proposal_creates_pending_admin_authored(monkeypatch):
@@ -863,6 +942,21 @@ async def test_proposal_engine_async_submit_proposal_reopens_existing_accepted_i
     assert pending[0].description == "Reopened draft"
 
 
+async def test_proposal_engine_async_submit_proposal_sanitizes_non_dict_config(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.suggested_reaction_config = ["bad"]  # type: ignore[assignment]
+    proposal_id = await engine.async_submit_proposal(proposal)
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].proposal_id == proposal_id
+    assert pending[0].suggested_reaction_config == {}
+
+
 async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
@@ -903,13 +997,18 @@ async def test_proposal_engine_shutdown_persisted_state_reloads_with_single_foll
     await engine2.async_initialize()
     await engine2.async_run()
 
-    assert len(engine2._proposals) == 2
-    accepted = next(proposal for proposal in engine2._proposals if proposal.status == "accepted")
-    pending = next(proposal for proposal in engine2._proposals if proposal.status == "pending")
-    assert accepted.proposal_id == proposal_id
-    assert accepted.confidence == 0.7
-    assert pending.followup_kind == "tuning_suggestion"
-    assert pending.confidence == 0.95
+    diagnostics = engine2.diagnostics()
+    assert diagnostics["total"] == 2
+    accepted = next(
+        proposal for proposal in diagnostics["proposals"] if proposal["status"] == "accepted"
+    )
+    pending = next(
+        proposal for proposal in diagnostics["proposals"] if proposal["status"] == "pending"
+    )
+    assert accepted["id"] == proposal_id
+    assert accepted["confidence"] == 0.7
+    assert pending["followup_kind"] == "tuning_suggestion"
+    assert pending["confidence"] == 0.95
 
 
 async def test_lighting_followup_minor_drift_is_suppressed(monkeypatch):
@@ -934,13 +1033,15 @@ async def test_lighting_followup_minor_drift_is_suppressed(monkeypatch):
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [ReactionProposal.from_dict({**base.as_dict(), "status": "accepted"})]
+    engine._store._data = {"data": {"proposals": [{**base.as_dict(), "status": "accepted"}]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
-    assert len(engine._proposals) == 1
-    assert engine._proposals[0].status == "accepted"
+    diagnostics = engine.diagnostics()
+    assert diagnostics["total"] == 1
+    assert diagnostics["proposals"][0]["status"] == "accepted"
 
 
 async def test_lighting_followup_material_drift_still_creates_tuning(monkeypatch):
@@ -965,14 +1066,16 @@ async def test_lighting_followup_material_drift_still_creates_tuning(monkeypatch
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [ReactionProposal.from_dict({**base.as_dict(), "status": "accepted"})]
+    engine._store._data = {"data": {"proposals": [{**base.as_dict(), "status": "accepted"}]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
-    assert len(engine._proposals) == 2
-    pending = next(item for item in engine._proposals if item.status == "pending")
-    assert pending.followup_kind == "tuning_suggestion"
+    diagnostics = engine.diagnostics()
+    assert diagnostics["total"] == 2
+    pending = next(item for item in diagnostics["proposals"] if item["status"] == "pending")
+    assert pending["followup_kind"] == "tuning_suggestion"
 
 
 async def test_proposal_engine_uses_plugin_lifecycle_hooks_for_identity(monkeypatch):
@@ -1050,7 +1153,9 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
             "steps": [],
         }
     )
-    engine._proposals = [proposal]
+    engine._store._data = {"data": {"proposals": [proposal.as_dict()]}}
+
+    await engine.async_initialize()
 
     diagnostics = engine.diagnostics()
 
@@ -1107,15 +1212,17 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [base]
+    engine._store._data = {"data": {"proposals": [base.as_dict()]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
-    assert len(engine._proposals) == 2
-    pending = next(item for item in engine._proposals if item.status == "pending")
-    assert pending.followup_kind == "tuning_suggestion"
-    assert pending.identity_key == "room_signal_assist|room=bathroom|primary=humidity"
+    diagnostics = engine.diagnostics()
+    assert diagnostics["total"] == 2
+    pending = next(item for item in diagnostics["proposals"] if item["status"] == "pending")
+    assert pending["followup_kind"] == "tuning_suggestion"
+    assert pending["identity_key"] == "room_signal_assist|room=bathroom|primary=humidity"
 
 
 async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(monkeypatch):
@@ -1161,9 +1268,10 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [base]
+    engine._store._data = {"data": {"proposals": [base.as_dict()]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
     assert len(engine.pending_proposals()) == 0
@@ -1227,15 +1335,17 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [base]
+    engine._store._data = {"data": {"proposals": [base.as_dict()]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
-    assert len(engine._proposals) == 2
-    pending = next(item for item in engine._proposals if item.status == "pending")
-    assert pending.followup_kind == "tuning_suggestion"
-    assert pending.identity_key == "room_darkness_lighting_assist|room=living|primary=room_lux"
+    diagnostics = engine.diagnostics()
+    assert diagnostics["total"] == 2
+    pending = next(item for item in diagnostics["proposals"] if item["status"] == "pending")
+    assert pending["followup_kind"] == "tuning_suggestion"
+    assert pending["identity_key"] == "room_darkness_lighting_assist|room=living|primary=room_lux"
 
 
 async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_drift(monkeypatch):
@@ -1293,9 +1403,10 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
     )
 
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
-    engine._proposals = [base]
+    engine._store._data = {"data": {"proposals": [base.as_dict()]}}
     engine.register_analyzer(_AnalyzerStub([candidate]))
 
+    await engine.async_initialize()
     await engine.async_run()
 
     assert len(engine.pending_proposals()) == 0

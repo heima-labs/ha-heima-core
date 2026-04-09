@@ -20,6 +20,23 @@ class _CoordinatorStub:
         self.learning_plugin_registry = create_builtin_learning_plugin_registry()
 
 
+def _reaction_state(payload: dict[str, object]) -> SimpleNamespace:
+    return SimpleNamespace(
+        get_sensor=lambda key: len(payload) if key == "heima_reactions_active" else None,
+        get_sensor_attributes=lambda key: (
+            {
+                "reactions": payload,
+                "total": len(payload),
+                "muted_total": sum(
+                    1 for raw in payload.values() if isinstance(raw, dict) and raw.get("muted")
+                ),
+            }
+            if key == "heima_reactions_active"
+            else None
+        ),
+    )
+
+
 async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins():
     coordinator = _CoordinatorStub()
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -204,15 +221,16 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
-        _state=SimpleNamespace(
-            get_sensor=lambda key: (
-                '{"r1":{"origin":"learned","author_kind":"heima"},'
-                '"r2":{"origin":"admin_authored","author_kind":"admin",'
-                '"source_template_id":"room.signal_assist.basic",'
-                '"source_proposal_identity_key":"room_signal_assist|room=bathroom"}}'
-                if key == "heima_reactions_active"
-                else None
-            )
+        _state=_reaction_state(
+            {
+                "r1": {"origin": "learned", "author_kind": "heima"},
+                "r2": {
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_template_id": "room.signal_assist.basic",
+                    "source_proposal_identity_key": "room_signal_assist|room=bathroom",
+                },
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -267,20 +285,57 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_summary() ->
     }
 
 
-async def test_config_entry_diagnostics_exposes_configured_reaction_identity_collisions() -> None:
+async def test_config_entry_diagnostics_supports_legacy_reaction_sensor_state_json() -> None:
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
         _state=SimpleNamespace(
             get_sensor=lambda key: (
-                '{"r1":{"origin":"admin_authored","author_kind":"admin",'
-                '"source_template_id":"lighting.scene_schedule.basic",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"},'
-                '"r2":{"origin":"learned","author_kind":"heima",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=b"}}'
+                '{"r1":{"origin":"learned","author_kind":"heima"}}'
                 if key == "heima_reactions_active"
                 else None
             )
+        ),
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["configured_reaction_summary"]
+
+    assert summary["total"] == 1
+    assert summary["by_origin"] == {"learned": 1}
+    assert summary["reaction_ids"] == ["r1"]
+
+
+async def test_config_entry_diagnostics_exposes_configured_reaction_identity_collisions() -> None:
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {"engine": "ok"},
+        _state=_reaction_state(
+            {
+                "r1": {
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "source_proposal_identity_key": (
+                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                    ),
+                },
+                "r2": {
+                    "origin": "learned",
+                    "author_kind": "heima",
+                    "source_proposal_identity_key": (
+                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=b"
+                    ),
+                },
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -315,16 +370,24 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
-        _state=SimpleNamespace(
-            get_sensor=lambda key: (
-                '{"r1":{"origin":"admin_authored","author_kind":"admin",'
-                '"source_template_id":"lighting.scene_schedule.basic",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"},'
-                '"r2":{"origin":"learned","author_kind":"heima",'
-                '"source_proposal_identity_key":"lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"}}'
-                if key == "heima_reactions_active"
-                else None
-            )
+        _state=_reaction_state(
+            {
+                "r1": {
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_template_id": "lighting.scene_schedule.basic",
+                    "source_proposal_identity_key": (
+                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                    ),
+                },
+                "r2": {
+                    "origin": "learned",
+                    "author_kind": "heima",
+                    "source_proposal_identity_key": (
+                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                    ),
+                },
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -480,13 +543,72 @@ async def test_config_entry_diagnostics_exposes_security_presence_summary() -> N
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
-        _state=SimpleNamespace(
-            get_sensor=lambda key: (
-                '{"sec1":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living","kitchen"],"active_tonight":true,"operational_state":"ready_tonight","blocked_reason":"","tonight_plan_count":2,"next_planned_activation":"2026-04-04T20:30:00+02:00","source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}],"excluded_source_trace":[{"reaction_id":"src3","room_id":"kitchen","exclusion_reason":"not_selected_within_budget","score":150.0}],"tonight_plan_preview":[{"room_id":"living","due_local":"2026-04-04T20:30:00+02:00","jitter_min":0,"selection_reason":"top_ranked_seed"}]},'
-                '"sec2":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["studio"],"source_rooms":["studio"],"active_tonight":false,"operational_state":"waiting_for_darkness","blocked_reason":"outside_not_dark","tonight_plan_count":0,"source_profile_kind":"accepted_lighting_reactions","selected_source_trace":[{"reaction_id":"src2","room_id":"studio","selection_reason":"top_ranked_seed","score":140.0}],"excluded_source_trace":[{"reaction_id":"src4","room_id":"studio","exclusion_reason":"outside_not_dark","score":120.0}]}}'
-                if key == "heima_reactions_active"
-                else None
-            )
+        _state=_reaction_state(
+            {
+                "sec1": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "allowed_rooms": ["living"],
+                    "source_rooms": ["living", "kitchen"],
+                    "active_tonight": True,
+                    "operational_state": "ready_tonight",
+                    "blocked_reason": "",
+                    "tonight_plan_count": 2,
+                    "next_planned_activation": "2026-04-04T20:30:00+02:00",
+                    "source_profile_kind": "learned_source_profiles",
+                    "selected_source_trace": [
+                        {
+                            "reaction_id": "src1",
+                            "room_id": "living",
+                            "selection_reason": "top_ranked_seed",
+                            "score": 203.0,
+                        }
+                    ],
+                    "excluded_source_trace": [
+                        {
+                            "reaction_id": "src3",
+                            "room_id": "kitchen",
+                            "exclusion_reason": "not_selected_within_budget",
+                            "score": 150.0,
+                        }
+                    ],
+                    "tonight_plan_preview": [
+                        {
+                            "room_id": "living",
+                            "due_local": "2026-04-04T20:30:00+02:00",
+                            "jitter_min": 0,
+                            "selection_reason": "top_ranked_seed",
+                        }
+                    ],
+                },
+                "sec2": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "allowed_rooms": ["studio"],
+                    "source_rooms": ["studio"],
+                    "active_tonight": False,
+                    "operational_state": "waiting_for_darkness",
+                    "blocked_reason": "outside_not_dark",
+                    "tonight_plan_count": 0,
+                    "source_profile_kind": "accepted_lighting_reactions",
+                    "selected_source_trace": [
+                        {
+                            "reaction_id": "src2",
+                            "room_id": "studio",
+                            "selection_reason": "top_ranked_seed",
+                            "score": 140.0,
+                        }
+                    ],
+                    "excluded_source_trace": [
+                        {
+                            "reaction_id": "src4",
+                            "room_id": "studio",
+                            "exclusion_reason": "outside_not_dark",
+                            "score": 120.0,
+                        }
+                    ],
+                },
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -536,12 +658,28 @@ async def test_config_entry_diagnostics_exposes_muted_security_presence_summary(
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
-        _state=SimpleNamespace(
-            get_sensor=lambda key: (
-                '{"sec-muted":{"reaction_class":"VacationPresenceSimulationReaction","reaction_type":"vacation_presence_simulation","allowed_rooms":["living"],"source_rooms":["living"],"active_tonight":false,"muted":true,"blocked_reason":"","tonight_plan_count":1,"source_profile_kind":"learned_source_profiles","selected_source_trace":[{"reaction_id":"src1","room_id":"living","selection_reason":"top_ranked_seed","score":203.0}]}}'
-                if key == "heima_reactions_active"
-                else None
-            )
+        _state=_reaction_state(
+            {
+                "sec-muted": {
+                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
+                    "allowed_rooms": ["living"],
+                    "source_rooms": ["living"],
+                    "active_tonight": False,
+                    "muted": True,
+                    "blocked_reason": "",
+                    "tonight_plan_count": 1,
+                    "source_profile_kind": "learned_source_profiles",
+                    "selected_source_trace": [
+                        {
+                            "reaction_id": "src1",
+                            "room_id": "living",
+                            "selection_reason": "top_ranked_seed",
+                            "score": 203.0,
+                        }
+                    ],
+                }
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
@@ -770,13 +908,21 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
     )
     coordinator.engine = SimpleNamespace(
         diagnostics=lambda: {"engine": "ok"},
-        _state=SimpleNamespace(
-            get_sensor=lambda key: (
-                '{"r1":{"reaction_type":"room_signal_assist","reaction_class":"RoomSignalAssistReaction","room_id":"bathroom","primary_signal_name":"humidity"},'
-                '"r2":{"reaction_class":"RoomLightingAssistReaction","source_proposal_identity_key":"room_darkness_lighting_assist|room=living|primary=room_lux"}}'
-                if key == "heima_reactions_active"
-                else None
-            )
+        _state=_reaction_state(
+            {
+                "r1": {
+                    "reaction_type": "room_signal_assist",
+                    "reaction_class": "RoomSignalAssistReaction",
+                    "room_id": "bathroom",
+                    "primary_signal_name": "humidity",
+                },
+                "r2": {
+                    "reaction_class": "RoomLightingAssistReaction",
+                    "source_proposal_identity_key": (
+                        "room_darkness_lighting_assist|room=living|primary=room_lux"
+                    ),
+                },
+            }
         ),
     )
     hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})

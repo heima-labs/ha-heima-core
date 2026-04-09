@@ -230,9 +230,9 @@ async def test_e2e_proposal_engine_accepted_not_overwritten(monkeypatch):
 
     await engine.async_run()
     # Still accepted, not reset to pending
-    all_proposals = engine._proposals
-    match = next(p for p in all_proposals if p.proposal_id == proposal_id)
-    assert match.status == "accepted"
+    proposals = engine.diagnostics()["proposals"]
+    match = next(p for p in proposals if p["id"] == proposal_id)
+    assert match["status"] == "accepted"
 
 
 # ---------------------------------------------------------------------------

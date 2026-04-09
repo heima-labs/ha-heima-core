@@ -361,30 +361,8 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
     engine = getattr(coordinator, "engine", None)
     if engine is None:
         return {}
-    payload = (
-        engine._state.get_sensor("heima_reactions_active") if hasattr(engine, "_state") else None
-    )  # noqa: SLF001
-    if not isinstance(payload, str) or not payload.strip():
-        return {
-            "total": 0,
-            "by_origin": {},
-            "by_author_kind": {},
-            "by_template_id": {},
-            "reaction_ids": [],
-        }
-    import json
-
-    try:
-        reactions = json.loads(payload)
-    except Exception:  # noqa: BLE001
-        return {
-            "total": 0,
-            "by_origin": {},
-            "by_author_kind": {},
-            "by_template_id": {},
-            "reaction_ids": [],
-        }
-    if not isinstance(reactions, dict):
+    reactions = _reaction_sensor_payload(getattr(engine, "_state", None))  # noqa: SLF001
+    if not reactions:
         return {
             "total": 0,
             "by_origin": {},
@@ -1188,26 +1166,39 @@ def _active_reaction_items(coordinator: Any) -> list[tuple[str, dict[str, Any]]]
         return []
     engine = getattr(coordinator, "engine", None)
     state = getattr(engine, "_state", None)
+    reactions = _reaction_sensor_payload(state)
+    return [
+        (str(reaction_id), dict(cfg))
+        for reaction_id, cfg in reactions.items()
+        if isinstance(cfg, dict)
+    ]
+
+
+def _reaction_sensor_payload(state: Any) -> dict[str, Any]:
+    if state is None:
+        return {}
+
+    get_sensor_attributes = getattr(state, "get_sensor_attributes", None)
+    if callable(get_sensor_attributes):
+        attrs = _safe_dict(get_sensor_attributes("heima_reactions_active"))
+        reactions = _safe_dict(attrs.get("reactions"))
+        if reactions:
+            return reactions
+
     get_sensor = getattr(state, "get_sensor", None)
-    if get_sensor is None:
-        return []
+    if not callable(get_sensor):
+        return {}
     payload = get_sensor("heima_reactions_active")
     if not isinstance(payload, str) or not payload.strip():
-        return []
+        return {}
 
     import json
 
     try:
         reactions = json.loads(payload)
     except Exception:  # noqa: BLE001
-        return []
-    if not isinstance(reactions, dict):
-        return []
-    return [
-        (str(reaction_id), dict(cfg))
-        for reaction_id, cfg in reactions.items()
-        if isinstance(cfg, dict)
-    ]
+        return {}
+    return _safe_dict(reactions)
 
 
 def _safe_dict(value: Any) -> dict[str, Any]:
