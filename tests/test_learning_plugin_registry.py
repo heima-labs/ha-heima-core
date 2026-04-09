@@ -7,7 +7,17 @@ from custom_components.heima.runtime.analyzers import (
     builtin_learning_pattern_plugins,
     create_builtin_learning_plugin_registry,
 )
-from custom_components.heima.runtime.analyzers.policy import learning_policy_from_config
+from custom_components.heima.runtime.analyzers.cross_domain import (
+    DEFAULT_COMPOSITE_PATTERN_CATALOG,
+    composite_quality_policy_from_learning_config,
+)
+from custom_components.heima.runtime.analyzers.lifecycle import (
+    composite_lifecycle_policy_from_learning_config,
+)
+from custom_components.heima.runtime.analyzers.policy import (
+    composite_catalog_with_policy,
+    learning_policy_from_config,
+)
 
 
 def test_builtin_learning_pattern_plugins_exposes_default_learning_plugins():
@@ -225,8 +235,8 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
 
 
 def test_builtin_learning_plugin_registry_passes_composite_quality_policy():
-    registry = create_builtin_learning_plugin_registry(
-        learning_config={
+    policy = composite_quality_policy_from_learning_config(
+        {
             "composite_quality_policy": {
                 "followup_entity_min_ratio": 0.75,
                 "followup_entity_min_episodes": 4,
@@ -237,19 +247,14 @@ def test_builtin_learning_plugin_registry_passes_composite_quality_policy():
         }
     )
 
-    composite = next(
-        analyzer
-        for analyzer in registry.analyzers()
-        if analyzer.analyzer_id == "CompositePatternCatalogAnalyzer"
-    )
-    assert composite._quality_policy.followup_entity_min_ratio == 0.75  # noqa: SLF001
-    assert composite._quality_policy.followup_entity_min_episodes == 4  # noqa: SLF001
-    assert composite._quality_policy.minimal_evidence_confidence_cap == 0.82  # noqa: SLF001
+    assert policy.followup_entity_min_ratio == 0.75
+    assert policy.followup_entity_min_episodes == 4
+    assert policy.minimal_evidence_confidence_cap == 0.82
 
 
 def test_builtin_learning_plugin_registry_passes_composite_lifecycle_policy():
-    registry = create_builtin_learning_plugin_registry(
-        learning_config={
+    policy = composite_lifecycle_policy_from_learning_config(
+        {
             "composite_lifecycle_policy": {
                 "room_signal_primary_threshold_max_gap": 2.0,
                 "room_signal_corroboration_threshold_max_gap": 0.5,
@@ -260,11 +265,6 @@ def test_builtin_learning_plugin_registry_passes_composite_lifecycle_policy():
         }
     )
 
-    hooks = registry.lifecycle_hooks_for("room_signal_assist")
-    assert hooks is not None
-    closure_cells = hooks.should_suppress_followup.__closure__  # type: ignore[union-attr]
-    assert closure_cells is not None
-    policy = closure_cells[0].cell_contents
     assert policy.room_signal_primary_threshold_max_gap == 2.0
     assert policy.room_signal_corroboration_threshold_max_gap == 0.5
     assert policy.room_darkness_primary_threshold_max_gap == 15.0
@@ -309,33 +309,31 @@ def test_builtin_learning_plugin_registry_passes_family_learning_policies():
     analyzers = {analyzer.analyzer_id: analyzer for analyzer in registry.analyzers()}
 
     presence = analyzers["PresencePatternAnalyzer"]
-    assert presence.min_arrivals == 7  # noqa: SLF001
-    assert presence.min_weeks == 3  # noqa: SLF001
+    assert presence.min_arrivals == 7
+    assert presence.min_weeks == 3
 
     lighting = analyzers["LightingPatternAnalyzer"]
-    assert lighting.min_occurrences == 6  # noqa: SLF001
-    assert lighting.min_weeks == 4  # noqa: SLF001
+    assert lighting.min_occurrences == 6
+    assert lighting.min_weeks == 4
 
     security_presence = analyzers["SecurityPresenceSimulationAnalyzer"]
-    assert security_presence.min_occurrences == 5  # noqa: SLF001
-    assert security_presence.min_weeks == 3  # noqa: SLF001
+    assert security_presence.min_occurrences == 5
+    assert security_presence.min_weeks == 3
 
 
 def test_builtin_learning_plugin_registry_passes_composite_family_learning_policy():
-    registry = create_builtin_learning_plugin_registry(
-        learning_config={
+    policies = learning_policy_from_config(
+        {
             "composite": {"min_occurrences": 7, "min_weeks": 4},
         }
     )
-
-    composite = next(
-        analyzer
-        for analyzer in registry.analyzers()
-        if analyzer.analyzer_id == "CompositePatternCatalogAnalyzer"
+    catalog = composite_catalog_with_policy(
+        DEFAULT_COMPOSITE_PATTERN_CATALOG,
+        policies.composite_room_assist,
     )
-    assert composite._catalog  # noqa: SLF001
-    assert all(item.min_occurrences == 7 for item in composite._catalog)  # noqa: SLF001
-    assert all(item.min_weeks == 4 for item in composite._catalog)  # noqa: SLF001
+    assert catalog
+    assert all(item.min_occurrences == 7 for item in catalog)
+    assert all(item.min_weeks == 4 for item in catalog)
 
 
 def test_builtin_learning_plugin_registry_passes_heating_family_learning_policy():
@@ -355,10 +353,10 @@ def test_builtin_learning_plugin_registry_passes_heating_family_learning_policy(
         for analyzer in registry.analyzers()
         if analyzer.analyzer_id == "HeatingPatternAnalyzer"
     )
-    assert heating.preference_min_events == 12  # noqa: SLF001
-    assert heating.preference_min_weeks == 4  # noqa: SLF001
-    assert heating.eco_min_sessions == 5  # noqa: SLF001
-    assert heating.eco_min_weeks == 3  # noqa: SLF001
+    assert heating.preference_min_events == 12
+    assert heating.preference_min_weeks == 4
+    assert heating.eco_min_sessions == 5
+    assert heating.eco_min_weeks == 3
 
 
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():

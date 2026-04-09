@@ -33,6 +33,9 @@ class _AnalyzerStub:
     def analyzer_id(self) -> str:
         return self._id
 
+    def set_proposals(self, proposals) -> None:
+        self._proposals = list(proposals)
+
     async def analyze(self, event_store):  # noqa: ANN001, ARG002
         return list(self._proposals)
 
@@ -168,7 +171,7 @@ async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
     await engine.async_initialize()
     await engine.async_run()
 
-    analyzer._proposals = [_proposal(conf=0.85)]
+    analyzer.set_proposals([_proposal(conf=0.85)])
     await engine.async_run()
     pending = engine.pending_proposals()
     assert len(pending) == 1
@@ -185,7 +188,7 @@ async def test_proposal_engine_accepted_history_generates_followup_pending(monke
     pid = engine.pending_proposals()[0].proposal_id
     assert await engine.async_accept_proposal(pid)
 
-    analyzer._proposals = [_proposal(conf=0.4)]
+    analyzer.set_proposals([_proposal(conf=0.4)])
     await engine.async_run()
     all_pending = engine.pending_proposals()
     assert len(all_pending) == 1
@@ -202,7 +205,7 @@ async def test_proposal_engine_still_skips_rejected_history(monkeypatch):
     pid = engine.pending_proposals()[0].proposal_id
     assert await engine.async_reject_proposal(pid)
 
-    analyzer._proposals = [_proposal(conf=0.95, weekday=1)]
+    analyzer.set_proposals([_proposal(conf=0.95, weekday=1)])
     await engine.async_run()
 
     assert engine.pending_proposals() == []
@@ -294,7 +297,7 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
     await engine.async_initialize()
     await engine.async_run()
 
-    analyzer._proposals = [second]
+    analyzer.set_proposals([second])
     await engine.async_run()
 
     pending = engine.pending_proposals()
@@ -366,7 +369,7 @@ async def test_proposal_engine_lighting_identity_tolerates_minor_scene_drift(mon
     await engine.async_initialize()
     await engine.async_run()
 
-    analyzer._proposals = [second]
+    analyzer.set_proposals([second])
     await engine.async_run()
 
     pending = engine.pending_proposals()
@@ -825,16 +828,18 @@ async def test_proposal_engine_run_sanitizes_non_dict_config_on_pending_update(m
     await engine.async_initialize()
     await engine.async_run()
 
-    analyzer._proposals = [
-        ReactionProposal(
-            analyzer_id="PresencePatternAnalyzer",
-            reaction_type="presence_preheat",
-            confidence=0.85,
-            description="bad-update",
-            identity_key="presence_preheat|weekday=0",
-            suggested_reaction_config=["bad"],  # type: ignore[arg-type]
-        )
-    ]
+    analyzer.set_proposals(
+        [
+            ReactionProposal(
+                analyzer_id="PresencePatternAnalyzer",
+                reaction_type="presence_preheat",
+                confidence=0.85,
+                description="bad-update",
+                identity_key="presence_preheat|weekday=0",
+                suggested_reaction_config=["bad"],  # type: ignore[arg-type]
+            )
+        ]
+    )
     await engine.async_run()
 
     pending = engine.pending_proposals()
