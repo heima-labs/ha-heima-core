@@ -1075,8 +1075,8 @@ def present_vacation_presence_simulation_label(
         str(item).strip() for item in cfg.get("allowed_rooms", []) or [] if str(item).strip()
     )
     if scope:
-        return f"Simulazione presenza vacation · {scope}"
-    return "Simulazione presenza vacation"
+        return f"Simulazione presenza (vacanza) · {scope}"
+    return "Simulazione presenza (vacanza)"
 
 
 def present_admin_authored_vacation_presence_simulation_details(
@@ -1094,7 +1094,7 @@ def present_admin_authored_vacation_presence_simulation_details(
         details.append(f"Stanze consentite: {', '.join(rooms)}")
     if entities:
         details.append(f"Entità consentite: {', '.join(entities)}")
-    details.append("Profilo di esecuzione: derivato da lighting reactions accettate recenti")
+    details.append("Profilo di esecuzione: derivato da automazioni luce accettate di recente")
     if bool(cfg.get("requires_dark_outside", True)):
         details.append("Buio richiesto: sì")
     if bool(cfg.get("skip_if_presence_detected", True)):
@@ -1134,7 +1134,7 @@ def present_learned_vacation_presence_simulation_details(
             else f"Covered weekdays: {', '.join(labels)}"
         )
     details.append(
-        "Profilo di esecuzione: derivato da user lighting history non-vacation"
+        "Profilo di esecuzione: derivato dallo storico luci utente (escluso vacanza)"
         if is_it
         else "Execution profile: derived from non-vacation user lighting history"
     )
@@ -1153,12 +1153,12 @@ def present_vacation_presence_simulation_proposal_label(
         if len(rooms) > 2:
             scope = f"{scope}, +{len(rooms) - 2}"
         return (
-            f"Presenza vacation · {scope}"
+            f"Presenza (vacanza) · {scope}"
             if language.startswith("it")
             else f"Vacation presence · {scope}"
         )
     return (
-        "Simulazione presenza vacation"
+        "Simulazione presenza (vacanza)"
         if language.startswith("it")
         else "Vacation presence simulation"
     )
@@ -1174,13 +1174,13 @@ def present_vacation_presence_simulation_review_title(
     base = present_vacation_presence_simulation_proposal_label(flow, proposal, cfg, language)
     if not base:
         return (
-            "Simulazione presenza in vacation"
+            "Simulazione presenza durante la vacanza"
             if language.startswith("it")
             else "Vacation presence simulation"
         )
     if getattr(proposal, "origin", "") == "admin_authored":
         return (
-            "Simulazione presenza in vacation"
+            "Simulazione presenza durante la vacanza"
             if language.startswith("it")
             else "Vacation presence simulation"
         )

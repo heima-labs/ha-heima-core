@@ -110,9 +110,9 @@ class SecurityPresenceSimulationAnalyzer:
         if len(rooms) > 3:
             room_label = f"{room_label}, +{len(rooms) - 3}"
         description = (
-            f"Simulazione presenza vacation da {room_label}"
+            f"Simulazione presenza (vacanza) — {room_label}"
             if room_label
-            else "Simulazione presenza vacation"
+            else "Simulazione presenza (vacanza)"
         )
 
         return [
