@@ -27,16 +27,19 @@ class RoomSignalAssistReaction(HeimaReaction):
         self,
         *,
         hass: HomeAssistant,
+        bucket_getter: Any | None = None,
         room_id: str,
         trigger_signal_entities: list[str] | None = None,
         steps: list[ApplyStep],
         primary_signal_entities: list[str] | None = None,
+        primary_bucket: str | None = None,
         primary_threshold: float | None = None,
         primary_threshold_mode: ThresholdMode = "rise",
         primary_rise_threshold: float | None = None,
         primary_signal_name: str = "primary",
         humidity_rise_threshold: float = 8.0,
         corroboration_signal_entities: list[str] | None = None,
+        corroboration_bucket: str | None = None,
         corroboration_threshold: float | None = None,
         corroboration_threshold_mode: ThresholdMode = "rise",
         corroboration_rise_threshold: float | None = None,
@@ -48,6 +51,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         reaction_id: str | None = None,
     ) -> None:
         self._hass = hass
+        self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._room_id = room_id
         resolved_primary_entities = [
             e for e in (primary_signal_entities or trigger_signal_entities or []) if e
@@ -76,8 +80,10 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._primary_entities = resolved_primary_entities
         self._corroboration_entities = resolved_corroboration_entities
         self._steps = list(steps)
+        self._primary_bucket = str(primary_bucket or "").strip() or None
         self._primary_threshold = float(resolved_primary_threshold)
         self._primary_threshold_mode = primary_threshold_mode
+        self._corroboration_bucket = str(corroboration_bucket or "").strip() or None
         self._corroboration_threshold = float(resolved_corroboration_threshold)
         self._corroboration_threshold_mode = corroboration_threshold_mode
         self._primary_signal_name = primary_signal_name or "primary"
@@ -111,6 +117,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._last_fired_ts: float | None = None
         self._fire_count = 0
         self._suppressed_count = 0
+        self._steady_condition_active = False
 
     @property
     def reaction_id(self) -> str:
@@ -121,24 +128,30 @@ class RoomSignalAssistReaction(HeimaReaction):
             return []
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
+            self._steady_condition_active = False
             return []
 
-        now = parse_snapshot_ts(snapshot.ts)
-        if now is None:
-            return []
+        if self._primary_bucket:
+            should_fire = self._steady_ready()
+        else:
+            now = parse_snapshot_ts(snapshot.ts)
+            if now is None:
+                return []
 
-        result = self._matcher.observe(
-            now=now,
-            pending_since=self._pending_episode_ts,
-            spec=self._pattern,
-        )
-        self._pending_episode_ts = result.pending_since
-        should_fire = result.ready
+            result = self._matcher.observe(
+                now=now,
+                pending_since=self._pending_episode_ts,
+                spec=self._pattern,
+            )
+            self._pending_episode_ts = result.pending_since
+            should_fire = result.ready
 
         if should_fire and self._is_cooled_down():
             self._pending_episode_ts = None
             self._fire_count += 1
             self._last_fired_ts = time.monotonic()
+            if self._primary_bucket:
+                self._steady_condition_active = True
             return list(self._steps)
         if should_fire:
             self._suppressed_count += 1
@@ -150,6 +163,7 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._last_fired_ts = None
         self._fire_count = 0
         self._suppressed_count = 0
+        self._steady_condition_active = False
 
     def diagnostics(self) -> dict[str, Any]:
         return {
@@ -157,11 +171,13 @@ class RoomSignalAssistReaction(HeimaReaction):
             "trigger_signal_entities": list(self._legacy_trigger_entities),
             "primary_signal_name": self._primary_signal_name,
             "primary_entities": list(self._primary_entities),
+            "primary_bucket": self._primary_bucket,
             "primary_threshold": self._primary_threshold,
             "primary_threshold_mode": self._primary_threshold_mode,
             "primary_rise_threshold": self._primary_threshold,
             "corroboration_signal_name": self._corroboration_signal_name,
             "corroboration_entities": list(self._corroboration_entities),
+            "corroboration_bucket": self._corroboration_bucket,
             "corroboration_threshold": self._corroboration_threshold,
             "corroboration_threshold_mode": self._corroboration_threshold_mode,
             "corroboration_rise_threshold": self._corroboration_threshold,
@@ -173,12 +189,30 @@ class RoomSignalAssistReaction(HeimaReaction):
             "pending_episode": self._pending_episode_ts.isoformat()
             if self._pending_episode_ts
             else None,
+            "steady_condition_active": self._steady_condition_active,
         }
 
     def _is_cooled_down(self) -> bool:
         if self._last_fired_ts is None:
             return True
         return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
+
+    def _steady_ready(self) -> bool:
+        current_bucket = self._bucket_getter(self._room_id, self._primary_signal_name)
+        if current_bucket != self._primary_bucket:
+            self._steady_condition_active = False
+            return False
+        if self._corroboration_bucket:
+            corroboration_bucket = self._bucket_getter(
+                self._room_id,
+                self._corroboration_signal_name,
+            )
+            if corroboration_bucket != self._corroboration_bucket:
+                self._steady_condition_active = False
+                return False
+        if self._steady_condition_active:
+            return False
+        return True
 
 
 def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +225,7 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
         for v in cfg.get("primary_signal_entities", trigger_signal_entities)
         if str(v).strip()
     ]
+    primary_bucket = str(cfg.get("primary_bucket") or "").strip() or None
     temperature_signal_entities = [
         str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
     ]
@@ -199,6 +234,7 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
         for v in cfg.get("corroboration_signal_entities", temperature_signal_entities)
         if str(v).strip()
     ]
+    corroboration_bucket = str(cfg.get("corroboration_bucket") or "").strip() or None
     humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
     primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
     primary_threshold = float(cfg.get("primary_threshold", primary_rise_threshold))
@@ -218,8 +254,10 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "trigger_signal_entities": trigger_signal_entities,
         "primary_signal_entities": primary_signal_entities,
+        "primary_bucket": primary_bucket,
         "temperature_signal_entities": temperature_signal_entities,
         "corroboration_signal_entities": corroboration_signal_entities,
+        "corroboration_bucket": corroboration_bucket,
         "humidity_rise_threshold": humidity_rise_threshold,
         "primary_rise_threshold": primary_rise_threshold,
         "primary_threshold": primary_threshold,
@@ -252,14 +290,17 @@ def build_room_signal_assist_reaction(
         return None
     return RoomSignalAssistReaction(
         hass=engine._hass,  # noqa: SLF001
+        bucket_getter=engine.signal_bucket,
         room_id=room_id,
         trigger_signal_entities=normalized["trigger_signal_entities"],
         primary_signal_entities=normalized["primary_signal_entities"],
+        primary_bucket=normalized["primary_bucket"],
         primary_threshold=normalized["primary_threshold"],
         primary_threshold_mode=normalized["primary_threshold_mode"],
         primary_rise_threshold=normalized["primary_rise_threshold"],
         primary_signal_name=normalized["primary_signal_name"],
         corroboration_signal_entities=normalized["corroboration_signal_entities"],
+        corroboration_bucket=normalized["corroboration_bucket"],
         corroboration_threshold=normalized["corroboration_threshold"],
         corroboration_threshold_mode=normalized["corroboration_threshold_mode"],
         corroboration_rise_threshold=normalized["corroboration_rise_threshold"],

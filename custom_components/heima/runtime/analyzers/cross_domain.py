@@ -316,6 +316,11 @@ async def _analyze_definition(
 
 
 def _is_humidity_event(event: HeimaEvent) -> bool:
+    if event.event_type == "room_signal_threshold":
+        return (
+            str(event.subject_id or "").strip() == "room_humidity"
+            and str(event.data.get("to_bucket") or "").strip() == "high"
+        )
     if event.data.get("device_class") == "humidity":
         return True
     entity_id = str(event.subject_id or event.data.get("entity_id") or "")
@@ -338,6 +343,11 @@ def _is_activation_event(event: HeimaEvent) -> bool:
 
 
 def _is_co2_event(event: HeimaEvent) -> bool:
+    if event.event_type == "room_signal_threshold":
+        return (
+            str(event.subject_id or "").strip() == "room_co2"
+            and str(event.data.get("to_bucket") or "").strip() in {"elevated", "high"}
+        )
     if event.data.get("device_class") == "carbon_dioxide":
         return True
     entity_id = str(event.subject_id or event.data.get("entity_id") or "")
@@ -577,9 +587,8 @@ def _build_signal_assist_config(
         "room_id": room_id,
         "trigger_signal_entities": humidity_entities,
         "primary_signal_entities": humidity_entities,
-        "primary_signal_name": "humidity",
-        "primary_threshold_mode": "rise",
-        "primary_threshold": _HUMIDITY_RISE_THRESHOLD,
+        "primary_signal_name": "room_humidity",
+        "primary_bucket": "high",
         "temperature_signal_entities": temperature_entities,
         "corroboration_signal_entities": temperature_entities,
         "corroboration_signal_name": "temperature",
@@ -643,8 +652,8 @@ def _build_air_quality_assist_config(
         "room_id": room_id,
         "trigger_signal_entities": co2_entities,
         "primary_signal_entities": co2_entities,
-        "primary_rise_threshold": _CO2_RISE_THRESHOLD,
-        "primary_signal_name": "co2",
+        "primary_signal_name": "room_co2",
+        "primary_bucket": "elevated",
         "temperature_signal_entities": [],
         "corroboration_signal_entities": [],
         "corroboration_rise_threshold": 0.0,
@@ -826,7 +835,7 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
         primary=CompositeSignalSpec(
             name="humidity",
             predicate=_is_humidity_event,
-            min_delta=_HUMIDITY_RISE_THRESHOLD,
+            min_delta=None,
         ),
         corroborations=(
             CompositeSignalSpec(
@@ -912,7 +921,7 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
         primary=CompositeSignalSpec(
             name="co2",
             predicate=_is_co2_event,
-            min_delta=_CO2_RISE_THRESHOLD,
+            min_delta=None,
         ),
         followup=CompositeSignalSpec(
             name="ventilation",

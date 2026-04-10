@@ -168,13 +168,13 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
         fan_ts = (base + timedelta(days=i * 7, minutes=5)).isoformat()
         events.extend(
             [
-                _state_change(
+                _room_signal_threshold(
                     entity_id="sensor.bathroom_humidity",
                     room="bathroom",
                     ts=ts,
-                    old_state="55",
-                    new_state="66",
-                    device_class="humidity",
+                    signal_name="room_humidity",
+                    from_bucket="ok",
+                    to_bucket="high",
                 ),
                 _state_change(
                     entity_id="sensor.bathroom_temperature",
@@ -207,9 +207,8 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.bathroom_humidity"
     ]
-    assert proposal.suggested_reaction_config["primary_signal_name"] == "humidity"
-    assert proposal.suggested_reaction_config["primary_threshold_mode"] == "rise"
-    assert proposal.suggested_reaction_config["primary_threshold"] == 8.0
+    assert proposal.suggested_reaction_config["primary_signal_name"] == "room_humidity"
+    assert proposal.suggested_reaction_config["primary_bucket"] == "high"
     assert proposal.suggested_reaction_config["temperature_signal_entities"] == [
         "sensor.bathroom_temperature"
     ]
@@ -310,13 +309,13 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
         fan_ts = (base + timedelta(days=i * 7, minutes=4)).isoformat()
         events.extend(
             [
-                _state_change(
+                _room_signal_threshold(
                     entity_id="sensor.office_co2",
                     room="office",
                     ts=co2_ts,
-                    old_state="700",
-                    new_state="940",
-                    device_class="carbon_dioxide",
+                    signal_name="room_co2",
+                    from_bucket="ok",
+                    to_bucket="elevated",
                 ),
                 _state_change(
                     entity_id="fan.office_ventilation",
@@ -336,7 +335,8 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert proposal.suggested_reaction_config["reaction_type"] == "room_air_quality_assist"
     assert proposal.suggested_reaction_config["room_id"] == "office"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == ["sensor.office_co2"]
-    assert proposal.suggested_reaction_config["primary_signal_name"] == "co2"
+    assert proposal.suggested_reaction_config["primary_signal_name"] == "room_co2"
+    assert proposal.suggested_reaction_config["primary_bucket"] == "elevated"
     assert proposal.suggested_reaction_config["observed_followup_entities"] == [
         "fan.office_ventilation"
     ]
@@ -693,17 +693,17 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
     events = []
     for i in range(5):
         events.extend(
-            [
-                _state_change(
-                    entity_id="sensor.bathroom_humidity",
-                    room="bathroom",
-                    ts=(base_bathroom + timedelta(days=i * 7)).isoformat(),
-                    old_state="55",
-                    new_state="66",
-                    device_class="humidity",
-                ),
-                _state_change(
-                    entity_id="sensor.bathroom_temperature",
+                [
+                    _room_signal_threshold(
+                        entity_id="sensor.bathroom_humidity",
+                        room="bathroom",
+                        ts=(base_bathroom + timedelta(days=i * 7)).isoformat(),
+                        signal_name="room_humidity",
+                        from_bucket="ok",
+                        to_bucket="high",
+                    ),
+                    _state_change(
+                        entity_id="sensor.bathroom_temperature",
                     room="bathroom",
                     ts=(base_bathroom + timedelta(days=i * 7, minutes=3)).isoformat(),
                     old_state="21.0",
@@ -740,16 +740,16 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
                     old_state="off",
                     new_state="on",
                 ),
-                _state_change(
-                    entity_id="sensor.office_co2",
-                    room="office",
-                    ts=(base_studio + timedelta(days=i * 7, minutes=30)).isoformat(),
-                    old_state="700",
-                    new_state="930",
-                    device_class="carbon_dioxide",
-                ),
-                _state_change(
-                    entity_id="fan.office_ventilation",
+                    _room_signal_threshold(
+                        entity_id="sensor.office_co2",
+                        room="office",
+                        ts=(base_studio + timedelta(days=i * 7, minutes=30)).isoformat(),
+                        signal_name="room_co2",
+                        from_bucket="ok",
+                        to_bucket="elevated",
+                    ),
+                    _state_change(
+                        entity_id="fan.office_ventilation",
                     room="office",
                     ts=(base_studio + timedelta(days=i * 7, minutes=34)).isoformat(),
                     old_state="off",
@@ -782,11 +782,14 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
     }
-    diagnostics_by_type = {
-        proposal.reaction_type: proposal.suggested_reaction_config["learning_diagnostics"]
+    diagnostics_by_slot = {
+        (
+            proposal.reaction_type,
+            proposal.suggested_reaction_config["room_id"],
+        ): proposal.suggested_reaction_config["learning_diagnostics"]
         for proposal in proposals
     }
-    assert diagnostics_by_type["room_signal_assist"]["room_id"] == "bathroom"
-    assert diagnostics_by_type["room_cooling_assist"]["room_id"] == "studio"
-    assert diagnostics_by_type["room_air_quality_assist"]["room_id"] == "office"
-    assert diagnostics_by_type["room_darkness_lighting_assist"]["room_id"] == "living"
+    assert diagnostics_by_slot[("room_signal_assist", "bathroom")]["room_id"] == "bathroom"
+    assert diagnostics_by_slot[("room_cooling_assist", "studio")]["room_id"] == "studio"
+    assert diagnostics_by_slot[("room_air_quality_assist", "office")]["room_id"] == "office"
+    assert diagnostics_by_slot[("room_darkness_lighting_assist", "living")]["room_id"] == "living"
