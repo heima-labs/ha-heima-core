@@ -2552,9 +2552,8 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
         {
             "room_id": "bathroom",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "primary_signal_name": "humidity",
-            "primary_threshold_mode": "rise",
-            "primary_threshold": 8.0,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "corroboration_signal_name": "temperature",
             "corroboration_threshold_mode": "rise",
@@ -2578,6 +2577,8 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert reaction["origin"] == "admin_authored"
     assert reaction["source_template_id"] == "room.signal_assist.basic"
     assert reaction["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert reaction["primary_signal_name"] == "room_humidity"
+    assert reaction["primary_bucket"] == "high"
     assert reaction["corroboration_signal_entities"] == ["sensor.bathroom_temperature"]
 
 
@@ -2660,6 +2661,36 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_payload():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_threshold": 120.0,
+            "light_entities": ["**REDACTED**"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["errors"]["base"] == "redacted_payload"
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_configured_identity():
     flow = _flow(
         {
@@ -2696,6 +2727,49 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
     assert result["errors"]["base"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_proposals_accept_rejects_redacted_config_payload():
+    proposal = ReactionProposal(
+        analyzer_id="RoomDarknessLightingAnalyzer",
+        reaction_type="room_darkness_lighting_assist",
+        description="studio: when room_lux drops too low, apply 1 light action",
+        confidence=0.8,
+        origin="learned",
+        identity_key="room_darkness_lighting_assist|room=studio|primary=room_lux",
+        fingerprint="room_darkness_lighting_assist|room=studio|primary=room_lux",
+        suggested_reaction_config={
+            "reaction_type": "room_darkness_lighting_assist",
+            "room_id": "studio",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "primary_threshold": 120.0,
+            "primary_signal_name": "room_lux",
+            "primary_threshold_mode": "below",
+            "entity_steps": [{"entity_id": "**REDACTED**", "action": "on"}],
+        },
+    )
+    coordinator = SimpleNamespace(
+        proposal_engine=SimpleNamespace(
+            pending_proposals=lambda: [proposal],
+            async_accept_proposal=AsyncMock(),
+            async_reject_proposal=AsyncMock(),
+        )
+    )
+    flow = _flow(
+        {
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposals"
+    assert result["errors"]["base"] == "redacted_payload"
+    coordinator.proposal_engine.async_accept_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 
 @pytest.mark.asyncio
@@ -2856,7 +2930,8 @@ async def test_admin_authored_room_signal_assist_accept_skips_action_configurati
             "reaction_class": "RoomSignalAssistReaction",
             "room_id": "bathroom",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "primary_signal_name": "humidity",
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "corroboration_signal_name": "temperature",
             "steps": [
@@ -3080,6 +3155,52 @@ async def test_proposal_configure_action_resumes_guided_review():
             "params": {"entity_id": "scene.arrival"},
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_proposal_configure_action_rejects_redacted_payload_without_accepting_proposal():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-redacted",
+        analyzer_id="PresencePatternAnalyzer",
+        reaction_type="presence_preheat",
+        description="Arrival proposal",
+        confidence=1.0,
+        suggested_reaction_config={
+            "reaction_class": "PresencePatternReaction",
+            "weekday": 0,
+            "median_arrival_min": 480,
+            "steps": [],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        async_accept_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+    flow._pending_action_drafts = [
+        {
+            "proposal": proposal,
+            "proposal_id": "proposal-redacted",
+            "target_id": "proposal-redacted",
+            "existing_config": {"source_proposal_identity_key": "**REDACTED**"},
+            "label": "Arrival proposal",
+        }
+    ]
+
+    result = await flow.async_step_proposal_configure_action(
+        {
+            "action_entities": ["scene.arrival"],
+            "pre_condition_min": 15,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposal_configure_action"
+    assert result["errors"]["base"] == "redacted_payload"
+    proposal_engine.async_accept_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 
 @pytest.mark.asyncio

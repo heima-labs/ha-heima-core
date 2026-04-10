@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
+_REDACTED_SENTINEL = "**REDACTED**"
 
 
 class _ReactionsStepsMixin:
@@ -30,6 +31,16 @@ class _ReactionsStepsMixin:
     @staticmethod
     def _reaction_type_from_cfg(cfg: dict[str, Any]) -> str:
         return resolve_reaction_type(cfg)
+
+    @staticmethod
+    def _has_redacted_payload(value: Any) -> bool:
+        if isinstance(value, str):
+            return _REDACTED_SENTINEL in value
+        if isinstance(value, dict):
+            return any(_ReactionsStepsMixin._has_redacted_payload(item) for item in value.values())
+        if isinstance(value, list):
+            return any(_ReactionsStepsMixin._has_redacted_payload(item) for item in value)
+        return False
 
     def _admin_authored_identity_conflicts(self, proposal: ReactionProposal) -> bool:
         """Return True if a configured reaction already covers this identity key."""
@@ -222,6 +233,27 @@ class _ReactionsStepsMixin:
                 },
             )
 
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_lighting_schedule",
+                data_schema=self._admin_authored_lighting_schedule_schema(
+                    {
+                        "room_id": room_id,
+                        "weekday": str(weekday),
+                        "scheduled_time": scheduled_time,
+                        "light_entities": entity_ids,
+                        "action": action,
+                        "brightness": brightness or defaults["brightness"],
+                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
+                    }
+                ),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
         return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_security_presence_simulation(
@@ -315,6 +347,17 @@ class _ReactionsStepsMixin:
                 },
             )
 
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_security_presence_simulation",
+                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
         return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_room_signal_assist(
@@ -328,9 +371,8 @@ class _ReactionsStepsMixin:
 
         defaults = {
             "room_id": room_ids[0],
-            "primary_signal_name": "humidity",
-            "primary_threshold_mode": "rise",
-            "primary_threshold": 8.0,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
             "corroboration_signal_name": "temperature",
             "corroboration_threshold_mode": "rise",
             "corroboration_threshold": 0.8,
@@ -368,18 +410,10 @@ class _ReactionsStepsMixin:
         if not action_entities:
             errors["action_entities"] = "required"
 
-        primary_threshold_mode = str(user_input.get("primary_threshold_mode") or "rise").strip()
-        if primary_threshold_mode not in self._signal_threshold_mode_options():
-            errors["primary_threshold_mode"] = "invalid_selection"
-            primary_threshold_mode = defaults["primary_threshold_mode"]
-
-        try:
-            primary_threshold = float(user_input.get("primary_threshold") or 0)
-            if primary_threshold <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["primary_threshold"] = "invalid_number"
-            primary_threshold = defaults["primary_threshold"]
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        if not primary_bucket:
+            errors["primary_bucket"] = "required"
+            primary_bucket = defaults["primary_bucket"]
 
         corroboration_threshold_mode = str(
             user_input.get("corroboration_threshold_mode") or "rise"
@@ -407,8 +441,7 @@ class _ReactionsStepsMixin:
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name
                         or defaults["primary_signal_name"],
-                        "primary_threshold_mode": primary_threshold_mode,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name
                         or defaults["corroboration_signal_name"],
@@ -428,8 +461,7 @@ class _ReactionsStepsMixin:
             room_id=room_id,
             primary_signal_entities=primary_signal_entities,
             primary_signal_name=primary_signal_name or "primary",
-            primary_threshold_mode=primary_threshold_mode,
-            primary_threshold=primary_threshold,
+            primary_bucket=primary_bucket,
             corroboration_signal_entities=corroboration_signal_entities,
             corroboration_signal_name=corroboration_signal_name or "corroboration",
             corroboration_threshold_mode=corroboration_threshold_mode,
@@ -444,8 +476,7 @@ class _ReactionsStepsMixin:
                         "room_id": room_id,
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_threshold_mode": primary_threshold_mode,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name,
                         "corroboration_threshold_mode": corroboration_threshold_mode,
@@ -454,6 +485,29 @@ class _ReactionsStepsMixin:
                     }
                 ),
                 errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_room_signal_assist",
+                data_schema=self._admin_authored_room_signal_assist_schema(
+                    {
+                        "room_id": room_id,
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
+                        "primary_bucket": primary_bucket,
+                        "corroboration_signal_entities": corroboration_signal_entities,
+                        "corroboration_signal_name": corroboration_signal_name,
+                        "corroboration_threshold_mode": corroboration_threshold_mode,
+                        "corroboration_threshold": corroboration_threshold,
+                        "action_entities": action_entities,
+                    }
+                ),
+                errors={"base": "redacted_payload"},
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
@@ -587,6 +641,28 @@ class _ReactionsStepsMixin:
                 },
             )
 
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_room_darkness_lighting_assist",
+                data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
+                    {
+                        "room_id": room_id,
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
+                        "primary_threshold": primary_threshold,
+                        "light_entities": entity_ids,
+                        "action": action,
+                        "brightness": brightness or defaults["brightness"],
+                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
+                    }
+                ),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
         return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_room_vacancy_lighting_off(
@@ -664,6 +740,23 @@ class _ReactionsStepsMixin:
                     }
                 ),
                 errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                },
+            )
+
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_room_vacancy_lighting_off",
+                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
+                    {
+                        "room_id": room_id,
+                        "light_entities": entity_ids,
+                        "vacancy_delay_min": vacancy_delay_min,
+                    }
+                ),
+                errors={"base": "redacted_payload"},
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
@@ -930,6 +1023,30 @@ class _ReactionsStepsMixin:
             }
             for entity_id in light_entities
         ]
+        if self._has_redacted_payload(cfg):
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_lighting_assist_schema(
+                    {
+                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+                        "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
+                        "primary_threshold": primary_threshold,
+                        "light_entities": light_entities,
+                        "action": action,
+                        "brightness": user_input.get("brightness", defaults["brightness"]),
+                        "color_temp_kelvin": user_input.get(
+                            "color_temp_kelvin", defaults["color_temp_kelvin"]
+                        ),
+                        "delete_reaction": bool(user_input.get("delete_reaction", False)),
+                    }
+                ),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                },
+            )
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
@@ -1064,6 +1181,24 @@ class _ReactionsStepsMixin:
                 self._resume_proposal_review = True
                 return await self.async_step_proposal_configure_action()
 
+            if self._has_redacted_payload(accepted_proposal.suggested_reaction_config):
+                self._proposal_review_queue = [current_id, *queue]
+                return self.async_show_form(
+                    step_id="proposals",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(
+                                "review_action",
+                                default="accept",
+                            ): vol.In(self._proposal_review_action_options()),
+                        }
+                    ),
+                    errors={"base": "redacted_payload"},
+                    description_placeholders=self._proposal_review_placeholders(
+                        pending, current, len(self._proposal_review_queue)
+                    ),
+                )
+
             await coordinator.proposal_engine.async_accept_proposal(current_id)
             configured[target_id] = self._configured_reaction_from_proposal(
                 accepted_proposal,
@@ -1136,10 +1271,6 @@ class _ReactionsStepsMixin:
             proposal_id = str(current_draft.get("proposal_id") or "")
             target_id = str(current_draft.get("target_id") or proposal_id)
             existing_cfg = _safe_mapping(current_draft.get("existing_config"))
-            coordinator = self._get_coordinator()
-            if coordinator is not None:
-                await coordinator.proposal_engine.async_accept_proposal(proposal_id)
-
             reactions_cfg = dict(self._reactions_options())
             configured = dict(reactions_cfg.get("configured", {}))
             labels = dict(reactions_cfg.get("labels", {}))
@@ -1149,6 +1280,29 @@ class _ReactionsStepsMixin:
             )
             cfg["steps"] = steps
             cfg["pre_condition_min"] = pre_condition_min
+            if self._has_redacted_payload(cfg):
+                return self.async_show_form(
+                    step_id="proposal_configure_action",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Optional("action_entities"): _entity_selector(
+                                ["scene", "script"], multiple=True
+                            ),
+                            vol.Optional("pre_condition_min", default=pre_condition_min): vol.All(
+                                vol.Coerce(int), vol.Range(min=1, max=120)
+                            ),
+                        }
+                    ),
+                    errors={"base": "redacted_payload"},
+                    description_placeholders={
+                        "proposal_description": str(
+                            current_draft.get("label") or current_draft.get("target_id") or ""
+                        )
+                    },
+                )
+            coordinator = self._get_coordinator()
+            if coordinator is not None:
+                await coordinator.proposal_engine.async_accept_proposal(proposal_id)
             configured[target_id] = cfg
             if target_id != proposal_id:
                 configured.pop(proposal_id, None)
@@ -1164,6 +1318,22 @@ class _ReactionsStepsMixin:
                 cfg = dict(configured[current_pid])
                 cfg["steps"] = steps
                 cfg["pre_condition_min"] = pre_condition_min
+                if self._has_redacted_payload(cfg):
+                    return self.async_show_form(
+                        step_id="proposal_configure_action",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Optional("action_entities"): _entity_selector(
+                                    ["scene", "script"], multiple=True
+                                ),
+                                vol.Optional(
+                                    "pre_condition_min", default=pre_condition_min
+                                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
+                            }
+                        ),
+                        errors={"base": "redacted_payload"},
+                        description_placeholders={"proposal_description": proposal_description},
+                    )
                 configured[current_pid] = cfg
                 reactions_cfg["configured"] = configured
                 self._store_reactions_options(reactions_cfg)
@@ -1430,9 +1600,8 @@ class _ReactionsStepsMixin:
                     vol.Required("primary_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
                     ),
-                    vol.Required("primary_signal_name", default="humidity"): str,
-                    vol.Required("primary_threshold_mode", default="rise"): vol.In(threshold_modes),
-                    vol.Required("primary_threshold", default=8.0): vol.Coerce(float),
+                    vol.Required("primary_signal_name", default="room_humidity"): str,
+                    vol.Required("primary_bucket", default="high"): str,
                     vol.Optional("corroboration_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
                     ),
@@ -1584,8 +1753,7 @@ class _ReactionsStepsMixin:
         room_id: str,
         primary_signal_entities: list[str],
         primary_signal_name: str,
-        primary_threshold_mode: str,
-        primary_threshold: float,
+        primary_bucket: str,
         corroboration_signal_entities: list[str],
         corroboration_signal_name: str,
         corroboration_threshold_mode: str,
@@ -1614,9 +1782,7 @@ class _ReactionsStepsMixin:
                 "room_id": room_id,
                 "trigger_signal_entities": list(primary_signal_entities),
                 "primary_signal_entities": list(primary_signal_entities),
-                "primary_threshold": float(primary_threshold),
-                "primary_threshold_mode": primary_threshold_mode,
-                "primary_rise_threshold": float(primary_threshold),
+                "primary_bucket": primary_bucket.strip(),
                 "primary_signal_name": primary_signal_name.strip() or "primary",
                 "temperature_signal_entities": list(corroboration_signal_entities),
                 "corroboration_signal_entities": list(corroboration_signal_entities),
