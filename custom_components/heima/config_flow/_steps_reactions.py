@@ -1039,12 +1039,27 @@ class _ReactionsStepsMixin:
                     target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
                     target_template_id=str(followup.get("target_template_id") or ""),
                 )
-            await coordinator.proposal_engine.async_accept_proposal(current_id)
             target_id = current_id
             existing_cfg: dict[str, Any] | None = None
             if followup is not None:
                 target_id = str(followup["reaction_id"])
                 existing_cfg = dict(followup["reaction_cfg"])
+            if self._proposal_requires_action_completion(current):
+                pending_drafts = list(getattr(self, "_pending_action_drafts", []))
+                pending_drafts.append(
+                    {
+                        "proposal": accepted_proposal,
+                        "proposal_id": current_id,
+                        "target_id": target_id,
+                        "existing_config": existing_cfg,
+                        "label": current.description,
+                    }
+                )
+                self._pending_action_drafts = pending_drafts
+                self._resume_proposal_review = True
+                return await self.async_step_proposal_configure_action()
+
+            await coordinator.proposal_engine.async_accept_proposal(current_id)
             configured[target_id] = self._configured_reaction_from_proposal(
                 accepted_proposal,
                 existing_config=existing_cfg,
@@ -1056,11 +1071,6 @@ class _ReactionsStepsMixin:
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
             self._store_reactions_options(reactions_cfg)
-
-            if self._proposal_requires_action_completion(current):
-                self._pending_action_configs = [target_id]
-                self._resume_proposal_review = True
-                return await self.async_step_proposal_configure_action()
 
         elif action == "reject":
             await coordinator.proposal_engine.async_reject_proposal(current_id)
@@ -1078,13 +1088,21 @@ class _ReactionsStepsMixin:
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
         """Configure the action(s) to trigger for each accepted proposal, one at a time."""
-        pending: list[str] = getattr(self, "_pending_action_configs", [])
-        if not pending:
-            return await self.async_step_init()
-
-        current_pid = pending[0]
-        labels_map: dict[str, str] = self._reactions_options().get("labels", {})
-        proposal_description = labels_map.get(current_pid, current_pid)
+        pending_drafts: list[dict[str, Any]] = list(getattr(self, "_pending_action_drafts", []))
+        if pending_drafts:
+            current_draft = pending_drafts[0]
+            current_pid = str(
+                current_draft.get("target_id") or current_draft.get("proposal_id") or ""
+            )
+            proposal_description = str(current_draft.get("label") or current_pid)
+        else:
+            pending: list[str] = getattr(self, "_pending_action_configs", [])
+            if not pending:
+                return await self.async_step_init()
+            current_pid = pending[0]
+            labels_map: dict[str, str] = self._reactions_options().get("labels", {})
+            proposal_description = labels_map.get(current_pid, current_pid)
+            current_draft = None
 
         if user_input is None:
             schema = vol.Schema(
@@ -1108,19 +1126,51 @@ class _ReactionsStepsMixin:
         steps = self._action_entities_to_steps(entities)
         pre_condition_min = int(user_input.get("pre_condition_min") or 20)
 
-        reactions_cfg = dict(self._reactions_options())
-        configured = dict(reactions_cfg.get("configured", {}))
-        if current_pid in configured:
-            cfg = dict(configured[current_pid])
+        if current_draft is not None:
+            proposal = current_draft["proposal"]
+            proposal_id = str(current_draft.get("proposal_id") or "")
+            target_id = str(current_draft.get("target_id") or proposal_id)
+            existing_cfg = _safe_mapping(current_draft.get("existing_config"))
+            coordinator = self._get_coordinator()
+            if coordinator is not None:
+                await coordinator.proposal_engine.async_accept_proposal(proposal_id)
+
+            reactions_cfg = dict(self._reactions_options())
+            configured = dict(reactions_cfg.get("configured", {}))
+            labels = dict(reactions_cfg.get("labels", {}))
+            cfg = self._configured_reaction_from_proposal(
+                proposal,
+                existing_config=existing_cfg,
+            )
             cfg["steps"] = steps
             cfg["pre_condition_min"] = pre_condition_min
-            configured[current_pid] = cfg
+            configured[target_id] = cfg
+            if target_id != proposal_id:
+                configured.pop(proposal_id, None)
+                labels.pop(proposal_id, None)
+            labels[target_id] = str(current_draft.get("label") or target_id)
             reactions_cfg["configured"] = configured
+            reactions_cfg["labels"] = labels
             self._store_reactions_options(reactions_cfg)
+        else:
+            reactions_cfg = dict(self._reactions_options())
+            configured = dict(reactions_cfg.get("configured", {}))
+            if current_pid in configured:
+                cfg = dict(configured[current_pid])
+                cfg["steps"] = steps
+                cfg["pre_condition_min"] = pre_condition_min
+                configured[current_pid] = cfg
+                reactions_cfg["configured"] = configured
+                self._store_reactions_options(reactions_cfg)
 
         # Advance queue
-        self._pending_action_configs = pending[1:]
-        if self._pending_action_configs:
+        if pending_drafts:
+            self._pending_action_drafts = pending_drafts[1:]
+        else:
+            self._pending_action_configs = pending[1:]
+        if getattr(self, "_pending_action_drafts", []):
+            return await self.async_step_proposal_configure_action()
+        if getattr(self, "_pending_action_configs", []):
             return await self.async_step_proposal_configure_action()
         if getattr(self, "_resume_proposal_review", False):
             self._resume_proposal_review = False

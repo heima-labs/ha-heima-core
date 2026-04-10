@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -11,7 +11,6 @@ from custom_components.heima.const import (
     DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
     DOMAIN,
 )
-from custom_components.heima.runtime.analyzers import create_builtin_learning_plugin_registry
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 
 
@@ -265,6 +264,51 @@ async def test_learning_flow_persists_enabled_plugin_families():
         "context_signal_entities": ["media_player.projector"],
         "enabled_plugin_families": ["presence", "lighting"],
     }
+
+
+@pytest.mark.asyncio
+async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_stale():
+    flow = _flow(
+        {
+            "learning": {"outdoor_lux_entity": "sensor.old_lux"},
+            "reactions": {
+                "configured": {"r_old": {"reaction_class": "LightingScheduleReaction"}},
+                "labels": {"r_old": "Old"},
+            },
+        }
+    )
+    config_entries = MagicMock()
+
+    def _async_update_entry(entry, *, options):
+        entry.options = dict(options)
+
+    config_entries.async_update_entry.side_effect = _async_update_entry
+    flow.hass.config_entries = config_entries
+
+    flow._config_entry.options = {
+        "learning": {"outdoor_lux_entity": "sensor.external_lux"},
+        "reactions": {
+            "configured": {"r_new": {"reaction_class": "RoomLightingAssistReaction"}},
+            "labels": {"r_new": "New"},
+        },
+    }
+
+    await flow.async_step_learning(
+        {
+            "outdoor_lux_entity": "sensor.updated_lux",
+            "outdoor_temp_entity": "",
+            "weather_entity": "",
+            "context_signal_entities": [],
+            "enabled_plugin_families": ["presence", "lighting"],
+        }
+    )
+
+    updated = flow._config_entry.options
+    assert updated["learning"]["outdoor_lux_entity"] == "sensor.updated_lux"
+    assert updated["reactions"]["configured"] == {
+        "r_new": {"reaction_class": "RoomLightingAssistReaction"}
+    }
+    assert updated["reactions"]["labels"] == {"r_new": "New"}
 
 
 @pytest.mark.asyncio
@@ -2409,7 +2453,11 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "VacationPresenceSimulationReaction"),
+        (
+            cfg
+            for cfg in configured.values()
+            if cfg.get("reaction_class") == "VacationPresenceSimulationReaction"
+        ),
         None,
     )
     assert reaction is not None
@@ -2445,7 +2493,11 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "LightingScheduleReaction"),
+        (
+            cfg
+            for cfg in configured.values()
+            if cfg.get("reaction_class") == "LightingScheduleReaction"
+        ),
         None,
     )
     assert reaction is not None
@@ -2480,7 +2532,9 @@ async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_sl
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
-    assert any(cfg.get("reaction_class") == "LightingScheduleReaction" for cfg in configured.values())
+    assert any(
+        cfg.get("reaction_class") == "LightingScheduleReaction" for cfg in configured.values()
+    )
 
 
 @pytest.mark.asyncio
@@ -2513,7 +2567,11 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomSignalAssistReaction"),
+        (
+            cfg
+            for cfg in configured.values()
+            if cfg.get("reaction_class") == "RoomSignalAssistReaction"
+        ),
         None,
     )
     assert reaction is not None
@@ -2551,7 +2609,11 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomLightingAssistReaction"),
+        (
+            cfg
+            for cfg in configured.values()
+            if cfg.get("reaction_class") == "RoomLightingAssistReaction"
+        ),
         None,
     )
     assert reaction is not None
@@ -2591,7 +2653,9 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
-    assert any(cfg.get("reaction_class") == "RoomLightingAssistReaction" for cfg in configured.values())
+    assert any(
+        cfg.get("reaction_class") == "RoomLightingAssistReaction" for cfg in configured.values()
+    )
 
 
 @pytest.mark.asyncio
@@ -2697,7 +2761,11 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomLightingVacancyOffReaction"),
+        (
+            cfg
+            for cfg in configured.values()
+            if cfg.get("reaction_class") == "RoomLightingVacancyOffReaction"
+        ),
         None,
     )
     assert reaction is not None
@@ -2987,6 +3055,8 @@ async def test_proposal_configure_action_resumes_guided_review():
 
     assert result["type"] == "form"
     assert result["step_id"] == "proposal_configure_action"
+    assert proposal_engine.async_accept_proposal.await_count == 0
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
     resumed = await flow.async_step_proposal_configure_action(
         {
@@ -2998,6 +3068,17 @@ async def test_proposal_configure_action_resumes_guided_review():
     assert resumed["type"] == "form"
     assert resumed["step_id"] == "proposals"
     assert "Luci living" in resumed["description_placeholders"]["proposal_label"]
+    proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-1")
+    stored = flow.options["reactions"]["configured"]["proposal-1"]
+    assert stored["pre_condition_min"] == 15
+    assert stored["steps"] == [
+        {
+            "domain": "lighting",
+            "target": "scene.arrival",
+            "action": "scene.turn_on",
+            "params": {"entity_id": "scene.arrival"},
+        }
+    ]
 
 
 @pytest.mark.asyncio

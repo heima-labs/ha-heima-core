@@ -154,6 +154,14 @@ class HeimaOptionsFlowHandler(
         """Persist options and close the flow from the toplevel menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
 
+    def _entry_options_snapshot(self) -> dict[str, Any]:
+        """Return the freshest available options snapshot for this flow."""
+        config_entry = getattr(self, "_config_entry", None)
+        entry_options = getattr(config_entry, "options", None)
+        if isinstance(entry_options, dict):
+            return dict(entry_options)
+        return dict(self.options)
+
     def _update_options(self, updates: dict[str, Any]) -> None:
         """Persist options keys immediately to disk.
 
@@ -161,15 +169,19 @@ class HeimaOptionsFlowHandler(
         - structural keys (people, rooms, zones) → full HA reload
         - runtime keys → coordinator.async_reload_options() only
         """
-        self.options.update(updates)
+        merged = self._entry_options_snapshot()
+        merged.update(updates)
+        self.options = merged
         config_entries = getattr(getattr(self, "hass", None), "config_entries", None)
         config_entry = getattr(self, "_config_entry", None)
         if config_entries is not None and config_entry is not None:
-            config_entries.async_update_entry(config_entry, options=dict(self.options))
+            config_entries.async_update_entry(config_entry, options=dict(merged))
+        if config_entry is not None:
+            setattr(config_entry, "options", dict(merged))
 
     def _sync_ha_backed_bindings(self) -> None:
         updated_options, _, changed = reconcile_ha_backed_options(
-            dict(self.options),
+            self._entry_options_snapshot(),
             ha_people=self._ha_people_inventory(),
             ha_areas=self._ha_area_inventory(),
         )
