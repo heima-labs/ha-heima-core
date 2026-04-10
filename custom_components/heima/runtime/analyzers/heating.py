@@ -95,7 +95,7 @@ class HeatingPatternAnalyzer:
                     ),
                     confidence=confidence,
                     suggested_reaction_config={
-                        "reaction_class": "HeatingPreferenceReaction",
+                        "reaction_type": "heating_preference",
                         "house_state": hs,
                         "target_temperature": median,
                         "env_correlations": signal_correlations,
@@ -167,7 +167,7 @@ class HeatingPatternAnalyzer:
                 ),
                 confidence=0.7,
                 suggested_reaction_config={
-                    "reaction_class": "HeatingEcoReaction",
+                    "reaction_type": "heating_eco",
                     "eco_sessions_observed": eco_sessions,
                     "eco_target_temperature": eco_target_temperature,
                     "learning_diagnostics": build_learning_diagnostics(

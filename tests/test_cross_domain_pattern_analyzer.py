@@ -168,7 +168,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     proposal = proposals[0]
     assert proposal.reaction_type == "room_signal_assist"
     assert proposal.description.startswith("bathroom: humidity assist")
-    assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_signal_assist"
     assert proposal.suggested_reaction_config["room_id"] == "bathroom"
     assert proposal.suggested_reaction_config["trigger_signal_entities"] == [
         "sensor.bathroom_humidity"
@@ -248,7 +248,7 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
     proposal = proposals[0]
     assert proposal.reaction_type == "room_cooling_assist"
     assert proposal.description.startswith("studio: cooling assist")
-    assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_cooling_assist"
     assert proposal.suggested_reaction_config["room_id"] == "studio"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.studio_temperature"
@@ -302,7 +302,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert len(air_quality) == 1
     proposal = air_quality[0]
     assert proposal.description.startswith("office: air quality assist")
-    assert proposal.suggested_reaction_config["reaction_class"] == "RoomSignalAssistReaction"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_air_quality_assist"
     assert proposal.suggested_reaction_config["room_id"] == "office"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == ["sensor.office_co2"]
     assert proposal.suggested_reaction_config["primary_signal_name"] == "co2"
@@ -351,7 +351,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
     assert len(darkness) == 1
     proposal = darkness[0]
     assert proposal.description.startswith("living: darkness lighting assist")
-    assert proposal.suggested_reaction_config["reaction_class"] == "RoomLightingAssistReaction"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_darkness_lighting_assist"
     assert proposal.suggested_reaction_config["room_id"] == "living"
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.living_room_lux"
@@ -642,7 +642,7 @@ async def test_catalog_analyzer_emits_room_vacancy_lighting_off_proposal():
     vacancy = [p for p in proposals if p.reaction_type == "room_vacancy_lighting_off"]
     assert len(vacancy) == 1
     proposal = vacancy[0]
-    assert proposal.suggested_reaction_config["reaction_class"] == "RoomLightingVacancyOffReaction"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_vacancy_lighting_off"
     assert proposal.suggested_reaction_config["room_id"] == "living"
     assert proposal.suggested_reaction_config["vacancy_delay_s"] == 180
     assert proposal.suggested_reaction_config["entity_steps"] == [

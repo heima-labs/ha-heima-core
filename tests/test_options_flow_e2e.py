@@ -1665,7 +1665,7 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     assert result["step_id"] == "init"
     assert getattr(flow, "_pending_action_configs", []) == []
     stored = flow.options["reactions"]["configured"]["proposal-darkness"]
-    assert stored["reaction_class"] == "RoomLightingAssistReaction"
+    assert stored["reaction_type"] == "room_darkness_lighting_assist"
     assert stored["origin"] == "learned"
     assert stored["author_kind"] == "heima"
     assert stored["source_request"] == "learned_pattern"
@@ -2456,7 +2456,7 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_class") == "VacationPresenceSimulationReaction"
+            if cfg.get("reaction_type") == "vacation_presence_simulation"
         ),
         None,
     )
@@ -2496,7 +2496,7 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_class") == "LightingScheduleReaction"
+            if cfg.get("reaction_type") == "lighting_scene_schedule"
         ),
         None,
     )
@@ -2533,7 +2533,7 @@ async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_sl
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     assert any(
-        cfg.get("reaction_class") == "LightingScheduleReaction" for cfg in configured.values()
+        cfg.get("reaction_type") == "lighting_scene_schedule" for cfg in configured.values()
     )
 
 
@@ -2570,7 +2570,7 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_class") == "RoomSignalAssistReaction"
+            if cfg.get("reaction_type") == "room_signal_assist"
         ),
         None,
     )
@@ -2612,7 +2612,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_class") == "RoomLightingAssistReaction"
+            if cfg.get("reaction_type") == "room_darkness_lighting_assist"
         ),
         None,
     )
@@ -2654,7 +2654,8 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     assert any(
-        cfg.get("reaction_class") == "RoomLightingAssistReaction" for cfg in configured.values()
+        cfg.get("reaction_type") == "room_darkness_lighting_assist"
+        for cfg in configured.values()
     )
 
 
@@ -2764,7 +2765,7 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_class") == "RoomLightingVacancyOffReaction"
+            if cfg.get("reaction_type") == "room_vacancy_lighting_off"
         ),
         None,
     )
@@ -2967,7 +2968,7 @@ async def test_admin_authored_room_vacancy_lighting_off_accept_skips_action_conf
     stored = flow.options["reactions"]["configured"]["proposal-room-vacancy-admin"]
     assert stored["origin"] == "admin_authored"
     assert stored["source_template_id"] == "room.vacancy_lighting_off.basic"
-    assert stored["reaction_class"] == "RoomLightingVacancyOffReaction"
+    assert stored["reaction_type"] == "room_vacancy_lighting_off"
     assert stored["vacancy_delay_s"] == 420
 
 
@@ -3009,7 +3010,7 @@ async def test_admin_authored_security_presence_simulation_accept_skips_action_c
     stored = flow.options["reactions"]["configured"]["proposal-security-presence-admin"]
     assert stored["origin"] == "admin_authored"
     assert stored["source_template_id"] == "security.vacation_presence_simulation.basic"
-    assert stored["reaction_class"] == "VacationPresenceSimulationReaction"
+    assert stored["reaction_type"] == "vacation_presence_simulation"
     assert stored["dynamic_policy"] is True
 
 

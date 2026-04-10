@@ -76,6 +76,7 @@ async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
                 "observed_provenance": {
                     "source": "reaction:heat_pref_test",
                     "origin_reaction_id": "heat_pref_test",
+                    "origin_reaction_type": "heating_preference",
                     "origin_reaction_class": "HeatingPreferenceReaction",
                     "expected_domains": ["climate"],
                     "expected_subject_ids": ["climate.test_thermostat"],
@@ -98,6 +99,7 @@ async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
     assert diagnostics["runtime"]["engine"]["heating"]["observed_provenance"] == {
         "source": "reaction:heat_pref_test",
         "origin_reaction_id": "heat_pref_test",
+        "origin_reaction_type": "heating_preference",
         "origin_reaction_class": "HeatingPreferenceReaction",
         "expected_domains": ["climate"],
         "expected_subject_ids": ["climate.test_thermostat"],
@@ -935,7 +937,10 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
 
     assert composite["configured_total"] == 2
     assert composite["configured_by_room"] == {"bathroom": 1, "living": 1}
-    assert composite["configured_by_type"] == {"room_signal_assist": 1}
+    assert composite["configured_by_type"] == {
+        "room_darkness_lighting_assist": 1,
+        "room_signal_assist": 1,
+    }
     assert composite["configured_by_primary_signal"] == {"humidity": 1, "room_lux": 1}
     assert composite["pending_total"] == 2
     assert composite["pending_tuning_total"] == 1

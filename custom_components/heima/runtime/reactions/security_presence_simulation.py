@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from ..contracts import ApplyStep
 from ..scheduler import ScheduledRuntimeJob
 from ..snapshot import DecisionSnapshot
+from ._compat import resolve_reaction_type
 from .base import HeimaReaction
 
 _SOURCE_EVENT_RECOVERY_WINDOW_S = 120
@@ -1285,10 +1286,9 @@ def _select_source_profile_from_config(
 
 
 def _is_lighting_source_candidate(cfg: dict[str, Any]) -> bool:
-    reaction_type = str(cfg.get("reaction_type") or "").strip()
-    reaction_class = str(cfg.get("reaction_class") or "").strip()
+    reaction_type = resolve_reaction_type(cfg)
     template_id = str(cfg.get("source_template_id") or "").strip()
-    if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+    if reaction_type != "lighting_scene_schedule":
         return False
     if template_id and template_id != "lighting.scene_schedule.basic":
         return False

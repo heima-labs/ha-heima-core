@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 from .analyzers.base import IPatternAnalyzer, ReactionProposal
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
+from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -178,6 +179,13 @@ class ProposalEngine:
                         identity_key=identity_key,
                         last_observed_at=now,
                         followup_kind="tuning_suggestion",
+                        target_reaction_type=(
+                            candidate.target_reaction_type
+                            or resolve_reaction_type(
+                                _safe_dict(accepted.suggested_reaction_config)
+                            )
+                            or accepted.reaction_type
+                        ),
                         target_reaction_class=(
                             candidate.target_reaction_class
                             or str(
@@ -255,6 +263,7 @@ class ProposalEngine:
                 identity_key=identity_key,
                 followup_kind=proposal.followup_kind,
                 target_reaction_id=proposal.target_reaction_id,
+                target_reaction_type=proposal.target_reaction_type,
                 target_reaction_class=proposal.target_reaction_class,
                 target_reaction_origin=proposal.target_reaction_origin,
                 target_template_id=proposal.target_template_id,
@@ -348,6 +357,7 @@ class ProposalEngine:
                     "identity_key": self._identity_key(p),
                     "fingerprint": self._fingerprint(p),
                     "target_reaction_id": p.target_reaction_id,
+                    "target_reaction_type": p.target_reaction_type,
                     "target_reaction_class": p.target_reaction_class,
                     "target_reaction_origin": p.target_reaction_origin,
                     "target_template_id": p.target_template_id,
@@ -383,6 +393,7 @@ class ProposalEngine:
                 "identity_key": self._identity_key(p),
                 "fingerprint": self._fingerprint(p),
                 "target_reaction_id": p.target_reaction_id,
+                "target_reaction_type": p.target_reaction_type,
                 "target_reaction_class": p.target_reaction_class,
                 "target_reaction_origin": p.target_reaction_origin,
                 "target_template_id": p.target_template_id,
@@ -526,7 +537,7 @@ class ProposalEngine:
     def _proposal_config_summary(proposal: ReactionProposal) -> dict[str, Any]:
         cfg = _safe_dict(proposal.suggested_reaction_config)
         summary = {
-            "reaction_class": cfg.get("reaction_class"),
+            "reaction_type": resolve_reaction_type(cfg) or proposal.reaction_type,
             "room_id": cfg.get("room_id"),
             "house_state": cfg.get("house_state"),
             "weekday": cfg.get("weekday"),

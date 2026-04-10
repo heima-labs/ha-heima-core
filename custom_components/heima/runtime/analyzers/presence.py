@@ -64,7 +64,7 @@ class PresencePatternAnalyzer:
                     ),
                     confidence=float(confidence),
                     suggested_reaction_config={
-                        "reaction_class": "PresencePatternReaction",
+                        "reaction_type": "presence_preheat",
                         "weekday": weekday,
                         "median_arrival_min": median,
                         "window_half_min": self.window_half_min,

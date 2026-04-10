@@ -209,6 +209,7 @@ async def test_heating_recorder_includes_provenance_when_present():
             heating_provenance={
                 "source": "reaction:heat_pref_test",
                 "origin_reaction_id": "heat_pref_test",
+                "origin_reaction_type": "heating_preference",
                 "origin_reaction_class": "HeatingPreferenceReaction",
                 "expected_domains": ["climate"],
                 "expected_subject_ids": ["climate.test_thermostat"],
@@ -221,6 +222,7 @@ async def test_heating_recorder_includes_provenance_when_present():
     assert store.events[-1].data["provenance"] == {
         "source": "reaction:heat_pref_test",
         "origin_reaction_id": "heat_pref_test",
+        "origin_reaction_type": "heating_preference",
         "origin_reaction_class": "HeatingPreferenceReaction",
         "expected_domains": ["climate"],
         "expected_subject_ids": ["climate.test_thermostat"],

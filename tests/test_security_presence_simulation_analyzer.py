@@ -116,7 +116,7 @@ async def test_security_presence_simulation_analyzer_emits_home_scoped_proposal(
         == "SecurityPresenceSimulationAnalyzer|vacation_presence_simulation|scope=home"
     )
     cfg = proposal.suggested_reaction_config
-    assert cfg["reaction_class"] == "VacationPresenceSimulationReaction"
+    assert cfg["reaction_type"] == "vacation_presence_simulation"
     assert cfg["dynamic_policy"] is True
     assert cfg["learned_source_profile_kind"] == "event_store_evening_lighting"
     assert sorted(cfg["allowed_rooms"]) == ["kitchen", "living"]

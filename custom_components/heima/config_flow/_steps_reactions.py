@@ -15,7 +15,7 @@ from homeassistant.helpers import config_validation as cv
 from ..const import DOMAIN, OPT_REACTIONS
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
-from ..runtime.reactions import create_builtin_reaction_plugin_registry
+from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
 from ._common import _entity_selector
 
 if TYPE_CHECKING:
@@ -26,6 +26,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class _ReactionsStepsMixin:
     """Mixin for reactions step."""
+
+    @staticmethod
+    def _reaction_type_from_cfg(cfg: dict[str, Any]) -> str:
+        return resolve_reaction_type(cfg)
 
     def _admin_authored_identity_conflicts(self, proposal: ReactionProposal) -> bool:
         """Return True if a configured reaction already covers this identity key."""
@@ -737,9 +741,9 @@ class _ReactionsStepsMixin:
         configured = dict(reactions_cfg.get("configured", {}))
         labels_map: dict[str, str] = reactions_cfg.get("labels", {})
         cfg = dict(configured.get(pid, {}))
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        reaction_type = self._reaction_type_from_cfg(cfg)
 
-        if reaction_class == "RoomLightingAssistReaction":
+        if reaction_type == "room_darkness_lighting_assist":
             return await self._async_step_reactions_edit_room_lighting_assist(
                 pid=pid,
                 reactions_cfg=reactions_cfg,
@@ -1035,6 +1039,7 @@ class _ReactionsStepsMixin:
                     current,
                     followup_kind="tuning_suggestion",
                     target_reaction_id=str(followup["reaction_id"]),
+                    target_reaction_type=self._reaction_type_from_cfg(followup["reaction_cfg"]),
                     target_reaction_class=str(followup["reaction_cfg"].get("reaction_class") or ""),
                     target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
                     target_template_id=str(followup.get("target_template_id") or ""),
@@ -1192,6 +1197,7 @@ class _ReactionsStepsMixin:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         configured = dict(_safe_mapping(existing_config))
         configured.update(cfg)
+        configured.pop("reaction_class", None)
 
         is_followup = proposal.followup_kind == "tuning_suggestion" and bool(
             _safe_mapping(existing_config)
@@ -1205,6 +1211,7 @@ class _ReactionsStepsMixin:
             return configured
 
         origin = proposal.origin
+        configured["reaction_type"] = str(proposal.reaction_type or "").strip()
         configured["origin"] = origin
         configured["author_kind"] = "admin" if origin == "admin_authored" else "heima"
         configured["source_proposal_id"] = proposal.proposal_id
@@ -1253,11 +1260,10 @@ class _ReactionsStepsMixin:
         for cfg in configured.values():
             if not isinstance(cfg, dict):
                 continue
-            reaction_class = str(cfg.get("reaction_class") or "").strip()
-            if reaction_class == "LightingScheduleReaction":
-                return True, ""
             reaction_type = str(cfg.get("reaction_type") or "").strip()
             if reaction_type == "lighting_scene_schedule":
+                return True, ""
+            if self._reaction_type_from_cfg(cfg) == "lighting_scene_schedule":
                 return True, ""
             template = str(cfg.get("source_template_id") or "").strip()
             if template == "lighting.scene_schedule.basic":
@@ -1561,7 +1567,7 @@ class _ReactionsStepsMixin:
             identity_key=identity_key,
             fingerprint=identity_key,
             suggested_reaction_config={
-                "reaction_class": "LightingScheduleReaction",
+                "reaction_type": "lighting_scene_schedule",
                 "room_id": room_id,
                 "weekday": weekday,
                 "scheduled_min": scheduled_min,
@@ -1604,7 +1610,7 @@ class _ReactionsStepsMixin:
             identity_key=identity_key,
             fingerprint=identity_key,
             suggested_reaction_config={
-                "reaction_class": "RoomSignalAssistReaction",
+                "reaction_type": "room_signal_assist",
                 "room_id": room_id,
                 "trigger_signal_entities": list(primary_signal_entities),
                 "primary_signal_entities": list(primary_signal_entities),
@@ -1663,7 +1669,7 @@ class _ReactionsStepsMixin:
             identity_key=identity_key,
             fingerprint=identity_key,
             suggested_reaction_config={
-                "reaction_class": "RoomLightingAssistReaction",
+                "reaction_type": "room_darkness_lighting_assist",
                 "room_id": room_id,
                 "primary_signal_entities": list(primary_signal_entities),
                 "primary_threshold": float(primary_threshold),
@@ -1713,7 +1719,7 @@ class _ReactionsStepsMixin:
             identity_key=identity_key,
             fingerprint=identity_key,
             suggested_reaction_config={
-                "reaction_class": "RoomLightingVacancyOffReaction",
+                "reaction_type": "room_vacancy_lighting_off",
                 "room_id": room_id,
                 "vacancy_delay_s": int(vacancy_delay_min) * 60,
                 "followup_window_s": 900,
@@ -1751,7 +1757,7 @@ class _ReactionsStepsMixin:
             identity_key=identity_key,
             fingerprint=identity_key,
             suggested_reaction_config={
-                "reaction_class": "VacationPresenceSimulationReaction",
+                "reaction_type": "vacation_presence_simulation",
                 "enabled": enabled,
                 "allowed_rooms": list(allowed_rooms),
                 "allowed_entities": list(allowed_entities),
@@ -1798,11 +1804,11 @@ class _ReactionsStepsMixin:
     @staticmethod
     def _proposal_requires_action_completion(proposal: ReactionProposal) -> bool:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        reaction_class = str(cfg.get("reaction_class") or "")
-        if reaction_class in {
-            "LightingScheduleReaction",
-            "RoomLightingAssistReaction",
-            "VacationPresenceSimulationReaction",
+        reaction_type = resolve_reaction_type(cfg) or str(proposal.reaction_type or "").strip()
+        if reaction_type in {
+            "lighting_scene_schedule",
+            "room_darkness_lighting_assist",
+            "vacation_presence_simulation",
         }:
             return False
         steps = cfg.get("steps")
@@ -2199,12 +2205,8 @@ class _ReactionsStepsMixin:
     @staticmethod
     def _proposal_followup_slot_key(proposal: ReactionProposal) -> str:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        reaction_type = proposal.reaction_type
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
-        if (
-            reaction_type != "lighting_scene_schedule"
-            and reaction_class != "LightingScheduleReaction"
-        ):
+        reaction_type = str(proposal.reaction_type or "").strip() or resolve_reaction_type(cfg)
+        if reaction_type != "lighting_scene_schedule":
             return ""
         scheduled_min = cfg.get("scheduled_min")
         bucket = None
@@ -2217,12 +2219,8 @@ class _ReactionsStepsMixin:
 
     @staticmethod
     def _lighting_followup_slot_key_from_cfg(cfg: dict[str, Any]) -> str:
-        reaction_type = str(cfg.get("reaction_type") or "").strip()
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
-        if (
-            reaction_type != "lighting_scene_schedule"
-            and reaction_class != "LightingScheduleReaction"
-        ):
+        reaction_type = resolve_reaction_type(cfg)
+        if reaction_type != "lighting_scene_schedule":
             return ""
         scheduled_min = cfg.get("scheduled_min")
         bucket = None
@@ -2272,11 +2270,11 @@ class _ReactionsStepsMixin:
 
     @staticmethod
     def _reaction_presenter_for_cfg(cfg: dict[str, Any]) -> Any | None:
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
-        if not reaction_class:
+        reaction_type = resolve_reaction_type(cfg)
+        if not reaction_type:
             return None
         registry = create_builtin_reaction_plugin_registry()
-        return registry.presenter_for(reaction_class)
+        return registry.presenter_for(reaction_type)
 
     @staticmethod
     def _proposal_origin_label(origin: str, language: str) -> str:
@@ -2376,14 +2374,14 @@ class _ReactionsStepsMixin:
         Falls back to labels_map, then to reaction_id.
         """
         registry = create_builtin_reaction_plugin_registry()
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
-        presenter = registry.presenter_for(reaction_class)
+        reaction_type = resolve_reaction_type(cfg)
+        presenter = registry.presenter_for(reaction_type)
         if presenter is not None and presenter.reaction_label_from_config is not None:
             presented = presenter.reaction_label_from_config(reaction_id, cfg, labels_map)
             if presented:
                 return presented
 
-        if cfg.get("reaction_class") == "PresencePatternReaction":
+        if reaction_type == "presence_preheat":
             try:
                 weekday = int(cfg["weekday"])
                 median_min = int(cfg["median_arrival_min"])
@@ -2395,7 +2393,7 @@ class _ReactionsStepsMixin:
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
 
-        if cfg.get("reaction_class") == "LightingScheduleReaction":
+        if reaction_type == "lighting_scene_schedule":
             try:
                 weekday = int(cfg["weekday"])
                 scheduled_min = int(cfg["scheduled_min"])
@@ -2407,7 +2405,11 @@ class _ReactionsStepsMixin:
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
 
-        if cfg.get("reaction_class") == "RoomSignalAssistReaction":
+        if reaction_type in {
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
+        }:
             try:
                 room_id = str(cfg.get("room_id", "")).strip() or reaction_id
                 humidity_entities = list(cfg.get("trigger_signal_entities", []))
@@ -2424,7 +2426,7 @@ class _ReactionsStepsMixin:
             except (TypeError, ValueError):
                 pass
 
-        if cfg.get("reaction_class") == "RoomLightingAssistReaction":
+        if reaction_type == "room_darkness_lighting_assist":
             try:
                 room_id = str(cfg.get("room_id", "")).strip() or reaction_id
                 primary_entities = list(cfg.get("primary_signal_entities", []))

@@ -450,9 +450,17 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
                 "sources": [],
                 "logic": "any_of",
             }
-        ],
-        "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
-    }
+            ],
+            "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
+            "reactions": {
+                "configured": {
+                    "room-assist-1": {
+                        "reaction_type": "room_darkness_lighting_assist",
+                        "room_id": "living",
+                    }
+                }
+            },
+        }
     engine = _build_engine(
         options,
         {
@@ -502,6 +510,7 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
     assert payload["expected_entity_ids"] == ["light.living_main", "light.living_spot"]
     assert payload["source"] == "reaction:room-assist-1"
     assert payload["origin_reaction_id"] == "room-assist-1"
+    assert payload["origin_reaction_type"] == "room_darkness_lighting_assist"
     assert payload["origin_reaction_class"] == "SimpleNamespace"
 
 

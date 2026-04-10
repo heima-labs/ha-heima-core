@@ -13,7 +13,7 @@ from homeassistant.helpers.redact import async_redact_data
 from .const import DIAGNOSTICS_REDACT_KEYS, DOMAIN
 from .room_inventory import build_room_inventory_summary
 from .runtime.analyzers import builtin_learning_pattern_plugin_descriptors
-from .runtime.reactions import create_builtin_reaction_plugin_registry
+from .runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
 
 
 async def async_get_config_entry_diagnostics(
@@ -335,6 +335,8 @@ def _enrich_proposals_with_followups(
             item["followup_kind"] = "tuning_suggestion"
         if not str(item.get("target_reaction_id") or "").strip():
             item["target_reaction_id"] = reaction_id
+        if not str(item.get("target_reaction_type") or "").strip():
+            item["target_reaction_type"] = resolve_reaction_type(cfg)
         if not str(item.get("target_reaction_class") or "").strip():
             item["target_reaction_class"] = str(cfg.get("reaction_class") or "")
         if not str(item.get("target_reaction_origin") or "").strip():
@@ -458,12 +460,10 @@ def _lighting_summary_diagnostics(
     configured_by_slot: dict[str, int] = {}
     configured_total = 0
     for _reaction_id, cfg in active:
-        reaction_type = str(cfg.get("reaction_type") or "").strip()
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        reaction_type = resolve_reaction_type(cfg)
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
         is_lighting = (
             reaction_type == "lighting_scene_schedule"
-            or reaction_class == "LightingScheduleReaction"
             or identity_key.startswith("lighting_scene_schedule|")
         )
         if not is_lighting:
@@ -632,12 +632,10 @@ def _security_presence_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     insufficient_evidence_examples: list[dict[str, Any]] = []
 
     for reaction_id, cfg in active:
-        reaction_type = str(cfg.get("reaction_type") or "").strip()
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        reaction_type = resolve_reaction_type(cfg)
         template_id = str(cfg.get("source_template_id") or "").strip()
         is_security_presence = (
             reaction_type == "vacation_presence_simulation"
-            or reaction_class == "VacationPresenceSimulationReaction"
             or template_id == "security.vacation_presence_simulation.basic"
         )
         if not is_security_presence:
@@ -975,14 +973,9 @@ def _composite_summary_diagnostics(
     configured_by_type: dict[str, int] = {}
     configured_by_primary_signal: dict[str, int] = {}
     for _reaction_id, cfg in active:
-        reaction_type = str(cfg.get("reaction_type") or "").strip()
-        reaction_class = str(cfg.get("reaction_class") or "").strip()
+        reaction_type = resolve_reaction_type(cfg)
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-        is_composite = (
-            reaction_type.startswith("room_")
-            or reaction_class in {"RoomSignalAssistReaction", "RoomLightingAssistReaction"}
-            or identity_key.startswith("room_")
-        )
+        is_composite = reaction_type.startswith("room_") or identity_key.startswith("room_")
         if not is_composite:
             continue
         configured_total += 1
@@ -1111,9 +1104,8 @@ def _lighting_room_from_identity(identity_key: str) -> str:
 
 
 def _lighting_followup_slot_key(cfg: dict[str, Any]) -> str:
-    reaction_type = str(cfg.get("reaction_type") or "").strip()
-    reaction_class = str(cfg.get("reaction_class") or "").strip()
-    if reaction_type != "lighting_scene_schedule" and reaction_class != "LightingScheduleReaction":
+    reaction_type = resolve_reaction_type(cfg)
+    if reaction_type != "lighting_scene_schedule":
         return ""
     scheduled_min = cfg.get("scheduled_min")
     bucket = None

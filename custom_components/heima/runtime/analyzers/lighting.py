@@ -196,7 +196,7 @@ class LightingPatternAnalyzer:
                         description=_describe(room_id, weekday, scheduled_min, entity_steps),
                         confidence=round(confidence, 3),
                         suggested_reaction_config={
-                            "reaction_class": "LightingScheduleReaction",
+                            "reaction_type": "lighting_scene_schedule",
                             "room_id": room_id,
                             "weekday": weekday,
                             "scheduled_min": scheduled_min,

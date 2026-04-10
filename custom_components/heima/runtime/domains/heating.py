@@ -56,6 +56,7 @@ class HeatingDomain:
         *,
         source: str = "",
         origin_reaction_id: str | None = None,
+        origin_reaction_type: str | None = None,
         origin_reaction_class: str | None = None,
         climate_entity: str | None = None,
     ) -> None:
@@ -65,6 +66,7 @@ class HeatingDomain:
         self._heating_last_apply_provenance = {
             "source": source,
             "origin_reaction_id": origin_reaction_id,
+            "origin_reaction_type": origin_reaction_type,
             "origin_reaction_class": origin_reaction_class,
             "expected_domains": ["climate"],
             "expected_subject_ids": [climate_entity] if climate_entity else [],

@@ -5,6 +5,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ._compat import LEGACY_REACTION_CLASS_TO_TYPE, resolve_reaction_type
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
 from .heating import (
@@ -83,6 +84,7 @@ ProposalReviewTitlePresenter = Callable[[Any, Any, dict[str, Any], str, bool], s
 class ReactionPluginDescriptor:
     """Minimal built-in metadata for one Reaction Plugin."""
 
+    reaction_type: str
     reaction_class: str
     reaction_id_strategy: str
     supported_config_contracts: tuple[str, ...]
@@ -115,25 +117,30 @@ class ReactionPluginRegistry:
 
     def __init__(self, plugins: tuple[RegisteredReactionPlugin, ...]) -> None:
         self._plugins = plugins
+        self._plugins_by_type = {plugin.descriptor.reaction_type: plugin for plugin in plugins}
         self._plugins_by_class = {plugin.descriptor.reaction_class: plugin for plugin in plugins}
 
-    def plugin_for(self, reaction_class: str) -> RegisteredReactionPlugin | None:
+    def plugin_for(self, reaction_type: str) -> RegisteredReactionPlugin | None:
+        return self._plugins_by_type.get(str(reaction_type or ""))
+
+    def plugin_for_class(self, reaction_class: str) -> RegisteredReactionPlugin | None:
         return self._plugins_by_class.get(str(reaction_class or ""))
 
-    def builder_for(self, reaction_class: str) -> ReactionPluginBuilder | None:
-        plugin = self.plugin_for(reaction_class)
+    def builder_for(self, reaction_type: str) -> ReactionPluginBuilder | None:
+        plugin = self.plugin_for(reaction_type)
         return plugin.builder if plugin is not None else None
 
     def descriptors(self) -> tuple[ReactionPluginDescriptor, ...]:
         return tuple(plugin.descriptor for plugin in self._plugins)
 
-    def presenter_for(self, reaction_class: str) -> ReactionPresenterHooks | None:
-        plugin = self.plugin_for(reaction_class)
+    def presenter_for(self, reaction_type: str) -> ReactionPresenterHooks | None:
+        plugin = self.plugin_for(reaction_type)
         return plugin.presenter_hooks if plugin is not None else None
 
     def diagnostics(self) -> list[dict[str, Any]]:
         return [
             {
+                "reaction_type": plugin.descriptor.reaction_type,
                 "reaction_class": plugin.descriptor.reaction_class,
                 "reaction_id_strategy": plugin.descriptor.reaction_id_strategy,
                 "supported_config_contracts": list(plugin.descriptor.supported_config_contracts),
@@ -149,6 +156,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
     plugins = (
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="presence_preheat",
                 reaction_class="PresencePatternReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("presence_preheat",),
@@ -161,6 +169,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="lighting_scene_schedule",
                 reaction_class="LightingScheduleReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("lighting_scene_schedule",),
@@ -178,6 +187,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="heating_preference",
                 reaction_class="HeatingPreferenceReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("heating_preference",),
@@ -187,6 +197,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="heating_eco",
                 reaction_class="HeatingEcoReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("heating_eco",),
@@ -196,13 +207,10 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="room_signal_assist",
                 reaction_class="RoomSignalAssistReaction",
                 reaction_id_strategy="proposal_id",
-                supported_config_contracts=(
-                    "room_signal_assist",
-                    "room_cooling_assist",
-                    "room_air_quality_assist",
-                ),
+                supported_config_contracts=("room_signal_assist",),
                 supports_normalizer=True,
             ),
             builder=build_room_signal_assist_reaction,
@@ -217,6 +225,43 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="room_cooling_assist",
+                reaction_class="RoomSignalAssistReaction",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("room_cooling_assist",),
+                supports_normalizer=True,
+            ),
+            builder=build_room_signal_assist_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_room_signal_assist_label,
+                proposal_human_label=present_room_signal_assist_proposal_label,
+                proposal_review_title=present_room_signal_assist_review_title,
+                admin_authored_review_details=present_admin_authored_room_signal_assist_details,
+                learned_review_details=present_learned_room_signal_assist_details,
+                tuning_review_details=present_tuning_room_signal_assist_details,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
+                reaction_type="room_air_quality_assist",
+                reaction_class="RoomSignalAssistReaction",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("room_air_quality_assist",),
+                supports_normalizer=True,
+            ),
+            builder=build_room_signal_assist_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_room_signal_assist_label,
+                proposal_human_label=present_room_signal_assist_proposal_label,
+                proposal_review_title=present_room_signal_assist_review_title,
+                admin_authored_review_details=present_admin_authored_room_signal_assist_details,
+                learned_review_details=present_learned_room_signal_assist_details,
+                tuning_review_details=present_tuning_room_signal_assist_details,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
+                reaction_type="room_darkness_lighting_assist",
                 reaction_class="RoomLightingAssistReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_darkness_lighting_assist",),
@@ -234,6 +279,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="room_vacancy_lighting_off",
                 reaction_class="RoomLightingVacancyOffReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_vacancy_lighting_off",),
@@ -250,6 +296,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="vacation_presence_simulation",
                 reaction_class="VacationPresenceSimulationReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("vacation_presence_simulation",),
@@ -269,12 +316,12 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
 
 
 def builtin_reaction_plugin_builders() -> dict[str, ReactionPluginBuilder]:
-    """Legacy helper: return built-in builders keyed by reaction_class."""
+    """Legacy helper: return built-in builders keyed by reaction_type."""
     registry = create_builtin_reaction_plugin_registry()
     return {
-        descriptor.reaction_class: registry.builder_for(descriptor.reaction_class)
+        descriptor.reaction_type: registry.builder_for(descriptor.reaction_type)
         for descriptor in registry.descriptors()
-        if registry.builder_for(descriptor.reaction_class) is not None
+        if registry.builder_for(descriptor.reaction_type) is not None
     }
 
 
@@ -299,6 +346,8 @@ __all__ = [
     "create_builtin_reaction_plugin_registry",
     "builtin_reaction_plugin_builders",
     "builtin_reaction_plugin_descriptors",
+    "resolve_reaction_type",
+    "LEGACY_REACTION_CLASS_TO_TYPE",
     "ConsecutiveStateReaction",
     "ConsecutiveMatchDetector",
     "HeatingEcoReaction",

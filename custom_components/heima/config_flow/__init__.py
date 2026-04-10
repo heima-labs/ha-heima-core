@@ -30,6 +30,7 @@ from ..const import (
     OPT_SECURITY,
 )
 from ..reconciliation import reconcile_ha_backed_options
+from ..runtime.reactions import resolve_reaction_type
 from ._common import _default_language, _default_timezone
 from ._steps_calendar import _CalendarStepsMixin
 from ._steps_general import _GeneralStepsMixin
@@ -386,12 +387,10 @@ class HeimaOptionsFlowHandler(
         for cfg in configured.values():
             if not isinstance(cfg, dict):
                 continue
-            reaction_type = str(cfg.get("reaction_type") or "").strip()
-            reaction_class = str(cfg.get("reaction_class") or "").strip()
+            reaction_type = resolve_reaction_type(cfg)
             identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
             if (
                 reaction_type == "lighting_scene_schedule"
-                or reaction_class == "LightingScheduleReaction"
                 or identity_key.startswith("lighting_scene_schedule|")
             ):
                 active_lighting += 1
@@ -437,12 +436,10 @@ class HeimaOptionsFlowHandler(
         for cfg in configured.values():
             if not isinstance(cfg, dict):
                 continue
-            reaction_type = str(cfg.get("reaction_type") or "").strip()
-            reaction_class = str(cfg.get("reaction_class") or "").strip()
+            reaction_type = resolve_reaction_type(cfg)
             identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
             is_composite = (
                 reaction_type.startswith("room_")
-                or reaction_class in {"RoomSignalAssistReaction", "RoomLightingAssistReaction"}
                 or identity_key.startswith("room_")
             )
             if not is_composite:

@@ -53,6 +53,7 @@ def _presence_cfg(
     **kwargs,
 ) -> dict:
     return {
+        "reaction_type": "presence_preheat",
         "reaction_class": "PresencePatternReaction",
         "weekday": weekday,
         "median_arrival_min": median_arrival_min,
@@ -91,32 +92,36 @@ def test_no_configured_entries_noop():
 def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
     registry = create_builtin_reaction_plugin_registry()
 
-    assert {descriptor.reaction_class for descriptor in registry.descriptors()} == {
-        "PresencePatternReaction",
-        "LightingScheduleReaction",
-        "HeatingPreferenceReaction",
-        "HeatingEcoReaction",
-        "RoomSignalAssistReaction",
-        "RoomLightingAssistReaction",
-        "RoomLightingVacancyOffReaction",
-        "VacationPresenceSimulationReaction",
+    assert {descriptor.reaction_type for descriptor in registry.descriptors()} == {
+        "presence_preheat",
+        "lighting_scene_schedule",
+        "heating_preference",
+        "heating_eco",
+        "room_signal_assist",
+        "room_cooling_assist",
+        "room_air_quality_assist",
+        "room_darkness_lighting_assist",
+        "room_vacancy_lighting_off",
+        "vacation_presence_simulation",
     }
-    assert registry.builder_for("RoomSignalAssistReaction") is not None
+    assert registry.builder_for("room_signal_assist") is not None
     assert registry.builder_for("MissingReaction") is None
 
 
 def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
     descriptors = builtin_reaction_plugin_descriptors()
 
-    assert [d.reaction_class for d in descriptors] == [
-        "PresencePatternReaction",
-        "LightingScheduleReaction",
-        "HeatingPreferenceReaction",
-        "HeatingEcoReaction",
-        "RoomSignalAssistReaction",
-        "RoomLightingAssistReaction",
-        "RoomLightingVacancyOffReaction",
-        "VacationPresenceSimulationReaction",
+    assert [d.reaction_type for d in descriptors] == [
+        "presence_preheat",
+        "lighting_scene_schedule",
+        "heating_preference",
+        "heating_eco",
+        "room_signal_assist",
+        "room_cooling_assist",
+        "room_air_quality_assist",
+        "room_darkness_lighting_assist",
+        "room_vacancy_lighting_off",
+        "vacation_presence_simulation",
     ]
     assert descriptors[-1].supported_config_contracts == ("vacation_presence_simulation",)
     assert descriptors[-1].supports_normalizer is False
@@ -124,12 +129,12 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
     assert descriptors[-2].supports_normalizer is False
     assert descriptors[-3].supported_config_contracts == ("room_darkness_lighting_assist",)
     assert descriptors[-3].supports_normalizer is False
-    assert descriptors[-4].supported_config_contracts == (
-        "room_signal_assist",
-        "room_cooling_assist",
-        "room_air_quality_assist",
-    )
+    assert descriptors[-4].supported_config_contracts == ("room_air_quality_assist",)
     assert descriptors[-4].supports_normalizer is True
+    assert descriptors[-5].supported_config_contracts == ("room_cooling_assist",)
+    assert descriptors[-5].supports_normalizer is True
+    assert descriptors[-6].supported_config_contracts == ("room_signal_assist",)
+    assert descriptors[-6].supports_normalizer is True
 
 
 def test_presence_reaction_built_and_registered():
@@ -187,6 +192,32 @@ def test_unknown_reaction_class_skipped(caplog):
 
     assert engine._reactions == []
     assert engine._configured_reaction_ids == set()
+
+
+def test_legacy_reaction_class_is_migrated_to_reaction_type():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "p1": {
+                        "reaction_class": "PresencePatternReaction",
+                        "weekday": 1,
+                        "median_arrival_min": 480,
+                        "window_half_min": 15,
+                        "pre_condition_min": 20,
+                        "min_arrivals": 5,
+                        "steps": [],
+                    },
+                }
+            }
+        }
+    )
+
+    engine._migrate_legacy_reaction_types()
+
+    cfg = engine._entry.options["reactions"]["configured"]["p1"]
+    assert cfg["reaction_type"] == "presence_preheat"
+    assert "reaction_class" not in cfg
 
 
 def test_malformed_config_skipped(caplog):

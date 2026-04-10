@@ -49,7 +49,7 @@ from .domains.people import PeopleDomain
 from .domains.security import SecurityDomain
 from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
 from .normalization.service import InputNormalizer
-from .reactions import create_builtin_reaction_plugin_registry
+from .reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
 from .reactions.base import HeimaReaction
 from .scheduler import ScheduledRuntimeJob
 from .snapshot import DecisionSnapshot
@@ -59,7 +59,6 @@ from .state_store import CanonicalState
 _LOGGER = logging.getLogger(__name__)
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
-
 
 @dataclass(frozen=True)
 class EngineHealth:
@@ -173,6 +172,13 @@ class HeimaEngine:
             return None
         return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
 
+    def _reaction_type_for_reaction_id(self, reaction_id: str) -> str | None:
+        provenance = self._configured_reaction_metadata(reaction_id)
+        reaction_type = provenance.get("reaction_type")
+        if isinstance(reaction_type, str) and reaction_type.strip():
+            return reaction_type.strip()
+        return None
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)
@@ -203,6 +209,7 @@ class HeimaEngine:
     ) -> None:
         _LOGGER.debug("Heima engine reload options")
         self._entry = entry
+        self._migrate_legacy_reaction_types()
         self._options = HeimaOptions.from_entry(entry)
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
@@ -360,7 +367,7 @@ class HeimaEngine:
         for reaction_id, cfg in configured.items():
             if reaction_id not in known_ids or not isinstance(cfg, dict):
                 continue
-            value = str(cfg.get("reaction_type") or "").strip()
+            value = self._reaction_type_from_config(cfg)
             if value == reaction_type:
                 matched.append(str(reaction_id))
         return sorted(matched)
@@ -377,25 +384,58 @@ class HeimaEngine:
         for proposal_id, cfg in configured.items():
             if not bool(dict(cfg or {}).get("enabled", True)):
                 continue
-            reaction_class = cfg.get("reaction_class")
-            builder = self._reaction_plugin_registry.builder_for(str(reaction_class or ""))
+            reaction_type = self._reaction_type_from_config(cfg)
+            builder = self._reaction_plugin_registry.builder_for(reaction_type)
             if builder is None:
                 _LOGGER.debug(
-                    "Skipping configured reaction with unknown class %r (proposal %s)",
-                    reaction_class,
+                    "Skipping configured reaction with unknown type %r (proposal %s)",
+                    reaction_type,
                     proposal_id,
                 )
                 continue
-            reaction = builder(self, proposal_id, cfg)
+            normalized_cfg = dict(cfg)
+            if reaction_type:
+                normalized_cfg["reaction_type"] = reaction_type
+            normalized_cfg.pop("reaction_class", None)
+            reaction = builder(self, proposal_id, normalized_cfg)
             if reaction is not None:
                 self._reactions.append(reaction)
                 self._configured_reaction_ids.add(reaction.reaction_id)
             else:
                 _LOGGER.warning(
                     "Malformed %s config for proposal %s",
-                    reaction_class,
+                    reaction_type or "<unknown>",
                     proposal_id,
                 )
+
+    @staticmethod
+    def _reaction_type_from_config(cfg: dict[str, Any]) -> str:
+        return resolve_reaction_type(cfg)
+
+    def _migrate_legacy_reaction_types(self) -> None:
+        options = dict(getattr(self._entry, "options", {}) or {})
+        reactions = dict(options.get(OPT_REACTIONS, {}) or {})
+        configured = dict(reactions.get("configured", {}) or {})
+        changed = False
+        normalized_configured: dict[str, Any] = {}
+        for reaction_id, raw_cfg in configured.items():
+            if not isinstance(raw_cfg, dict):
+                normalized_configured[reaction_id] = raw_cfg
+                continue
+            cfg = dict(raw_cfg)
+            reaction_type = self._reaction_type_from_config(cfg)
+            if reaction_type and str(cfg.get("reaction_type") or "").strip() != reaction_type:
+                cfg["reaction_type"] = reaction_type
+                changed = True
+            if "reaction_class" in cfg:
+                cfg.pop("reaction_class", None)
+                changed = True
+            normalized_configured[reaction_id] = cfg
+        if not changed:
+            return
+        reactions["configured"] = normalized_configured
+        options[OPT_REACTIONS] = reactions
+        setattr(self._entry, "options", options)
 
     def set_house_state_override(
         self,
@@ -1023,6 +1063,11 @@ class HeimaEngine:
                             origin_reaction_id=(
                                 reaction.reaction_id if reaction is not None else None
                             ),
+                            origin_reaction_type=(
+                                self._reaction_type_for_reaction_id(reaction.reaction_id)
+                                if reaction is not None
+                                else None
+                            ),
                             origin_reaction_class=(
                                 reaction.__class__.__name__ if reaction is not None else None
                             ),
@@ -1077,6 +1122,11 @@ class HeimaEngine:
                     correlation_id=f"script-apply:{uuid4()}",
                     source=step.source,
                     origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
+                    origin_reaction_type=(
+                        self._reaction_type_for_reaction_id(reaction.reaction_id)
+                        if reaction is not None
+                        else None
+                    ),
                     origin_reaction_class=(
                         reaction.__class__.__name__ if reaction is not None else None
                     ),

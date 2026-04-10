@@ -513,7 +513,7 @@ async def test_proposal_engine_diagnostics_include_summary_and_explainability(mo
     assert item["last_observed_at"]
     assert item["is_stale"] is False
     assert item["stale_reason"] is None
-    assert item["config_summary"]["reaction_class"] == "PresencePatternReaction"
+    assert item["config_summary"]["reaction_type"] == "presence_preheat"
     assert item["config_summary"]["weekday"] == 0
     assert item["config_summary"]["steps_count"] == 0
     assert item["explainability"]["pattern_id"] == "presence_preheat"
@@ -812,10 +812,12 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
 
     item = diagnostics["proposals"][0]
     assert item["origin"] == "learned"
-    assert item["config_summary"] == {}
+    assert item["config_summary"] == {"reaction_type": "presence_preheat"}
     assert item["explainability"] == {}
     assert sensor_updates[-1][1]["legacy"]["origin"] == "learned"
-    assert sensor_updates[-1][1]["legacy"]["config_summary"] == {}
+    assert sensor_updates[-1][1]["legacy"]["config_summary"] == {
+        "reaction_type": "presence_preheat"
+    }
     assert sensor_updates[-1][1]["legacy"]["explainability"] == {}
 
 

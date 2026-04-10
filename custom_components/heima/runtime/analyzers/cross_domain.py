@@ -557,7 +557,7 @@ def _build_signal_assist_config(
     )
     followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     return {
-        "reaction_class": "RoomSignalAssistReaction",
+        "reaction_type": "room_signal_assist",
         "room_id": room_id,
         "trigger_signal_entities": humidity_entities,
         "primary_signal_entities": humidity_entities,
@@ -596,7 +596,7 @@ def _build_cooling_assist_config(
     followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     corroborated_count = sum(1 for ep in confirmed if ep.corroboration_matches.get("humidity"))
     return {
-        "reaction_class": "RoomSignalAssistReaction",
+        "reaction_type": "room_cooling_assist",
         "room_id": room_id,
         "trigger_signal_entities": temperature_entities,
         "primary_signal_entities": temperature_entities,
@@ -623,7 +623,7 @@ def _build_air_quality_assist_config(
     co2_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
     followup_entities = _stable_followup_entities(confirmed, quality_policy=quality_policy)
     return {
-        "reaction_class": "RoomSignalAssistReaction",
+        "reaction_type": "room_air_quality_assist",
         "room_id": room_id,
         "trigger_signal_entities": co2_entities,
         "primary_signal_entities": co2_entities,
@@ -653,7 +653,7 @@ def _build_darkness_lighting_assist_config(
         {step["entity_id"] for step in entity_steps if step.get("entity_id")}
     )
     return {
-        "reaction_class": "RoomLightingAssistReaction",
+        "reaction_type": "room_darkness_lighting_assist",
         "room_id": room_id,
         "primary_signal_entities": lux_entities,
         "primary_threshold": _ROOM_LUX_LOW_THRESHOLD,
@@ -685,7 +685,7 @@ def _build_vacancy_lighting_off_config(
         {step["entity_id"] for step in entity_steps if step.get("entity_id")}
     )
     return {
-        "reaction_class": "RoomLightingVacancyOffReaction",
+        "reaction_type": "room_vacancy_lighting_off",
         "room_id": room_id,
         "vacancy_delay_s": median_vacancy_delay_s(confirmed),
         "followup_window_s": _FOLLOWUP_WINDOW_S,

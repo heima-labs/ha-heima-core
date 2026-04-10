@@ -255,7 +255,7 @@ async def test_lighting_analyzer_proposal_config_fields():
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) == 1
     cfg = proposals[0].suggested_reaction_config
-    assert cfg["reaction_class"] == "LightingScheduleReaction"
+    assert cfg["reaction_type"] == "lighting_scene_schedule"
     assert cfg["room_id"] == "kitchen"
     assert cfg["weekday"] == 2
     assert cfg["scheduled_min"] == 1380

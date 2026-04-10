@@ -122,7 +122,7 @@ class SecurityPresenceSimulationAnalyzer:
                 description=description,
                 confidence=confidence,
                 suggested_reaction_config={
-                    "reaction_class": "VacationPresenceSimulationReaction",
+                    "reaction_type": "vacation_presence_simulation",
                     "dynamic_policy": True,
                     "requires_dark_outside": True,
                     "skip_if_presence_detected": True,
