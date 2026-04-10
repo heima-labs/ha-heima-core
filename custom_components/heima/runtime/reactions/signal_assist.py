@@ -348,7 +348,7 @@ def present_admin_authored_room_signal_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
-    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
         details.append(
             f"Segnale primario: {primary_signal_name}"
@@ -375,7 +375,9 @@ def present_admin_authored_room_signal_assist_details(
         )
     corroboration_entities = cfg.get("corroboration_signal_entities")
     if isinstance(corroboration_entities, list) and corroboration_entities:
-        corroboration_name = str(cfg.get("corroboration_signal_name") or "corroboration")
+        corroboration_name = _human_signal_name(
+            str(cfg.get("corroboration_signal_name") or "corroboration")
+        )
         details.append(
             f"Corroborazione: {corroboration_name} ({len(corroboration_entities)})"
             if is_it
@@ -414,7 +416,7 @@ def present_learned_room_signal_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
-    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
         details.append(
             f"Segnale primario: {primary_signal_name}"
@@ -567,10 +569,19 @@ def present_room_signal_assist_proposal_label(
     room_id = str(cfg.get("room_id") or "").strip()
     if not room_id:
         return None
-    primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+    primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
         return f"Assist {room_id} · {primary_signal_name}"
     return f"Assist {room_id}"
+
+
+def _human_signal_name(signal_name: str) -> str:
+    clean = str(signal_name or "").strip()
+    if clean == "room_humidity":
+        return "humidity"
+    if clean == "room_co2":
+        return "co2"
+    return clean
 
 
 def present_room_signal_assist_review_title(

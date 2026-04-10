@@ -889,7 +889,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
                     "followup_kind": "tuning_suggestion",
                     "config_summary": {
                         "room_id": "bathroom",
-                        "primary_signal_name": "humidity",
+                        "primary_signal_name": "room_humidity",
                     },
                 },
                 {
@@ -916,7 +916,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
                     "reaction_type": "room_signal_assist",
                     "reaction_class": "RoomSignalAssistReaction",
                     "room_id": "bathroom",
-                    "primary_signal_name": "humidity",
+                    "primary_signal_name": "room_humidity",
                 },
                 "r2": {
                     "reaction_class": "RoomLightingAssistReaction",
@@ -941,7 +941,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
         "room_darkness_lighting_assist": 1,
         "room_signal_assist": 1,
     }
-    assert composite["configured_by_primary_signal"] == {"humidity": 1, "room_lux": 1}
+    assert composite["configured_by_primary_signal"] == {"room_humidity": 1, "room_lux": 1}
     assert composite["pending_total"] == 2
     assert composite["pending_tuning_total"] == 1
     assert composite["pending_discovery_total"] == 1
@@ -950,14 +950,14 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
         "room_darkness_lighting_assist": 1,
         "room_signal_assist": 1,
     }
-    assert composite["pending_by_primary_signal"] == {"humidity": 1, "room_lux": 1}
+    assert composite["pending_by_primary_signal"] == {"room_humidity": 1, "room_lux": 1}
     assert composite["pending_tuning_examples"] == [
         {
             "id": "p1",
             "type": "room_signal_assist",
             "label": "Assist bathroom · humidity",
             "room_id": "bathroom",
-            "primary_signal_name": "humidity",
+            "primary_signal_name": "room_humidity",
             "confidence": 0.88,
         }
     ]

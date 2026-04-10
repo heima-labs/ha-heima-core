@@ -1589,7 +1589,7 @@ async def test_proposal_human_label_for_room_signal_assist_includes_primary_sign
         suggested_reaction_config={
             "reaction_class": "RoomSignalAssistReaction",
             "room_id": "bathroom",
-            "primary_signal_name": "humidity",
+            "primary_signal_name": "room_humidity",
         },
     )
 

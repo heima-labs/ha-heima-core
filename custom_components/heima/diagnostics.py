@@ -1124,7 +1124,7 @@ def _composite_example_label(
 ) -> str:
     reaction_type = str(reaction_type or "").strip()
     room_id = str(room_id or "").strip()
-    primary_signal_name = str(primary_signal_name or "").strip()
+    primary_signal_name = _human_signal_name(str(primary_signal_name or "").strip())
     if not room_id:
         return ""
 
@@ -1151,6 +1151,15 @@ def _composite_example_label(
             else f"Air quality {room_id}"
         )
     return ""
+
+
+def _human_signal_name(signal_name: str) -> str:
+    clean = str(signal_name or "").strip()
+    if clean == "room_humidity":
+        return "humidity"
+    if clean == "room_co2":
+        return "co2"
+    return clean
 
 
 def _active_reaction_items(coordinator: Any) -> list[tuple[str, dict[str, Any]]]:
