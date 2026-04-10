@@ -528,7 +528,7 @@ class _ReactionsStepsMixin:
         defaults = {
             "room_id": room_ids[0],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "action": "on",
             "brightness": 190,
             "color_temp_kelvin": 2850,
@@ -560,13 +560,10 @@ class _ReactionsStepsMixin:
         if not entity_ids:
             errors["light_entities"] = "required"
 
-        try:
-            primary_threshold = float(user_input.get("primary_threshold") or 0)
-            if primary_threshold <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["primary_threshold"] = "invalid_number"
-            primary_threshold = defaults["primary_threshold"]
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        if not primary_bucket:
+            errors["primary_bucket"] = "required"
+            primary_bucket = defaults["primary_bucket"]
 
         brightness = None
         color_temp_kelvin = None
@@ -593,7 +590,7 @@ class _ReactionsStepsMixin:
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name
                         or defaults["primary_signal_name"],
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "light_entities": entity_ids,
                         "action": action or defaults["action"],
                         "brightness": user_input.get("brightness", defaults["brightness"]),
@@ -613,7 +610,7 @@ class _ReactionsStepsMixin:
             room_id=room_id,
             primary_signal_entities=primary_signal_entities,
             primary_signal_name=primary_signal_name or "room_lux",
-            primary_threshold=primary_threshold,
+            primary_bucket=primary_bucket,
             entity_ids=entity_ids,
             action=action,
             brightness=brightness,
@@ -627,7 +624,7 @@ class _ReactionsStepsMixin:
                         "room_id": room_id,
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "light_entities": entity_ids,
                         "action": action,
                         "brightness": brightness or defaults["brightness"],
@@ -649,7 +646,7 @@ class _ReactionsStepsMixin:
                         "room_id": room_id,
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "light_entities": entity_ids,
                         "action": action,
                         "brightness": brightness or defaults["brightness"],
@@ -921,7 +918,7 @@ class _ReactionsStepsMixin:
             "enabled": bool(cfg.get("enabled", True)),
             "primary_signal_entities": list(cfg.get("primary_signal_entities", [])),
             "primary_signal_name": str(cfg.get("primary_signal_name") or "room_lux").strip(),
-            "primary_threshold": float(cfg.get("primary_threshold", 120.0) or 120.0),
+            "primary_bucket": str(cfg.get("primary_bucket") or "dim").strip() or "dim",
             "light_entities": current_entities,
             "action": str(first_step.get("action") or "on").strip() or "on",
             "brightness": int(first_step.get("brightness") or 190),
@@ -960,13 +957,10 @@ class _ReactionsStepsMixin:
         if not light_entities:
             errors["light_entities"] = "required"
 
-        try:
-            primary_threshold = float(user_input.get("primary_threshold") or 0)
-            if primary_threshold <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["primary_threshold"] = "invalid_number"
-            primary_threshold = defaults["primary_threshold"]
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        if not primary_bucket:
+            errors["primary_bucket"] = "required"
+            primary_bucket = defaults["primary_bucket"]
 
         brightness: int | None = None
         color_temp_kelvin: int | None = None
@@ -992,7 +986,7 @@ class _ReactionsStepsMixin:
                         "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "light_entities": light_entities,
                         "action": action,
                         "brightness": user_input.get("brightness", defaults["brightness"]),
@@ -1012,7 +1006,9 @@ class _ReactionsStepsMixin:
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["primary_signal_entities"] = primary_signal_entities
         cfg["primary_signal_name"] = primary_signal_name
-        cfg["primary_threshold"] = primary_threshold
+        cfg["primary_bucket"] = primary_bucket
+        cfg.pop("primary_threshold", None)
+        cfg.pop("primary_threshold_mode", None)
         cfg["entity_steps"] = [
             {
                 "entity_id": entity_id,
@@ -1031,7 +1027,7 @@ class _ReactionsStepsMixin:
                         "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                         "primary_signal_entities": primary_signal_entities,
                         "primary_signal_name": primary_signal_name,
-                        "primary_threshold": primary_threshold,
+                        "primary_bucket": primary_bucket,
                         "light_entities": light_entities,
                         "action": action,
                         "brightness": user_input.get("brightness", defaults["brightness"]),
@@ -1632,7 +1628,7 @@ class _ReactionsStepsMixin:
                         ["sensor", "binary_sensor"], multiple=True
                     ),
                     vol.Required("primary_signal_name", default="room_lux"): str,
-                    vol.Required("primary_threshold", default=120.0): vol.Coerce(float),
+                    vol.Required("primary_bucket", default="dim"): str,
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
                     vol.Required("action", default="on"): vol.In(action_options),
                     vol.Optional("brightness", default=190): vol.All(
@@ -1677,7 +1673,7 @@ class _ReactionsStepsMixin:
                         ["sensor", "binary_sensor"], multiple=True
                     ),
                     vol.Required("primary_signal_name", default="room_lux"): str,
-                    vol.Required("primary_threshold", default=120.0): vol.Coerce(float),
+                    vol.Required("primary_bucket", default="dim"): str,
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
                     vol.Required("action", default="on"): vol.In(action_options),
                     vol.Optional("brightness", default=190): vol.All(
@@ -1804,7 +1800,7 @@ class _ReactionsStepsMixin:
         room_id: str,
         primary_signal_entities: list[str],
         primary_signal_name: str,
-        primary_threshold: float,
+        primary_bucket: str,
         entity_ids: list[str],
         action: str,
         brightness: int | None,
@@ -1838,9 +1834,8 @@ class _ReactionsStepsMixin:
                 "reaction_type": "room_darkness_lighting_assist",
                 "room_id": room_id,
                 "primary_signal_entities": list(primary_signal_entities),
-                "primary_threshold": float(primary_threshold),
+                "primary_bucket": primary_bucket.strip(),
                 "primary_signal_name": primary_signal_name.strip() or "room_lux",
-                "primary_threshold_mode": "below",
                 "corroboration_signal_entities": [],
                 "corroboration_threshold": None,
                 "corroboration_signal_name": "corroboration",

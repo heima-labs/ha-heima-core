@@ -2598,7 +2598,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "light_entities": ["light.studio_main", "light.studio_spot"],
             "action": "on",
             "brightness": 190,
@@ -2621,6 +2621,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert reaction["origin"] == "admin_authored"
     assert reaction["source_template_id"] == "room.darkness_lighting_assist.basic"
     assert reaction["primary_signal_entities"] == ["sensor.studio_lux"]
+    assert reaction["primary_bucket"] == "dim"
     assert len(reaction["entity_steps"]) == 2
 
 
@@ -2643,7 +2644,7 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "light_entities": ["light.studio_main"],
             "action": "on",
             "brightness": 190,
@@ -2676,7 +2677,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_pay
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "light_entities": ["**REDACTED**"],
             "action": "on",
             "brightness": 190,
@@ -2716,7 +2717,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "light_entities": ["light.studio_main"],
             "action": "on",
             "brightness": 190,
@@ -2743,9 +2744,8 @@ async def test_proposals_accept_rejects_redacted_config_payload():
             "reaction_type": "room_darkness_lighting_assist",
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "primary_signal_name": "room_lux",
-            "primary_threshold_mode": "below",
             "entity_steps": [{"entity_id": "**REDACTED**", "action": "on"}],
         },
     )
@@ -2800,7 +2800,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pen
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "light_entities": ["light.studio_main"],
             "action": "on",
             "brightness": 190,
@@ -3251,8 +3251,7 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
                         "enabled": True,
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_lux"],
-                        "primary_threshold": 90.0,
-                        "primary_threshold_mode": "below",
+                        "primary_bucket": "dim",
                         "entity_steps": [
                             {
                                 "entity_id": "light.studio_main",
@@ -3276,7 +3275,7 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
     assert result["step_id"] == "reactions_edit_form"
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "primary_signal_entities" in schema_keys
-    assert "primary_threshold" in schema_keys
+    assert "primary_bucket" in schema_keys
     assert "light_entities" in schema_keys
     assert "action" in schema_keys
     assert "pre_condition_min" not in schema_keys
@@ -3295,8 +3294,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
                         "enabled": True,
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_lux"],
-                        "primary_threshold": 90.0,
-                        "primary_threshold_mode": "below",
+                        "primary_bucket": "dim",
                         "entity_steps": [
                             {
                                 "entity_id": "light.studio_main",
@@ -3318,7 +3316,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
         {
             "enabled": False,
             "primary_signal_entities": ["sensor.studio_lux", "sensor.studio_window_lux"],
-            "primary_threshold": 120.0,
+            "primary_bucket": "dark",
             "light_entities": ["light.studio_main", "light.studio_spot"],
             "action": "on",
             "brightness": 180,
@@ -3335,7 +3333,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
         "sensor.studio_lux",
         "sensor.studio_window_lux",
     ]
-    assert stored["primary_threshold"] == 120.0
+    assert stored["primary_bucket"] == "dark"
     assert stored["entity_steps"] == [
         {
             "entity_id": "light.studio_main",
