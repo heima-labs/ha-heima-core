@@ -2390,25 +2390,6 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
         }
     )
 
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
-
     result = await flow.async_step_admin_authored_security_presence_simulation(
         {
             "enabled": True,
@@ -2424,21 +2405,17 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    created = pending[0]
-    assert created.origin == "admin_authored"
-    assert created.reaction_type == "vacation_presence_simulation"
-    assert created.identity_key == "vacation_presence_simulation|scope=home"
-    assert (
-        created.suggested_reaction_config["reaction_class"] == "VacationPresenceSimulationReaction"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "VacationPresenceSimulationReaction"),
+        None,
     )
-    assert (
-        created.suggested_reaction_config["admin_authored_template_id"]
-        == "security.vacation_presence_simulation.basic"
-    )
-    assert created.suggested_reaction_config["dynamic_policy"] is True
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "security.vacation_presence_simulation.basic"
+    assert reaction["dynamic_policy"] is True
 
 
 @pytest.mark.asyncio
@@ -2452,27 +2429,6 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
         }
     )
 
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"lighting", "presence"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
-
     result = await flow.async_step_admin_authored_lighting_schedule(
         {
             "room_id": "living",
@@ -2485,29 +2441,17 @@ async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_ope
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    created = pending[0]
-    assert created.origin == "admin_authored"
-    assert created.reaction_type == "lighting_scene_schedule"
-    assert (
-        created.suggested_reaction_config["admin_authored_template_id"]
-        == "lighting.scene_schedule.basic"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "LightingScheduleReaction"),
+        None,
     )
-    assert created.identity_key.startswith(
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
-    )
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
-    assert "Bozza admin: Luci living" in result["description_placeholders"]["proposal_label"]
-    assert (
-        "Origine: bozza richiesta dall'amministratore"
-        in result["description_placeholders"]["proposal_details"]
-    )
-    assert (
-        "Template: lighting.scene_schedule.basic"
-        in result["description_placeholders"]["proposal_details"]
-    )
-    assert "Stato UX: bozza" in result["description_placeholders"]["proposal_details"]
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "lighting.scene_schedule.basic"
+    assert len(reaction["entity_steps"]) == 2
 
 
 @pytest.mark.asyncio
@@ -2521,27 +2465,6 @@ async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_sl
         }
     )
 
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"lighting"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
-
     result = await flow.async_step_admin_authored_lighting_schedule(
         {
             "room_id": "living",
@@ -2554,8 +2477,10 @@ async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_sl
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    assert result["step_id"] == "proposals"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    assert any(cfg.get("reaction_class") == "LightingScheduleReaction" for cfg in configured.values())
 
 
 @pytest.mark.asyncio
@@ -2568,27 +2493,6 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
         }
     )
-
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
 
     result = await flow.async_step_admin_authored_room_signal_assist(
         {
@@ -2605,34 +2509,18 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    created = pending[0]
-    assert created.origin == "admin_authored"
-    assert created.reaction_type == "room_signal_assist"
-    assert (
-        created.suggested_reaction_config["admin_authored_template_id"]
-        == "room.signal_assist.basic"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomSignalAssistReaction"),
+        None,
     )
-    assert created.suggested_reaction_config["primary_signal_entities"] == [
-        "sensor.bathroom_humidity"
-    ]
-    assert created.suggested_reaction_config["corroboration_signal_entities"] == [
-        "sensor.bathroom_temperature"
-    ]
-    assert created.suggested_reaction_config["steps"][0]["action"] == "script.turn_on"
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
-    assert (
-        "Bozza admin: Assist bathroom · humidity"
-        in result["description_placeholders"]["proposal_label"]
-    )
-    details = result["description_placeholders"]["proposal_details"]
-    assert "Template: room.signal_assist.basic" in details
-    assert "Segnale primario: humidity" in details
-    assert "Condizione primaria: Aumento rapido (8.0)" in details
-    assert "Corroborazione: temperature (1)" in details
-    assert "Condizione corroborante: Aumento rapido (0.8)" in details
-    assert "Azioni configurate: 1" in details
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "room.signal_assist.basic"
+    assert reaction["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert reaction["corroboration_signal_entities"] == ["sensor.bathroom_temperature"]
 
 
 @pytest.mark.asyncio
@@ -2645,27 +2533,6 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
         }
     )
-
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
 
     result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
         {
@@ -2680,31 +2547,25 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    created = pending[0]
-    assert created.origin == "admin_authored"
-    assert created.reaction_type == "room_darkness_lighting_assist"
-    assert (
-        created.suggested_reaction_config["admin_authored_template_id"]
-        == "room.darkness_lighting_assist.basic"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomLightingAssistReaction"),
+        None,
     )
-    assert created.suggested_reaction_config["primary_signal_entities"] == ["sensor.studio_lux"]
-    assert len(created.suggested_reaction_config["entity_steps"]) == 2
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
-    assert (
-        "Bozza admin: Luci studio · room_lux"
-        in result["description_placeholders"]["proposal_label"]
-    )
-    details = result["description_placeholders"]["proposal_details"]
-    assert "Template: room.darkness_lighting_assist.basic" in details
-    assert "Segnale primario: room_lux" in details
-    assert "Soglia buio: 120.0" in details
-    assert "Luci configurate: 2" in details
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "room.darkness_lighting_assist.basic"
+    assert reaction["primary_signal_entities"] == ["sensor.studio_lux"]
+    assert len(reaction["entity_steps"]) == 2
 
 
 @pytest.mark.asyncio
 async def test_admin_authored_room_darkness_lighting_assist_allows_historical_non_pending_duplicate():
+    # Con il nuovo flusso diretto non c'è più il concetto di "storico pending":
+    # la reaction viene scritta direttamente in configured, quindi una seconda
+    # submission con la stessa identity_key viene bloccata come duplicate.
     flow = _flow(
         {
             "rooms": [
@@ -2713,28 +2574,6 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
         }
     )
-
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    historical = SimpleNamespace(status="accepted")
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: historical,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
 
     result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
         {
@@ -2749,9 +2588,10 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    assert any(cfg.get("reaction_class") == "RoomLightingAssistReaction" for cfg in configured.values())
 
 
 @pytest.mark.asyncio
@@ -2775,21 +2615,6 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
         }
     )
 
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: [],
-        async_submit_proposal=AsyncMock(),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
-
     result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
         {
             "room_id": "studio",
@@ -2803,7 +2628,6 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 0
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
     assert result["errors"]["base"] == "duplicate"
@@ -2811,47 +2635,26 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
 
 @pytest.mark.asyncio
 async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pending_identity_even_if_history_lookup_is_accepted():
+    # Con il nuovo flusso diretto il duplicate check si basa su configured.
+    # Equivalente del vecchio test: configured contiene già la stessa identity_key.
     flow = _flow(
         {
             "rooms": [
                 {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
             ],
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+            "reactions": {
+                "configured": {
+                    "reaction-existing": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "source_proposal_identity_key": (
+                            "room_darkness_lighting_assist|room=studio|primary=room_lux"
+                        ),
+                    }
+                }
+            },
         }
     )
-
-    pending_proposal = ReactionProposal(
-        proposal_id="proposal-pending",
-        analyzer_id="AdminAuthoredRoomDarknessLightingTemplate",
-        reaction_type="room_darkness_lighting_assist",
-        description="studio pending darkness assist",
-        confidence=1.0,
-        origin="admin_authored",
-        identity_key="room_darkness_lighting_assist|room=studio|primary=room_lux",
-        suggested_reaction_config={
-            "reaction_class": "RoomLightingAssistReaction",
-            "room_id": "studio",
-            "primary_signal_entities": ["sensor.studio_lux"],
-            "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
-            "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}],
-        },
-    )
-    historical = SimpleNamespace(status="accepted")
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: [pending_proposal],
-        async_submit_proposal=AsyncMock(),
-        proposal_by_identity_key=lambda identity_key: historical,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
 
     result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
         {
@@ -2866,7 +2669,6 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pen
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 0
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
     assert result["errors"]["base"] == "duplicate"
@@ -2883,27 +2685,6 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
         }
     )
 
-    pending: list[ReactionProposal] = []
-
-    async def _async_submit_proposal(proposal: ReactionProposal) -> str:
-        pending[:] = [proposal]
-        return proposal.proposal_id
-
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: list(pending),
-        async_submit_proposal=AsyncMock(side_effect=_async_submit_proposal),
-        proposal_by_identity_key=lambda identity_key: None,
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    coordinator = SimpleNamespace(
-        proposal_engine=proposal_engine,
-        learning_plugin_registry=create_builtin_learning_plugin_registry(
-            enabled_families={"composite_room_assist"}
-        ),
-    )
-    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
-
     result = await flow.async_step_admin_authored_room_vacancy_lighting_off(
         {
             "room_id": "studio",
@@ -2912,26 +2693,18 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
         }
     )
 
-    assert proposal_engine.async_submit_proposal.await_count == 1
-    created = pending[0]
-    assert created.origin == "admin_authored"
-    assert created.reaction_type == "room_vacancy_lighting_off"
-    assert (
-        created.suggested_reaction_config["admin_authored_template_id"]
-        == "room.vacancy_lighting_off.basic"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_class") == "RoomLightingVacancyOffReaction"),
+        None,
     )
-    assert created.suggested_reaction_config["vacancy_delay_s"] == 420
-    assert len(created.suggested_reaction_config["entity_steps"]) == 2
-    assert result["type"] == "form"
-    assert result["step_id"] == "proposals"
-    assert (
-        "Bozza admin: Spegni studio per assenza"
-        in result["description_placeholders"]["proposal_label"]
-    )
-    details = result["description_placeholders"]["proposal_details"]
-    assert "Template: room.vacancy_lighting_off.basic" in details
-    assert "Ritardo spegnimento: 7 minuti" in details
-    assert "Luci proposte: 2" in details
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "room.vacancy_lighting_off.basic"
+    assert reaction["vacancy_delay_s"] == 420
+    assert len(reaction["entity_steps"]) == 2
 
 
 @pytest.mark.asyncio

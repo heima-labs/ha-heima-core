@@ -412,13 +412,13 @@
       },
       "admin_authored_room_darkness_lighting_assist": {
         "title": "Nuovo assist luce per oscurità stanza",
-        "description": "Template: {template_title}\n{template_description}",
+        "description": "Template: {template_title}\n{template_description}\n\nNota: la presenza viene rilevata automaticamente dall'engine di occupancy per la stanza scelta — non è necessario configurare un sensore di presenza qui.",
         "data": {
           "room_id": "Stanza",
-          "primary_signal_entities": "Entità segnale primario",
-          "primary_signal_name": "Nome segnale primario",
-          "primary_threshold": "Soglia oscurità",
-          "light_entities": "Luci da controllare",
+          "primary_signal_entities": "Sensori lux",
+          "primary_signal_name": "Nome segnale (es. room_lux)",
+          "primary_threshold": "Soglia oscurità (lux)",
+          "light_entities": "Luci da accendere",
           "action": "Azione",
           "brightness": "Luminosità",
           "color_temp_kelvin": "Temperatura colore (K)"
@@ -493,13 +493,14 @@
         }
       },
       "reactions_edit_form": {
-        "title": "Modifica azioni reazione",
-        "description": "{reaction_description}",
+        "title": "Modifica reazione",
+        "description": "{reaction_description}\nStanza: {room_id}\n\nNota: la presenza è rilevata automaticamente dall'engine di occupancy — non configurare un sensore di presenza qui.",
         "data": {
           "enabled": "Abilitata",
           "primary_signal_entities": "Sensori lux",
-          "primary_threshold": "Soglia lux",
-          "light_entities": "Luci da comandare",
+          "primary_signal_name": "Nome segnale (es. room_lux)",
+          "primary_threshold": "Soglia oscurità (lux)",
+          "light_entities": "Luci da accendere",
           "action": "Azione luci",
           "brightness": "Luminosità",
           "color_temp_kelvin": "Temperatura colore (K)",

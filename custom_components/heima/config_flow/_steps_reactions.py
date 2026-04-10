@@ -27,28 +27,32 @@ _LOGGER = logging.getLogger(__name__)
 class _ReactionsStepsMixin:
     """Mixin for reactions step."""
 
-    def _admin_authored_identity_conflicts(
-        self,
-        proposal: ReactionProposal,
-        proposal_engine: Any,
-    ) -> bool:
-        """Block only active duplicates, not historical accepted/rejected proposals."""
+    def _admin_authored_identity_conflicts(self, proposal: ReactionProposal) -> bool:
+        """Return True if a configured reaction already covers this identity key."""
         identity_key = str(proposal.identity_key or "").strip()
         if not identity_key:
             return False
-
-        pending_fn = getattr(proposal_engine, "pending_proposals", None)
-        pending = pending_fn() if callable(pending_fn) else []
-        for current in list(pending or []):
-            if str(getattr(current, "identity_key", "") or "").strip() == identity_key:
-                return True
-
         configured = dict(self._reactions_options().get("configured", {}))
         for raw in configured.values():
             reaction_cfg = _safe_mapping(raw)
             if str(reaction_cfg.get("source_proposal_identity_key") or "").strip() == identity_key:
                 return True
         return False
+
+    async def _store_admin_authored_reaction_directly(
+        self, proposal: ReactionProposal
+    ) -> "FlowResult":
+        """Persist an admin-authored reaction directly to configured, bypassing proposals review."""
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
+        reaction_id = proposal.proposal_id
+        configured[reaction_id] = self._configured_reaction_from_proposal(proposal)
+        labels[reaction_id] = proposal.description
+        reactions_cfg["configured"] = configured
+        reactions_cfg["labels"] = labels
+        self._store_reactions_options(reactions_cfg)
+        return await self.async_step_init()
 
     async def async_step_admin_authored_create(
         self, user_input: dict[str, Any] | None = None
@@ -193,12 +197,7 @@ class _ReactionsStepsMixin:
             brightness=brightness,
             color_temp_kelvin=color_temp_kelvin,
         )
-        coordinator = self._get_coordinator()
-        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
-        if proposal_engine is None:
-            return await self.async_step_init()
-
-        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
+        if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_lighting_schedule",
                 data_schema=self._admin_authored_lighting_schedule_schema(
@@ -219,9 +218,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        proposal_id = await proposal_engine.async_submit_proposal(proposal)
-        self._proposal_review_queue = [proposal_id]
-        return await self.async_step_proposals()
+        return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_security_presence_simulation(
         self, user_input: dict[str, Any] | None = None
@@ -303,12 +300,7 @@ class _ReactionsStepsMixin:
             latest_end_time_override=latest_end or None,
             skip_if_presence_detected=bool(user_input.get("skip_if_presence_detected", True)),
         )
-        coordinator = self._get_coordinator()
-        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
-        if proposal_engine is None:
-            return await self.async_step_init()
-
-        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
+        if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
                 data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
@@ -319,9 +311,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        proposal_id = await proposal_engine.async_submit_proposal(proposal)
-        self._proposal_review_queue = [proposal_id]
-        return await self.async_step_proposals()
+        return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_room_signal_assist(
         self, user_input: dict[str, Any] | None = None
@@ -442,12 +432,7 @@ class _ReactionsStepsMixin:
             corroboration_threshold=corroboration_threshold,
             action_entities=action_entities,
         )
-        coordinator = self._get_coordinator()
-        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
-        if proposal_engine is None:
-            return await self.async_step_init()
-
-        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
+        if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
                 data_schema=self._admin_authored_room_signal_assist_schema(
@@ -471,9 +456,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        proposal_id = await proposal_engine.async_submit_proposal(proposal)
-        self._proposal_review_queue = [proposal_id]
-        return await self.async_step_proposals()
+        return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_room_darkness_lighting_assist(
         self, user_input: dict[str, Any] | None = None
@@ -578,12 +561,7 @@ class _ReactionsStepsMixin:
             brightness=brightness,
             color_temp_kelvin=color_temp_kelvin,
         )
-        coordinator = self._get_coordinator()
-        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
-        if proposal_engine is None:
-            return await self.async_step_init()
-
-        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
+        if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
@@ -605,9 +583,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        proposal_id = await proposal_engine.async_submit_proposal(proposal)
-        self._proposal_review_queue = [proposal_id]
-        return await self.async_step_proposals()
+        return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_room_vacancy_lighting_off(
         self, user_input: dict[str, Any] | None = None
@@ -673,12 +649,7 @@ class _ReactionsStepsMixin:
             entity_ids=entity_ids,
             vacancy_delay_min=vacancy_delay_min,
         )
-        coordinator = self._get_coordinator()
-        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
-        if proposal_engine is None:
-            return await self.async_step_init()
-
-        if self._admin_authored_identity_conflicts(proposal, proposal_engine):
+        if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
                 data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
@@ -695,9 +666,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        proposal_id = await proposal_engine.async_submit_proposal(proposal)
-        self._proposal_review_queue = [proposal_id]
-        return await self.async_step_proposals()
+        return await self._store_admin_authored_reaction_directly(proposal)
 
     def _store_reactions_options(self, updates: dict[str, Any]) -> None:
         """Persist reaction options without dropping sibling reaction state."""
@@ -810,7 +779,10 @@ class _ReactionsStepsMixin:
                         "delete_reaction": False,
                     },
                 ),
-                description_placeholders={"reaction_description": label},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": str(cfg.get("room_id") or "-"),
+                },
             )
 
         if bool(user_input.get("delete_reaction", False)):
@@ -851,6 +823,7 @@ class _ReactionsStepsMixin:
         defaults = {
             "enabled": bool(cfg.get("enabled", True)),
             "primary_signal_entities": list(cfg.get("primary_signal_entities", [])),
+            "primary_signal_name": str(cfg.get("primary_signal_name") or "room_lux").strip(),
             "primary_threshold": float(cfg.get("primary_threshold", 120.0) or 120.0),
             "light_entities": current_entities,
             "action": str(first_step.get("action") or "on").strip() or "on",
@@ -859,12 +832,16 @@ class _ReactionsStepsMixin:
             "delete_reaction": False,
         }
         label = self._reaction_label_from_config(pid, cfg, labels_map)
+        room_id_placeholder = str(cfg.get("room_id") or "-")
 
         if user_input is None:
             return self.async_show_form(
                 step_id="reactions_edit_form",
                 data_schema=self._reactions_edit_room_lighting_assist_schema(defaults),
-                description_placeholders={"reaction_description": label},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                },
             )
 
         if bool(user_input.get("delete_reaction", False)):
@@ -875,6 +852,9 @@ class _ReactionsStepsMixin:
         primary_signal_entities = self._normalize_multi_value(
             user_input.get("primary_signal_entities")
         )
+        primary_signal_name = str(
+            user_input.get("primary_signal_name") or defaults["primary_signal_name"]
+        ).strip()
         light_entities = self._normalize_multi_value(user_input.get("light_entities"))
         action = str(user_input.get("action") or "on").strip() or "on"
 
@@ -914,6 +894,7 @@ class _ReactionsStepsMixin:
                     {
                         "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                         "primary_signal_entities": primary_signal_entities,
+                        "primary_signal_name": primary_signal_name,
                         "primary_threshold": primary_threshold,
                         "light_entities": light_entities,
                         "action": action,
@@ -925,11 +906,15 @@ class _ReactionsStepsMixin:
                     }
                 ),
                 errors=errors,
-                description_placeholders={"reaction_description": label},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                },
             )
 
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["primary_signal_entities"] = primary_signal_entities
+        cfg["primary_signal_name"] = primary_signal_name
         cfg["primary_threshold"] = primary_threshold
         cfg["entity_steps"] = [
             {
@@ -1466,6 +1451,7 @@ class _ReactionsStepsMixin:
                     vol.Required("primary_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
                     ),
+                    vol.Required("primary_signal_name", default="room_lux"): str,
                     vol.Required("primary_threshold", default=120.0): vol.Coerce(float),
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
                     vol.Required("action", default="on"): vol.In(action_options),
