@@ -660,7 +660,7 @@ def test_lighting_reaction_steps_blocked_by_manual_hold_behavior():
         "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
     }
     engine = _build_engine(options)
-    engine.register_behavior(LightingReactionGuardBehavior(engine.state, options))
+    behavior = LightingReactionGuardBehavior(engine.state, options)
     engine.state.set_binary("heima_lighting_hold_living", True)
     snapshot = DecisionSnapshot.empty()
     plan = ApplyPlan(
@@ -684,7 +684,7 @@ def test_lighting_reaction_steps_blocked_by_manual_hold_behavior():
         ]
     )
 
-    filtered = engine._dispatch_apply_filter(plan, snapshot)
+    filtered = behavior.apply_filter(plan, snapshot)
 
     assert filtered.steps[0].blocked_by == "lighting.manual_hold:living"
     assert filtered.steps[1].blocked_by == ""
