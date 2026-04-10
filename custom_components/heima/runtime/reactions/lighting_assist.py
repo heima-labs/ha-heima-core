@@ -26,10 +26,12 @@ class RoomLightingAssistReaction(HeimaReaction):
         self,
         *,
         hass: HomeAssistant,
+        bucket_getter: Any | None = None,
         room_id: str,
         entity_steps: list[dict[str, Any]],
         primary_signal_entities: list[str],
-        primary_threshold: float,
+        primary_threshold: float | None = None,
+        primary_bucket: str | None = None,
         primary_signal_name: str = "room_lux",
         primary_threshold_mode: str = "below",
         corroboration_signal_entities: list[str] | None = None,
@@ -41,17 +43,19 @@ class RoomLightingAssistReaction(HeimaReaction):
         reaction_id: str | None = None,
     ) -> None:
         self._hass = hass
+        self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._room_id = room_id
         self._entity_steps = list(entity_steps)
         self._reaction_id = reaction_id or self.__class__.__name__
         self._followup_window_s = followup_window_s
         self._matcher = RuntimeCompositeMatcher(hass)
+        self._primary_bucket = str(primary_bucket or "").strip() or None
         corroboration_entities = [e for e in (corroboration_signal_entities or []) if e]
         self._pattern = RuntimeCompositePatternSpec(
             primary=RuntimeCompositeSignalSpec(
                 name=primary_signal_name,
                 entity_ids=tuple(primary_signal_entities),
-                threshold=float(primary_threshold),
+                threshold=float(primary_threshold or 0.0),
                 threshold_mode=primary_threshold_mode,  # type: ignore[arg-type]
             ),
             corroborations=(
@@ -122,6 +126,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         return {
             "room_id": self._room_id,
             "entity_steps": len(self._entity_steps),
+            "primary_bucket": self._primary_bucket,
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
@@ -173,13 +178,18 @@ class RoomLightingAssistReaction(HeimaReaction):
         return steps
 
     def _steady_ready(self) -> bool:
-        if not _signal_condition_matches_now(
-            hass=self._hass,
-            entity_ids=self._pattern.primary.entity_ids,
-            threshold=self._pattern.primary.threshold,
-            threshold_mode=self._pattern.primary.threshold_mode,
-        ):
-            return False
+        if self._primary_bucket:
+            current_bucket = self._bucket_getter(self._room_id, self._pattern.primary.name)
+            if current_bucket != self._primary_bucket:
+                return False
+        else:
+            if not _signal_condition_matches_now(
+                hass=self._hass,
+                entity_ids=self._pattern.primary.entity_ids,
+                threshold=self._pattern.primary.threshold,
+                threshold_mode=self._pattern.primary.threshold_mode,
+            ):
+                return False
         if self._steady_condition_active:
             return False
         return self._entity_steps_need_apply()
@@ -210,7 +220,10 @@ def build_room_lighting_assist_reaction(
         primary_signal_entities = [
             str(v).strip() for v in cfg.get("primary_signal_entities", []) if str(v).strip()
         ]
-        primary_threshold = float(cfg["primary_threshold"])
+        primary_threshold = (
+            float(cfg["primary_threshold"]) if cfg.get("primary_threshold") is not None else None
+        )
+        primary_bucket = str(cfg.get("primary_bucket") or "").strip() or None
         primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
         primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
         corroboration_signal_entities = [
@@ -228,14 +241,18 @@ def build_room_lighting_assist_reaction(
         entity_steps = list(cfg.get("entity_steps", []))
         if not room_id or not primary_signal_entities or not entity_steps:
             raise ValueError("room_id, primary_signal_entities or entity_steps missing")
+        if primary_threshold is None and primary_bucket is None:
+            raise ValueError("primary_threshold or primary_bucket missing")
     except (KeyError, TypeError, ValueError):
         return None
     return RoomLightingAssistReaction(
         hass=engine._hass,  # noqa: SLF001
+        bucket_getter=engine.signal_bucket,
         room_id=room_id,
         entity_steps=entity_steps,
         primary_signal_entities=primary_signal_entities,
         primary_threshold=primary_threshold,
+        primary_bucket=primary_bucket,
         primary_signal_name=primary_signal_name,
         primary_threshold_mode=primary_threshold_mode,
         corroboration_signal_entities=corroboration_signal_entities,

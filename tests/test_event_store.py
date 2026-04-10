@@ -128,6 +128,47 @@ async def test_event_store_query_by_type(monkeypatch):
     assert presence_only[0].event_type == "presence"
 
 
+async def test_event_store_query_by_room_and_subject(monkeypatch):
+    monkeypatch.setattr(event_store_module, "Store", _FakeStore)
+    store = EventStore(object())  # type: ignore[arg-type]
+    await store.async_load()
+    await store.async_append(
+        HeimaEvent(
+            ts=_iso_now_minus(minutes=2),
+            event_type="room_signal_threshold",
+            context=_ctx(),
+            source=None,
+            domain="sensor",
+            subject_type="signal",
+            subject_id="room_lux",
+            room_id="studio",
+            data={"from_bucket": "ok", "to_bucket": "dark"},
+        )
+    )
+    await store.async_append(
+        HeimaEvent(
+            ts=_iso_now_minus(minutes=1),
+            event_type="room_signal_threshold",
+            context=_ctx(),
+            source=None,
+            domain="sensor",
+            subject_type="signal",
+            subject_id="room_humidity",
+            room_id="bathroom",
+            data={"from_bucket": "ok", "to_bucket": "high"},
+        )
+    )
+
+    result = await store.async_query(
+        event_type="room_signal_threshold",
+        room_id="studio",
+        subject_id="room_lux",
+    )
+    assert len(result) == 1
+    assert result[0].room_id == "studio"
+    assert result[0].subject_id == "room_lux"
+
+
 async def test_event_store_query_since(monkeypatch):
     monkeypatch.setattr(event_store_module, "Store", _FakeStore)
     store = EventStore(object())  # type: ignore[arg-type]

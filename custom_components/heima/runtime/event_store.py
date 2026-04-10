@@ -182,6 +182,8 @@ class EventStore:
         self,
         *,
         event_type: str | None = None,
+        room_id: str | None = None,
+        subject_id: str | None = None,
         since: str | None = None,
         limit: int | None = None,
     ) -> list[HeimaEvent]:
@@ -193,6 +195,10 @@ class EventStore:
         results: list[HeimaEvent] = []
         for event in self._events:
             if event_type and event.event_type != event_type:
+                continue
+            if room_id is not None and event.room_id != room_id:
+                continue
+            if subject_id is not None and event.subject_id != subject_id:
                 continue
             if since_dt is not None:
                 event_dt = self._parse_iso_ts(event.ts)

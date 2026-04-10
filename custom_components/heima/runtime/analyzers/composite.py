@@ -151,6 +151,10 @@ def numeric_delta(event: HeimaEvent) -> float | None:
 
 
 def subject_entity_id(event: HeimaEvent) -> str:
+    if str(event.subject_type or "").strip() == "signal":
+        entity_id = str(event.data.get("entity_id") or "").strip()
+        if entity_id:
+            return entity_id
     return str(event.subject_id or event.data.get("entity_id") or "")
 
 

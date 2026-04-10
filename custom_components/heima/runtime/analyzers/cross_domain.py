@@ -197,11 +197,17 @@ async def rooms_with_confirmed_pattern_evidence(
     matcher = RoomScopedCompositeMatcher()
     definition = _definition_by_pattern_id(pattern_id)
     state_changes = await event_store.async_query(event_type="state_change")
+    room_signal_threshold_events = await event_store.async_query(event_type="room_signal_threshold")
     lighting_events = await event_store.async_query(event_type="lighting")
     room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
     events = [
         event
-        for event in [*state_changes, *lighting_events, *room_occupancy_events]
+        for event in [
+            *state_changes,
+            *room_signal_threshold_events,
+            *lighting_events,
+            *room_occupancy_events,
+        ]
         if isinstance(event, HeimaEvent) and event.room_id
     ]
     if not events:
@@ -234,11 +240,17 @@ async def _analyze_definition(
     quality_policy: CompositeProposalQualityPolicy,
 ) -> list[ReactionProposal]:
     state_changes = await event_store.async_query(event_type="state_change")
+    room_signal_threshold_events = await event_store.async_query(event_type="room_signal_threshold")
     lighting_events = await event_store.async_query(event_type="lighting")
     room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
     events = [
         e
-        for e in [*state_changes, *lighting_events, *room_occupancy_events]
+        for e in [
+            *state_changes,
+            *room_signal_threshold_events,
+            *lighting_events,
+            *room_occupancy_events,
+        ]
         if isinstance(e, HeimaEvent) and e.room_id
     ]
     if not events:
@@ -333,6 +345,10 @@ def _is_co2_event(event: HeimaEvent) -> bool:
 
 
 def _is_room_lux_event(event: HeimaEvent) -> bool:
+    if event.event_type == "room_signal_threshold":
+        if str(event.subject_id or "").strip() != "room_lux":
+            return False
+        return str(event.data.get("to_bucket") or "").strip() in {"dim", "dark"}
     if event.event_type != "state_change":
         return False
     if event.data.get("device_class") == "illuminance":
@@ -656,9 +672,8 @@ def _build_darkness_lighting_assist_config(
         "reaction_type": "room_darkness_lighting_assist",
         "room_id": room_id,
         "primary_signal_entities": lux_entities,
-        "primary_threshold": _ROOM_LUX_LOW_THRESHOLD,
+        "primary_bucket": "dim",
         "primary_signal_name": "room_lux",
-        "primary_threshold_mode": "below",
         "corroboration_signal_entities": [],
         "corroboration_threshold": None,
         "corroboration_signal_name": "corroboration",
@@ -931,8 +946,7 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
         primary=CompositeSignalSpec(
             name="room_lux",
             predicate=_is_room_lux_event,
-            min_delta=_ROOM_LUX_LOW_THRESHOLD,
-            threshold_mode="below",
+            min_delta=None,
         ),
         followup=CompositeSignalSpec(
             name="lighting_replay",

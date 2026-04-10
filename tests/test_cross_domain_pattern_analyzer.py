@@ -67,6 +67,37 @@ def _state_change(
     )
 
 
+def _room_signal_threshold(
+    *,
+    entity_id: str,
+    room: str,
+    ts: str,
+    from_bucket: str,
+    to_bucket: str,
+    device_class: str = "illuminance",
+    signal_name: str = "room_lux",
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="room_signal_threshold",
+        context=_ctx(room=room),
+        source=None,
+        domain="sensor",
+        subject_type="signal",
+        subject_id=signal_name,
+        room_id=room,
+        data={
+            "signal_name": signal_name,
+            "entity_id": entity_id,
+            "from_bucket": from_bucket,
+            "to_bucket": to_bucket,
+            "direction": "down",
+            "value": 95.0,
+            "device_class": device_class,
+        },
+    )
+
+
 def _lighting_event(
     *,
     entity_id: str,
@@ -326,14 +357,13 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         lux_ts = (base + timedelta(days=i * 7)).isoformat()
         light_ts = (base + timedelta(days=i * 7, minutes=2)).isoformat()
         events.extend(
-            [
-                _state_change(
+                [
+                _room_signal_threshold(
                     entity_id="sensor.living_room_lux",
                     room="living",
                     ts=lux_ts,
-                    old_state="180",
-                    new_state="95",
-                    device_class="illuminance",
+                    from_bucket="ok",
+                    to_bucket="dim",
                 ),
                 _lighting_event(
                     entity_id="light.living_main",
@@ -356,7 +386,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.living_room_lux"
     ]
-    assert proposal.suggested_reaction_config["primary_threshold_mode"] == "below"
+    assert proposal.suggested_reaction_config["primary_bucket"] == "dim"
     assert proposal.suggested_reaction_config["entity_steps"] == [
         {
             "entity_id": "light.living_main",

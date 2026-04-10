@@ -1,6 +1,7 @@
 """Heima Behavior Framework — pluggable hook dispatch."""
 
 from .base import HeimaBehavior
+from .event_canonicalizer import EventCanonicalizer
 from .event_recorder import EventRecorderBehavior
 from .heating_recorder import HeatingRecorderBehavior
 from .lighting_reaction_guard import LightingReactionGuardBehavior
@@ -9,6 +10,7 @@ from .signal_recorder import SignalRecorderBehavior
 
 __all__ = [
     "HeimaBehavior",
+    "EventCanonicalizer",
     "EventRecorderBehavior",
     "HeatingRecorderBehavior",
     "LightingReactionGuardBehavior",

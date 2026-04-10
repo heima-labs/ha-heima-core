@@ -49,7 +49,11 @@ from .domains.people import PeopleDomain
 from .domains.security import SecurityDomain
 from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
 from .normalization.service import InputNormalizer
-from .reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
+from .reactions import (
+    create_builtin_reaction_plugin_registry,
+    normalize_reaction_options_payload,
+    resolve_reaction_type,
+)
 from .reactions.base import HeimaReaction
 from .scheduler import ScheduledRuntimeJob
 from .snapshot import DecisionSnapshot
@@ -177,6 +181,19 @@ class HeimaEngine:
         reaction_type = provenance.get("reaction_type")
         if isinstance(reaction_type, str) and reaction_type.strip():
             return reaction_type.strip()
+        return None
+
+    def signal_bucket(self, room_id: str, signal_name: str) -> str | None:
+        """Return the current canonical bucket for a room signal when available."""
+        for behavior in self._behaviors:
+            bucket_for = getattr(behavior, "bucket_for", None)
+            if callable(bucket_for):
+                try:
+                    bucket = bucket_for(room_id, signal_name)
+                except Exception:
+                    continue
+                if isinstance(bucket, str) and bucket.strip():
+                    return bucket.strip()
         return None
 
     async def async_initialize(self) -> None:
@@ -414,28 +431,10 @@ class HeimaEngine:
 
     def _migrate_legacy_reaction_types(self) -> None:
         options = dict(getattr(self._entry, "options", {}) or {})
-        reactions = dict(options.get(OPT_REACTIONS, {}) or {})
-        configured = dict(reactions.get("configured", {}) or {})
-        changed = False
-        normalized_configured: dict[str, Any] = {}
-        for reaction_id, raw_cfg in configured.items():
-            if not isinstance(raw_cfg, dict):
-                normalized_configured[reaction_id] = raw_cfg
-                continue
-            cfg = dict(raw_cfg)
-            reaction_type = self._reaction_type_from_config(cfg)
-            if reaction_type and str(cfg.get("reaction_type") or "").strip() != reaction_type:
-                cfg["reaction_type"] = reaction_type
-                changed = True
-            if "reaction_class" in cfg:
-                cfg.pop("reaction_class", None)
-                changed = True
-            normalized_configured[reaction_id] = cfg
+        normalized_options, changed = normalize_reaction_options_payload(options)
         if not changed:
             return
-        reactions["configured"] = normalized_configured
-        options[OPT_REACTIONS] = reactions
-        setattr(self._entry, "options", options)
+        setattr(self._entry, "options", normalized_options)
 
     def set_house_state_override(
         self,

@@ -12,6 +12,11 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
 from .entities.registry import build_registry
+from .room_sources import (
+    autopopulate_room_signals,
+    migrate_room_darkness_reactions_to_primary_bucket,
+)
+from .runtime.reactions import normalize_reaction_options_payload
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +36,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Heima from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+
+    normalized_options, signal_changed = autopopulate_room_signals(
+        dict(entry.options),
+        state_getter=hass.states.get,
+    )
+    normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
+        normalized_options
+    )
+    normalized_options, reaction_changed = normalize_reaction_options_payload(normalized_options)
+    changed = signal_changed or bucket_changed or reaction_changed
+    if changed:
+        hass.config_entries.async_update_entry(entry, options=normalized_options)
 
     coordinator = HeimaCoordinator(hass=hass, entry=entry)
     await coordinator.async_initialize()
@@ -54,6 +71,19 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
     if coordinator is None:
         _LOGGER.debug("No coordinator found for %s, skipping update", entry.entry_id)
+        return
+
+    normalized_options, signals_changed = autopopulate_room_signals(
+        dict(entry.options),
+        state_getter=hass.states.get,
+    )
+    normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
+        normalized_options
+    )
+    normalized_options, reactions_changed = normalize_reaction_options_payload(normalized_options)
+    if signals_changed or bucket_changed or reactions_changed:
+        hass.config_entries.async_update_entry(entry, options=normalized_options)
+        coordinator.last_options_snapshot = dict(normalized_options)
         return
 
     prev = coordinator.last_options_snapshot

@@ -1,17 +1,28 @@
-"""Tests for SignalRecorderBehavior."""
+"""Tests for EventCanonicalizer (backward-compat filename kept intentionally)."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 
-from custom_components.heima.runtime.behaviors.signal_recorder import SignalRecorderBehavior
+from custom_components.heima.runtime.behaviors.event_canonicalizer import EventCanonicalizer
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
-_TS = "2026-03-10T08:00:00+00:00"
 _LAST_CHANGED = datetime(2026, 3, 10, 8, 0, 0, tzinfo=timezone.utc)
+
+
+class _FakeState:
+    def __init__(
+        self,
+        state: str,
+        *,
+        device_class: str | None = None,
+        last_changed: datetime | None = None,
+    ) -> None:
+        self.state = state
+        self.attributes = {"device_class": device_class} if device_class else {}
+        self.last_changed = last_changed or _LAST_CHANGED
 
 
 class _FakeStore:
@@ -37,10 +48,19 @@ class _FakeBus:
         return _unsub
 
 
+class _FakeStateMachine:
+    def __init__(self, mapping: dict[str, _FakeState]) -> None:
+        self._mapping = mapping
+
+    def get(self, entity_id: str):
+        return self._mapping.get(entity_id)
+
+
 class _FakeHass:
-    def __init__(self) -> None:
+    def __init__(self, states: dict[str, _FakeState]) -> None:
         self.tasks: list = []
         self.bus = _FakeBus()
+        self.states = _FakeStateMachine(states)
 
     def async_create_task(self, coro):
         task = asyncio.create_task(coro)
@@ -74,324 +94,162 @@ class _FakeContextBuilder:
         )
 
 
-def _snapshot(house_state: str = "home") -> DecisionSnapshot:
+def _snapshot() -> DecisionSnapshot:
     return DecisionSnapshot(
         snapshot_id="s",
-        ts=_TS,
-        house_state=house_state,
+        ts="2026-03-10T08:00:00+00:00",
+        house_state="home",
         anyone_home=True,
         people_count=1,
-        occupied_rooms=["bathroom"],
+        occupied_rooms=["studio"],
         lighting_intents={},
         security_state="disarmed",
     )
 
 
-def _state_event(
-    entity_id: str,
-    new_state: str,
-    old_state: str | None = None,
-    *,
-    context_id: str | None = None,
-    attributes: dict | None = None,
-) -> object:
-    new = MagicMock()
-    new.state = new_state
-    new.attributes = attributes or {}
-    new.last_changed = _LAST_CHANGED
-    new.context = MagicMock(id=context_id) if context_id else None
+def _state_event(entity_id: str, new_state: _FakeState) -> object:
+    class _Event:
+        data = {
+            "entity_id": entity_id,
+            "new_state": new_state,
+            "old_state": None,
+        }
 
-    old = None
-    if old_state is not None:
-        old = MagicMock()
-        old.state = old_state
-
-    event = MagicMock()
-    event.data = {
-        "entity_id": entity_id,
-        "new_state": new,
-        "old_state": old,
-    }
-    return event
+    return _Event()
 
 
 def _behavior(
-    hass: _FakeHass,
-    store: _FakeStore,
     *,
-    options: dict | None = None,
-    apply_state: dict | None = None,
-) -> SignalRecorderBehavior:
-    behavior = SignalRecorderBehavior(
+    states: dict[str, _FakeState],
+    options: dict,
+) -> tuple[_FakeHass, _FakeStore, EventCanonicalizer]:
+    hass = _FakeHass(states)
+    store = _FakeStore()
+    behavior = EventCanonicalizer(
         hass,  # type: ignore[arg-type]
         store,  # type: ignore[arg-type]
         _FakeContextBuilder(),  # type: ignore[arg-type]
         _FakeEntry(options),  # type: ignore[arg-type]
-        lambda: apply_state or {"scripts": {}},
     )
-    behavior._last_snapshot = _snapshot()
-    return behavior
+    return hass, store, behavior
 
 
-async def test_signal_recorder_records_tracked_signal_state_change():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={"learning": {"context_signal_entities": ["sensor.bathroom_humidity"]}},
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(
-        _state_event(
-            "sensor.bathroom_humidity", "68", "55", attributes={"unit_of_measurement": "%"}
-        )
-    )
-    await hass.flush()
-
-    assert len(store.events) == 1
-    event = store.events[0]
-    assert event.event_type == "state_change"
-    assert event.domain == "sensor"
-    assert event.subject_id == "sensor.bathroom_humidity"
-    assert event.data["old_state"] == "55"
-    assert event.data["new_state"] == "68"
-    assert event.data["unit_of_measurement"] == "%"
-
-
-async def test_signal_recorder_ignores_untracked_entity():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={"learning": {"context_signal_entities": ["sensor.other"]}},
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(_state_event("sensor.bathroom_humidity", "68", "55"))
-    await hass.flush()
-
-    assert store.events == []
-
-
-async def test_signal_recorder_maps_room_from_room_sources():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
+async def test_event_canonicalizer_tracks_room_learning_source_with_default_buckets():
+    hass, _store, behavior = _behavior(
+        states={"sensor.studio_lux": _FakeState("180", device_class="illuminance")},
         options={
-            "learning": {"context_signal_entities": ["sensor.bathroom_humidity"]},
-            "rooms": [
-                {
-                    "room_id": "bathroom",
-                    "learning_sources": ["sensor.bathroom_humidity"],
-                }
-            ],
+            "rooms": [{"room_id": "studio", "learning_sources": ["sensor.studio_lux"]}],
+            "learning": {},
         },
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(_state_event("sensor.bathroom_humidity", "68", "55"))
-    await hass.flush()
-
-    assert store.events[0].room_id == "bathroom"
-
-
-async def test_signal_recorder_tracks_room_learning_sources_without_global_extra():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={
-            "learning": {"context_signal_entities": []},
-            "rooms": [
-                {
-                    "room_id": "bathroom",
-                    "occupancy_sources": ["binary_sensor.bathroom_motion"],
-                    "learning_sources": ["sensor.bathroom_humidity"],
-                }
-            ],
-        },
-    )
-    behavior._refresh_config()
-
-    assert behavior.diagnostics()["tracked_entities"] == ["sensor.bathroom_humidity"]
-
-    await behavior._handle_state_changed(_state_event("sensor.bathroom_humidity", "68", "55"))
-    await hass.flush()
-
-    assert len(store.events) == 1
-    assert store.events[0].room_id == "bathroom"
-
-
-async def test_signal_recorder_uses_context_id_as_correlation_id():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={"learning": {"context_signal_entities": ["sensor.bathroom_humidity"]}},
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(
-        _state_event("sensor.bathroom_humidity", "68", "55", context_id="ctx-signal-1")
-    )
-    await hass.flush()
-
-    assert store.events[0].correlation_id == "ctx-signal-1"
-
-
-async def test_signal_recorder_ignores_recent_heima_script_apply_for_same_room():
-    import time
-
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={
-            "learning": {"context_signal_entities": ["switch.bathroom_fan"]},
-            "rooms": [{"room_id": "bathroom", "learning_sources": ["switch.bathroom_fan"]}],
-        },
-        apply_state={
-            "scripts": {
-                "script.bathroom_fan": {
-                    "script_entity": "script.bathroom_fan",
-                    "room_id": "bathroom",
-                    "applied_ts": time.monotonic() - 1.0,
-                    "correlation_id": "script-apply:1",
-                    "source": "reaction:test",
-                    "origin_reaction_id": "test",
-                    "origin_reaction_type": "room_signal_assist",
-                    "origin_reaction_class": "RoomSignalAssistReaction",
-                    "expected_domains": ["switch"],
-                    "expected_subject_ids": ["switch.bathroom_fan"],
-                    "expected_entity_ids": [],
-                }
-            }
-        },
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(_state_event("switch.bathroom_fan", "on", "off"))
-    await hass.flush()
-
-    assert store.events == []
-
-
-async def test_signal_recorder_does_not_ignore_recent_heima_script_apply_for_other_room():
-    import time
-
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={
-            "learning": {"context_signal_entities": ["switch.studio_fan"]},
-            "rooms": [{"room_id": "studio", "learning_sources": ["switch.studio_fan"]}],
-        },
-        apply_state={
-            "scripts": {
-                "script.bathroom_fan": {
-                    "script_entity": "script.bathroom_fan",
-                    "room_id": "bathroom",
-                    "applied_ts": time.monotonic() - 1.0,
-                    "correlation_id": "script-apply:2",
-                    "source": "reaction:test",
-                    "origin_reaction_id": "test",
-                    "origin_reaction_type": "room_signal_assist",
-                    "origin_reaction_class": "RoomSignalAssistReaction",
-                    "expected_domains": ["switch"],
-                    "expected_subject_ids": ["switch.bathroom_fan"],
-                    "expected_entity_ids": [],
-                }
-            }
-        },
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(_state_event("switch.studio_fan", "on", "off"))
-    await hass.flush()
-
-    assert len(store.events) == 1
-    assert store.events[0].subject_id == "switch.studio_fan"
-
-
-async def test_signal_recorder_uses_expected_domains_with_room_scope():
-    import time
-
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={
-            "learning": {"context_signal_entities": ["switch.studio_fan", "sensor.studio_co2"]},
-            "rooms": [
-                {
-                    "room_id": "studio",
-                    "learning_sources": ["switch.studio_fan", "sensor.studio_co2"],
-                }
-            ],
-        },
-        apply_state={
-            "scripts": {
-                "script.studio_fan": {
-                    "script_entity": "script.studio_fan",
-                    "room_id": "studio",
-                    "applied_ts": time.monotonic() - 1.0,
-                    "correlation_id": "script-apply:3",
-                    "source": "reaction:test",
-                    "origin_reaction_id": "test",
-                    "origin_reaction_type": "room_signal_assist",
-                    "origin_reaction_class": "RoomSignalAssistReaction",
-                    "expected_domains": ["switch"],
-                    "expected_subject_ids": [],
-                    "expected_entity_ids": [],
-                }
-            }
-        },
-    )
-    behavior._refresh_config()
-
-    await behavior._handle_state_changed(_state_event("sensor.studio_co2", "940", "700"))
-    await behavior._handle_state_changed(_state_event("switch.studio_fan", "on", "off"))
-    await hass.flush()
-
-    assert len(store.events) == 1
-    assert store.events[0].subject_id == "sensor.studio_co2"
-
-
-async def test_signal_recorder_async_setup_subscribes_when_tracked_entities_exist():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass,
-        store,
-        options={"learning": {"context_signal_entities": ["sensor.bathroom_humidity"]}},
     )
 
     await behavior.async_setup()
 
-    assert behavior._unsub is not None
+    diag = behavior.diagnostics()
+    assert "sensor.studio_lux" in diag["tracked_entities"]
+    tracked = diag["tracked_entities"]["sensor.studio_lux"]
+    assert tracked["room_id"] == "studio"
+    assert tracked["signal_name"] == "room_lux"
+    assert tracked["device_class"] == "illuminance"
+    await hass.flush()
 
 
-async def test_signal_recorder_on_options_reloaded_updates_tracked_entities():
-    hass = _FakeHass()
-    store = _FakeStore()
-    behavior = _behavior(
-        hass, store, options={"learning": {"context_signal_entities": ["sensor.old"]}}
+async def test_event_canonicalizer_emits_room_signal_threshold_on_bucket_crossing():
+    state = _FakeState("180", device_class="illuminance")
+    hass, store, behavior = _behavior(
+        states={"sensor.studio_lux": state},
+        options={
+            "rooms": [{"room_id": "studio", "learning_sources": ["sensor.studio_lux"]}],
+            "learning": {},
+        },
     )
-    behavior._refresh_config()
+    behavior.on_snapshot(_snapshot())
+    await behavior.async_setup()
 
-    behavior.on_options_reloaded(
-        {"learning": {"context_signal_entities": ["sensor.new"]}, "rooms": []}
+    state.state = "20"
+    state.last_changed = datetime(2026, 3, 10, 8, 5, 0, tzinfo=timezone.utc)
+    await behavior._handle_state_changed(_state_event("sensor.studio_lux", state))
+    await hass.flush()
+
+    assert len(store.events) == 1
+    event = store.events[0]
+    assert event.event_type == "room_signal_threshold"
+    assert event.room_id == "studio"
+    assert event.subject_type == "signal"
+    assert event.subject_id == "room_lux"
+    assert event.source is None
+    assert event.data["from_bucket"] == "ok"
+    assert event.data["to_bucket"] == "dark"
+    assert event.data["direction"] == "down"
+
+
+async def test_event_canonicalizer_ignores_intra_bucket_noise():
+    state = _FakeState("20", device_class="illuminance")
+    hass, store, behavior = _behavior(
+        states={"sensor.studio_lux": state},
+        options={
+            "rooms": [{"room_id": "studio", "learning_sources": ["sensor.studio_lux"]}],
+            "learning": {},
+        },
+    )
+    behavior.on_snapshot(_snapshot())
+    await behavior.async_setup()
+
+    state.state = "25"
+    await behavior._handle_state_changed(_state_event("sensor.studio_lux", state))
+    await hass.flush()
+
+    assert store.events == []
+
+
+async def test_event_canonicalizer_periodic_sync_emits_when_bucket_state_drifted():
+    state = _FakeState("180", device_class="illuminance")
+    hass, store, behavior = _behavior(
+        states={"sensor.studio_lux": state},
+        options={
+            "rooms": [{"room_id": "studio", "learning_sources": ["sensor.studio_lux"]}],
+            "learning": {},
+        },
+    )
+    await behavior.async_setup()
+    state.state = "20"
+
+    behavior.on_snapshot(_snapshot())
+    await hass.flush()
+
+    assert len(store.events) == 1
+    assert store.events[0].source == "periodic_sync"
+    assert store.events[0].data["to_bucket"] == "dark"
+
+
+async def test_event_canonicalizer_uses_explicit_room_signal_config():
+    state = _FakeState("950", device_class="carbon_dioxide")
+    hass, _store, behavior = _behavior(
+        states={"sensor.studio_co2": state},
+        options={
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.studio_co2",
+                            "signal_name": "room_co2",
+                            "device_class": "carbon_dioxide",
+                            "buckets": [
+                                {"label": "ok", "upper_bound": 800},
+                                {"label": "elevated", "upper_bound": 1200},
+                                {"label": "high", "upper_bound": None},
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
     )
 
-    assert behavior.diagnostics()["tracked_entities"] == ["sensor.new"]
+    await behavior.async_setup()
+
+    diag = behavior.diagnostics()
+    assert diag["tracked_entities"]["sensor.studio_co2"]["signal_name"] == "room_co2"
+    assert diag["bucket_state"]["studio:room_co2"] == "elevated"
+    await hass.flush()

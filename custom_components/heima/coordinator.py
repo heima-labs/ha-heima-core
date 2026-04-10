@@ -19,11 +19,11 @@ from .runtime.analyzers import (
     create_builtin_learning_plugin_registry,
 )
 from .runtime.behaviors import (
+    EventCanonicalizer,
     EventRecorderBehavior,
     HeatingRecorderBehavior,
     LightingReactionGuardBehavior,
     LightingRecorderBehavior,
-    SignalRecorderBehavior,
 )
 from .runtime.context_builder import ContextBuilder
 from .runtime.engine import HeimaEngine
@@ -67,12 +67,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         self.engine.register_behavior(self._lighting_recorder)
         self.engine.register_behavior(
-            SignalRecorderBehavior(
+            EventCanonicalizer(
                 hass,
                 self._event_store,
                 self._context_builder,
                 entry,
-                lambda: self.engine.lighting_recent_apply_state,
             )
         )
         self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
