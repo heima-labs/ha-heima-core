@@ -400,8 +400,7 @@
           "room_id": "Stanza",
           "primary_signal_entities": "Entità segnale primario",
           "primary_signal_name": "Nome segnale primario",
-          "primary_threshold_mode": "Condizione primaria",
-          "primary_threshold": "Soglia primaria",
+          "primary_bucket": "Bucket primario",
           "corroboration_signal_entities": "Entità di corroborazione",
           "corroboration_signal_name": "Nome corroborazione",
           "corroboration_threshold_mode": "Condizione corroborante",
@@ -417,7 +416,7 @@
           "room_id": "Stanza",
           "primary_signal_entities": "Sensori lux",
           "primary_signal_name": "Nome segnale (es. room_lux)",
-          "primary_threshold": "Soglia oscurità (lux)",
+          "primary_bucket": "Bucket oscurità",
           "light_entities": "Luci da accendere",
           "action": "Azione",
           "brightness": "Luminosità",
@@ -499,7 +498,7 @@
           "enabled": "Abilitata",
           "primary_signal_entities": "Sensori lux",
           "primary_signal_name": "Nome segnale (es. room_lux)",
-          "primary_threshold": "Soglia oscurità (lux)",
+          "primary_bucket": "Bucket oscurità",
           "light_entities": "Luci da accendere",
           "action": "Azione luci",
           "brightness": "Luminosità",
@@ -531,7 +530,8 @@
       "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
       "invalid_number": "Inserisci un numero positivo valido",
       "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
-      "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna"
+      "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna",
+      "redacted_payload": "Configurazione non valida: il payload contiene valori redatti"
     }
   }
 }

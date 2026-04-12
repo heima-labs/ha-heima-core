@@ -5,7 +5,11 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ._compat import LEGACY_REACTION_CLASS_TO_TYPE, resolve_reaction_type
+from ._compat import (
+    LEGACY_REACTION_CLASS_TO_TYPE,
+    normalize_reaction_options_payload,
+    resolve_reaction_type,
+)
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
 from .heating import (

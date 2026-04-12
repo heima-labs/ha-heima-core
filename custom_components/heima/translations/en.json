@@ -400,8 +400,7 @@
           "room_id": "Room",
           "primary_signal_entities": "Primary signal entities",
           "primary_signal_name": "Primary signal name",
-          "primary_threshold_mode": "Primary condition",
-          "primary_threshold": "Primary threshold",
+          "primary_bucket": "Primary bucket",
           "corroboration_signal_entities": "Corroboration entities",
           "corroboration_signal_name": "Corroboration name",
           "corroboration_threshold_mode": "Corroboration condition",
@@ -417,7 +416,7 @@
           "room_id": "Room",
           "primary_signal_entities": "Primary signal entities",
           "primary_signal_name": "Primary signal name",
-          "primary_threshold": "Darkness threshold",
+          "primary_bucket": "Darkness bucket",
           "light_entities": "Lights to control",
           "action": "Action",
           "brightness": "Brightness",
@@ -498,7 +497,7 @@
         "data": {
           "enabled": "Enabled",
           "primary_signal_entities": "Lux sensors",
-          "primary_threshold": "Lux threshold",
+          "primary_bucket": "Darkness bucket",
           "light_entities": "Lights to control",
           "action": "Light action",
           "brightness": "Brightness",
@@ -530,7 +529,8 @@
       "area_sync_failed": "Heima could not create or link the Home Assistant area",
       "invalid_number": "Enter a valid positive number",
       "invalid_hhmm": "Enter a valid time in HH:MM format",
-      "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings"
+      "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings",
+      "redacted_payload": "Invalid configuration: payload contains redacted values"
     }
   }
 }

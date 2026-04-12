@@ -9,6 +9,7 @@ from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.reactions import (
     builtin_reaction_plugin_descriptors,
     create_builtin_reaction_plugin_registry,
+    normalize_reaction_options_payload,
 )
 from custom_components.heima.runtime.reactions.heating import (
     HeatingEcoReaction,
@@ -218,6 +219,73 @@ def test_legacy_reaction_class_is_migrated_to_reaction_type():
     cfg = engine._entry.options["reactions"]["configured"]["p1"]
     assert cfg["reaction_type"] == "presence_preheat"
     assert "reaction_class" not in cfg
+
+
+def test_normalize_reaction_options_payload_filters_redacted_entity_steps_but_keeps_valid_reaction():
+    options = {
+        "reactions": {
+            "configured": {
+                "r1": {
+                    "reaction_class": "RoomLightingAssistReaction",
+                    "room_id": "studio",
+                    "primary_signal_entities": ["sensor.studio_lux"],
+                    "primary_threshold": 120.0,
+                    "primary_signal_name": "room_lux",
+                    "entity_steps": [
+                        {"entity_id": "light.studio_main", "action": "on"},
+                        {"entity_id": "**REDACTED**", "action": "on"},
+                    ],
+                }
+            }
+        }
+    }
+
+    normalized, changed = normalize_reaction_options_payload(options)
+
+    assert changed is True
+    cfg = normalized["reactions"]["configured"]["r1"]
+    assert cfg["reaction_type"] == "room_darkness_lighting_assist"
+    assert "reaction_class" not in cfg
+    assert cfg["entity_steps"] == [{"entity_id": "light.studio_main", "action": "on"}]
+
+
+def test_migrate_legacy_reaction_types_prunes_fully_redacted_reaction_and_related_metadata():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "bad": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "room_id": "studio",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_threshold": 120.0,
+                        "primary_signal_name": "room_lux",
+                        "entity_steps": [{"entity_id": "**REDACTED**", "action": "on"}],
+                    },
+                    "good": {
+                        "reaction_class": "PresencePatternReaction",
+                        "weekday": 1,
+                        "median_arrival_min": 480,
+                        "window_half_min": 15,
+                        "pre_condition_min": 20,
+                        "min_arrivals": 5,
+                        "steps": [],
+                    },
+                },
+                "labels": {"bad": "Broken studio lights", "good": "Presence"},
+                "muted": ["bad", "good"],
+            }
+        }
+    )
+
+    engine._migrate_legacy_reaction_types()
+
+    reactions = engine._entry.options["reactions"]
+    assert "bad" not in reactions["configured"]
+    assert "bad" not in reactions["labels"]
+    assert "bad" not in reactions["muted"]
+    assert reactions["configured"]["good"]["reaction_type"] == "presence_preheat"
+    assert "reaction_class" not in reactions["configured"]["good"]
 
 
 def test_malformed_config_skipped(caplog):
@@ -1876,9 +1944,12 @@ def test_room_signal_assist_reaction_built_and_registered():
                         "reaction_class": "RoomSignalAssistReaction",
                         "room_id": "bathroom",
                         "trigger_signal_entities": ["sensor.bathroom_humidity"],
+                        "primary_signal_entities": ["sensor.bathroom_humidity"],
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
                         "temperature_signal_entities": ["sensor.bathroom_temperature"],
-                        "humidity_rise_threshold": 8.0,
-                        "temperature_rise_threshold": 0.8,
+                        "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+                        "corroboration_signal_name": "temperature",
                         "correlation_window_s": 600,
                         "followup_window_s": 900,
                         "steps": [
@@ -1975,9 +2046,8 @@ def test_room_lighting_assist_reaction_built_and_registered():
                         "reaction_class": "RoomLightingAssistReaction",
                         "room_id": "living",
                         "primary_signal_entities": ["sensor.living_room_lux"],
-                        "primary_threshold": 120.0,
+                        "primary_bucket": "dim",
                         "primary_signal_name": "room_lux",
-                        "primary_threshold_mode": "below",
                         "entity_steps": [
                             {
                                 "entity_id": "light.living_main",
