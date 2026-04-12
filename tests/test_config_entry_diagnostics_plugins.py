@@ -63,8 +63,8 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
         and item["admin_authored_templates"][0]["implemented"] is True
         for item in learning
     )
-    assert any(item["reaction_class"] == "RoomSignalAssistReaction" for item in reactions)
-    assert any(item["reaction_class"] == "RoomLightingAssistReaction" for item in reactions)
+    assert any(item["reaction_type"] == "room_signal_assist" for item in reactions)
+    assert any(item["reaction_type"] == "room_darkness_lighting_assist" for item in reactions)
 
 
 async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
@@ -77,7 +77,6 @@ async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
                     "source": "reaction:heat_pref_test",
                     "origin_reaction_id": "heat_pref_test",
                     "origin_reaction_type": "heating_preference",
-                    "origin_reaction_class": "HeatingPreferenceReaction",
                     "expected_domains": ["climate"],
                     "expected_subject_ids": ["climate.test_thermostat"],
                 },
@@ -100,7 +99,6 @@ async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
         "source": "reaction:heat_pref_test",
         "origin_reaction_id": "heat_pref_test",
         "origin_reaction_type": "heating_preference",
-        "origin_reaction_class": "HeatingPreferenceReaction",
         "expected_domains": ["climate"],
         "expected_subject_ids": ["climate.test_thermostat"],
     }

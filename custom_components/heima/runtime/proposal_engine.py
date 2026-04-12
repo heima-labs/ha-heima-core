@@ -143,7 +143,7 @@ class ProposalEngine:
                     identity_key=identity_key,
                     followup_kind=candidate.followup_kind,
                     target_reaction_id=candidate.target_reaction_id,
-                    target_reaction_class=candidate.target_reaction_class,
+                    target_reaction_type=candidate.target_reaction_type,
                     target_reaction_origin=candidate.target_reaction_origin,
                     target_template_id=candidate.target_template_id,
                 )
@@ -185,13 +185,6 @@ class ProposalEngine:
                                 _safe_dict(accepted.suggested_reaction_config)
                             )
                             or accepted.reaction_type
-                        ),
-                        target_reaction_class=(
-                            candidate.target_reaction_class
-                            or str(
-                                _safe_dict(accepted.suggested_reaction_config).get("reaction_class")
-                                or ""
-                            )
                         ),
                         target_reaction_origin=(
                             candidate.target_reaction_origin or accepted.origin
@@ -264,7 +257,6 @@ class ProposalEngine:
                 followup_kind=proposal.followup_kind,
                 target_reaction_id=proposal.target_reaction_id,
                 target_reaction_type=proposal.target_reaction_type,
-                target_reaction_class=proposal.target_reaction_class,
                 target_reaction_origin=proposal.target_reaction_origin,
                 target_template_id=proposal.target_template_id,
             )
@@ -358,7 +350,6 @@ class ProposalEngine:
                     "fingerprint": self._fingerprint(p),
                     "target_reaction_id": p.target_reaction_id,
                     "target_reaction_type": p.target_reaction_type,
-                    "target_reaction_class": p.target_reaction_class,
                     "target_reaction_origin": p.target_reaction_origin,
                     "target_template_id": p.target_template_id,
                     "is_stale": self._is_stale(p),
@@ -394,7 +385,6 @@ class ProposalEngine:
                 "fingerprint": self._fingerprint(p),
                 "target_reaction_id": p.target_reaction_id,
                 "target_reaction_type": p.target_reaction_type,
-                "target_reaction_class": p.target_reaction_class,
                 "target_reaction_origin": p.target_reaction_origin,
                 "target_template_id": p.target_template_id,
                 "is_stale": self._is_stale(p),

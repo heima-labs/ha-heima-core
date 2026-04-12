@@ -139,7 +139,6 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
     engine._sync_reactions_sensor()
     val = engine._state.get_sensor_attributes("heima_reactions_active")["reactions"]
     assert val["my_reaction"]["origin"] == "admin_authored"
-    assert val["my_reaction"]["reaction_class"] == "LightingScheduleReaction"
     assert val["my_reaction"]["author_kind"] == "admin"
     assert val["my_reaction"]["reaction_type"] == "lighting_scene_schedule"
     assert val["my_reaction"]["source_request"] == "template:lighting.scene_schedule.basic"

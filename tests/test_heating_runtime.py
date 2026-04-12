@@ -311,7 +311,6 @@ def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply(
         source="reaction:heat_pref_test",
         origin_reaction_id="heat_pref_test",
         origin_reaction_type="heating_preference",
-        origin_reaction_class="HeatingPreferenceReaction",
         climate_entity="climate.test_thermostat",
     )
     engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 20.0})
@@ -324,7 +323,6 @@ def test_heating_snapshot_marks_observed_setpoint_as_heima_after_matching_apply(
         "source": "reaction:heat_pref_test",
         "origin_reaction_id": "heat_pref_test",
         "origin_reaction_type": "heating_preference",
-        "origin_reaction_class": "HeatingPreferenceReaction",
         "expected_domains": ["climate"],
         "expected_subject_ids": ["climate.test_thermostat"],
     }
@@ -358,7 +356,6 @@ def test_heating_snapshot_marks_observed_setpoint_as_user_when_not_matching_last
         source="reaction:heat_pref_test",
         origin_reaction_id="heat_pref_test",
         origin_reaction_type="heating_preference",
-        origin_reaction_class="HeatingPreferenceReaction",
         climate_entity="climate.test_thermostat",
     )
     engine._hass.states._values["climate.test_thermostat"] = ("heat", {"temperature": 21.5})

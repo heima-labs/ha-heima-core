@@ -1153,7 +1153,6 @@ class _ReactionsStepsMixin:
                     followup_kind="tuning_suggestion",
                     target_reaction_id=str(followup["reaction_id"]),
                     target_reaction_type=self._reaction_type_from_cfg(followup["reaction_cfg"]),
-                    target_reaction_class=str(followup["reaction_cfg"].get("reaction_class") or ""),
                     target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
                     target_template_id=str(followup.get("target_template_id") or ""),
                 )

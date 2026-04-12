@@ -89,7 +89,6 @@ class ReactionPluginDescriptor:
     """Minimal built-in metadata for one Reaction Plugin."""
 
     reaction_type: str
-    reaction_class: str
     reaction_id_strategy: str
     supported_config_contracts: tuple[str, ...]
     supports_normalizer: bool
@@ -122,13 +121,9 @@ class ReactionPluginRegistry:
     def __init__(self, plugins: tuple[RegisteredReactionPlugin, ...]) -> None:
         self._plugins = plugins
         self._plugins_by_type = {plugin.descriptor.reaction_type: plugin for plugin in plugins}
-        self._plugins_by_class = {plugin.descriptor.reaction_class: plugin for plugin in plugins}
 
     def plugin_for(self, reaction_type: str) -> RegisteredReactionPlugin | None:
         return self._plugins_by_type.get(str(reaction_type or ""))
-
-    def plugin_for_class(self, reaction_class: str) -> RegisteredReactionPlugin | None:
-        return self._plugins_by_class.get(str(reaction_class or ""))
 
     def builder_for(self, reaction_type: str) -> ReactionPluginBuilder | None:
         plugin = self.plugin_for(reaction_type)
@@ -145,7 +140,6 @@ class ReactionPluginRegistry:
         return [
             {
                 "reaction_type": plugin.descriptor.reaction_type,
-                "reaction_class": plugin.descriptor.reaction_class,
                 "reaction_id_strategy": plugin.descriptor.reaction_id_strategy,
                 "supported_config_contracts": list(plugin.descriptor.supported_config_contracts),
                 "supports_normalizer": plugin.descriptor.supports_normalizer,
@@ -161,7 +155,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="presence_preheat",
-                reaction_class="PresencePatternReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("presence_preheat",),
                 supports_normalizer=False,
@@ -174,7 +167,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="lighting_scene_schedule",
-                reaction_class="LightingScheduleReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("lighting_scene_schedule",),
                 supports_normalizer=False,
@@ -192,7 +184,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="heating_preference",
-                reaction_class="HeatingPreferenceReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("heating_preference",),
                 supports_normalizer=False,
@@ -202,7 +193,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="heating_eco",
-                reaction_class="HeatingEcoReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("heating_eco",),
                 supports_normalizer=False,
@@ -212,7 +202,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="room_signal_assist",
-                reaction_class="RoomSignalAssistReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_signal_assist",),
                 supports_normalizer=True,
@@ -230,7 +219,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="room_cooling_assist",
-                reaction_class="RoomSignalAssistReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_cooling_assist",),
                 supports_normalizer=True,
@@ -248,7 +236,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="room_air_quality_assist",
-                reaction_class="RoomSignalAssistReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_air_quality_assist",),
                 supports_normalizer=True,
@@ -266,7 +253,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="room_darkness_lighting_assist",
-                reaction_class="RoomLightingAssistReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_darkness_lighting_assist",),
                 supports_normalizer=False,
@@ -284,7 +270,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="room_vacancy_lighting_off",
-                reaction_class="RoomLightingVacancyOffReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_vacancy_lighting_off",),
                 supports_normalizer=False,
@@ -301,7 +286,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
                 reaction_type="vacation_presence_simulation",
-                reaction_class="VacationPresenceSimulationReaction",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("vacation_presence_simulation",),
                 supports_normalizer=False,

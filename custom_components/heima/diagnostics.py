@@ -337,8 +337,6 @@ def _enrich_proposals_with_followups(
             item["target_reaction_id"] = reaction_id
         if not str(item.get("target_reaction_type") or "").strip():
             item["target_reaction_type"] = resolve_reaction_type(cfg)
-        if not str(item.get("target_reaction_class") or "").strip():
-            item["target_reaction_class"] = str(cfg.get("reaction_class") or "")
         if not str(item.get("target_reaction_origin") or "").strip():
             item["target_reaction_origin"] = str(cfg.get("origin") or "")
         if not str(item.get("target_template_id") or "").strip():

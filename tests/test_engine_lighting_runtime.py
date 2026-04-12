@@ -511,7 +511,6 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
     assert payload["source"] == "reaction:room-assist-1"
     assert payload["origin_reaction_id"] == "room-assist-1"
     assert payload["origin_reaction_type"] == "room_darkness_lighting_assist"
-    assert payload["origin_reaction_class"] == "SimpleNamespace"
 
 
 @pytest.mark.asyncio

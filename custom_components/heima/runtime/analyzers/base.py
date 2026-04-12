@@ -30,7 +30,6 @@ class ReactionProposal:
     fingerprint: str = ""  # if set, used by ProposalEngine instead of the computed fingerprint
     target_reaction_id: str = ""
     target_reaction_type: str = ""
-    target_reaction_class: str = ""
     target_reaction_origin: str = ""
     target_template_id: str = ""
 
@@ -52,7 +51,6 @@ class ReactionProposal:
             "fingerprint": self.fingerprint,
             "target_reaction_id": self.target_reaction_id,
             "target_reaction_type": self.target_reaction_type,
-            "target_reaction_class": self.target_reaction_class,
             "target_reaction_origin": self.target_reaction_origin,
             "target_template_id": self.target_template_id,
         }
@@ -90,7 +88,6 @@ class ReactionProposal:
             fingerprint=str(raw.get("fingerprint") or ""),
             target_reaction_id=str(raw.get("target_reaction_id") or ""),
             target_reaction_type=str(raw.get("target_reaction_type") or ""),
-            target_reaction_class=str(raw.get("target_reaction_class") or ""),
             target_reaction_origin=str(raw.get("target_reaction_origin") or ""),
             target_template_id=str(raw.get("target_template_id") or ""),
         )

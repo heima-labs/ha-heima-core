@@ -1067,9 +1067,6 @@ class HeimaEngine:
                                 if reaction is not None
                                 else None
                             ),
-                            origin_reaction_class=(
-                                reaction.__class__.__name__ if reaction is not None else None
-                            ),
                             climate_entity=climate_entity,
                         )
                     self._state.set_sensor("heima_heating_last_applied_target", applied_temp)
@@ -1125,9 +1122,6 @@ class HeimaEngine:
                         self._reaction_type_for_reaction_id(reaction.reaction_id)
                         if reaction is not None
                         else None
-                    ),
-                    origin_reaction_class=(
-                        reaction.__class__.__name__ if reaction is not None else None
                     ),
                 )
             except ServiceNotFound:
@@ -1204,7 +1198,6 @@ class HeimaEngine:
         if not isinstance(cfg, dict):
             return {}
         keys = (
-            "reaction_class",
             "reaction_type",
             "origin",
             "author_kind",

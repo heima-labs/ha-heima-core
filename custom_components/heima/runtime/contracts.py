@@ -65,7 +65,6 @@ class ScriptApplyBatch:
     source: str = ""
     origin_reaction_id: str | None = None
     origin_reaction_type: str | None = None
-    origin_reaction_class: str | None = None
     room_id: str | None = None
     expected_domains: tuple[str, ...] = ()
     expected_subject_ids: tuple[str, ...] = ()
