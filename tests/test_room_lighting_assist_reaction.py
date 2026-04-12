@@ -18,16 +18,16 @@ def _snapshot(*, occupied_rooms: list[str], ts: str) -> DecisionSnapshot:
 
 def test_room_lighting_assist_reaction_fires_when_room_lux_drops_below_threshold():
     hass = MagicMock()
-    states = {"sensor.living_room_lux": "180"}
+    bucket_state = {"living:room_lux": "ok"}
     hass.states.get.side_effect = lambda eid: (
-        SimpleNamespace(state=states[eid]) if eid in states else None
+        SimpleNamespace(state="off") if eid == "light.living_main" else None
     )
     reaction = RoomLightingAssistReaction(
         hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
         room_id="living",
         primary_signal_entities=["sensor.living_room_lux"],
-        primary_threshold=120.0,
-        primary_threshold_mode="below",
+        primary_bucket="dim",
         entity_steps=[
             {
                 "entity_id": "light.living_main",
@@ -45,7 +45,7 @@ def test_room_lighting_assist_reaction_fires_when_room_lux_drops_below_threshold
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
 
-    states["sensor.living_room_lux"] = "95"
+    bucket_state["living:room_lux"] = "dim"
     steps = reaction.evaluate(
         [
             _snapshot(occupied_rooms=["living"], ts=ts1),
@@ -61,16 +61,16 @@ def test_room_lighting_assist_reaction_fires_when_room_lux_drops_below_threshold
 
 def test_room_lighting_assist_reaction_respects_room_occupancy():
     hass = MagicMock()
-    states = {"sensor.living_room_lux": "180"}
+    bucket_state = {"living:room_lux": "ok"}
     hass.states.get.side_effect = lambda eid: (
-        SimpleNamespace(state=states[eid]) if eid in states else None
+        SimpleNamespace(state="off") if eid == "light.living_main" else None
     )
     reaction = RoomLightingAssistReaction(
         hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
         room_id="living",
         primary_signal_entities=["sensor.living_room_lux"],
-        primary_threshold=120.0,
-        primary_threshold_mode="below",
+        primary_bucket="dim",
         entity_steps=[
             {
                 "entity_id": "light.living_main",
@@ -87,7 +87,7 @@ def test_room_lighting_assist_reaction_respects_room_occupancy():
 
     assert reaction.evaluate([_snapshot(occupied_rooms=[], ts=ts1)]) == []
 
-    states["sensor.living_room_lux"] = "95"
+    bucket_state["living:room_lux"] = "dim"
     steps = reaction.evaluate(
         [
             _snapshot(occupied_rooms=[], ts=ts1),
@@ -99,19 +99,17 @@ def test_room_lighting_assist_reaction_respects_room_occupancy():
 
 def test_room_lighting_assist_reaction_fires_when_room_is_already_dark_on_entry():
     hass = MagicMock()
-    states = {
-        "sensor.living_room_lux": "40",
-        "light.living_main": "off",
-    }
+    bucket_state = {"living:room_lux": "dim"}
+    states = {"light.living_main": "off"}
     hass.states.get.side_effect = lambda eid: (
         SimpleNamespace(state=states[eid]) if eid in states else None
     )
     reaction = RoomLightingAssistReaction(
         hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
         room_id="living",
         primary_signal_entities=["sensor.living_room_lux"],
-        primary_threshold=120.0,
-        primary_threshold_mode="below",
+        primary_bucket="dim",
         entity_steps=[
             {
                 "entity_id": "light.living_main",
@@ -135,19 +133,17 @@ def test_room_lighting_assist_reaction_fires_when_room_is_already_dark_on_entry(
 
 def test_room_lighting_assist_reaction_does_not_refire_while_same_dark_episode_persists():
     hass = MagicMock()
-    states = {
-        "sensor.living_room_lux": "40",
-        "light.living_main": "off",
-    }
+    bucket_state = {"living:room_lux": "dim"}
+    states = {"light.living_main": "off"}
     hass.states.get.side_effect = lambda eid: (
         SimpleNamespace(state=states[eid]) if eid in states else None
     )
     reaction = RoomLightingAssistReaction(
         hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
         room_id="living",
         primary_signal_entities=["sensor.living_room_lux"],
-        primary_threshold=120.0,
-        primary_threshold_mode="below",
+        primary_bucket="dim",
         entity_steps=[
             {
                 "entity_id": "light.living_main",

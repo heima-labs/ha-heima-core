@@ -1744,8 +1744,7 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
             "reaction_class": "RoomLightingAssistReaction",
             "room_id": "living",
             "primary_signal_entities": ["sensor.living_room_lux"],
-            "primary_threshold": 120.0,
-            "primary_threshold_mode": "below",
+            "primary_bucket": "ok",
             "entity_steps": [
                 {
                     "entity_id": "light.living_main",
@@ -2270,8 +2269,7 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
                         "source_template_id": "room.darkness_lighting_assist.basic",
                         "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
                         "primary_signal_name": "room_lux",
-                        "primary_threshold_mode": "below",
-                        "primary_threshold": 120.0,
+                        "primary_bucket": "ok",
                         "primary_signal_entities": ["sensor.living_lux"],
                         "corroboration_signal_name": "projector",
                         "corroboration_threshold_mode": "switch_on",
@@ -2297,8 +2295,7 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
             "reaction_class": "RoomLightingAssistReaction",
             "room_id": "living",
             "primary_signal_name": "room_lux",
-            "primary_threshold_mode": "below",
-            "primary_threshold": 90.0,
+            "primary_bucket": "dim",
             "primary_signal_entities": ["sensor.living_lux", "sensor.living_lux_aux"],
             "corroboration_signal_name": "projector",
             "corroboration_threshold_mode": "state_change",
@@ -2329,7 +2326,7 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
     assert (
         "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
     )
-    assert "Soglia: 120.0 -> 90.0" in placeholders["proposal_details"]
+    assert "Bucket: ok -> dim" in placeholders["proposal_details"]
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
     assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
     assert "Entità corroboranti: 1 -> 2" in placeholders["proposal_details"]
@@ -3087,7 +3084,7 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
-            "primary_threshold": 120.0,
+            "primary_bucket": "ok",
             "entity_steps": [
                 {"entity_id": "light.studio_main", "action": "on", "brightness": 190},
                 {"entity_id": "light.studio_spot", "action": "on", "brightness": 160},

@@ -536,25 +536,34 @@ class ProposalEngine:
     @staticmethod
     def _proposal_config_summary(proposal: ReactionProposal) -> dict[str, Any]:
         cfg = _safe_dict(proposal.suggested_reaction_config)
+        reaction_type = resolve_reaction_type(cfg) or proposal.reaction_type
+        primary_bucket = cfg.get("primary_bucket")
+        corroboration_bucket = cfg.get("corroboration_bucket")
         summary = {
-            "reaction_type": resolve_reaction_type(cfg) or proposal.reaction_type,
+            "reaction_type": reaction_type,
             "room_id": cfg.get("room_id"),
             "house_state": cfg.get("house_state"),
             "weekday": cfg.get("weekday"),
             "scheduled_min": cfg.get("scheduled_min"),
             "primary_signal_name": cfg.get("primary_signal_name"),
-            "primary_bucket": cfg.get("primary_bucket"),
-            "primary_threshold_mode": cfg.get("primary_threshold_mode"),
-            "primary_threshold": cfg.get("primary_threshold", cfg.get("primary_rise_threshold")),
+            "primary_bucket": primary_bucket,
             "corroboration_signal_name": cfg.get("corroboration_signal_name"),
-            "corroboration_bucket": cfg.get("corroboration_bucket"),
-            "corroboration_threshold_mode": cfg.get("corroboration_threshold_mode"),
-            "corroboration_threshold": cfg.get(
-                "corroboration_threshold", cfg.get("corroboration_rise_threshold")
-            ),
+            "corroboration_bucket": corroboration_bucket,
             "episodes_observed": cfg.get("episodes_observed"),
             "corroborated_episodes": cfg.get("corroborated_episodes"),
         }
+        if not primary_bucket:
+            summary["primary_threshold_mode"] = cfg.get("primary_threshold_mode")
+            summary["primary_threshold"] = cfg.get(
+                "primary_threshold",
+                cfg.get("primary_rise_threshold"),
+            )
+        if not corroboration_bucket:
+            summary["corroboration_threshold_mode"] = cfg.get("corroboration_threshold_mode")
+            summary["corroboration_threshold"] = cfg.get(
+                "corroboration_threshold",
+                cfg.get("corroboration_rise_threshold"),
+            )
         primary_entities = cfg.get("primary_signal_entities")
         if isinstance(primary_entities, list):
             summary["primary_signal_entities_count"] = len(primary_entities)

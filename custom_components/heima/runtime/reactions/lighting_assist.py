@@ -30,10 +30,8 @@ class RoomLightingAssistReaction(HeimaReaction):
         room_id: str,
         entity_steps: list[dict[str, Any]],
         primary_signal_entities: list[str],
-        primary_threshold: float | None = None,
         primary_bucket: str | None = None,
         primary_signal_name: str = "room_lux",
-        primary_threshold_mode: str = "below",
         corroboration_signal_entities: list[str] | None = None,
         corroboration_threshold: float | None = None,
         corroboration_signal_name: str = "corroboration",
@@ -55,8 +53,8 @@ class RoomLightingAssistReaction(HeimaReaction):
             primary=RuntimeCompositeSignalSpec(
                 name=primary_signal_name,
                 entity_ids=tuple(primary_signal_entities),
-                threshold=float(primary_threshold or 0.0),
-                threshold_mode=primary_threshold_mode,  # type: ignore[arg-type]
+                threshold=0.0,
+                threshold_mode="below",
             ),
             corroborations=(
                 RuntimeCompositeSignalSpec(
@@ -178,18 +176,9 @@ class RoomLightingAssistReaction(HeimaReaction):
         return steps
 
     def _steady_ready(self) -> bool:
-        if self._primary_bucket:
-            current_bucket = self._bucket_getter(self._room_id, self._pattern.primary.name)
-            if current_bucket != self._primary_bucket:
-                return False
-        else:
-            if not _signal_condition_matches_now(
-                hass=self._hass,
-                entity_ids=self._pattern.primary.entity_ids,
-                threshold=self._pattern.primary.threshold,
-                threshold_mode=self._pattern.primary.threshold_mode,
-            ):
-                return False
+        current_bucket = self._bucket_getter(self._room_id, self._pattern.primary.name)
+        if current_bucket != self._primary_bucket:
+            return False
         if self._steady_condition_active:
             return False
         return self._entity_steps_need_apply()
@@ -220,12 +209,8 @@ def build_room_lighting_assist_reaction(
         primary_signal_entities = [
             str(v).strip() for v in cfg.get("primary_signal_entities", []) if str(v).strip()
         ]
-        primary_threshold = (
-            float(cfg["primary_threshold"]) if cfg.get("primary_threshold") is not None else None
-        )
         primary_bucket = str(cfg.get("primary_bucket") or "").strip() or None
         primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
-        primary_threshold_mode = str(cfg.get("primary_threshold_mode", "below"))
         corroboration_signal_entities = [
             str(v).strip() for v in cfg.get("corroboration_signal_entities", []) if str(v).strip()
         ]
@@ -241,8 +226,8 @@ def build_room_lighting_assist_reaction(
         entity_steps = list(cfg.get("entity_steps", []))
         if not room_id or not primary_signal_entities or not entity_steps:
             raise ValueError("room_id, primary_signal_entities or entity_steps missing")
-        if primary_threshold is None and primary_bucket is None:
-            raise ValueError("primary_threshold or primary_bucket missing")
+        if primary_bucket is None:
+            raise ValueError("primary_bucket missing")
     except (KeyError, TypeError, ValueError):
         return None
     return RoomLightingAssistReaction(
@@ -251,10 +236,8 @@ def build_room_lighting_assist_reaction(
         room_id=room_id,
         entity_steps=entity_steps,
         primary_signal_entities=primary_signal_entities,
-        primary_threshold=primary_threshold,
         primary_bucket=primary_bucket,
         primary_signal_name=primary_signal_name,
-        primary_threshold_mode=primary_threshold_mode,
         corroboration_signal_entities=corroboration_signal_entities,
         corroboration_threshold=corroboration_threshold,
         corroboration_signal_name=corroboration_signal_name,
@@ -285,38 +268,6 @@ def present_room_lighting_assist_label(
         return labels_map.get(reaction_id)
 
 
-def _signal_condition_matches_now(
-    *,
-    hass: HomeAssistant,
-    entity_ids: tuple[str, ...],
-    threshold: float,
-    threshold_mode: str,
-) -> bool:
-    for entity_id in entity_ids:
-        state = hass.states.get(entity_id)
-        if state is None:
-            continue
-        raw = str(state.state).strip()
-        raw_norm = raw.lower()
-        numeric = _parse_numeric_state(raw)
-        if threshold_mode == "below" and numeric is not None and numeric <= threshold:
-            return True
-        if threshold_mode == "above" and numeric is not None and numeric >= threshold:
-            return True
-        if threshold_mode == "switch_on" and raw_norm == "on":
-            return True
-        if threshold_mode == "switch_off" and raw_norm == "off":
-            return True
-    return False
-
-
-def _parse_numeric_state(raw: str) -> float | None:
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None
-
-
 def present_admin_authored_room_lighting_assist_details(
     flow: Any,
     proposal: Any,
@@ -341,12 +292,10 @@ def present_admin_authored_room_lighting_assist_details(
             if is_it
             else f"Primary entities: {len(primary_entities)}"
         )
-    primary_threshold = cfg.get("primary_threshold")
-    if primary_threshold not in (None, ""):
+    primary_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if primary_bucket:
         details.append(
-            f"Soglia buio: {primary_threshold}"
-            if is_it
-            else f"Darkness threshold: {primary_threshold}"
+            f"Bucket buio: {primary_bucket}" if is_it else f"Darkness bucket: {primary_bucket}"
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
@@ -375,12 +324,12 @@ def present_learned_room_lighting_assist_details(
             if is_it
             else f"Primary signal: {primary_signal_name}"
         )
-    primary_threshold = cfg.get("primary_threshold")
-    if primary_threshold not in (None, ""):
+    primary_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if primary_bucket:
         details.append(
-            f"Soglia proposta: {primary_threshold}"
+            f"Bucket proposto: {primary_bucket}"
             if is_it
-            else f"Proposed threshold: {primary_threshold}"
+            else f"Proposed bucket: {primary_bucket}"
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
@@ -403,24 +352,15 @@ def present_tuning_room_lighting_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
-    current_threshold = target_cfg.get("primary_threshold")
-    proposed_threshold = cfg.get("primary_threshold")
-    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
-        if str(current_threshold) != str(proposed_threshold):
+    current_bucket = str(target_cfg.get("primary_bucket") or "").strip()
+    proposed_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if current_bucket or proposed_bucket:
+        if current_bucket != proposed_bucket:
             details.append(
-                f"Soglia: {current_threshold} -> {proposed_threshold}"
+                f"Bucket: {current_bucket} -> {proposed_bucket}"
                 if is_it
-                else f"Threshold: {current_threshold} -> {proposed_threshold}"
+                else f"Bucket: {current_bucket} -> {proposed_bucket}"
             )
-
-    current_mode = str(target_cfg.get("primary_threshold_mode") or "below").strip()
-    proposed_mode = str(cfg.get("primary_threshold_mode") or "below").strip()
-    if current_mode != proposed_mode:
-        details.append(
-            f"Modo primario: {current_mode} -> {proposed_mode}"
-            if is_it
-            else f"Primary mode: {current_mode} -> {proposed_mode}"
-        )
 
     current_primary_entities = target_cfg.get("primary_signal_entities")
     proposed_primary_entities = cfg.get("primary_signal_entities")

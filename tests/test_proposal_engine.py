@@ -1279,6 +1279,62 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
     assert len(engine.pending_proposals()) == 0
 
 
+async def test_proposal_engine_suppresses_canonical_room_signal_followup_despite_legacy_primary_threshold_fields(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    base = _composite_proposal(
+        reaction_type="room_signal_assist",
+        room_id="bathroom",
+        primary_signal_name="room_humidity",
+    )
+    base = ReactionProposal.from_dict(
+        {
+            **base.as_dict(),
+            "status": "accepted",
+            "origin": "admin_authored",
+        }
+    )
+    base.suggested_reaction_config.update(
+        {
+            "primary_bucket": "high",
+            "primary_threshold": 8.0,
+            "primary_threshold_mode": "rise",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [],
+        }
+    )
+    candidate = _composite_proposal(
+        reaction_type="room_signal_assist",
+        room_id="bathroom",
+        primary_signal_name="room_humidity",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "primary_bucket": "high",
+            "primary_threshold": 99.0,
+            "primary_threshold_mode": "above",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "corroboration_threshold_mode": "rise",
+            "corroboration_threshold": 0.8,
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [],
+        }
+    )
+
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {"data": {"proposals": [base.as_dict()]}}
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    assert len(engine.pending_proposals()) == 0
+
+
 async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     base = _composite_proposal(
@@ -1296,8 +1352,7 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
     base.suggested_reaction_config.update(
         {
             "reaction_class": "RoomLightingAssistReaction",
-            "primary_threshold_mode": "below",
-            "primary_threshold": 100.0,
+            "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
                 {
@@ -1318,8 +1373,7 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
     candidate.suggested_reaction_config.update(
         {
             "reaction_class": "RoomLightingAssistReaction",
-            "primary_threshold_mode": "below",
-            "primary_threshold": 120.0,
+            "primary_bucket": "dim",
             "primary_signal_entities": [
                 "sensor.living_room_lux",
                 "sensor.living_room_lux_aux",
@@ -1367,8 +1421,7 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
     base.suggested_reaction_config.update(
         {
             "reaction_class": "RoomLightingAssistReaction",
-            "primary_threshold_mode": "below",
-            "primary_threshold": 120.0,
+            "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
                 {
@@ -1389,8 +1442,7 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
     candidate.suggested_reaction_config.update(
         {
             "reaction_class": "RoomLightingAssistReaction",
-            "primary_threshold_mode": "below",
-            "primary_threshold": 125.0,
+            "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
                 {

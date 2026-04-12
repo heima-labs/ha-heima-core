@@ -166,21 +166,15 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._steady_condition_active = False
 
     def diagnostics(self) -> dict[str, Any]:
-        return {
+        diagnostics = {
             "room_id": self._room_id,
             "trigger_signal_entities": list(self._legacy_trigger_entities),
             "primary_signal_name": self._primary_signal_name,
             "primary_entities": list(self._primary_entities),
             "primary_bucket": self._primary_bucket,
-            "primary_threshold": self._primary_threshold,
-            "primary_threshold_mode": self._primary_threshold_mode,
-            "primary_rise_threshold": self._primary_threshold,
             "corroboration_signal_name": self._corroboration_signal_name,
             "corroboration_entities": list(self._corroboration_entities),
             "corroboration_bucket": self._corroboration_bucket,
-            "corroboration_threshold": self._corroboration_threshold,
-            "corroboration_threshold_mode": self._corroboration_threshold_mode,
-            "corroboration_rise_threshold": self._corroboration_threshold,
             "humidity_entities": list(self._primary_entities),
             "temperature_entities": list(self._corroboration_entities),
             "fire_count": self._fire_count,
@@ -191,6 +185,15 @@ class RoomSignalAssistReaction(HeimaReaction):
             else None,
             "steady_condition_active": self._steady_condition_active,
         }
+        if not self._primary_bucket:
+            diagnostics["primary_threshold"] = self._primary_threshold
+            diagnostics["primary_threshold_mode"] = self._primary_threshold_mode
+            diagnostics["primary_rise_threshold"] = self._primary_threshold
+        if not self._corroboration_bucket:
+            diagnostics["corroboration_threshold"] = self._corroboration_threshold
+            diagnostics["corroboration_threshold_mode"] = self._corroboration_threshold_mode
+            diagnostics["corroboration_rise_threshold"] = self._corroboration_threshold
+        return diagnostics
 
     def _is_cooled_down(self) -> bool:
         if self._last_fired_ts is None:
@@ -213,6 +216,11 @@ class RoomSignalAssistReaction(HeimaReaction):
         if self._steady_condition_active:
             return False
         return True
+
+
+def _is_canonical_signal_assist_type(reaction_type: str | None) -> bool:
+    normalized = str(reaction_type or "").strip()
+    return normalized in {"room_signal_assist", "room_air_quality_assist"}
 
 
 def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -251,7 +259,12 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
     )
     primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
     corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
+    reaction_type = str(cfg.get("reaction_type") or "").strip()
+    if _is_canonical_signal_assist_type(reaction_type) and primary_bucket:
+        primary_threshold = primary_rise_threshold
+        primary_threshold_mode = "rise"
     return {
+        "reaction_type": reaction_type,
         "trigger_signal_entities": trigger_signal_entities,
         "primary_signal_entities": primary_signal_entities,
         "primary_bucket": primary_bucket,
@@ -280,12 +293,15 @@ def build_room_signal_assist_reaction(
     try:
         room_id = str(cfg["room_id"]).strip()
         normalized = normalize_room_signal_assist_config(cfg)
+        reaction_type = normalized["reaction_type"]
         correlation_window_s = int(cfg.get("correlation_window_s", 600))
         followup_window_s = int(cfg.get("followup_window_s", 900))
         steps_raw: list = cfg.get("steps", [])
         steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
         if not room_id or not normalized["primary_signal_entities"]:
             raise ValueError("room_id or primary_signal_entities missing")
+        if _is_canonical_signal_assist_type(reaction_type) and not normalized["primary_bucket"]:
+            raise ValueError("canonical room signal assist requires primary_bucket")
     except (KeyError, TypeError, ValueError):
         return None
     return RoomSignalAssistReaction(
@@ -347,6 +363,10 @@ def present_admin_authored_room_signal_assist_details(
     """Return room-signal-specific admin-authored review details."""
     is_it = language.startswith("it")
     details: list[str] = []
+    reaction_type = str(
+        cfg.get("reaction_type") or getattr(proposal, "reaction_type", "") or ""
+    ).strip()
+    canonical_primary = _is_canonical_signal_assist_type(reaction_type)
 
     primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
@@ -364,7 +384,7 @@ def present_admin_authored_room_signal_assist_details(
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if not primary_bucket and primary_threshold not in (None, ""):
+    if not canonical_primary and not primary_bucket and primary_threshold not in (None, ""):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -429,6 +449,10 @@ def present_learned_room_signal_assist_details(
     """Return learned/tuning review details for room signal assist proposals."""
     is_it = language.startswith("it")
     details: list[str] = []
+    reaction_type = str(
+        cfg.get("reaction_type") or getattr(proposal, "reaction_type", "") or ""
+    ).strip()
+    canonical_primary = _is_canonical_signal_assist_type(reaction_type)
 
     primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
@@ -446,7 +470,7 @@ def present_learned_room_signal_assist_details(
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if not primary_bucket and primary_threshold not in (None, ""):
+    if not canonical_primary and not primary_bucket and primary_threshold not in (None, ""):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -473,6 +497,13 @@ def present_tuning_room_signal_assist_details(
     """Return room-signal-specific tuning diff lines."""
     is_it = language.startswith("it")
     details: list[str] = []
+    reaction_type = str(
+        cfg.get("reaction_type")
+        or target_cfg.get("reaction_type")
+        or getattr(proposal, "reaction_type", "")
+        or ""
+    ).strip()
+    canonical_primary = _is_canonical_signal_assist_type(reaction_type)
 
     current_bucket = str(target_cfg.get("primary_bucket") or "").strip()
     proposed_bucket = str(cfg.get("primary_bucket") or "").strip()
@@ -488,7 +519,8 @@ def present_tuning_room_signal_assist_details(
     )
     proposed_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     if (
-        not (current_bucket or proposed_bucket)
+        not canonical_primary
+        and not (current_bucket or proposed_bucket)
         and current_threshold not in (None, "")
         and proposed_threshold not in (None, "")
     ):
@@ -501,7 +533,7 @@ def present_tuning_room_signal_assist_details(
 
     current_mode = str(target_cfg.get("primary_threshold_mode") or "rise").strip()
     proposed_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if not (current_bucket or proposed_bucket) and current_mode != proposed_mode:
+    if not canonical_primary and not (current_bucket or proposed_bucket) and current_mode != proposed_mode:
         current_label = flow._signal_threshold_mode_options().get(current_mode, current_mode)  # noqa: SLF001
         proposed_label = flow._signal_threshold_mode_options().get(proposed_mode, proposed_mode)  # noqa: SLF001
         details.append(

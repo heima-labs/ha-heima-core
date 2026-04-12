@@ -229,7 +229,7 @@ def test_normalize_reaction_options_payload_filters_redacted_entity_steps_but_ke
                     "reaction_class": "RoomLightingAssistReaction",
                     "room_id": "studio",
                     "primary_signal_entities": ["sensor.studio_lux"],
-                    "primary_threshold": 120.0,
+                    "primary_bucket": "ok",
                     "primary_signal_name": "room_lux",
                     "entity_steps": [
                         {"entity_id": "light.studio_main", "action": "on"},
@@ -258,7 +258,7 @@ def test_migrate_legacy_reaction_types_prunes_fully_redacted_reaction_and_relate
                         "reaction_class": "RoomLightingAssistReaction",
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_lux"],
-                        "primary_threshold": 120.0,
+                        "primary_bucket": "ok",
                         "primary_signal_name": "room_lux",
                         "entity_steps": [{"entity_id": "**REDACTED**", "action": "on"}],
                     },
@@ -1972,12 +1972,46 @@ def test_room_signal_assist_reaction_built_and_registered():
     assert reaction.reaction_id == "sa1"
 
 
+def test_room_signal_assist_reaction_requires_primary_bucket_for_canonical_types():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "sa1": {
+                        "reaction_type": "room_signal_assist",
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "primary_signal_entities": ["sensor.bathroom_humidity"],
+                        "primary_signal_name": "room_humidity",
+                        "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+                        "corroboration_signal_name": "temperature",
+                        "correlation_window_s": 600,
+                        "followup_window_s": 900,
+                        "steps": [
+                            {
+                                "domain": "script",
+                                "target": "script.fan_on",
+                                "action": "script.turn_on",
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    assert engine._reactions == []
+
+
 def test_room_signal_assist_reaction_builds_generic_signal_config():
     engine = _make_engine(
         options={
             "reactions": {
                 "configured": {
                     "sa2": {
+                        "reaction_type": "room_cooling_assist",
                         "reaction_class": "RoomSignalAssistReaction",
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_temperature"],
