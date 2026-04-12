@@ -196,20 +196,7 @@ async def rooms_with_confirmed_pattern_evidence(
 
     matcher = RoomScopedCompositeMatcher()
     definition = _definition_by_pattern_id(pattern_id)
-    state_changes = await event_store.async_query(event_type="state_change")
-    room_signal_threshold_events = await event_store.async_query(event_type="room_signal_threshold")
-    lighting_events = await event_store.async_query(event_type="lighting")
-    room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
-    events = [
-        event
-        for event in [
-            *state_changes,
-            *room_signal_threshold_events,
-            *lighting_events,
-            *room_occupancy_events,
-        ]
-        if isinstance(event, HeimaEvent) and event.room_id
-    ]
+    events = await _events_for_definition(event_store, definition)
     if not events:
         return set()
 
@@ -239,20 +226,7 @@ async def _analyze_definition(
     definition: CompositeLearningPatternDefinition,
     quality_policy: CompositeProposalQualityPolicy,
 ) -> list[ReactionProposal]:
-    state_changes = await event_store.async_query(event_type="state_change")
-    room_signal_threshold_events = await event_store.async_query(event_type="room_signal_threshold")
-    lighting_events = await event_store.async_query(event_type="lighting")
-    room_occupancy_events = await event_store.async_query(event_type="room_occupancy")
-    events = [
-        e
-        for e in [
-            *state_changes,
-            *room_signal_threshold_events,
-            *lighting_events,
-            *room_occupancy_events,
-        ]
-        if isinstance(e, HeimaEvent) and e.room_id
-    ]
+    events = await _events_for_definition(event_store, definition)
     if not events:
         return []
 
@@ -315,58 +289,31 @@ async def _analyze_definition(
     return proposals
 
 
-def _is_humidity_event(event: HeimaEvent) -> bool:
-    if event.event_type == "room_signal_threshold":
-        return (
-            str(event.subject_id or "").strip() == "room_humidity"
-            and str(event.data.get("to_bucket") or "").strip() == "high"
-        )
-    if event.data.get("device_class") == "humidity":
-        return True
-    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
-    return "humidity" in entity_id
+async def _events_for_definition(
+    event_store: EventStore,
+    definition: CompositeLearningPatternDefinition,
+) -> list[HeimaEvent]:
+    events: list[HeimaEvent] = []
+    for event_type in _event_types_for_definition(definition):
+        events.extend(await event_store.async_query(event_type=event_type))
+    return [event for event in events if isinstance(event, HeimaEvent) and event.room_id]
 
 
-def _is_temperature_event(event: HeimaEvent) -> bool:
-    if event.data.get("device_class") == "temperature":
-        return True
-    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
-    return "temperature" in entity_id or "temp" in entity_id
-
-
-def _is_activation_event(event: HeimaEvent) -> bool:
-    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
-    domain = str(event.domain or "")
-    if domain not in {"fan", "switch"} and not entity_id.startswith(("fan.", "switch.")):
-        return False
-    return str(event.data.get("new_state") or "") == "on"
-
-
-def _is_co2_event(event: HeimaEvent) -> bool:
-    if event.event_type == "room_signal_threshold":
-        return (
-            str(event.subject_id or "").strip() == "room_co2"
-            and str(event.data.get("to_bucket") or "").strip() in {"elevated", "high"}
-        )
-    if event.data.get("device_class") == "carbon_dioxide":
-        return True
-    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
-    return "co2" in entity_id.lower() or "carbon_dioxide" in entity_id.lower()
-
-
-def _is_room_lux_event(event: HeimaEvent) -> bool:
-    if event.event_type == "room_signal_threshold":
-        if str(event.subject_id or "").strip() != "room_lux":
-            return False
-        return str(event.data.get("to_bucket") or "").strip() in {"dim", "dark"}
-    if event.event_type != "state_change":
-        return False
-    if event.data.get("device_class") == "illuminance":
-        return True
-    unit = str(event.data.get("unit_of_measurement") or "").lower()
-    entity_id = str(event.subject_id or event.data.get("entity_id") or "").lower()
-    return unit in {"lx", "lux"} or "lux" in entity_id or "illuminance" in entity_id
-
+def _event_types_for_definition(
+    definition: CompositeLearningPatternDefinition,
+) -> tuple[str, ...]:
+    reaction_type = str(definition.reaction_type or "").strip()
+    if reaction_type == "room_darkness_lighting_assist":
+        return ("room_signal_threshold", "lighting", "room_occupancy")
+    if reaction_type == "room_vacancy_lighting_off":
+        return ("room_occupancy", "lighting")
+    if reaction_type == "room_air_quality_assist":
+        return ("room_signal_threshold", "state_change", "room_occupancy")
+    if reaction_type == "room_signal_assist":
+        return ("room_signal_threshold", "state_change", "room_occupancy")
+    if reaction_type == "room_cooling_assist":
+        return ("state_change", "room_signal_threshold", "room_occupancy")
+    return ("state_change", "room_signal_threshold", "lighting", "room_occupancy")
 
 def _is_user_lighting_on_event(event: HeimaEvent) -> bool:
     if event.event_type != "lighting":
@@ -834,20 +781,36 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
             name="humidity",
-            predicate=_is_humidity_event,
+            predicate=lambda event: (
+                event.event_type == "room_signal_threshold"
+                and str(event.subject_id or "").strip() == "room_humidity"
+                and str(event.data.get("to_bucket") or "").strip() == "high"
+            ),
             min_delta=None,
         ),
         corroborations=(
             CompositeSignalSpec(
                 name="temperature",
-                predicate=_is_temperature_event,
+                predicate=lambda event: (
+                    event.data.get("device_class") == "temperature"
+                    or "temperature" in str(event.subject_id or event.data.get("entity_id") or "")
+                    or "temp" in str(event.subject_id or event.data.get("entity_id") or "")
+                ),
                 min_delta=_TEMPERATURE_RISE_THRESHOLD,
                 required=False,
             ),
         ),
         followup=CompositeSignalSpec(
             name="ventilation",
-            predicate=_is_activation_event,
+            predicate=lambda event: (
+                (
+                    str(event.domain or "") in {"fan", "switch"}
+                    or str(event.subject_id or event.data.get("entity_id") or "").startswith(
+                        ("fan.", "switch.")
+                    )
+                )
+                and str(event.data.get("new_state") or "") == "on"
+            ),
         ),
         require_room_occupancy=True,
         correlation_window_s=_CORRELATION_WINDOW_S,
@@ -877,14 +840,22 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
             name="temperature",
-            predicate=_is_temperature_event,
+            predicate=lambda event: (
+                event.data.get("device_class") == "temperature"
+                or "temperature" in str(event.subject_id or event.data.get("entity_id") or "")
+                or "temp" in str(event.subject_id or event.data.get("entity_id") or "")
+            ),
             min_delta=1.5,
         ),
         corroborations=(
             CompositeSignalSpec(
                 name="humidity",
-                predicate=_is_humidity_event,
-                min_delta=5.0,
+                predicate=lambda event: (
+                    event.event_type == "room_signal_threshold"
+                    and str(event.subject_id or "").strip() == "room_humidity"
+                    and str(event.data.get("to_bucket") or "").strip() == "high"
+                ),
+                min_delta=None,
                 required=False,
             ),
         ),
@@ -920,12 +891,24 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
             name="co2",
-            predicate=_is_co2_event,
+            predicate=lambda event: (
+                event.event_type == "room_signal_threshold"
+                and str(event.subject_id or "").strip() == "room_co2"
+                and str(event.data.get("to_bucket") or "").strip() in {"elevated", "high"}
+            ),
             min_delta=None,
         ),
         followup=CompositeSignalSpec(
             name="ventilation",
-            predicate=_is_activation_event,
+            predicate=lambda event: (
+                (
+                    str(event.domain or "") in {"fan", "switch"}
+                    or str(event.subject_id or event.data.get("entity_id") or "").startswith(
+                        ("fan.", "switch.")
+                    )
+                )
+                and str(event.data.get("new_state") or "") == "on"
+            ),
         ),
         require_room_occupancy=True,
         correlation_window_s=_CORRELATION_WINDOW_S,
@@ -954,7 +937,11 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
             name="room_lux",
-            predicate=_is_room_lux_event,
+            predicate=lambda event: (
+                event.event_type == "room_signal_threshold"
+                and str(event.subject_id or "").strip() == "room_lux"
+                and str(event.data.get("to_bucket") or "").strip() in {"dim", "dark"}
+            ),
             min_delta=None,
         ),
         followup=CompositeSignalSpec(

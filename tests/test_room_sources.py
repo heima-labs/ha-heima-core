@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 from custom_components.heima.room_sources import (
     autopopulate_room_signals,
+    format_room_signals_for_form,
     migrate_room_darkness_reactions_to_primary_bucket,
+    normalize_room_signals,
 )
 
 
@@ -106,3 +108,75 @@ def test_migrate_room_darkness_reaction_threshold_to_primary_bucket():
     assert cfg["primary_bucket"] == "dim"
     assert "primary_threshold" not in cfg
     assert "primary_threshold_mode" not in cfg
+
+
+def test_normalize_room_signals_parses_json_form_payload():
+    raw = """
+    [
+      {
+        "entity_id": "sensor.studio_lux",
+        "signal_name": "room_lux",
+        "device_class": "illuminance",
+        "buckets": [
+          {"label": "dark", "upper_bound": 30},
+          {"label": "dim", "upper_bound": 100},
+          {"label": "bright", "upper_bound": null}
+        ]
+      }
+    ]
+    """
+
+    signals = normalize_room_signals(raw)
+
+    assert signals == [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+
+
+def test_normalize_room_signals_rejects_duplicate_signal_names():
+    raw = [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [{"label": "dark", "upper_bound": 30.0}],
+        },
+        {
+            "entity_id": "sensor.studio_lux_aux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [{"label": "dark", "upper_bound": 30.0}],
+        },
+    ]
+
+    try:
+        normalize_room_signals(raw)
+    except ValueError as exc:
+        assert str(exc) == "duplicate_signal_name"
+    else:
+        raise AssertionError("duplicate signal names should be rejected")
+
+
+def test_format_room_signals_for_form_pretty_prints_json():
+    rendered = format_room_signals_for_form(
+        [
+            {
+                "entity_id": "sensor.studio_lux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [{"label": "dark", "upper_bound": 30.0}],
+            }
+        ]
+    )
+
+    assert '"signal_name": "room_lux"' in rendered
+    assert rendered.strip().startswith("[")

@@ -6,7 +6,6 @@ from .event_recorder import EventRecorderBehavior
 from .heating_recorder import HeatingRecorderBehavior
 from .lighting_reaction_guard import LightingReactionGuardBehavior
 from .lighting_recorder import LightingRecorderBehavior
-from .signal_recorder import SignalRecorderBehavior
 
 __all__ = [
     "HeimaBehavior",
@@ -15,5 +14,4 @@ __all__ = [
     "HeatingRecorderBehavior",
     "LightingReactionGuardBehavior",
     "LightingRecorderBehavior",
-    "SignalRecorderBehavior",
 ]

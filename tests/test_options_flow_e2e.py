@@ -960,6 +960,118 @@ async def test_rooms_flow_persists_separate_learning_sources():
 
 
 @pytest.mark.asyncio
+async def test_rooms_flow_persists_structured_room_signals():
+    flow = _flow()
+
+    result = await flow.async_step_rooms_add(
+        {
+            "room_id": "studio",
+            "display_name": "Studio",
+            "area_id": "studio",
+            "occupancy_mode": "derived",
+            "occupancy_sources": ["binary_sensor.motion"],
+            "learning_sources": ["sensor.studio_lux"],
+            "signals": """
+            [
+              {
+                "entity_id": "sensor.studio_lux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [
+                  {"label": "dark", "upper_bound": 30},
+                  {"label": "dim", "upper_bound": 100},
+                  {"label": "bright", "upper_bound": null}
+                ]
+              }
+            ]
+            """,
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "menu"
+    room = flow.options["rooms"][0]
+    assert room["signals"] == [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rooms_flow_rejects_invalid_room_signals_json():
+    flow = _flow()
+
+    result = await flow.async_step_rooms_add(
+        {
+            "room_id": "studio",
+            "display_name": "Studio",
+            "area_id": "studio",
+            "occupancy_mode": "derived",
+            "occupancy_sources": ["binary_sensor.motion"],
+            "learning_sources": [],
+            "signals": "{not-json}",
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"signals": "invalid_json"}
+
+
+@pytest.mark.asyncio
+async def test_rooms_flow_rejects_duplicate_signal_names():
+    flow = _flow()
+
+    result = await flow.async_step_rooms_add(
+        {
+            "room_id": "studio",
+            "display_name": "Studio",
+            "area_id": "studio",
+            "occupancy_mode": "derived",
+            "occupancy_sources": ["binary_sensor.motion"],
+            "learning_sources": [],
+            "signals": """
+            [
+              {
+                "entity_id": "sensor.studio_lux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [{"label": "dark", "upper_bound": 30}]
+              },
+              {
+                "entity_id": "sensor.studio_lux_aux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [{"label": "dark", "upper_bound": 30}]
+              }
+            ]
+            """,
+            "logic": "any_of",
+            "on_dwell_s": 5,
+            "off_dwell_s": 120,
+            "max_on_s": None,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"signals": "duplicate_signal_name"}
+
+
+@pytest.mark.asyncio
 async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monkeypatch):
     flow = _flow(
         {

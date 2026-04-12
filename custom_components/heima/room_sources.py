@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 _DEFAULT_SIGNAL_BUCKETS: dict[str, list[dict[str, float | str | None]]] = {
@@ -69,6 +70,74 @@ def normalize_room_signal_config(payload: dict[str, Any]) -> dict[str, Any]:
     data["learning_sources"] = _dedupe(learning_sources)
     data.pop("sources", None)
     return data
+
+
+def format_room_signals_for_form(raw_signals: Any) -> str:
+    """Return room signal config as a readable JSON block for the options form."""
+    if isinstance(raw_signals, str):
+        return raw_signals
+    if not isinstance(raw_signals, list) or not raw_signals:
+        return ""
+    return json.dumps(raw_signals, indent=2, ensure_ascii=False)
+
+
+def normalize_room_signals(
+    raw_signals: Any,
+    *,
+    state_getter: Any | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize room signal definitions from form input or stored payload."""
+    if raw_signals in (None, ""):
+        return []
+
+    parsed = raw_signals
+    if isinstance(raw_signals, str):
+        try:
+            parsed = json.loads(raw_signals)
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid_json") from exc
+
+    if not isinstance(parsed, list):
+        raise ValueError("invalid_signal_config")
+
+    normalized: list[dict[str, Any]] = []
+    seen_signal_names: set[str] = set()
+    for raw_item in parsed:
+        if not isinstance(raw_item, dict):
+            raise ValueError("invalid_signal_config")
+
+        entity_id = str(raw_item.get("entity_id") or "").strip()
+        signal_name = str(raw_item.get("signal_name") or "").strip()
+        device_class = str(raw_item.get("device_class") or "").strip()
+        if not entity_id or not signal_name:
+            raise ValueError("invalid_signal_config")
+        if signal_name in seen_signal_names:
+            raise ValueError("duplicate_signal_name")
+        seen_signal_names.add(signal_name)
+
+        if not device_class and callable(state_getter):
+            state = state_getter(entity_id)
+            attributes = getattr(state, "attributes", {}) if state is not None else {}
+            device_class = str(attributes.get("device_class") or "").strip()
+
+        buckets = _normalize_signal_buckets(raw_item.get("buckets"))
+        if not buckets and device_class:
+            buckets = _normalize_signal_buckets(_DEFAULT_SIGNAL_BUCKETS.get(device_class))
+        if not buckets:
+            raise ValueError("invalid_signal_config")
+
+        normalized.append(
+            {
+                "entity_id": entity_id,
+                "signal_name": signal_name,
+                "device_class": device_class,
+                "buckets": [
+                    {"label": label, "upper_bound": upper_bound}
+                    for upper_bound, label in buckets
+                ],
+            }
+        )
+    return normalized
 
 
 def room_occupancy_source_entity_ids(room_or_sources: Any) -> list[str]:

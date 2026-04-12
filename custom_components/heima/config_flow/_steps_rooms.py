@@ -13,7 +13,9 @@ from homeassistant.helpers import config_validation as cv
 from ..const import OPT_ROOMS
 from ..room_inventory import build_room_inventory_summary
 from ..room_sources import (
+    format_room_signals_for_form,
     normalize_room_signal_config,
+    normalize_room_signals,
     room_learning_source_entity_ids,
     room_occupancy_source_entity_ids,
 )
@@ -257,6 +259,7 @@ class _RoomsStepsMixin:
         defaults["occupancy_sources"] = room_occupancy_source_entity_ids(defaults)
         defaults["learning_sources"] = room_learning_source_entity_ids(defaults)
         defaults["source_weights"] = _format_source_weights(defaults.get("source_weights"))
+        defaults["signals"] = format_room_signals_for_form(defaults.get("signals"))
         from homeassistant.helpers.selector import selector as _sel
 
         schema_dict: dict[Any, Any] = {
@@ -266,6 +269,7 @@ class _RoomsStepsMixin:
             vol.Optional("learning_sources"): _entity_selector(
                 ["binary_sensor", "sensor", "switch"], multiple=True
             ),
+            vol.Optional("signals", default=defaults.get("signals", "")): _multiline_text_selector(),
             vol.Optional(
                 "occupancy_mode", default=defaults.get("occupancy_mode", "derived")
             ): vol.In(ROOM_OCCUPANCY_MODES),
@@ -288,6 +292,9 @@ class _RoomsStepsMixin:
 
     def _validate_room_payload(self, payload: dict[str, Any], is_edit: bool) -> dict[str, str]:
         errors: dict[str, str] = {}
+        signal_error = str(getattr(self, "_room_signal_validation_error", "") or "").strip()
+        if signal_error:
+            errors["signals"] = signal_error
         room_id = payload.get("room_id", "")
         if is_edit:
             errors.update(
@@ -344,6 +351,7 @@ class _RoomsStepsMixin:
 
     def _normalize_room_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload)
+        self._room_signal_validation_error = None
         data["room_id"] = str(data.get("room_id", "")).strip()
         data["display_name"] = str(data.get("display_name", "") or "").strip()
         if data.get("area_id"):
@@ -356,6 +364,14 @@ class _RoomsStepsMixin:
         if "learning_sources" in data:
             data["learning_sources"] = self._normalize_multi_value(data.get("learning_sources"))
         data = normalize_room_signal_config(data)
+        if "signals" in data:
+            try:
+                data["signals"] = normalize_room_signals(
+                    data.get("signals"),
+                    state_getter=self.hass.states.get,
+                )
+            except ValueError as exc:
+                self._room_signal_validation_error = str(exc)
         occupancy_mode = str(data.get("occupancy_mode", "") or "").strip()
         if occupancy_mode not in ROOM_OCCUPANCY_MODES:
             occupancy_mode = "derived"
