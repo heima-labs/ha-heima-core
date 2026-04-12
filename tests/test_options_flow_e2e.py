@@ -2067,17 +2067,16 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
             "reactions": {
                 "configured": {
                     "reaction-signal-1": {
-                        "reaction_class": "RoomSignalAssistReaction",
-                        "room_id": "bathroom",
-                        "origin": "admin_authored",
-                        "source_template_id": "room.signal_assist.basic",
-                        "source_proposal_identity_key": "room_signal_assist|room=bathroom|primary=humidity",
-                        "primary_signal_name": "humidity",
-                        "primary_threshold_mode": "rise",
-                        "primary_threshold": 8.0,
-                        "primary_signal_entities": ["sensor.bathroom_humidity"],
-                        "corroboration_signal_name": "temperature",
-                        "corroboration_threshold_mode": "rise",
+                    "reaction_class": "RoomSignalAssistReaction",
+                    "room_id": "bathroom",
+                    "origin": "admin_authored",
+                    "source_template_id": "room.signal_assist.basic",
+                    "source_proposal_identity_key": "room_signal_assist|room=bathroom|primary=room_humidity",
+                    "primary_signal_name": "room_humidity",
+                    "primary_bucket": "high",
+                    "primary_signal_entities": ["sensor.bathroom_humidity"],
+                    "corroboration_signal_name": "temperature",
+                    "corroboration_threshold_mode": "rise",
                         "corroboration_threshold": 0.8,
                         "corroboration_signal_entities": ["sensor.bathroom_temperature"],
                         "steps": [],
@@ -2092,14 +2091,13 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
         reaction_type="room_signal_assist",
         description="Bathroom humidity assist refined",
         confidence=0.91,
-        identity_key="room_signal_assist|room=bathroom|primary=humidity",
+        identity_key="room_signal_assist|room=bathroom|primary=room_humidity",
         followup_kind="tuning_suggestion",
         suggested_reaction_config={
             "reaction_class": "RoomSignalAssistReaction",
             "room_id": "bathroom",
-            "primary_signal_name": "humidity",
-            "primary_threshold_mode": "above",
-            "primary_threshold": 9.5,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
             "primary_signal_entities": [
                 "sensor.bathroom_humidity",
                 "sensor.bathroom_humidity_aux",
@@ -2139,9 +2137,7 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
     )
     assert "Automazione target: Assist bathroom" in placeholders["proposal_details"]
     assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
-    assert "Soglia primaria: 8.0 -> 9.5" in placeholders["proposal_details"]
-    assert "Modo primario: Supera soglia -> Aumento rapido" not in placeholders["proposal_details"]
-    assert "Modo primario: Aumento rapido -> Supera soglia" in placeholders["proposal_details"]
+    assert "Bucket primario:" not in placeholders["proposal_details"] or "Bucket primario:  -> high" not in placeholders["proposal_details"]
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
     assert "Soglia corroborante: 0.8 -> 1.2" in placeholders["proposal_details"]
     assert "Modo corroborante: Aumento rapido -> Supera soglia" in placeholders["proposal_details"]

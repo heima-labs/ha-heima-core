@@ -1126,7 +1126,7 @@ async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(m
             _composite_proposal(
                 reaction_type="room_signal_assist",
                 room_id="bathroom",
-                primary_signal_name="humidity",
+                primary_signal_name="room_humidity",
             )
         ]
     )
@@ -1137,7 +1137,7 @@ async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(m
 
     pending = engine.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].identity_key == "room_signal_assist|room=bathroom|primary=humidity"
+    assert pending[0].identity_key == "room_signal_assist|room=bathroom|primary=room_humidity"
 
 
 async def test_proposal_engine_composite_config_summary_exposes_signal_fields(monkeypatch):
@@ -1146,12 +1146,11 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
     proposal = _composite_proposal(
         reaction_type="room_signal_assist",
         room_id="bathroom",
-        primary_signal_name="humidity",
+        primary_signal_name="room_humidity",
     )
     proposal.suggested_reaction_config.update(
         {
-            "primary_threshold_mode": "rise",
-            "primary_threshold": 8.0,
+            "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
             "corroboration_signal_name": "temperature",
             "corroboration_threshold_mode": "rise",
@@ -1167,9 +1166,8 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
     diagnostics = engine.diagnostics()
 
     summary = diagnostics["proposals"][0]["config_summary"]
-    assert summary["primary_signal_name"] == "humidity"
-    assert summary["primary_threshold_mode"] == "rise"
-    assert summary["primary_threshold"] == 8.0
+    assert summary["primary_signal_name"] == "room_humidity"
+    assert summary["primary_bucket"] == "high"
     assert summary["primary_signal_entities_count"] == 1
     assert summary["corroboration_signal_name"] == "temperature"
     assert summary["corroboration_threshold_mode"] == "rise"
@@ -1182,7 +1180,7 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
     base = _composite_proposal(
         reaction_type="room_signal_assist",
         room_id="bathroom",
-        primary_signal_name="humidity",
+        primary_signal_name="room_humidity",
     )
     base = ReactionProposal.from_dict(
         {
@@ -1194,12 +1192,11 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
     candidate = _composite_proposal(
         reaction_type="room_signal_assist",
         room_id="bathroom",
-        primary_signal_name="humidity",
+        primary_signal_name="room_humidity",
     )
     candidate.suggested_reaction_config.update(
         {
-            "primary_threshold": 9.5,
-            "primary_threshold_mode": "above",
+            "primary_bucket": "high",
             "primary_signal_entities": [
                 "sensor.bathroom_humidity",
                 "sensor.bathroom_humidity_aux",
@@ -1229,7 +1226,7 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
     assert diagnostics["total"] == 2
     pending = next(item for item in diagnostics["proposals"] if item["status"] == "pending")
     assert pending["followup_kind"] == "tuning_suggestion"
-    assert pending["identity_key"] == "room_signal_assist|room=bathroom|primary=humidity"
+    assert pending["identity_key"] == "room_signal_assist|room=bathroom|primary=room_humidity"
 
 
 async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(monkeypatch):
@@ -1237,7 +1234,7 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
     base = _composite_proposal(
         reaction_type="room_signal_assist",
         room_id="bathroom",
-        primary_signal_name="humidity",
+        primary_signal_name="room_humidity",
     )
     base = ReactionProposal.from_dict(
         {
@@ -1248,8 +1245,7 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
     )
     base.suggested_reaction_config.update(
         {
-            "primary_threshold_mode": "rise",
-            "primary_threshold": 8.0,
+            "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
             "corroboration_threshold_mode": "rise",
             "corroboration_threshold": 0.8,
@@ -1260,12 +1256,11 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
     candidate = _composite_proposal(
         reaction_type="room_signal_assist",
         room_id="bathroom",
-        primary_signal_name="humidity",
+        primary_signal_name="room_humidity",
     )
     candidate.suggested_reaction_config.update(
         {
-            "primary_threshold_mode": "rise",
-            "primary_threshold": 8.5,
+            "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
             "corroboration_threshold_mode": "rise",
             "corroboration_threshold": 0.8,

@@ -355,9 +355,16 @@ def present_admin_authored_room_signal_assist_details(
             if is_it
             else f"Primary signal: {primary_signal_name}"
         )
+    primary_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if primary_bucket:
+        details.append(
+            f"Bucket primario: {primary_bucket}"
+            if is_it
+            else f"Primary bucket: {primary_bucket}"
+        )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if primary_threshold not in (None, ""):
+    if not primary_bucket and primary_threshold not in (None, ""):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -383,13 +390,20 @@ def present_admin_authored_room_signal_assist_details(
             if is_it
             else f"Corroboration: {corroboration_name} ({len(corroboration_entities)})"
         )
+        corroboration_bucket = str(cfg.get("corroboration_bucket") or "").strip()
+        if corroboration_bucket:
+            details.append(
+                f"Bucket corroborante: {corroboration_bucket}"
+                if is_it
+                else f"Corroborating bucket: {corroboration_bucket}"
+            )
         corroboration_threshold = cfg.get(
             "corroboration_threshold", cfg.get("corroboration_rise_threshold")
         )
         corroboration_threshold_mode = str(
             cfg.get("corroboration_threshold_mode") or "rise"
         ).strip()
-        if corroboration_threshold not in (None, ""):
+        if not corroboration_bucket and corroboration_threshold not in (None, ""):
             mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
                 corroboration_threshold_mode, corroboration_threshold_mode
             )
@@ -423,9 +437,16 @@ def present_learned_room_signal_assist_details(
             if is_it
             else f"Primary signal: {primary_signal_name}"
         )
+    primary_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if primary_bucket:
+        details.append(
+            f"Bucket proposto: {primary_bucket}"
+            if is_it
+            else f"Proposed bucket: {primary_bucket}"
+        )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if primary_threshold not in (None, ""):
+    if not primary_bucket and primary_threshold not in (None, ""):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -453,11 +474,24 @@ def present_tuning_room_signal_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
+    current_bucket = str(target_cfg.get("primary_bucket") or "").strip()
+    proposed_bucket = str(cfg.get("primary_bucket") or "").strip()
+    if current_bucket or proposed_bucket:
+        if current_bucket != proposed_bucket:
+            details.append(
+                f"Bucket primario: {current_bucket} -> {proposed_bucket}"
+                if is_it
+                else f"Primary bucket: {current_bucket} -> {proposed_bucket}"
+            )
     current_threshold = target_cfg.get(
         "primary_threshold", target_cfg.get("primary_rise_threshold")
     )
     proposed_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
-    if current_threshold not in (None, "") and proposed_threshold not in (None, ""):
+    if (
+        not (current_bucket or proposed_bucket)
+        and current_threshold not in (None, "")
+        and proposed_threshold not in (None, "")
+    ):
         if str(current_threshold) != str(proposed_threshold):
             details.append(
                 f"Soglia primaria: {current_threshold} -> {proposed_threshold}"
@@ -467,7 +501,7 @@ def present_tuning_room_signal_assist_details(
 
     current_mode = str(target_cfg.get("primary_threshold_mode") or "rise").strip()
     proposed_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if current_mode != proposed_mode:
+    if not (current_bucket or proposed_bucket) and current_mode != proposed_mode:
         current_label = flow._signal_threshold_mode_options().get(current_mode, current_mode)  # noqa: SLF001
         proposed_label = flow._signal_threshold_mode_options().get(proposed_mode, proposed_mode)  # noqa: SLF001
         details.append(
@@ -489,13 +523,26 @@ def present_tuning_room_signal_assist_details(
                 )
             )
 
+    current_corroboration_bucket = str(target_cfg.get("corroboration_bucket") or "").strip()
+    proposed_corroboration_bucket = str(cfg.get("corroboration_bucket") or "").strip()
+    if current_corroboration_bucket or proposed_corroboration_bucket:
+        if current_corroboration_bucket != proposed_corroboration_bucket:
+            details.append(
+                f"Bucket corroborante: {current_corroboration_bucket} -> {proposed_corroboration_bucket}"
+                if is_it
+                else (
+                    "Corroboration bucket: "
+                    f"{current_corroboration_bucket} -> {proposed_corroboration_bucket}"
+                )
+            )
+
     current_corroboration_threshold = target_cfg.get(
         "corroboration_threshold", target_cfg.get("corroboration_rise_threshold")
     )
     proposed_corroboration_threshold = cfg.get(
         "corroboration_threshold", cfg.get("corroboration_rise_threshold")
     )
-    if current_corroboration_threshold not in (
+    if not (current_corroboration_bucket or proposed_corroboration_bucket) and current_corroboration_threshold not in (
         None,
         "",
     ) and proposed_corroboration_threshold not in (
@@ -516,7 +563,10 @@ def present_tuning_room_signal_assist_details(
         target_cfg.get("corroboration_threshold_mode") or "rise"
     ).strip()
     proposed_corroboration_mode = str(cfg.get("corroboration_threshold_mode") or "rise").strip()
-    if current_corroboration_mode != proposed_corroboration_mode:
+    if (
+        not (current_corroboration_bucket or proposed_corroboration_bucket)
+        and current_corroboration_mode != proposed_corroboration_mode
+    ):
         current_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             current_corroboration_mode, current_corroboration_mode
         )

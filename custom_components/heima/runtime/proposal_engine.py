@@ -543,9 +543,11 @@ class ProposalEngine:
             "weekday": cfg.get("weekday"),
             "scheduled_min": cfg.get("scheduled_min"),
             "primary_signal_name": cfg.get("primary_signal_name"),
+            "primary_bucket": cfg.get("primary_bucket"),
             "primary_threshold_mode": cfg.get("primary_threshold_mode"),
             "primary_threshold": cfg.get("primary_threshold", cfg.get("primary_rise_threshold")),
             "corroboration_signal_name": cfg.get("corroboration_signal_name"),
+            "corroboration_bucket": cfg.get("corroboration_bucket"),
             "corroboration_threshold_mode": cfg.get("corroboration_threshold_mode"),
             "corroboration_threshold": cfg.get(
                 "corroboration_threshold", cfg.get("corroboration_rise_threshold")
