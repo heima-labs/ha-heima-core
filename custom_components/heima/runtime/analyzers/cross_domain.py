@@ -308,12 +308,13 @@ def _event_types_for_definition(
     if reaction_type == "room_vacancy_lighting_off":
         return ("room_occupancy", "lighting")
     if reaction_type == "room_air_quality_assist":
-        return ("room_signal_threshold", "state_change", "room_occupancy")
+        return ("room_signal_threshold", "actuation", "room_occupancy")
     if reaction_type == "room_signal_assist":
-        return ("room_signal_threshold", "state_change", "room_occupancy")
+        return ("room_signal_threshold", "actuation", "room_occupancy")
     if reaction_type == "room_cooling_assist":
-        return ("state_change", "room_signal_threshold", "room_occupancy")
-    return ("state_change", "room_signal_threshold", "lighting", "room_occupancy")
+        return ("room_signal_burst", "actuation", "room_occupancy")
+    return ("room_signal_threshold", "actuation", "lighting", "room_occupancy")
+
 
 def _is_user_lighting_on_event(event: HeimaEvent) -> bool:
     if event.event_type != "lighting":
@@ -338,13 +339,28 @@ def _is_room_vacancy_event(event: HeimaEvent) -> bool:
 
 
 def _is_cooling_followup_event(event: HeimaEvent) -> bool:
+    if event.event_type != "actuation":
+        return False
     entity_id = str(event.subject_id or event.data.get("entity_id") or "")
     domain = str(event.domain or "")
-    new_state = str(event.data.get("new_state") or "").lower()
+    action = str(event.data.get("action") or "").lower()
     if domain in {"fan", "switch"} or entity_id.startswith(("fan.", "switch.")):
-        return new_state == "on"
+        return action == "on"
     if domain == "climate" or entity_id.startswith("climate."):
-        return new_state in {"cool", "cooling", "dry", "fan_only", "on"}
+        return action in {"cool", "cooling", "dry", "fan_only", "on"}
+    return False
+
+
+def _is_ventilation_followup_event(event: HeimaEvent) -> bool:
+    if event.event_type != "actuation":
+        return False
+    entity_id = str(event.subject_id or event.data.get("entity_id") or "")
+    domain = str(event.domain or "")
+    action = str(event.data.get("action") or "").lower()
+    if domain in {"fan", "switch"} or entity_id.startswith(("fan.", "switch.")):
+        return action == "on"
+    if domain == "climate" or entity_id.startswith("climate."):
+        return action in {"fan_only", "on"}
     return False
 
 
@@ -569,15 +585,10 @@ def _build_cooling_assist_config(
     return {
         "reaction_type": "room_cooling_assist",
         "room_id": room_id,
-        "trigger_signal_entities": temperature_entities,
         "primary_signal_entities": temperature_entities,
-        "primary_rise_threshold": 1.5,
-        "primary_signal_name": "temperature",
-        "temperature_signal_entities": humidity_entities,
+        "primary_signal_name": "room_temperature",
         "corroboration_signal_entities": humidity_entities,
-        "corroboration_rise_threshold": 5.0,
-        "corroboration_signal_name": "humidity",
-        "correlation_window_s": _CORRELATION_WINDOW_S,
+        "corroboration_signal_name": "room_humidity",
         "followup_window_s": _FOLLOWUP_WINDOW_S,
         "steps": [],
         "episodes_observed": len(confirmed),
@@ -798,15 +809,7 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
         ),
         followup=CompositeSignalSpec(
             name="ventilation",
-            predicate=lambda event: (
-                (
-                    str(event.domain or "") in {"fan", "switch"}
-                    or str(event.subject_id or event.data.get("entity_id") or "").startswith(
-                        ("fan.", "switch.")
-                    )
-                )
-                and str(event.data.get("new_state") or "") == "on"
-            ),
+            predicate=_is_ventilation_followup_event,
         ),
         require_room_occupancy=True,
         correlation_window_s=_CORRELATION_WINDOW_S,
@@ -835,21 +838,19 @@ _ROOM_COOLING_PATTERN = CompositeLearningPatternDefinition(
     fingerprint_key="temperature_rise",
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
-            name="temperature",
+            name="room_temperature",
             predicate=lambda event: (
-                event.data.get("device_class") == "temperature"
-                or "temperature" in str(event.subject_id or event.data.get("entity_id") or "")
-                or "temp" in str(event.subject_id or event.data.get("entity_id") or "")
+                event.event_type == "room_signal_burst"
+                and str(event.subject_id or "").strip() == "room_temperature"
             ),
-            min_delta=1.5,
+            min_delta=None,
         ),
         corroborations=(
             CompositeSignalSpec(
                 name="humidity",
                 predicate=lambda event: (
-                    event.event_type == "room_signal_threshold"
+                    event.event_type == "room_signal_burst"
                     and str(event.subject_id or "").strip() == "room_humidity"
-                    and str(event.data.get("to_bucket") or "").strip() == "high"
                 ),
                 min_delta=None,
                 required=False,
@@ -896,15 +897,7 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
         ),
         followup=CompositeSignalSpec(
             name="ventilation",
-            predicate=lambda event: (
-                (
-                    str(event.domain or "") in {"fan", "switch"}
-                    or str(event.subject_id or event.data.get("entity_id") or "").startswith(
-                        ("fan.", "switch.")
-                    )
-                )
-                and str(event.data.get("new_state") or "") == "on"
-            ),
+            predicate=_is_ventilation_followup_event,
         ),
         require_room_occupancy=True,
         correlation_window_s=_CORRELATION_WINDOW_S,

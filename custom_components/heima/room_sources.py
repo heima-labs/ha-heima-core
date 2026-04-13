@@ -35,6 +35,7 @@ _DEVICE_CLASS_TO_SIGNAL_NAME = {
     "humidity": "room_humidity",
     "temperature": "room_temperature",
 }
+_BURST_DIRECTIONS = {"up", "down", "both"}
 
 
 def normalize_entity_id_list(raw_entities: Any) -> list[str]:
@@ -134,15 +135,18 @@ def normalize_room_signals(
             raise ValueError("invalid_signal_config")
 
         normalized.append(
-            {
-                "entity_id": entity_id,
-                "signal_name": signal_name,
-                "device_class": device_class,
-                "buckets": [
-                    {"label": label, "upper_bound": upper_bound}
-                    for upper_bound, label in buckets
-                ],
-            }
+            _with_normalized_burst_config(
+                {
+                    "entity_id": entity_id,
+                    "signal_name": signal_name,
+                    "device_class": device_class,
+                    "buckets": [
+                        {"label": label, "upper_bound": upper_bound}
+                        for upper_bound, label in buckets
+                    ],
+                },
+                raw_item,
+            )
         )
     return normalized
 
@@ -204,12 +208,15 @@ def autopopulate_room_signals(
             if not signal_name or not buckets:
                 continue
             synthesized.append(
-                {
-                    "entity_id": entity_id,
-                    "signal_name": signal_name,
-                    "device_class": device_class,
-                    "buckets": [dict(item) for item in buckets],
-                }
+                _with_normalized_burst_config(
+                    {
+                        "entity_id": entity_id,
+                        "signal_name": signal_name,
+                        "device_class": device_class,
+                        "buckets": [dict(item) for item in buckets],
+                    },
+                    {},
+                )
             )
         if synthesized:
             room["signals"] = synthesized
@@ -236,7 +243,10 @@ def migrate_room_darkness_reactions_to_primary_bucket(
             continue
         cfg = dict(raw_cfg)
         reaction_type = str(cfg.get("reaction_type") or "").strip()
-        if reaction_type != "room_darkness_lighting_assist" or str(cfg.get("primary_bucket") or "").strip():
+        if (
+            reaction_type != "room_darkness_lighting_assist"
+            or str(cfg.get("primary_bucket") or "").strip()
+        ):
             next_configured[reaction_id] = cfg
             continue
         room_id = str(cfg.get("room_id") or "").strip()
@@ -263,7 +273,123 @@ def migrate_room_darkness_reactions_to_primary_bucket(
     return normalized, changed
 
 
-def _room_signal_bucket_index(options: dict[str, Any]) -> dict[tuple[str, str], tuple[tuple[float | None, str], ...]]:
+def migrate_burst_signal_configs_and_reactions(
+    options: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Move burst thresholds from legacy cooling reactions into room signals."""
+    normalized = dict(options or {})
+    rooms = [
+        dict(item) if isinstance(item, dict) else item
+        for item in list(normalized.get("rooms") or [])
+    ]
+    reactions = dict(normalized.get("reactions") or {})
+    configured = dict(reactions.get("configured") or {})
+    changed = False
+
+    room_map: dict[str, dict[str, Any]] = {}
+    signal_maps: dict[str, dict[str, dict[str, Any]]] = {}
+    for room in rooms:
+        if not isinstance(room, dict):
+            continue
+        room_id = str(room.get("room_id") or "").strip()
+        if not room_id:
+            continue
+        room_map[room_id] = room
+        signal_map: dict[str, dict[str, Any]] = {}
+        signals = []
+        for raw_signal in list(room.get("signals") or []):
+            if not isinstance(raw_signal, dict):
+                continue
+            signal = dict(raw_signal)
+            signal_name = _canonical_signal_name(signal.get("signal_name"))
+            if not signal_name:
+                continue
+            signal["signal_name"] = signal_name
+            signals.append(signal)
+            signal_map[signal_name] = signal
+        if signals:
+            room["signals"] = signals
+        signal_maps[room_id] = signal_map
+
+    next_configured: dict[str, Any] = {}
+    for reaction_id, raw_cfg in configured.items():
+        if not isinstance(raw_cfg, dict):
+            next_configured[reaction_id] = raw_cfg
+            continue
+        cfg = dict(raw_cfg)
+        if str(cfg.get("reaction_type") or "").strip() != "room_cooling_assist":
+            next_configured[reaction_id] = cfg
+            continue
+        room_id = str(cfg.get("room_id") or "").strip()
+        room = room_map.get(room_id)
+        signal_map = signal_maps.get(room_id, {})
+        if room is None:
+            next_configured[reaction_id] = cfg
+            continue
+
+        primary_signal_name = _canonical_signal_name(cfg.get("primary_signal_name"))
+        corroboration_signal_name = _canonical_signal_name(cfg.get("corroboration_signal_name"))
+        if primary_signal_name:
+            cfg["primary_signal_name"] = primary_signal_name
+        if corroboration_signal_name:
+            cfg["corroboration_signal_name"] = corroboration_signal_name
+
+        correlation_window_s = _coerce_positive_int(cfg.get("correlation_window_s"), 600)
+        if primary_signal_name:
+            primary_signal = signal_map.get(primary_signal_name)
+            if primary_signal is not None:
+                primary_changed = _merge_burst_config(
+                    primary_signal,
+                    threshold=cfg.get("primary_rise_threshold", cfg.get("primary_threshold")),
+                    window_s=correlation_window_s,
+                    direction=_direction_from_threshold_mode(cfg.get("primary_threshold_mode")),
+                )
+                changed = changed or primary_changed
+        if corroboration_signal_name:
+            corroboration_signal = signal_map.get(corroboration_signal_name)
+            if corroboration_signal is not None:
+                corroboration_changed = _merge_burst_config(
+                    corroboration_signal,
+                    threshold=cfg.get(
+                        "corroboration_rise_threshold",
+                        cfg.get("corroboration_threshold"),
+                    ),
+                    window_s=correlation_window_s,
+                    direction=_direction_from_threshold_mode(
+                        cfg.get("corroboration_threshold_mode")
+                    ),
+                )
+                changed = changed or corroboration_changed
+
+        for legacy_key in (
+            "trigger_signal_entities",
+            "temperature_signal_entities",
+            "humidity_rise_threshold",
+            "temperature_rise_threshold",
+            "primary_rise_threshold",
+            "primary_threshold",
+            "primary_threshold_mode",
+            "corroboration_rise_threshold",
+            "corroboration_threshold",
+            "corroboration_threshold_mode",
+            "correlation_window_s",
+        ):
+            if legacy_key in cfg:
+                cfg.pop(legacy_key, None)
+                changed = True
+
+        next_configured[reaction_id] = cfg
+
+    if changed:
+        normalized["rooms"] = rooms
+        reactions["configured"] = next_configured
+        normalized["reactions"] = reactions
+    return normalized, changed
+
+
+def _room_signal_bucket_index(
+    options: dict[str, Any],
+) -> dict[tuple[str, str], tuple[tuple[float | None, str], ...]]:
     index: dict[tuple[str, str], tuple[tuple[float | None, str], ...]] = {}
     for raw_room in list(options.get("rooms") or []):
         room = raw_room if isinstance(raw_room, dict) else {}
@@ -306,13 +432,96 @@ def _normalize_signal_buckets(raw_buckets: Any) -> tuple[tuple[float | None, str
             continue
         if upper_bound_raw in (None, ""):
             upper_bound = None
-        else:
+        elif isinstance(upper_bound_raw, (int, float)):
+            upper_bound = float(upper_bound_raw)
+        elif isinstance(upper_bound_raw, str):
             try:
                 upper_bound = float(upper_bound_raw)
-            except (TypeError, ValueError):
+            except ValueError:
                 continue
+        else:
+            continue
         normalized.append((upper_bound, label))
     return tuple(normalized)
+
+
+def _with_normalized_burst_config(
+    target: dict[str, Any],
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    burst_threshold = _coerce_optional_float(source.get("burst_threshold"))
+    burst_window_s = _coerce_positive_int(source.get("burst_window_s"), 600)
+    burst_direction = str(source.get("burst_direction") or "up").strip().lower()
+    if burst_threshold is not None:
+        target["burst_threshold"] = burst_threshold
+        target["burst_window_s"] = burst_window_s
+        target["burst_direction"] = (
+            burst_direction if burst_direction in _BURST_DIRECTIONS else "up"
+        )
+    return target
+
+
+def _merge_burst_config(
+    signal_cfg: dict[str, Any],
+    *,
+    threshold: Any,
+    window_s: int,
+    direction: str,
+) -> bool:
+    numeric_threshold = _coerce_optional_float(threshold)
+    if numeric_threshold is None:
+        return False
+    changed = False
+    if signal_cfg.get("burst_threshold") != numeric_threshold:
+        signal_cfg["burst_threshold"] = numeric_threshold
+        changed = True
+    if int(signal_cfg.get("burst_window_s") or 0) != int(window_s):
+        signal_cfg["burst_window_s"] = int(window_s)
+        changed = True
+    normalized_direction = direction if direction in _BURST_DIRECTIONS else "up"
+    if str(signal_cfg.get("burst_direction") or "").strip().lower() != normalized_direction:
+        signal_cfg["burst_direction"] = normalized_direction
+        changed = True
+    return changed
+
+
+def _coerce_optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_positive_int(value: Any, default: int) -> int:
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return default
+    return numeric if numeric > 0 else default
+
+
+def _canonical_signal_name(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if raw == "temperature":
+        return "room_temperature"
+    if raw == "humidity":
+        return "room_humidity"
+    if raw == "co2":
+        return "room_co2"
+    if raw == "lux":
+        return "room_lux"
+    return raw
+
+
+def _direction_from_threshold_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode == "drop":
+        return "down"
+    if mode == "both":
+        return "both"
+    return "up"
 
 
 def _migrate_legacy_occupancy_sources(raw_sources: Any) -> list[str]:

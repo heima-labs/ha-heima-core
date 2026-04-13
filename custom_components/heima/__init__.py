@@ -14,6 +14,7 @@ from .coordinator import HeimaCoordinator
 from .entities.registry import build_registry
 from .room_sources import (
     autopopulate_room_signals,
+    migrate_burst_signal_configs_and_reactions,
     migrate_room_darkness_reactions_to_primary_bucket,
 )
 from .runtime.reactions import normalize_reaction_options_payload
@@ -44,8 +45,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
         normalized_options
     )
+    normalized_options, burst_changed = migrate_burst_signal_configs_and_reactions(
+        normalized_options
+    )
     normalized_options, reaction_changed = normalize_reaction_options_payload(normalized_options)
-    changed = signal_changed or bucket_changed or reaction_changed
+    changed = signal_changed or bucket_changed or burst_changed or reaction_changed
     if changed:
         hass.config_entries.async_update_entry(entry, options=normalized_options)
 
@@ -73,15 +77,20 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.debug("No coordinator found for %s, skipping update", entry.entry_id)
         return
 
+    states = getattr(hass, "states", None)
+    state_getter = getattr(states, "get", None)
     normalized_options, signals_changed = autopopulate_room_signals(
         dict(entry.options),
-        state_getter=hass.states.get,
+        state_getter=state_getter,
     )
     normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
         normalized_options
     )
+    normalized_options, burst_changed = migrate_burst_signal_configs_and_reactions(
+        normalized_options
+    )
     normalized_options, reactions_changed = normalize_reaction_options_payload(normalized_options)
-    if signals_changed or bucket_changed or reactions_changed:
+    if signals_changed or bucket_changed or burst_changed or reactions_changed:
         hass.config_entries.async_update_entry(entry, options=normalized_options)
         coordinator.last_options_snapshot = dict(normalized_options)
         return

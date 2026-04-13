@@ -460,9 +460,8 @@ def _lighting_summary_diagnostics(
     for _reaction_id, cfg in active:
         reaction_type = resolve_reaction_type(cfg)
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-        is_lighting = (
-            reaction_type == "lighting_scene_schedule"
-            or identity_key.startswith("lighting_scene_schedule|")
+        is_lighting = reaction_type == "lighting_scene_schedule" or identity_key.startswith(
+            "lighting_scene_schedule|"
         )
         if not is_lighting:
             continue

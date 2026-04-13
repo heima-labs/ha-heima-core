@@ -181,9 +181,7 @@ class ProposalEngine:
                         followup_kind="tuning_suggestion",
                         target_reaction_type=(
                             candidate.target_reaction_type
-                            or resolve_reaction_type(
-                                _safe_dict(accepted.suggested_reaction_config)
-                            )
+                            or resolve_reaction_type(_safe_dict(accepted.suggested_reaction_config))
                             or accepted.reaction_type
                         ),
                         target_reaction_origin=(
@@ -529,7 +527,6 @@ class ProposalEngine:
         reaction_type = resolve_reaction_type(cfg) or proposal.reaction_type
         primary_bucket = cfg.get("primary_bucket")
         corroboration_bucket = cfg.get("corroboration_bucket")
-        generic_threshold_reaction = reaction_type == "room_cooling_assist"
         summary = {
             "reaction_type": reaction_type,
             "room_id": cfg.get("room_id"),
@@ -543,18 +540,6 @@ class ProposalEngine:
             "episodes_observed": cfg.get("episodes_observed"),
             "corroborated_episodes": cfg.get("corroborated_episodes"),
         }
-        if generic_threshold_reaction and not primary_bucket:
-            summary["primary_threshold_mode"] = cfg.get("primary_threshold_mode")
-            summary["primary_threshold"] = cfg.get(
-                "primary_threshold",
-                cfg.get("primary_rise_threshold"),
-            )
-        if generic_threshold_reaction and not corroboration_bucket:
-            summary["corroboration_threshold_mode"] = cfg.get("corroboration_threshold_mode")
-            summary["corroboration_threshold"] = cfg.get(
-                "corroboration_threshold",
-                cfg.get("corroboration_rise_threshold"),
-            )
         primary_entities = cfg.get("primary_signal_entities")
         if isinstance(primary_entities, list):
             summary["primary_signal_entities_count"] = len(primary_entities)

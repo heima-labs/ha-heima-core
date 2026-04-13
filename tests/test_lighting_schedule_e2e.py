@@ -151,7 +151,7 @@ async def test_e2e_analyzer_produces_proposal_with_entity_steps():
     p = proposals[0]
     assert p.reaction_type == "lighting_scene_schedule"
     cfg = p.suggested_reaction_config
-    assert cfg["reaction_class"] == "LightingScheduleReaction"
+    assert cfg["reaction_type"] == "lighting_scene_schedule"
     assert len(cfg["entity_steps"]) == 1
     step = cfg["entity_steps"][0]
     assert step["entity_id"] == "light.living_main"

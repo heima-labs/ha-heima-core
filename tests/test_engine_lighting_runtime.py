@@ -450,17 +450,17 @@ async def test_execute_apply_plan_tracks_script_room_scope_and_expected_entities
                 "sources": [],
                 "logic": "any_of",
             }
-            ],
-            "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
-            "reactions": {
-                "configured": {
-                    "room-assist-1": {
-                        "reaction_type": "room_darkness_lighting_assist",
-                        "room_id": "living",
-                    }
+        ],
+        "lighting_rooms": [{"room_id": "living", "enable_manual_hold": True}],
+        "reactions": {
+            "configured": {
+                "room-assist-1": {
+                    "reaction_type": "room_darkness_lighting_assist",
+                    "room_id": "living",
                 }
-            },
-        }
+            }
+        },
+    }
     engine = _build_engine(
         options,
         {

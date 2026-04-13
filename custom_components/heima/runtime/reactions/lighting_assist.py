@@ -327,9 +327,7 @@ def present_learned_room_lighting_assist_details(
     primary_bucket = str(cfg.get("primary_bucket") or "").strip()
     if primary_bucket:
         details.append(
-            f"Bucket proposto: {primary_bucket}"
-            if is_it
-            else f"Proposed bucket: {primary_bucket}"
+            f"Bucket proposto: {primary_bucket}" if is_it else f"Proposed bucket: {primary_bucket}"
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:

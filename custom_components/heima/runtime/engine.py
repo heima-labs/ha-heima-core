@@ -64,6 +64,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 
+
 @dataclass(frozen=True)
 class EngineHealth:
     """Health status for the runtime engine."""
@@ -195,6 +196,19 @@ class HeimaEngine:
                 if isinstance(bucket, str) and bucket.strip():
                     return bucket.strip()
         return None
+
+    def signal_burst_recent(self, room_id: str, signal_name: str, *, window_s: int) -> bool:
+        """Return whether a canonical burst was observed recently for a room signal."""
+        for behavior in self._behaviors:
+            burst_recent_for = getattr(behavior, "burst_recent_for", None)
+            if not callable(burst_recent_for):
+                continue
+            try:
+                if bool(burst_recent_for(room_id, signal_name, window_s=window_s)):
+                    return True
+            except Exception:
+                continue
+        return False
 
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")

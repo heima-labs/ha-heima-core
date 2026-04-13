@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from custom_components.heima.runtime.behaviors.event_canonicalizer import EventCanonicalizer
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
@@ -94,10 +94,10 @@ class _FakeContextBuilder:
         )
 
 
-def _snapshot() -> DecisionSnapshot:
+def _snapshot(ts: str = "2026-03-10T08:00:00+00:00") -> DecisionSnapshot:
     return DecisionSnapshot(
         snapshot_id="s",
-        ts="2026-03-10T08:00:00+00:00",
+        ts=ts,
         house_state="home",
         anyone_home=True,
         people_count=1,
@@ -253,3 +253,89 @@ async def test_event_canonicalizer_uses_explicit_room_signal_config():
     assert diag["tracked_entities"]["sensor.studio_co2"]["signal_name"] == "room_co2"
     assert diag["bucket_state"]["studio:room_co2"] == "elevated"
     await hass.flush()
+
+
+async def test_event_canonicalizer_emits_room_signal_burst_and_updates_recent_accessor():
+    now = datetime.now(UTC)
+    state = _FakeState("21.0", device_class="temperature", last_changed=now)
+    hass, store, behavior = _behavior(
+        states={"sensor.studio_temperature": state},
+        options={
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.studio_temperature",
+                            "signal_name": "room_temperature",
+                            "device_class": "temperature",
+                            "buckets": [
+                                {"label": "cool", "upper_bound": 20.0},
+                                {"label": "ok", "upper_bound": 24.0},
+                                {"label": "warm", "upper_bound": 27.0},
+                                {"label": "hot", "upper_bound": None},
+                            ],
+                            "burst_threshold": 1.5,
+                            "burst_window_s": 600,
+                            "burst_direction": "up",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    await behavior.async_setup()
+
+    state.state = "23.0"
+    state.last_changed = now
+    behavior.on_snapshot(_snapshot(now.isoformat()))
+    await hass.flush()
+
+    burst_events = [event for event in store.events if event.event_type == "room_signal_burst"]
+    assert len(burst_events) == 1
+    assert burst_events[0].subject_id == "room_temperature"
+    assert burst_events[0].data["delta"] == 2.0
+    assert behavior.burst_recent_for("studio", "room_temperature", window_s=900) is True
+
+
+async def test_event_canonicalizer_resets_burst_baseline_after_each_emission():
+    state = _FakeState("55.0", device_class="humidity")
+    hass, store, behavior = _behavior(
+        states={"sensor.bathroom_humidity": state},
+        options={
+            "rooms": [
+                {
+                    "room_id": "bathroom",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.bathroom_humidity",
+                            "signal_name": "room_humidity",
+                            "device_class": "humidity",
+                            "buckets": [
+                                {"label": "low", "upper_bound": 40.0},
+                                {"label": "ok", "upper_bound": 70.0},
+                                {"label": "high", "upper_bound": None},
+                            ],
+                            "burst_threshold": 8.0,
+                            "burst_window_s": 600,
+                            "burst_direction": "up",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    await behavior.async_setup()
+
+    state.state = "64.0"
+    behavior.on_snapshot(_snapshot())
+    state.state = "73.0"
+    behavior.on_snapshot(_snapshot())
+    await hass.flush()
+
+    burst_events = [event for event in store.events if event.event_type == "room_signal_burst"]
+    assert len(burst_events) == 2
+    assert burst_events[0].data["from_value"] == 55.0
+    assert burst_events[0].data["to_value"] == 64.0
+    assert burst_events[1].data["from_value"] == 64.0
+    assert burst_events[1].data["to_value"] == 73.0

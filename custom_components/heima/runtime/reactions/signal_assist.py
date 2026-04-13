@@ -28,6 +28,8 @@ class RoomSignalAssistReaction(HeimaReaction):
         *,
         hass: HomeAssistant,
         bucket_getter: Any | None = None,
+        burst_getter: Any | None = None,
+        use_burst_accessor: bool = False,
         room_id: str,
         trigger_signal_entities: list[str] | None = None,
         steps: list[ApplyStep],
@@ -52,6 +54,8 @@ class RoomSignalAssistReaction(HeimaReaction):
     ) -> None:
         self._hass = hass
         self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
+        self._burst_getter = burst_getter or (lambda _room_id, _signal_name, *, window_s: False)
+        self._use_burst_accessor = use_burst_accessor
         self._room_id = room_id
         resolved_primary_entities = [
             e for e in (primary_signal_entities or trigger_signal_entities or []) if e
@@ -133,6 +137,8 @@ class RoomSignalAssistReaction(HeimaReaction):
 
         if self._primary_bucket:
             should_fire = self._steady_ready()
+        elif self._use_burst_accessor:
+            should_fire = self._burst_ready()
         else:
             now = parse_snapshot_ts(snapshot.ts)
             if now is None:
@@ -175,6 +181,7 @@ class RoomSignalAssistReaction(HeimaReaction):
             "corroboration_signal_name": self._corroboration_signal_name,
             "corroboration_entities": list(self._corroboration_entities),
             "corroboration_bucket": self._corroboration_bucket,
+            "uses_burst_accessor": self._use_burst_accessor,
             "humidity_entities": list(self._primary_entities),
             "temperature_entities": list(self._corroboration_entities),
             "fire_count": self._fire_count,
@@ -185,11 +192,11 @@ class RoomSignalAssistReaction(HeimaReaction):
             else None,
             "steady_condition_active": self._steady_condition_active,
         }
-        if not self._primary_bucket:
+        if not self._primary_bucket and not self._use_burst_accessor:
             diagnostics["primary_threshold"] = self._primary_threshold
             diagnostics["primary_threshold_mode"] = self._primary_threshold_mode
             diagnostics["primary_rise_threshold"] = self._primary_threshold
-        if not self._corroboration_bucket:
+        if not self._corroboration_bucket and not self._use_burst_accessor:
             diagnostics["corroboration_threshold"] = self._corroboration_threshold
             diagnostics["corroboration_threshold_mode"] = self._corroboration_threshold_mode
             diagnostics["corroboration_rise_threshold"] = self._corroboration_threshold
@@ -215,6 +222,26 @@ class RoomSignalAssistReaction(HeimaReaction):
                 return False
         if self._steady_condition_active:
             return False
+        return True
+
+    def _burst_ready(self) -> bool:
+        should_fire = bool(
+            self._burst_getter(
+                self._room_id,
+                self._primary_signal_name,
+                window_s=self._followup_window_s,
+            )
+        )
+        if not should_fire:
+            return False
+        if self._corroboration_signal_name and self._corroboration_entities:
+            return bool(
+                self._burst_getter(
+                    self._room_id,
+                    self._corroboration_signal_name,
+                    window_s=self._followup_window_s,
+                )
+            )
         return True
 
 
@@ -264,6 +291,11 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
     primary_signal_name = str(cfg.get("primary_signal_name", "primary"))
     corroboration_signal_name = str(cfg.get("corroboration_signal_name", "corroboration"))
     reaction_type = str(cfg.get("reaction_type") or "").strip()
+    if _is_room_cooling_assist_type(reaction_type):
+        if primary_signal_name.strip().lower() == "temperature":
+            primary_signal_name = "room_temperature"
+        if corroboration_signal_name.strip().lower() == "humidity":
+            corroboration_signal_name = "room_humidity"
     if _is_canonical_signal_assist_type(reaction_type) and primary_bucket:
         primary_threshold = primary_rise_threshold
         primary_threshold_mode = "rise"
@@ -322,6 +354,8 @@ def _build_normalized_room_signal_assist_reaction(
         elif expected_contract == "cooling":
             if not _is_room_cooling_assist_type(reaction_type):
                 raise ValueError("cooling builder requires room_cooling_assist")
+            if not normalized["primary_signal_name"]:
+                raise ValueError("cooling builder requires primary signal name")
         else:
             raise ValueError("unsupported signal assist contract")
     except (KeyError, TypeError, ValueError):
@@ -329,6 +363,8 @@ def _build_normalized_room_signal_assist_reaction(
     return RoomSignalAssistReaction(
         hass=engine._hass,  # noqa: SLF001
         bucket_getter=engine.signal_bucket,
+        burst_getter=engine.signal_burst_recent,
+        use_burst_accessor=expected_contract == "cooling",
         room_id=room_id,
         trigger_signal_entities=normalized["trigger_signal_entities"],
         primary_signal_entities=normalized["primary_signal_entities"],
@@ -426,13 +462,15 @@ def present_admin_authored_room_signal_assist_details(
     primary_bucket = str(cfg.get("primary_bucket") or "").strip()
     if primary_bucket:
         details.append(
-            f"Bucket primario: {primary_bucket}"
-            if is_it
-            else f"Primary bucket: {primary_bucket}"
+            f"Bucket primario: {primary_bucket}" if is_it else f"Primary bucket: {primary_bucket}"
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if _is_room_cooling_assist_type(reaction_type) and not primary_bucket and primary_threshold not in (None, ""):
+    if (
+        _is_room_cooling_assist_type(reaction_type)
+        and not primary_bucket
+        and primary_threshold not in (None, "")
+    ):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -471,7 +509,11 @@ def present_admin_authored_room_signal_assist_details(
         corroboration_threshold_mode = str(
             cfg.get("corroboration_threshold_mode") or "rise"
         ).strip()
-        if _is_room_cooling_assist_type(reaction_type) and not corroboration_bucket and corroboration_threshold not in (None, ""):
+        if (
+            _is_room_cooling_assist_type(reaction_type)
+            and not corroboration_bucket
+            and corroboration_threshold not in (None, "")
+        ):
             mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
                 corroboration_threshold_mode, corroboration_threshold_mode
             )
@@ -510,13 +552,15 @@ def present_learned_room_signal_assist_details(
     primary_bucket = str(cfg.get("primary_bucket") or "").strip()
     if primary_bucket:
         details.append(
-            f"Bucket proposto: {primary_bucket}"
-            if is_it
-            else f"Proposed bucket: {primary_bucket}"
+            f"Bucket proposto: {primary_bucket}" if is_it else f"Proposed bucket: {primary_bucket}"
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if _is_room_cooling_assist_type(reaction_type) and not primary_bucket and primary_threshold not in (None, ""):
+    if (
+        _is_room_cooling_assist_type(reaction_type)
+        and not primary_bucket
+        and primary_threshold not in (None, "")
+    ):
         mode_label = flow._signal_threshold_mode_options().get(  # noqa: SLF001
             primary_threshold_mode, primary_threshold_mode
         )
@@ -577,7 +621,11 @@ def present_tuning_room_signal_assist_details(
 
     current_mode = str(target_cfg.get("primary_threshold_mode") or "rise").strip()
     proposed_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
-    if _is_room_cooling_assist_type(reaction_type) and not (current_bucket or proposed_bucket) and current_mode != proposed_mode:
+    if (
+        _is_room_cooling_assist_type(reaction_type)
+        and not (current_bucket or proposed_bucket)
+        and current_mode != proposed_mode
+    ):
         current_label = flow._signal_threshold_mode_options().get(current_mode, current_mode)  # noqa: SLF001
         proposed_label = flow._signal_threshold_mode_options().get(proposed_mode, proposed_mode)  # noqa: SLF001
         details.append(
@@ -618,12 +666,19 @@ def present_tuning_room_signal_assist_details(
     proposed_corroboration_threshold = cfg.get(
         "corroboration_threshold", cfg.get("corroboration_rise_threshold")
     )
-    if _is_room_cooling_assist_type(reaction_type) and not (current_corroboration_bucket or proposed_corroboration_bucket) and current_corroboration_threshold not in (
-        None,
-        "",
-    ) and proposed_corroboration_threshold not in (
-        None,
-        "",
+    if (
+        _is_room_cooling_assist_type(reaction_type)
+        and not (current_corroboration_bucket or proposed_corroboration_bucket)
+        and current_corroboration_threshold
+        not in (
+            None,
+            "",
+        )
+        and proposed_corroboration_threshold
+        not in (
+            None,
+            "",
+        )
     ):
         if str(current_corroboration_threshold) != str(proposed_corroboration_threshold):
             details.append(

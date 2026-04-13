@@ -2178,16 +2178,16 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
             "reactions": {
                 "configured": {
                     "reaction-signal-1": {
-                    "reaction_class": "RoomSignalAssistReaction",
-                    "room_id": "bathroom",
-                    "origin": "admin_authored",
-                    "source_template_id": "room.signal_assist.basic",
-                    "source_proposal_identity_key": "room_signal_assist|room=bathroom|primary=room_humidity",
-                    "primary_signal_name": "room_humidity",
-                    "primary_bucket": "high",
-                    "primary_signal_entities": ["sensor.bathroom_humidity"],
-                    "corroboration_signal_name": "room_temperature",
-                    "corroboration_bucket": "warm",
+                        "reaction_class": "RoomSignalAssistReaction",
+                        "room_id": "bathroom",
+                        "origin": "admin_authored",
+                        "source_template_id": "room.signal_assist.basic",
+                        "source_proposal_identity_key": "room_signal_assist|room=bathroom|primary=room_humidity",
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
+                        "primary_signal_entities": ["sensor.bathroom_humidity"],
+                        "corroboration_signal_name": "room_temperature",
+                        "corroboration_bucket": "warm",
                         "corroboration_signal_entities": ["sensor.bathroom_temperature"],
                         "steps": [],
                     }
@@ -2246,7 +2246,10 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
     )
     assert "Automazione target: Assist bathroom" in placeholders["proposal_details"]
     assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
-    assert "Bucket primario:" not in placeholders["proposal_details"] or "Bucket primario:  -> high" not in placeholders["proposal_details"]
+    assert (
+        "Bucket primario:" not in placeholders["proposal_details"]
+        or "Bucket primario:  -> high" not in placeholders["proposal_details"]
+    )
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
     assert "Bucket corroborante: warm -> hot" in placeholders["proposal_details"]
     assert "Azioni: 0 -> 1" in placeholders["proposal_details"]
@@ -2634,9 +2637,7 @@ async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_sl
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
-    assert any(
-        cfg.get("reaction_type") == "lighting_scene_schedule" for cfg in configured.values()
-    )
+    assert any(cfg.get("reaction_type") == "lighting_scene_schedule" for cfg in configured.values())
 
 
 @pytest.mark.asyncio
@@ -2667,11 +2668,7 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     reaction = next(
-        (
-            cfg
-            for cfg in configured.values()
-            if cfg.get("reaction_type") == "room_signal_assist"
-        ),
+        (cfg for cfg in configured.values() if cfg.get("reaction_type") == "room_signal_assist"),
         None,
     )
     assert reaction is not None
@@ -2759,8 +2756,7 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     assert any(
-        cfg.get("reaction_type") == "room_darkness_lighting_assist"
-        for cfg in configured.values()
+        cfg.get("reaction_type") == "room_darkness_lighting_assist" for cfg in configured.values()
     )
 
 

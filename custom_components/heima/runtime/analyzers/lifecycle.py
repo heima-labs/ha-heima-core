@@ -30,8 +30,6 @@ class ProposalLifecycleHooks:
 class CompositeLifecyclePolicy:
     """Lifecycle suppression policy for composite follow-ups."""
 
-    room_cooling_primary_threshold_max_gap: float = 1.0
-    room_cooling_corroboration_threshold_max_gap: float = 0.0
     room_darkness_brightness_max_gap: int = 16
     room_darkness_color_temp_max_gap: int = 150
 
@@ -71,14 +69,6 @@ def composite_lifecycle_policy_from_learning_config(
 
     default = DEFAULT_COMPOSITE_LIFECYCLE_POLICY
     return CompositeLifecyclePolicy(
-        room_cooling_primary_threshold_max_gap=_coerce_non_negative_float(
-            policy_raw.get("room_cooling_primary_threshold_max_gap"),
-            default.room_cooling_primary_threshold_max_gap,
-        ),
-        room_cooling_corroboration_threshold_max_gap=_coerce_non_negative_float(
-            policy_raw.get("room_cooling_corroboration_threshold_max_gap"),
-            default.room_cooling_corroboration_threshold_max_gap,
-        ),
         room_darkness_brightness_max_gap=_coerce_non_negative_int(
             policy_raw.get("room_darkness_brightness_max_gap"),
             default.room_darkness_brightness_max_gap,
@@ -240,9 +230,7 @@ def _composite_should_suppress_followup(
         return False
 
     if candidate.reaction_type == "room_signal_assist":
-        return _room_signal_assist_should_suppress_followup(
-            candidate_cfg, accepted_cfg
-        )
+        return _room_signal_assist_should_suppress_followup(candidate_cfg, accepted_cfg)
     if candidate.reaction_type == "room_cooling_assist":
         return _room_cooling_assist_should_suppress_followup(
             candidate_cfg, accepted_cfg, policy=policy
@@ -292,22 +280,24 @@ def _room_cooling_assist_should_suppress_followup(
     *,
     policy: CompositeLifecyclePolicy,
 ) -> bool:
-    if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
-        accepted_cfg.get("primary_threshold_mode")
+    del policy
+    if _normalize_str(candidate_cfg.get("primary_signal_name")) != _normalize_str(
+        accepted_cfg.get("primary_signal_name")
     ):
         return False
-    if (
-        _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold"))
-        > policy.room_cooling_primary_threshold_max_gap
+    if _normalize_str(candidate_cfg.get("corroboration_signal_name")) != _normalize_str(
+        accepted_cfg.get("corroboration_signal_name")
     ):
         return False
-    if (
-        _numeric_gap(
-            candidate_cfg.get("corroboration_threshold"),
-            accepted_cfg.get("corroboration_threshold"),
-        )
-        > policy.room_cooling_corroboration_threshold_max_gap
+    if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
+        accepted_cfg.get("primary_signal_entities")
     ):
+        return False
+    if _sorted_strings(candidate_cfg.get("corroboration_signal_entities")) != _sorted_strings(
+        accepted_cfg.get("corroboration_signal_entities")
+    ):
+        return False
+    if _steps_count(candidate_cfg.get("steps")) != _steps_count(accepted_cfg.get("steps")):
         return False
     return True
 

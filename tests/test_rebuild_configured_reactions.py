@@ -2019,11 +2019,9 @@ def test_room_signal_assist_reaction_builds_generic_signal_config():
                         "reaction_class": "RoomSignalAssistReaction",
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_temperature"],
-                        "primary_rise_threshold": 1.5,
-                        "primary_signal_name": "temperature",
+                        "primary_signal_name": "room_temperature",
                         "corroboration_signal_entities": ["sensor.studio_humidity"],
-                        "corroboration_rise_threshold": 5.0,
-                        "corroboration_signal_name": "humidity",
+                        "corroboration_signal_name": "room_humidity",
                         "steps": [
                             {
                                 "domain": "script",
@@ -2071,11 +2069,9 @@ def test_room_signal_and_cooling_builders_reject_wrong_contract():
         "reaction_type": "room_cooling_assist",
         "room_id": "studio",
         "primary_signal_entities": ["sensor.studio_temperature"],
-        "primary_signal_name": "temperature",
-        "primary_rise_threshold": 1.5,
+        "primary_signal_name": "room_temperature",
         "corroboration_signal_entities": ["sensor.studio_humidity"],
-        "corroboration_signal_name": "humidity",
-        "corroboration_rise_threshold": 5.0,
+        "corroboration_signal_name": "room_humidity",
         "steps": [],
     }
 

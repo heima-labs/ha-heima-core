@@ -97,85 +97,68 @@ def test_signal_assist_reaction_waits_for_temperature_corroboration():
     assert steps[0].action == "script.turn_on"
 
 
-def test_signal_assist_reaction_supports_generic_primary_and_corroboration_signals():
+def test_room_cooling_assist_reaction_uses_burst_recent_for_primary_and_corroboration():
     hass = MagicMock()
-    states = {
-        "sensor.studio_temperature": "24.0",
-        "sensor.studio_humidity": "50.0",
+    burst_state = {
+        ("studio", "room_temperature"): False,
+        ("studio", "room_humidity"): False,
     }
-    hass.states.get.side_effect = lambda eid: (
-        SimpleNamespace(state=states[eid]) if eid in states else None
-    )
+
+    def _burst_getter(room_id: str, signal_name: str, *, window_s: int) -> bool:
+        assert window_s == 900
+        return burst_state.get((room_id, signal_name), False)
+
     reaction = RoomSignalAssistReaction(
         hass=hass,
+        burst_getter=_burst_getter,
+        use_burst_accessor=True,
         room_id="studio",
-        trigger_signal_entities=["sensor.studio_temperature"],
         primary_signal_entities=["sensor.studio_temperature"],
-        primary_rise_threshold=1.5,
-        primary_signal_name="temperature",
+        primary_signal_name="room_temperature",
         corroboration_signal_entities=["sensor.studio_humidity"],
-        corroboration_rise_threshold=5.0,
-        corroboration_signal_name="humidity",
+        corroboration_signal_name="room_humidity",
         steps=[ApplyStep(domain="script", target="script.cool_room", action="script.turn_on")],
-        followup_window_s=0,
+        followup_window_s=900,
     )
     ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
     ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
-    ts3 = datetime(2026, 3, 20, 15, 4, tzinfo=timezone.utc).isoformat()
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)]) == []
 
-    states["sensor.studio_temperature"] = "25.8"
-    assert (
-        reaction.evaluate(
-            [
-                _snapshot(occupied_rooms=["studio"], ts=ts1),
-                _snapshot(occupied_rooms=["studio"], ts=ts2),
-            ]
-        )
-        == []
-    )
+    burst_state[("studio", "room_temperature")] = True
+    assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2)]) == []
 
-    states["sensor.studio_humidity"] = "56.0"
-    steps = reaction.evaluate(
-        [
-            _snapshot(occupied_rooms=["studio"], ts=ts2),
-            _snapshot(occupied_rooms=["studio"], ts=ts3),
-        ]
-    )
+    burst_state[("studio", "room_humidity")] = True
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2)])
     assert len(steps) == 1
     assert steps[0].target == "script.cool_room"
 
 
-def test_signal_assist_reaction_supports_generic_contract_without_legacy_trigger_alias():
+def test_room_cooling_assist_reaction_supports_burst_without_corroboration():
     hass = MagicMock()
-    states = {
-        "sensor.office_temperature": "24.0",
-    }
-    hass.states.get.side_effect = lambda eid: (
-        SimpleNamespace(state=states[eid]) if eid in states else None
-    )
+    burst_state = {("office", "room_temperature"): False}
+
+    def _burst_getter(room_id: str, signal_name: str, *, window_s: int) -> bool:
+        assert window_s == 900
+        return burst_state.get((room_id, signal_name), False)
+
     reaction = RoomSignalAssistReaction(
         hass=hass,
+        burst_getter=_burst_getter,
+        use_burst_accessor=True,
         room_id="office",
         primary_signal_entities=["sensor.office_temperature"],
-        primary_rise_threshold=1.2,
-        primary_signal_name="temperature",
+        primary_signal_name="room_temperature",
         steps=[ApplyStep(domain="script", target="script.cool_office", action="script.turn_on")],
-        followup_window_s=0,
+        followup_window_s=900,
     )
     ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
     ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
 
-    states["sensor.office_temperature"] = "25.6"
-    steps = reaction.evaluate(
-        [
-            _snapshot(occupied_rooms=["office"], ts=ts1),
-            _snapshot(occupied_rooms=["office"], ts=ts2),
-        ]
-    )
+    burst_state[("office", "room_temperature")] = True
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts2)])
     assert len(steps) == 1
     assert steps[0].target == "script.cool_office"
 

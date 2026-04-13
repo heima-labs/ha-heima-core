@@ -269,7 +269,9 @@ class _RoomsStepsMixin:
             vol.Optional("learning_sources"): _entity_selector(
                 ["binary_sensor", "sensor", "switch"], multiple=True
             ),
-            vol.Optional("signals", default=defaults.get("signals", "")): _multiline_text_selector(),
+            vol.Optional(
+                "signals", default=defaults.get("signals", "")
+            ): _multiline_text_selector(),
             vol.Optional(
                 "occupancy_mode", default=defaults.get("occupancy_mode", "derived")
             ): vol.In(ROOM_OCCUPANCY_MODES),

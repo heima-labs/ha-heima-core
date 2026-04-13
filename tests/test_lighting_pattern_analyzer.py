@@ -13,8 +13,21 @@ class _StoreStub:
     def __init__(self, events):
         self._events = list(events)
 
-    async def async_query(self, *, event_type=None, since=None, limit=None):  # noqa: ARG002
-        return [e for e in self._events if event_type is None or e.event_type == event_type]
+    async def async_query(  # noqa: ARG002
+        self,
+        *,
+        event_type=None,
+        room_id=None,
+        subject_id=None,
+        since=None,
+        limit=None,
+    ):
+        events = [e for e in self._events if event_type is None or e.event_type == event_type]
+        if room_id is not None:
+            events = [e for e in events if e.room_id == room_id]
+        if subject_id is not None:
+            events = [e for e in events if e.subject_id == subject_id]
+        return events
 
 
 def _ctx(weekday: int = 0, minute: int = 1200) -> EventContext:
@@ -119,6 +132,50 @@ def _state_change(
     )
 
 
+def _room_signal_threshold(
+    *,
+    entity_id: str,
+    room_id: str,
+    from_bucket: str,
+    to_bucket: str,
+    weekday: int = 0,
+    minute: int = 1200,
+    ts: str = _WEEK1_TS,
+    device_class: str = "illuminance",
+    signal_name: str = "room_lux",
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="room_signal_threshold",
+        context=EventContext(
+            weekday=weekday,
+            minute_of_day=minute,
+            month=3,
+            house_state="home",
+            occupants_count=1,
+            occupied_rooms=(room_id,),
+            outdoor_lux=None,
+            outdoor_temp=None,
+            weather_condition=None,
+            signals={},
+        ),
+        source=None,
+        domain="sensor",
+        subject_type="signal",
+        subject_id=signal_name,
+        room_id=room_id,
+        data={
+            "entity_id": entity_id,
+            "signal_name": signal_name,
+            "from_bucket": from_bucket,
+            "to_bucket": to_bucket,
+            "direction": "down",
+            "value": 95.0,
+            "device_class": device_class,
+        },
+    )
+
+
 def _multi_week_events(
     n_week1: int,
     n_week2: int,
@@ -208,15 +265,16 @@ async def test_lighting_analyzer_suppresses_schedule_when_darkness_assist_is_con
     for lux_ts, light_ts in evidence_pairs:
         events.extend(
             [
-                _state_change(
+                _room_signal_threshold(
                     entity_id="sensor.bedroom_lux",
                     room_id="bedroom",
-                    old_state="180",
-                    new_state="95",
+                    from_bucket="ok",
+                    to_bucket="dim",
                     weekday=2,
                     minute=17 * 60 + 58,
                     ts=lux_ts,
                     device_class="illuminance",
+                    signal_name="room_lux",
                 ),
                 _lighting(
                     entity_id="light.bedroom_main",

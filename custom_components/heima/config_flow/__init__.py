@@ -389,9 +389,8 @@ class HeimaOptionsFlowHandler(
                 continue
             reaction_type = resolve_reaction_type(cfg)
             identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-            if (
-                reaction_type == "lighting_scene_schedule"
-                or identity_key.startswith("lighting_scene_schedule|")
+            if reaction_type == "lighting_scene_schedule" or identity_key.startswith(
+                "lighting_scene_schedule|"
             ):
                 active_lighting += 1
 
@@ -438,10 +437,7 @@ class HeimaOptionsFlowHandler(
                 continue
             reaction_type = resolve_reaction_type(cfg)
             identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-            is_composite = (
-                reaction_type.startswith("room_")
-                or identity_key.startswith("room_")
-            )
+            is_composite = reaction_type.startswith("room_") or identity_key.startswith("room_")
             if not is_composite:
                 continue
             active_composite += 1
