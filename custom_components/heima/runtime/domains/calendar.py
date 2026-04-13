@@ -53,6 +53,7 @@ class CalendarDomain:
         # Cached upcoming events from calendar.get_events (all entities merged)
         self._cached_events: list[CalendarEvent] = []
         self._cache_ts: datetime | None = None
+        self._missing_get_events_logged = False
 
     def reset(self) -> None:
         """Called on options reload — clears cache."""
@@ -97,6 +98,18 @@ class CalendarDomain:
         lookahead_days: int = int(calendar_cfg.get("lookahead_days") or 7)
         keywords, priority_order = _resolve_classification_config(calendar_cfg)
         end_dt = now + timedelta(days=lookahead_days)
+        services = getattr(self._hass, "services", None)
+        has_service = getattr(services, "has_service", None)
+        if callable(has_service) and not has_service("calendar", "get_events"):
+            if not self._missing_get_events_logged:
+                _LOGGER.warning(
+                    "CalendarDomain: calendar.get_events service not available; "
+                    "skipping calendar lookahead refresh"
+                )
+                self._missing_get_events_logged = True
+            self._cached_events = []
+            self._cache_ts = now
+            return
 
         events: list[CalendarEvent] = []
         for entity_id in entity_ids:

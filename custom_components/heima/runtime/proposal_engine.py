@@ -368,29 +368,28 @@ class ProposalEngine:
         pending = self.pending_proposals()
         ordered = self._sort_proposals(self._proposals)
         attributes = {
-            p.proposal_id: {
-                "type": p.reaction_type,
-                "description": p.description,
-                "confidence": p.confidence,
-                "origin": p.origin,
-                "followup_kind": p.followup_kind,
-                "status": p.status,
-                "analyzer_id": p.analyzer_id,
-                "created_at": p.created_at,
-                "updated_at": p.updated_at,
-                "last_observed_at": p.last_observed_at,
-                "identity_key": self._identity_key(p),
-                "fingerprint": self._fingerprint(p),
-                "target_reaction_id": p.target_reaction_id,
-                "target_reaction_type": p.target_reaction_type,
-                "target_reaction_origin": p.target_reaction_origin,
-                "target_template_id": p.target_template_id,
-                "is_stale": self._is_stale(p),
-                "stale_reason": self._stale_reason(p),
-                "config_summary": self._proposal_config_summary(p),
-                "explainability": self._proposal_explainability(p),
-            }
-            for p in ordered
+            "total": len(ordered),
+            "pending": len(pending),
+            "by_origin": {
+                "learned": sum(1 for p in ordered if p.origin == "learned"),
+                "admin_authored": sum(1 for p in ordered if p.origin == "admin_authored"),
+            },
+            "by_type": _proposal_type_counts(ordered),
+            "items": {
+                p.proposal_id: {
+                    "type": p.reaction_type,
+                    "description": p.description,
+                    "confidence": round(p.confidence, 2),
+                    "origin": p.origin,
+                    "followup_kind": p.followup_kind,
+                    "status": p.status,
+                    "updated_at": p.updated_at,
+                    "target_reaction_id": p.target_reaction_id,
+                    "target_reaction_type": p.target_reaction_type,
+                    "is_stale": self._is_stale(p),
+                }
+                for p in ordered
+            },
         }
         self._sensor_writer(len(pending), attributes)
 
@@ -605,3 +604,10 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _proposal_type_counts(proposals: list[ReactionProposal]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for proposal in proposals:
+        counts[proposal.reaction_type] = counts.get(proposal.reaction_type, 0) + 1
+    return dict(sorted(counts.items()))

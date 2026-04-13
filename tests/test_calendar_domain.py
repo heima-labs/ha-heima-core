@@ -35,7 +35,10 @@ def _fake_hass(states: dict | None = None, service_response: dict | None = None)
 
     return SimpleNamespace(
         states=SimpleNamespace(get=lambda eid: state_map.get(eid)),
-        services=SimpleNamespace(async_call=_async_call),
+        services=SimpleNamespace(
+            async_call=_async_call,
+            has_service=lambda domain, service: True,
+        ),
     )
 
 
@@ -443,6 +446,32 @@ async def test_async_maybe_refresh_handles_service_error_gracefully():
     assert domain._cached_events == []
     # cache_ts IS set (refresh was attempted)
     assert domain._cache_ts is not None
+
+
+@pytest.mark.asyncio
+async def test_async_maybe_refresh_skips_when_get_events_service_missing(caplog: pytest.LogCaptureFixture):
+    call_count = 0
+
+    async def _counting_call(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return {}
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda _: None),
+        services=SimpleNamespace(
+            async_call=_counting_call,
+            has_service=lambda domain, service: False,
+        ),
+    )
+    domain = CalendarDomain(hass)
+    cfg = {"calendar_entities": ["calendar.personal"]}
+
+    await domain.async_maybe_refresh(cfg)
+    assert call_count == 0
+    assert domain._cached_events == []
+    assert domain._cache_ts is not None
+    assert "calendar.get_events service not available" in caplog.text
 
 
 # ---------------------------------------------------------------------------

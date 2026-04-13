@@ -177,8 +177,6 @@ class HeimaOptionsFlowHandler(
         config_entry = getattr(self, "_config_entry", None)
         if config_entries is not None and config_entry is not None:
             config_entries.async_update_entry(config_entry, options=dict(merged))
-        if config_entry is not None:
-            setattr(config_entry, "options", dict(merged))
 
     def _sync_ha_backed_bindings(self) -> None:
         updated_options, _, changed = reconcile_ha_backed_options(

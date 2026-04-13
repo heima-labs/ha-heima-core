@@ -495,7 +495,7 @@
       },
       "reactions_edit_form": {
         "title": "Modifica reazione",
-        "description": "{reaction_description}\nStanza: {room_id}\n\nNota: la presenza è rilevata automaticamente dall'engine di occupancy — non configurare un sensore di presenza qui.",
+        "description": "{reaction_description}",
         "data": {
           "enabled": "Abilitata",
           "primary_signal_entities": "Sensori lux",

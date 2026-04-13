@@ -153,14 +153,11 @@ async def test_proposal_engine_run_and_pending(monkeypatch):
     pending = engine.pending_proposals()
     assert len(pending) == 1
     assert sensor_updates[-1][0] == 1
-    proposal_attrs = sensor_updates[-1][1][pending[0].proposal_id]
-    assert "created_at" in proposal_attrs
+    assert sensor_updates[-1][1]["pending"] == 1
+    proposal_attrs = sensor_updates[-1][1]["items"][pending[0].proposal_id]
     assert "updated_at" in proposal_attrs
-    assert "last_observed_at" in proposal_attrs
     assert proposal_attrs["origin"] == "learned"
-    assert "identity_key" in proposal_attrs
-    assert "config_summary" in proposal_attrs
-    assert "explainability" in proposal_attrs
+    assert proposal_attrs["type"] == "presence_preheat"
 
 
 async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
@@ -814,11 +811,8 @@ async def test_proposal_engine_diagnostics_tolerate_non_dict_config(monkeypatch)
     assert item["origin"] == "learned"
     assert item["config_summary"] == {"reaction_type": "presence_preheat"}
     assert item["explainability"] == {}
-    assert sensor_updates[-1][1]["legacy"]["origin"] == "learned"
-    assert sensor_updates[-1][1]["legacy"]["config_summary"] == {
-        "reaction_type": "presence_preheat"
-    }
-    assert sensor_updates[-1][1]["legacy"]["explainability"] == {}
+    assert sensor_updates[-1][1]["items"]["legacy"]["origin"] == "learned"
+    assert sensor_updates[-1][1]["items"]["legacy"]["type"] == "presence_preheat"
 
 
 async def test_proposal_engine_run_sanitizes_non_dict_config_on_pending_update(monkeypatch):
@@ -866,7 +860,7 @@ async def test_proposal_engine_diagnostics_expose_admin_authored_origin(monkeypa
 
     item = diagnostics["proposals"][0]
     assert item["origin"] == "admin_authored"
-    assert sensor_updates[-1][1][proposal_id]["origin"] == "admin_authored"
+    assert sensor_updates[-1][1]["items"][proposal_id]["origin"] == "admin_authored"
 
 
 async def test_proposal_engine_sensor_writer_keeps_count_in_state_and_payload_in_attrs(
@@ -890,8 +884,9 @@ async def test_proposal_engine_sensor_writer_keeps_count_in_state_and_payload_in
     assert count == 5
     assert isinstance(count, int)
     assert len(str(count)) < 255
-    assert len(attrs) == 5
-    assert attrs[proposal_ids[0]]["origin"] == "admin_authored"
+    assert attrs["total"] == 5
+    assert len(attrs["items"]) == 5
+    assert attrs[ "items"][proposal_ids[0]]["origin"] == "admin_authored"
 
 
 async def test_proposal_engine_async_submit_proposal_creates_pending_admin_authored(monkeypatch):
