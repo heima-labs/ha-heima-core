@@ -22,11 +22,18 @@ _DEFAULT_SIGNAL_BUCKETS: dict[str, list[dict[str, float | str | None]]] = {
         {"label": "ok", "upper_bound": 70.0},
         {"label": "high", "upper_bound": None},
     ],
+    "temperature": [
+        {"label": "cool", "upper_bound": 20.0},
+        {"label": "ok", "upper_bound": 24.0},
+        {"label": "warm", "upper_bound": 27.0},
+        {"label": "hot", "upper_bound": None},
+    ],
 }
 _DEVICE_CLASS_TO_SIGNAL_NAME = {
     "illuminance": "room_lux",
     "carbon_dioxide": "room_co2",
     "humidity": "room_humidity",
+    "temperature": "room_temperature",
 }
 
 

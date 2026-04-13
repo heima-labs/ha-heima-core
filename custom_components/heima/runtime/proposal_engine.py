@@ -529,6 +529,7 @@ class ProposalEngine:
         reaction_type = resolve_reaction_type(cfg) or proposal.reaction_type
         primary_bucket = cfg.get("primary_bucket")
         corroboration_bucket = cfg.get("corroboration_bucket")
+        generic_threshold_reaction = reaction_type == "room_cooling_assist"
         summary = {
             "reaction_type": reaction_type,
             "room_id": cfg.get("room_id"),
@@ -542,13 +543,13 @@ class ProposalEngine:
             "episodes_observed": cfg.get("episodes_observed"),
             "corroborated_episodes": cfg.get("corroborated_episodes"),
         }
-        if not primary_bucket:
+        if generic_threshold_reaction and not primary_bucket:
             summary["primary_threshold_mode"] = cfg.get("primary_threshold_mode")
             summary["primary_threshold"] = cfg.get(
                 "primary_threshold",
                 cfg.get("primary_rise_threshold"),
             )
-        if not corroboration_bucket:
+        if generic_threshold_reaction and not corroboration_bucket:
             summary["corroboration_threshold_mode"] = cfg.get("corroboration_threshold_mode")
             summary["corroboration_threshold"] = cfg.get(
                 "corroboration_threshold",

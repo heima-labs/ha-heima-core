@@ -22,6 +22,8 @@ from custom_components.heima.runtime.reactions.security_presence_simulation impo
 )
 from custom_components.heima.runtime.reactions.signal_assist import (
     RoomSignalAssistReaction,
+    build_room_cooling_assist_reaction,
+    build_room_signal_assist_reaction,
     normalize_room_signal_assist_config,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
@@ -1941,6 +1943,7 @@ def test_room_signal_assist_reaction_built_and_registered():
             "reactions": {
                 "configured": {
                     "sa1": {
+                        "reaction_type": "room_signal_assist",
                         "reaction_class": "RoomSignalAssistReaction",
                         "room_id": "bathroom",
                         "trigger_signal_entities": ["sensor.bathroom_humidity"],
@@ -1949,7 +1952,8 @@ def test_room_signal_assist_reaction_built_and_registered():
                         "primary_bucket": "high",
                         "temperature_signal_entities": ["sensor.bathroom_temperature"],
                         "corroboration_signal_entities": ["sensor.bathroom_temperature"],
-                        "corroboration_signal_name": "temperature",
+                        "corroboration_signal_name": "room_temperature",
+                        "corroboration_bucket": "warm",
                         "correlation_window_s": 600,
                         "followup_window_s": 900,
                         "steps": [
@@ -2039,6 +2043,44 @@ def test_room_signal_assist_reaction_builds_generic_signal_config():
     reaction = engine._reactions[0]
     assert isinstance(reaction, RoomSignalAssistReaction)
     assert reaction.reaction_id == "sa2"
+
+
+def test_room_signal_assist_and_room_cooling_use_separate_builders():
+    registry = create_builtin_reaction_plugin_registry()
+
+    assert registry.builder_for("room_signal_assist") is build_room_signal_assist_reaction
+    assert registry.builder_for("room_air_quality_assist") is build_room_signal_assist_reaction
+    assert registry.builder_for("room_cooling_assist") is build_room_cooling_assist_reaction
+
+
+def test_room_signal_and_cooling_builders_reject_wrong_contract():
+    engine = _make_engine()
+
+    canonical_cfg = {
+        "reaction_type": "room_signal_assist",
+        "room_id": "bathroom",
+        "primary_signal_entities": ["sensor.bathroom_humidity"],
+        "primary_signal_name": "room_humidity",
+        "primary_bucket": "high",
+        "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+        "corroboration_signal_name": "room_temperature",
+        "corroboration_bucket": "warm",
+        "steps": [],
+    }
+    cooling_cfg = {
+        "reaction_type": "room_cooling_assist",
+        "room_id": "studio",
+        "primary_signal_entities": ["sensor.studio_temperature"],
+        "primary_signal_name": "temperature",
+        "primary_rise_threshold": 1.5,
+        "corroboration_signal_entities": ["sensor.studio_humidity"],
+        "corroboration_signal_name": "humidity",
+        "corroboration_rise_threshold": 5.0,
+        "steps": [],
+    }
+
+    assert build_room_signal_assist_reaction(engine, "rx1", cooling_cfg) is None
+    assert build_room_cooling_assist_reaction(engine, "rx2", canonical_cfg) is None
 
 
 def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_legacy_aliases():

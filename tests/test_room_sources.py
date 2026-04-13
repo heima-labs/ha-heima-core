@@ -38,8 +38,13 @@ def test_autopopulate_room_signals_from_learning_sources():
     assert [item["entity_id"] for item in signals] == [
         "sensor.studio_lux",
         "sensor.studio_co2",
+        "sensor.studio_temperature",
     ]
-    assert [item["signal_name"] for item in signals] == ["room_lux", "room_co2"]
+    assert [item["signal_name"] for item in signals] == [
+        "room_lux",
+        "room_co2",
+        "room_temperature",
+    ]
 
 
 def test_autopopulate_room_signals_keeps_existing_config():

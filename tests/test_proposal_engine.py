@@ -1152,9 +1152,8 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
         {
             "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "corroboration_signal_name": "temperature",
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [],
         }
@@ -1169,9 +1168,8 @@ async def test_proposal_engine_composite_config_summary_exposes_signal_fields(mo
     assert summary["primary_signal_name"] == "room_humidity"
     assert summary["primary_bucket"] == "high"
     assert summary["primary_signal_entities_count"] == 1
-    assert summary["corroboration_signal_name"] == "temperature"
-    assert summary["corroboration_threshold_mode"] == "rise"
-    assert summary["corroboration_threshold"] == 0.8
+    assert summary["corroboration_signal_name"] == "room_temperature"
+    assert summary["corroboration_bucket"] == "warm"
     assert summary["corroboration_signal_entities_count"] == 1
 
 
@@ -1201,8 +1199,8 @@ async def test_proposal_engine_creates_composite_tuning_followup_for_accepted_sl
                 "sensor.bathroom_humidity",
                 "sensor.bathroom_humidity_aux",
             ],
-            "corroboration_threshold": 1.2,
-            "corroboration_threshold_mode": "above",
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "hot",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [
                 {
@@ -1247,8 +1245,8 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
         {
             "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [],
         }
@@ -1262,8 +1260,8 @@ async def test_proposal_engine_suppresses_minor_room_signal_assist_tuning_drift(
         {
             "primary_bucket": "high",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [],
         }
@@ -1301,8 +1299,8 @@ async def test_proposal_engine_suppresses_canonical_room_signal_followup_despite
             "primary_threshold": 8.0,
             "primary_threshold_mode": "rise",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [],
         }
@@ -1318,8 +1316,8 @@ async def test_proposal_engine_suppresses_canonical_room_signal_followup_despite
             "primary_threshold": 99.0,
             "primary_threshold_mode": "above",
             "primary_signal_entities": ["sensor.bathroom_humidity"],
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [],
         }

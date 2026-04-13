@@ -30,9 +30,8 @@ class ProposalLifecycleHooks:
 class CompositeLifecyclePolicy:
     """Lifecycle suppression policy for composite follow-ups."""
 
-    room_signal_primary_threshold_max_gap: float = 1.0
-    room_signal_corroboration_threshold_max_gap: float = 0.0
-    room_darkness_primary_threshold_max_gap: float = 10.0
+    room_cooling_primary_threshold_max_gap: float = 1.0
+    room_cooling_corroboration_threshold_max_gap: float = 0.0
     room_darkness_brightness_max_gap: int = 16
     room_darkness_color_temp_max_gap: int = 150
 
@@ -72,17 +71,13 @@ def composite_lifecycle_policy_from_learning_config(
 
     default = DEFAULT_COMPOSITE_LIFECYCLE_POLICY
     return CompositeLifecyclePolicy(
-        room_signal_primary_threshold_max_gap=_coerce_non_negative_float(
-            policy_raw.get("room_signal_primary_threshold_max_gap"),
-            default.room_signal_primary_threshold_max_gap,
+        room_cooling_primary_threshold_max_gap=_coerce_non_negative_float(
+            policy_raw.get("room_cooling_primary_threshold_max_gap"),
+            default.room_cooling_primary_threshold_max_gap,
         ),
-        room_signal_corroboration_threshold_max_gap=_coerce_non_negative_float(
-            policy_raw.get("room_signal_corroboration_threshold_max_gap"),
-            default.room_signal_corroboration_threshold_max_gap,
-        ),
-        room_darkness_primary_threshold_max_gap=_coerce_non_negative_float(
-            policy_raw.get("room_darkness_primary_threshold_max_gap"),
-            default.room_darkness_primary_threshold_max_gap,
+        room_cooling_corroboration_threshold_max_gap=_coerce_non_negative_float(
+            policy_raw.get("room_cooling_corroboration_threshold_max_gap"),
+            default.room_cooling_corroboration_threshold_max_gap,
         ),
         room_darkness_brightness_max_gap=_coerce_non_negative_int(
             policy_raw.get("room_darkness_brightness_max_gap"),
@@ -246,6 +241,10 @@ def _composite_should_suppress_followup(
 
     if candidate.reaction_type == "room_signal_assist":
         return _room_signal_assist_should_suppress_followup(
+            candidate_cfg, accepted_cfg
+        )
+    if candidate.reaction_type == "room_cooling_assist":
+        return _room_cooling_assist_should_suppress_followup(
             candidate_cfg, accepted_cfg, policy=policy
         )
     if candidate.reaction_type == "room_darkness_lighting_assist":
@@ -260,27 +259,17 @@ def _composite_should_suppress_followup(
 def _room_signal_assist_should_suppress_followup(
     candidate_cfg: dict[str, Any],
     accepted_cfg: dict[str, Any],
-    *,
-    policy: CompositeLifecyclePolicy,
 ) -> bool:
     candidate_primary_bucket = _normalize_str(candidate_cfg.get("primary_bucket"))
     accepted_primary_bucket = _normalize_str(accepted_cfg.get("primary_bucket"))
-    if candidate_primary_bucket or accepted_primary_bucket:
-        if candidate_primary_bucket != accepted_primary_bucket:
-            return False
-    elif _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
-        accepted_cfg.get("primary_threshold_mode")
-    ):
+    if not candidate_primary_bucket or not accepted_primary_bucket:
+        return False
+    if candidate_primary_bucket != accepted_primary_bucket:
         return False
 
     candidate_corroboration_bucket = _normalize_str(candidate_cfg.get("corroboration_bucket"))
     accepted_corroboration_bucket = _normalize_str(accepted_cfg.get("corroboration_bucket"))
-    if candidate_corroboration_bucket or accepted_corroboration_bucket:
-        if candidate_corroboration_bucket != accepted_corroboration_bucket:
-            return False
-    elif _normalize_str(candidate_cfg.get("corroboration_threshold_mode")) != _normalize_str(
-        accepted_cfg.get("corroboration_threshold_mode")
-    ):
+    if candidate_corroboration_bucket != accepted_corroboration_bucket:
         return False
 
     if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
@@ -294,16 +283,22 @@ def _room_signal_assist_should_suppress_followup(
     if _steps_count(candidate_cfg.get("steps")) != _steps_count(accepted_cfg.get("steps")):
         return False
 
-    if candidate_primary_bucket or accepted_primary_bucket:
-        return True
+    return True
 
+
+def _room_cooling_assist_should_suppress_followup(
+    candidate_cfg: dict[str, Any],
+    accepted_cfg: dict[str, Any],
+    *,
+    policy: CompositeLifecyclePolicy,
+) -> bool:
     if _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
         accepted_cfg.get("primary_threshold_mode")
     ):
         return False
     if (
         _numeric_gap(candidate_cfg.get("primary_threshold"), accepted_cfg.get("primary_threshold"))
-        > policy.room_signal_primary_threshold_max_gap
+        > policy.room_cooling_primary_threshold_max_gap
     ):
         return False
     if (
@@ -311,7 +306,7 @@ def _room_signal_assist_should_suppress_followup(
             candidate_cfg.get("corroboration_threshold"),
             accepted_cfg.get("corroboration_threshold"),
         )
-        > policy.room_signal_corroboration_threshold_max_gap
+        > policy.room_cooling_corroboration_threshold_max_gap
     ):
         return False
     return True
@@ -325,12 +320,9 @@ def _room_darkness_lighting_assist_should_suppress_followup(
 ) -> bool:
     candidate_primary_bucket = _normalize_str(candidate_cfg.get("primary_bucket"))
     accepted_primary_bucket = _normalize_str(accepted_cfg.get("primary_bucket"))
-    if candidate_primary_bucket or accepted_primary_bucket:
-        if candidate_primary_bucket != accepted_primary_bucket:
-            return False
-    elif _normalize_str(candidate_cfg.get("primary_threshold_mode")) != _normalize_str(
-        accepted_cfg.get("primary_threshold_mode")
-    ):
+    if not candidate_primary_bucket or not accepted_primary_bucket:
+        return False
+    if candidate_primary_bucket != accepted_primary_bucket:
         return False
     if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
         accepted_cfg.get("primary_signal_entities")
@@ -340,15 +332,6 @@ def _room_darkness_lighting_assist_should_suppress_followup(
     candidate_steps = _lighting_steps_by_entity(candidate_cfg)
     accepted_steps = _lighting_steps_by_entity(accepted_cfg)
     if set(candidate_steps) != set(accepted_steps):
-        return False
-    if (
-        not (candidate_primary_bucket or accepted_primary_bucket)
-        and _numeric_gap(
-            candidate_cfg.get("primary_threshold"),
-            accepted_cfg.get("primary_threshold"),
-        )
-        > policy.room_darkness_primary_threshold_max_gap
-    ):
         return False
 
     for entity_id in sorted(candidate_steps):

@@ -373,9 +373,8 @@ class _ReactionsStepsMixin:
             "room_id": room_ids[0],
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
-            "corroboration_signal_name": "temperature",
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "action_entities": [],
         }
         errors: dict[str, str] = {}
@@ -415,22 +414,13 @@ class _ReactionsStepsMixin:
             errors["primary_bucket"] = "required"
             primary_bucket = defaults["primary_bucket"]
 
-        corroboration_threshold_mode = str(
-            user_input.get("corroboration_threshold_mode") or "rise"
-        ).strip()
-        if corroboration_threshold_mode not in self._signal_threshold_mode_options():
-            errors["corroboration_threshold_mode"] = "invalid_selection"
-            corroboration_threshold_mode = defaults["corroboration_threshold_mode"]
-
-        try:
-            corroboration_threshold = float(user_input.get("corroboration_threshold") or 0)
-            if corroboration_signal_entities and corroboration_threshold <= 0:
-                raise ValueError
-            if not corroboration_signal_entities:
-                corroboration_threshold = 0.0
-        except (TypeError, ValueError):
-            errors["corroboration_threshold"] = "invalid_number"
-            corroboration_threshold = defaults["corroboration_threshold"]
+        corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
+        if corroboration_signal_entities and not corroboration_bucket:
+            errors["corroboration_bucket"] = "required"
+        if not corroboration_signal_entities:
+            corroboration_bucket = ""
+        elif not corroboration_bucket:
+            corroboration_bucket = defaults["corroboration_bucket"]
 
         if errors:
             return self.async_show_form(
@@ -445,8 +435,7 @@ class _ReactionsStepsMixin:
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name
                         or defaults["corroboration_signal_name"],
-                        "corroboration_threshold_mode": corroboration_threshold_mode,
-                        "corroboration_threshold": corroboration_threshold,
+                        "corroboration_bucket": corroboration_bucket,
                         "action_entities": action_entities,
                     }
                 ),
@@ -464,8 +453,7 @@ class _ReactionsStepsMixin:
             primary_bucket=primary_bucket,
             corroboration_signal_entities=corroboration_signal_entities,
             corroboration_signal_name=corroboration_signal_name or "corroboration",
-            corroboration_threshold_mode=corroboration_threshold_mode,
-            corroboration_threshold=corroboration_threshold,
+            corroboration_bucket=corroboration_bucket,
             action_entities=action_entities,
         )
         if self._admin_authored_identity_conflicts(proposal):
@@ -479,8 +467,7 @@ class _ReactionsStepsMixin:
                         "primary_bucket": primary_bucket,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name,
-                        "corroboration_threshold_mode": corroboration_threshold_mode,
-                        "corroboration_threshold": corroboration_threshold,
+                        "corroboration_bucket": corroboration_bucket,
                         "action_entities": action_entities,
                     }
                 ),
@@ -502,8 +489,7 @@ class _ReactionsStepsMixin:
                         "primary_bucket": primary_bucket,
                         "corroboration_signal_entities": corroboration_signal_entities,
                         "corroboration_signal_name": corroboration_signal_name,
-                        "corroboration_threshold_mode": corroboration_threshold_mode,
-                        "corroboration_threshold": corroboration_threshold,
+                        "corroboration_bucket": corroboration_bucket,
                         "action_entities": action_entities,
                     }
                 ),
@@ -1587,7 +1573,6 @@ class _ReactionsStepsMixin:
     ) -> vol.Schema:
         defaults = defaults or {}
         room_options = {room_id: room_id for room_id in self._room_ids()}
-        threshold_modes = self._signal_threshold_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
@@ -1600,11 +1585,8 @@ class _ReactionsStepsMixin:
                     vol.Optional("corroboration_signal_entities"): _entity_selector(
                         ["sensor", "binary_sensor"], multiple=True
                     ),
-                    vol.Optional("corroboration_signal_name", default="temperature"): str,
-                    vol.Optional("corroboration_threshold_mode", default="rise"): vol.In(
-                        threshold_modes
-                    ),
-                    vol.Optional("corroboration_threshold", default=0.8): vol.Coerce(float),
+                    vol.Optional("corroboration_signal_name", default="room_temperature"): str,
+                    vol.Optional("corroboration_bucket", default="warm"): str,
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
@@ -1751,8 +1733,7 @@ class _ReactionsStepsMixin:
         primary_bucket: str,
         corroboration_signal_entities: list[str],
         corroboration_signal_name: str,
-        corroboration_threshold_mode: str,
-        corroboration_threshold: float,
+        corroboration_bucket: str,
         action_entities: list[str],
     ) -> ReactionProposal:
         template_id = "room.signal_assist.basic"
@@ -1781,9 +1762,7 @@ class _ReactionsStepsMixin:
                 "primary_signal_name": primary_signal_name.strip() or "primary",
                 "temperature_signal_entities": list(corroboration_signal_entities),
                 "corroboration_signal_entities": list(corroboration_signal_entities),
-                "corroboration_threshold": float(corroboration_threshold),
-                "corroboration_threshold_mode": corroboration_threshold_mode,
-                "corroboration_rise_threshold": float(corroboration_threshold),
+                "corroboration_bucket": corroboration_bucket.strip() or None,
                 "corroboration_signal_name": corroboration_signal_name.strip() or "corroboration",
                 "correlation_window_s": 600,
                 "followup_window_s": 900,
@@ -1836,9 +1815,7 @@ class _ReactionsStepsMixin:
                 "primary_bucket": primary_bucket.strip(),
                 "primary_signal_name": primary_signal_name.strip() or "room_lux",
                 "corroboration_signal_entities": [],
-                "corroboration_threshold": None,
                 "corroboration_signal_name": "corroboration",
-                "corroboration_threshold_mode": "below",
                 "correlation_window_s": 600,
                 "followup_window_s": 900,
                 "entity_steps": entity_steps,

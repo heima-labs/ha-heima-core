@@ -2186,9 +2186,8 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
                     "primary_signal_name": "room_humidity",
                     "primary_bucket": "high",
                     "primary_signal_entities": ["sensor.bathroom_humidity"],
-                    "corroboration_signal_name": "temperature",
-                    "corroboration_threshold_mode": "rise",
-                        "corroboration_threshold": 0.8,
+                    "corroboration_signal_name": "room_temperature",
+                    "corroboration_bucket": "warm",
                         "corroboration_signal_entities": ["sensor.bathroom_temperature"],
                         "steps": [],
                     }
@@ -2213,9 +2212,8 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
                 "sensor.bathroom_humidity",
                 "sensor.bathroom_humidity_aux",
             ],
-            "corroboration_signal_name": "temperature",
-            "corroboration_threshold_mode": "above",
-            "corroboration_threshold": 1.2,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "hot",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "steps": [
                 {
@@ -2250,8 +2248,7 @@ async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_b
     assert "Template target: room.signal_assist.basic" in placeholders["proposal_details"]
     assert "Bucket primario:" not in placeholders["proposal_details"] or "Bucket primario:  -> high" not in placeholders["proposal_details"]
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
-    assert "Soglia corroborante: 0.8 -> 1.2" in placeholders["proposal_details"]
-    assert "Modo corroborante: Aumento rapido -> Supera soglia" in placeholders["proposal_details"]
+    assert "Bucket corroborante: warm -> hot" in placeholders["proposal_details"]
     assert "Azioni: 0 -> 1" in placeholders["proposal_details"]
 
 
@@ -2660,9 +2657,8 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
-            "corroboration_signal_name": "temperature",
-            "corroboration_threshold_mode": "rise",
-            "corroboration_threshold": 0.8,
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "action_entities": ["script.bathroom_ventilation"],
         }
     )
@@ -2685,6 +2681,8 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert reaction["primary_signal_name"] == "room_humidity"
     assert reaction["primary_bucket"] == "high"
     assert reaction["corroboration_signal_entities"] == ["sensor.bathroom_temperature"]
+    assert reaction["corroboration_signal_name"] == "room_temperature"
+    assert reaction["corroboration_bucket"] == "warm"
 
 
 @pytest.mark.asyncio
@@ -3038,7 +3036,8 @@ async def test_admin_authored_room_signal_assist_accept_skips_action_configurati
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
             "corroboration_signal_entities": ["sensor.bathroom_temperature"],
-            "corroboration_signal_name": "temperature",
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
             "steps": [
                 {
                     "domain": "script",

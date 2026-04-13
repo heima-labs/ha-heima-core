@@ -256,18 +256,16 @@ def test_builtin_learning_plugin_registry_passes_composite_lifecycle_policy():
     policy = composite_lifecycle_policy_from_learning_config(
         {
             "composite_lifecycle_policy": {
-                "room_signal_primary_threshold_max_gap": 2.0,
-                "room_signal_corroboration_threshold_max_gap": 0.5,
-                "room_darkness_primary_threshold_max_gap": 15.0,
+                "room_cooling_primary_threshold_max_gap": 2.0,
+                "room_cooling_corroboration_threshold_max_gap": 0.5,
                 "room_darkness_brightness_max_gap": 24,
                 "room_darkness_color_temp_max_gap": 180,
             }
         }
     )
 
-    assert policy.room_signal_primary_threshold_max_gap == 2.0
-    assert policy.room_signal_corroboration_threshold_max_gap == 0.5
-    assert policy.room_darkness_primary_threshold_max_gap == 15.0
+    assert policy.room_cooling_primary_threshold_max_gap == 2.0
+    assert policy.room_cooling_corroboration_threshold_max_gap == 0.5
     assert policy.room_darkness_brightness_max_gap == 24
     assert policy.room_darkness_color_temp_max_gap == 180
 

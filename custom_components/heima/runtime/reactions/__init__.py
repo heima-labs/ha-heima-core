@@ -65,6 +65,7 @@ from .security_presence_simulation import (
 )
 from .signal_assist import (
     RoomSignalAssistReaction,
+    build_room_cooling_assist_reaction,
     build_room_signal_assist_reaction,
     normalize_room_signal_assist_config,
     present_admin_authored_room_signal_assist_details,
@@ -223,7 +224,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 supported_config_contracts=("room_cooling_assist",),
                 supports_normalizer=True,
             ),
-            builder=build_room_signal_assist_reaction,
+            builder=build_room_cooling_assist_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_room_signal_assist_label,
                 proposal_human_label=present_room_signal_assist_proposal_label,

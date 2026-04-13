@@ -405,8 +405,7 @@
           "primary_bucket": "Bucket primario",
           "corroboration_signal_entities": "Entità di corroborazione",
           "corroboration_signal_name": "Nome corroborazione",
-          "corroboration_threshold_mode": "Condizione corroborante",
-          "corroboration_threshold": "Soglia corroborante",
+          "corroboration_bucket": "Bucket corroborante",
           "action_entities": "Azioni da attivare"
         },
         "submit": "OK"

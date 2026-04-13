@@ -538,9 +538,8 @@ def _build_signal_assist_config(
         "primary_bucket": "high",
         "temperature_signal_entities": temperature_entities,
         "corroboration_signal_entities": temperature_entities,
-        "corroboration_signal_name": "temperature",
-        "corroboration_threshold_mode": "rise",
-        "corroboration_threshold": _TEMPERATURE_RISE_THRESHOLD,
+        "corroboration_signal_name": "room_temperature",
+        "corroboration_bucket": "warm",
         "humidity_rise_threshold": _HUMIDITY_RISE_THRESHOLD,
         "temperature_rise_threshold": _TEMPERATURE_RISE_THRESHOLD,
         "correlation_window_s": _CORRELATION_WINDOW_S,
@@ -603,7 +602,6 @@ def _build_air_quality_assist_config(
         "primary_bucket": "elevated",
         "temperature_signal_entities": [],
         "corroboration_signal_entities": [],
-        "corroboration_rise_threshold": 0.0,
         "corroboration_signal_name": "corroboration",
         "correlation_window_s": _CORRELATION_WINDOW_S,
         "followup_window_s": _FOLLOWUP_WINDOW_S,
@@ -631,9 +629,7 @@ def _build_darkness_lighting_assist_config(
         "primary_bucket": "dim",
         "primary_signal_name": "room_lux",
         "corroboration_signal_entities": [],
-        "corroboration_threshold": None,
         "corroboration_signal_name": "corroboration",
-        "corroboration_threshold_mode": "below",
         "correlation_window_s": _CORRELATION_WINDOW_S,
         "followup_window_s": _FOLLOWUP_WINDOW_S,
         "entity_steps": entity_steps,
@@ -792,11 +788,11 @@ _ROOM_SIGNAL_ASSIST_PATTERN = CompositeLearningPatternDefinition(
             CompositeSignalSpec(
                 name="temperature",
                 predicate=lambda event: (
-                    event.data.get("device_class") == "temperature"
-                    or "temperature" in str(event.subject_id or event.data.get("entity_id") or "")
-                    or "temp" in str(event.subject_id or event.data.get("entity_id") or "")
+                    event.event_type == "room_signal_threshold"
+                    and str(event.subject_id or "").strip() == "room_temperature"
+                    and str(event.data.get("to_bucket") or "").strip() in {"warm", "hot"}
                 ),
-                min_delta=_TEMPERATURE_RISE_THRESHOLD,
+                min_delta=None,
                 required=False,
             ),
         ),

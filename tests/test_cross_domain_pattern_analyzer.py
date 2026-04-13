@@ -179,13 +179,13 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
                     from_bucket="ok",
                     to_bucket="high",
                 ),
-                _state_change(
+                _room_signal_threshold(
                     entity_id="sensor.bathroom_temperature",
                     room="bathroom",
                     ts=temp_ts,
-                    old_state="21.0",
-                    new_state="22.1",
-                    device_class="temperature",
+                    signal_name="room_temperature",
+                    from_bucket="ok",
+                    to_bucket="warm",
                 ),
                 _state_change(
                     entity_id="fan.bathroom_fan",
@@ -218,9 +218,8 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     assert proposal.suggested_reaction_config["corroboration_signal_entities"] == [
         "sensor.bathroom_temperature"
     ]
-    assert proposal.suggested_reaction_config["corroboration_signal_name"] == "temperature"
-    assert proposal.suggested_reaction_config["corroboration_threshold_mode"] == "rise"
-    assert proposal.suggested_reaction_config["corroboration_threshold"] == 0.8
+    assert proposal.suggested_reaction_config["corroboration_signal_name"] == "room_temperature"
+    assert proposal.suggested_reaction_config["corroboration_bucket"] == "warm"
     assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.bathroom_fan"]
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
