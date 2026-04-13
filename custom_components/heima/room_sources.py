@@ -387,6 +387,63 @@ def migrate_burst_signal_configs_and_reactions(
     return normalized, changed
 
 
+def room_signal_names(rooms: list[dict[str, Any]], room_id: str) -> list[str]:
+    """Return signal names configured for a room."""
+    room = next((r for r in rooms if isinstance(r, dict) and r.get("room_id") == room_id), None)
+    if not room:
+        return []
+    return [
+        str(s.get("signal_name") or "").strip()
+        for s in list(room.get("signals") or [])
+        if isinstance(s, dict) and str(s.get("signal_name") or "").strip()
+    ]
+
+
+def room_signal_bucket_labels(
+    rooms: list[dict[str, Any]], room_id: str, signal_name: str
+) -> list[str]:
+    """Return bucket labels for a room+signal combo."""
+    room = next((r for r in rooms if isinstance(r, dict) and r.get("room_id") == room_id), None)
+    if not room:
+        return []
+    signal = next(
+        (
+            s
+            for s in list(room.get("signals") or [])
+            if isinstance(s, dict) and s.get("signal_name") == signal_name
+        ),
+        None,
+    )
+    if not signal:
+        return []
+    return [
+        str(b.get("label") or "").strip()
+        for b in list(signal.get("buckets") or [])
+        if isinstance(b, dict) and str(b.get("label") or "").strip()
+    ]
+
+
+def room_signal_entity_id(
+    rooms: list[dict[str, Any]], room_id: str, signal_name: str
+) -> str | None:
+    """Return the entity_id for a room+signal combo, or None if not found."""
+    room = next((r for r in rooms if isinstance(r, dict) and r.get("room_id") == room_id), None)
+    if not room:
+        return None
+    signal = next(
+        (
+            s
+            for s in list(room.get("signals") or [])
+            if isinstance(s, dict) and s.get("signal_name") == signal_name
+        ),
+        None,
+    )
+    if not signal:
+        return None
+    entity_id = str(signal.get("entity_id") or "").strip()
+    return entity_id or None
+
+
 def _room_signal_bucket_index(
     options: dict[str, Any],
 ) -> dict[tuple[str, str], tuple[tuple[float | None, str], ...]]:

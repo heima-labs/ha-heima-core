@@ -2647,7 +2647,31 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     flow = _flow(
         {
             "rooms": [
-                {"room_id": "bathroom", "display_name": "Bathroom", "area_id": "bathroom"},
+                {
+                    "room_id": "bathroom",
+                    "display_name": "Bathroom",
+                    "area_id": "bathroom",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.bathroom_humidity",
+                            "signal_name": "room_humidity",
+                            "device_class": "humidity",
+                            "buckets": [
+                                {"label": "ok", "upper_bound": 60},
+                                {"label": "high", "upper_bound": None},
+                            ],
+                        },
+                        {
+                            "entity_id": "sensor.bathroom_temperature",
+                            "signal_name": "room_temperature",
+                            "device_class": "temperature",
+                            "buckets": [
+                                {"label": "cool", "upper_bound": 22},
+                                {"label": "warm", "upper_bound": None},
+                            ],
+                        },
+                    ],
+                },
             ],
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
         }
@@ -2656,10 +2680,8 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     result = await flow.async_step_admin_authored_room_signal_assist(
         {
             "room_id": "bathroom",
-            "primary_signal_entities": ["sensor.bathroom_humidity"],
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
-            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
             "corroboration_signal_name": "room_temperature",
             "corroboration_bucket": "warm",
             "action_entities": ["script.bathroom_ventilation"],
@@ -2689,7 +2711,23 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     flow = _flow(
         {
             "rooms": [
-                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.studio_lux",
+                            "signal_name": "room_lux",
+                            "device_class": "illuminance",
+                            "buckets": [
+                                {"label": "dark", "upper_bound": 30},
+                                {"label": "dim", "upper_bound": 100},
+                                {"label": "bright", "upper_bound": None},
+                            ],
+                        },
+                    ],
+                },
             ],
             "learning": {"enabled_plugin_families": ["composite_room_assist"]},
         }
@@ -2698,7 +2736,6 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
         {
             "room_id": "studio",
-            "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
             "light_entities": ["light.studio_main", "light.studio_spot"],
@@ -3376,10 +3413,11 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
     assert result["type"] == "form"
     assert result["step_id"] == "reactions_edit_form"
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
-    assert "primary_signal_entities" in schema_keys
+    assert "primary_signal_name" in schema_keys
     assert "primary_bucket" in schema_keys
     assert "light_entities" in schema_keys
     assert "action" in schema_keys
+    assert "primary_signal_entities" not in schema_keys
     assert "pre_condition_min" not in schema_keys
     assert "action_entities" not in schema_keys
 
@@ -3388,6 +3426,25 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
 async def test_reactions_edit_form_updates_room_lighting_assist_config():
     flow = _flow(
         {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.studio_lux",
+                            "signal_name": "room_lux",
+                            "device_class": "illuminance",
+                            "buckets": [
+                                {"label": "dark", "upper_bound": 30},
+                                {"label": "dim", "upper_bound": 100},
+                                {"label": "bright", "upper_bound": None},
+                            ],
+                        },
+                    ],
+                },
+            ],
             "reactions": {
                 "configured": {
                     "r1": {
@@ -3395,6 +3452,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
                         "reaction_type": "room_darkness_lighting_assist",
                         "enabled": True,
                         "room_id": "studio",
+                        "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
                         "primary_bucket": "dim",
                         "entity_steps": [
@@ -3409,7 +3467,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
                     }
                 },
                 "labels": {"r1": "Studio darkness"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -3417,7 +3475,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": False,
-            "primary_signal_entities": ["sensor.studio_lux", "sensor.studio_window_lux"],
+            "primary_signal_name": "room_lux",
             "primary_bucket": "dark",
             "light_entities": ["light.studio_main", "light.studio_spot"],
             "action": "on",
@@ -3431,10 +3489,8 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
     assert result["step_id"] == "init"
     stored = flow.options["reactions"]["configured"]["r1"]
     assert stored["enabled"] is False
-    assert stored["primary_signal_entities"] == [
-        "sensor.studio_lux",
-        "sensor.studio_window_lux",
-    ]
+    # entity derived from room.signals[room_lux].entity_id
+    assert stored["primary_signal_entities"] == ["sensor.studio_lux"]
     assert stored["primary_bucket"] == "dark"
     assert stored["entity_steps"] == [
         {
@@ -3683,3 +3739,352 @@ def test_signal_threshold_mode_options_include_binary_transitions():
     assert "switch_on" in options
     assert "switch_off" in options
     assert "state_change" in options
+
+
+# ---- room_signal_assist edit form ----
+
+def _flow_with_rooms(reactions: dict | None = None) -> "HeimaOptionsFlowHandler":
+    """Flow with rooms and people_named set so _sync_ha_backed_bindings stays silent."""
+    return _flow({
+        "people_named": [],
+        "rooms": [_room_with_signals()],
+        "reactions": reactions or {},
+    })
+
+
+def _room_with_signals() -> dict:
+    return {
+        "room_id": "studio",
+        "display_name": "Studio",
+        "occupancy_mode": "derived",
+        "occupancy_sources": ["binary_sensor.studio_motion"],
+        # reconciliation fields pre-populated so _sync_ha_backed_bindings stays silent
+        "source": "ha_area_registry",
+        "ha_sync_status": "orphaned",
+        "signals": [
+            {
+                "entity_id": "sensor.studio_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "low", "upper_bound": 40.0},
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+            },
+            {
+                "entity_id": "sensor.studio_temperature",
+                "signal_name": "room_temperature",
+                "device_class": "temperature",
+                "buckets": [
+                    {"label": "cool", "upper_bound": 20.0},
+                    {"label": "ok", "upper_bound": 24.0},
+                    {"label": "warm", "upper_bound": 27.0},
+                    {"label": "hot", "upper_bound": None},
+                ],
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_for_room_signal_assist_shows_bucket_fields():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_signal_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
+                        "primary_signal_entities": ["sensor.studio_humidity"],
+                        "steps": [{"domain": "scene", "target": "scene.relax", "action": "scene.turn_on"}],
+                        "enabled": True,
+                    }
+                },
+                "labels": {"r1": "Studio humidity assist"},
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_name" in schema_keys
+    assert "primary_bucket" in schema_keys
+    assert "corroboration_signal_name" in schema_keys
+    assert "corroboration_bucket" in schema_keys
+    assert "action_entities" in schema_keys
+    assert "primary_signal_entities" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_for_room_air_quality_assist_uses_same_handler():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_air_quality_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
+                        "primary_signal_entities": ["sensor.studio_humidity"],
+                        "steps": [],
+                        "enabled": True,
+                    }
+                },
+                "labels": {},
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_name" in schema_keys
+    assert "primary_bucket" in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_room_signal_assist_saves_with_derived_entity():
+    flow = _flow_with_rooms(
+        {
+            "configured": {
+                "r1": {
+                    "reaction_type": "room_signal_assist",
+                    "room_id": "studio",
+                    "primary_signal_name": "room_humidity",
+                    "primary_bucket": "ok",
+                    "primary_signal_entities": ["sensor.studio_humidity"],
+                    "steps": [],
+                    "enabled": True,
+                }
+            },
+            "labels": {},
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": False,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["enabled"] is False
+    assert stored["primary_bucket"] == "high"
+    assert stored["primary_signal_name"] == "room_humidity"
+    assert stored["primary_signal_entities"] == ["sensor.studio_humidity"]
+    assert "primary_threshold" not in stored
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_room_signal_assist_rejects_invalid_signal_name():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_signal_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
+                        "primary_signal_entities": ["sensor.studio_humidity"],
+                        "steps": [],
+                        "enabled": True,
+                    }
+                },
+                "labels": {},
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "primary_signal_name": "room_co2",
+            "primary_bucket": "high",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"].get("primary_signal_name") == "invalid_signal_name"
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_room_signal_assist_rejects_invalid_bucket():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_signal_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_humidity",
+                        "primary_bucket": "high",
+                        "primary_signal_entities": ["sensor.studio_humidity"],
+                        "steps": [],
+                        "enabled": True,
+                    }
+                },
+                "labels": {},
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "medium",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"].get("primary_bucket") == "invalid_bucket"
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_room_signal_assist_with_valid_corroboration():
+    flow = _flow_with_rooms(
+        {
+            "configured": {
+                "r1": {
+                    "reaction_type": "room_signal_assist",
+                    "room_id": "studio",
+                    "primary_signal_name": "room_humidity",
+                    "primary_bucket": "high",
+                    "primary_signal_entities": ["sensor.studio_humidity"],
+                    "steps": [],
+                    "enabled": True,
+                }
+            },
+            "labels": {},
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
+            "action_entities": ["scene.relax"],
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["corroboration_signal_name"] == "room_temperature"
+    assert stored["corroboration_bucket"] == "warm"
+    assert stored["corroboration_signal_entities"] == ["sensor.studio_temperature"]
+
+
+# ---- admin_authored_room_signal_assist create form ----
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_no_entity_selector_in_schema():
+    flow = _flow({"rooms": [_room_with_signals()]})
+
+    result = await flow.async_step_admin_authored_room_signal_assist()
+
+    assert result["type"] == "form"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_name" in schema_keys
+    assert "primary_bucket" in schema_keys
+    assert "primary_signal_entities" not in schema_keys
+    assert "corroboration_signal_entities" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_rejects_unknown_signal():
+    flow = _flow({"rooms": [_room_with_signals()]})
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_co2",
+            "primary_bucket": "high",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"].get("primary_signal_name") == "invalid_signal_name"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_rejects_unknown_bucket():
+    flow = _flow({"rooms": [_room_with_signals()]})
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "medium",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"].get("primary_bucket") == "invalid_bucket"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_derives_entity_from_room_signals():
+    flow = _flow_with_rooms()
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "action_entities": ["scene.relax"],
+        }
+    )
+
+    assert result["type"] == "menu"
+    configured = flow.options["reactions"]["configured"]
+    assert len(configured) == 1
+    stored = next(iter(configured.values()))
+    assert stored["primary_signal_entities"] == ["sensor.studio_humidity"]
+    assert stored["primary_bucket"] == "high"
+    assert stored["reaction_type"] == "room_signal_assist"

@@ -13,6 +13,7 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN, OPT_REACTIONS
+from ..room_sources import room_signal_bucket_labels, room_signal_entity_id, room_signal_names
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
@@ -369,89 +370,101 @@ class _ReactionsStepsMixin:
         if template is None or not room_ids:
             return await self.async_step_init()
 
+        rooms = self._rooms()
         defaults = {
             "room_id": room_ids[0],
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
-            "corroboration_signal_name": "room_temperature",
-            "corroboration_bucket": "warm",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
             "action_entities": [],
         }
         errors: dict[str, str] = {}
+
+        def _placeholders(selected_room_id: str) -> dict[str, str]:
+            return {
+                "template_title": template.title,
+                "template_description": template.description,
+                "available_signals": self._format_room_signals_placeholder(
+                    rooms, selected_room_id
+                ),
+            }
 
         if user_input is None:
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
                 data_schema=self._admin_authored_room_signal_assist_schema(defaults),
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                description_placeholders=_placeholders(defaults["room_id"]),
             )
 
         room_id = str(user_input.get("room_id") or "").strip()
-        primary_signal_entities = self._normalize_multi_value(
-            user_input.get("primary_signal_entities")
-        )
-        primary_signal_name = str(user_input.get("primary_signal_name") or "primary").strip()
-        corroboration_signal_entities = self._normalize_multi_value(
-            user_input.get("corroboration_signal_entities")
-        )
-        corroboration_signal_name = str(
-            user_input.get("corroboration_signal_name") or "corroboration"
-        ).strip()
+        primary_signal_name = str(user_input.get("primary_signal_name") or "").strip()
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        corroboration_signal_name = str(user_input.get("corroboration_signal_name") or "").strip()
+        corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
         action_entities = self._normalize_multi_value(user_input.get("action_entities"))
 
         if not room_id:
             errors["room_id"] = "required"
-        if not primary_signal_entities:
-            errors["primary_signal_entities"] = "required"
         if not action_entities:
             errors["action_entities"] = "required"
 
-        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
-        if not primary_bucket:
-            errors["primary_bucket"] = "required"
-            primary_bucket = defaults["primary_bucket"]
+        valid_signals = room_signal_names(rooms, room_id) if room_id else []
 
-        corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
-        if corroboration_signal_entities and not corroboration_bucket:
-            errors["corroboration_bucket"] = "required"
-        if not corroboration_signal_entities:
-            corroboration_bucket = ""
-        elif not corroboration_bucket:
-            corroboration_bucket = defaults["corroboration_bucket"]
+        if not primary_signal_name:
+            errors["primary_signal_name"] = "required"
+        elif primary_signal_name not in valid_signals:
+            errors["primary_signal_name"] = "invalid_signal_name"
+
+        if not errors.get("primary_signal_name"):
+            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+            if not primary_bucket:
+                errors["primary_bucket"] = "required"
+            elif primary_bucket not in valid_buckets:
+                errors["primary_bucket"] = "invalid_bucket"
+
+        if corroboration_signal_name:
+            if corroboration_signal_name not in valid_signals:
+                errors["corroboration_signal_name"] = "invalid_signal_name"
+            elif not errors.get("corroboration_signal_name") and corroboration_bucket:
+                valid_corr_buckets = room_signal_bucket_labels(
+                    rooms, room_id, corroboration_signal_name
+                )
+                if corroboration_bucket not in valid_corr_buckets:
+                    errors["corroboration_bucket"] = "invalid_bucket"
+
+        current_input = {
+            "room_id": room_id or defaults["room_id"],
+            "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+            "primary_bucket": primary_bucket,
+            "corroboration_signal_name": corroboration_signal_name,
+            "corroboration_bucket": corroboration_bucket,
+            "action_entities": action_entities,
+        }
 
         if errors:
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
-                data_schema=self._admin_authored_room_signal_assist_schema(
-                    {
-                        "room_id": room_id or defaults["room_id"],
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name
-                        or defaults["primary_signal_name"],
-                        "primary_bucket": primary_bucket,
-                        "corroboration_signal_entities": corroboration_signal_entities,
-                        "corroboration_signal_name": corroboration_signal_name
-                        or defaults["corroboration_signal_name"],
-                        "corroboration_bucket": corroboration_bucket,
-                        "action_entities": action_entities,
-                    }
-                ),
+                data_schema=self._admin_authored_room_signal_assist_schema(current_input),
                 errors=errors,
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                description_placeholders=_placeholders(room_id or defaults["room_id"]),
             )
+
+        primary_entity_id = room_signal_entity_id(rooms, room_id, primary_signal_name)
+        primary_entities = [primary_entity_id] if primary_entity_id else []
+
+        corroboration_entities: list[str] = []
+        if corroboration_signal_name:
+            corr_entity_id = room_signal_entity_id(rooms, room_id, corroboration_signal_name)
+            if corr_entity_id:
+                corroboration_entities = [corr_entity_id]
 
         proposal = self._build_admin_authored_room_signal_assist_proposal(
             room_id=room_id,
-            primary_signal_entities=primary_signal_entities,
-            primary_signal_name=primary_signal_name or "primary",
+            primary_signal_entities=primary_entities,
+            primary_signal_name=primary_signal_name,
             primary_bucket=primary_bucket,
-            corroboration_signal_entities=corroboration_signal_entities,
+            corroboration_signal_entities=corroboration_entities,
             corroboration_signal_name=corroboration_signal_name or "corroboration",
             corroboration_bucket=corroboration_bucket,
             action_entities=action_entities,
@@ -459,45 +472,17 @@ class _ReactionsStepsMixin:
         if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
-                data_schema=self._admin_authored_room_signal_assist_schema(
-                    {
-                        "room_id": room_id,
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "corroboration_signal_entities": corroboration_signal_entities,
-                        "corroboration_signal_name": corroboration_signal_name,
-                        "corroboration_bucket": corroboration_bucket,
-                        "action_entities": action_entities,
-                    }
-                ),
+                data_schema=self._admin_authored_room_signal_assist_schema(current_input),
                 errors={"base": "duplicate"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                description_placeholders=_placeholders(room_id),
             )
 
         if self._has_redacted_payload(proposal.suggested_reaction_config):
             return self.async_show_form(
                 step_id="admin_authored_room_signal_assist",
-                data_schema=self._admin_authored_room_signal_assist_schema(
-                    {
-                        "room_id": room_id,
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "corroboration_signal_entities": corroboration_signal_entities,
-                        "corroboration_signal_name": corroboration_signal_name,
-                        "corroboration_bucket": corroboration_bucket,
-                        "action_entities": action_entities,
-                    }
-                ),
+                data_schema=self._admin_authored_room_signal_assist_schema(current_input),
                 errors={"base": "redacted_payload"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                description_placeholders=_placeholders(room_id),
             )
 
         return await self._store_admin_authored_reaction_directly(proposal)
@@ -508,11 +493,13 @@ class _ReactionsStepsMixin:
         """Create a bounded admin-authored room darkness lighting assist proposal."""
         template = self._admin_authored_template("room.darkness_lighting_assist.basic")
         room_ids = self._room_ids()
+        rooms = self._rooms()
         if template is None or not room_ids:
             return await self.async_step_init()
 
+        default_room_id = room_ids[0]
         defaults = {
-            "room_id": room_ids[0],
+            "room_id": default_room_id,
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
             "action": "on",
@@ -522,33 +509,43 @@ class _ReactionsStepsMixin:
         errors: dict[str, str] = {}
 
         if user_input is None:
+            signals_placeholder = self._format_room_signals_placeholder(rooms, default_room_id)
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(defaults),
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
+                    "available_signals": signals_placeholder,
                 },
             )
 
         room_id = str(user_input.get("room_id") or "").strip()
-        primary_signal_entities = self._normalize_multi_value(
-            user_input.get("primary_signal_entities")
-        )
         primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
         action = str(user_input.get("action") or "on").strip()
         entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
+        signals_placeholder = self._format_room_signals_placeholder(rooms, room_id)
 
         if not room_id:
             errors["room_id"] = "required"
-        if not primary_signal_entities:
-            errors["primary_signal_entities"] = "required"
         if not entity_ids:
             errors["light_entities"] = "required"
 
+        valid_signals = room_signal_names(rooms, room_id) if room_id else []
+        if not primary_signal_name:
+            errors["primary_signal_name"] = "required"
+        elif valid_signals and primary_signal_name not in valid_signals:
+            errors["primary_signal_name"] = "invalid_signal_name"
+
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
-        if not primary_bucket:
-            errors["primary_bucket"] = "required"
+        if not errors.get("primary_signal_name") and room_id:
+            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+            if not primary_bucket:
+                errors["primary_bucket"] = "required"
+                primary_bucket = defaults["primary_bucket"]
+            elif valid_buckets and primary_bucket not in valid_buckets:
+                errors["primary_bucket"] = "invalid_bucket"
+        elif not primary_bucket:
             primary_bucket = defaults["primary_bucket"]
 
         brightness = None
@@ -567,30 +564,32 @@ class _ReactionsStepsMixin:
             except (TypeError, ValueError):
                 errors["color_temp_kelvin"] = "invalid_number"
 
+        current_input = {
+            "room_id": room_id or defaults["room_id"],
+            "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+            "primary_bucket": primary_bucket,
+            "light_entities": entity_ids,
+            "action": action or defaults["action"],
+            "brightness": user_input.get("brightness", defaults["brightness"]),
+            "color_temp_kelvin": user_input.get("color_temp_kelvin", defaults["color_temp_kelvin"]),
+        }
+
         if errors:
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
-                    {
-                        "room_id": room_id or defaults["room_id"],
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name
-                        or defaults["primary_signal_name"],
-                        "primary_bucket": primary_bucket,
-                        "light_entities": entity_ids,
-                        "action": action or defaults["action"],
-                        "brightness": user_input.get("brightness", defaults["brightness"]),
-                        "color_temp_kelvin": user_input.get(
-                            "color_temp_kelvin", defaults["color_temp_kelvin"]
-                        ),
-                    }
+                    current_input
                 ),
                 errors=errors,
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
+                    "available_signals": signals_placeholder,
                 },
             )
+
+        primary_entity_id = room_signal_entity_id(rooms, room_id, primary_signal_name)
+        primary_signal_entities = [primary_entity_id] if primary_entity_id else []
 
         proposal = self._build_admin_authored_room_darkness_lighting_assist_proposal(
             room_id=room_id,
@@ -606,21 +605,13 @@ class _ReactionsStepsMixin:
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
-                    {
-                        "room_id": room_id,
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "light_entities": entity_ids,
-                        "action": action,
-                        "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
-                    }
+                    current_input
                 ),
                 errors={"base": "duplicate"},
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
+                    "available_signals": signals_placeholder,
                 },
             )
 
@@ -628,21 +619,13 @@ class _ReactionsStepsMixin:
             return self.async_show_form(
                 step_id="admin_authored_room_darkness_lighting_assist",
                 data_schema=self._admin_authored_room_darkness_lighting_assist_schema(
-                    {
-                        "room_id": room_id,
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "light_entities": entity_ids,
-                        "action": action,
-                        "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
-                    }
+                    current_input
                 ),
                 errors={"base": "redacted_payload"},
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
+                    "available_signals": signals_placeholder,
                 },
             )
 
@@ -829,6 +812,16 @@ class _ReactionsStepsMixin:
                 user_input=user_input,
             )
 
+        if reaction_type in ("room_signal_assist", "room_air_quality_assist"):
+            return await self._async_step_reactions_edit_room_signal_assist(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
         if user_input is None:
             current_steps = cfg.get("steps", [])
             current_entities = [
@@ -862,6 +855,7 @@ class _ReactionsStepsMixin:
                 description_placeholders={
                     "reaction_description": label,
                     "room_id": str(cfg.get("room_id") or "-"),
+                    "available_signals": "",
                 },
             )
 
@@ -891,6 +885,8 @@ class _ReactionsStepsMixin:
         user_input: dict[str, Any] | None,
     ) -> "FlowResult":
         """Edit a room darkness lighting assist reaction using its real config contract."""
+        room_id = str(cfg.get("room_id") or "").strip()
+        rooms = self._rooms()
         current_steps = [
             step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
         ]
@@ -902,7 +898,6 @@ class _ReactionsStepsMixin:
         first_step = current_steps[0] if current_steps else {}
         defaults = {
             "enabled": bool(cfg.get("enabled", True)),
-            "primary_signal_entities": list(cfg.get("primary_signal_entities", [])),
             "primary_signal_name": str(cfg.get("primary_signal_name") or "room_lux").strip(),
             "primary_bucket": str(cfg.get("primary_bucket") or "dim").strip() or "dim",
             "light_entities": current_entities,
@@ -912,7 +907,8 @@ class _ReactionsStepsMixin:
             "delete_reaction": False,
         }
         label = self._reaction_label_from_config(pid, cfg, labels_map)
-        room_id_placeholder = str(cfg.get("room_id") or "-")
+        room_id_placeholder = room_id or "-"
+        signals_placeholder = self._format_room_signals_placeholder(rooms, room_id)
 
         if user_input is None:
             return self.async_show_form(
@@ -921,6 +917,7 @@ class _ReactionsStepsMixin:
                 description_placeholders={
                     "reaction_description": label,
                     "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
                 },
             )
 
@@ -929,23 +926,30 @@ class _ReactionsStepsMixin:
             return await self.async_step_reactions_delete_confirm()
 
         errors: dict[str, str] = {}
-        primary_signal_entities = self._normalize_multi_value(
-            user_input.get("primary_signal_entities")
-        )
         primary_signal_name = str(
             user_input.get("primary_signal_name") or defaults["primary_signal_name"]
         ).strip()
         light_entities = self._normalize_multi_value(user_input.get("light_entities"))
         action = str(user_input.get("action") or "on").strip() or "on"
 
-        if not primary_signal_entities:
-            errors["primary_signal_entities"] = "required"
         if not light_entities:
             errors["light_entities"] = "required"
 
+        valid_signals = room_signal_names(rooms, room_id)
+        if not primary_signal_name:
+            errors["primary_signal_name"] = "required"
+        elif primary_signal_name not in valid_signals:
+            errors["primary_signal_name"] = "invalid_signal_name"
+
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
-        if not primary_bucket:
-            errors["primary_bucket"] = "required"
+        if not errors.get("primary_signal_name"):
+            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+            if not primary_bucket:
+                errors["primary_bucket"] = "required"
+                primary_bucket = defaults["primary_bucket"]
+            elif primary_bucket not in valid_buckets:
+                errors["primary_bucket"] = "invalid_bucket"
+        elif not primary_bucket:
             primary_bucket = defaults["primary_bucket"]
 
         brightness: int | None = None
@@ -964,30 +968,31 @@ class _ReactionsStepsMixin:
             except (TypeError, ValueError):
                 errors["color_temp_kelvin"] = "invalid_number"
 
+        current_input = {
+            "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+            "primary_signal_name": primary_signal_name,
+            "primary_bucket": primary_bucket,
+            "light_entities": light_entities,
+            "action": action,
+            "brightness": user_input.get("brightness", defaults["brightness"]),
+            "color_temp_kelvin": user_input.get("color_temp_kelvin", defaults["color_temp_kelvin"]),
+            "delete_reaction": False,
+        }
+
         if errors:
             return self.async_show_form(
                 step_id="reactions_edit_form",
-                data_schema=self._reactions_edit_room_lighting_assist_schema(
-                    {
-                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "light_entities": light_entities,
-                        "action": action,
-                        "brightness": user_input.get("brightness", defaults["brightness"]),
-                        "color_temp_kelvin": user_input.get(
-                            "color_temp_kelvin", defaults["color_temp_kelvin"]
-                        ),
-                        "delete_reaction": bool(user_input.get("delete_reaction", False)),
-                    }
-                ),
+                data_schema=self._reactions_edit_room_lighting_assist_schema(current_input),
                 errors=errors,
                 description_placeholders={
                     "reaction_description": label,
                     "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
                 },
             )
+
+        primary_entity_id = room_signal_entity_id(rooms, room_id, primary_signal_name)
+        primary_signal_entities = [primary_entity_id] if primary_entity_id else []
 
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["primary_signal_entities"] = primary_signal_entities
@@ -1008,27 +1013,165 @@ class _ReactionsStepsMixin:
         if self._has_redacted_payload(cfg):
             return self.async_show_form(
                 step_id="reactions_edit_form",
-                data_schema=self._reactions_edit_room_lighting_assist_schema(
-                    {
-                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
-                        "primary_signal_entities": primary_signal_entities,
-                        "primary_signal_name": primary_signal_name,
-                        "primary_bucket": primary_bucket,
-                        "light_entities": light_entities,
-                        "action": action,
-                        "brightness": user_input.get("brightness", defaults["brightness"]),
-                        "color_temp_kelvin": user_input.get(
-                            "color_temp_kelvin", defaults["color_temp_kelvin"]
-                        ),
-                        "delete_reaction": bool(user_input.get("delete_reaction", False)),
-                    }
-                ),
+                data_schema=self._reactions_edit_room_lighting_assist_schema(current_input),
                 errors={"base": "redacted_payload"},
                 description_placeholders={
                     "reaction_description": label,
                     "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
                 },
             )
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_room_signal_assist(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a room signal assist (or air quality assist) reaction."""
+        room_id = str(cfg.get("room_id") or "").strip()
+        rooms = self._rooms()
+        current_steps = list(cfg.get("steps", []))
+        current_entities = [
+            str(s.get("target") or "").strip()
+            for s in current_steps
+            if isinstance(s, dict) and str(s.get("target") or "").strip()
+        ]
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "primary_signal_name": str(cfg.get("primary_signal_name") or "").strip(),
+            "primary_bucket": str(cfg.get("primary_bucket") or "").strip(),
+            "corroboration_signal_name": str(cfg.get("corroboration_signal_name") or "").strip(),
+            "corroboration_bucket": str(cfg.get("corroboration_bucket") or "").strip(),
+            "action_entities": current_entities,
+            "delete_reaction": False,
+        }
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        room_id_placeholder = room_id or "-"
+        signals_placeholder = self._format_room_signals_placeholder(rooms, room_id)
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_signal_assist_schema(defaults),
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
+                },
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        errors: dict[str, str] = {}
+        primary_signal_name = str(user_input.get("primary_signal_name") or "").strip()
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        corroboration_signal_name = str(
+            user_input.get("corroboration_signal_name") or ""
+        ).strip()
+        corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
+        action_entities = self._normalize_multi_value(user_input.get("action_entities"))
+
+        valid_signals = room_signal_names(rooms, room_id)
+        if not primary_signal_name:
+            errors["primary_signal_name"] = "required"
+        elif primary_signal_name not in valid_signals:
+            errors["primary_signal_name"] = "invalid_signal_name"
+
+        if not errors.get("primary_signal_name"):
+            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+            if not primary_bucket:
+                errors["primary_bucket"] = "required"
+            elif primary_bucket not in valid_buckets:
+                errors["primary_bucket"] = "invalid_bucket"
+
+        if corroboration_signal_name:
+            if corroboration_signal_name not in valid_signals:
+                errors["corroboration_signal_name"] = "invalid_signal_name"
+            elif not errors.get("corroboration_signal_name"):
+                valid_corr_buckets = room_signal_bucket_labels(
+                    rooms, room_id, corroboration_signal_name
+                )
+                if corroboration_bucket and corroboration_bucket not in valid_corr_buckets:
+                    errors["corroboration_bucket"] = "invalid_bucket"
+
+        if not action_entities:
+            errors["action_entities"] = "required"
+
+        current_input = {
+            "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+            "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+            "primary_bucket": primary_bucket,
+            "corroboration_signal_name": corroboration_signal_name,
+            "corroboration_bucket": corroboration_bucket,
+            "action_entities": action_entities,
+            "delete_reaction": False,
+        }
+
+        if errors:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_signal_assist_schema(current_input),
+                errors=errors,
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
+                },
+            )
+
+        primary_entity_id = room_signal_entity_id(rooms, room_id, primary_signal_name)
+        primary_entities = [primary_entity_id] if primary_entity_id else []
+
+        corroboration_entities: list[str] = []
+        if corroboration_signal_name:
+            corr_entity_id = room_signal_entity_id(rooms, room_id, corroboration_signal_name)
+            if corr_entity_id:
+                corroboration_entities = [corr_entity_id]
+
+        cfg["enabled"] = bool(user_input.get("enabled", True))
+        cfg["primary_signal_name"] = primary_signal_name
+        cfg["primary_bucket"] = primary_bucket
+        cfg["primary_signal_entities"] = primary_entities
+        cfg["trigger_signal_entities"] = primary_entities
+        cfg["corroboration_signal_name"] = corroboration_signal_name or "corroboration"
+        cfg["corroboration_bucket"] = corroboration_bucket or None
+        cfg["corroboration_signal_entities"] = corroboration_entities
+        cfg["temperature_signal_entities"] = corroboration_entities
+        cfg["steps"] = self._action_entities_to_steps(action_entities)
+        for legacy_key in (
+            "primary_threshold",
+            "primary_threshold_mode",
+            "primary_rise_threshold",
+            "corroboration_threshold",
+            "corroboration_threshold_mode",
+            "corroboration_rise_threshold",
+        ):
+            cfg.pop(legacy_key, None)
+
+        if self._has_redacted_payload(cfg):
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_signal_assist_schema(current_input),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id_placeholder,
+                    "available_signals": signals_placeholder,
+                },
+            )
+
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
@@ -1577,16 +1720,10 @@ class _ReactionsStepsMixin:
             vol.Schema(
                 {
                     vol.Required("room_id"): vol.In(room_options),
-                    vol.Required("primary_signal_entities"): _entity_selector(
-                        ["sensor", "binary_sensor"], multiple=True
-                    ),
                     vol.Required("primary_signal_name", default="room_humidity"): str,
                     vol.Required("primary_bucket", default="high"): str,
-                    vol.Optional("corroboration_signal_entities"): _entity_selector(
-                        ["sensor", "binary_sensor"], multiple=True
-                    ),
-                    vol.Optional("corroboration_signal_name", default="room_temperature"): str,
-                    vol.Optional("corroboration_bucket", default="warm"): str,
+                    vol.Optional("corroboration_signal_name", default=""): str,
+                    vol.Optional("corroboration_bucket", default=""): str,
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
@@ -1605,9 +1742,6 @@ class _ReactionsStepsMixin:
             vol.Schema(
                 {
                     vol.Required("room_id"): vol.In(room_options),
-                    vol.Required("primary_signal_entities"): _entity_selector(
-                        ["sensor", "binary_sensor"], multiple=True
-                    ),
                     vol.Required("primary_signal_name", default="room_lux"): str,
                     vol.Required("primary_bucket", default="dim"): str,
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
@@ -1622,6 +1756,40 @@ class _ReactionsStepsMixin:
             ),
             defaults,
         )
+
+    def _reactions_edit_room_signal_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Optional("enabled", default=True): bool,
+                    vol.Required("primary_signal_name", default=""): str,
+                    vol.Required("primary_bucket", default=""): str,
+                    vol.Optional("corroboration_signal_name", default=""): str,
+                    vol.Optional("corroboration_bucket", default=""): str,
+                    vol.Required("action_entities"): _entity_selector(
+                        ["scene", "script"], multiple=True
+                    ),
+                    vol.Optional("delete_reaction", default=False): bool,
+                }
+            ),
+            defaults,
+        )
+
+    def _format_room_signals_placeholder(
+        self, rooms: list[dict[str, Any]], room_id: str
+    ) -> str:
+        """Return a human-readable signal/bucket map for description_placeholders."""
+        signals = room_signal_names(rooms, room_id)
+        if not signals:
+            return "—"
+        lines = []
+        for signal_name in signals:
+            labels = room_signal_bucket_labels(rooms, room_id, signal_name)
+            lines.append(f"{signal_name}: {', '.join(labels) if labels else '—'}")
+        return "\n".join(lines)
 
     def _admin_authored_room_vacancy_lighting_off_schema(
         self, defaults: dict[str, Any] | None = None
@@ -1650,9 +1818,6 @@ class _ReactionsStepsMixin:
             vol.Schema(
                 {
                     vol.Optional("enabled", default=True): bool,
-                    vol.Required("primary_signal_entities"): _entity_selector(
-                        ["sensor", "binary_sensor"], multiple=True
-                    ),
                     vol.Required("primary_signal_name", default="room_lux"): str,
                     vol.Required("primary_bucket", default="dim"): str,
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),

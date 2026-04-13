@@ -413,11 +413,10 @@
       },
       "admin_authored_room_darkness_lighting_assist": {
         "title": "New room darkness lighting assist",
-        "description": "Template: {template_title}\n{template_description}",
+        "description": "Template: {template_title}\n{template_description}\n{available_signals}",
         "data": {
           "room_id": "Room",
-          "primary_signal_entities": "Primary signal entities",
-          "primary_signal_name": "Primary signal name",
+          "primary_signal_name": "Signal name",
           "primary_bucket": "Darkness bucket",
           "light_entities": "Lights to control",
           "action": "Action",
@@ -495,11 +494,11 @@
       },
       "reactions_edit_form": {
         "title": "Edit reaction actions",
-        "description": "{reaction_description}",
+        "description": "{reaction_description}\n{available_signals}",
         "data": {
           "enabled": "Enabled",
-          "primary_signal_entities": "Lux sensors",
-          "primary_bucket": "Darkness bucket",
+          "primary_signal_name": "Signal name",
+          "primary_bucket": "Bucket",
           "light_entities": "Lights to control",
           "action": "Light action",
           "brightness": "Brightness",
@@ -535,7 +534,9 @@
       "invalid_number": "Enter a valid positive number",
       "invalid_hhmm": "Enter a valid time in HH:MM format",
       "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings",
-      "redacted_payload": "Invalid configuration: payload contains redacted values"
+      "redacted_payload": "Invalid configuration: payload contains redacted values",
+      "invalid_signal_name": "Signal name not found in room signal configuration",
+      "invalid_bucket": "Bucket label not found in the configured signal buckets"
     }
   }
 }

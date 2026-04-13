@@ -173,8 +173,16 @@ class HeimaOptionsFlowHandler(
         merged = self._entry_options_snapshot()
         merged.update(updates)
         self.options = merged
-        config_entries = getattr(getattr(self, "hass", None), "config_entries", None)
         config_entry = getattr(self, "_config_entry", None)
+        # Keep config_entry.options in sync so _entry_options_snapshot always
+        # reflects the latest in-memory state (critical when config_entries is
+        # not available, e.g. in tests).
+        if config_entry is not None:
+            try:
+                config_entry.options = dict(merged)
+            except (AttributeError, TypeError):
+                pass
+        config_entries = getattr(getattr(self, "hass", None), "config_entries", None)
         if config_entries is not None and config_entry is not None:
             config_entries.async_update_entry(config_entry, options=dict(merged))
 

@@ -413,11 +413,10 @@
       },
       "admin_authored_room_darkness_lighting_assist": {
         "title": "Nuovo assist luce per oscurità stanza",
-        "description": "Template: {template_title}\n{template_description}\n\nNota: la presenza viene rilevata automaticamente dall'engine di occupancy per la stanza scelta — non è necessario configurare un sensore di presenza qui.",
+        "description": "Template: {template_title}\n{template_description}\n{available_signals}",
         "data": {
           "room_id": "Stanza",
-          "primary_signal_entities": "Sensori lux",
-          "primary_signal_name": "Nome segnale (es. room_lux)",
+          "primary_signal_name": "Nome segnale",
           "primary_bucket": "Bucket oscurità",
           "light_entities": "Luci da accendere",
           "action": "Azione",
@@ -495,12 +494,11 @@
       },
       "reactions_edit_form": {
         "title": "Modifica reazione",
-        "description": "{reaction_description}",
+        "description": "{reaction_description}\n{available_signals}",
         "data": {
           "enabled": "Abilitata",
-          "primary_signal_entities": "Sensori lux",
-          "primary_signal_name": "Nome segnale (es. room_lux)",
-          "primary_bucket": "Bucket oscurità",
+          "primary_signal_name": "Nome segnale",
+          "primary_bucket": "Bucket",
           "light_entities": "Luci da accendere",
           "action": "Azione luci",
           "brightness": "Luminosità",
@@ -536,7 +534,9 @@
       "invalid_number": "Inserisci un numero positivo valido",
       "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
       "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna",
-      "redacted_payload": "Configurazione non valida: il payload contiene valori redatti"
+      "redacted_payload": "Configurazione non valida: il payload contiene valori redatti",
+      "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
+      "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale"
     }
   }
 }
