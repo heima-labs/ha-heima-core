@@ -67,6 +67,53 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     assert any(item["reaction_type"] == "room_darkness_lighting_assist" for item in reactions)
 
 
+async def test_config_entry_diagnostics_exposes_canonical_signals_summary():
+    coordinator = _CoordinatorStub()
+    coordinator.engine = SimpleNamespace(
+        diagnostics=lambda: {
+            "behaviors": {
+                "event_canonicalizer": {
+                    "tracked_entities": {
+                        "sensor.studio_temperature": {
+                            "room_id": "studio",
+                            "signal_name": "room_temperature",
+                            "device_class": "temperature",
+                            "buckets": [],
+                            "burst_threshold": 1.5,
+                        }
+                    },
+                    "bucket_state": {"studio:room_temperature": "warm"},
+                    "burst_baseline": {
+                        "studio:room_temperature": {
+                            "value": 26.0,
+                            "ts": "2026-04-13T10:00:00+00:00",
+                        }
+                    },
+                    "last_burst_ts": {"studio:room_temperature": "2026-04-13T10:05:00+00:00"},
+                }
+            }
+        }
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={},
+    )
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    summary = diagnostics["runtime"]["plugins"]["canonical_signals_summary"]
+
+    assert summary["tracked_signal_count"] == 1
+    assert summary["tracked_signal_entities"] == ["sensor.studio_temperature"]
+    assert summary["signals_with_burst"] == ["sensor.studio_temperature"]
+    assert summary["signals_with_burst_count"] == 1
+    assert summary["bucket_state"] == {"studio:room_temperature": "warm"}
+    assert summary["last_burst_ts"] == {"studio:room_temperature": "2026-04-13T10:05:00+00:00"}
+
+
 async def test_config_entry_diagnostics_exposes_heating_observed_provenance():
     coordinator = _CoordinatorStub()
     coordinator.engine = SimpleNamespace(

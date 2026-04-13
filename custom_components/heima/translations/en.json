@@ -132,6 +132,7 @@
       },
       "rooms_add": {
         "title": "Add Room",
+        "description": "{signals_help}\nExample:\n{signals_example}",
         "data": {
           "room_id": "Room id",
           "display_name": "Display name",
@@ -163,7 +164,7 @@
       },
       "rooms_edit_form": {
         "title": "Edit Room",
-        "description": "Linked HA area: {area_label}\nHA entities found in room: {inventory_entity_total}\nSuggested occupancy sources: {suggested_occupancy}\nSuggested learning sources: {suggested_learning}\nSuggested lights: {suggested_lighting}\nConfigured bindings outside area: {configured_mismatch}",
+        "description": "Linked HA area: {area_label}\nHA entities found in room: {inventory_entity_total}\nSuggested occupancy sources: {suggested_occupancy}\nSuggested learning sources: {suggested_learning}\nSuggested lights: {suggested_lighting}\nConfigured bindings outside area: {configured_mismatch}\n\n{signals_help}\nExample:\n{signals_example}",
         "data": {
           "room_id": "Room id",
           "display_name": "Display name",

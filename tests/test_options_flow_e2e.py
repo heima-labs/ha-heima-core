@@ -1116,6 +1116,8 @@ async def test_rooms_edit_form_exposes_inventory_suggestions_in_description(monk
     assert placeholders["suggested_learning"] == "sensor.studio_lux"
     assert placeholders["suggested_lighting"] == "light.studio_main"
     assert placeholders["configured_mismatch"] == "—"
+    assert "burst_threshold" in placeholders["signals_help"]
+    assert '"signal_name": "room_temperature"' in placeholders["signals_example"]
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "use_suggested_occupancy_sources" not in schema_keys
     assert "use_suggested_learning_sources" not in schema_keys

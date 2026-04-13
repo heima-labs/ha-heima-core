@@ -69,6 +69,7 @@ async def async_get_config_entry_diagnostics(
                     proposal_diagnostics,
                     coordinator,
                 ),
+                "canonical_signals_summary": _canonical_signals_summary_diagnostics(coordinator),
                 "configured_reaction_summary": _configured_reaction_summary_diagnostics(
                     coordinator
                 ),
@@ -409,6 +410,35 @@ def _configured_reaction_summary_diagnostics(coordinator: Any) -> dict[str, Any]
         "identity_collisions": identity_collisions,
         "lighting_slot_collisions": lighting_slot_collisions,
         "reaction_ids": sorted(reaction_ids),
+    }
+
+
+def _canonical_signals_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    engine = getattr(coordinator, "engine", None)
+    if engine is None or not hasattr(engine, "diagnostics"):
+        return {}
+    diagnostics = _safe_dict(engine.diagnostics())
+    behaviors = _safe_dict(diagnostics.get("behaviors"))
+    canonicalizer = _safe_dict(behaviors.get("event_canonicalizer"))
+    tracked = _safe_dict(canonicalizer.get("tracked_entities"))
+    bucket_state = _safe_dict(canonicalizer.get("bucket_state"))
+    burst_baseline = _safe_dict(canonicalizer.get("burst_baseline"))
+    last_burst_ts = _safe_dict(canonicalizer.get("last_burst_ts"))
+    signals_with_burst = [
+        entity_id
+        for entity_id, item in tracked.items()
+        if isinstance(item, dict) and item.get("burst_threshold") not in (None, "")
+    ]
+    return {
+        "tracked_signal_entities": sorted(tracked),
+        "tracked_signal_count": len(tracked),
+        "bucket_state": bucket_state,
+        "burst_baseline": burst_baseline,
+        "last_burst_ts": last_burst_ts,
+        "signals_with_burst": sorted(signals_with_burst),
+        "signals_with_burst_count": len(signals_with_burst),
     }
 
 

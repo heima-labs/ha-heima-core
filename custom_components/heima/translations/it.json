@@ -132,6 +132,7 @@
       },
       "rooms_add": {
         "title": "Aggiungi Stanza",
+        "description": "{signals_help}\nEsempio:\n{signals_example}",
         "data": {
           "room_id": "ID stanza",
           "display_name": "Nome visualizzato",
@@ -163,7 +164,7 @@
       },
       "rooms_edit_form": {
         "title": "Modifica Stanza",
-        "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti apprendimento suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}",
+        "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti apprendimento suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}\n\n{signals_help}\nEsempio:\n{signals_example}",
         "data": {
           "room_id": "ID stanza",
           "display_name": "Nome visualizzato",

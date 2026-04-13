@@ -70,13 +70,20 @@ class _RoomsStepsMixin:
     async def async_step_rooms_add(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         errors: dict[str, str] = {}
         if user_input is None:
-            return self.async_show_form(step_id="rooms_add", data_schema=self._room_schema())
+            return self.async_show_form(
+                step_id="rooms_add",
+                data_schema=self._room_schema(),
+                description_placeholders=self._room_signal_placeholders({}),
+            )
 
         user_input = self._normalize_room_payload(user_input)
         errors = self._validate_room_payload(user_input, is_edit=False)
         if errors:
             return self.async_show_form(
-                step_id="rooms_add", data_schema=self._room_schema(user_input), errors=errors
+                step_id="rooms_add",
+                data_schema=self._room_schema(user_input),
+                errors=errors,
+                description_placeholders=self._room_signal_placeholders(user_input),
             )
 
         user_input = await self._async_ensure_room_area(user_input)
@@ -85,6 +92,7 @@ class _RoomsStepsMixin:
                 step_id="rooms_add",
                 data_schema=self._room_schema(user_input),
                 errors={"area_id": "area_sync_failed"},
+                description_placeholders=self._room_signal_placeholders(user_input),
             )
         rooms = self._rooms()
         user_input["source"] = "ha_area_registry"
@@ -138,7 +146,7 @@ class _RoomsStepsMixin:
             return self.async_show_form(
                 step_id="rooms_edit_form",
                 data_schema=self._room_schema(existing),
-                description_placeholders=self._room_inventory_placeholders(existing),
+                description_placeholders=self._room_form_placeholders(existing),
             )
 
         raw_input = dict(user_input)
@@ -149,7 +157,7 @@ class _RoomsStepsMixin:
                 step_id="rooms_edit_form",
                 data_schema=self._room_schema(raw_input),
                 errors=errors,
-                description_placeholders=self._room_inventory_placeholders(user_input),
+                description_placeholders=self._room_form_placeholders(user_input),
             )
 
         existing_room = self._find_by_key(rooms, "room_id", self._editing_room_id or "") or {}
@@ -159,7 +167,7 @@ class _RoomsStepsMixin:
                 step_id="rooms_edit_form",
                 data_schema=self._room_schema(raw_input),
                 errors={"area_id": "area_sync_failed"},
-                description_placeholders=self._room_inventory_placeholders(user_input),
+                description_placeholders=self._room_form_placeholders(user_input),
             )
         updated = []
         for room in rooms:
@@ -423,6 +431,44 @@ class _RoomsStepsMixin:
             "suggested_lighting": suggested_lighting,
             "configured_mismatch": mismatches,
         }
+
+    def _room_signal_placeholders(self, room: dict[str, Any]) -> dict[str, str]:
+        rendered = format_room_signals_for_form(room.get("signals"))
+        example = rendered.strip() if rendered.strip() else self._default_room_signals_example()
+        return {
+            "signals_help": (
+                "JSON array of room signals. Each item supports entity_id, signal_name, "
+                "device_class, buckets and optional burst_threshold/burst_window_s/burst_direction."
+            ),
+            "signals_example": example,
+        }
+
+    def _room_form_placeholders(self, room: dict[str, Any]) -> dict[str, str]:
+        return {
+            **self._room_inventory_placeholders(room),
+            **self._room_signal_placeholders(room),
+        }
+
+    @staticmethod
+    def _default_room_signals_example() -> str:
+        return (
+            "[\n"
+            "  {\n"
+            '    "entity_id": "sensor.studio_temperature",\n'
+            '    "signal_name": "room_temperature",\n'
+            '    "device_class": "temperature",\n'
+            '    "buckets": [\n'
+            '      {"label": "cool", "upper_bound": 20},\n'
+            '      {"label": "ok", "upper_bound": 24},\n'
+            '      {"label": "warm", "upper_bound": 27},\n'
+            '      {"label": "hot", "upper_bound": null}\n'
+            "    ],\n"
+            '    "burst_threshold": 1.5,\n'
+            '    "burst_window_s": 600,\n'
+            '    "burst_direction": "up"\n'
+            "  }\n"
+            "]"
+        )
 
     @staticmethod
     def _format_inventory_list(values: Any) -> str:
