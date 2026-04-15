@@ -46,6 +46,16 @@ v1's plugin architecture is designed to be replaced and extended. The v2 DAG int
 
 **Household-level learning only.** Heima v1 observes the home as a unit. Presence patterns, lighting preferences, and schedules are learned at the household level — not per person. In households where two people have substantially different routines (different work schedules, different sleeping times), the learned patterns may reflect an average that is optimal for neither. Per-person learning with device-tracked identity is a planned v2 capability.
 
+**Inference Engine v2 not implemented.** The learning system spec (`docs/specs/learning/inference_engine_spec.md`) describes a second-generation inference engine with richer pattern extraction. In v1, all analyzers use pure Python + stdlib statistics (median, IQR, ISO-week grouping). The spec is RFC/on-hold; no implementation work is scheduled until an explicit decision is made.
+
+**Plugin registry is built-in only.** There is no dynamic third-party plugin loading in v1. Learning plugins and reaction plugins are registered at import time inside `registry.py`. Adding a new plugin requires modifying the source. A stable third-party plugin API with dynamic loading is planned for v2.
+
+**Burst trigger mode is limited to `room_signal_assist` reactions.** The burst pipeline (rapid-change detection via `burst_threshold` / `burst_window_s`) is only exposed as a trigger mode for `room_signal_assist`. Other reaction types such as `room_darkness_lighting_assist` always operate on steady-state bucket values. Extending burst to other reaction types is deferred to v2.
+
+**`burst_window_s` in room signal config has no runtime effect.** When configuring a signal with burst detection, the `burst_window_s` field is accepted, stored, and emitted in event payloads as metadata — but it does not throttle burst detection or influence when a reaction fires. The effective "recency window" for burst-triggered reactions is the reaction's own `followup_window_s` (default 900 s). In v2, `burst_window_s` should either be wired into the detection logic or removed from the config surface to avoid confusion.
+
+**Corroboration signal supports bucket mode only.** In `room_signal_assist` reactions, the primary signal supports both `bucket` (fire while signal is in a given range) and `burst` (fire when signal changes rapidly) trigger modes. The corroboration signal — when present — is always evaluated in bucket mode. Dual-burst reactions (e.g., fire when both humidity and CO₂ rise rapidly at the same time) are not supported in v1. The main reasons: (1) two independent burst windows are unlikely to overlap precisely without explicit synchronization, increasing the risk of false negatives; (2) the use case is narrow enough not to justify the added config surface and runtime complexity. If a real production case emerges, this is a natural v2 extension.
+
 ## Project Icon
 ![Heima icon](docs/assets/heima-icon.svg)
 

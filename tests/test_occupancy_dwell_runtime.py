@@ -137,7 +137,50 @@ async def test_room_off_dwell_delays_transition_from_on_to_off(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_room_max_on_forces_off_and_emits_event(monkeypatch):
+async def test_room_max_on_forces_off_when_candidate_off(monkeypatch):
+    """max_on_s fires only after candidate goes off — sensors went off but effective is still on."""
+    t = 0.0
+    monkeypatch.setattr("custom_components.heima.runtime.engine.time.monotonic", lambda: t)
+    states = _MutableStates({"binary_sensor.room_presence": "on"})
+    engine = _engine(
+        states,
+        {
+            "rooms": [
+                {
+                    "room_id": "room",
+                    "occupancy_mode": "derived",
+                    "sources": ["binary_sensor.room_presence"],
+                    "logic": "any_of",
+                    "on_dwell_s": 0,
+                    "off_dwell_s": 600,  # long persistence
+                    "max_on_s": 5,
+                }
+            ]
+        },
+    )
+
+    snap = engine._compute_snapshot(reason="t0")
+    assert "room" in snap.occupied_rooms
+
+    # sensor goes off → candidate off, but off_dwell would keep effective on for 600s
+    states.set("binary_sensor.room_presence", "off")
+    t = 1.0
+    snap = engine._compute_snapshot(reason="t1_sensor_off")
+    assert "room" in snap.occupied_rooms  # effective still on due to off_dwell
+
+    # max_on_s (5s) elapsed since effective went on → force off despite off_dwell
+    t = 7.0
+    snap = engine._compute_snapshot(reason="t7")
+    assert "room" not in snap.occupied_rooms
+    await engine._emit_queued_events()
+
+    event_types = [p["type"] for e, p in engine._hass.bus.events if e == "heima_event"]
+    assert "occupancy.max_on_timeout" in event_types
+
+
+@pytest.mark.asyncio
+async def test_room_max_on_does_not_fire_when_candidate_on(monkeypatch):
+    """max_on_s must not fire while candidate is on — mmWave scenario where person is stationary."""
     t = 0.0
     monkeypatch.setattr("custom_components.heima.runtime.engine.time.monotonic", lambda: t)
     states = _MutableStates({"binary_sensor.room_presence": "on"})
@@ -161,13 +204,14 @@ async def test_room_max_on_forces_off_and_emits_event(monkeypatch):
     snap = engine._compute_snapshot(reason="t0")
     assert "room" in snap.occupied_rooms
 
-    t = 6.0
-    snap = engine._compute_snapshot(reason="t6")
-    assert "room" not in snap.occupied_rooms
+    # sensor stays on (mmWave detects stationary presence) — max_on_s must not fire
+    t = 100.0
+    snap = engine._compute_snapshot(reason="t100")
+    assert "room" in snap.occupied_rooms
     await engine._emit_queued_events()
 
     event_types = [p["type"] for e, p in engine._hass.bus.events if e == "heima_event"]
-    assert "occupancy.max_on_timeout" in event_types
+    assert "occupancy.max_on_timeout" not in event_types
 
 
 @pytest.mark.asyncio

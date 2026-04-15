@@ -254,7 +254,7 @@ class OccupancyDomain:
                 "candidate_since": None,
                 "effective_state": "off",
                 "effective_since": None,
-                "on_dwell_s": int(room_cfg.get("on_dwell_s", 5)),
+                "on_dwell_s": int(room_cfg.get("on_dwell_s", 0)),
                 "off_dwell_s": int(room_cfg.get("off_dwell_s", 120)),
                 "max_on_s": room_cfg.get("max_on_s"),
                 "forced_off_by_max_on": False,
@@ -284,7 +284,7 @@ class OccupancyDomain:
             self._occupancy_room_candidate_since[room_id] = now
 
         candidate_since = self._occupancy_room_candidate_since.get(room_id, now)
-        on_dwell_s = int(room_cfg.get("on_dwell_s", 5))
+        on_dwell_s = int(room_cfg.get("on_dwell_s", 0))
         off_dwell_s = int(room_cfg.get("off_dwell_s", 120))
         max_on_s_raw = room_cfg.get("max_on_s")
         max_on_s = int(max_on_s_raw) if max_on_s_raw not in (None, "") else None
@@ -312,7 +312,12 @@ class OccupancyDomain:
 
         forced_off_by_max_on = False
         effective_since = self._occupancy_room_effective_since.get(room_id, now)
-        if max_on_s is not None and max_on_s > 0 and effective_state == "on":
+        if (
+            max_on_s is not None
+            and max_on_s > 0
+            and effective_state == "on"
+            and candidate_state == "off"
+        ):
             if (now - effective_since) >= max_on_s:
                 forced_off_by_max_on = True
                 effective_state = "off"
