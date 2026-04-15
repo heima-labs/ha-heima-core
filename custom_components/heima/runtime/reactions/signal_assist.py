@@ -74,9 +74,11 @@ class RoomSignalAssistReaction(HeimaReaction):
         temperature_rise_threshold: float = 0.8,
         correlation_window_s: int = 600,
         followup_window_s: int = 900,
+        house_state_filter: str | None = None,
         reaction_id: str | None = None,
     ) -> None:
         self._hass = hass
+        self._house_state_filter = str(house_state_filter).strip() if house_state_filter else None
         self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._burst_getter = burst_getter or (lambda _room_id, _signal_name, *, window_s: False)
         self._use_burst_accessor = use_burst_accessor
@@ -167,6 +169,8 @@ class RoomSignalAssistReaction(HeimaReaction):
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
             self._steady_condition_active = False
+            return []
+        if self._house_state_filter and snapshot.house_state != self._house_state_filter:
             return []
 
         if self._primary_bucket:
@@ -490,6 +494,7 @@ def _build_normalized_room_signal_assist_reaction(
         correlation_window_s=correlation_window_s,
         followup_window_s=followup_window_s,
         steps=steps,
+        house_state_filter=cfg.get("house_state_filter") or None,
         reaction_id=proposal_id,
     )
 

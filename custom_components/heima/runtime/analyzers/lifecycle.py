@@ -116,9 +116,11 @@ def _lighting_identity_key(proposal: ReactionProposal) -> str:
     if isinstance(scheduled_min, (int, float)):
         bucket = (int(scheduled_min) // 30) * 30
     scene_signature = _lighting_scene_signature(cfg)
+    house_state_filter = cfg.get("house_state_filter") or None
+    hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
     return (
         f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-        f"|bucket={bucket}|scene={scene_signature}"
+        f"|bucket={bucket}|scene={scene_signature}{hs_suffix}"
     )
 
 
@@ -208,7 +210,9 @@ def _composite_room_identity_key(proposal: ReactionProposal) -> str:
     cfg = _safe_dict(proposal.suggested_reaction_config)
     primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
     suffix = f"|primary={primary_signal}" if primary_signal else ""
-    return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}"
+    house_state_filter = cfg.get("house_state_filter") or None
+    hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
+    return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}{hs_suffix}"
 
 
 def _security_presence_simulation_identity_key(proposal: ReactionProposal) -> str:

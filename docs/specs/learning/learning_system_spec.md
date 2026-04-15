@@ -621,6 +621,67 @@ remain queryable; they simply carry less context. No `STORAGE_VERSION` bump is r
 
 ---
 
+### 3.0.2 house_state concentration rule (cross-cutting)
+
+Every analyzer SHOULD apply house_state concentration analysis before emitting a proposal, to
+determine whether the learned pattern is state-bound.
+
+**Algorithm:**
+
+```
+observations_by_state: dict[str, int] = count events per context.house_state
+
+total = sum(observations_by_state.values())
+dominant_state, dominant_count = max(observations_by_state.items(), key=lambda x: x[1])
+
+if total > 0
+   and (dominant_count / total) >= HOUSE_STATE_CONCENTRATION_THRESHOLD   # 0.75
+   and dominant_count >= HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS:           # 8
+    house_state_filter = dominant_state
+else:
+    house_state_filter = None
+```
+
+**Constants (v1 defaults):**
+- `HOUSE_STATE_CONCENTRATION_THRESHOLD = 0.75`
+- `HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS = 8`
+
+**Normative rules:**
+
+1. When `house_state_filter` is not None, the analyzer MUST include it in `suggested_reaction_config`
+   as an explicit gate field AND include `house_state=<value>` in the `identity_key`.
+
+2. When `house_state_filter` is None, `house_state` MUST NOT appear in the `identity_key` and
+   `house_state_filter` SHOULD be explicitly set to `None` in `suggested_reaction_config` (not
+   omitted) to make the intent visible.
+
+3. The reaction runtime MUST gate on `house_state_filter` when present: a reaction with
+   `house_state_filter=relax` is inactive when the current `house_state` differs from `relax`.
+
+4. The concentration is computed over the same observation window used by the analyzer for
+   confidence and min-weeks checks — not over the full event history.
+
+**Rationale for the two-parameter threshold:**
+
+A single percentage threshold is insufficient because small samples can yield misleading
+concentrations (e.g., 6 out of 8 events = 75%, but statistically fragile). The minimum absolute
+count guards against this. Both conditions must hold simultaneously.
+
+Time-in-state normalization is intentionally deferred to v2. In v1, the temporal correlation
+between `house_state` and time-of-day is accepted as a useful signal rather than a confound,
+because most practical cases where a pattern is state-bound are also time-bound.
+
+**Applicability:**
+
+This rule applies to all analyzer families that produce `suggested_reaction_config`:
+- `LightingPatternAnalyzer` (`house_state_filter` currently hardcoded to `None` — MUST be computed)
+- Composite analyzers: `room_signal_assist`, `room_darkness_lighting_assist`, `room_cooling_assist`,
+  `room_air_quality_assist`
+- `PresencePatternAnalyzer`: not applicable (identity is weekday-scoped, not state-scoped)
+- `HeatingPatternAnalyzer`: already compliant — segments by `house_state` natively
+
+---
+
 ### 3.1 Pattern Events
 
 All events embed an `EventContext` instead of duplicating contextual fields inline.
@@ -1731,7 +1792,7 @@ ReactionProposal(
         "weekday": weekday,
         "scheduled_min": scheduled_min,
         "window_half_min": derived_window_half_min,
-        "house_state_filter": None,
+        "house_state_filter": house_state_filter,  # computed via §3.0.2 concentration rule; None if pattern spans all states
         "entity_steps": [
             # Un dict per entità nel cluster
             {
@@ -1914,7 +1975,7 @@ LightingScheduleReaction(
     weekday=0,
     scheduled_min=1200,
     window_half_min=10,
-    house_state_filter=None,
+    house_state_filter=house_state_filter,  # computed via §3.0.2; None if pattern spans all states
     entity_steps=[
         {"entity_id": "light.living_main",  "action": "on",  "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
         {"entity_id": "light.living_spot",  "action": "on",  "brightness": 64,  "color_temp_kelvin": 3500, "rgb_color": None},

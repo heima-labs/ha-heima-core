@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
-from .base import ReactionProposal
+from .base import ReactionProposal, compute_house_state_filter
 from .cross_domain import rooms_with_confirmed_pattern_evidence
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import LightingLearningPolicy
@@ -34,6 +34,11 @@ class _EntityPattern:
     brightness: int | None
     color_temp_kelvin: int | None
     rgb_color: list[int] | None
+    source_events: list[HeimaEvent] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.source_events is None:
+            self.source_events = []
 
     def as_entity_step(self) -> dict[str, Any]:
         return {
@@ -142,6 +147,7 @@ class LightingPatternAnalyzer:
                     brightness=brightness if action == "on" else None,
                     color_temp_kelvin=color_temp if action == "on" else None,
                     rgb_color=rgb if action == "on" else None,
+                    source_events=list(group),
                 )
             )
 
@@ -183,6 +189,9 @@ class LightingPatternAnalyzer:
                 entity_steps = [p.as_entity_step() for p in normalized_cluster]
                 window_half_min = _cluster_window_half_min(normalized_cluster)
 
+                cluster_events = [e for p in normalized_cluster for e in p.source_events]
+                house_state_filter = compute_house_state_filter(cluster_events)
+
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
                 fingerprint = (
@@ -201,7 +210,7 @@ class LightingPatternAnalyzer:
                             "weekday": weekday,
                             "scheduled_min": scheduled_min,
                             "window_half_min": window_half_min,
-                            "house_state_filter": None,
+                            "house_state_filter": house_state_filter,  # computed via §3.0.2
                             "entity_steps": entity_steps,
                             "learning_diagnostics": build_learning_diagnostics(
                                 pattern_id="lighting_scene_schedule",

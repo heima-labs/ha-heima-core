@@ -142,7 +142,7 @@ Fields suitable for logical identity:
 - `reaction_type`
 - `plugin_family`
 - `room_id`
-- `house_state`
+- `house_state` — only when used as an activation gate (see §4.2a)
 - `weekday`
 - `time_bucket`
 - `primary_signal_name`
@@ -164,6 +164,23 @@ For admin-authored proposals, template identifiers and plugin provenance belong 
 diagnostics only if they define the authored slot itself. Human-authored details that change over
 time should remain evidence.
 
+### 4.2a house_state as conditional identity field
+
+`house_state` enters the identity key **only** when the analyzer determines that the pattern is
+state-bound — i.e., when `house_state_filter` is set in the `suggested_reaction_config`.
+
+When `house_state_filter` is `None` (pattern spans all states), `house_state` MUST NOT appear in
+the identity key. Including it unconditionally would multiply identity slots without meaningful
+differentiation.
+
+Rationale: a proposal with `house_state_filter=relax` and one without a filter represent different
+behavioral contracts. They must occupy distinct identity slots so they can coexist, be independently
+accepted or rejected, and be routed to different active reactions.
+
+The corollary: if an analyzer previously emitted a proposal without a filter, and later determines
+the pattern is state-bound, the identity key changes and the old proposal is treated as a separate
+slot — not an in-place refresh. This is intentional: the behavioral contract has changed.
+
 ### 4.3 Built-in identity strategy
 
 Built-in proposals should converge on these identity keys:
@@ -171,11 +188,14 @@ Built-in proposals should converge on these identity keys:
 - `presence_preheat|weekday=<weekday>`
 - `heating_preference|house_state=<house_state>`
 - `heating_eco`
-- `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>`
-- `room_signal_assist|room=<room_id>|primary=<primary_signal_name>`
-- `room_cooling_assist|room=<room_id>|primary=<primary_signal_name>`
-- `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>`
-- `room_darkness_lighting_assist|room=<room_id>|primary=<primary_signal_name>`
+- `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>[|house_state=<house_state>]`
+- `room_signal_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
+- `room_cooling_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
+- `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
+- `room_darkness_lighting_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
+
+The `[|house_state=<house_state>]` suffix is included **only** when `house_state_filter` is set in
+the corresponding `suggested_reaction_config` (see §4.2a and learning_system_spec §3.0.2).
 
 Product-direction clarification:
 - `lighting_scene_schedule` remains a valid lifecycle family
@@ -295,6 +315,46 @@ Normative guidance:
 - review titles for lighting discovery SHOULD read as a new learned automation, not a generic proposal
 - review titles for lighting tuning SHOULD read as an adjustment of an existing automation, not a second discovery
 - the same distinction SHOULD be visible both in proposal review wording and in lighting-specific diagnostics summaries
+
+### 4.5a Review details for lighting and room-lighting proposals
+
+For proposal families whose payload includes `entity_steps`, review UX MUST expose enough
+structured detail for an administrator to understand the concrete affected entities without opening
+diagnostics or reading raw JSON.
+
+This applies at minimum to:
+- `lighting_scene_schedule`
+- `room_darkness_lighting_assist`
+- `room_vacancy_lighting_off`
+- any future learned or tuning proposal whose suggested config contains `entity_steps`
+
+Normative guidance:
+- a bare count such as `Luci proposte: 3` is not sufficient on its own for review-quality UX
+- discovery proposals with `entity_steps` SHOULD show the concrete proposed entities
+- tuning proposals with `entity_steps` MUST show a structured delta against the active target
+  automation when a target reaction exists
+
+Minimum required review detail for discovery:
+- proposed entity list
+- action count MAY be shown, but only as a secondary summary
+
+Minimum required review detail for tuning:
+- current entity list
+- proposed entity list
+- added entities, when non-empty
+- removed entities, when non-empty
+
+If the same entity exists in both current and proposed payloads but with materially different
+lighting fields, review UX SHOULD also show per-entity field diffs for:
+- action
+- brightness
+- color temperature
+- rgb color
+
+Rationale:
+- proposal review is an administrative decision surface
+- an administrator must be able to answer "which lights?" directly from the review body
+- counts alone are acceptable for diagnostics summaries, but insufficient for acceptance UX
 
 ## 5. Lifecycle Fields
 

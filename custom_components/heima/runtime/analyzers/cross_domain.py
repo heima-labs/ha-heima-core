@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
-from .base import ReactionProposal
+from .base import ReactionProposal, compute_house_state_filter
 from .composite import (
     CompositePatternSpec,
     CompositeSignalSpec,
@@ -247,7 +247,9 @@ async def _analyze_definition(
         if len(confirmed) < definition.min_occurrences:
             continue
 
+        house_state_filter = compute_house_state_filter(room_events)
         suggested = definition.suggested_config_builder(room_id, confirmed, quality_policy)
+        suggested["house_state_filter"] = house_state_filter  # computed via §3.0.2
         diagnostics = _build_default_diagnostics(
             room_id=room_id,
             definition=definition,

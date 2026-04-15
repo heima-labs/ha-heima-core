@@ -4,10 +4,40 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from ..event_store import EventStore
+
+if TYPE_CHECKING:
+    from ..event_store import HeimaEvent
+
+HOUSE_STATE_CONCENTRATION_THRESHOLD: float = 0.75
+HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS: int = 8
+
+
+def compute_house_state_filter(events: "list[HeimaEvent]") -> str | None:
+    """Return the dominant house_state if it meets concentration thresholds, else None.
+
+    Implements the §3.0.2 concentration rule:
+    - concentration >= HOUSE_STATE_CONCENTRATION_THRESHOLD (0.75)
+    - dominant_count >= HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS (8)
+    """
+    counts: dict[str, int] = {}
+    for e in events:
+        state = str(getattr(getattr(e, "context", None), "house_state", None) or "").strip()
+        if state:
+            counts[state] = counts.get(state, 0) + 1
+    total = sum(counts.values())
+    if not total:
+        return None
+    dominant_state, dominant_count = max(counts.items(), key=lambda x: x[1])
+    if (
+        dominant_count / total >= HOUSE_STATE_CONCENTRATION_THRESHOLD
+        and dominant_count >= HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS
+    ):
+        return dominant_state
+    return None
 
 
 @dataclass

@@ -11,6 +11,10 @@ from homeassistant.core import HomeAssistant
 from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
+from ._lighting_review import (
+    render_entity_steps_discovery_details,
+    render_entity_steps_tuning_details,
+)
 from .base import HeimaReaction
 from .composite import (
     RuntimeCompositeMatcher,
@@ -60,9 +64,11 @@ class RoomLightingAssistReaction(HeimaReaction):
         corroboration_threshold_mode: str = "below",
         correlation_window_s: int = 600,
         followup_window_s: int = 900,
+        house_state_filter: str | None = None,
         reaction_id: str | None = None,
     ) -> None:
         self._hass = hass
+        self._house_state_filter = str(house_state_filter).strip() if house_state_filter else None
         self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._room_id = room_id
         self._entity_steps = list(entity_steps)
@@ -111,6 +117,8 @@ class RoomLightingAssistReaction(HeimaReaction):
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
             self._steady_condition_active = False
+            return []
+        if self._house_state_filter and snapshot.house_state != self._house_state_filter:
             return []
 
         now = parse_snapshot_ts(snapshot.ts)
@@ -306,6 +314,7 @@ def build_room_lighting_assist_reaction(
         corroboration_threshold_mode=corroboration_threshold_mode,
         correlation_window_s=correlation_window_s,
         followup_window_s=followup_window_s,
+        house_state_filter=cfg.get("house_state_filter") or None,
         reaction_id=proposal_id,
     )
 
@@ -407,10 +416,11 @@ def present_learned_room_lighting_assist_details(
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
-        details.append(
-            f"Luci proposte: {len(entity_steps)}"
-            if is_it
-            else f"Proposed lights: {len(entity_steps)}"
+        details.extend(
+            render_entity_steps_discovery_details(
+                entity_steps,
+                language=language,
+            )
         )
     return details
 
@@ -511,12 +521,13 @@ def present_tuning_room_lighting_assist_details(
     current_steps = target_cfg.get("entity_steps")
     proposed_steps = cfg.get("entity_steps")
     if isinstance(current_steps, list) and isinstance(proposed_steps, list):
-        if len(current_steps) != len(proposed_steps):
-            details.append(
-                f"Luci: {len(current_steps)} -> {len(proposed_steps)}"
-                if is_it
-                else f"Lights: {len(current_steps)} -> {len(proposed_steps)}"
+        details.extend(
+            render_entity_steps_tuning_details(
+                current_steps,
+                proposed_steps,
+                language=language,
             )
+        )
 
     return details
 
