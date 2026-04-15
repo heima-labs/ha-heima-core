@@ -289,7 +289,7 @@ class _RoomsStepsMixin:
             vol.Optional("logic", default=defaults.get("logic", "any_of")): vol.In(ROOM_LOGIC),
             vol.Optional("weight_threshold"): vol.Coerce(float),
             vol.Optional("source_weights"): _multiline_text_selector(),
-            vol.Optional("on_dwell_s", default=defaults.get("on_dwell_s", 5)): cv.positive_int,
+            vol.Optional("on_dwell_s", default=defaults.get("on_dwell_s", 0)): cv.positive_int,
             vol.Optional("off_dwell_s", default=defaults.get("off_dwell_s", 120)): cv.positive_int,
             vol.Optional("max_on_s", default=defaults.get("max_on_s")): vol.Any(
                 None, cv.positive_int

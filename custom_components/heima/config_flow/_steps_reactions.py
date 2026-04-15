@@ -13,7 +13,12 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN, OPT_REACTIONS
-from ..room_sources import room_signal_bucket_labels, room_signal_entity_id, room_signal_names
+from ..room_sources import (
+    room_signal_bucket_labels,
+    room_signal_entity_id,
+    room_signal_has_burst,
+    room_signal_names,
+)
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
@@ -374,9 +379,12 @@ class _ReactionsStepsMixin:
         defaults = {
             "room_id": room_ids[0],
             "primary_signal_name": "room_humidity",
+            "primary_trigger_mode": "bucket",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": [],
         }
         errors: dict[str, str] = {}
@@ -399,9 +407,19 @@ class _ReactionsStepsMixin:
 
         room_id = str(user_input.get("room_id") or "").strip()
         primary_signal_name = str(user_input.get("primary_signal_name") or "").strip()
+        primary_trigger_mode = str(
+            user_input.get("primary_trigger_mode") or defaults["primary_trigger_mode"]
+        ).strip()
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        primary_bucket_match_mode = str(
+            user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
+        ).strip()
         corroboration_signal_name = str(user_input.get("corroboration_signal_name") or "").strip()
         corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
+        corroboration_bucket_match_mode = str(
+            user_input.get("corroboration_bucket_match_mode")
+            or defaults["corroboration_bucket_match_mode"]
+        ).strip()
         action_entities = self._normalize_multi_value(user_input.get("action_entities"))
 
         if not room_id:
@@ -416,12 +434,20 @@ class _ReactionsStepsMixin:
         elif primary_signal_name not in valid_signals:
             errors["primary_signal_name"] = "invalid_signal_name"
 
-        if not errors.get("primary_signal_name"):
-            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
-            if not primary_bucket:
-                errors["primary_bucket"] = "required"
-            elif primary_bucket not in valid_buckets:
-                errors["primary_bucket"] = "invalid_bucket"
+        if primary_trigger_mode not in self._trigger_mode_options():
+            errors["primary_trigger_mode"] = "invalid_option"
+        elif not errors.get("primary_signal_name"):
+            if primary_trigger_mode == "burst":
+                if not room_signal_has_burst(rooms, room_id, primary_signal_name):
+                    errors["primary_trigger_mode"] = "no_burst_config"
+            else:
+                valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+                if not primary_bucket:
+                    errors["primary_bucket"] = "required"
+                elif primary_bucket not in valid_buckets:
+                    errors["primary_bucket"] = "invalid_bucket"
+                if primary_bucket_match_mode not in self._bucket_match_mode_options():
+                    errors["primary_bucket_match_mode"] = "invalid_option"
 
         if corroboration_signal_name:
             if corroboration_signal_name not in valid_signals:
@@ -432,13 +458,18 @@ class _ReactionsStepsMixin:
                 )
                 if corroboration_bucket not in valid_corr_buckets:
                     errors["corroboration_bucket"] = "invalid_bucket"
+        if corroboration_bucket_match_mode not in self._bucket_match_mode_options():
+            errors["corroboration_bucket_match_mode"] = "invalid_option"
 
         current_input = {
             "room_id": room_id or defaults["room_id"],
             "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+            "primary_trigger_mode": primary_trigger_mode,
             "primary_bucket": primary_bucket,
+            "primary_bucket_match_mode": primary_bucket_match_mode,
             "corroboration_signal_name": corroboration_signal_name,
             "corroboration_bucket": corroboration_bucket,
+            "corroboration_bucket_match_mode": corroboration_bucket_match_mode,
             "action_entities": action_entities,
         }
 
@@ -463,10 +494,13 @@ class _ReactionsStepsMixin:
             room_id=room_id,
             primary_signal_entities=primary_entities,
             primary_signal_name=primary_signal_name,
+            primary_trigger_mode=primary_trigger_mode,
             primary_bucket=primary_bucket,
+            primary_bucket_match_mode=primary_bucket_match_mode,
             corroboration_signal_entities=corroboration_entities,
             corroboration_signal_name=corroboration_signal_name or "corroboration",
             corroboration_bucket=corroboration_bucket,
+            corroboration_bucket_match_mode=corroboration_bucket_match_mode,
             action_entities=action_entities,
         )
         if self._admin_authored_identity_conflicts(proposal):
@@ -502,6 +536,7 @@ class _ReactionsStepsMixin:
             "room_id": default_room_id,
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
+            "primary_bucket_match_mode": "eq",
             "action": "on",
             "brightness": 190,
             "color_temp_kelvin": 2850,
@@ -538,6 +573,9 @@ class _ReactionsStepsMixin:
             errors["primary_signal_name"] = "invalid_signal_name"
 
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        primary_bucket_match_mode = str(
+            user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
+        ).strip()
         if not errors.get("primary_signal_name") and room_id:
             valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
             if not primary_bucket:
@@ -547,6 +585,9 @@ class _ReactionsStepsMixin:
                 errors["primary_bucket"] = "invalid_bucket"
         elif not primary_bucket:
             primary_bucket = defaults["primary_bucket"]
+        if primary_bucket_match_mode not in self._bucket_match_mode_options():
+            errors["primary_bucket_match_mode"] = "invalid_option"
+            primary_bucket_match_mode = defaults["primary_bucket_match_mode"]
 
         brightness = None
         color_temp_kelvin = None
@@ -568,6 +609,7 @@ class _ReactionsStepsMixin:
             "room_id": room_id or defaults["room_id"],
             "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
             "primary_bucket": primary_bucket,
+            "primary_bucket_match_mode": primary_bucket_match_mode,
             "light_entities": entity_ids,
             "action": action or defaults["action"],
             "brightness": user_input.get("brightness", defaults["brightness"]),
@@ -596,6 +638,7 @@ class _ReactionsStepsMixin:
             primary_signal_entities=primary_signal_entities,
             primary_signal_name=primary_signal_name or "room_lux",
             primary_bucket=primary_bucket,
+            primary_bucket_match_mode=primary_bucket_match_mode,
             entity_ids=entity_ids,
             action=action,
             brightness=brightness,
@@ -900,6 +943,8 @@ class _ReactionsStepsMixin:
             "enabled": bool(cfg.get("enabled", True)),
             "primary_signal_name": str(cfg.get("primary_signal_name") or "room_lux").strip(),
             "primary_bucket": str(cfg.get("primary_bucket") or "dim").strip() or "dim",
+            "primary_bucket_match_mode": str(cfg.get("primary_bucket_match_mode") or "eq").strip()
+            or "eq",
             "light_entities": current_entities,
             "action": str(first_step.get("action") or "on").strip() or "on",
             "brightness": int(first_step.get("brightness") or 190),
@@ -942,6 +987,9 @@ class _ReactionsStepsMixin:
             errors["primary_signal_name"] = "invalid_signal_name"
 
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        primary_bucket_match_mode = str(
+            user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
+        ).strip()
         if not errors.get("primary_signal_name"):
             valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
             if not primary_bucket:
@@ -951,6 +999,9 @@ class _ReactionsStepsMixin:
                 errors["primary_bucket"] = "invalid_bucket"
         elif not primary_bucket:
             primary_bucket = defaults["primary_bucket"]
+        if primary_bucket_match_mode not in self._bucket_match_mode_options():
+            errors["primary_bucket_match_mode"] = "invalid_option"
+            primary_bucket_match_mode = defaults["primary_bucket_match_mode"]
 
         brightness: int | None = None
         color_temp_kelvin: int | None = None
@@ -972,6 +1023,7 @@ class _ReactionsStepsMixin:
             "enabled": bool(user_input.get("enabled", defaults["enabled"])),
             "primary_signal_name": primary_signal_name,
             "primary_bucket": primary_bucket,
+            "primary_bucket_match_mode": primary_bucket_match_mode,
             "light_entities": light_entities,
             "action": action,
             "brightness": user_input.get("brightness", defaults["brightness"]),
@@ -998,6 +1050,7 @@ class _ReactionsStepsMixin:
         cfg["primary_signal_entities"] = primary_signal_entities
         cfg["primary_signal_name"] = primary_signal_name
         cfg["primary_bucket"] = primary_bucket
+        cfg["primary_bucket_match_mode"] = primary_bucket_match_mode
         cfg.pop("primary_threshold", None)
         cfg.pop("primary_threshold_mode", None)
         cfg["entity_steps"] = [
@@ -1049,9 +1102,16 @@ class _ReactionsStepsMixin:
         defaults = {
             "enabled": bool(cfg.get("enabled", True)),
             "primary_signal_name": str(cfg.get("primary_signal_name") or "").strip(),
+            "primary_trigger_mode": str(cfg.get("primary_trigger_mode") or "bucket").strip() or "bucket",
             "primary_bucket": str(cfg.get("primary_bucket") or "").strip(),
+            "primary_bucket_match_mode": str(cfg.get("primary_bucket_match_mode") or "eq").strip()
+            or "eq",
             "corroboration_signal_name": str(cfg.get("corroboration_signal_name") or "").strip(),
             "corroboration_bucket": str(cfg.get("corroboration_bucket") or "").strip(),
+            "corroboration_bucket_match_mode": str(
+                cfg.get("corroboration_bucket_match_mode") or "eq"
+            ).strip()
+            or "eq",
             "action_entities": current_entities,
             "delete_reaction": False,
         }
@@ -1076,11 +1136,21 @@ class _ReactionsStepsMixin:
 
         errors: dict[str, str] = {}
         primary_signal_name = str(user_input.get("primary_signal_name") or "").strip()
+        primary_trigger_mode = str(
+            user_input.get("primary_trigger_mode") or defaults["primary_trigger_mode"]
+        ).strip()
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        primary_bucket_match_mode = str(
+            user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
+        ).strip()
         corroboration_signal_name = str(
             user_input.get("corroboration_signal_name") or ""
         ).strip()
         corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
+        corroboration_bucket_match_mode = str(
+            user_input.get("corroboration_bucket_match_mode")
+            or defaults["corroboration_bucket_match_mode"]
+        ).strip()
         action_entities = self._normalize_multi_value(user_input.get("action_entities"))
 
         valid_signals = room_signal_names(rooms, room_id)
@@ -1089,12 +1159,20 @@ class _ReactionsStepsMixin:
         elif primary_signal_name not in valid_signals:
             errors["primary_signal_name"] = "invalid_signal_name"
 
-        if not errors.get("primary_signal_name"):
-            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
-            if not primary_bucket:
-                errors["primary_bucket"] = "required"
-            elif primary_bucket not in valid_buckets:
-                errors["primary_bucket"] = "invalid_bucket"
+        if primary_trigger_mode not in self._trigger_mode_options():
+            errors["primary_trigger_mode"] = "invalid_option"
+        elif not errors.get("primary_signal_name"):
+            if primary_trigger_mode == "burst":
+                if not room_signal_has_burst(rooms, room_id, primary_signal_name):
+                    errors["primary_trigger_mode"] = "no_burst_config"
+            else:
+                valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+                if not primary_bucket:
+                    errors["primary_bucket"] = "required"
+                elif primary_bucket not in valid_buckets:
+                    errors["primary_bucket"] = "invalid_bucket"
+                if primary_bucket_match_mode not in self._bucket_match_mode_options():
+                    errors["primary_bucket_match_mode"] = "invalid_option"
 
         if corroboration_signal_name:
             if corroboration_signal_name not in valid_signals:
@@ -1105,6 +1183,8 @@ class _ReactionsStepsMixin:
                 )
                 if corroboration_bucket and corroboration_bucket not in valid_corr_buckets:
                     errors["corroboration_bucket"] = "invalid_bucket"
+        if corroboration_bucket_match_mode not in self._bucket_match_mode_options():
+            errors["corroboration_bucket_match_mode"] = "invalid_option"
 
         if not action_entities:
             errors["action_entities"] = "required"
@@ -1112,9 +1192,12 @@ class _ReactionsStepsMixin:
         current_input = {
             "enabled": bool(user_input.get("enabled", defaults["enabled"])),
             "primary_signal_name": primary_signal_name or defaults["primary_signal_name"],
+            "primary_trigger_mode": primary_trigger_mode,
             "primary_bucket": primary_bucket,
+            "primary_bucket_match_mode": primary_bucket_match_mode,
             "corroboration_signal_name": corroboration_signal_name,
             "corroboration_bucket": corroboration_bucket,
+            "corroboration_bucket_match_mode": corroboration_bucket_match_mode,
             "action_entities": action_entities,
             "delete_reaction": False,
         }
@@ -1142,11 +1225,14 @@ class _ReactionsStepsMixin:
 
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["primary_signal_name"] = primary_signal_name
-        cfg["primary_bucket"] = primary_bucket
+        cfg["primary_trigger_mode"] = primary_trigger_mode
+        cfg["primary_bucket"] = primary_bucket if primary_trigger_mode == "bucket" else None
+        cfg["primary_bucket_match_mode"] = primary_bucket_match_mode
         cfg["primary_signal_entities"] = primary_entities
         cfg["trigger_signal_entities"] = primary_entities
         cfg["corroboration_signal_name"] = corroboration_signal_name or "corroboration"
         cfg["corroboration_bucket"] = corroboration_bucket or None
+        cfg["corroboration_bucket_match_mode"] = corroboration_bucket_match_mode
         cfg["corroboration_signal_entities"] = corroboration_entities
         cfg["temperature_signal_entities"] = corroboration_entities
         cfg["steps"] = self._action_entities_to_steps(action_entities)
@@ -1716,14 +1802,25 @@ class _ReactionsStepsMixin:
     ) -> vol.Schema:
         defaults = defaults or {}
         room_options = {room_id: room_id for room_id in self._room_ids()}
+        bucket_match_options = self._bucket_match_mode_options()
+        trigger_mode_options = self._trigger_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
                     vol.Required("room_id"): vol.In(room_options),
                     vol.Required("primary_signal_name", default="room_humidity"): str,
-                    vol.Required("primary_bucket", default="high"): str,
+                    vol.Required("primary_trigger_mode", default="bucket"): vol.In(
+                        trigger_mode_options
+                    ),
+                    vol.Optional("primary_bucket", default=""): str,
+                    vol.Required("primary_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Optional("corroboration_signal_name", default=""): str,
                     vol.Optional("corroboration_bucket", default=""): str,
+                    vol.Optional("corroboration_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
@@ -1738,12 +1835,16 @@ class _ReactionsStepsMixin:
         defaults = defaults or {}
         room_options = {room_id: room_id for room_id in self._room_ids()}
         action_options = self._admin_authored_lighting_action_options()
+        bucket_match_options = self._bucket_match_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
                     vol.Required("room_id"): vol.In(room_options),
                     vol.Required("primary_signal_name", default="room_lux"): str,
                     vol.Required("primary_bucket", default="dim"): str,
+                    vol.Required("primary_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
                     vol.Required("action", default="on"): vol.In(action_options),
                     vol.Optional("brightness", default=190): vol.All(
@@ -1761,14 +1862,25 @@ class _ReactionsStepsMixin:
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
         defaults = defaults or {}
+        bucket_match_options = self._bucket_match_mode_options()
+        trigger_mode_options = self._trigger_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
                     vol.Optional("enabled", default=True): bool,
                     vol.Required("primary_signal_name", default=""): str,
-                    vol.Required("primary_bucket", default=""): str,
+                    vol.Required("primary_trigger_mode", default="bucket"): vol.In(
+                        trigger_mode_options
+                    ),
+                    vol.Optional("primary_bucket", default=""): str,
+                    vol.Required("primary_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Optional("corroboration_signal_name", default=""): str,
                     vol.Optional("corroboration_bucket", default=""): str,
+                    vol.Optional("corroboration_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
@@ -1814,12 +1926,16 @@ class _ReactionsStepsMixin:
     ) -> vol.Schema:
         defaults = defaults or {}
         action_options = self._admin_authored_lighting_action_options()
+        bucket_match_options = self._bucket_match_mode_options()
         return self._with_suggested(
             vol.Schema(
                 {
                     vol.Optional("enabled", default=True): bool,
                     vol.Required("primary_signal_name", default="room_lux"): str,
                     vol.Required("primary_bucket", default="dim"): str,
+                    vol.Required("primary_bucket_match_mode", default="eq"): vol.In(
+                        bucket_match_options
+                    ),
                     vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
                     vol.Required("action", default="on"): vol.In(action_options),
                     vol.Optional("brightness", default=190): vol.All(
@@ -1837,6 +1953,21 @@ class _ReactionsStepsMixin:
     def _weekday_options(self) -> dict[str, str]:
         language = self._flow_language()
         return {str(index): self._weekday_label(index, language) for index in range(7)}
+
+    @staticmethod
+    def _bucket_match_mode_options() -> dict[str, str]:
+        return {
+            "eq": "Exact bucket",
+            "lte": "Bucket or lower",
+            "gte": "Bucket or higher",
+        }
+
+    @staticmethod
+    def _trigger_mode_options() -> dict[str, str]:
+        return {
+            "bucket": "Bucket (steady-state)",
+            "burst": "Burst (rapid change)",
+        }
 
     def _build_admin_authored_lighting_schedule_proposal(
         self,
@@ -1895,19 +2026,54 @@ class _ReactionsStepsMixin:
         room_id: str,
         primary_signal_entities: list[str],
         primary_signal_name: str,
+        primary_trigger_mode: str,
         primary_bucket: str,
+        primary_bucket_match_mode: str,
         corroboration_signal_entities: list[str],
         corroboration_signal_name: str,
         corroboration_bucket: str,
+        corroboration_bucket_match_mode: str,
         action_entities: list[str],
     ) -> ReactionProposal:
         template_id = "room.signal_assist.basic"
         identity_key = (
             f"room_signal_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
+            f"|mode={primary_trigger_mode}"
         )
         steps = self._action_entities_to_steps(action_entities)
+        if primary_trigger_mode == "burst":
+            trigger_text = f"{primary_signal_name.strip().lower()} bursts"
+        else:
+            primary_match_mode = primary_bucket_match_mode.strip() or "eq"
+            if primary_match_mode == "lte":
+                trigger_text = (
+                    f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or lower"
+                )
+            elif primary_match_mode == "gte":
+                trigger_text = (
+                    f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or higher"
+                )
+            else:
+                trigger_text = (
+                    f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()}"
+                )
+        if corroboration_signal_entities and corroboration_bucket.strip():
+            corroboration_match_mode = corroboration_bucket_match_mode.strip() or "eq"
+            if corroboration_match_mode == "lte":
+                corroboration_text = (
+                    f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or lower"
+                )
+            elif corroboration_match_mode == "gte":
+                corroboration_text = (
+                    f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or higher"
+                )
+            else:
+                corroboration_text = (
+                    f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()}"
+                )
+            trigger_text = f"{trigger_text} and {corroboration_text}"
         description = (
-            f"{room_id}: when {primary_signal_name.strip().lower()} changes quickly, "
+            f"{room_id}: when {trigger_text}, "
             f"trigger {len(steps)} action{'s' if len(steps) != 1 else ''}"
         )
         return ReactionProposal(
@@ -1921,13 +2087,18 @@ class _ReactionsStepsMixin:
             suggested_reaction_config={
                 "reaction_type": "room_signal_assist",
                 "room_id": room_id,
+                "primary_trigger_mode": primary_trigger_mode,
                 "trigger_signal_entities": list(primary_signal_entities),
                 "primary_signal_entities": list(primary_signal_entities),
-                "primary_bucket": primary_bucket.strip(),
+                "primary_bucket": primary_bucket.strip() if primary_trigger_mode == "bucket" else None,
+                "primary_bucket_match_mode": primary_bucket_match_mode.strip() or "eq",
                 "primary_signal_name": primary_signal_name.strip() or "primary",
                 "temperature_signal_entities": list(corroboration_signal_entities),
                 "corroboration_signal_entities": list(corroboration_signal_entities),
                 "corroboration_bucket": corroboration_bucket.strip() or None,
+                "corroboration_bucket_match_mode": (
+                    corroboration_bucket_match_mode.strip() or "eq"
+                ),
                 "corroboration_signal_name": corroboration_signal_name.strip() or "corroboration",
                 "correlation_window_s": 600,
                 "followup_window_s": 900,
@@ -1944,6 +2115,7 @@ class _ReactionsStepsMixin:
         primary_signal_entities: list[str],
         primary_signal_name: str,
         primary_bucket: str,
+        primary_bucket_match_mode: str,
         entity_ids: list[str],
         action: str,
         brightness: int | None,
@@ -1961,8 +2133,15 @@ class _ReactionsStepsMixin:
             }
             for entity_id in entity_ids
         ]
+        match_mode = primary_bucket_match_mode.strip() or "eq"
+        if match_mode == "lte":
+            trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or darker"
+        elif match_mode == "gte":
+            trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or brighter"
+        else:
+            trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()}"
         description = (
-            f"{room_id}: when {primary_signal_name.strip().lower()} drops too low, "
+            f"{room_id}: when {trigger_text}, "
             f"apply {len(entity_steps)} light action{'s' if len(entity_steps) != 1 else ''}"
         )
         return ReactionProposal(
@@ -1978,6 +2157,7 @@ class _ReactionsStepsMixin:
                 "room_id": room_id,
                 "primary_signal_entities": list(primary_signal_entities),
                 "primary_bucket": primary_bucket.strip(),
+                "primary_bucket_match_mode": primary_bucket_match_mode.strip() or "eq",
                 "primary_signal_name": primary_signal_name.strip() or "room_lux",
                 "corroboration_signal_entities": [],
                 "corroboration_signal_name": "corroboration",

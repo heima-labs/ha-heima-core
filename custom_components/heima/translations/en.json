@@ -398,16 +398,21 @@
       },
       "admin_authored_room_signal_assist": {
         "title": "New room signal assist",
-        "description": "Template: {template_title}\n{template_description}",
+        "description": "Template: {template_title}\n{template_description}\n\n{available_signals}",
         "data": {
           "room_id": "Room",
-          "primary_signal_entities": "Primary signal entities",
           "primary_signal_name": "Primary signal name",
+          "primary_trigger_mode": "Trigger mode",
           "primary_bucket": "Primary bucket",
-          "corroboration_signal_entities": "Corroboration entities",
-          "corroboration_signal_name": "Corroboration name",
+          "primary_bucket_match_mode": "Bucket match mode",
+          "corroboration_signal_name": "Corroboration signal name",
           "corroboration_bucket": "Corroboration bucket",
+          "corroboration_bucket_match_mode": "Corroboration match mode",
           "action_entities": "Actions to trigger"
+        },
+        "data_description": {
+          "primary_trigger_mode": "Bucket: fire while signal is in the given bucket. Burst: fire when signal changes rapidly (requires burst_threshold in room signal config).",
+          "primary_bucket": "Required for Bucket mode. {available_signals}"
         },
         "submit": "OK"
       },
@@ -494,7 +499,7 @@
       },
       "reactions_edit_form": {
         "title": "Edit reaction actions",
-        "description": "{reaction_description}\n{available_signals}",
+        "description": "{reaction_description}",
         "data": {
           "enabled": "Enabled",
           "primary_signal_name": "Signal name",
@@ -506,6 +511,11 @@
           "action_entities": "Scenes or scripts to activate",
           "pre_condition_min": "Lead time (minutes)",
           "delete_reaction": "Delete this reaction"
+        },
+        "data_description": {
+          "primary_signal_name": "Available signals and buckets: {available_signals}",
+          "primary_trigger_mode": "Bucket: fire while signal is in the given bucket. Burst: fire when signal changes rapidly (requires burst_threshold in room signal config).",
+          "primary_bucket": "Required for Bucket mode. Valid buckets per signal: {available_signals}"
         }
       },
       "reactions_delete_confirm": {
@@ -536,7 +546,8 @@
       "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings",
       "redacted_payload": "Invalid configuration: payload contains redacted values",
       "invalid_signal_name": "Signal name not found in room signal configuration",
-      "invalid_bucket": "Bucket label not found in the configured signal buckets"
+      "invalid_bucket": "Bucket label not found in the configured signal buckets",
+      "no_burst_config": "Signal has no burst_threshold configured in room signals"
     }
   }
 }

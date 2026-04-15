@@ -313,7 +313,7 @@ def _reconcile_rooms(
                 "occupancy_sources": [],
                 "learning_sources": [],
                 "logic": "any_of",
-                "on_dwell_s": 5,
+                "on_dwell_s": 0,
                 "off_dwell_s": 120,
                 "max_on_s": None,
                 "source": "ha_area_registry",

@@ -101,7 +101,7 @@ async def test_rooms_flow_persists_actuation_only_room_with_save_and_close():
             "occupancy_sources": [],
             "learning_sources": [],
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -915,7 +915,7 @@ async def test_rooms_flow_persists_weighted_quorum_room_source_weights():
             "logic": "weighted_quorum",
             "weight_threshold": 1.2,
             "source_weights": "binary_sensor.motion=0.4\nbinary_sensor.mmwave=0.8",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -946,7 +946,7 @@ async def test_rooms_flow_persists_separate_learning_sources():
             "occupancy_sources": ["binary_sensor.motion"],
             "learning_sources": ["sensor.studio_lux", "switch.studio_fan"],
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -986,7 +986,7 @@ async def test_rooms_flow_persists_structured_room_signals():
             ]
             """,
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1022,7 +1022,7 @@ async def test_rooms_flow_rejects_invalid_room_signals_json():
             "learning_sources": [],
             "signals": "{not-json}",
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1061,7 +1061,7 @@ async def test_rooms_flow_rejects_duplicate_signal_names():
             ]
             """,
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1136,7 +1136,7 @@ async def test_rooms_edit_form_orders_learning_before_occupancy_logic(monkeypatc
                     "occupancy_sources": [],
                     "learning_sources": [],
                     "logic": "any_of",
-                    "on_dwell_s": 5,
+                    "on_dwell_s": 0,
                     "off_dwell_s": 120,
                     "max_on_s": None,
                 }
@@ -1173,7 +1173,7 @@ async def test_rooms_edit_form_persists_explicit_inventory_bindings(monkeypatch)
                     "occupancy_sources": [],
                     "learning_sources": [],
                     "logic": "any_of",
-                    "on_dwell_s": 5,
+                    "on_dwell_s": 0,
                     "off_dwell_s": 120,
                     "max_on_s": None,
                 }
@@ -1208,7 +1208,7 @@ async def test_rooms_edit_form_persists_explicit_inventory_bindings(monkeypatch)
             "occupancy_sources": ["binary_sensor.studio_motion"],
             "learning_sources": ["sensor.studio_lux"],
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1479,7 +1479,7 @@ async def test_rooms_add_creates_linked_ha_area_when_missing(monkeypatch):
             "occupancy_sources": [],
             "learning_sources": [],
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1503,7 +1503,7 @@ async def test_rooms_edit_updates_linked_ha_area_name(monkeypatch):
                     "occupancy_sources": [],
                     "learning_sources": [],
                     "logic": "any_of",
-                    "on_dwell_s": 5,
+                    "on_dwell_s": 0,
                     "off_dwell_s": 120,
                     "max_on_s": None,
                 }
@@ -1526,7 +1526,7 @@ async def test_rooms_edit_updates_linked_ha_area_name(monkeypatch):
             "occupancy_sources": [],
             "learning_sources": [],
             "logic": "any_of",
-            "on_dwell_s": 5,
+            "on_dwell_s": 0,
             "off_dwell_s": 120,
             "max_on_s": None,
         }
@@ -1550,7 +1550,7 @@ async def test_rooms_remove_requires_confirmation_and_deletes_linked_ha_area(mon
                     "occupancy_sources": [],
                     "learning_sources": [],
                     "logic": "any_of",
-                    "on_dwell_s": 5,
+                    "on_dwell_s": 0,
                     "off_dwell_s": 120,
                     "max_on_s": None,
                 }
@@ -2682,8 +2682,10 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
             "room_id": "bathroom",
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "room_temperature",
             "corroboration_bucket": "warm",
+            "corroboration_bucket_match_mode": "gte",
             "action_entities": ["script.bathroom_ventilation"],
         }
     )
@@ -2701,9 +2703,11 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
     assert reaction["primary_signal_entities"] == ["sensor.bathroom_humidity"]
     assert reaction["primary_signal_name"] == "room_humidity"
     assert reaction["primary_bucket"] == "high"
+    assert reaction["primary_bucket_match_mode"] == "eq"
     assert reaction["corroboration_signal_entities"] == ["sensor.bathroom_temperature"]
     assert reaction["corroboration_signal_name"] == "room_temperature"
     assert reaction["corroboration_bucket"] == "warm"
+    assert reaction["corroboration_bucket_match_mode"] == "gte"
 
 
 @pytest.mark.asyncio
@@ -2738,6 +2742,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
             "room_id": "studio",
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
+            "primary_bucket_match_mode": "eq",
             "light_entities": ["light.studio_main", "light.studio_spot"],
             "action": "on",
             "brightness": 190,
@@ -2761,6 +2766,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
     assert reaction["source_template_id"] == "room.darkness_lighting_assist.basic"
     assert reaction["primary_signal_entities"] == ["sensor.studio_lux"]
     assert reaction["primary_bucket"] == "dim"
+    assert reaction["primary_bucket_match_mode"] == "eq"
     assert len(reaction["entity_steps"]) == 2
 
 
@@ -3415,6 +3421,7 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "primary_signal_name" in schema_keys
     assert "primary_bucket" in schema_keys
+    assert "primary_bucket_match_mode" in schema_keys
     assert "light_entities" in schema_keys
     assert "action" in schema_keys
     assert "primary_signal_entities" not in schema_keys
@@ -3455,6 +3462,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
                         "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
                         "primary_bucket": "dim",
+                        "primary_bucket_match_mode": "eq",
                         "entity_steps": [
                             {
                                 "entity_id": "light.studio_main",
@@ -3477,6 +3485,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
             "enabled": False,
             "primary_signal_name": "room_lux",
             "primary_bucket": "dark",
+            "primary_bucket_match_mode": "lte",
             "light_entities": ["light.studio_main", "light.studio_spot"],
             "action": "on",
             "brightness": 180,
@@ -3492,6 +3501,7 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
     # entity derived from room.signals[room_lux].entity_id
     assert stored["primary_signal_entities"] == ["sensor.studio_lux"]
     assert stored["primary_bucket"] == "dark"
+    assert stored["primary_bucket_match_mode"] == "lte"
     assert stored["entity_steps"] == [
         {
             "entity_id": "light.studio_main",
@@ -3817,8 +3827,10 @@ async def test_reactions_edit_form_for_room_signal_assist_shows_bucket_fields():
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "primary_signal_name" in schema_keys
     assert "primary_bucket" in schema_keys
+    assert "primary_bucket_match_mode" in schema_keys
     assert "corroboration_signal_name" in schema_keys
     assert "corroboration_bucket" in schema_keys
+    assert "corroboration_bucket_match_mode" in schema_keys
     assert "action_entities" in schema_keys
     assert "primary_signal_entities" not in schema_keys
 
@@ -3864,6 +3876,7 @@ async def test_reactions_edit_form_room_signal_assist_saves_with_derived_entity(
                     "room_id": "studio",
                     "primary_signal_name": "room_humidity",
                     "primary_bucket": "ok",
+                    "primary_bucket_match_mode": "eq",
                     "primary_signal_entities": ["sensor.studio_humidity"],
                     "steps": [],
                     "enabled": True,
@@ -3879,8 +3892,10 @@ async def test_reactions_edit_form_room_signal_assist_saves_with_derived_entity(
             "enabled": False,
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "gte",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
             "delete_reaction": False,
         }
@@ -3890,6 +3905,7 @@ async def test_reactions_edit_form_room_signal_assist_saves_with_derived_entity(
     stored = flow.options["reactions"]["configured"]["r1"]
     assert stored["enabled"] is False
     assert stored["primary_bucket"] == "high"
+    assert stored["primary_bucket_match_mode"] == "gte"
     assert stored["primary_signal_name"] == "room_humidity"
     assert stored["primary_signal_entities"] == ["sensor.studio_humidity"]
     assert "primary_threshold" not in stored
@@ -3923,8 +3939,10 @@ async def test_reactions_edit_form_room_signal_assist_rejects_invalid_signal_nam
             "enabled": True,
             "primary_signal_name": "room_co2",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
             "delete_reaction": False,
         }
@@ -3962,8 +3980,10 @@ async def test_reactions_edit_form_room_signal_assist_rejects_invalid_bucket():
             "enabled": True,
             "primary_signal_name": "room_humidity",
             "primary_bucket": "medium",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
             "delete_reaction": False,
         }
@@ -3983,6 +4003,7 @@ async def test_reactions_edit_form_room_signal_assist_with_valid_corroboration()
                     "room_id": "studio",
                     "primary_signal_name": "room_humidity",
                     "primary_bucket": "high",
+                    "primary_bucket_match_mode": "eq",
                     "primary_signal_entities": ["sensor.studio_humidity"],
                     "steps": [],
                     "enabled": True,
@@ -3998,8 +4019,10 @@ async def test_reactions_edit_form_room_signal_assist_with_valid_corroboration()
             "enabled": True,
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "room_temperature",
             "corroboration_bucket": "warm",
+            "corroboration_bucket_match_mode": "gte",
             "action_entities": ["scene.relax"],
             "delete_reaction": False,
         }
@@ -4009,6 +4032,7 @@ async def test_reactions_edit_form_room_signal_assist_with_valid_corroboration()
     stored = flow.options["reactions"]["configured"]["r1"]
     assert stored["corroboration_signal_name"] == "room_temperature"
     assert stored["corroboration_bucket"] == "warm"
+    assert stored["corroboration_bucket_match_mode"] == "gte"
     assert stored["corroboration_signal_entities"] == ["sensor.studio_temperature"]
 
 
@@ -4024,6 +4048,8 @@ async def test_admin_authored_room_signal_assist_no_entity_selector_in_schema():
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "primary_signal_name" in schema_keys
     assert "primary_bucket" in schema_keys
+    assert "primary_bucket_match_mode" in schema_keys
+    assert "corroboration_bucket_match_mode" in schema_keys
     assert "primary_signal_entities" not in schema_keys
     assert "corroboration_signal_entities" not in schema_keys
 
@@ -4037,8 +4063,10 @@ async def test_admin_authored_room_signal_assist_rejects_unknown_signal():
             "room_id": "studio",
             "primary_signal_name": "room_co2",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
         }
     )
@@ -4056,8 +4084,10 @@ async def test_admin_authored_room_signal_assist_rejects_unknown_bucket():
             "room_id": "studio",
             "primary_signal_name": "room_humidity",
             "primary_bucket": "medium",
+            "primary_bucket_match_mode": "eq",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
         }
     )
@@ -4075,8 +4105,10 @@ async def test_admin_authored_room_signal_assist_derives_entity_from_room_signal
             "room_id": "studio",
             "primary_signal_name": "room_humidity",
             "primary_bucket": "high",
+            "primary_bucket_match_mode": "lte",
             "corroboration_signal_name": "",
             "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
             "action_entities": ["scene.relax"],
         }
     )
@@ -4087,4 +4119,131 @@ async def test_admin_authored_room_signal_assist_derives_entity_from_room_signal
     stored = next(iter(configured.values()))
     assert stored["primary_signal_entities"] == ["sensor.studio_humidity"]
     assert stored["primary_bucket"] == "high"
+    assert stored["primary_bucket_match_mode"] == "lte"
     assert stored["reaction_type"] == "room_signal_assist"
+
+
+def _room_with_burst_signal() -> dict:
+    """Room with humidity signal that has burst_threshold configured."""
+    return {
+        "room_id": "bathroom",
+        "display_name": "Bathroom",
+        "occupancy_sources": ["binary_sensor.bathroom_motion"],
+        "source": "ha_area_registry",
+        "ha_sync_status": "orphaned",
+        "signals": [
+            {
+                "entity_id": "sensor.bathroom_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+                "burst_threshold": 8.0,
+                "burst_window_s": 300,
+                "burst_direction": "up",
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_burst_mode_creates_proposal():
+    flow = _flow({"rooms": [_room_with_burst_signal()]})
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "bathroom",
+            "primary_signal_name": "room_humidity",
+            "primary_trigger_mode": "burst",
+            "primary_bucket": "",
+            "primary_bucket_match_mode": "eq",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
+            "action_entities": ["script.turn_on_fan"],
+        }
+    )
+
+    assert result["type"] == "menu"
+    configured = flow.options["reactions"]["configured"]
+    assert len(configured) == 1
+    stored = next(iter(configured.values()))
+    assert stored["primary_trigger_mode"] == "burst"
+    assert stored["primary_bucket"] is None
+    assert stored["primary_signal_name"] == "room_humidity"
+    assert stored["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+    assert stored["reaction_type"] == "room_signal_assist"
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_signal_assist_burst_mode_rejects_missing_burst_config():
+    """Burst mode rejected when signal has no burst_threshold configured."""
+    flow = _flow({"rooms": [_room_with_signals()]})  # studio signals have no burst_threshold
+
+    result = await flow.async_step_admin_authored_room_signal_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_humidity",
+            "primary_trigger_mode": "burst",
+            "primary_bucket": "",
+            "primary_bucket_match_mode": "eq",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
+            "action_entities": ["script.turn_on_fan"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"].get("primary_trigger_mode") == "no_burst_config"
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_room_signal_assist_burst_mode_saves_correctly():
+    flow = _flow(
+        {
+            "rooms": [_room_with_burst_signal()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_signal_assist",
+                        "room_id": "bathroom",
+                        "primary_signal_name": "room_humidity",
+                        "primary_trigger_mode": "burst",
+                        "primary_bucket": None,
+                        "primary_signal_entities": ["sensor.bathroom_humidity"],
+                        "steps": [{"domain": "script", "target": "script.turn_on_fan", "action": "script.turn_on"}],
+                        "enabled": True,
+                    }
+                }
+            },
+        }
+    )
+
+    # Select reaction to edit
+    result = await flow.async_step_reactions_edit({"reaction": "r1"})
+    assert result["type"] == "form"
+
+    # Submit burst mode edit
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "primary_signal_name": "room_humidity",
+            "primary_trigger_mode": "burst",
+            "primary_bucket": "",
+            "primary_bucket_match_mode": "eq",
+            "corroboration_signal_name": "",
+            "corroboration_bucket": "",
+            "corroboration_bucket_match_mode": "eq",
+            "action_entities": ["script.turn_on_fan"],
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["primary_trigger_mode"] == "burst"
+    assert stored["primary_bucket"] is None
+    assert stored["primary_signal_entities"] == ["sensor.bathroom_humidity"]

@@ -44,6 +44,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `037_admin_authored_room_signal_binary_modes.py`
 - Diagnostics:
   - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). Per `learning`, `reactions` e `lighting` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati, collisioni lighting per slot e pending tuning lighting.
+  - `reaction_live_debug.py`: polling live di una singola reaction con vista unica su `heima_reactions_active`, `engine diagnostics`, `apply_plan`, ultimo evento e stato delle entita osservate.
   - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati, collisioni lighting per slot e overview lighting-specifica su configured/pending/tuning.
   - `ops_audit.py`: summary operativo compatto per monitoring continuo (health, house state, learning backlog, reactions, security, camera evidence, security presence).
     Può anche esportare uno snapshot JSON stabile con `--snapshot-out <path>` per review longitudinali.
@@ -104,6 +105,16 @@ python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --secti
 python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --snapshot-out /tmp/heima_ops_snapshot.json
+
+# Debug live di una reaction specifica per label
+python3 scripts/reaction_live_debug.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --label-contains "Luce studio"
+
+# Oppure per reaction_id, aggiungendo entita da monitorare esplicitamente
+python3 scripts/reaction_live_debug.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" \
+  --reaction-id "<reaction_id>" \
+  --entity sensor.study_illuminance \
+  --entity binary_sensor.study_presence \
+  --entity light.study_main
 ```
 
 - Per un check rapido giornaliero su produzione:

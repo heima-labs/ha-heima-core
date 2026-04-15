@@ -381,7 +381,7 @@ Example:
 
 ### `on_dwell_s`
 - Type: positive integer
-- Default: `5`
+- Default: `0`
 - Meaning: room must remain in an `on` candidate state this long before becoming occupied.
 
 ### `off_dwell_s`

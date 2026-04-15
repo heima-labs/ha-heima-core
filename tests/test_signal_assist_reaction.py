@@ -306,6 +306,7 @@ def test_signal_assist_reaction_supports_canonical_primary_bucket_steady_state()
         primary_signal_entities=["sensor.bathroom_humidity"],
         primary_signal_name="room_humidity",
         primary_bucket="high",
+        primary_bucket_labels=["low", "ok", "high"],
         steps=[ApplyStep(domain="script", target="script.fan_on", action="script.turn_on")],
         followup_window_s=0,
     )
@@ -320,6 +321,32 @@ def test_signal_assist_reaction_supports_canonical_primary_bucket_steady_state()
     assert steps[0].target == "script.fan_on"
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["bathroom"], ts=ts2)]) == []
+
+
+def test_signal_assist_reaction_supports_primary_bucket_lte_matching():
+    hass = MagicMock()
+    bucket_state = {"bathroom:room_humidity": "ok"}
+
+    def _bucket_getter(room_id: str, signal_name: str) -> str | None:
+        return bucket_state.get(f"{room_id}:{signal_name}")
+
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        bucket_getter=_bucket_getter,
+        room_id="bathroom",
+        primary_signal_entities=["sensor.bathroom_humidity"],
+        primary_signal_name="room_humidity",
+        primary_bucket="high",
+        primary_bucket_match_mode="lte",
+        primary_bucket_labels=["low", "ok", "high"],
+        steps=[ApplyStep(domain="script", target="script.fan_on", action="script.turn_on")],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc).isoformat()
+
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["bathroom"], ts=ts1)])
+    assert len(steps) == 1
+    assert steps[0].target == "script.fan_on"
 
 
 def test_signal_assist_reaction_requires_canonical_corroboration_bucket_when_configured():
@@ -339,9 +366,11 @@ def test_signal_assist_reaction_requires_canonical_corroboration_bucket_when_con
         primary_signal_entities=["sensor.office_co2"],
         primary_signal_name="room_co2",
         primary_bucket="elevated",
+        primary_bucket_labels=["ok", "elevated", "high"],
         corroboration_signal_entities=["sensor.office_humidity"],
         corroboration_signal_name="room_humidity",
         corroboration_bucket="high",
+        corroboration_bucket_labels=["low", "ok", "high"],
         steps=[
             ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")
         ],
@@ -354,5 +383,41 @@ def test_signal_assist_reaction_requires_canonical_corroboration_bucket_when_con
 
     bucket_state["office:room_humidity"] = "high"
     steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts2)])
+    assert len(steps) == 1
+    assert steps[0].target == "script.ventilate_office"
+
+
+def test_signal_assist_reaction_supports_corroboration_bucket_gte_matching():
+    hass = MagicMock()
+    bucket_state = {
+        "office:room_co2": "high",
+        "office:room_temperature": "hot",
+    }
+
+    def _bucket_getter(room_id: str, signal_name: str) -> str | None:
+        return bucket_state.get(f"{room_id}:{signal_name}")
+
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        bucket_getter=_bucket_getter,
+        room_id="office",
+        primary_signal_entities=["sensor.office_co2"],
+        primary_signal_name="room_co2",
+        primary_bucket="elevated",
+        primary_bucket_match_mode="gte",
+        primary_bucket_labels=["ok", "elevated", "high"],
+        corroboration_signal_entities=["sensor.office_temperature"],
+        corroboration_signal_name="room_temperature",
+        corroboration_bucket="warm",
+        corroboration_bucket_match_mode="gte",
+        corroboration_bucket_labels=["cool", "ok", "warm", "hot"],
+        steps=[
+            ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")
+        ],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc).isoformat()
+
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)])
     assert len(steps) == 1
     assert steps[0].target == "script.ventilate_office"

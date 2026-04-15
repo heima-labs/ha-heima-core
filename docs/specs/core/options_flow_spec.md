@@ -256,7 +256,7 @@ Fields:
 - `occupancy_mode` (enum: `derived`, `none`; default `derived`)
 - `sources` (multi-entity picker, conditional)
 - `logic` (enum: `any_of`, `all_of`, conditional)
-- `on_dwell_s` (int, default 5)
+- `on_dwell_s` (int, default 0)
 - `off_dwell_s` (int, default 120)
 - `max_on_s` (int, optional)
 

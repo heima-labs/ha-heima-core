@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from homeassistant.core import HomeAssistant
 
+from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
@@ -18,6 +19,25 @@ from .composite import (
     ThresholdMode,
     parse_snapshot_ts,
 )
+
+BucketMatchMode = Literal["eq", "lte", "gte"]
+
+
+def _normalize_bucket_match_mode(value: str | BucketMatchMode | None) -> BucketMatchMode:
+    normalized = str(value or "eq").strip().lower()
+    if normalized in {"eq", "lte", "gte"}:
+        return normalized  # type: ignore[return-value]
+    return "eq"
+
+
+def _bucket_match_mode_label(value: str | BucketMatchMode | None, *, language: str) -> str:
+    normalized = _normalize_bucket_match_mode(value)
+    is_it = language.startswith("it")
+    if normalized == "lte":
+        return "bucket o inferiori" if is_it else "bucket or lower"
+    if normalized == "gte":
+        return "bucket o superiori" if is_it else "bucket or higher"
+    return "bucket esatto" if is_it else "exact bucket"
 
 
 class RoomSignalAssistReaction(HeimaReaction):
@@ -35,6 +55,8 @@ class RoomSignalAssistReaction(HeimaReaction):
         steps: list[ApplyStep],
         primary_signal_entities: list[str] | None = None,
         primary_bucket: str | None = None,
+        primary_bucket_match_mode: BucketMatchMode = "eq",
+        primary_bucket_labels: list[str] | None = None,
         primary_threshold: float | None = None,
         primary_threshold_mode: ThresholdMode = "rise",
         primary_rise_threshold: float | None = None,
@@ -42,6 +64,8 @@ class RoomSignalAssistReaction(HeimaReaction):
         humidity_rise_threshold: float = 8.0,
         corroboration_signal_entities: list[str] | None = None,
         corroboration_bucket: str | None = None,
+        corroboration_bucket_match_mode: BucketMatchMode = "eq",
+        corroboration_bucket_labels: list[str] | None = None,
         corroboration_threshold: float | None = None,
         corroboration_threshold_mode: ThresholdMode = "rise",
         corroboration_rise_threshold: float | None = None,
@@ -85,9 +109,19 @@ class RoomSignalAssistReaction(HeimaReaction):
         self._corroboration_entities = resolved_corroboration_entities
         self._steps = list(steps)
         self._primary_bucket = str(primary_bucket or "").strip() or None
+        self._primary_bucket_match_mode = _normalize_bucket_match_mode(primary_bucket_match_mode)
+        self._primary_bucket_labels = tuple(
+            str(item).strip() for item in (primary_bucket_labels or []) if str(item).strip()
+        )
         self._primary_threshold = float(resolved_primary_threshold)
         self._primary_threshold_mode = primary_threshold_mode
         self._corroboration_bucket = str(corroboration_bucket or "").strip() or None
+        self._corroboration_bucket_match_mode = _normalize_bucket_match_mode(
+            corroboration_bucket_match_mode
+        )
+        self._corroboration_bucket_labels = tuple(
+            str(item).strip() for item in (corroboration_bucket_labels or []) if str(item).strip()
+        )
         self._corroboration_threshold = float(resolved_corroboration_threshold)
         self._corroboration_threshold_mode = corroboration_threshold_mode
         self._primary_signal_name = primary_signal_name or "primary"
@@ -178,9 +212,13 @@ class RoomSignalAssistReaction(HeimaReaction):
             "primary_signal_name": self._primary_signal_name,
             "primary_entities": list(self._primary_entities),
             "primary_bucket": self._primary_bucket,
+            "primary_bucket_match_mode": self._primary_bucket_match_mode,
+            "primary_bucket_labels": list(self._primary_bucket_labels),
             "corroboration_signal_name": self._corroboration_signal_name,
             "corroboration_entities": list(self._corroboration_entities),
             "corroboration_bucket": self._corroboration_bucket,
+            "corroboration_bucket_match_mode": self._corroboration_bucket_match_mode,
+            "corroboration_bucket_labels": list(self._corroboration_bucket_labels),
             "uses_burst_accessor": self._use_burst_accessor,
             "humidity_entities": list(self._primary_entities),
             "temperature_entities": list(self._corroboration_entities),
@@ -209,7 +247,12 @@ class RoomSignalAssistReaction(HeimaReaction):
 
     def _steady_ready(self) -> bool:
         current_bucket = self._bucket_getter(self._room_id, self._primary_signal_name)
-        if current_bucket != self._primary_bucket:
+        if not self._bucket_matches(
+            current_bucket,
+            expected_bucket=self._primary_bucket,
+            match_mode=self._primary_bucket_match_mode,
+            labels=self._primary_bucket_labels,
+        ):
             self._steady_condition_active = False
             return False
         if self._corroboration_bucket:
@@ -217,12 +260,45 @@ class RoomSignalAssistReaction(HeimaReaction):
                 self._room_id,
                 self._corroboration_signal_name,
             )
-            if corroboration_bucket != self._corroboration_bucket:
+            if not self._bucket_matches(
+                corroboration_bucket,
+                expected_bucket=self._corroboration_bucket,
+                match_mode=self._corroboration_bucket_match_mode,
+                labels=self._corroboration_bucket_labels,
+            ):
                 self._steady_condition_active = False
                 return False
         if self._steady_condition_active:
             return False
         return True
+
+    @staticmethod
+    def _bucket_matches(
+        current_bucket: str | None,
+        *,
+        expected_bucket: str | None,
+        match_mode: BucketMatchMode,
+        labels: tuple[str, ...],
+    ) -> bool:
+        expected = str(expected_bucket or "").strip()
+        current = str(current_bucket or "").strip()
+        if not expected or not current:
+            return False
+        if match_mode == "eq":
+            return current == expected
+        order = list(labels)
+        if not order:
+            return current == expected
+        try:
+            current_index = order.index(current)
+            expected_index = order.index(expected)
+        except ValueError:
+            return current == expected
+        if match_mode == "lte":
+            return current_index <= expected_index
+        if match_mode == "gte":
+            return current_index >= expected_index
+        return current == expected
 
     def _burst_ready(self) -> bool:
         should_fire = bool(
@@ -265,6 +341,7 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
         if str(v).strip()
     ]
     primary_bucket = str(cfg.get("primary_bucket") or "").strip() or None
+    primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "eq").strip() or "eq"
     temperature_signal_entities = [
         str(v).strip() for v in cfg.get("temperature_signal_entities", []) if str(v).strip()
     ]
@@ -274,6 +351,9 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
         if str(v).strip()
     ]
     corroboration_bucket = str(cfg.get("corroboration_bucket") or "").strip() or None
+    corroboration_bucket_match_mode = (
+        str(cfg.get("corroboration_bucket_match_mode") or "eq").strip() or "eq"
+    )
     humidity_rise_threshold = float(cfg.get("humidity_rise_threshold", 8.0))
     primary_rise_threshold = float(cfg.get("primary_rise_threshold", humidity_rise_threshold))
     primary_threshold = float(cfg.get("primary_threshold", primary_rise_threshold))
@@ -307,9 +387,11 @@ def normalize_room_signal_assist_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "trigger_signal_entities": trigger_signal_entities,
         "primary_signal_entities": primary_signal_entities,
         "primary_bucket": primary_bucket,
+        "primary_bucket_match_mode": primary_bucket_match_mode,
         "temperature_signal_entities": temperature_signal_entities,
         "corroboration_signal_entities": corroboration_signal_entities,
         "corroboration_bucket": corroboration_bucket,
+        "corroboration_bucket_match_mode": corroboration_bucket_match_mode,
         "humidity_rise_threshold": humidity_rise_threshold,
         "primary_rise_threshold": primary_rise_threshold,
         "primary_threshold": primary_threshold,
@@ -338,15 +420,24 @@ def _build_normalized_room_signal_assist_reaction(
         followup_window_s = int(cfg.get("followup_window_s", 900))
         steps_raw: list = cfg.get("steps", [])
         steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+        rooms = list(dict(getattr(engine, "_entry").options).get("rooms") or [])  # noqa: SLF001
+        primary_bucket_labels = room_signal_bucket_labels(
+            rooms, room_id, normalized["primary_signal_name"]
+        )
+        corroboration_bucket_labels = room_signal_bucket_labels(
+            rooms, room_id, normalized["corroboration_signal_name"]
+        )
         if not room_id or not normalized["primary_signal_entities"]:
             raise ValueError("room_id or primary_signal_entities missing")
         if expected_contract == "canonical":
             if not _is_canonical_signal_assist_type(reaction_type):
                 raise ValueError("canonical builder requires canonical reaction type")
-            if not normalized["primary_bucket"]:
+            primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "bucket").strip()
+            if primary_trigger_mode != "burst" and not normalized["primary_bucket"]:
                 raise ValueError("canonical room signal assist requires primary_bucket")
             if (
-                reaction_type == "room_signal_assist"
+                primary_trigger_mode != "burst"
+                and reaction_type == "room_signal_assist"
                 and normalized["corroboration_signal_entities"]
                 and not normalized["corroboration_bucket"]
             ):
@@ -364,17 +455,31 @@ def _build_normalized_room_signal_assist_reaction(
         hass=engine._hass,  # noqa: SLF001
         bucket_getter=engine.signal_bucket,
         burst_getter=engine.signal_burst_recent,
-        use_burst_accessor=expected_contract == "cooling",
+        use_burst_accessor=(
+            expected_contract == "cooling"
+            or (
+                expected_contract == "canonical"
+                and str(cfg.get("primary_trigger_mode") or "bucket").strip() == "burst"
+            )
+        ),
         room_id=room_id,
         trigger_signal_entities=normalized["trigger_signal_entities"],
         primary_signal_entities=normalized["primary_signal_entities"],
         primary_bucket=normalized["primary_bucket"],
+        primary_bucket_match_mode=_normalize_bucket_match_mode(
+            normalized.get("primary_bucket_match_mode")
+        ),
+        primary_bucket_labels=primary_bucket_labels,
         primary_threshold=normalized["primary_threshold"],
         primary_threshold_mode=normalized["primary_threshold_mode"],
         primary_rise_threshold=normalized["primary_rise_threshold"],
         primary_signal_name=normalized["primary_signal_name"],
         corroboration_signal_entities=normalized["corroboration_signal_entities"],
         corroboration_bucket=normalized["corroboration_bucket"],
+        corroboration_bucket_match_mode=_normalize_bucket_match_mode(
+            normalized.get("corroboration_bucket_match_mode")
+        ),
+        corroboration_bucket_labels=corroboration_bucket_labels,
         corroboration_threshold=normalized["corroboration_threshold"],
         corroboration_threshold_mode=normalized["corroboration_threshold_mode"],
         corroboration_rise_threshold=normalized["corroboration_rise_threshold"],
@@ -464,6 +569,14 @@ def present_admin_authored_room_signal_assist_details(
         details.append(
             f"Bucket primario: {primary_bucket}" if is_it else f"Primary bucket: {primary_bucket}"
         )
+    primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if primary_bucket_match_mode:
+        match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
+        details.append(
+            f"Match primario: {match_label}"
+            if is_it
+            else f"Primary bucket match: {match_label}"
+        )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
     if (
@@ -502,6 +615,18 @@ def present_admin_authored_room_signal_assist_details(
                 f"Bucket corroborante: {corroboration_bucket}"
                 if is_it
                 else f"Corroborating bucket: {corroboration_bucket}"
+            )
+        corroboration_bucket_match_mode = str(
+            cfg.get("corroboration_bucket_match_mode") or ""
+        ).strip()
+        if corroboration_bucket_match_mode:
+            match_label = _bucket_match_mode_label(
+                corroboration_bucket_match_mode, language=language
+            )
+            details.append(
+                f"Match corroborante: {match_label}"
+                if is_it
+                else f"Corroborating bucket match: {match_label}"
             )
         corroboration_threshold = cfg.get(
             "corroboration_threshold", cfg.get("corroboration_rise_threshold")
@@ -554,6 +679,14 @@ def present_learned_room_signal_assist_details(
         details.append(
             f"Bucket proposto: {primary_bucket}" if is_it else f"Proposed bucket: {primary_bucket}"
         )
+    primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if primary_bucket_match_mode:
+        match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
+        details.append(
+            f"Match proposto: {match_label}"
+            if is_it
+            else f"Proposed bucket match: {match_label}"
+        )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
     if (
@@ -601,6 +734,24 @@ def present_tuning_room_signal_assist_details(
                 f"Bucket primario: {current_bucket} -> {proposed_bucket}"
                 if is_it
                 else f"Primary bucket: {current_bucket} -> {proposed_bucket}"
+            )
+    current_primary_match_mode = str(target_cfg.get("primary_bucket_match_mode") or "").strip()
+    proposed_primary_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if current_primary_match_mode or proposed_primary_match_mode:
+        current_primary_match_label = _bucket_match_mode_label(
+            current_primary_match_mode, language=language
+        )
+        proposed_primary_match_label = _bucket_match_mode_label(
+            proposed_primary_match_mode, language=language
+        )
+        if current_primary_match_mode != proposed_primary_match_mode:
+            details.append(
+                f"Match primario: {current_primary_match_label} -> {proposed_primary_match_label}"
+                if is_it
+                else (
+                    "Primary bucket match: "
+                    f"{current_primary_match_label} -> {proposed_primary_match_label}"
+                )
             )
     current_threshold = target_cfg.get(
         "primary_threshold", target_cfg.get("primary_rise_threshold")
@@ -657,6 +808,29 @@ def present_tuning_room_signal_assist_details(
                 else (
                     "Corroboration bucket: "
                     f"{current_corroboration_bucket} -> {proposed_corroboration_bucket}"
+                )
+            )
+    current_corroboration_match_mode = str(
+        target_cfg.get("corroboration_bucket_match_mode") or ""
+    ).strip()
+    proposed_corroboration_match_mode = str(
+        cfg.get("corroboration_bucket_match_mode") or ""
+    ).strip()
+    if current_corroboration_match_mode or proposed_corroboration_match_mode:
+        current_corroboration_match_label = _bucket_match_mode_label(
+            current_corroboration_match_mode, language=language
+        )
+        proposed_corroboration_match_label = _bucket_match_mode_label(
+            proposed_corroboration_match_mode, language=language
+        )
+        if current_corroboration_match_mode != proposed_corroboration_match_mode:
+            details.append(
+                "Match corroborante: "
+                f"{current_corroboration_match_label} -> {proposed_corroboration_match_label}"
+                if is_it
+                else (
+                    "Corroborating bucket match: "
+                    f"{current_corroboration_match_label} -> {proposed_corroboration_match_label}"
                 )
             )
 

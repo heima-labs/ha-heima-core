@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from homeassistant.core import HomeAssistant
 
+from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
@@ -17,6 +18,25 @@ from .composite import (
     RuntimeCompositeSignalSpec,
     parse_snapshot_ts,
 )
+
+BucketMatchMode = Literal["eq", "lte", "gte"]
+
+
+def _normalize_bucket_match_mode(value: str | BucketMatchMode | None) -> BucketMatchMode:
+    normalized = str(value or "eq").strip().lower()
+    if normalized in {"eq", "lte", "gte"}:
+        return normalized  # type: ignore[return-value]
+    return "eq"
+
+
+def _bucket_match_mode_label(value: str | BucketMatchMode | None, *, language: str) -> str:
+    normalized = _normalize_bucket_match_mode(value)
+    is_it = language.startswith("it")
+    if normalized == "lte":
+        return "bucket o inferiori" if is_it else "bucket or lower"
+    if normalized == "gte":
+        return "bucket o superiori" if is_it else "bucket or higher"
+    return "bucket esatto" if is_it else "exact bucket"
 
 
 class RoomLightingAssistReaction(HeimaReaction):
@@ -31,6 +51,8 @@ class RoomLightingAssistReaction(HeimaReaction):
         entity_steps: list[dict[str, Any]],
         primary_signal_entities: list[str],
         primary_bucket: str | None = None,
+        primary_bucket_match_mode: BucketMatchMode = "eq",
+        primary_bucket_labels: list[str] | None = None,
         primary_signal_name: str = "room_lux",
         corroboration_signal_entities: list[str] | None = None,
         corroboration_threshold: float | None = None,
@@ -48,13 +70,17 @@ class RoomLightingAssistReaction(HeimaReaction):
         self._followup_window_s = followup_window_s
         self._matcher = RuntimeCompositeMatcher(hass)
         self._primary_bucket = str(primary_bucket or "").strip() or None
+        self._primary_bucket_match_mode = _normalize_bucket_match_mode(primary_bucket_match_mode)
+        self._primary_bucket_labels = tuple(
+            str(item).strip() for item in (primary_bucket_labels or []) if str(item).strip()
+        )
         corroboration_entities = [e for e in (corroboration_signal_entities or []) if e]
         self._pattern = RuntimeCompositePatternSpec(
             primary=RuntimeCompositeSignalSpec(
                 name=primary_signal_name,
                 entity_ids=tuple(primary_signal_entities),
                 threshold=0.0,
-                threshold_mode="below",
+                threshold_mode="state_change",
             ),
             corroborations=(
                 RuntimeCompositeSignalSpec(
@@ -98,7 +124,10 @@ class RoomLightingAssistReaction(HeimaReaction):
         )
         self._pending_episode_ts = result.pending_since
         steady_ready = self._steady_ready()
-        should_fire = result.ready or steady_ready
+        corroboration_ready = bool(self._pattern.corroborations) and bool(result.ready) and bool(
+            self._bucket_matches(self._current_primary_bucket())
+        )
+        should_fire = corroboration_ready or steady_ready
         if not should_fire:
             self._steady_condition_active = False
             return []
@@ -125,6 +154,8 @@ class RoomLightingAssistReaction(HeimaReaction):
             "room_id": self._room_id,
             "entity_steps": len(self._entity_steps),
             "primary_bucket": self._primary_bucket,
+            "primary_bucket_match_mode": self._primary_bucket_match_mode,
+            "primary_bucket_labels": list(self._primary_bucket_labels),
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
@@ -138,6 +169,9 @@ class RoomLightingAssistReaction(HeimaReaction):
         if self._last_fired_ts is None:
             return True
         return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
+
+    def _current_primary_bucket(self) -> str | None:
+        return self._bucket_getter(self._room_id, self._pattern.primary.name)
 
     def _build_steps(self) -> list[ApplyStep]:
         steps: list[ApplyStep] = []
@@ -176,12 +210,33 @@ class RoomLightingAssistReaction(HeimaReaction):
         return steps
 
     def _steady_ready(self) -> bool:
-        current_bucket = self._bucket_getter(self._room_id, self._pattern.primary.name)
-        if current_bucket != self._primary_bucket:
+        current_bucket = self._current_primary_bucket()
+        if not self._bucket_matches(current_bucket):
             return False
         if self._steady_condition_active:
             return False
         return self._entity_steps_need_apply()
+
+    def _bucket_matches(self, current_bucket: str | None) -> bool:
+        expected_bucket = str(self._primary_bucket or "").strip()
+        current = str(current_bucket or "").strip()
+        if not expected_bucket or not current:
+            return False
+        if self._primary_bucket_match_mode == "eq":
+            return current == expected_bucket
+        order = list(self._primary_bucket_labels)
+        if not order:
+            return current == expected_bucket
+        try:
+            current_index = order.index(current)
+            expected_index = order.index(expected_bucket)
+        except ValueError:
+            return current == expected_bucket
+        if self._primary_bucket_match_mode == "lte":
+            return current_index <= expected_index
+        if self._primary_bucket_match_mode == "gte":
+            return current_index >= expected_index
+        return current == expected_bucket
 
     def _entity_steps_need_apply(self) -> bool:
         for cfg in self._entity_steps:
@@ -210,6 +265,9 @@ def build_room_lighting_assist_reaction(
             str(v).strip() for v in cfg.get("primary_signal_entities", []) if str(v).strip()
         ]
         primary_bucket = str(cfg.get("primary_bucket") or "").strip() or None
+        primary_bucket_match_mode = _normalize_bucket_match_mode(
+            str(cfg.get("primary_bucket_match_mode") or "eq")
+        )
         primary_signal_name = str(cfg.get("primary_signal_name", "room_lux"))
         corroboration_signal_entities = [
             str(v).strip() for v in cfg.get("corroboration_signal_entities", []) if str(v).strip()
@@ -224,6 +282,8 @@ def build_room_lighting_assist_reaction(
         correlation_window_s = int(cfg.get("correlation_window_s", 600))
         followup_window_s = int(cfg.get("followup_window_s", 900))
         entity_steps = list(cfg.get("entity_steps", []))
+        rooms = list(dict(getattr(engine, "_entry").options).get("rooms") or [])  # noqa: SLF001
+        primary_bucket_labels = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
         if not room_id or not primary_signal_entities or not entity_steps:
             raise ValueError("room_id, primary_signal_entities or entity_steps missing")
         if primary_bucket is None:
@@ -237,6 +297,8 @@ def build_room_lighting_assist_reaction(
         entity_steps=entity_steps,
         primary_signal_entities=primary_signal_entities,
         primary_bucket=primary_bucket,
+        primary_bucket_match_mode=primary_bucket_match_mode,
+        primary_bucket_labels=primary_bucket_labels,
         primary_signal_name=primary_signal_name,
         corroboration_signal_entities=corroboration_signal_entities,
         corroboration_threshold=corroboration_threshold,
@@ -297,6 +359,12 @@ def present_admin_authored_room_lighting_assist_details(
         details.append(
             f"Bucket buio: {primary_bucket}" if is_it else f"Darkness bucket: {primary_bucket}"
         )
+    primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if primary_bucket_match_mode:
+        match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
+        details.append(
+            f"Match bucket: {match_label}" if is_it else f"Bucket match: {match_label}"
+        )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
         details.append(
@@ -329,6 +397,14 @@ def present_learned_room_lighting_assist_details(
         details.append(
             f"Bucket proposto: {primary_bucket}" if is_it else f"Proposed bucket: {primary_bucket}"
         )
+    primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if primary_bucket_match_mode:
+        match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
+        details.append(
+            f"Match proposto: {match_label}"
+            if is_it
+            else f"Proposed bucket match: {match_label}"
+        )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
         details.append(
@@ -358,6 +434,17 @@ def present_tuning_room_lighting_assist_details(
                 f"Bucket: {current_bucket} -> {proposed_bucket}"
                 if is_it
                 else f"Bucket: {current_bucket} -> {proposed_bucket}"
+            )
+    current_match_mode = str(target_cfg.get("primary_bucket_match_mode") or "").strip()
+    proposed_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
+    if current_match_mode or proposed_match_mode:
+        current_match_label = _bucket_match_mode_label(current_match_mode, language=language)
+        proposed_match_label = _bucket_match_mode_label(proposed_match_mode, language=language)
+        if current_match_mode != proposed_match_mode:
+            details.append(
+                f"Match: {current_match_label} -> {proposed_match_label}"
+                if is_it
+                else f"Match: {current_match_label} -> {proposed_match_label}"
             )
 
     current_primary_entities = target_cfg.get("primary_signal_entities")
