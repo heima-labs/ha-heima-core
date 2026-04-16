@@ -36,10 +36,27 @@ if TYPE_CHECKING:
 class _GeneralStepsMixin:
     """Mixin for general + house signals step."""
 
+    def _general_description_placeholders(self) -> dict[str, str]:
+        apply_mode = self.options.get(OPT_LIGHTING_APPLY_MODE, DEFAULT_LIGHTING_APPLY_MODE)
+        reactions_cfg = self.options.get("reactions", {}).get("configured", {})
+        if apply_mode == "delegate" and reactions_cfg:
+            reaction_ids = ", ".join(sorted(reactions_cfg.keys()))
+            return {
+                "delegate_warning": (
+                    f"⚠ Modalità 'delegate': le reazioni non vengono eseguite "
+                    f"(reactions: {reaction_ids}). Passa a 'scene' per attivarle."
+                )
+            }
+        return {"delegate_warning": ""}
+
     async def async_step_general(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         schema = self._general_schema()
         if user_input is None:
-            return self.async_show_form(step_id="general", data_schema=schema)
+            return self.async_show_form(
+                step_id="general",
+                data_schema=schema,
+                description_placeholders=self._general_description_placeholders(),
+            )
 
         errors: dict[str, str] = {}
         timezone_value = user_input.get(CONF_TIMEZONE, _default_timezone(self.hass))
@@ -47,7 +64,12 @@ class _GeneralStepsMixin:
             errors[CONF_TIMEZONE] = "invalid_time_zone"
 
         if errors:
-            return self.async_show_form(step_id="general", data_schema=schema, errors=errors)
+            return self.async_show_form(
+                step_id="general",
+                data_schema=schema,
+                errors=errors,
+                description_placeholders=self._general_description_placeholders(),
+            )
 
         self._update_options(
             {

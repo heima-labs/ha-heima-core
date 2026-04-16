@@ -166,6 +166,9 @@ class RoomLightingAssistReaction(HeimaReaction):
         return {
             "room_id": self._room_id,
             "entity_steps": len(self._entity_steps),
+            "entity_step_ids": [
+                str(cfg.get("entity_id") or "") for cfg in self._entity_steps
+            ],
             "primary_bucket": self._primary_bucket,
             "primary_bucket_match_mode": self._primary_bucket_match_mode,
             "primary_bucket_labels": list(self._primary_bucket_labels),

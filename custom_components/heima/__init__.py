@@ -92,7 +92,9 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     normalized_options, reactions_changed = normalize_reaction_options_payload(normalized_options)
     if signals_changed or bucket_changed or burst_changed or reactions_changed:
         hass.config_entries.async_update_entry(entry, options=normalized_options)
-        coordinator.last_options_snapshot = dict(normalized_options)
+        # Do NOT update last_options_snapshot here: the next invocation (scheduled by
+        # async_update_entry) will detect the delta between the old snapshot and the
+        # normalized options, and call async_reload_options to rebuild reactions.
         return
 
     prev = coordinator.last_options_snapshot

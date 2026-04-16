@@ -574,11 +574,33 @@ Recommended v1 interpretation:
 - good default learning signals:
   - normalized `sensor.*` entities with stable numeric semantics
   - room-scoped `switch.*` entities that represent meaningful user follow-up actions
+  - room-scoped `media_player.*` entities when their state is canonicalized to bounded contextual
+    semantics
   - selected `binary_sensor.*` entities only when their semantics are explicit and stable
 - poor default learning signals:
   - highly noisy raw motion pulses
   - redundant low-level transport entities
   - entities whose semantics are not normalized enough for repeatable inference
+
+Normative media-player rule:
+- `rooms[*].learning_sources` and `learning.context_signal_entities` MAY include `media_player.*`
+  entities when they are semantically meaningful room or context signals
+- the learning substrate MUST NOT treat `media_player` states as unconstrained raw labels for
+  proposal logic
+- implementations SHOULD canonicalize media-player state into a bounded contextual vocabulary before
+  analyzers rely on it
+
+Initial v1 guidance:
+- preserve clearly meaningful active states such as `playing`
+- preserve `paused` and `idle` when the distinction is useful
+- preserve `off`
+- degrade ambiguous or non-informative states such as `unknown`, empty, or unavailable-like values
+  to `off` or, at most, `idle`
+
+Rationale:
+- media player state is often an important contextual signal for room assists and learned reactions
+- raw integration-specific state vocabularies are too unstable and vendor-specific to be used
+  directly as first-class learning semantics
 
 ### 3.0.1 Trigger signals vs observed responses
 

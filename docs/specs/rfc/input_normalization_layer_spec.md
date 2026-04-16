@@ -101,6 +101,22 @@ Notes:
   - `off`
   - `unknown`
 
+### Media Context Observation
+- `kind = "media_context"`
+- canonical states (bounded v1 vocabulary):
+  - `off`
+  - `idle`
+  - `paused`
+  - `playing`
+  - `unknown`
+
+Normative guidance:
+- `media_player.*` entities used as learning/context signals SHOULD normalize into this bounded
+  vocabulary rather than exposing vendor-specific raw state labels directly to analyzers
+- ambiguous raw states such as `unknown`, empty, or unavailable-like values SHOULD degrade to
+  `off` or, at most, `idle`, unless a future family-specific normalizer documents a stricter rule
+- normalization MUST remain diagnostic-traceable through `raw_state` and `reason`
+
 ## 4.3 `DerivedObservation` (Fusion Output Contract)
 `DerivedObservation` is the canonical output of a signal fusion method (built-in or plugin).
 
@@ -130,6 +146,7 @@ Required methods in v1:
 Optional later:
 - `person(entity_id)`
 - `numeric_signal(entity_id, thresholds_cfg)`
+- `media_context(entity_id)`
 - `derive(kind, inputs, strategy_cfg) -> DerivedObservation`
 
 Rule:

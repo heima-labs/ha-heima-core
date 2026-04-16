@@ -558,7 +558,10 @@ class _ReactionsStepsMixin:
         room_id = str(user_input.get("room_id") or "").strip()
         primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
         action = str(user_input.get("action") or "on").strip()
-        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
+        entity_ids = [
+            e for e in self._normalize_multi_value(user_input.get("light_entities"))
+            if _REDACTED_SENTINEL not in e
+        ]
         signals_placeholder = self._format_room_signals_placeholder(rooms, room_id)
 
         if not room_id:
@@ -974,7 +977,10 @@ class _ReactionsStepsMixin:
         primary_signal_name = str(
             user_input.get("primary_signal_name") or defaults["primary_signal_name"]
         ).strip()
-        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
+        light_entities = [
+            e for e in self._normalize_multi_value(user_input.get("light_entities"))
+            if _REDACTED_SENTINEL not in e
+        ]
         action = str(user_input.get("action") or "on").strip() or "on"
 
         if not light_entities:

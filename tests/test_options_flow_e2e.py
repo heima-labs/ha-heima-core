@@ -2160,10 +2160,12 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     )
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
+    assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
+    assert "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
     assert "Delta luci:" in placeholders["proposal_details"]
     assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
     assert (
-        "light.living_main: brightness None -> 180; kelvin None -> 2600"
+        "light.living_main: brightness None -> 180; color_temp_kelvin None -> 2600"
         in placeholders["proposal_details"]
     )
     assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
@@ -2332,7 +2334,84 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
     assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
     assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
     assert "Entità corroboranti: 1 -> 2" in placeholders["proposal_details"]
+    assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
+    assert "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
     assert "Luci: 1 -> 2" in placeholders["proposal_details"]
+    assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_marks_room_vacancy_lighting_off_followup_with_entity_diffs():
+    flow = _flow(
+        {
+            "language": "it",
+            "reactions": {
+                "configured": {
+                    "reaction-vacancy-1": {
+                        "reaction_class": "RoomLightingVacancyOffReaction",
+                        "room_id": "studio",
+                        "origin": "admin_authored",
+                        "source_template_id": "room.vacancy_lighting_off.basic",
+                        "source_proposal_identity_key": "room_vacancy_lighting_off|room=studio",
+                        "vacancy_delay_s": 300,
+                        "entity_steps": [
+                            {"entity_id": "light.studio_main", "action": "off"},
+                        ],
+                    }
+                }
+            },
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-vacancy-followup-1",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_vacancy_lighting_off",
+        description="studio: vacancy lights-off assist refined",
+        confidence=0.71,
+        identity_key="room_vacancy_lighting_off|room=studio",
+        followup_kind="tuning_suggestion",
+        suggested_reaction_config={
+            "reaction_class": "RoomLightingVacancyOffReaction",
+            "room_id": "studio",
+            "vacancy_delay_s": 420,
+            "entity_steps": [
+                {"entity_id": "light.studio_main", "action": "off"},
+                {"entity_id": "light.studio_spot", "action": "off"},
+                {"entity_id": "light.studio_desk", "action": "off"},
+            ],
+            "learning_diagnostics": {"episodes_observed": 35, "weeks_observed": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals()
+
+    placeholders = result["description_placeholders"]
+    assert placeholders["proposal_label"].startswith("Affinamento spegnimento luci:")
+    assert (
+        "Tipo proposta: affinamento di una automazione esistente"
+        in placeholders["proposal_details"]
+    )
+    assert "Automazione target: Spegni studio dopo 5m" in placeholders["proposal_details"]
+    assert "Template target: room.vacancy_lighting_off.basic" in placeholders["proposal_details"]
+    assert "Ritardo spegnimento: 5 -> 7 minuti" in placeholders["proposal_details"]
+    assert "Entità attuali: light.studio_main" in placeholders["proposal_details"]
+    assert (
+        "Entità proposte: light.studio_desk, light.studio_main, light.studio_spot"
+        in placeholders["proposal_details"]
+    )
+    assert "Luci: 1 -> 3" in placeholders["proposal_details"]
+    assert (
+        "Entità aggiunte: light.studio_desk, light.studio_spot"
+        in placeholders["proposal_details"]
+    )
 
 
 @pytest.mark.asyncio
@@ -2367,6 +2446,8 @@ async def test_proposals_step_marks_lighting_discovery_as_new_automation():
 
     placeholders = result["description_placeholders"]
     assert placeholders["proposal_label"].startswith("Nuova automazione luci: Luci living")
+    assert "Entità proposte: light.living_main" in placeholders["proposal_details"]
+    assert "Luci proposte: 1" in placeholders["proposal_details"]
 
 
 @pytest.mark.asyncio
@@ -2831,7 +2912,8 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_pay
 
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
-    assert result["errors"]["base"] == "redacted_payload"
+    # sentinel stripped before validation → empty list → "required" error (not "redacted_payload")
+    assert result["errors"]["light_entities"] == "required"
     assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 

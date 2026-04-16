@@ -184,6 +184,42 @@ Future extension point:
 - la UX di v1 non deve assumerlo ancora; oggi il flow gestisce un solo acceptance path effettivo per
   proposal
 
+### D5.2 — Proposal review details must expose concrete affected entities
+
+Il passo `proposals` è una superficie decisionale amministrativa, non un semplice sommario.
+
+Regola normativa:
+- quando la proposal o il tuning target coinvolgono `entity_steps`, il body `proposal_details`
+  MUST rendere visibili le entità concrete coinvolte
+- un semplice conteggio, ad esempio `Luci proposte: 3`, non è sufficiente come unico dettaglio
+  decisionale
+
+Per proposal discovery con `entity_steps`, la review SHOULD mostrare almeno:
+- entità proposte
+- eventuale conteggio come riassunto secondario
+
+Per proposal di tuning/follow-up con `entity_steps`, la review MUST mostrare almeno:
+- entità attuali
+- entità proposte
+- entità aggiunte, se presenti
+- entità rimosse, se presenti
+
+Se una stessa entità è presente sia nel payload attuale sia in quello proposto, e cambiano campi
+materiali dello step, la review SHOULD mostrare anche il delta per-entità dei campi rilevanti:
+- `action`
+- `brightness`
+- `color_temp_kelvin`
+- `rgb_color`
+
+Questa regola si applica almeno alle famiglie lighting/composite che usano `entity_steps`, incluse:
+- `lighting_scene_schedule`
+- `room_darkness_lighting_assist`
+- `room_vacancy_lighting_off`
+
+Interpretation rule:
+- se un presenter reaction-specific produce un body che mostra solo cardinalità e non identità o
+  delta delle entità, l'implementazione è da considerarsi incompleta rispetto alla UX review v1.x
+
 ---
 
 ## Invarianti

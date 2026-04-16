@@ -9,6 +9,10 @@ from homeassistant.core import HomeAssistant
 
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
+from ._lighting_review import (
+    render_entity_steps_discovery_details,
+    render_entity_steps_tuning_details,
+)
 from .base import HeimaReaction
 
 
@@ -192,10 +196,11 @@ def present_learned_room_lighting_vacancy_off_details(
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
-        details.append(
-            f"Luci proposte: {len(entity_steps)}"
-            if is_it
-            else f"Proposed lights: {len(entity_steps)}"
+        details.extend(
+            render_entity_steps_discovery_details(
+                entity_steps,
+                language=language,
+            )
         )
     return details
 
@@ -207,6 +212,44 @@ def present_admin_authored_room_lighting_vacancy_off_details(
     language: str,
 ) -> list[str]:
     return present_learned_room_lighting_vacancy_off_details(flow, proposal, cfg, language)
+
+
+def present_tuning_room_lighting_vacancy_off_details(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    target_cfg: dict[str, Any],
+    language: str,
+) -> list[str]:
+    """Return room-vacancy-lighting tuning diff lines."""
+    del flow, proposal
+    is_it = language.startswith("it")
+    details: list[str] = []
+
+    current_delay_s = target_cfg.get("vacancy_delay_s")
+    proposed_delay_s = cfg.get("vacancy_delay_s")
+    if isinstance(current_delay_s, (int, float)) and isinstance(proposed_delay_s, (int, float)):
+        current_delay_min = max(1, int(current_delay_s) // 60)
+        proposed_delay_min = max(1, int(proposed_delay_s) // 60)
+        if current_delay_min != proposed_delay_min:
+            details.append(
+                f"Ritardo spegnimento: {current_delay_min} -> {proposed_delay_min} minuti"
+                if is_it
+                else f"Lights-off delay: {current_delay_min} -> {proposed_delay_min} minutes"
+            )
+
+    current_steps = target_cfg.get("entity_steps")
+    proposed_steps = cfg.get("entity_steps")
+    if isinstance(current_steps, list) and isinstance(proposed_steps, list):
+        details.extend(
+            render_entity_steps_tuning_details(
+                current_steps,
+                proposed_steps,
+                language=language,
+            )
+        )
+
+    return details
 
 
 def present_room_lighting_vacancy_off_proposal_label(
@@ -231,12 +274,18 @@ def present_room_lighting_vacancy_off_review_title(
     language: str,
     is_followup: bool,
 ) -> str | None:
-    del flow, is_followup
+    del flow
     if getattr(proposal, "origin", "") == "admin_authored":
         return None
     base = present_room_lighting_vacancy_off_proposal_label(None, proposal, cfg, language)
     if not base:
         return None
+    if is_followup:
+        return (
+            f"Affinamento spegnimento luci: {base}"
+            if language.startswith("it")
+            else f"Lights-off tuning: {base}"
+        )
     return (
         f"Nuovo spegnimento luci: {base}"
         if language.startswith("it")

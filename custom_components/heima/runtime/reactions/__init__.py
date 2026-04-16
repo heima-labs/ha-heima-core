@@ -47,6 +47,7 @@ from .lighting_vacancy_off import (
     present_room_lighting_vacancy_off_label,
     present_room_lighting_vacancy_off_proposal_label,
     present_room_lighting_vacancy_off_review_title,
+    present_tuning_room_lighting_vacancy_off_details,
 )
 from .patterns import ConsecutiveMatchDetector, IPatternDetector
 from .presence import (
@@ -282,6 +283,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 proposal_review_title=present_room_lighting_vacancy_off_review_title,
                 admin_authored_review_details=present_admin_authored_room_lighting_vacancy_off_details,
                 learned_review_details=present_learned_room_lighting_vacancy_off_details,
+                tuning_review_details=present_tuning_room_lighting_vacancy_off_details,
             ),
         ),
         RegisteredReactionPlugin(

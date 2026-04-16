@@ -279,6 +279,7 @@ def _canonical_entity_ids_for_room(room_id: str) -> list[str]:
         f"binary_sensor.heima_occupancy_{rid}",
         f"sensor.heima_occupancy_{rid}_source",
         f"sensor.heima_occupancy_{rid}_last_change",
+        f"binary_sensor.heima_lighting_hold_{rid}",
         "sensor.heima_security_state",
         "sensor.heima_security_reason",
         "sensor.heima_house_state",
@@ -320,6 +321,7 @@ def _auto_entity_ids(
         "trigger_signal_entities",
         "humidity_entities",
         "temperature_entities",
+        "entity_step_ids",
     ):
         for value in _safe_list(reaction_diag.get(key)):
             entity_id = str(value).strip()
@@ -357,6 +359,7 @@ def _summary_reasoning(
     matched_plan_steps: list[dict[str, Any]],
     active_constraints: list[str],
     last_event: dict[str, Any],
+    guard_diag: dict[str, Any] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     room_id = str(reaction_diag.get("room_id") or "").strip()
@@ -390,6 +393,14 @@ def _summary_reasoning(
         reasons.append("reaction has no current step in apply_plan")
     if active_constraints:
         reasons.append("constraints active: " + ", ".join(active_constraints))
+    if guard_diag:
+        guard_blocked_total = int(guard_diag.get("blocked_total") or 0)
+        room_id_local = str(reaction_diag.get("room_id") or "").strip()
+        manual_hold_rooms = [str(r) for r in _safe_list(guard_diag.get("manual_hold_rooms"))]
+        if room_id_local in manual_hold_rooms:
+            reasons.append(f"manual hold enabled for room '{room_id_local}' (check binary_sensor.heima_lighting_hold_{room_id_local})")
+        if guard_blocked_total > 0:
+            reasons.append(f"lighting_reaction_guard blocked {guard_blocked_total} step(s) total (manual hold active at fire time)")
     if _reaction_event_match(last_event, reaction_id):
         reasons.append("last emitted event confirms reaction.fired")
     else:
@@ -407,6 +418,7 @@ def _compute_verdict(
     matched_plan_steps: list[dict[str, Any]],
     active_constraints: list[str],
     last_event: dict[str, Any],
+    guard_diag: dict[str, Any] | None = None,
 ) -> str:
     room_id = str(reaction_diag.get("room_id") or "").strip()
     occupied_rooms = [str(item) for item in _safe_list(snapshot.get("occupied_rooms"))]
@@ -433,6 +445,11 @@ def _compute_verdict(
         return "idle_waiting_bucket"
     if reaction_diag.get("pending_episode"):
         return "pending_episode"
+    if guard_diag and int(guard_diag.get("blocked_total") or 0) > 0 and not matched_plan_steps:
+        room_id_local = str(reaction_diag.get("room_id") or "").strip()
+        blocked_by_room = _safe_dict(guard_diag.get("blocked_by_room"))
+        if room_id_local and int(blocked_by_room.get(room_id_local) or 0) > 0:
+            return "blocked_by_manual_hold"
     if int(reaction_diag.get("suppressed_count") or 0) > 0 and not matched_plan_steps:
         return "suppressed_cooldown"
     if matched_plan_steps and any(str(step.get("blocked_by") or "").strip() for step in matched_plan_steps):
@@ -543,6 +560,9 @@ def _print_reaction_status(
             ]
         )
     )
+    entity_step_ids = [str(e) for e in _safe_list(reaction_diag.get("entity_step_ids")) if str(e).strip()]
+    if entity_step_ids:
+        print(f"  entity_step_ids={', '.join(entity_step_ids)}")
     print()
 
 
@@ -551,6 +571,7 @@ def _print_runtime_snapshot(
     active_constraints: list[str],
     *,
     full_timestamps: bool,
+    options: dict[str, Any] | None = None,
 ) -> None:
     print("[snapshot]")
     print(
@@ -569,6 +590,10 @@ def _print_runtime_snapshot(
     constraints = ", ".join(active_constraints) or "-"
     print(f"  occupied_rooms={occupied}")
     print(f"  active_constraints={constraints}")
+    if options is not None:
+        engine_enabled = bool(options.get("engine_enabled", True))
+        apply_mode = str(options.get("lighting_apply_mode") or "scene")
+        print(f"  engine_enabled={_as_bool_str(engine_enabled)} | lighting_apply_mode={apply_mode}")
     print()
 
 
@@ -848,6 +873,7 @@ def _debug_once(
     room_cfg = _room_cfg_from_options(options, str(reaction_diag.get("room_id") or ""))
     behaviors = _safe_dict(engine.get("behaviors"))
     canonicalizer = _safe_dict(behaviors.get("event_canonicalizer"))
+    guard_diag = _safe_dict(behaviors.get("lighting_reaction_guard"))
     bucket_state = _safe_dict(canonicalizer.get("bucket_state"))
     burst_baseline = _safe_dict(canonicalizer.get("burst_baseline"))
     last_burst_ts = _safe_dict(canonicalizer.get("last_burst_ts"))
@@ -882,6 +908,7 @@ def _debug_once(
         matched_plan_steps=matched_plan_steps,
         active_constraints=active_constraints,
         last_event=last_event_attrs,
+        guard_diag=guard_diag,
     )
     verdict = _compute_verdict(
         reaction_id=reaction_id,
@@ -892,6 +919,7 @@ def _debug_once(
         matched_plan_steps=matched_plan_steps,
         active_constraints=active_constraints,
         last_event=last_event_attrs,
+        guard_diag=guard_diag,
     )
 
     if _should_clear_screen(clear):
@@ -918,7 +946,7 @@ def _debug_once(
             current_primary_bucket,
             full_timestamps=False,
         )
-    _print_runtime_snapshot(snapshot, active_constraints, full_timestamps=verbosity == "full")
+    _print_runtime_snapshot(snapshot, active_constraints, full_timestamps=verbosity == "full", options=options)
     _print_canonical_buckets(
         room_id=room_id,
         bucket_state=bucket_state,

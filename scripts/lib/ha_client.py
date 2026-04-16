@@ -127,6 +127,18 @@ class HAClient:
             return []
         return [item for item in data if isinstance(item, dict)]
 
+    def state_from_list(self, entity_id: str) -> dict[str, Any] | None:
+        """Find entity state by scanning /api/states list.
+
+        Avoids 404 from GET /api/states/{id} when the entity is temporarily
+        absent from the state machine (integration reload, unavailable, etc.).
+        Returns None if not found.
+        """
+        for s in self.all_states():
+            if s.get("entity_id") == entity_id:
+                return s
+        return None
+
     def call_service(self, domain: str, service: str, data: dict[str, Any] | None = None) -> Any:
         return self.post(f"/api/services/{domain}/{service}", data or {})
 

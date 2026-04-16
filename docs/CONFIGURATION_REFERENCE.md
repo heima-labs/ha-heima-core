@@ -319,7 +319,7 @@ Important:
 - they are distinct from room-scoped learning signals
 
 ### `learning_sources`
-- Type: multi-entity selector (`binary_sensor`, `sensor`)
+- Type: multi-entity selector (`binary_sensor`, `sensor`, `switch`, `media_player`)
 - Required when:
   - never
 
@@ -339,8 +339,21 @@ Practical guidance:
   - `sensor.room_co2`
   - `sensor.room_temperature`
   - `switch.room_fan`
+  - `media_player.room_tv`
 - keep noisy occupancy pulses in `occupancy_sources` when they are useful to know if the room is
   occupied, but not as learning inputs unless they are semantically meaningful for a plugin
+
+Media player rule:
+- `media_player.*` entities are allowed when they are meaningful room-scoped context signals
+- they must be treated as canonicalized context signals, not as arbitrary raw state strings
+- implementations should prefer a bounded interpretation such as:
+  - active playback states remain distinct when useful (`playing`, `paused`, `idle`)
+  - `off` remains `off`
+  - unknown / unavailable / empty states should degrade to `off` or, at most, `idle`
+- a room-scoped media player is therefore suitable to explain contextual situations such as:
+  - TV on in the room
+  - projector active in the room
+  - media session idle vs actively playing
 
 Important distinction:
 - room entities are not all used in the same role by learning
@@ -348,6 +361,7 @@ Important distinction:
   - `sensor.room_lux`
   - `sensor.room_co2`
   - `sensor.room_temperature`
+  - `media_player.room_tv`
 - other entities are more naturally observed as user responses:
   - `light.room_main`
   - `light.room_spot`
