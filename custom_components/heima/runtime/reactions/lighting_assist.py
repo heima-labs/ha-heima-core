@@ -103,6 +103,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         )
         self._pending_episode_ts: datetime | None = None
         self._last_fired_ts: float | None = None
+        self._last_fired_iso: str | None = None
         self._fire_count = 0
         self._suppressed_count = 0
         self._steady_condition_active = False
@@ -117,6 +118,8 @@ class RoomLightingAssistReaction(HeimaReaction):
         snapshot = history[-1]
         if self._room_id not in snapshot.occupied_rooms:
             self._steady_condition_active = False
+            self._last_fired_ts = None
+            self._last_fired_iso = None
             return []
         if self._house_state_filter and snapshot.house_state != self._house_state_filter:
             return []
@@ -145,6 +148,7 @@ class RoomLightingAssistReaction(HeimaReaction):
 
         self._pending_episode_ts = None
         self._last_fired_ts = time.monotonic()
+        self._last_fired_iso = datetime.now().isoformat()
         self._fire_count += 1
         self._steady_condition_active = steady_ready
         return self._build_steps()
@@ -153,6 +157,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         self._matcher.reset()
         self._pending_episode_ts = None
         self._last_fired_ts = None
+        self._last_fired_iso = None
         self._fire_count = 0
         self._suppressed_count = 0
         self._steady_condition_active = False
@@ -167,6 +172,7 @@ class RoomLightingAssistReaction(HeimaReaction):
             "fire_count": self._fire_count,
             "suppressed_count": self._suppressed_count,
             "last_fired_ts": self._last_fired_ts,
+            "last_fired_iso": self._last_fired_iso,
             "pending_episode": self._pending_episode_ts.isoformat()
             if self._pending_episode_ts
             else None,
