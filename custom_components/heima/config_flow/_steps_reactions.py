@@ -140,129 +140,52 @@ class _ReactionsStepsMixin:
         errors: dict[str, str] = {}
 
         if user_input is None:
-            return self.async_show_form(
+            return self._show_admin_authored_lighting_schedule_form(
                 step_id="admin_authored_lighting_schedule",
-                data_schema=self._admin_authored_lighting_schedule_schema(defaults),
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                defaults=defaults,
+                template_title=template.title,
+                template_description=template.description,
             )
-
-        room_id = str(user_input.get("room_id") or "").strip()
-        action = str(user_input.get("action") or "on").strip()
-        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
-        weekday_raw = user_input.get("weekday")
-        scheduled_time = str(user_input.get("scheduled_time") or "").strip()
-
-        if not room_id:
-            errors["room_id"] = "required"
-        if not entity_ids:
-            errors["light_entities"] = "required"
-
-        weekday: int | None = None
-        try:
-            weekday = int(weekday_raw)
-            if weekday < 0 or weekday > 6:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["weekday"] = "invalid_number"
-
-        scheduled_min = _parse_hhmm_to_min(scheduled_time)
-        if scheduled_min is None:
-            errors["scheduled_time"] = "invalid_hhmm"
-
-        brightness = None
-        color_temp_kelvin = None
-        if action == "on":
-            try:
-                brightness = int(user_input.get("brightness") or 0)
-                if brightness < 1 or brightness > 255:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errors["brightness"] = "invalid_number"
-            try:
-                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
-                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errors["color_temp_kelvin"] = "invalid_number"
-
+        current_input, resolved, errors = (
+            self._normalize_admin_authored_lighting_schedule_submission(
+                user_input=user_input,
+                defaults=defaults,
+            )
+        )
         if errors:
-            return self.async_show_form(
+            return self._show_admin_authored_lighting_schedule_form(
                 step_id="admin_authored_lighting_schedule",
-                data_schema=self._admin_authored_lighting_schedule_schema(
-                    {
-                        "room_id": room_id or defaults["room_id"],
-                        "weekday": str(weekday_raw or defaults["weekday"]),
-                        "scheduled_time": scheduled_time or defaults["scheduled_time"],
-                        "light_entities": entity_ids,
-                        "action": action or defaults["action"],
-                        "brightness": user_input.get("brightness", defaults["brightness"]),
-                        "color_temp_kelvin": user_input.get(
-                            "color_temp_kelvin", defaults["color_temp_kelvin"]
-                        ),
-                    }
-                ),
+                defaults=current_input,
                 errors=errors,
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
-
-        assert weekday is not None
-        assert scheduled_min is not None
 
         proposal = self._build_admin_authored_lighting_schedule_proposal(
-            room_id=room_id,
-            weekday=weekday,
-            scheduled_min=scheduled_min,
-            entity_ids=entity_ids,
-            action=action,
-            brightness=brightness,
-            color_temp_kelvin=color_temp_kelvin,
+            room_id=str(resolved["room_id"]),
+            weekday=int(resolved["weekday"]),
+            scheduled_min=int(resolved["scheduled_min"]),
+            entity_ids=list(resolved["light_entities"]),
+            action=str(resolved["action"]),
+            brightness=resolved["brightness"],
+            color_temp_kelvin=resolved["color_temp_kelvin"],
         )
         if self._admin_authored_identity_conflicts(proposal):
-            return self.async_show_form(
+            return self._show_admin_authored_lighting_schedule_form(
                 step_id="admin_authored_lighting_schedule",
-                data_schema=self._admin_authored_lighting_schedule_schema(
-                    {
-                        "room_id": room_id,
-                        "weekday": str(weekday),
-                        "scheduled_time": scheduled_time,
-                        "light_entities": entity_ids,
-                        "action": action,
-                        "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
-                    }
-                ),
+                defaults=current_input,
                 errors={"base": "duplicate"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
 
         if self._has_redacted_payload(proposal.suggested_reaction_config):
-            return self.async_show_form(
+            return self._show_admin_authored_lighting_schedule_form(
                 step_id="admin_authored_lighting_schedule",
-                data_schema=self._admin_authored_lighting_schedule_schema(
-                    {
-                        "room_id": room_id,
-                        "weekday": str(weekday),
-                        "scheduled_time": scheduled_time,
-                        "light_entities": entity_ids,
-                        "action": action,
-                        "brightness": brightness or defaults["brightness"],
-                        "color_temp_kelvin": color_temp_kelvin or defaults["color_temp_kelvin"],
-                    }
-                ),
+                defaults=current_input,
                 errors={"base": "redacted_payload"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
 
         return await self._store_admin_authored_reaction_directly(proposal)
@@ -772,85 +695,46 @@ class _ReactionsStepsMixin:
         errors: dict[str, str] = {}
 
         if user_input is None:
-            return self.async_show_form(
+            return self._show_admin_authored_room_vacancy_lighting_off_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
-                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(defaults),
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                defaults=defaults,
+                template_title=template.title,
+                template_description=template.description,
             )
-
-        room_id = str(user_input.get("room_id") or "").strip()
-        entity_ids = self._normalize_multi_value(user_input.get("light_entities"))
-
-        if not room_id:
-            errors["room_id"] = "required"
-        if not entity_ids:
-            errors["light_entities"] = "required"
-
-        try:
-            vacancy_delay_min = int(user_input.get("vacancy_delay_min") or 0)
-            if vacancy_delay_min < 1 or vacancy_delay_min > 180:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["vacancy_delay_min"] = "invalid_number"
-            vacancy_delay_min = int(defaults["vacancy_delay_min"])
-
+        current_input, resolved, errors = self._normalize_admin_authored_room_vacancy_submission(
+            user_input=user_input,
+            defaults=defaults,
+        )
         if errors:
-            return self.async_show_form(
+            return self._show_admin_authored_room_vacancy_lighting_off_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
-                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
-                    {
-                        "room_id": room_id or defaults["room_id"],
-                        "light_entities": entity_ids,
-                        "vacancy_delay_min": vacancy_delay_min,
-                    }
-                ),
+                defaults=current_input,
                 errors=errors,
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
 
         proposal = self._build_admin_authored_room_vacancy_lighting_off_proposal(
-            room_id=room_id,
-            entity_ids=entity_ids,
-            vacancy_delay_min=vacancy_delay_min,
+            room_id=str(resolved["room_id"]),
+            entity_ids=list(resolved["light_entities"]),
+            vacancy_delay_min=int(resolved["vacancy_delay_min"]),
         )
         if self._admin_authored_identity_conflicts(proposal):
-            return self.async_show_form(
+            return self._show_admin_authored_room_vacancy_lighting_off_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
-                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
-                    {
-                        "room_id": room_id,
-                        "light_entities": entity_ids,
-                        "vacancy_delay_min": vacancy_delay_min,
-                    }
-                ),
+                defaults=current_input,
                 errors={"base": "duplicate"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
 
         if self._has_redacted_payload(proposal.suggested_reaction_config):
-            return self.async_show_form(
+            return self._show_admin_authored_room_vacancy_lighting_off_form(
                 step_id="admin_authored_room_vacancy_lighting_off",
-                data_schema=self._admin_authored_room_vacancy_lighting_off_schema(
-                    {
-                        "room_id": room_id,
-                        "light_entities": entity_ids,
-                        "vacancy_delay_min": vacancy_delay_min,
-                    }
-                ),
+                defaults=current_input,
                 errors={"base": "redacted_payload"},
-                description_placeholders={
-                    "template_title": template.title,
-                    "template_description": template.description,
-                },
+                template_title=template.title,
+                template_description=template.description,
             )
 
         return await self._store_admin_authored_reaction_directly(proposal)
@@ -2069,6 +1953,44 @@ class _ReactionsStepsMixin:
             },
         )
 
+    def _show_admin_authored_lighting_schedule_form(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        template_title: str = "",
+        template_description: str = "",
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._admin_authored_lighting_schedule_schema(defaults),
+            errors=errors,
+            description_placeholders={
+                "template_title": template_title,
+                "template_description": template_description,
+            },
+        )
+
+    def _show_admin_authored_room_vacancy_lighting_off_form(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        template_title: str = "",
+        template_description: str = "",
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._admin_authored_room_vacancy_lighting_off_schema(defaults),
+            errors=errors,
+            description_placeholders={
+                "template_title": template_title,
+                "template_description": template_description,
+            },
+        )
+
     def _normalize_room_darkness_lighting_editor_submission(
         self,
         *,
@@ -2304,6 +2226,111 @@ class _ReactionsStepsMixin:
             "corroboration_signal_entities": corroboration_entities,
             "action_entities": action_entities,
             "enabled": bool(current_input.get("enabled", True)),
+        }
+        return current_input, resolved, errors
+
+    def _normalize_admin_authored_lighting_schedule_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        errors: dict[str, str] = {}
+        room_id = str(user_input.get("room_id") or "").strip()
+        action = str(user_input.get("action") or "on").strip()
+        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
+        weekday_raw = user_input.get("weekday")
+        scheduled_time = str(user_input.get("scheduled_time") or "").strip()
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not light_entities:
+            errors["light_entities"] = "required"
+
+        weekday: int | None = None
+        try:
+            weekday = int(weekday_raw)
+            if weekday < 0 or weekday > 6:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["weekday"] = "invalid_number"
+
+        scheduled_min = _parse_hhmm_to_min(scheduled_time)
+        if scheduled_min is None:
+            errors["scheduled_time"] = "invalid_hhmm"
+
+        brightness: int | None = None
+        color_temp_kelvin: int | None = None
+        if action == "on":
+            try:
+                brightness = int(user_input.get("brightness") or 0)
+                if brightness < 1 or brightness > 255:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["brightness"] = "invalid_number"
+            try:
+                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
+                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors["color_temp_kelvin"] = "invalid_number"
+
+        current_input = {
+            "room_id": room_id or defaults["room_id"],
+            "weekday": str(weekday_raw or defaults["weekday"]),
+            "scheduled_time": scheduled_time or defaults["scheduled_time"],
+            "light_entities": light_entities,
+            "action": action or defaults["action"],
+            "brightness": user_input.get("brightness", defaults["brightness"]),
+            "color_temp_kelvin": user_input.get("color_temp_kelvin", defaults["color_temp_kelvin"]),
+        }
+        resolved = {
+            "room_id": room_id,
+            "weekday": weekday if weekday is not None else int(defaults["weekday"]),
+            "scheduled_min": (
+                scheduled_min
+                if scheduled_min is not None
+                else _parse_hhmm_to_min(str(defaults["scheduled_time"])) or 0
+            ),
+            "light_entities": light_entities,
+            "action": action,
+            "brightness": brightness,
+            "color_temp_kelvin": color_temp_kelvin,
+        }
+        return current_input, resolved, errors
+
+    def _normalize_admin_authored_room_vacancy_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        errors: dict[str, str] = {}
+        room_id = str(user_input.get("room_id") or "").strip()
+        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not light_entities:
+            errors["light_entities"] = "required"
+
+        try:
+            vacancy_delay_min = int(user_input.get("vacancy_delay_min") or 0)
+            if vacancy_delay_min < 1 or vacancy_delay_min > 180:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["vacancy_delay_min"] = "invalid_number"
+            vacancy_delay_min = int(defaults["vacancy_delay_min"])
+
+        current_input = {
+            "room_id": room_id or defaults["room_id"],
+            "light_entities": light_entities,
+            "vacancy_delay_min": vacancy_delay_min,
+        }
+        resolved = {
+            "room_id": room_id,
+            "light_entities": light_entities,
+            "vacancy_delay_min": vacancy_delay_min,
         }
         return current_input, resolved, errors
 
