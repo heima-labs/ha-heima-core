@@ -95,6 +95,16 @@ def _reaction_cfg(options: dict[str, Any], reaction_id: str) -> dict[str, Any]:
     return dict(cfg) if isinstance(cfg, dict) else {}
 
 
+def _contains_redacted(value: Any) -> bool:
+    if isinstance(value, str):
+        return "**REDACTED**" in value
+    if isinstance(value, dict):
+        return any(_contains_redacted(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_redacted(item) for item in value)
+    return False
+
+
 def _room_cfg(options: dict[str, Any], room_id: str) -> dict[str, Any]:
     for room in _safe_list(options.get("rooms")):
         if isinstance(room, dict) and str(room.get("room_id") or "") == room_id:
@@ -209,6 +219,22 @@ def _bucket_matches_lte(
         return current == expected
 
 
+def _bucket_matches_mode(
+    *,
+    current: str,
+    expected: str,
+    labels: list[str],
+    match_mode: str,
+) -> bool:
+    if not current or not expected:
+        return False
+    if match_mode == "lte":
+        return _bucket_matches_lte(current, expected, labels)
+    if match_mode == "gte":
+        return _bucket_matches_lte(expected, current, labels)
+    return current == expected
+
+
 # ---------------------------------------------------------------------------
 # core test
 # ---------------------------------------------------------------------------
@@ -247,15 +273,25 @@ def run_test(
     print(f"Label:    {label}")
     print(f"Room:     {room_id}")
 
-    # entity_steps (list of dicts) from persisted config
     entity_steps: list[dict[str, Any]] = _safe_list(rcfg.get("entity_steps"))
-    light_entities = [
-        str(s.get("entity_id") or "").strip()
-        for s in entity_steps
-        if str(s.get("action") or "") == "on" and str(s.get("entity_id") or "").strip()
-    ]
+    light_entities = []
+    if not _contains_redacted(entity_steps):
+        light_entities = [
+            str(s.get("entity_id") or "").strip()
+            for s in entity_steps
+            if str(s.get("action") or "") == "on" and str(s.get("entity_id") or "").strip()
+        ]
     if not light_entities:
-        _fail("nessuna entity_step con action=on trovata nel config — la reaction è correttamente configurata?")
+        light_entities = [
+            str(v).strip()
+            for v in _safe_list(rdiag.get("entity_step_ids"))
+            if str(v).strip()
+        ]
+    if not light_entities:
+        _fail(
+            "nessun target light trovato né nel config né nei diagnostics runtime "
+            "(entity_step_ids)"
+        )
         return False
     print(f"Lights:   {', '.join(light_entities)}")
 
@@ -292,13 +328,12 @@ def run_test(
 
     # 3. lux nel bucket atteso
     if primary_bucket:
-        lux_ok = False
-        if match_mode == "lte":
-            lux_ok = _bucket_matches_lte(current_lux_bucket, primary_bucket, bucket_labels)
-        elif match_mode == "gte":
-            lux_ok = _bucket_matches_lte(primary_bucket, current_lux_bucket, bucket_labels)
-        else:
-            lux_ok = current_lux_bucket == primary_bucket
+        lux_ok = _bucket_matches_mode(
+            current=current_lux_bucket,
+            expected=primary_bucket,
+            labels=bucket_labels,
+            match_mode=match_mode,
+        )
         if not lux_ok:
             _fail(
                 f"lux bucket corrente={current_lux_bucket!r}, atteso {match_mode}={primary_bucket!r} "

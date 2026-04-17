@@ -69,26 +69,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_living_main_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_main_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_main_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_main_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_main_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(333))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_living_main_color_temp') | float(3000) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_main_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(333))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_living_main_color_temp') | float(3000) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_main_raw
       test_heima_living_spot:
         friendly_name: "Test Heima Living Spot"
         unique_id: test_heima_living_spot
@@ -104,26 +110,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_living_spot_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_spot_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_spot_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_spot_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_spot_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(312))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_living_spot_color_temp') | float(3200) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_spot_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(312))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_living_spot_color_temp') | float(3200) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_spot_raw
       test_heima_living_floor:
         friendly_name: "Test Heima Living Floor"
         unique_id: test_heima_living_floor
@@ -139,26 +151,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_living_floor_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_floor_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_floor_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_floor_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_living_floor_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(370))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_living_floor_color_temp') | float(2700) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_living_floor_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(370))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_living_floor_color_temp') | float(2700) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_living_floor_raw
       test_heima_studio_main:
         friendly_name: "Test Heima Studio Main"
         unique_id: test_heima_studio_main
@@ -174,26 +192,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_studio_main_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_main_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_main_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_main_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_main_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(303))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_studio_main_color_temp') | float(3300) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_main_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(303))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_studio_main_color_temp') | float(3300) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_main_raw
       test_heima_studio_spot:
         friendly_name: "Test Heima Studio Spot"
         unique_id: test_heima_studio_spot
@@ -209,26 +233,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_studio_spot_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_spot_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_spot_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_spot_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_spot_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(278))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_studio_spot_color_temp') | float(3600) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_spot_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(278))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_studio_spot_color_temp') | float(3600) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_spot_raw
       test_heima_studio_desk:
         friendly_name: "Test Heima Studio Desk"
         unique_id: test_heima_studio_desk
@@ -244,26 +274,32 @@ light:
           target:
             entity_id: input_boolean.test_heima_light_studio_desk_raw
         set_level:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_desk_brightness
-          data:
-            value: "{{ brightness }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_desk_brightness
+            data:
+              value: "{{ brightness }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_desk_raw
         set_temperature:
-          action: input_number.set_value
-          target:
-            entity_id: input_number.test_heima_light_studio_desk_color_temp
-          data:
-            value: >-
-              {% if kelvin is defined %}
-                {{ kelvin }}
-              {% elif color_temp_kelvin is defined %}
-                {{ color_temp_kelvin }}
-              {% elif color_temp is defined %}
-                {{ (1000000 / (color_temp | float(250))) | round(0) }}
-              {% else %}
-                {{ states('input_number.test_heima_light_studio_desk_color_temp') | float(4000) }}
-              {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.test_heima_light_studio_desk_color_temp
+            data:
+              value: >-
+                {% if kelvin is defined %}
+                  {{ kelvin }}
+                {% elif color_temp_kelvin is defined %}
+                  {{ color_temp_kelvin }}
+                {% elif color_temp is defined %}
+                  {{ (1000000 / (color_temp | float(250))) | round(0) }}
+                {% else %}
+                  {{ states('input_number.test_heima_light_studio_desk_color_temp') | float(4000) }}
+                {% endif %}
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.test_heima_light_studio_desk_raw
 
 input_number:
   test_heima_people_score:

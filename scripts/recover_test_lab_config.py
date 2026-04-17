@@ -280,6 +280,51 @@ def _flow_save(client: HAFlowClient, flow_id: str) -> None:
         raise RuntimeError(f"expected create_entry on save, got: {result}")
 
 
+def _select_room_for_edit(
+    client: HAFlowClient,
+    flow_id: str,
+    room: dict[str, Any],
+) -> dict[str, Any]:
+    """Select an existing room in rooms_edit using the current flow contract.
+
+    Older/newer flow implementations may accept either the stable room_id or the
+    user-facing selector label like ``Studio [configured]``.
+    """
+    candidates = [str(room["room_id"])]
+    display_name = str(room.get("display_name") or room["room_id"]).strip()
+    if display_name:
+        candidates.append(f"{display_name} [configured]")
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            return client.options_flow_configure(flow_id, {"room": candidate})
+        except HAApiError as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"unable to select room for edit: {room}")
+
+
+def _enter_room_edit_form(
+    client: HAFlowClient,
+    flow_id: str,
+    room: dict[str, Any],
+) -> dict[str, Any]:
+    """Navigate to rooms_edit_form across current/legacy room edit flows."""
+    step = _select_room_for_edit(client, flow_id, room)
+    if step.get("step_id") == "rooms_edit_form":
+        return step
+    if step.get("step_id") == "rooms_edit_actions":
+        step = _menu_next(client, flow_id, "rooms_edit_form")
+        _expect_step(step, "rooms_edit_form")
+        return step
+    raise RuntimeError(
+        f"expected rooms_edit_form or rooms_edit_actions, got: {step}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Recovery steps
 # ---------------------------------------------------------------------------
@@ -383,8 +428,7 @@ def recover_rooms(client: HAFlowClient, entry_id: str, area_ids: dict[str, str] 
         flow_id, _ = _open_rooms_menu(client, entry_id)
         step = _menu_next(client, flow_id, "rooms_edit")
         _expect_step(step, "rooms_edit")
-        step = client.options_flow_configure(flow_id, {"room": room["room_id"]})
-        _expect_step(step, "rooms_edit_form")
+        step = _enter_room_edit_form(client, flow_id, room)
         result = client.options_flow_configure(flow_id, payload)
         _expect_step(result, "rooms_menu")
 
