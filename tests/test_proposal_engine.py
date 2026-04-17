@@ -886,7 +886,7 @@ async def test_proposal_engine_sensor_writer_keeps_count_in_state_and_payload_in
     assert len(str(count)) < 255
     assert attrs["total"] == 5
     assert len(attrs["items"]) == 5
-    assert attrs[ "items"][proposal_ids[0]]["origin"] == "admin_authored"
+    assert attrs["items"][proposal_ids[0]]["origin"] == "admin_authored"
 
 
 async def test_proposal_engine_async_submit_proposal_creates_pending_admin_authored(monkeypatch):

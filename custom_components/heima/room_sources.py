@@ -423,9 +423,7 @@ def room_signal_bucket_labels(
     ]
 
 
-def room_signal_has_burst(
-    rooms: list[dict[str, Any]], room_id: str, signal_name: str
-) -> bool:
+def room_signal_has_burst(rooms: list[dict[str, Any]], room_id: str, signal_name: str) -> bool:
     """Return True if a room+signal has burst_threshold configured."""
     room = next((r for r in rooms if isinstance(r, dict) and r.get("room_id") == room_id), None)
     if not room:

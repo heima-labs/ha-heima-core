@@ -449,7 +449,9 @@ async def test_async_maybe_refresh_handles_service_error_gracefully():
 
 
 @pytest.mark.asyncio
-async def test_async_maybe_refresh_skips_when_get_events_service_missing(caplog: pytest.LogCaptureFixture):
+async def test_async_maybe_refresh_skips_when_get_events_service_missing(
+    caplog: pytest.LogCaptureFixture,
+):
     call_count = 0
 
     async def _counting_call(*args, **kwargs):

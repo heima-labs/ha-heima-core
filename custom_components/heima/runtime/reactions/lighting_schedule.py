@@ -377,4 +377,3 @@ def present_lighting_schedule_review_title(
     if is_followup:
         return f"Lighting tuning: {base}"
     return f"New lighting automation: {base}"
-

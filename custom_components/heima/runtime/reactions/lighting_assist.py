@@ -135,8 +135,10 @@ class RoomLightingAssistReaction(HeimaReaction):
         )
         self._pending_episode_ts = result.pending_since
         steady_ready = self._steady_ready()
-        corroboration_ready = bool(self._pattern.corroborations) and bool(result.ready) and bool(
-            self._bucket_matches(self._current_primary_bucket())
+        corroboration_ready = (
+            bool(self._pattern.corroborations)
+            and bool(result.ready)
+            and bool(self._bucket_matches(self._current_primary_bucket()))
         )
         should_fire = corroboration_ready or steady_ready
         if not should_fire:
@@ -166,9 +168,7 @@ class RoomLightingAssistReaction(HeimaReaction):
         return {
             "room_id": self._room_id,
             "entity_steps": len(self._entity_steps),
-            "entity_step_ids": [
-                str(cfg.get("entity_id") or "") for cfg in self._entity_steps
-            ],
+            "entity_step_ids": [str(cfg.get("entity_id") or "") for cfg in self._entity_steps],
             "primary_bucket": self._primary_bucket,
             "primary_bucket_match_mode": self._primary_bucket_match_mode,
             "primary_bucket_labels": list(self._primary_bucket_labels),
@@ -380,9 +380,7 @@ def present_admin_authored_room_lighting_assist_details(
     primary_bucket_match_mode = str(cfg.get("primary_bucket_match_mode") or "").strip()
     if primary_bucket_match_mode:
         match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
-        details.append(
-            f"Match bucket: {match_label}" if is_it else f"Bucket match: {match_label}"
-        )
+        details.append(f"Match bucket: {match_label}" if is_it else f"Bucket match: {match_label}")
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:
         details.append(
@@ -419,9 +417,7 @@ def present_learned_room_lighting_assist_details(
     if primary_bucket_match_mode:
         match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
         details.append(
-            f"Match proposto: {match_label}"
-            if is_it
-            else f"Proposed bucket match: {match_label}"
+            f"Match proposto: {match_label}" if is_it else f"Proposed bucket match: {match_label}"
         )
     entity_steps = cfg.get("entity_steps")
     if isinstance(entity_steps, list) and entity_steps:

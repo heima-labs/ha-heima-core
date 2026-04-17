@@ -17,16 +17,14 @@ from typing import Any
 import pytest
 
 from custom_components.heima.runtime.analyzers.base import (
-    HOUSE_STATE_CONCENTRATION_THRESHOLD,
-    HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS,
+    ReactionProposal,
     compute_house_state_filter,
 )
-from custom_components.heima.runtime.analyzers.lighting import LightingPatternAnalyzer
 from custom_components.heima.runtime.analyzers.lifecycle import (
     composite_room_assist_lifecycle_hooks,
     lighting_lifecycle_hooks,
 )
-from custom_components.heima.runtime.analyzers.base import ReactionProposal
+from custom_components.heima.runtime.analyzers.lighting import LightingPatternAnalyzer
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 
 # ---------------------------------------------------------------------------
@@ -107,8 +105,17 @@ def test_compute_house_state_filter_returns_none_when_all_empty_house_state():
         signals={},
     )
     events = [
-        HeimaEvent(ts=_WEEK1, event_type="lighting", context=ctx, source="user",
-                   domain="light", subject_type="entity", subject_id="x", room_id="r", data={})
+        HeimaEvent(
+            ts=_WEEK1,
+            event_type="lighting",
+            context=ctx,
+            source="user",
+            domain="light",
+            subject_type="entity",
+            subject_id="x",
+            room_id="r",
+            data={},
+        )
     ] * 10
     assert compute_house_state_filter(events) is None
 
@@ -185,9 +192,7 @@ async def test_lighting_analyzer_sets_house_state_filter_when_concentrated():
     # all events are in "relax" but we need ≥ 8 observations for dominant count
     # with 12 events all in relax: 12/12 >= 0.75 and 12 >= 8 → filter = "relax"
     assert proposals, "expected at least one proposal"
-    assert all(
-        p.suggested_reaction_config.get("house_state_filter") == "relax" for p in proposals
-    )
+    assert all(p.suggested_reaction_config.get("house_state_filter") == "relax" for p in proposals)
 
 
 @pytest.mark.asyncio
@@ -203,9 +208,7 @@ async def test_lighting_analyzer_house_state_filter_none_when_spread():
     store = _StoreStub(events)
     proposals = await LightingPatternAnalyzer(min_occurrences=5, min_weeks=2).analyze(store)
     if proposals:
-        assert all(
-            p.suggested_reaction_config.get("house_state_filter") is None for p in proposals
-        )
+        assert all(p.suggested_reaction_config.get("house_state_filter") is None for p in proposals)
 
 
 # ---------------------------------------------------------------------------

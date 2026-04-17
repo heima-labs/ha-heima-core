@@ -584,9 +584,7 @@ def present_admin_authored_room_signal_assist_details(
     if primary_bucket_match_mode:
         match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
         details.append(
-            f"Match primario: {match_label}"
-            if is_it
-            else f"Primary bucket match: {match_label}"
+            f"Match primario: {match_label}" if is_it else f"Primary bucket match: {match_label}"
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
@@ -694,9 +692,7 @@ def present_learned_room_signal_assist_details(
     if primary_bucket_match_mode:
         match_label = _bucket_match_mode_label(primary_bucket_match_mode, language=language)
         details.append(
-            f"Match proposto: {match_label}"
-            if is_it
-            else f"Proposed bucket match: {match_label}"
+            f"Match proposto: {match_label}" if is_it else f"Proposed bucket match: {match_label}"
         )
     primary_threshold = cfg.get("primary_threshold", cfg.get("primary_rise_threshold"))
     primary_threshold_mode = str(cfg.get("primary_threshold_mode") or "rise").strip()
