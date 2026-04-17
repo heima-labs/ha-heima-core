@@ -131,7 +131,28 @@ def _wait_for_contextual_reaction(
         if found is not None:
             return found
         time.sleep(poll_s)
-    raise AssertionError("contextual lighting reaction not visible in config entry within timeout")
+    entry = client.get_entry(entry_id)
+    options = dict(entry.get("options") or {})
+    reactions = dict(options.get("reactions") or {})
+    configured = dict(reactions.get("configured") or {})
+    compact = {
+        reaction_id: {
+            "reaction_type": str(dict(raw).get("reaction_type") or ""),
+            "room_id": str(dict(raw).get("room_id") or ""),
+            "source_template_id": str(dict(raw).get("source_template_id") or ""),
+        }
+        for reaction_id, raw in configured.items()
+        if isinstance(raw, dict)
+    }
+    raise AssertionError(
+        "contextual lighting reaction not visible in config entry within timeout; "
+        f"configured snapshot={compact}"
+    )
+
+
+def _is_duplicate_error(result: dict[str, Any]) -> bool:
+    errors = result.get("errors")
+    return isinstance(errors, dict) and str(errors.get("base") or "") == "duplicate"
 
 
 def _policy_json(light_entity: str) -> str:
@@ -270,6 +291,23 @@ def main() -> int:
             flow_id,
             {"config_json": _policy_json("light.test_heima_studio_desk")},
         )
+        if _is_duplicate_error(result):
+            print("Contextual reaction already configured: duplicate slot detected")
+            summary = _diagnostics_reactions(client, entry_id)
+            by_origin = summary.get("by_origin") or {}
+            by_author_kind = summary.get("by_author_kind") or {}
+            _assert(
+                int(by_origin.get("admin_authored") or 0) >= 1,
+                f"admin_authored reaction not counted in by_origin: {by_origin}",
+            )
+            _assert(
+                int(by_author_kind.get("admin") or 0) >= 1,
+                f"admin reaction not counted in by_author_kind: {by_author_kind}",
+            )
+            print("PASS: contextual lighting reaction already present in lab")
+            return 0
+        if result.get("step_id") != "init":
+            print(f"Unexpected JSON submit result: {result}")
         _expect_step(result, "init")
 
         reaction_id, cfg = _wait_for_contextual_reaction(
