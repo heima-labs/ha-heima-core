@@ -42,6 +42,7 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `035_admin_authored_room_darkness_lighting_flow.py`
       - `036_lighting_tuning_followup_flow.py`
       - `037_admin_authored_room_signal_binary_modes.py`
+      - `048_admin_authored_room_contextual_lighting_flow.py`
 - Diagnostics:
   - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). Per `learning`, `reactions` e `lighting` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati, collisioni lighting per slot e pending tuning lighting.
   - `reaction_live_debug.py`: polling live di una singola reaction con vista unica su `heima_reactions_active`, `engine diagnostics`, `apply_plan`, ultimo evento e stato delle entita osservate.
@@ -177,5 +178,6 @@ currently part of the canonical `check_all_live.sh --tier all` lane:
 - `035_admin_authored_room_darkness_lighting_flow.py`
 - `036_lighting_tuning_followup_flow.py`
 - `037_admin_authored_room_signal_binary_modes.py`
+- `048_admin_authored_room_contextual_lighting_flow.py`
 - `042_room_signal_assist_tuning_followup_flow.py`
 - `043_room_darkness_lighting_tuning_followup_flow.py`

@@ -210,6 +210,18 @@ class HeimaEngine:
                 continue
         return False
 
+    def room_occupancy_age_s(self, room_id: str) -> float | None:
+        """Return effective occupancy age in seconds for a room when currently occupied."""
+        trace = dict(self._occupancy_domain.room_trace).get(room_id)
+        room_trace = dict(trace or {})
+        if str(room_trace.get("effective_state") or "") != "on":
+            return None
+        effective_since = room_trace.get("effective_since")
+        if not isinstance(effective_since, (int, float)):
+            return None
+        age = time.monotonic() - float(effective_since)
+        return age if age >= 0 else 0.0
+
     async def async_initialize(self) -> None:
         _LOGGER.debug("Heima engine initialize")
         self._options = HeimaOptions.from_entry(self._entry)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -4273,6 +4274,100 @@ async def test_admin_authored_room_signal_assist_derives_entity_from_room_signal
     assert stored["reaction_type"] == "room_signal_assist"
 
 
+@pytest.mark.asyncio
+async def test_admin_authored_room_contextual_lighting_assist_persists_guided_json_contract():
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
+
+    result = await flow.async_step_admin_authored_room_contextual_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "preset": "all_day_adaptive",
+            "light_entities": ["light.studio_main"],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_room_contextual_lighting_assist_json"
+
+    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
+        {
+            "config_json": flow._contextual_lighting_policy_json(
+                preset="all_day_adaptive",
+                light_entities=["light.studio_main"],
+            )
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = next(iter(flow.options["reactions"]["configured"].values()))
+    assert stored["reaction_type"] == "room_contextual_lighting_assist"
+    assert stored["primary_signal_entities"] == ["sensor.studio_lux"]
+    assert stored["primary_bucket"] == "ok"
+    assert stored["primary_bucket_match_mode"] == "lte"
+    assert stored["default_profile"] == "day_generic"
+    assert sorted(stored["profiles"]) == [
+        "day_generic",
+        "evening_relax",
+        "night_navigation",
+        "workday_focus",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_json():
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
+
+    first = await flow.async_step_admin_authored_room_contextual_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "preset": "all_day_adaptive",
+            "light_entities": ["light.studio_main"],
+        }
+    )
+
+    assert first["type"] == "form"
+    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
+        {"config_json": "{not-json}"}
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"config_json": "invalid_json"}
+
+
 def _room_with_burst_signal() -> dict:
     """Room with humidity signal that has burst_threshold configured."""
     return {
@@ -4403,3 +4498,87 @@ async def test_reactions_edit_room_signal_assist_burst_mode_saves_correctly():
     assert stored["primary_trigger_mode"] == "burst"
     assert stored["primary_bucket"] is None
     assert stored["primary_signal_entities"] == ["sensor.bathroom_humidity"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_contextual_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "ok",
+                        "primary_bucket_match_mode": "lte",
+                        "profiles": {
+                            "day_generic": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 140,
+                                        "color_temp_kelvin": 3600,
+                                    }
+                                ]
+                            },
+                            "evening_relax": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 100,
+                                        "color_temp_kelvin": 2700,
+                                    }
+                                ]
+                            },
+                        },
+                        "rules": [{"profile": "evening_relax"}],
+                        "default_profile": "day_generic",
+                        "followup_window_s": 900,
+                        "enabled": True,
+                    }
+                }
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+    assert result["type"] == "form"
+
+    payload = json.dumps(
+        {
+            "profiles": {
+                "day_generic": {
+                    "entity_steps": [
+                        {
+                            "entity_id": "light.studio_main",
+                            "action": "on",
+                            "brightness": 150,
+                            "color_temp_kelvin": 3700,
+                        }
+                    ]
+                }
+            },
+            "rules": [],
+            "default_profile": "day_generic",
+            "followup_window_s": 600,
+        }
+    )
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": False,
+            "config_json": payload,
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["enabled"] is False
+    assert stored["followup_window_s"] == 600
+    assert list(stored["profiles"]) == ["day_generic"]
