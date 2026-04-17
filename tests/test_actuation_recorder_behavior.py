@@ -368,9 +368,7 @@ def test_actuation_recorder_builds_entity_room_map_from_entity_and_device_area(m
             ),
         }
     )
-    device_registry = SimpleNamespace(
-        devices={"dev-1": SimpleNamespace(area_id="area_living")}
-    )
+    device_registry = SimpleNamespace(devices={"dev-1": SimpleNamespace(area_id="area_living")})
 
     monkeypatch.setattr(
         "homeassistant.helpers.entity_registry.async_get",

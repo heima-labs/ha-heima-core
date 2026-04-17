@@ -550,7 +550,9 @@ def test_build_room_cooling_assist_reaction_requires_primary_signal_entities():
             "reaction_type": "room_cooling_assist",
             "room_id": "studio",
             "primary_signal_name": "room_temperature",
-            "steps": [{"domain": "script", "target": "script.cool_room", "action": "script.turn_on"}],
+            "steps": [
+                {"domain": "script", "target": "script.cool_room", "action": "script.turn_on"}
+            ],
         },
     )
 
