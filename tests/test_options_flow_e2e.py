@@ -2904,6 +2904,90 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
 
 
 @pytest.mark.asyncio
+async def test_room_darkness_lighting_create_and_edit_forms_share_common_fields():
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "display_name": "Studio",
+                    "area_id": "studio",
+                    "signals": [
+                        {
+                            "entity_id": "sensor.studio_lux",
+                            "signal_name": "room_lux",
+                            "device_class": "illuminance",
+                            "buckets": [
+                                {"label": "dark", "upper_bound": 30},
+                                {"label": "dim", "upper_bound": 100},
+                                {"label": "bright", "upper_bound": None},
+                            ],
+                        },
+                    ],
+                },
+            ],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_type": "room_darkness_lighting_assist",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "dim",
+                        "primary_bucket_match_mode": "eq",
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_main",
+                                "action": "on",
+                                "brightness": 144,
+                                "color_temp_kelvin": 2900,
+                                "rgb_color": None,
+                            }
+                        ],
+                    }
+                },
+                "labels": {"r1": "Studio darkness"},
+            },
+            "learning": {"enabled_plugin_families": ["composite_room_assist"]},
+        }
+    )
+
+    create_result = await flow.async_step_admin_authored_room_darkness_lighting_assist()
+    flow._editing_reaction_id = "r1"
+    edit_result = await flow.async_step_reactions_edit_form()
+
+    create_keys = {str(key.schema) for key in create_result["data_schema"].schema}
+    edit_keys = {str(key.schema) for key in edit_result["data_schema"].schema}
+
+    assert {
+        "primary_signal_name",
+        "primary_bucket",
+        "primary_bucket_match_mode",
+        "light_entities",
+        "action",
+        "brightness",
+        "color_temp_kelvin",
+    } <= create_keys
+    assert {
+        "primary_signal_name",
+        "primary_bucket",
+        "primary_bucket_match_mode",
+        "light_entities",
+        "action",
+        "brightness",
+        "color_temp_kelvin",
+    } <= edit_keys
+    assert "room_id" in create_keys
+    assert "room_id" not in edit_keys
+    assert "enabled" not in create_keys
+    assert "enabled" in edit_keys
+    assert "delete_reaction" not in create_keys
+    assert "delete_reaction" in edit_keys
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_room_darkness_lighting_assist_allows_historical_non_pending_duplicate():
     # Con il nuovo flusso diretto non c'è più il concetto di "storico pending":
     # la reaction viene scritta direttamente in configured, quindi una seconda
@@ -4203,6 +4287,64 @@ async def test_admin_authored_room_signal_assist_no_entity_selector_in_schema():
     assert "corroboration_bucket_match_mode" in schema_keys
     assert "primary_signal_entities" not in schema_keys
     assert "corroboration_signal_entities" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_room_signal_assist_create_and_edit_forms_share_common_fields():
+    flow = _flow_with_rooms(
+        {
+            "configured": {
+                "r1": {
+                    "reaction_type": "room_signal_assist",
+                    "room_id": "studio",
+                    "primary_signal_name": "room_humidity",
+                    "primary_trigger_mode": "bucket",
+                    "primary_bucket": "high",
+                    "primary_bucket_match_mode": "eq",
+                    "primary_signal_entities": ["sensor.studio_humidity"],
+                    "steps": [
+                        {"domain": "scene", "target": "scene.relax", "action": "scene.turn_on"}
+                    ],
+                    "enabled": True,
+                }
+            },
+            "labels": {"r1": "Studio humidity assist"},
+        }
+    )
+
+    create_result = await flow.async_step_admin_authored_room_signal_assist()
+    flow._editing_reaction_id = "r1"
+    edit_result = await flow.async_step_reactions_edit_form()
+
+    create_keys = {str(key.schema) for key in create_result["data_schema"].schema}
+    edit_keys = {str(key.schema) for key in edit_result["data_schema"].schema}
+
+    assert {
+        "primary_signal_name",
+        "primary_trigger_mode",
+        "primary_bucket",
+        "primary_bucket_match_mode",
+        "corroboration_signal_name",
+        "corroboration_bucket",
+        "corroboration_bucket_match_mode",
+        "action_entities",
+    } <= create_keys
+    assert {
+        "primary_signal_name",
+        "primary_trigger_mode",
+        "primary_bucket",
+        "primary_bucket_match_mode",
+        "corroboration_signal_name",
+        "corroboration_bucket",
+        "corroboration_bucket_match_mode",
+        "action_entities",
+    } <= edit_keys
+    assert "room_id" in create_keys
+    assert "room_id" not in edit_keys
+    assert "enabled" not in create_keys
+    assert "enabled" in edit_keys
+    assert "delete_reaction" not in create_keys
+    assert "delete_reaction" in edit_keys
 
 
 @pytest.mark.asyncio
