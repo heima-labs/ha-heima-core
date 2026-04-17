@@ -431,6 +431,28 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_contextual_lighting_assist": {
+        "title": "Nuovo assist luce contestuale stanza",
+        "description": "Template: {template_title}\n{template_description}\n\nSegnali stanza disponibili:\n{available_signals}\n\nPreset integrati:\n{preset_previews}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_name": "Nome segnale primario",
+          "primary_bucket": "Bucket oscurità",
+          "primary_bucket_match_mode": "Match mode bucket",
+          "preset": "Preset",
+          "light_entities": "Luci da controllare"
+        },
+        "submit": "Avanti"
+      },
+      "admin_authored_room_contextual_lighting_assist_json": {
+        "title": "Rivedi policy luce contestuale",
+        "description": "Template: {template_title}\n{template_description}\n\nPreset: {preset_label}\n{preset_description}\n\nAnteprima policy:\n{policy_summary}",
+        "data": {
+          "preset": "Preset",
+          "config_json": "JSON policy luce contestuale"
+        },
+        "submit": "Crea reazione"
+      },
       "admin_authored_room_vacancy_lighting_off": {
         "title": "Nuovo spegnimento luci per assenza",
         "description": "Template: {template_title}\n{template_description}",
@@ -519,6 +541,16 @@
           "primary_bucket": "Obbligatorio in modalità Bucket. Bucket validi per segnale: {available_signals}"
         }
       },
+      "reactions_edit_contextual_lighting_assist": {
+        "title": "Modifica reazione luce contestuale",
+        "description": "{reaction_description}\n\nAnteprima policy:\n{policy_summary}",
+        "data": {
+          "enabled": "Abilitata",
+          "preset": "Preset",
+          "config_json": "JSON policy luce contestuale",
+          "delete_reaction": "Elimina questa reazione"
+        }
+      },
       "reactions_delete_confirm": {
         "title": "Conferma Rimozione Reazione",
         "description": "Rimuovere {reaction_description}?",
@@ -540,6 +572,7 @@
       "unknown_area": "L'area Home Assistant selezionata non esiste",
       "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
       "invalid_json": "JSON non valido",
+      "invalid_contextual_contract": "Contratto luce contestuale non valido",
       "invalid_signal_config": "Configurazione segnali stanza non valida",
       "duplicate_signal_name": "Nome segnale duplicato nella stanza",
       "invalid_number": "Inserisci un numero positivo valido",
