@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import time
 from datetime import datetime
-from typing import Any, Literal
-
-from homeassistant.core import HomeAssistant
+from typing import Any
 
 from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
@@ -15,7 +12,16 @@ from ._lighting_review import (
     render_entity_steps_discovery_details,
     render_entity_steps_tuning_details,
 )
-from .base import HeimaReaction
+from ._room_lighting_base import (
+    BucketMatchMode,
+    _BaseRoomLightingAssist,
+)
+from ._room_lighting_base import (
+    bucket_match_mode_label as _bucket_match_mode_label,
+)
+from ._room_lighting_base import (
+    normalize_bucket_match_mode as _normalize_bucket_match_mode,
+)
 from .composite import (
     RuntimeCompositeMatcher,
     RuntimeCompositePatternSpec,
@@ -23,33 +29,14 @@ from .composite import (
     parse_snapshot_ts,
 )
 
-BucketMatchMode = Literal["eq", "lte", "gte"]
 
-
-def _normalize_bucket_match_mode(value: str | BucketMatchMode | None) -> BucketMatchMode:
-    normalized = str(value or "eq").strip().lower()
-    if normalized in {"eq", "lte", "gte"}:
-        return normalized  # type: ignore[return-value]
-    return "eq"
-
-
-def _bucket_match_mode_label(value: str | BucketMatchMode | None, *, language: str) -> str:
-    normalized = _normalize_bucket_match_mode(value)
-    is_it = language.startswith("it")
-    if normalized == "lte":
-        return "bucket o inferiori" if is_it else "bucket or lower"
-    if normalized == "gte":
-        return "bucket o superiori" if is_it else "bucket or higher"
-    return "bucket esatto" if is_it else "exact bucket"
-
-
-class RoomLightingAssistReaction(HeimaReaction):
+class RoomLightingAssistReaction(_BaseRoomLightingAssist):
     """Replay learned lighting entity steps when a room-scoped darkness pattern reoccurs."""
 
     def __init__(
         self,
         *,
-        hass: HomeAssistant,
+        hass: Any,
         bucket_getter: Any | None = None,
         room_id: str,
         entity_steps: list[dict[str, Any]],
@@ -67,19 +54,20 @@ class RoomLightingAssistReaction(HeimaReaction):
         house_state_filter: str | None = None,
         reaction_id: str | None = None,
     ) -> None:
-        self._hass = hass
         self._house_state_filter = str(house_state_filter).strip() if house_state_filter else None
-        self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
-        self._room_id = room_id
-        self._entity_steps = list(entity_steps)
-        self._reaction_id = reaction_id or self.__class__.__name__
-        self._followup_window_s = followup_window_s
-        self._matcher = RuntimeCompositeMatcher(hass)
-        self._primary_bucket = str(primary_bucket or "").strip() or None
-        self._primary_bucket_match_mode = _normalize_bucket_match_mode(primary_bucket_match_mode)
-        self._primary_bucket_labels = tuple(
-            str(item).strip() for item in (primary_bucket_labels or []) if str(item).strip()
+        super().__init__(
+            hass=hass,
+            bucket_getter=bucket_getter,
+            room_id=room_id,
+            reaction_id=reaction_id,
+            followup_window_s=followup_window_s,
+            primary_signal_name=primary_signal_name,
+            primary_bucket=primary_bucket,
+            primary_bucket_match_mode=primary_bucket_match_mode,
+            primary_bucket_labels=primary_bucket_labels,
         )
+        self._entity_steps = list(entity_steps)
+        self._matcher = RuntimeCompositeMatcher(hass)
         corroboration_entities = [e for e in (corroboration_signal_entities or []) if e]
         self._pattern = RuntimeCompositePatternSpec(
             primary=RuntimeCompositeSignalSpec(
@@ -102,15 +90,7 @@ class RoomLightingAssistReaction(HeimaReaction):
             correlation_window_s=correlation_window_s,
         )
         self._pending_episode_ts: datetime | None = None
-        self._last_fired_ts: float | None = None
-        self._last_fired_iso: str | None = None
-        self._fire_count = 0
-        self._suppressed_count = 0
         self._steady_condition_active = False
-
-    @property
-    def reaction_id(self) -> str:
-        return self._reaction_id
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         if not history:
@@ -145,86 +125,33 @@ class RoomLightingAssistReaction(HeimaReaction):
             self._steady_condition_active = False
             return []
         if not self._is_cooled_down():
-            self._suppressed_count += 1
+            self._mark_suppressed()
             return []
 
         self._pending_episode_ts = None
-        self._last_fired_ts = time.monotonic()
-        self._last_fired_iso = datetime.now().isoformat()
-        self._fire_count += 1
+        self._mark_fired()
         self._steady_condition_active = steady_ready
-        return self._build_steps()
+        return self._build_steps(self._entity_steps, reason_prefix="room_lighting_assist")
 
     def reset_learning_state(self) -> None:
         self._matcher.reset()
         self._pending_episode_ts = None
-        self._last_fired_ts = None
-        self._last_fired_iso = None
-        self._fire_count = 0
-        self._suppressed_count = 0
+        self._reset_runtime_counters()
         self._steady_condition_active = False
 
     def diagnostics(self) -> dict[str, Any]:
-        return {
-            "room_id": self._room_id,
-            "entity_steps": len(self._entity_steps),
-            "entity_step_ids": [str(cfg.get("entity_id") or "") for cfg in self._entity_steps],
-            "primary_bucket": self._primary_bucket,
-            "primary_bucket_match_mode": self._primary_bucket_match_mode,
-            "primary_bucket_labels": list(self._primary_bucket_labels),
-            "fire_count": self._fire_count,
-            "suppressed_count": self._suppressed_count,
-            "last_fired_ts": self._last_fired_ts,
-            "last_fired_iso": self._last_fired_iso,
-            "pending_episode": self._pending_episode_ts.isoformat()
-            if self._pending_episode_ts
-            else None,
-            "steady_condition_active": self._steady_condition_active,
-        }
-
-    def _is_cooled_down(self) -> bool:
-        if self._last_fired_ts is None:
-            return True
-        return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
-
-    def _current_primary_bucket(self) -> str | None:
-        return self._bucket_getter(self._room_id, self._pattern.primary.name)
-
-    def _build_steps(self) -> list[ApplyStep]:
-        steps: list[ApplyStep] = []
-        for cfg in self._entity_steps:
-            entity_id = str(cfg.get("entity_id") or "").strip()
-            action = str(cfg.get("action") or "").strip()
-            if not entity_id or action not in {"on", "off"}:
-                continue
-            if action == "on":
-                params: dict[str, Any] = {"entity_id": entity_id}
-                if cfg.get("brightness") is not None:
-                    params["brightness"] = cfg["brightness"]
-                if cfg.get("rgb_color") is not None:
-                    params["rgb_color"] = cfg["rgb_color"]
-                elif cfg.get("color_temp_kelvin") is not None:
-                    params["color_temp_kelvin"] = cfg["color_temp_kelvin"]
-                steps.append(
-                    ApplyStep(
-                        domain="lighting",
-                        target=self._room_id,
-                        action="light.turn_on",
-                        params=params,
-                        reason=f"room_lighting_assist:{self._reaction_id}",
-                    )
-                )
-            else:
-                steps.append(
-                    ApplyStep(
-                        domain="lighting",
-                        target=self._room_id,
-                        action="light.turn_off",
-                        params={"entity_id": entity_id},
-                        reason=f"room_lighting_assist:{self._reaction_id}",
-                    )
-                )
-        return steps
+        data = self._base_diagnostics()
+        data.update(
+            {
+                "entity_steps": len(self._entity_steps),
+                "entity_step_ids": [str(cfg.get("entity_id") or "") for cfg in self._entity_steps],
+                "pending_episode": self._pending_episode_ts.isoformat()
+                if self._pending_episode_ts
+                else None,
+                "steady_condition_active": self._steady_condition_active,
+            }
+        )
+        return data
 
     def _steady_ready(self) -> bool:
         current_bucket = self._current_primary_bucket()
@@ -232,42 +159,13 @@ class RoomLightingAssistReaction(HeimaReaction):
             return False
         if self._steady_condition_active:
             return False
-        return self._entity_steps_need_apply()
+        return self._static_entity_steps_need_apply()
 
     def _bucket_matches(self, current_bucket: str | None) -> bool:
-        expected_bucket = str(self._primary_bucket or "").strip()
-        current = str(current_bucket or "").strip()
-        if not expected_bucket or not current:
-            return False
-        if self._primary_bucket_match_mode == "eq":
-            return current == expected_bucket
-        order = list(self._primary_bucket_labels)
-        if not order:
-            return current == expected_bucket
-        try:
-            current_index = order.index(current)
-            expected_index = order.index(expected_bucket)
-        except ValueError:
-            return current == expected_bucket
-        if self._primary_bucket_match_mode == "lte":
-            return current_index <= expected_index
-        if self._primary_bucket_match_mode == "gte":
-            return current_index >= expected_index
-        return current == expected_bucket
+        return super()._bucket_matches(current_bucket)
 
-    def _entity_steps_need_apply(self) -> bool:
-        for cfg in self._entity_steps:
-            entity_id = str(cfg.get("entity_id") or "").strip()
-            desired_action = str(cfg.get("action") or "").strip()
-            if not entity_id or desired_action not in {"on", "off"}:
-                continue
-            state = self._hass.states.get(entity_id)
-            current = str(state.state).strip().lower() if state is not None else ""
-            if desired_action == "on" and current != "on":
-                return True
-            if desired_action == "off" and current != "off":
-                return True
-        return False
+    def _static_entity_steps_need_apply(self) -> bool:
+        return super()._entity_steps_need_apply(self._entity_steps)
 
 
 def build_room_lighting_assist_reaction(

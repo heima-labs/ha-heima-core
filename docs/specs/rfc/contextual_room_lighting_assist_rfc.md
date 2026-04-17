@@ -48,7 +48,8 @@ Introduce a new canonical reaction type:
 
 - `room_contextual_lighting_assist`
 
-This reaction is room-scoped and bucket-triggered, like darkness assist, but its apply payload is selected from a list of profiles and rules instead of one fixed `entity_steps` block.
+This reaction is room-scoped and bucket-triggered, like darkness assist, but its apply
+payload is selected from a list of profiles and rules instead of one fixed `entity_steps` block.
 
 ## Core Model
 
@@ -71,6 +72,36 @@ Suggested canonical fields:
 
 Optional corroboration stays allowed but is not the focus of this RFC.
 
+### Ambient Modulation Layer
+
+Some rooms should not only choose a different profile by context, but also adjust
+the final light intensity according to outside brightness.
+
+Example:
+
+- the selected profile remains `workday_focus`
+- color temperature stays aligned with the selected profile
+- final brightness is reduced when outdoor light is strong
+- final brightness is increased slightly when outdoor light is very low
+
+This must be modeled as an optional **modulation layer inside the same reaction**,
+not as a second independent reaction targeting the same lights.
+
+Reason:
+
+- two separate reactions writing to the same lights would create ordering conflicts
+- debugging would become opaque
+- cooldown interactions would become harder to reason about
+
+So the correct evaluation order is:
+
+1. primary trigger matches
+2. contextual rule selects a profile
+3. optional ambient modulation adjusts the selected profile `entity_steps`
+4. final `needs_apply` / cooldown / fire logic runs on the adjusted result
+
+The modulation layer is optional.
+
 ### Policy Layer
 
 The final light behavior is chosen from profiles.
@@ -80,6 +111,7 @@ Each reaction contains:
 - `profiles`
 - `rules`
 - `default_profile`
+- optional `ambient_modulation`
 
 #### Profiles
 
@@ -166,6 +198,45 @@ rules:
 default_profile: day_generic
 ```
 
+#### Ambient Modulation
+
+Version 2 of this RFC should support optional brightness modulation driven by an
+external signal such as `outdoor_lux`.
+
+The first supported mode should be:
+
+- `brightness_multiplier`
+
+Suggested shape:
+
+```yaml
+ambient_modulation:
+  source_signal_name: outdoor_lux
+  mode: brightness_multiplier
+  buckets:
+    bright: 0.70
+    normal: 1.00
+    dark: 1.15
+  clamp_min: 20
+  clamp_max: 255
+```
+
+Semantics:
+
+- modulation does **not** change the selected profile
+- modulation does **not** change `color_temp_kelvin`
+- modulation adjusts only `brightness`
+- modulation applies after profile selection and before `needs_apply`
+- if a selected `entity_step` has no brightness field, it is left unchanged
+
+This keeps the policy model simple:
+
+- profile = intent
+- ambient modulation = contextual refinement of brightness
+
+Future extensions may add more advanced modes such as profile overrides by
+outdoor bucket, but the initial design should stay brightness-only.
+
 ## Occupancy Reason
 
 The user requirement includes:
@@ -207,6 +278,15 @@ This is intentionally limited.
 
 The system should not emit more refined meanings unless a dedicated explicit signal exists.
 
+### Version 1 Threshold for `settled`
+
+In v1, the threshold used to classify `settled` is a fixed internal constant of **600 seconds**.
+
+`settled` is emitted when the room has been continuously occupied for at least 600s.
+
+The ability to configure this threshold per-reaction (`min_presence_age_s` as a rule field)
+is deferred to phase 2.
+
 ## Resolver Semantics
 
 The reaction evaluation flow becomes:
@@ -220,8 +300,9 @@ The reaction evaluation flow becomes:
    - derived `occupancy_reason`
 4. select the first matching rule
 5. load the target profile
-6. compute `needs_apply`
-7. fire `entity_steps` from that profile if cooldown allows it
+6. optionally apply `ambient_modulation`
+7. compute `needs_apply`
+8. fire `entity_steps` from that profile if cooldown allows it
 
 ### needs_apply Definition
 
@@ -273,6 +354,8 @@ Required diagnostics:
 - `selected_rule_index`
 - `selected_rule_summary`
 - `available_profiles`
+- `ambient_source_bucket`
+- `ambient_brightness_scale`
 - `fire_count`
 - `suppressed_count`
 - `last_fired_iso`
@@ -311,6 +394,15 @@ rules:
   - profile: night_navigation
     time_window: {start: "23:30", end: "06:30"}
 default_profile: day_generic
+ambient_modulation:
+  source_signal_name: outdoor_lux
+  mode: brightness_multiplier
+  buckets:
+    bright: 0.70
+    normal: 1.00
+    dark: 1.15
+  clamp_min: 20
+  clamp_max: 255
 ```
 
 ## Config Flow
@@ -369,6 +461,15 @@ The JSON editor must reject:
 
 Errors must be attached to the form and not crash the flow.
 
+Version 1 may omit `ambient_modulation` from the guided UI even if the contract
+already reserves the field.
+
+When the JSON editor exposes it, validation must reject:
+
+- unknown outdoor buckets
+- non-numeric multipliers
+- invalid clamp bounds
+
 ## Migration Strategy
 
 Do not mutate existing `room_darkness_lighting_assist` reactions automatically.
@@ -399,6 +500,26 @@ Reasons:
 
 `room_contextual_lighting_assist` becomes the richer policy-driven version.
 
+### Implementation: shared base class
+
+The two reaction classes share a non-trivial amount of logic:
+
+- trigger check (room occupancy + lux bucket match)
+- cooldown enforcement
+- `entity_steps` application
+- base diagnostics counters (fire_count, suppressed_count, last_fired_iso)
+
+This shared logic must live in a common base class, not be duplicated.
+
+`RoomLightingAssistReaction` and `RoomContextualLightingAssistReaction` both extend
+`_BaseRoomLightingAssist`, which provides the shared primitives.
+
+Each subclass implements only its own `evaluate()` path. There are no `if reaction_type`
+or `if policy_mode` branches in the base class or in either subclass.
+
+This keeps `room_darkness_lighting_assist` untouched and fully stable, while the
+contextual path is developed as greenfield code with independent test coverage.
+
 ## Acceptance Criteria
 
 This RFC is complete when:
@@ -406,8 +527,10 @@ This RFC is complete when:
 1. a configured `room_contextual_lighting_assist` can choose different profiles by time window
 2. it can choose a different profile when `house_state=working`
 3. diagnostics show the selected profile and rule
-4. config flow can create at least one studio-focused template
-5. existing `room_darkness_lighting_assist` reactions remain unchanged
+4. config flow can create at least one built-in template for `room_contextual_lighting_assist`
+5. an optional outdoor-light brightness modulation can be expressed without
+   introducing a second competing reaction
+6. existing `room_darkness_lighting_assist` reactions remain unchanged
 
 ## Recommended First Implementation Scope
 
@@ -424,5 +547,7 @@ To keep the first slice small:
 5. expose a generated-and-editable JSON payload in the flow
 6. defer `min_presence_age_s` / `max_presence_age_s` as raw rule fields to phase 2
    (they are superseded by `occupancy_reason` in most practical cases)
+7. defer `ambient_modulation` guided UI to phase 2, but keep the contract ready
+   for JSON-level support
 
 This is enough to solve the concrete user problem without overdesign.

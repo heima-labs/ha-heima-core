@@ -4305,6 +4305,7 @@ async def test_admin_authored_room_contextual_lighting_assist_persists_guided_js
 
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_room_contextual_lighting_assist_json"
+    assert "preset" in result["data_schema"].schema
 
     result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
         {
@@ -4328,6 +4329,35 @@ async def test_admin_authored_room_contextual_lighting_assist_persists_guided_js
         "night_navigation",
         "workday_focus",
     ]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_contextual_lighting_assist_exposes_preset_previews():
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
+
+    result = await flow.async_step_admin_authored_room_contextual_lighting_assist()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "admin_authored_room_contextual_lighting_assist"
+    previews = result["description_placeholders"]["preset_previews"]
+    assert "Daytime focus" in previews
+    assert "Evening warmth" in previews
+    assert "Night navigation" in previews
+    assert "All-day adaptive" in previews
 
 
 @pytest.mark.asyncio
@@ -4366,6 +4396,63 @@ async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_js
 
     assert result["type"] == "form"
     assert result["errors"] == {"config_json": "invalid_json"}
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_contract():
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
+
+    first = await flow.async_step_admin_authored_room_contextual_lighting_assist(
+        {
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "preset": "all_day_adaptive",
+            "light_entities": ["light.studio_main"],
+        }
+    )
+
+    assert first["type"] == "form"
+    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
+        {
+            "config_json": json.dumps(
+                {
+                    "profiles": {
+                        "day_generic": {
+                            "entity_steps": [
+                                {
+                                    "entity_id": "light.studio_main",
+                                    "action": "on",
+                                    "brightness": 140,
+                                    "color_temp_kelvin": 3600,
+                                }
+                            ]
+                        }
+                    },
+                    "rules": [{"profile": "day_generic", "house_state_in": ["not-a-state"]}],
+                    "default_profile": "day_generic",
+                }
+            )
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"config_json": "invalid_contextual_contract"}
 
 
 def _room_with_burst_signal() -> dict:
@@ -4549,6 +4636,8 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
 
     result = await flow.async_step_reactions_edit_form()
     assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_contextual_lighting_assist"
+    assert "preset" in result["data_schema"].schema
 
     payload = json.dumps(
         {
@@ -4582,3 +4671,175 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
     assert stored["enabled"] is False
     assert stored["followup_window_s"] == 600
     assert list(stored["profiles"]) == ["day_generic"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_contextual_lighting_assist_can_regenerate_from_preset():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_contextual_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "ok",
+                        "primary_bucket_match_mode": "lte",
+                        "profiles": {
+                            "day_generic": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 140,
+                                        "color_temp_kelvin": 3600,
+                                    }
+                                ]
+                            },
+                            "evening_relax": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 100,
+                                        "color_temp_kelvin": 2700,
+                                    }
+                                ]
+                            },
+                            "night_navigation": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 25,
+                                        "color_temp_kelvin": 2200,
+                                    }
+                                ]
+                            },
+                            "workday_focus": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 180,
+                                        "color_temp_kelvin": 4300,
+                                    }
+                                ]
+                            },
+                        },
+                        "rules": [
+                            {
+                                "profile": "workday_focus",
+                                "house_state_in": ["working"],
+                                "time_window": {"start": "08:00", "end": "18:30"},
+                            },
+                            {
+                                "profile": "day_generic",
+                                "house_state_in": ["home", "relax"],
+                                "time_window": {"start": "08:00", "end": "18:30"},
+                            },
+                            {
+                                "profile": "evening_relax",
+                                "time_window": {"start": "18:30", "end": "23:30"},
+                            },
+                            {
+                                "profile": "night_navigation",
+                                "time_window": {"start": "23:30", "end": "06:30"},
+                            },
+                        ],
+                        "default_profile": "day_generic",
+                        "followup_window_s": 900,
+                        "enabled": True,
+                    }
+                }
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+    assert result["type"] == "form"
+    config_json = flow._contextual_lighting_policy_for_form(
+        flow.options["reactions"]["configured"]["r1"]
+    )
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "preset": "night_navigation",
+            "config_json": config_json,
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["default_profile"] == "daytime_low"
+    assert sorted(stored["profiles"]) == ["daytime_low", "night_navigation"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_contextual_lighting_assist_preserves_ambient_modulation():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_contextual_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "ok",
+                        "primary_bucket_match_mode": "lte",
+                        "profiles": {
+                            "day_generic": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 140,
+                                        "color_temp_kelvin": 3600,
+                                    }
+                                ]
+                            }
+                        },
+                        "rules": [],
+                        "default_profile": "day_generic",
+                        "ambient_modulation": {
+                            "source_signal_name": "outdoor_lux",
+                            "mode": "brightness_multiplier",
+                            "buckets": {"bright": 0.7, "dark": 1.15},
+                            "clamp_min": 20,
+                            "clamp_max": 255,
+                        },
+                        "followup_window_s": 900,
+                        "enabled": True,
+                    }
+                }
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+    assert result["type"] == "form"
+    config_json = flow._contextual_lighting_policy_for_form(
+        flow.options["reactions"]["configured"]["r1"]
+    )
+    payload = json.loads(config_json)
+    assert payload["ambient_modulation"]["source_signal_name"] == "outdoor_lux"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "config_json": config_json,
+            "delete_reaction": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["ambient_modulation"]["mode"] == "brightness_multiplier"

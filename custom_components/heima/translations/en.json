@@ -431,6 +431,28 @@
         },
         "submit": "OK"
       },
+      "admin_authored_room_contextual_lighting_assist": {
+        "title": "New contextual room lighting assist",
+        "description": "Template: {template_title}\n{template_description}\n\nAvailable room signals:\n{available_signals}\n\nBuilt-in presets:\n{preset_previews}",
+        "data": {
+          "room_id": "Room",
+          "primary_signal_name": "Primary signal name",
+          "primary_bucket": "Darkness bucket",
+          "primary_bucket_match_mode": "Bucket match mode",
+          "preset": "Preset",
+          "light_entities": "Lights to control"
+        },
+        "submit": "Next"
+      },
+      "admin_authored_room_contextual_lighting_assist_json": {
+        "title": "Review contextual lighting policy",
+        "description": "Template: {template_title}\n{template_description}\n\nPreset: {preset_label}\n{preset_description}\n\nPolicy preview:\n{policy_summary}",
+        "data": {
+          "preset": "Preset",
+          "config_json": "Contextual lighting policy JSON"
+        },
+        "submit": "Create reaction"
+      },
       "admin_authored_room_vacancy_lighting_off": {
         "title": "New vacancy lights-off assist",
         "description": "Template: {template_title}\n{template_description}",
@@ -519,6 +541,16 @@
           "primary_bucket": "Required for Bucket mode. Valid buckets per signal: {available_signals}"
         }
       },
+      "reactions_edit_contextual_lighting_assist": {
+        "title": "Edit contextual lighting reaction",
+        "description": "{reaction_description}\n\nPolicy preview:\n{policy_summary}",
+        "data": {
+          "enabled": "Enabled",
+          "preset": "Preset",
+          "config_json": "Contextual lighting policy JSON",
+          "delete_reaction": "Delete this reaction"
+        }
+      },
       "reactions_delete_confirm": {
         "title": "Confirm Reaction Removal",
         "description": "Remove {reaction_description}?",
@@ -540,6 +572,7 @@
       "unknown_area": "Selected Home Assistant area was not found",
       "area_sync_failed": "Heima could not create or link the Home Assistant area",
       "invalid_json": "Invalid JSON",
+      "invalid_contextual_contract": "Invalid contextual lighting contract",
       "invalid_signal_config": "Invalid room signal configuration",
       "duplicate_signal_name": "Duplicate signal name in room",
       "invalid_number": "Enter a valid positive number",

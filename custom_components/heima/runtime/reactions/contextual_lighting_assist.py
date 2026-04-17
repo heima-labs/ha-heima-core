@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import time
-from datetime import UTC, datetime
+from datetime import datetime
 from datetime import time as dt_time
 from typing import Any
 
-from homeassistant.core import HomeAssistant
-
+from ...const import HOUSE_STATES_CANONICAL
 from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
@@ -16,10 +14,12 @@ from ._lighting_review import (
     render_entity_steps_discovery_details,
     render_entity_steps_tuning_details,
 )
-from .base import HeimaReaction
+from ._room_lighting_base import _BaseRoomLightingAssist
 from .composite import parse_snapshot_ts
 
-_TRANSIENT_OCCUPANCY_MAX_S = 300.0
+_TRANSIENT_OCCUPANCY_MAX_S = 600.0
+_CONTEXTUAL_OCCUPANCY_REASONS = {"focus", "settled", "transient", "generic"}
+_AMBIENT_MODULATION_MODE = "brightness_multiplier"
 
 
 def derive_contextual_occupancy_reason(*, house_state: str, occupancy_age_s: float | None) -> str:
@@ -61,7 +61,7 @@ def resolve_contextual_lighting_profile(
         house_state=house_state,
         occupancy_age_s=occupancy_age_s,
     )
-    current_time = current_dt.astimezone(UTC).timetz().replace(tzinfo=None)
+    current_time = current_dt.timetz().replace(tzinfo=None)
     for index, rule in enumerate(rules):
         profile = str(rule.get("profile") or "").strip()
         if not profile:
@@ -88,13 +88,13 @@ def resolve_contextual_lighting_profile(
     return default_profile, None, "default_profile", occupancy_reason
 
 
-class RoomContextualLightingAssistReaction(HeimaReaction):
+class RoomContextualLightingAssistReaction(_BaseRoomLightingAssist):
     """Apply different lighting profiles for the same dark-room trigger."""
 
     def __init__(
         self,
         *,
-        hass: HomeAssistant,
+        hass: Any,
         bucket_getter: Any | None = None,
         occupancy_age_getter: Any | None = None,
         room_id: str,
@@ -106,20 +106,24 @@ class RoomContextualLightingAssistReaction(HeimaReaction):
         profiles: dict[str, dict[str, Any]] | None = None,
         rules: list[dict[str, Any]] | None = None,
         default_profile: str | None = None,
+        ambient_modulation: dict[str, Any] | None = None,
         followup_window_s: int = 900,
         reaction_id: str | None = None,
     ) -> None:
-        self._hass = hass
         self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._occupancy_age_getter = occupancy_age_getter or (lambda _room_id: None)
-        self._room_id = room_id
+        super().__init__(
+            hass=hass,
+            bucket_getter=bucket_getter,
+            room_id=room_id,
+            reaction_id=reaction_id,
+            followup_window_s=followup_window_s,
+            primary_signal_name=primary_signal_name,
+            primary_bucket=primary_bucket,
+            primary_bucket_match_mode=primary_bucket_match_mode,
+            primary_bucket_labels=primary_bucket_labels,
+        )
         self._primary_signal_entities = list(primary_signal_entities)
-        self._primary_signal_name = primary_signal_name
-        self._primary_bucket = str(primary_bucket or "").strip()
-        self._primary_bucket_match_mode = str(primary_bucket_match_mode or "eq").strip().lower()
-        self._primary_bucket_labels = [
-            str(item).strip() for item in (primary_bucket_labels or []) if str(item).strip()
-        ]
         self._profiles = {
             str(name).strip(): dict(payload)
             for name, payload in dict(profiles or {}).items()
@@ -127,24 +131,18 @@ class RoomContextualLightingAssistReaction(HeimaReaction):
         }
         self._rules = [dict(item) for item in list(rules or []) if isinstance(item, dict)]
         self._default_profile = str(default_profile or "").strip() or None
-        self._followup_window_s = int(followup_window_s)
-        self._reaction_id = reaction_id or self.__class__.__name__
-        self._last_fired_ts: float | None = None
-        self._last_fired_iso: str | None = None
-        self._fire_count = 0
-        self._suppressed_count = 0
+        self._ambient_modulation = dict(ambient_modulation or {})
         self._last_applied_profile: str | None = None
-        self._current_primary_bucket: str | None = None
+        self._current_primary_bucket_value: str | None = None
         self._current_house_state: str = "unknown"
         self._occupancy_age_s: float | None = None
         self._occupancy_reason: str = "generic"
         self._selected_profile: str | None = None
         self._selected_rule_index: int | None = None
         self._selected_rule_summary: str | None = None
-
-    @property
-    def reaction_id(self) -> str:
-        return self._reaction_id
+        self._ambient_source_bucket: str | None = None
+        self._ambient_brightness_scale: float | None = None
+        self._last_applied_ambient_scale: float | None = None
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         if not history:
@@ -158,10 +156,13 @@ class RoomContextualLightingAssistReaction(HeimaReaction):
             self._selected_profile = None
             self._selected_rule_index = None
             self._selected_rule_summary = None
+            self._ambient_source_bucket = None
+            self._ambient_brightness_scale = None
+            self._last_applied_ambient_scale = None
             return []
 
-        self._current_primary_bucket = self._current_bucket()
-        if not self._bucket_matches(self._current_primary_bucket):
+        self._current_primary_bucket_value = self._current_primary_bucket()
+        if not self._bucket_matches(self._current_primary_bucket_value):
             return []
 
         current_dt = parse_snapshot_ts(snapshot.ts)
@@ -186,80 +187,48 @@ class RoomContextualLightingAssistReaction(HeimaReaction):
         entity_steps = self._profile_entity_steps(profile_name)
         if not entity_steps:
             return []
+        entity_steps = self._apply_ambient_modulation(entity_steps)
         if not self._needs_apply(profile_name, entity_steps):
             return []
         if not self._is_cooled_down():
-            self._suppressed_count += 1
+            self._mark_suppressed()
             return []
 
-        self._last_fired_ts = time.monotonic()
-        self._last_fired_iso = datetime.now().isoformat()
-        self._fire_count += 1
+        self._mark_fired()
         self._last_applied_profile = profile_name
-        return self._build_steps(entity_steps)
+        self._last_applied_ambient_scale = self._ambient_brightness_scale
+        return self._build_steps(entity_steps, reason_prefix="room_contextual_lighting_assist")
 
     def reset_learning_state(self) -> None:
-        self._last_fired_ts = None
-        self._last_fired_iso = None
-        self._fire_count = 0
-        self._suppressed_count = 0
+        self._reset_runtime_counters()
         self._last_applied_profile = None
         self._occupancy_age_s = None
         self._occupancy_reason = "generic"
         self._selected_profile = None
         self._selected_rule_index = None
         self._selected_rule_summary = None
+        self._ambient_source_bucket = None
+        self._ambient_brightness_scale = None
+        self._last_applied_ambient_scale = None
 
     def diagnostics(self) -> dict[str, Any]:
-        return {
-            "room_id": self._room_id,
-            "current_primary_bucket": self._current_primary_bucket,
-            "primary_bucket": self._primary_bucket,
-            "primary_bucket_match_mode": self._primary_bucket_match_mode,
-            "current_house_state": self._current_house_state,
-            "occupancy_age_s": self._occupancy_age_s,
-            "occupancy_reason": self._occupancy_reason,
-            "selected_profile": self._selected_profile,
-            "last_applied_profile": self._last_applied_profile,
-            "selected_rule_index": self._selected_rule_index,
-            "selected_rule_summary": self._selected_rule_summary,
-            "available_profiles": sorted(self._profiles),
-            "fire_count": self._fire_count,
-            "suppressed_count": self._suppressed_count,
-            "last_fired_ts": self._last_fired_ts,
-            "last_fired_iso": self._last_fired_iso,
-        }
-
-    def _current_bucket(self) -> str | None:
-        value = self._bucket_getter(self._room_id, self._primary_signal_name)
-        text = str(value or "").strip()
-        return text or None
-
-    def _bucket_matches(self, current_bucket: str | None) -> bool:
-        expected_bucket = self._primary_bucket
-        current = str(current_bucket or "").strip()
-        if not expected_bucket or not current:
-            return False
-        if self._primary_bucket_match_mode == "eq":
-            return current == expected_bucket
-        order = list(self._primary_bucket_labels)
-        if not order:
-            return current == expected_bucket
-        try:
-            current_index = order.index(current)
-            expected_index = order.index(expected_bucket)
-        except ValueError:
-            return current == expected_bucket
-        if self._primary_bucket_match_mode == "lte":
-            return current_index <= expected_index
-        if self._primary_bucket_match_mode == "gte":
-            return current_index >= expected_index
-        return current == expected_bucket
-
-    def _is_cooled_down(self) -> bool:
-        if self._last_fired_ts is None:
-            return True
-        return (time.monotonic() - self._last_fired_ts) >= self._followup_window_s
+        data = self._base_diagnostics()
+        data.update(
+            {
+                "current_primary_bucket": self._current_primary_bucket_value,
+                "current_house_state": self._current_house_state,
+                "occupancy_age_s": self._occupancy_age_s,
+                "occupancy_reason": self._occupancy_reason,
+                "selected_profile": self._selected_profile,
+                "last_applied_profile": self._last_applied_profile,
+                "selected_rule_index": self._selected_rule_index,
+                "selected_rule_summary": self._selected_rule_summary,
+                "available_profiles": sorted(self._profiles),
+                "ambient_source_bucket": self._ambient_source_bucket,
+                "ambient_brightness_scale": self._ambient_brightness_scale,
+            }
+        )
+        return data
 
     def _profile_entity_steps(self, profile_name: str) -> list[dict[str, Any]]:
         profile = dict(self._profiles.get(profile_name) or {})
@@ -269,54 +238,45 @@ class RoomContextualLightingAssistReaction(HeimaReaction):
     def _needs_apply(self, profile_name: str, entity_steps: list[dict[str, Any]]) -> bool:
         if self._last_applied_profile != profile_name:
             return True
-        for cfg in entity_steps:
-            entity_id = str(cfg.get("entity_id") or "").strip()
-            desired_action = str(cfg.get("action") or "").strip()
-            if not entity_id or desired_action not in {"on", "off"}:
-                continue
-            state = self._hass.states.get(entity_id)
-            current = str(state.state).strip().lower() if state is not None else ""
-            if desired_action == "on" and current != "on":
-                return True
-            if desired_action == "off" and current != "off":
-                return True
-        return False
+        if self._last_applied_ambient_scale != self._ambient_brightness_scale:
+            return True
+        return super()._entity_steps_need_apply(entity_steps)
 
-    def _build_steps(self, entity_steps: list[dict[str, Any]]) -> list[ApplyStep]:
-        steps: list[ApplyStep] = []
-        for cfg in entity_steps:
-            entity_id = str(cfg.get("entity_id") or "").strip()
-            action = str(cfg.get("action") or "").strip()
-            if not entity_id or action not in {"on", "off"}:
+    def _apply_ambient_modulation(self, entity_steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        self._ambient_source_bucket = None
+        self._ambient_brightness_scale = None
+        if not self._ambient_modulation:
+            return entity_steps
+        source_signal_name = str(self._ambient_modulation.get("source_signal_name") or "").strip()
+        if not source_signal_name:
+            return entity_steps
+        mode = str(self._ambient_modulation.get("mode") or "").strip()
+        if mode != _AMBIENT_MODULATION_MODE:
+            return entity_steps
+        bucket = self._current_bucket_for(source_signal_name)
+        self._ambient_source_bucket = bucket
+        multipliers = dict(self._ambient_modulation.get("buckets") or {})
+        scale = _coerce_float(multipliers.get(str(bucket or "").strip()))
+        if scale is None:
+            return entity_steps
+        self._ambient_brightness_scale = scale
+        clamp_min = _coerce_int(self._ambient_modulation.get("clamp_min"))
+        clamp_max = _coerce_int(self._ambient_modulation.get("clamp_max"))
+        adjusted: list[dict[str, Any]] = []
+        for raw in entity_steps:
+            step = dict(raw)
+            brightness = _coerce_int(step.get("brightness"))
+            if brightness is None:
+                adjusted.append(step)
                 continue
-            if action == "on":
-                params: dict[str, Any] = {"entity_id": entity_id}
-                if cfg.get("brightness") is not None:
-                    params["brightness"] = cfg["brightness"]
-                if cfg.get("rgb_color") is not None:
-                    params["rgb_color"] = cfg["rgb_color"]
-                elif cfg.get("color_temp_kelvin") is not None:
-                    params["color_temp_kelvin"] = cfg["color_temp_kelvin"]
-                steps.append(
-                    ApplyStep(
-                        domain="lighting",
-                        target=self._room_id,
-                        action="light.turn_on",
-                        params=params,
-                        reason=f"room_contextual_lighting_assist:{self._reaction_id}",
-                    )
-                )
-            else:
-                steps.append(
-                    ApplyStep(
-                        domain="lighting",
-                        target=self._room_id,
-                        action="light.turn_off",
-                        params={"entity_id": entity_id},
-                        reason=f"room_contextual_lighting_assist:{self._reaction_id}",
-                    )
-                )
-        return steps
+            modulated = int(round(float(brightness) * scale))
+            if clamp_min is not None:
+                modulated = max(clamp_min, modulated)
+            if clamp_max is not None:
+                modulated = min(clamp_max, modulated)
+            step["brightness"] = max(1, modulated)
+            adjusted.append(step)
+        return adjusted
 
 
 def build_room_contextual_lighting_assist_reaction(
@@ -336,6 +296,7 @@ def build_room_contextual_lighting_assist_reaction(
         profiles = dict(cfg.get("profiles") or {})
         rules = list(cfg.get("rules") or [])
         default_profile = str(cfg.get("default_profile") or "").strip()
+        ambient_modulation = dict(cfg.get("ambient_modulation") or {})
         followup_window_s = int(cfg.get("followup_window_s", 900))
         if not room_id or not primary_signal_entities or not primary_bucket:
             raise ValueError("missing required contextual lighting fields")
@@ -344,6 +305,8 @@ def build_room_contextual_lighting_assist_reaction(
                 "profiles": profiles,
                 "rules": rules,
                 "default_profile": default_profile,
+                "ambient_modulation": ambient_modulation,
+                "followup_window_s": followup_window_s,
             }
         ):
             raise ValueError("invalid contextual lighting contract")
@@ -364,6 +327,7 @@ def build_room_contextual_lighting_assist_reaction(
         profiles=profiles,
         rules=rules,
         default_profile=default_profile,
+        ambient_modulation=ambient_modulation,
         followup_window_s=followup_window_s,
         reaction_id=proposal_id,
     )
@@ -374,7 +338,10 @@ def validate_contextual_lighting_contract(cfg: dict[str, Any]) -> bool:
     profiles = dict(cfg.get("profiles") or {})
     rules = list(cfg.get("rules") or [])
     default_profile = str(cfg.get("default_profile") or "").strip()
+    followup_window_s = cfg.get("followup_window_s", 900)
     if not profiles or not isinstance(profiles.get(default_profile), dict):
+        return False
+    if _coerce_int(followup_window_s) is None or int(followup_window_s) < 0:
         return False
     for name, profile in profiles.items():
         if not str(name).strip():
@@ -382,11 +349,30 @@ def validate_contextual_lighting_contract(cfg: dict[str, Any]) -> bool:
         entity_steps = dict(profile).get("entity_steps")
         if not isinstance(entity_steps, list) or not entity_steps:
             return False
+        for raw_step in entity_steps:
+            if not isinstance(raw_step, dict):
+                return False
+            entity_id = str(raw_step.get("entity_id") or "").strip()
+            action = str(raw_step.get("action") or "").strip()
+            if not entity_id or action not in {"on", "off"}:
+                return False
     for raw_rule in rules:
         if not isinstance(raw_rule, dict):
             return False
         profile = str(raw_rule.get("profile") or "").strip()
         if not profile or profile not in profiles:
+            return False
+        states = [
+            str(v).strip() for v in list(raw_rule.get("house_state_in") or []) if str(v).strip()
+        ]
+        if states and any(state not in HOUSE_STATES_CANONICAL for state in states):
+            return False
+        reasons = [
+            str(v).strip()
+            for v in list(raw_rule.get("occupancy_reason_in") or [])
+            if str(v).strip()
+        ]
+        if reasons and any(reason not in _CONTEXTUAL_OCCUPANCY_REASONS for reason in reasons):
             return False
         time_window = raw_rule.get("time_window")
         if time_window not in (None, {}) and (
@@ -394,6 +380,32 @@ def validate_contextual_lighting_contract(cfg: dict[str, Any]) -> bool:
             or _parse_hhmm(str(time_window.get("start") or "").strip()) is None
             or _parse_hhmm(str(time_window.get("end") or "").strip()) is None
         ):
+            return False
+    ambient_modulation = cfg.get("ambient_modulation")
+    if ambient_modulation not in (None, {}):
+        if not isinstance(ambient_modulation, dict):
+            return False
+        source_signal_name = str(ambient_modulation.get("source_signal_name") or "").strip()
+        mode = str(ambient_modulation.get("mode") or "").strip()
+        buckets = ambient_modulation.get("buckets")
+        if (
+            not source_signal_name
+            or mode != _AMBIENT_MODULATION_MODE
+            or not isinstance(buckets, dict)
+        ):
+            return False
+        if not buckets:
+            return False
+        for label, multiplier in buckets.items():
+            if not str(label).strip() or _coerce_float(multiplier) is None:
+                return False
+        clamp_min = ambient_modulation.get("clamp_min")
+        clamp_max = ambient_modulation.get("clamp_max")
+        if clamp_min is not None and _coerce_int(clamp_min) is None:
+            return False
+        if clamp_max is not None and _coerce_int(clamp_max) is None:
+            return False
+        if clamp_min is not None and clamp_max is not None and int(clamp_min) > int(clamp_max):
             return False
     return True
 
@@ -459,6 +471,14 @@ def present_admin_authored_room_contextual_lighting_assist_details(
             f"Profilo di default: {default_profile}"
             if is_it
             else f"Default profile: {default_profile}"
+        )
+    ambient_modulation = dict(cfg.get("ambient_modulation") or {})
+    ambient_signal = str(ambient_modulation.get("source_signal_name") or "").strip()
+    if ambient_signal:
+        lines.append(
+            f"Modulazione ambientale: {ambient_signal}"
+            if is_it
+            else f"Ambient modulation: {ambient_signal}"
         )
     for profile_name, profile in profiles.items():
         entity_steps = profile.get("entity_steps")
@@ -550,5 +570,12 @@ def _rule_summary(rule: dict[str, Any]) -> str:
 def _coerce_float(value: Any) -> float | None:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
