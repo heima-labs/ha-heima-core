@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
+from custom_components.heima.runtime.reactions.lighting_assist import (
+    RoomLightingAssistReaction,
+    build_room_lighting_assist_reaction,
+)
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -256,3 +259,136 @@ def test_room_lighting_assist_reaction_does_not_refire_while_same_dark_episode_p
         ]
     )
     assert second == []
+
+
+def test_room_lighting_assist_reaction_does_not_fire_when_apply_already_satisfied():
+    hass = MagicMock()
+    bucket_state = {"living:room_lux": "dim"}
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state="on") if eid == "light.living_main" else None
+    )
+    reaction = RoomLightingAssistReaction(
+        hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
+        room_id="living",
+        primary_signal_entities=["sensor.living_room_lux"],
+        primary_bucket="dim",
+        entity_steps=[
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 144,
+                "color_temp_kelvin": 2900,
+                "rgb_color": None,
+            }
+        ],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 23, 18, 0, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)]) == []
+    assert reaction.diagnostics()["steady_condition_active"] is False
+
+
+def test_room_lighting_assist_reaction_counts_suppression_during_cooldown():
+    hass = MagicMock()
+    bucket_state = {"living:room_lux": "dim"}
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state="off") if eid == "light.living_main" else None
+    )
+    reaction = RoomLightingAssistReaction(
+        hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
+        room_id="living",
+        primary_signal_entities=["sensor.living_room_lux"],
+        primary_bucket="dim",
+        entity_steps=[
+            {
+                "entity_id": "light.living_main",
+                "action": "on",
+                "brightness": 144,
+                "color_temp_kelvin": 2900,
+                "rgb_color": None,
+            }
+        ],
+        followup_window_s=999,
+    )
+    ts1 = datetime(2026, 3, 23, 18, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 23, 18, 1, tzinfo=timezone.utc).isoformat()
+
+    first = reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)])
+    assert len(first) == 1
+
+    reaction._steady_condition_active = False  # noqa: SLF001
+    second = reaction.evaluate(
+        [
+            _snapshot(occupied_rooms=["living"], ts=ts1),
+            _snapshot(occupied_rooms=["living"], ts=ts2),
+        ]
+    )
+    assert second == []
+    assert reaction.diagnostics()["suppressed_count"] == 1
+
+
+def test_room_lighting_assist_reaction_builds_turn_off_steps():
+    hass = MagicMock()
+    bucket_state = {"living:room_lux": "dim"}
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state="on") if eid == "light.living_main" else None
+    )
+    reaction = RoomLightingAssistReaction(
+        hass=hass,
+        bucket_getter=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
+        room_id="living",
+        primary_signal_entities=["sensor.living_room_lux"],
+        primary_bucket="dim",
+        entity_steps=[
+            {
+                "entity_id": "light.living_main",
+                "action": "off",
+            }
+        ],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 23, 18, 0, tzinfo=timezone.utc).isoformat()
+
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts1)])
+
+    assert len(steps) == 1
+    assert steps[0].action == "light.turn_off"
+    assert steps[0].params["entity_id"] == "light.living_main"
+
+
+def test_build_room_lighting_assist_reaction_requires_primary_bucket():
+    engine = SimpleNamespace(
+        _hass=MagicMock(),
+        signal_bucket=lambda room_id, signal_name: None,
+        _entry=SimpleNamespace(
+            options={
+                "rooms": [
+                    {
+                        "room_id": "living",
+                        "signals": [
+                            {
+                                "signal_name": "room_lux",
+                                "bucket_labels": ["dark", "dim", "ok", "bright"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+
+    reaction = build_room_lighting_assist_reaction(
+        engine,
+        "darkness-test",
+        {
+            "room_id": "living",
+            "primary_signal_entities": ["sensor.living_room_lux"],
+            "primary_signal_name": "room_lux",
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+
+    assert reaction is None

@@ -1673,6 +1673,54 @@ async def test_proposal_configure_action_normalizes_scene_and_script_steps():
 
 
 @pytest.mark.asyncio
+async def test_proposal_configure_action_returns_init_when_queue_is_empty():
+    flow = _flow()
+
+    result = await flow.async_step_proposal_configure_action(
+        {
+            "action_entities": ["scene.arrival"],
+            "pre_condition_min": 15,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+
+
+@pytest.mark.asyncio
+async def test_proposal_configure_action_legacy_queue_rejects_redacted_payload():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "proposal-1": {
+                        "reaction_class": "PresencePatternReaction",
+                        "weekday": 0,
+                        "median_arrival_min": 480,
+                        "steps": [],
+                        "source_proposal_identity_key": "**REDACTED**",
+                    }
+                },
+                "labels": {"proposal-1": "Arrival proposal"},
+            }
+        }
+    )
+    flow._pending_action_configs = ["proposal-1"]
+
+    result = await flow.async_step_proposal_configure_action(
+        {
+            "action_entities": ["scene.arrival"],
+            "pre_condition_min": 15,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposal_configure_action"
+    assert result["errors"]["base"] == "redacted_payload"
+    assert flow.options["reactions"]["configured"]["proposal-1"]["steps"] == []
+
+
+@pytest.mark.asyncio
 async def test_reaction_label_from_room_signal_assist_config_is_readable():
     flow = _flow()
 
@@ -2161,7 +2209,9 @@ async def test_proposals_step_marks_tuning_review_for_matching_active_reaction()
     assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
     assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
     assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
-    assert "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
+    assert (
+        "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
+    )
     assert "Delta luci:" in placeholders["proposal_details"]
     assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
     assert (
@@ -2335,7 +2385,9 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
     assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
     assert "Entità corroboranti: 1 -> 2" in placeholders["proposal_details"]
     assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
-    assert "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
+    assert (
+        "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
+    )
     assert "Luci: 1 -> 2" in placeholders["proposal_details"]
     assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
 
@@ -2409,8 +2461,7 @@ async def test_proposals_step_marks_room_vacancy_lighting_off_followup_with_enti
     )
     assert "Luci: 1 -> 3" in placeholders["proposal_details"]
     assert (
-        "Entità aggiunte: light.studio_desk, light.studio_spot"
-        in placeholders["proposal_details"]
+        "Entità aggiunte: light.studio_desk, light.studio_spot" in placeholders["proposal_details"]
     )
 
 
@@ -3512,6 +3563,17 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
 
 
 @pytest.mark.asyncio
+async def test_reactions_edit_form_returns_init_when_reaction_missing():
+    flow = _flow({"reactions": {"configured": {}, "labels": {}}})
+    flow._editing_reaction_id = "missing"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_updates_room_lighting_assist_config():
     flow = _flow(
         {
@@ -3835,13 +3897,16 @@ def test_signal_threshold_mode_options_include_binary_transitions():
 
 # ---- room_signal_assist edit form ----
 
+
 def _flow_with_rooms(reactions: dict | None = None) -> "HeimaOptionsFlowHandler":
     """Flow with rooms and people_named set so _sync_ha_backed_bindings stays silent."""
-    return _flow({
-        "people_named": [],
-        "rooms": [_room_with_signals()],
-        "reactions": reactions or {},
-    })
+    return _flow(
+        {
+            "people_named": [],
+            "rooms": [_room_with_signals()],
+            "reactions": reactions or {},
+        }
+    )
 
 
 def _room_with_signals() -> dict:
@@ -3892,7 +3957,9 @@ async def test_reactions_edit_form_for_room_signal_assist_shows_bucket_fields():
                         "primary_signal_name": "room_humidity",
                         "primary_bucket": "high",
                         "primary_signal_entities": ["sensor.studio_humidity"],
-                        "steps": [{"domain": "scene", "target": "scene.relax", "action": "scene.turn_on"}],
+                        "steps": [
+                            {"domain": "scene", "target": "scene.relax", "action": "scene.turn_on"}
+                        ],
                         "enabled": True,
                     }
                 },
@@ -4120,6 +4187,7 @@ async def test_reactions_edit_form_room_signal_assist_with_valid_corroboration()
 
 # ---- admin_authored_room_signal_assist create form ----
 
+
 @pytest.mark.asyncio
 async def test_admin_authored_room_signal_assist_no_entity_selector_in_schema():
     flow = _flow({"rooms": [_room_with_signals()]})
@@ -4296,7 +4364,13 @@ async def test_reactions_edit_room_signal_assist_burst_mode_saves_correctly():
                         "primary_trigger_mode": "burst",
                         "primary_bucket": None,
                         "primary_signal_entities": ["sensor.bathroom_humidity"],
-                        "steps": [{"domain": "script", "target": "script.turn_on_fan", "action": "script.turn_on"}],
+                        "steps": [
+                            {
+                                "domain": "script",
+                                "target": "script.turn_on_fan",
+                                "action": "script.turn_on",
+                            }
+                        ],
                         "enabled": True,
                     }
                 }

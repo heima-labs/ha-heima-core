@@ -393,9 +393,7 @@ class _ReactionsStepsMixin:
             return {
                 "template_title": template.title,
                 "template_description": template.description,
-                "available_signals": self._format_room_signals_placeholder(
-                    rooms, selected_room_id
-                ),
+                "available_signals": self._format_room_signals_placeholder(rooms, selected_room_id),
             }
 
         if user_input is None:
@@ -559,7 +557,8 @@ class _ReactionsStepsMixin:
         primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
         action = str(user_input.get("action") or "on").strip()
         entity_ids = [
-            e for e in self._normalize_multi_value(user_input.get("light_entities"))
+            e
+            for e in self._normalize_multi_value(user_input.get("light_entities"))
             if _REDACTED_SENTINEL not in e
         ]
         signals_placeholder = self._format_room_signals_placeholder(rooms, room_id)
@@ -846,6 +845,9 @@ class _ReactionsStepsMixin:
         configured = dict(reactions_cfg.get("configured", {}))
         labels_map: dict[str, str] = reactions_cfg.get("labels", {})
         cfg = dict(configured.get(pid, {}))
+        if not cfg:
+            self._editing_reaction_id = None
+            return await self.async_step_init()
         reaction_type = self._reaction_type_from_cfg(cfg)
 
         if reaction_type == "room_darkness_lighting_assist":
@@ -978,7 +980,8 @@ class _ReactionsStepsMixin:
             user_input.get("primary_signal_name") or defaults["primary_signal_name"]
         ).strip()
         light_entities = [
-            e for e in self._normalize_multi_value(user_input.get("light_entities"))
+            e
+            for e in self._normalize_multi_value(user_input.get("light_entities"))
             if _REDACTED_SENTINEL not in e
         ]
         action = str(user_input.get("action") or "on").strip() or "on"
@@ -1108,7 +1111,8 @@ class _ReactionsStepsMixin:
         defaults = {
             "enabled": bool(cfg.get("enabled", True)),
             "primary_signal_name": str(cfg.get("primary_signal_name") or "").strip(),
-            "primary_trigger_mode": str(cfg.get("primary_trigger_mode") or "bucket").strip() or "bucket",
+            "primary_trigger_mode": str(cfg.get("primary_trigger_mode") or "bucket").strip()
+            or "bucket",
             "primary_bucket": str(cfg.get("primary_bucket") or "").strip(),
             "primary_bucket_match_mode": str(cfg.get("primary_bucket_match_mode") or "eq").strip()
             or "eq",
@@ -1149,9 +1153,7 @@ class _ReactionsStepsMixin:
         primary_bucket_match_mode = str(
             user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
         ).strip()
-        corroboration_signal_name = str(
-            user_input.get("corroboration_signal_name") or ""
-        ).strip()
+        corroboration_signal_name = str(user_input.get("corroboration_signal_name") or "").strip()
         corroboration_bucket = str(user_input.get("corroboration_bucket") or "").strip()
         corroboration_bucket_match_mode = str(
             user_input.get("corroboration_bucket_match_mode")
@@ -1896,9 +1898,7 @@ class _ReactionsStepsMixin:
             defaults,
         )
 
-    def _format_room_signals_placeholder(
-        self, rooms: list[dict[str, Any]], room_id: str
-    ) -> str:
+    def _format_room_signals_placeholder(self, rooms: list[dict[str, Any]], room_id: str) -> str:
         """Return a human-readable signal/bucket map for description_placeholders."""
         signals = room_signal_names(rooms, room_id)
         if not signals:
@@ -2052,13 +2052,9 @@ class _ReactionsStepsMixin:
         else:
             primary_match_mode = primary_bucket_match_mode.strip() or "eq"
             if primary_match_mode == "lte":
-                trigger_text = (
-                    f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or lower"
-                )
+                trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or lower"
             elif primary_match_mode == "gte":
-                trigger_text = (
-                    f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or higher"
-                )
+                trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or higher"
             else:
                 trigger_text = (
                     f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()}"
@@ -2066,13 +2062,9 @@ class _ReactionsStepsMixin:
         if corroboration_signal_entities and corroboration_bucket.strip():
             corroboration_match_mode = corroboration_bucket_match_mode.strip() or "eq"
             if corroboration_match_mode == "lte":
-                corroboration_text = (
-                    f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or lower"
-                )
+                corroboration_text = f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or lower"
             elif corroboration_match_mode == "gte":
-                corroboration_text = (
-                    f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or higher"
-                )
+                corroboration_text = f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()} or higher"
             else:
                 corroboration_text = (
                     f"{corroboration_signal_name.strip().lower()} is {corroboration_bucket.strip()}"
@@ -2096,7 +2088,9 @@ class _ReactionsStepsMixin:
                 "primary_trigger_mode": primary_trigger_mode,
                 "trigger_signal_entities": list(primary_signal_entities),
                 "primary_signal_entities": list(primary_signal_entities),
-                "primary_bucket": primary_bucket.strip() if primary_trigger_mode == "bucket" else None,
+                "primary_bucket": primary_bucket.strip()
+                if primary_trigger_mode == "bucket"
+                else None,
                 "primary_bucket_match_mode": primary_bucket_match_mode.strip() or "eq",
                 "primary_signal_name": primary_signal_name.strip() or "primary",
                 "temperature_signal_entities": list(corroboration_signal_entities),
@@ -2141,9 +2135,13 @@ class _ReactionsStepsMixin:
         ]
         match_mode = primary_bucket_match_mode.strip() or "eq"
         if match_mode == "lte":
-            trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or darker"
+            trigger_text = (
+                f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or darker"
+            )
         elif match_mode == "gte":
-            trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or brighter"
+            trigger_text = (
+                f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()} or brighter"
+            )
         else:
             trigger_text = f"{primary_signal_name.strip().lower()} enters {primary_bucket.strip()}"
         description = (

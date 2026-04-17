@@ -8,7 +8,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.heima.runtime.contracts import ApplyStep
-from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
+from custom_components.heima.runtime.reactions.signal_assist import (
+    RoomSignalAssistReaction,
+    build_room_cooling_assist_reaction,
+    build_room_signal_assist_reaction,
+)
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -161,6 +165,40 @@ def test_room_cooling_assist_reaction_supports_burst_without_corroboration():
     steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts2)])
     assert len(steps) == 1
     assert steps[0].target == "script.cool_office"
+
+
+def test_room_cooling_assist_reaction_counts_suppression_during_cooldown():
+    hass = MagicMock()
+    burst_state = {
+        ("studio", "room_temperature"): True,
+        ("studio", "room_humidity"): True,
+    }
+
+    def _burst_getter(room_id: str, signal_name: str, *, window_s: int) -> bool:
+        assert window_s == 900
+        return burst_state.get((room_id, signal_name), False)
+
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        burst_getter=_burst_getter,
+        use_burst_accessor=True,
+        room_id="studio",
+        primary_signal_entities=["sensor.studio_temperature"],
+        primary_signal_name="room_temperature",
+        corroboration_signal_entities=["sensor.studio_humidity"],
+        corroboration_signal_name="room_humidity",
+        steps=[ApplyStep(domain="script", target="script.cool_room", action="script.turn_on")],
+        followup_window_s=900,
+    )
+    ts1 = datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc).isoformat()
+    ts2 = datetime(2026, 3, 20, 15, 2, tzinfo=timezone.utc).isoformat()
+
+    first = reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)])
+    assert len(first) == 1
+
+    second = reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2)])
+    assert second == []
+    assert reaction.diagnostics()["suppressed_count"] == 1
 
 
 def test_signal_assist_reaction_supports_above_mode():
@@ -421,3 +459,99 @@ def test_signal_assist_reaction_supports_corroboration_bucket_gte_matching():
     steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)])
     assert len(steps) == 1
     assert steps[0].target == "script.ventilate_office"
+
+
+def test_signal_assist_reaction_resets_steady_state_when_corroboration_bucket_misses():
+    hass = MagicMock()
+    bucket_state = {
+        "office:room_co2": "high",
+        "office:room_temperature": "ok",
+    }
+
+    def _bucket_getter(room_id: str, signal_name: str) -> str | None:
+        return bucket_state.get(f"{room_id}:{signal_name}")
+
+    reaction = RoomSignalAssistReaction(
+        hass=hass,
+        bucket_getter=_bucket_getter,
+        room_id="office",
+        primary_signal_entities=["sensor.office_co2"],
+        primary_signal_name="room_co2",
+        primary_bucket="elevated",
+        primary_bucket_match_mode="gte",
+        primary_bucket_labels=["ok", "elevated", "high"],
+        corroboration_signal_entities=["sensor.office_temperature"],
+        corroboration_signal_name="room_temperature",
+        corroboration_bucket="warm",
+        corroboration_bucket_match_mode="gte",
+        corroboration_bucket_labels=["cool", "ok", "warm", "hot"],
+        steps=[
+            ApplyStep(domain="script", target="script.ventilate_office", action="script.turn_on")
+        ],
+        followup_window_s=0,
+    )
+    ts1 = datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc).isoformat()
+
+    assert reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts1)]) == []
+    assert reaction.diagnostics()["steady_condition_active"] is False
+
+
+def test_build_room_signal_assist_reaction_allows_burst_trigger_without_primary_bucket():
+    engine = SimpleNamespace(
+        _hass=MagicMock(),
+        signal_bucket=lambda room_id, signal_name: None,
+        signal_burst_recent=lambda room_id, signal_name, *, window_s: False,
+        _entry=SimpleNamespace(
+            options={
+                "rooms": [
+                    {
+                        "room_id": "bathroom",
+                        "signals": [
+                            {
+                                "signal_name": "room_humidity",
+                                "bucket_labels": ["low", "ok", "high"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+
+    reaction = build_room_signal_assist_reaction(
+        engine,
+        "rx1",
+        {
+            "reaction_type": "room_signal_assist",
+            "room_id": "bathroom",
+            "primary_trigger_mode": "burst",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "primary_signal_name": "room_humidity",
+            "steps": [{"domain": "script", "target": "script.fan_on", "action": "script.turn_on"}],
+        },
+    )
+
+    assert reaction is not None
+    assert reaction.diagnostics()["uses_burst_accessor"] is True
+
+
+def test_build_room_cooling_assist_reaction_requires_primary_signal_entities():
+    engine = SimpleNamespace(
+        _hass=MagicMock(),
+        signal_bucket=lambda room_id, signal_name: None,
+        signal_burst_recent=lambda room_id, signal_name, *, window_s: False,
+        _entry=SimpleNamespace(options={"rooms": []}),
+    )
+
+    reaction = build_room_cooling_assist_reaction(
+        engine,
+        "rx2",
+        {
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "steps": [{"domain": "script", "target": "script.cool_room", "action": "script.turn_on"}],
+        },
+    )
+
+    assert reaction is None

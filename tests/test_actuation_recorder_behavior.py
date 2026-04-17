@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from custom_components.heima.runtime.behaviors.actuation_recorder import (
     ActuationRecorderBehavior,
@@ -30,8 +31,17 @@ class _FakeStore:
 
 
 class _FakeBus:
+    def __init__(self) -> None:
+        self.listeners: list[tuple[str, object]] = []
+        self.unsubscribed = 0
+
     def async_listen(self, event_type: str, callback):  # noqa: ARG002
-        return lambda: None
+        self.listeners.append((event_type, callback))
+
+        def _unsub() -> None:
+            self.unsubscribed += 1
+
+        return _unsub
 
 
 class _FakeStateMachine:
@@ -96,6 +106,24 @@ def _state_event(entity_id: str, new_state: _FakeState, old_state: _FakeState | 
             "entity_id": entity_id,
             "new_state": new_state,
             "old_state": old_state,
+        }
+
+    return _Event()
+
+
+def _state_event_with_context(
+    entity_id: str,
+    new_state: _FakeState,
+    old_state: _FakeState | None,
+    *,
+    event_context: dict | None = None,
+) -> object:
+    class _Event:
+        data = {
+            "entity_id": entity_id,
+            "new_state": new_state,
+            "old_state": old_state,
+            "context": event_context,
         }
 
     return _Event()
@@ -169,3 +197,193 @@ async def test_actuation_recorder_ignores_unchanged_state():
     await hass.flush()
 
     assert store.events == []
+
+
+async def test_actuation_recorder_ignores_non_actuator_entities():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+    behavior._entity_to_room = {"fan.studio_fan": "studio"}  # noqa: SLF001
+    behavior.on_snapshot(_snapshot())
+
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event("light.studio", _FakeState("on"), _FakeState("off"))
+    )
+    await hass.flush()
+
+    assert store.events == []
+
+
+async def test_actuation_recorder_ignores_event_without_snapshot_or_room():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event("switch.studio_aux", _FakeState("on"), _FakeState("off"))
+    )
+    await hass.flush()
+    assert store.events == []
+
+    behavior.on_snapshot(_snapshot())
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event("switch.studio_aux", _FakeState("on"), _FakeState("off"))
+    )
+    await hass.flush()
+    assert store.events == []
+
+
+async def test_actuation_recorder_ignores_unsupported_switch_state():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+    behavior._entity_to_room = {"switch.studio_aux": "studio"}  # noqa: SLF001
+    behavior.on_snapshot(_snapshot())
+
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event("switch.studio_aux", _FakeState("unavailable"), _FakeState("off"))
+    )
+    await hass.flush()
+
+    assert store.events == []
+
+
+async def test_actuation_recorder_uses_new_state_context_id_as_correlation_id():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+    behavior._entity_to_room = {"switch.studio_aux": "studio"}  # noqa: SLF001
+    behavior.on_snapshot(_snapshot())
+    new_state = _FakeState("off")
+    new_state.context = SimpleNamespace(id="ctx-new")
+
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event_with_context(
+            "switch.studio_aux",
+            new_state,
+            _FakeState("on"),
+            event_context={"id": "ctx-event"},
+        )
+    )
+    await hass.flush()
+
+    assert store.events[0].correlation_id == "ctx-new"
+
+
+async def test_actuation_recorder_falls_back_to_event_context_id():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+    behavior._entity_to_room = {"switch.studio_aux": "studio"}  # noqa: SLF001
+    behavior.on_snapshot(_snapshot())
+
+    await behavior._handle_state_changed(  # noqa: SLF001
+        _state_event_with_context(
+            "switch.studio_aux",
+            _FakeState("off"),
+            _FakeState("on"),
+            event_context={"id": "ctx-event"},
+        )
+    )
+    await hass.flush()
+
+    assert store.events[0].correlation_id == "ctx-event"
+
+
+def test_actuation_recorder_syncs_listener_subscription():
+    hass = _FakeHass()
+    store = _FakeStore()
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        store,  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        _FakeEntry(),  # type: ignore[arg-type]
+    )
+
+    behavior._entity_to_room = {"fan.studio_fan": "studio"}  # noqa: SLF001
+    behavior._sync_listener_subscription()  # noqa: SLF001
+    assert len(hass.bus.listeners) == 1
+
+    behavior._entity_to_room = {}  # noqa: SLF001
+    behavior._sync_listener_subscription()  # noqa: SLF001
+    assert hass.bus.unsubscribed == 1
+
+
+def test_actuation_recorder_builds_entity_room_map_from_entity_and_device_area(monkeypatch):
+    hass = _FakeHass()
+    entry = _FakeEntry()
+    entry.options = {
+        "rooms": [
+            {"room_id": "studio", "area_id": "area_studio"},
+            {"room_id": "living", "area_id": "area_living"},
+        ]
+    }
+    behavior = ActuationRecorderBehavior(
+        hass,  # type: ignore[arg-type]
+        _FakeStore(),  # type: ignore[arg-type]
+        _FakeContextBuilder(),  # type: ignore[arg-type]
+        entry,  # type: ignore[arg-type]
+    )
+    entity_registry = SimpleNamespace(
+        entities={
+            "fan.studio_fan": SimpleNamespace(
+                entity_id="fan.studio_fan",
+                area_id="area_studio",
+                device_id=None,
+            ),
+            "switch.living_aux": SimpleNamespace(
+                entity_id="switch.living_aux",
+                area_id=None,
+                device_id="dev-1",
+            ),
+            "sensor.ignore": SimpleNamespace(
+                entity_id="sensor.ignore",
+                area_id="area_studio",
+                device_id=None,
+            ),
+        }
+    )
+    device_registry = SimpleNamespace(
+        devices={"dev-1": SimpleNamespace(area_id="area_living")}
+    )
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    result = behavior._build_entity_room_map()  # noqa: SLF001
+
+    assert result == {
+        "fan.studio_fan": "studio",
+        "switch.living_aux": "living",
+    }
