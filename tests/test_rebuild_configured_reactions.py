@@ -103,6 +103,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_contextual_lighting_assist",
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
         "vacation_presence_simulation",
@@ -122,6 +123,7 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
+        "room_contextual_lighting_assist",
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
         "vacation_presence_simulation",
@@ -132,12 +134,14 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
     assert descriptors[-2].supports_normalizer is False
     assert descriptors[-3].supported_config_contracts == ("room_darkness_lighting_assist",)
     assert descriptors[-3].supports_normalizer is False
-    assert descriptors[-4].supported_config_contracts == ("room_air_quality_assist",)
-    assert descriptors[-4].supports_normalizer is True
-    assert descriptors[-5].supported_config_contracts == ("room_cooling_assist",)
+    assert descriptors[-4].supported_config_contracts == ("room_contextual_lighting_assist",)
+    assert descriptors[-4].supports_normalizer is False
+    assert descriptors[-5].supported_config_contracts == ("room_air_quality_assist",)
     assert descriptors[-5].supports_normalizer is True
-    assert descriptors[-6].supported_config_contracts == ("room_signal_assist",)
+    assert descriptors[-6].supported_config_contracts == ("room_cooling_assist",)
     assert descriptors[-6].supports_normalizer is True
+    assert descriptors[-7].supported_config_contracts == ("room_signal_assist",)
+    assert descriptors[-7].supports_normalizer is True
 
 
 def test_presence_reaction_built_and_registered():
@@ -157,6 +161,54 @@ def test_presence_reaction_built_and_registered():
     assert isinstance(r, PresencePatternReaction)
     assert r.reaction_id == "proposal-abc"
     assert "proposal-abc" in engine._configured_reaction_ids
+
+
+def test_contextual_lighting_reaction_built_and_registered():
+    engine = _make_engine(
+        options={
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "signals": [
+                        {
+                            "signal_name": "room_lux",
+                            "buckets": [
+                                {"label": "dark"},
+                                {"label": "dim"},
+                                {"label": "ok"},
+                                {"label": "bright"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "reactions": {
+                "configured": {
+                    "contextual-1": {
+                        "reaction_type": "room_contextual_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "ok",
+                        "primary_bucket_match_mode": "lte",
+                        "profiles": {
+                            "day_generic": {
+                                "entity_steps": [{"entity_id": "light.studio_main", "action": "on"}]
+                            }
+                        },
+                        "rules": [],
+                        "default_profile": "day_generic",
+                    }
+                }
+            },
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    assert engine._reactions[0].reaction_id == "contextual-1"
+    assert "contextual-1" in engine._configured_reaction_ids
 
 
 def test_reaction_pre_seeded_with_synthetic_arrivals():

@@ -71,6 +71,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
     assert tuple(item.template_id for item in descriptors[3].admin_authored_templates) == (
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
     )
     assert descriptors[4].supports_admin_authored is True
@@ -156,6 +157,15 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "flow_step_id": "admin_authored_room_darkness_lighting_assist",
             },
             {
+                "template_id": "room.contextual_lighting_assist.basic",
+                "reaction_type": "room_contextual_lighting_assist",
+                "title": "Contextual Room Lighting",
+                "description": "Create a room lighting assist that selects profiles by time and context.",
+                "config_schema_id": "room_contextual_lighting_assist.basic.v1",
+                "implemented": True,
+                "flow_step_id": "admin_authored_room_contextual_lighting_assist",
+            },
+            {
                 "template_id": "room.vacancy_lighting_off.basic",
                 "reaction_type": "room_vacancy_lighting_off",
                 "title": "Vacancy Lights Off",
@@ -195,6 +205,7 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
         "security.vacation_presence_simulation.basic",
     ]
@@ -202,6 +213,7 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
+        "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
         "security.vacation_presence_simulation.basic",
     ]

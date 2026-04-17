@@ -281,6 +281,15 @@ def create_builtin_learning_plugin_registry(
                     flow_step_id="admin_authored_room_darkness_lighting_assist",
                 ),
                 AdminAuthoredTemplateDescriptor(
+                    template_id="room.contextual_lighting_assist.basic",
+                    reaction_type="room_contextual_lighting_assist",
+                    title="Contextual Room Lighting",
+                    description="Create a room lighting assist that selects profiles by time and context.",
+                    config_schema_id="room_contextual_lighting_assist.basic.v1",
+                    implemented=True,
+                    flow_step_id="admin_authored_room_contextual_lighting_assist",
+                ),
+                AdminAuthoredTemplateDescriptor(
                     template_id="room.vacancy_lighting_off.basic",
                     reaction_type="room_vacancy_lighting_off",
                     title="Vacancy Lights Off",

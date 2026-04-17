@@ -12,6 +12,17 @@ from ._compat import (
 )
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
+from .contextual_lighting_assist import (
+    RoomContextualLightingAssistReaction,
+    build_room_contextual_lighting_assist_reaction,
+    present_admin_authored_room_contextual_lighting_assist_details,
+    present_learned_room_contextual_lighting_assist_details,
+    present_room_contextual_lighting_assist_label,
+    present_room_contextual_lighting_assist_proposal_label,
+    present_room_contextual_lighting_assist_review_title,
+    present_tuning_room_contextual_lighting_assist_details,
+    validate_contextual_lighting_contract,
+)
 from .heating import (
     HeatingEcoReaction,
     HeatingPreferenceReaction,
@@ -254,6 +265,23 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="room_contextual_lighting_assist",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("room_contextual_lighting_assist",),
+                supports_normalizer=False,
+            ),
+            builder=build_room_contextual_lighting_assist_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_room_contextual_lighting_assist_label,
+                proposal_human_label=present_room_contextual_lighting_assist_proposal_label,
+                proposal_review_title=present_room_contextual_lighting_assist_review_title,
+                admin_authored_review_details=present_admin_authored_room_contextual_lighting_assist_details,
+                learned_review_details=present_learned_room_contextual_lighting_assist_details,
+                tuning_review_details=present_tuning_room_contextual_lighting_assist_details,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
                 reaction_type="room_darkness_lighting_assist",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("room_darkness_lighting_assist",),
@@ -345,10 +373,12 @@ __all__ = [
     "HeatingPreferenceReaction",
     "IPatternDetector",
     "ILearningBackend",
+    "RoomContextualLightingAssistReaction",
     "RoomLightingAssistReaction",
     "LightingScheduleReaction",
     "NaiveLearningBackend",
     "PresencePatternReaction",
     "RoomSignalAssistReaction",
     "VacationPresenceSimulationReaction",
+    "validate_contextual_lighting_contract",
 ]

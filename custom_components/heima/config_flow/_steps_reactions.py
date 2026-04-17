@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
 from datetime import datetime
@@ -21,8 +22,12 @@ from ..room_sources import (
 )
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
-from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
-from ._common import _entity_selector
+from ..runtime.reactions import (
+    create_builtin_reaction_plugin_registry,
+    resolve_reaction_type,
+    validate_contextual_lighting_contract,
+)
+from ._common import _entity_selector, _multiline_text_selector
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
@@ -676,6 +681,204 @@ class _ReactionsStepsMixin:
 
         return await self._store_admin_authored_reaction_directly(proposal)
 
+    async def async_step_admin_authored_room_contextual_lighting_assist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a contextual lighting assist via guided inputs + JSON policy."""
+        template = self._admin_authored_template("room.contextual_lighting_assist.basic")
+        room_ids = self._room_ids()
+        rooms = self._rooms()
+        if template is None or not room_ids:
+            return await self.async_step_init()
+
+        default_room_id = room_ids[0]
+        defaults = {
+            "room_id": default_room_id,
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "preset": "all_day_adaptive",
+            "light_entities": [],
+        }
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_schema(defaults),
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                    "available_signals": self._format_room_signals_placeholder(
+                        rooms, default_room_id
+                    ),
+                },
+            )
+
+        room_id = str(user_input.get("room_id") or "").strip()
+        primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
+        primary_bucket = str(user_input.get("primary_bucket") or "").strip()
+        primary_bucket_match_mode = str(
+            user_input.get("primary_bucket_match_mode") or defaults["primary_bucket_match_mode"]
+        ).strip()
+        preset = str(user_input.get("preset") or defaults["preset"]).strip()
+        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
+
+        if not room_id:
+            errors["room_id"] = "required"
+        if not light_entities:
+            errors["light_entities"] = "required"
+        valid_signals = room_signal_names(rooms, room_id) if room_id else []
+        if not primary_signal_name:
+            errors["primary_signal_name"] = "required"
+        elif valid_signals and primary_signal_name not in valid_signals:
+            errors["primary_signal_name"] = "invalid_signal_name"
+        if not errors.get("primary_signal_name") and room_id:
+            valid_buckets = room_signal_bucket_labels(rooms, room_id, primary_signal_name)
+            if not primary_bucket:
+                errors["primary_bucket"] = "required"
+            elif valid_buckets and primary_bucket not in valid_buckets:
+                errors["primary_bucket"] = "invalid_bucket"
+        if primary_bucket_match_mode not in self._bucket_match_mode_options():
+            errors["primary_bucket_match_mode"] = "invalid_option"
+        if preset not in self._contextual_lighting_preset_options():
+            errors["preset"] = "invalid_option"
+
+        current_input = {
+            "room_id": room_id or default_room_id,
+            "primary_signal_name": primary_signal_name or "room_lux",
+            "primary_bucket": primary_bucket or defaults["primary_bucket"],
+            "primary_bucket_match_mode": primary_bucket_match_mode,
+            "preset": preset or defaults["preset"],
+            "light_entities": light_entities,
+        }
+        if errors:
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_schema(
+                    current_input
+                ),
+                errors=errors,
+                description_placeholders={
+                    "template_title": template.title,
+                    "template_description": template.description,
+                    "available_signals": self._format_room_signals_placeholder(
+                        rooms, room_id or default_room_id
+                    ),
+                },
+            )
+
+        primary_entity_id = room_signal_entity_id(rooms, room_id, primary_signal_name)
+        primary_signal_entities = [primary_entity_id] if primary_entity_id else []
+        self._pending_contextual_lighting_seed = {
+            "room_id": room_id,
+            "primary_signal_name": primary_signal_name,
+            "primary_signal_entities": primary_signal_entities,
+            "primary_bucket": primary_bucket,
+            "primary_bucket_match_mode": primary_bucket_match_mode,
+            "preset": preset,
+            "light_entities": light_entities,
+            "template_title": template.title,
+            "template_description": template.description,
+        }
+        return await self.async_step_admin_authored_room_contextual_lighting_assist_json()
+
+    async def async_step_admin_authored_room_contextual_lighting_assist_json(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Edit the generated contextual lighting JSON before persisting it."""
+        seed = dict(getattr(self, "_pending_contextual_lighting_seed", {}) or {})
+        if not seed:
+            return await self.async_step_init()
+
+        default_json = self._contextual_lighting_policy_json(
+            preset=str(seed.get("preset") or "all_day_adaptive"),
+            light_entities=list(seed.get("light_entities") or []),
+        )
+        if user_input is None:
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist_json",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_json_schema(
+                    {"config_json": default_json}
+                ),
+                description_placeholders={
+                    "template_title": str(seed.get("template_title") or ""),
+                    "template_description": str(seed.get("template_description") or ""),
+                    "policy_summary": self._contextual_lighting_policy_summary(default_json),
+                },
+            )
+
+        config_json = str(user_input.get("config_json") or "").strip()
+        try:
+            contract = json.loads(config_json)
+            if not isinstance(contract, dict):
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist_json",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_json_schema(
+                    {"config_json": config_json}
+                ),
+                errors={"config_json": "invalid_json"},
+                description_placeholders={
+                    "template_title": str(seed.get("template_title") or ""),
+                    "template_description": str(seed.get("template_description") or ""),
+                    "policy_summary": self._contextual_lighting_policy_summary(config_json),
+                },
+            )
+
+        if not validate_contextual_lighting_contract(contract):
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist_json",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_json_schema(
+                    {"config_json": config_json}
+                ),
+                errors={"config_json": "invalid_contextual_contract"},
+                description_placeholders={
+                    "template_title": str(seed.get("template_title") or ""),
+                    "template_description": str(seed.get("template_description") or ""),
+                    "policy_summary": self._contextual_lighting_policy_summary(config_json),
+                },
+            )
+
+        proposal = self._build_admin_authored_room_contextual_lighting_assist_proposal(
+            room_id=str(seed.get("room_id") or ""),
+            primary_signal_name=str(seed.get("primary_signal_name") or "room_lux"),
+            primary_signal_entities=list(seed.get("primary_signal_entities") or []),
+            primary_bucket=str(seed.get("primary_bucket") or ""),
+            primary_bucket_match_mode=str(seed.get("primary_bucket_match_mode") or "eq"),
+            contract=contract,
+        )
+        if self._admin_authored_identity_conflicts(proposal):
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist_json",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_json_schema(
+                    {"config_json": config_json}
+                ),
+                errors={"base": "duplicate"},
+                description_placeholders={
+                    "template_title": str(seed.get("template_title") or ""),
+                    "template_description": str(seed.get("template_description") or ""),
+                    "policy_summary": self._contextual_lighting_policy_summary(config_json),
+                },
+            )
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self.async_show_form(
+                step_id="admin_authored_room_contextual_lighting_assist_json",
+                data_schema=self._admin_authored_room_contextual_lighting_assist_json_schema(
+                    {"config_json": config_json}
+                ),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "template_title": str(seed.get("template_title") or ""),
+                    "template_description": str(seed.get("template_description") or ""),
+                    "policy_summary": self._contextual_lighting_policy_summary(config_json),
+                },
+            )
+
+        self._pending_contextual_lighting_seed = {}
+        return await self._store_admin_authored_reaction_directly(proposal)
+
     async def async_step_admin_authored_room_vacancy_lighting_off(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
@@ -852,6 +1055,16 @@ class _ReactionsStepsMixin:
 
         if reaction_type == "room_darkness_lighting_assist":
             return await self._async_step_reactions_edit_room_lighting_assist(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
+        if reaction_type == "room_contextual_lighting_assist":
+            return await self._async_step_reactions_edit_room_contextual_lighting_assist(
                 pid=pid,
                 reactions_cfg=reactions_cfg,
                 configured=configured,
@@ -1081,6 +1294,111 @@ class _ReactionsStepsMixin:
                     "reaction_description": label,
                     "room_id": room_id_placeholder,
                     "available_signals": signals_placeholder,
+                },
+            )
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_room_contextual_lighting_assist(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a contextual lighting assist using the guided JSON contract."""
+        room_id = str(cfg.get("room_id") or "").strip() or "-"
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "config_json": self._contextual_lighting_policy_for_form(cfg),
+            "delete_reaction": False,
+        }
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_contextual_lighting_assist_schema(defaults),
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id,
+                    "available_signals": "",
+                },
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        config_json = str(user_input.get("config_json") or "").strip()
+        try:
+            contract = json.loads(config_json)
+            if not isinstance(contract, dict):
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_contextual_lighting_assist_schema(
+                    {
+                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+                        "config_json": config_json,
+                        "delete_reaction": False,
+                    }
+                ),
+                errors={"config_json": "invalid_json"},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id,
+                    "available_signals": "",
+                },
+            )
+
+        if not validate_contextual_lighting_contract(contract):
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_contextual_lighting_assist_schema(
+                    {
+                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+                        "config_json": config_json,
+                        "delete_reaction": False,
+                    }
+                ),
+                errors={"config_json": "invalid_contextual_contract"},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id,
+                    "available_signals": "",
+                },
+            )
+
+        cfg["enabled"] = bool(user_input.get("enabled", True))
+        cfg["profiles"] = dict(contract.get("profiles") or {})
+        cfg["rules"] = list(contract.get("rules") or [])
+        cfg["default_profile"] = str(contract.get("default_profile") or "").strip()
+        cfg["followup_window_s"] = int(
+            contract.get("followup_window_s", cfg.get("followup_window_s", 900))
+        )
+        if self._has_redacted_payload(cfg):
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._reactions_edit_room_contextual_lighting_assist_schema(
+                    {
+                        "enabled": bool(user_input.get("enabled", defaults["enabled"])),
+                        "config_json": config_json,
+                        "delete_reaction": False,
+                    }
+                ),
+                errors={"base": "redacted_payload"},
+                description_placeholders={
+                    "reaction_description": label,
+                    "room_id": room_id,
+                    "available_signals": "",
                 },
             )
         configured[pid] = cfg
@@ -1866,6 +2184,46 @@ class _ReactionsStepsMixin:
             defaults,
         )
 
+    def _admin_authored_room_contextual_lighting_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        bucket_match_options = self._bucket_match_mode_options()
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required("room_id"): vol.In(room_options),
+                    vol.Required("primary_signal_name", default="room_lux"): str,
+                    vol.Required("primary_bucket", default="ok"): str,
+                    vol.Required("primary_bucket_match_mode", default="lte"): vol.In(
+                        bucket_match_options
+                    ),
+                    vol.Required("preset", default="all_day_adaptive"): vol.In(
+                        self._contextual_lighting_preset_options()
+                    ),
+                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
+                }
+            ),
+            defaults,
+        )
+
+    def _admin_authored_room_contextual_lighting_assist_json_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Required(
+                        "config_json",
+                        default=defaults.get("config_json", ""),
+                    ): _multiline_text_selector(),
+                }
+            ),
+            defaults,
+        )
+
     def _reactions_edit_room_signal_assist_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
@@ -1892,6 +2250,24 @@ class _ReactionsStepsMixin:
                     vol.Required("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
+                    vol.Optional("delete_reaction", default=False): bool,
+                }
+            ),
+            defaults,
+        )
+
+    def _reactions_edit_room_contextual_lighting_assist_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        return self._with_suggested(
+            vol.Schema(
+                {
+                    vol.Optional("enabled", default=True): bool,
+                    vol.Required(
+                        "config_json",
+                        default=defaults.get("config_json", ""),
+                    ): _multiline_text_selector(),
                     vol.Optional("delete_reaction", default=False): bool,
                 }
             ),
@@ -1974,6 +2350,10 @@ class _ReactionsStepsMixin:
             "bucket": "Bucket (steady-state)",
             "burst": "Burst (rapid change)",
         }
+
+    @staticmethod
+    def _contextual_lighting_preset_options() -> dict[str, str]:
+        return {"all_day_adaptive": "All-day adaptive"}
 
     def _build_admin_authored_lighting_schedule_proposal(
         self,
@@ -2173,6 +2553,52 @@ class _ReactionsStepsMixin:
             },
         )
 
+    def _build_admin_authored_room_contextual_lighting_assist_proposal(
+        self,
+        *,
+        room_id: str,
+        primary_signal_name: str,
+        primary_signal_entities: list[str],
+        primary_bucket: str,
+        primary_bucket_match_mode: str,
+        contract: dict[str, Any],
+    ) -> ReactionProposal:
+        template_id = "room.contextual_lighting_assist.basic"
+        identity_key = (
+            "room_contextual_lighting_assist"
+            f"|room={room_id}|primary={primary_signal_name.strip().lower()}"
+        )
+        profiles = dict(contract.get("profiles") or {})
+        rules = list(contract.get("rules") or [])
+        default_profile = str(contract.get("default_profile") or "").strip()
+        followup_window_s = int(contract.get("followup_window_s", 900))
+        description = (
+            f"{room_id}: contextual lighting ({len(profiles)} profiles, {len(rules)} rules)"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredRoomContextualLightingTemplate",
+            reaction_type="room_contextual_lighting_assist",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_type": "room_contextual_lighting_assist",
+                "room_id": room_id,
+                "primary_signal_entities": list(primary_signal_entities),
+                "primary_signal_name": primary_signal_name.strip() or "room_lux",
+                "primary_bucket": primary_bucket.strip(),
+                "primary_bucket_match_mode": primary_bucket_match_mode.strip() or "eq",
+                "profiles": profiles,
+                "rules": rules,
+                "default_profile": default_profile,
+                "followup_window_s": followup_window_s,
+                "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
     def _build_admin_authored_room_vacancy_lighting_off_proposal(
         self,
         *,
@@ -2214,6 +2640,91 @@ class _ReactionsStepsMixin:
                 "admin_authored_template_id": template_id,
             },
         )
+
+    @staticmethod
+    def _contextual_lighting_policy_json(*, preset: str, light_entities: list[str]) -> str:
+        contract = _ReactionsStepsMixin._contextual_lighting_contract_from_preset(
+            preset=preset,
+            light_entities=light_entities,
+        )
+        return json.dumps(contract, indent=2, sort_keys=True)
+
+    @staticmethod
+    def _contextual_lighting_contract_from_preset(
+        *, preset: str, light_entities: list[str]
+    ) -> dict[str, Any]:
+        entities = [
+            str(entity_id).strip() for entity_id in light_entities if str(entity_id).strip()
+        ]
+
+        def _profile(brightness: int, color_temp_kelvin: int) -> dict[str, Any]:
+            return {
+                "entity_steps": [
+                    {
+                        "entity_id": entity_id,
+                        "action": "on",
+                        "brightness": brightness,
+                        "color_temp_kelvin": color_temp_kelvin,
+                    }
+                    for entity_id in entities
+                ]
+            }
+
+        if preset != "all_day_adaptive":
+            preset = "all_day_adaptive"
+        return {
+            "profiles": {
+                "workday_focus": _profile(180, 4300),
+                "day_generic": _profile(140, 3600),
+                "evening_relax": _profile(100, 2700),
+                "night_navigation": _profile(25, 2200),
+            },
+            "rules": [
+                {
+                    "profile": "workday_focus",
+                    "house_state_in": ["working"],
+                    "time_window": {"start": "08:00", "end": "18:30"},
+                },
+                {
+                    "profile": "day_generic",
+                    "house_state_in": ["home", "relax"],
+                    "time_window": {"start": "08:00", "end": "18:30"},
+                },
+                {
+                    "profile": "evening_relax",
+                    "time_window": {"start": "18:30", "end": "23:30"},
+                },
+                {
+                    "profile": "night_navigation",
+                    "time_window": {"start": "23:30", "end": "06:30"},
+                },
+            ],
+            "default_profile": "day_generic",
+            "followup_window_s": 900,
+        }
+
+    @staticmethod
+    def _contextual_lighting_policy_summary(config_json: str) -> str:
+        try:
+            payload = json.loads(config_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return "—"
+        if not isinstance(payload, dict):
+            return "—"
+        profiles = dict(payload.get("profiles") or {})
+        rules = list(payload.get("rules") or [])
+        default_profile = str(payload.get("default_profile") or "").strip()
+        return f"profiles={len(profiles)} | rules={len(rules)} | default={default_profile or '-'}"
+
+    @staticmethod
+    def _contextual_lighting_policy_for_form(cfg: dict[str, Any]) -> str:
+        payload = {
+            "profiles": dict(cfg.get("profiles") or {}),
+            "rules": list(cfg.get("rules") or []),
+            "default_profile": str(cfg.get("default_profile") or "").strip(),
+            "followup_window_s": int(cfg.get("followup_window_s", 900)),
+        }
+        return json.dumps(payload, indent=2, sort_keys=True)
 
     def _build_admin_authored_security_presence_simulation_proposal(
         self,
@@ -2923,6 +3434,15 @@ class _ReactionsStepsMixin:
                 if entity_steps:
                     parts.append(f"{len(entity_steps)} entità")
                 return " — ".join(parts)
+            except (TypeError, ValueError):
+                pass
+
+        if reaction_type == "room_contextual_lighting_assist":
+            try:
+                room_id = str(cfg.get("room_id", "")).strip() or reaction_id
+                profiles = dict(cfg.get("profiles") or {})
+                rules = list(cfg.get("rules") or [])
+                return f"Luce contestuale {room_id} — {len(profiles)} profili — {len(rules)} regole"
             except (TypeError, ValueError):
                 pass
 
