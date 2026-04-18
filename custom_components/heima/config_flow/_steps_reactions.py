@@ -1344,6 +1344,25 @@ class _ReactionsStepsMixin:
             if followup is not None:
                 target_id = str(followup["reaction_id"])
                 existing_cfg = dict(followup["reaction_cfg"])
+            if current.followup_kind == "improvement":
+                strategy = self._improvement_acceptance_strategy(current)
+                if strategy != "convert_replace":
+                    self._proposal_review_queue = [current_id, *queue]
+                    return self.async_show_form(
+                        step_id="proposals",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Required(
+                                    "review_action",
+                                    default="accept",
+                                ): vol.In(self._proposal_review_action_options()),
+                            }
+                        ),
+                        errors={"base": "unsupported_improvement_strategy"},
+                        description_placeholders=self._proposal_review_placeholders(
+                            pending, current, len(self._proposal_review_queue)
+                        ),
+                    )
             if self._proposal_requires_action_completion(current):
                 pending_drafts = list(getattr(self, "_pending_action_drafts", []))
                 pending_drafts.append(
@@ -1582,6 +1601,7 @@ class _ReactionsStepsMixin:
                 previous.get("reaction_type") or proposal.improves_reaction_type or ""
             ).strip()
             converted["improvement_reason"] = str(proposal.improvement_reason or "").strip()
+            converted["improvement_acceptance_strategy"] = "convert_replace"
             if "enabled" in previous:
                 converted["enabled"] = previous.get("enabled")
             return converted
@@ -3409,6 +3429,22 @@ class _ReactionsStepsMixin:
                 )
             )
         return lines
+
+    def _improvement_acceptance_strategy(self, proposal: ReactionProposal) -> str:
+        registry = self._learning_plugin_registry()
+        if registry is None:
+            return "convert_replace"
+        descriptor = registry.improvement_descriptor_for(
+            target_reaction_type=str(proposal.reaction_type or "").strip(),
+            source_reaction_type=str(
+                proposal.improves_reaction_type or proposal.target_reaction_type or ""
+            ).strip(),
+            improvement_reason=str(proposal.improvement_reason or "").strip(),
+            enabled_only=False,
+        )
+        if descriptor is None:
+            return "convert_replace"
+        return str(descriptor.acceptance_strategy or "convert_replace")
 
     def _proposal_tuning_review_details(
         self,

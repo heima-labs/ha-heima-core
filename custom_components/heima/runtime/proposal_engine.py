@@ -220,13 +220,26 @@ class ProposalEngine:
         candidate: ReactionProposal,
         proposals: list[ReactionProposal],
     ) -> ReactionProposal | None:
-        if candidate.reaction_type != "room_contextual_lighting_assist":
+        registry = self._learning_plugin_registry
+        if registry is None:
             return candidate
         if candidate.followup_kind == "improvement":
             return candidate
-        source = self._accepted_darkness_target_for_contextual_candidate(candidate, proposals)
+        if not any(
+            descriptor.target_reaction_type == candidate.reaction_type
+            for descriptor in registry.improvement_descriptors()
+        ):
+            return candidate
+        source = self._accepted_source_for_improvement_candidate(candidate, proposals)
         if source is None:
             return None
+        descriptor = registry.improvement_descriptor_for(
+            target_reaction_type=candidate.reaction_type,
+            source_reaction_type=source.reaction_type,
+            improvement_reason=candidate.improvement_reason,
+        )
+        if descriptor is None:
+            return candidate
         source_cfg = _safe_dict(source.suggested_reaction_config)
         return replace(
             candidate,
@@ -236,14 +249,17 @@ class ProposalEngine:
             target_reaction_origin=source.origin,
             target_template_id=str(source_cfg.get("admin_authored_template_id") or ""),
             improves_reaction_type=source.reaction_type,
-            improvement_reason=candidate.improvement_reason or "contextual_variation",
+            improvement_reason=candidate.improvement_reason or descriptor.improvement_reason,
         )
 
-    def _accepted_darkness_target_for_contextual_candidate(
+    def _accepted_source_for_improvement_candidate(
         self,
         candidate: ReactionProposal,
         proposals: list[ReactionProposal],
     ) -> ReactionProposal | None:
+        registry = self._learning_plugin_registry
+        if registry is None:
+            return None
         cfg = _safe_dict(candidate.suggested_reaction_config)
         room_id = str(cfg.get("room_id") or "").strip()
         primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
@@ -252,7 +268,12 @@ class ProposalEngine:
         for proposal in proposals:
             if proposal.status != "accepted":
                 continue
-            if proposal.reaction_type != "room_darkness_lighting_assist":
+            descriptor = registry.improvement_descriptor_for(
+                target_reaction_type=candidate.reaction_type,
+                source_reaction_type=proposal.reaction_type,
+                improvement_reason=candidate.improvement_reason,
+            )
+            if descriptor is None:
                 continue
             source_cfg = _safe_dict(proposal.suggested_reaction_config)
             if str(source_cfg.get("room_id") or "").strip() != room_id:

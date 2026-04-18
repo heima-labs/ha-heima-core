@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -150,7 +150,12 @@ def _seek_matching_review(
     for _ in range(max_steps):
         label = _proposal_label(step)
         details = _proposal_details(step)
-        if proposal_id in details or target_reaction_id in details or "Upgrade:" in label or "Miglioramento:" in label:
+        if (
+            proposal_id in details
+            or target_reaction_id in details
+            or "Upgrade:" in label
+            or "Miglioramento:" in label
+        ):
             return step
         step = client.options_flow_configure(flow_id, {"review_action": "skip"})
         if step.get("type") == "menu":
@@ -185,9 +190,12 @@ def main() -> int:
     print(f"Target darkness reaction: {target_reaction_id}")
 
     before = _configured_reactions(client, entry_id)
-    _assert(target_reaction_id in before, f"target reaction missing before accept: {target_reaction_id}")
     _assert(
-        str(before[target_reaction_id].get("reaction_type") or "") == "room_darkness_lighting_assist",
+        target_reaction_id in before, f"target reaction missing before accept: {target_reaction_id}"
+    )
+    _assert(
+        str(before[target_reaction_id].get("reaction_type") or "")
+        == "room_darkness_lighting_assist",
         f"target reaction is not darkness before accept: {before[target_reaction_id]}",
     )
 
@@ -211,7 +219,9 @@ def main() -> int:
         client.options_flow_abort(flow_id)
 
     after = _configured_reactions(client, entry_id)
-    _assert(target_reaction_id in after, f"target reaction missing after accept: {target_reaction_id}")
+    _assert(
+        target_reaction_id in after, f"target reaction missing after accept: {target_reaction_id}"
+    )
     cfg = after[target_reaction_id]
     _assert(
         str(cfg.get("reaction_type") or "") == "room_contextual_lighting_assist",

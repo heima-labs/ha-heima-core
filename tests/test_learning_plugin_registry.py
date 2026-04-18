@@ -76,6 +76,14 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
     )
+    assert descriptors[3].improvement_proposals == (
+        type(descriptors[3].improvement_proposals[0])(
+            source_reaction_type="room_darkness_lighting_assist",
+            target_reaction_type="room_contextual_lighting_assist",
+            improvement_reason="contextual_variation",
+            acceptance_strategy="convert_replace",
+        ),
+    )
     assert descriptors[4].supports_admin_authored is True
     assert tuple(item.template_id for item in descriptors[4].admin_authored_templates) == (
         "security.vacation_presence_simulation.basic",
@@ -118,6 +126,14 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "implemented": True,
                 "flow_step_id": "admin_authored_security_presence_simulation",
             },
+        ],
+        "improvement_proposals": [
+            {
+                "source_reaction_type": "room_darkness_lighting_assist",
+                "target_reaction_type": "room_contextual_lighting_assist",
+                "improvement_reason": "contextual_variation",
+                "acceptance_strategy": "convert_replace",
+            }
         ],
         "enabled": True,
     }
@@ -221,6 +237,19 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "room.vacancy_lighting_off.basic",
         "security.vacation_presence_simulation.basic",
     ]
+
+
+def test_builtin_learning_plugin_registry_exposes_improvement_descriptor_lookup():
+    registry = create_builtin_learning_plugin_registry()
+
+    descriptor = registry.improvement_descriptor_for(
+        target_reaction_type="room_contextual_lighting_assist",
+        source_reaction_type="room_darkness_lighting_assist",
+        improvement_reason="contextual_variation",
+    )
+
+    assert descriptor is not None
+    assert descriptor.acceptance_strategy == "convert_replace"
     assert (
         registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
         == "room_signal_assist"

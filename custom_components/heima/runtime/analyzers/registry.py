@@ -43,6 +43,16 @@ class AdminAuthoredTemplateDescriptor:
 
 
 @dataclass(frozen=True)
+class ImprovementProposalDescriptor:
+    """Metadata for one supported improvement proposal family."""
+
+    source_reaction_type: str
+    target_reaction_type: str
+    improvement_reason: str
+    acceptance_strategy: str = "convert_replace"
+
+
+@dataclass(frozen=True)
 class LearningPatternPluginDescriptor:
     """Minimal built-in metadata for one Learning Pattern Plugin."""
 
@@ -54,6 +64,7 @@ class LearningPatternPluginDescriptor:
     lifecycle_hooks: ProposalLifecycleHooks | None = None
     supports_admin_authored: bool = False
     admin_authored_templates: tuple[AdminAuthoredTemplateDescriptor, ...] = ()
+    improvement_proposals: tuple[ImprovementProposalDescriptor, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -152,6 +163,9 @@ class LearningPluginRegistry:
                 "admin_authored_templates": list(
                     _template_diagnostics(item.descriptor.admin_authored_templates)
                 ),
+                "improvement_proposals": list(
+                    _improvement_diagnostics(item.descriptor.improvement_proposals)
+                ),
                 "enabled": item.enabled,
             }
             for item in self._plugins
@@ -172,6 +186,44 @@ class LearningPluginRegistry:
             if target in item.descriptor.proposal_types:
                 return item.descriptor.lifecycle_hooks
         return None
+
+    def improvement_descriptor_for(
+        self,
+        *,
+        target_reaction_type: str,
+        source_reaction_type: str,
+        improvement_reason: str = "",
+        enabled_only: bool = False,
+    ) -> ImprovementProposalDescriptor | None:
+        target = str(target_reaction_type or "").strip()
+        source = str(source_reaction_type or "").strip()
+        reason = str(improvement_reason or "").strip()
+        if not target or not source:
+            return None
+        for item in self._plugins:
+            if enabled_only and not item.enabled:
+                continue
+            for descriptor in item.descriptor.improvement_proposals:
+                if descriptor.target_reaction_type != target:
+                    continue
+                if descriptor.source_reaction_type != source:
+                    continue
+                if reason and descriptor.improvement_reason != reason:
+                    continue
+                return descriptor
+        return None
+
+    def improvement_descriptors(
+        self,
+        *,
+        enabled_only: bool = False,
+    ) -> tuple[ImprovementProposalDescriptor, ...]:
+        items: list[ImprovementProposalDescriptor] = []
+        for plugin in self._plugins:
+            if enabled_only and not plugin.enabled:
+                continue
+            items.extend(plugin.descriptor.improvement_proposals)
+        return tuple(items)
 
     def __len__(self) -> int:
         return len(self._plugins)
@@ -301,6 +353,14 @@ def create_builtin_learning_plugin_registry(
                     flow_step_id="admin_authored_room_vacancy_lighting_off",
                 ),
             ),
+            improvement_proposals=(
+                ImprovementProposalDescriptor(
+                    source_reaction_type="room_darkness_lighting_assist",
+                    target_reaction_type="room_contextual_lighting_assist",
+                    improvement_reason="contextual_variation",
+                    acceptance_strategy="convert_replace",
+                ),
+            ),
         ),
         analyzer=CompositePatternCatalogAnalyzer(
             catalog=composite_catalog_with_policy(
@@ -358,4 +418,18 @@ def _template_diagnostics(
             "flow_step_id": item.flow_step_id,
         }
         for item in templates
+    ]
+
+
+def _improvement_diagnostics(
+    improvements: tuple[ImprovementProposalDescriptor, ...],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "source_reaction_type": item.source_reaction_type,
+            "target_reaction_type": item.target_reaction_type,
+            "improvement_reason": item.improvement_reason,
+            "acceptance_strategy": item.acceptance_strategy,
+        }
+        for item in improvements
     ]
