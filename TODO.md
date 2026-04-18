@@ -152,7 +152,7 @@
   - phase A: deprecation notice + docs/UI warnings (done)
   - phase B: migration tooling (`routes` -> logical recipients/targets) (done: options-flow bridge for routes-only profiles)
   - phase C: runtime closed (routes no longer used directly; logical routing only)
-- [x] Introduce `security.mismatch` canonical event with subtype model and compatibility mode (`explicit_only|generic_only|dual_emit`) per `docs/specs/rfc/security_mismatch_generalization_spec.md`.
+- [x] Introduce `security.mismatch` canonical event with subtype model and compatibility mode (`explicit_only|generic_only|dual_emit`) per `docs/specs/core/security_mismatch_generalization_spec.md`.
 
 5. [ ] Cross-Cut — Input Normalization Layer (Incremental Rollout N1-N5)
 - [x] N1 Foundation: add shared normalization contracts + `InputNormalizer` facade + fusion plugin/strategy registry contract (behavior-preserving legacy-backed adapter).

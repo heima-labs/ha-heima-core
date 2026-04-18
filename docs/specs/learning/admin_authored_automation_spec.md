@@ -216,8 +216,10 @@ Normative distinction:
 
 - a new learned proposal is a **discovery** artifact
 - a tuning proposal is a **refinement** artifact
+- an upgrade/conversion proposal is an **improvement** artifact
 
-The difference is whether Heima is proposing a new automation slot or an update to an already active one.
+The difference is whether Heima is proposing a new automation slot, a bounded change to an active
+one, or a richer replacement for an active one.
 
 Discovery:
 
@@ -231,10 +233,20 @@ Refinement / tuning:
 - Heima observes recurring behavior that suggests the reaction should be adjusted
 - Heima proposes a follow-up change to that existing reaction instead of proposing a second near-duplicate automation
 
+Improvement / upgrade:
+
+- an active reaction already exists and is still semantically valid
+- Heima observes that the current reaction family is too simple for the learned variation
+- Heima proposes a richer replacement or conversion instead of either:
+  - rediscovering the same slot as a second automation
+  - overloading a simple tuning proposal with a structural change
+
 In other words:
 
 - if no matching reaction exists, Heima SHOULD emit a fresh learned proposal
 - if a matching reaction already exists, Heima SHOULD prefer a tuning-style follow-up proposal linked to that reaction
+- if a matching reaction exists but a richer reaction family would express the learned behavior
+  materially better, Heima SHOULD be allowed to emit an improvement proposal linked to that reaction
 
 This distinction is especially important for admin-authored automations, because the admin has already expressed explicit intent.
 Heima should therefore prefer improving that intent rather than rediscovering it as if it were unrelated.
@@ -258,6 +270,8 @@ Heima may then propose:
 - room or device scope refinements
 - split or merge suggestions
 - disable/retire suggestions
+- conversion suggestions into a richer reaction family when the observed behavior no longer fits the
+  current family cleanly
 
 For lighting-specific authored automations, tuning SHOULD be able to express a structured diff rather
 than only a generic “this could be improved” wording.

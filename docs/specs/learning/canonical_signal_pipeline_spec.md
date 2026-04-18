@@ -1,9 +1,8 @@
-# Spec: Canonical Signal Pipeline
+# Canonical Signal Pipeline Spec
 
-**Status**: Draft
-**Date**: 2026-04-13
-**Target branch**: `refactor/canonical-signal-pipeline`
-**Soft dependency**: `reaction_type_canonical_key_rfc.md` (preferred but not blocking)
+**Status**: Active v1.x canonical signal pipeline contract
+**Last Verified Against Code**: 2026-04-18
+**Related**: `../core/reaction_identity_spec.md`
 
 ---
 

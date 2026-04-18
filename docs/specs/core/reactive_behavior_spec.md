@@ -201,6 +201,13 @@ Normative boundary for v1:
 - current proposals MUST still rebuild directly into plain Reaction Plugins without an enhancement
   layer
 
+Clarification:
+- this does **not** forbid v1 improvement proposals
+- v1 may still propose that one plain Reaction Plugin should be replaced by another plain Reaction
+  Plugin with a richer contract
+- what remains out of scope is a second runtime layer that wraps an accepted reaction with a
+  persisted enhancement object
+
 The engine:
 1. Calls `reaction.evaluate(history)` for each registered reaction.
 2. Tags each returned step with `source = "reaction:{reaction_id}"`.

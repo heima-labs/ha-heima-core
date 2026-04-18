@@ -15,8 +15,8 @@ Interpretation notes:
   they explicitly say `Draft`, `Target vNext`, or `RFC`
 - documents under `rfc/` are not the source of truth for current runtime behavior unless they
   explicitly say `Implemented on main`
-- root-level `docs/specs/heima_*` files are compatibility redirect stubs only and should not be
-  treated as living specifications
+- legacy root-level `docs/specs/heima_*` redirect stubs have been removed; use only the canonical
+  paths listed below
 
 Related practical guides live outside this tree:
 - `docs/guides/scene_and_script_usage.md`
@@ -29,9 +29,14 @@ Related practical guides live outside this tree:
 - `core/options_flow_spec.md` — configuration and options flow
 - `core/options_flow_ux_spec.md` — current bounded UX/session contract for the options flow
 - `core/events_and_notifications_spec.md` — event model + routing model (consolidated)
+- `core/event_catalog_spec.md` — stable canonical event taxonomy and payload envelope
+- `core/notification_recipients_spec.md` — logical notification recipients, groups, and routing rules
+- `core/security_mismatch_generalization_spec.md` — canonical `security.mismatch` taxonomy and compatibility contract
 - `core/runtime_scheduler_spec.md` — runtime timer scheduler
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
+- `core/reaction_identity_spec.md` — canonical `reaction_type` identity and persisted reaction contract
+- `core/contextual_room_lighting_assist_spec.md` — contextual room-lighting reaction contract
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
 - `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX
@@ -51,6 +56,7 @@ Related practical guides live outside this tree:
 ## Learning
 
 - `learning/learning_system_spec.md` — event store, analyzers, proposals
+- `learning/canonical_signal_pipeline_spec.md` — canonical signal and burst pipeline used by learning/proposals
 - `learning/proposal_lifecycle_spec.md` — v1 proposal identity, refresh, and staleness
 - `learning/admin_authored_automation_spec.md` — admin-requested automations and follow-up tuning
 - `learning/inference_engine_spec.md` — inference v2 draft
@@ -62,10 +68,8 @@ Related practical guides live outside this tree:
 - `rfc/constraints_dependencies_spec.md`
 - `rfc/domain_framework_spec.md`
 - `rfc/input_normalization_layer_spec.md`
+- `rfc/improvement_proposals_rfc.md`
 - `rfc/mapping_model_spec.md`
-- `rfc/event_catalog_spec.md`
-- `rfc/security_mismatch_generalization_spec.md`
-- `rfc/notification_recipients_spec.md`
 - `rfc/heima_v2_emotion_ieq_research_note.md`
 - `rfc/heima_spec_v1.md`
 - `rfc/heima_spec_v1_1_behavior_framework.md`
@@ -84,5 +88,5 @@ Until then, the v1 hardcoded order is the only runtime contract.
 
 ## Compatibility Notes
 
-Legacy root-level spec filenames are kept as thin redirect stubs for compatibility.
-They remain referenced by some older docs and guides, but they are not canonical.
+Older references to removed root-level spec filenames should be updated in-place rather than
+reintroduced as redirect stubs.

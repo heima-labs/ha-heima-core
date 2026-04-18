@@ -1,8 +1,8 @@
-# RFC: `reaction_type` come chiave canonica delle reazioni
+# Reaction Identity Spec
+## `reaction_type` as canonical reaction key
 
-**Stato**: Draft
-**Data**: 2026-04-10
-**Branch target**: `refactor/reaction-type-canonical`
+**Status**: Active v1.x reaction identity contract
+**Last Verified Against Code**: 2026-04-18
 
 ---
 

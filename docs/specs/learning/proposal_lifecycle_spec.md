@@ -15,6 +15,7 @@ Goals:
 - make proposal recency and staleness explicit
 - reduce duplicate proposals caused by minor parameter drift
 - keep proposal lifecycle centralized in `ProposalEngine`
+- keep room for a third proposal intent beyond discovery and tuning: bounded improvement proposals
 
 ## 2. Lifecycle Ownership
 
@@ -49,6 +50,14 @@ Required lifecycle hooks per proposal family SHOULD include:
 Lifecycle applies equally to learned and admin-authored proposals. The `origin` of a proposal is
 orthogonal to its review `status`; the same lifecycle rules should work for both unless a specific
 plugin family documents a stricter exception.
+
+Normative taxonomy clarification:
+- proposal lifecycle in v1 may operate on proposals that are conceptually:
+  - discovery
+  - refinement/follow-up
+  - improvement/upgrade
+- this taxonomy does **not** require new persisted `status` values
+- it affects identity, review wording, and acceptance semantics, not the base status machine
 
 ## 2b. ProposalLifecycleHooks Interface
 

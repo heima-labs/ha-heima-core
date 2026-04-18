@@ -14,7 +14,7 @@
 >   directly in the engine, not via behaviors.
 > - The `lighting_policy` hook (section 4.2) is **not implemented**.
 > - The "active contributor" use case (injecting steps from temporal patterns) has been moved
->   to the **Reactive Behavior Engine** spec (`heima_reactive_behavior_spec_v1.md`),
+>   to the **Reactive Behavior Engine** spec (`../core/reactive_behavior_spec.md`),
 >   using a separate `HeimaReaction` framework.
 > - `HeimaBehavior` is the correct abstraction for **passive observability** (`on_snapshot`).
 

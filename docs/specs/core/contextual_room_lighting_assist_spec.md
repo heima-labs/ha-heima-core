@@ -1,8 +1,8 @@
-# Contextual Room Lighting Assist RFC
+# Contextual Room Lighting Assist Spec
 
 ## Status
 
-Draft
+Active v1.x contextual lighting reaction contract
 
 ## Problem
 
@@ -34,7 +34,7 @@ This reaction should be explicit, deterministic, and easy to debug.
 
 ## Non-goals
 
-This RFC does not try to:
+This spec does not try to:
 
 - infer deep semantic human intent from ambiguous signals
 - replace all existing lighting reactions immediately
@@ -70,7 +70,7 @@ Suggested canonical fields:
 - `primary_bucket_match_mode`
 - `followup_window_s`
 
-Optional corroboration stays allowed but is not the focus of this RFC.
+Optional corroboration stays allowed but is not the focus of this spec.
 
 ### Ambient Modulation Layer
 
@@ -200,7 +200,7 @@ default_profile: day_generic
 
 #### Ambient Modulation
 
-Version 2 of this RFC should support optional brightness modulation driven by an
+Version 2 of this spec should support optional brightness modulation driven by an
 external signal such as `outdoor_lux`.
 
 The first supported mode should be:
@@ -250,7 +250,7 @@ Heima does not currently know a true semantic reason such as:
 - relaxing
 - passing through
 
-So this RFC introduces a constrained proxy model instead of pretending to know more than the system actually knows.
+So this spec introduces a constrained proxy model instead of pretending to know more than the system actually knows.
 
 ### Allowed Context Inputs
 
@@ -411,7 +411,7 @@ Version 1 should use a guided JSON approach, not a fully structured editor.
 
 The reason is pragmatic:
 
-- the runtime contract in this RFC is already expressive and stable enough
+- the runtime contract in this spec is already expressive and stable enough
 - a structured editor would take longer to implement and validate correctly
 - advanced users may want direct control over profiles and rules immediately
 
@@ -485,6 +485,22 @@ Migration should be opt-in:
 
 This avoids risky silent behavior changes.
 
+### Improvement proposal path
+
+In addition to an explicit admin-driven conversion, Heima SHOULD later support a learned
+**improvement proposal** path:
+
+1. Heima first learns or reuses a valid `room_darkness_lighting_assist`
+2. later evidence shows that multiple contextual variants of the scene are materially useful
+3. instead of proposing a second competing darkness reaction, Heima proposes an upgrade to
+   `room_contextual_lighting_assist`
+
+That proposal is not a fresh discovery of an unrelated automation. It is an improvement/conversion
+proposal attached to the existing darkness assist.
+
+The first version of contextual lighting does not require that improvement path to exist yet, but
+the contract and UX should leave room for it.
+
 ## Why A New Reaction Type
 
 Do not overload `room_darkness_lighting_assist` with profile logic.
@@ -522,7 +538,7 @@ contextual path is developed as greenfield code with independent test coverage.
 
 ## Acceptance Criteria
 
-This RFC is complete when:
+This spec is complete when:
 
 1. a configured `room_contextual_lighting_assist` can choose different profiles by time window
 2. it can choose a different profile when `house_state=working`

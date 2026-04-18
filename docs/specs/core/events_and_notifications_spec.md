@@ -11,8 +11,8 @@ Consolidate the operational contract for:
 - category gating and delivery controls
 
 This supersedes split reading of:
-- `rfc/event_catalog_spec.md`
-- `rfc/notification_recipients_spec.md`
+- `core/event_catalog_spec.md`
+- `core/notification_recipients_spec.md`
 
 ## Scope and non-goals
 
@@ -109,5 +109,5 @@ Interpretation rule:
 The codebase is therefore a reference implementation, not the source of truth.
 
 Supporting detail remains available in:
-- `rfc/event_catalog_spec.md`
-- `rfc/notification_recipients_spec.md`
+- `core/event_catalog_spec.md`
+- `core/notification_recipients_spec.md`

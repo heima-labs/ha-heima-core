@@ -69,6 +69,29 @@ This separation is part of the intended architecture:
 
 No analyzer code ever runs in `async_evaluate()`.
 
+### 0.2.0 Proposal intent model
+
+Heima's shared proposal system is not limited to "new automation" suggestions.
+
+At the product level, proposal intent may be one of:
+
+- **discovery**
+  - propose a new reaction because no active reaction owns the observed behavior slot
+- **refinement**
+  - propose a bounded follow-up/tuning to an existing active reaction
+- **improvement**
+  - propose a richer replacement or conversion because the current reaction family is no longer the
+    best fit for the learned behavior
+
+All three still flow through the same shared proposal substrate:
+
+- analyzers emit `ReactionProposal`
+- `ProposalEngine` persists/reviews/deduplicates them
+- accepted proposals rebuild into executable reaction configs
+
+This keeps Heima's learning model unified while still allowing the system to suggest not only new
+automations, but also better automations.
+
 ### 0.2.1 Learning system model
 
 Heima has one learning system, not multiple competing learning subsystems.
