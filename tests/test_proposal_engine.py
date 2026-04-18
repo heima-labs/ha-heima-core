@@ -9,6 +9,7 @@ from custom_components.heima.runtime.analyzers.lifecycle import ProposalLifecycl
 from custom_components.heima.runtime.analyzers.registry import (
     LearningPatternPluginDescriptor,
     LearningPluginRegistry,
+    create_builtin_learning_plugin_registry,
 )
 from custom_components.heima.runtime.proposal_engine import ProposalEngine
 
@@ -160,6 +161,31 @@ async def test_proposal_engine_run_and_pending(monkeypatch):
     assert proposal_attrs["type"] == "presence_preheat"
 
 
+def test_reaction_proposal_from_dict_preserves_improvement_fields() -> None:
+    proposal = ReactionProposal.from_dict(
+        {
+            "proposal_id": "improve-1",
+            "analyzer_id": "CompositePatternCatalogAnalyzer",
+            "reaction_type": "room_contextual_lighting_assist",
+            "description": "studio upgrade",
+            "confidence": 0.81,
+            "followup_kind": "improvement",
+            "target_reaction_id": "darkness-1",
+            "target_reaction_type": "room_contextual_lighting_assist",
+            "target_reaction_origin": "learned",
+            "improves_reaction_type": "room_darkness_lighting_assist",
+            "improvement_reason": "time_window_variation",
+            "suggested_reaction_config": {"room_id": "studio"},
+        }
+    )
+
+    assert proposal.followup_kind == "improvement"
+    assert proposal.target_reaction_id == "darkness-1"
+    assert proposal.target_reaction_type == "room_contextual_lighting_assist"
+    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.improvement_reason == "time_window_variation"
+
+
 async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
@@ -173,6 +199,159 @@ async def test_proposal_engine_dedup_pending_updates_confidence(monkeypatch):
     pending = engine.pending_proposals()
     assert len(pending) == 1
     assert pending[0].confidence == 0.85
+
+
+async def test_proposal_engine_sensor_writer_exposes_improvement_metadata(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    proposal = ReactionProposal(
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_contextual_lighting_assist",
+        description="studio upgrade",
+        confidence=0.84,
+        followup_kind="improvement",
+        target_reaction_id="darkness-1",
+        target_reaction_type="room_contextual_lighting_assist",
+        target_reaction_origin="learned",
+        improves_reaction_type="room_darkness_lighting_assist",
+        improvement_reason="house_state_variation",
+        suggested_reaction_config={"room_id": "studio"},
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    engine.register_analyzer(_AnalyzerStub([proposal]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    attrs = sensor_updates[-1][1]
+    assert attrs["by_followup_kind"]["improvement"] == 1
+    item = next(iter(attrs["items"].values()))
+    assert item["followup_kind"] == "improvement"
+    assert item["target_reaction_id"] == "darkness-1"
+    assert item["target_reaction_type"] == "room_contextual_lighting_assist"
+    assert item["improves_reaction_type"] == "room_darkness_lighting_assist"
+    assert item["improvement_reason"] == "house_state_variation"
+
+
+async def test_proposal_engine_dedup_pending_improvement_by_target_reaction(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = create_builtin_learning_plugin_registry()
+    analyzer = _AnalyzerStub(
+        [
+            ReactionProposal(
+                analyzer_id="CompositePatternCatalogAnalyzer",
+                reaction_type="room_contextual_lighting_assist",
+                description="studio upgrade",
+                confidence=0.72,
+                followup_kind="improvement",
+                target_reaction_id="darkness-1",
+                target_reaction_type="room_contextual_lighting_assist",
+                target_reaction_origin="learned",
+                improves_reaction_type="room_darkness_lighting_assist",
+                improvement_reason="time_window_variation",
+                suggested_reaction_config={
+                    "room_id": "studio",
+                    "primary_signal_name": "room_lux",
+                },
+            )
+        ]
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+    engine.register_analyzer(analyzer)
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    analyzer.set_proposals(
+        [
+            ReactionProposal(
+                analyzer_id="CompositePatternCatalogAnalyzer",
+                reaction_type="room_contextual_lighting_assist",
+                description="studio upgrade refined",
+                confidence=0.88,
+                followup_kind="improvement",
+                target_reaction_id="darkness-1",
+                target_reaction_type="room_contextual_lighting_assist",
+                target_reaction_origin="learned",
+                improves_reaction_type="room_darkness_lighting_assist",
+                improvement_reason="house_state_variation",
+                suggested_reaction_config={
+                    "room_id": "studio",
+                    "primary_signal_name": "room_lux",
+                },
+            )
+        ]
+    )
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].followup_kind == "improvement"
+    assert pending[0].confidence == 0.88
+    assert pending[0].description == "studio upgrade refined"
+
+
+async def test_proposal_engine_normalizes_contextual_candidate_into_improvement(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = create_builtin_learning_plugin_registry()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+    engine.register_analyzer(
+        _AnalyzerStub(
+            [
+                ReactionProposal(
+                    analyzer_id="CompositePatternCatalogAnalyzer",
+                    reaction_type="room_contextual_lighting_assist",
+                    description="studio contextual candidate",
+                    confidence=0.82,
+                    suggested_reaction_config={
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_bucket": "dim",
+                    },
+                )
+            ]
+        )
+    )
+    await engine.async_initialize()
+    engine._proposals = [  # noqa: SLF001
+        ReactionProposal(
+            proposal_id="darkness-accepted",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_darkness_lighting_assist",
+            description="studio darkness",
+            confidence=0.84,
+            status="accepted",
+            suggested_reaction_config={
+                "room_id": "studio",
+                "primary_signal_name": "room_lux",
+                "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+            },
+        )
+    ]
+
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    proposal = pending[0]
+    assert proposal.reaction_type == "room_contextual_lighting_assist"
+    assert proposal.followup_kind == "improvement"
+    assert proposal.target_reaction_id == "darkness-accepted"
+    assert proposal.target_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.improvement_reason == "contextual_variation"
 
 
 async def test_proposal_engine_accepted_history_generates_followup_pending(monkeypatch):

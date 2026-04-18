@@ -1855,6 +1855,87 @@ async def test_reaction_label_from_room_lighting_assist_config_is_readable():
     assert label == "Luce living — lux:1 — 2 entità"
 
 
+@pytest.mark.asyncio
+async def test_proposals_step_accepts_contextual_improvement_by_replacing_darkness_target():
+    flow = _flow(
+        options={
+            "reactions": {
+                "configured": {
+                    "darkness-1": {
+                        "reaction_type": "room_darkness_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_main",
+                                "action": "on",
+                                "brightness": 144,
+                            }
+                        ],
+                        "created_at": "2026-03-01T08:00:00+00:00",
+                    }
+                },
+                "labels": {"darkness-1": "Luce studio"},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-contextual-upgrade",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_contextual_lighting_assist",
+        description="studio contextual upgrade",
+        confidence=0.86,
+        followup_kind="improvement",
+        target_reaction_id="darkness-1",
+        target_reaction_type="room_darkness_lighting_assist",
+        target_reaction_origin="learned",
+        improves_reaction_type="room_darkness_lighting_assist",
+        improvement_reason="contextual_variation",
+        suggested_reaction_config={
+            "reaction_type": "room_contextual_lighting_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "dim",
+            "primary_bucket_match_mode": "lte",
+            "followup_window_s": 900,
+            "profiles": {
+                "day_generic": {
+                    "entity_steps": [
+                        {
+                            "entity_id": "light.studio_main",
+                            "action": "on",
+                            "brightness": 140,
+                            "color_temp_kelvin": 3600,
+                        }
+                    ]
+                }
+            },
+            "rules": [{"profile": "day_generic"}],
+            "default_profile": "day_generic",
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-contextual-upgrade")
+    stored = flow.options["reactions"]["configured"]["darkness-1"]
+    assert stored["reaction_type"] == "room_contextual_lighting_assist"
+    assert stored["improved_from_reaction_type"] == "room_darkness_lighting_assist"
+    assert stored["improvement_reason"] == "contextual_variation"
+    assert stored["default_profile"] == "day_generic"
+    assert "entity_steps" not in stored
+
+
 def test_proposal_review_label_includes_context_confidence_and_last_seen():
     flow = _flow()
     proposal = ReactionProposal(

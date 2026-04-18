@@ -1330,7 +1330,7 @@ class _ReactionsStepsMixin:
 
         if action == "accept":
             accepted_proposal = current
-            if followup is not None and current.followup_kind != "tuning_suggestion":
+            if followup is not None and current.followup_kind == "discovery":
                 accepted_proposal = replace(
                     current,
                     followup_kind="tuning_suggestion",
@@ -1557,6 +1557,34 @@ class _ReactionsStepsMixin:
             configured["last_tuning_origin"] = proposal.origin
             configured["last_tuning_followup_kind"] = proposal.followup_kind
             return configured
+
+        is_improvement = proposal.followup_kind == "improvement" and bool(
+            _safe_mapping(existing_config)
+        )
+        if is_improvement:
+            previous = _safe_mapping(existing_config)
+            converted = dict(cfg)
+            converted.pop("reaction_class", None)
+            converted["reaction_type"] = str(proposal.reaction_type or "").strip()
+            converted["origin"] = proposal.origin
+            converted["author_kind"] = "admin" if proposal.origin == "admin_authored" else "heima"
+            converted["source_proposal_id"] = proposal.proposal_id
+            if proposal.identity_key:
+                converted["source_proposal_identity_key"] = proposal.identity_key
+            converted["source_request"] = "learned_pattern"
+            converted["created_at"] = str(
+                previous.get("created_at") or proposal.created_at or ""
+            ).strip()
+            converted["last_improved_at"] = str(
+                proposal.updated_at or proposal.created_at or ""
+            ).strip()
+            converted["improved_from_reaction_type"] = str(
+                previous.get("reaction_type") or proposal.improves_reaction_type or ""
+            ).strip()
+            converted["improvement_reason"] = str(proposal.improvement_reason or "").strip()
+            if "enabled" in previous:
+                converted["enabled"] = previous.get("enabled")
+            return converted
 
         origin = proposal.origin
         configured["reaction_type"] = str(proposal.reaction_type or "").strip()
@@ -3161,6 +3189,7 @@ class _ReactionsStepsMixin:
         if reaction_type in {
             "lighting_scene_schedule",
             "room_darkness_lighting_assist",
+            "room_contextual_lighting_assist",
             "vacation_presence_simulation",
         }:
             return False
@@ -3255,6 +3284,10 @@ class _ReactionsStepsMixin:
             if title:
                 return title
         title = self._proposal_human_label(proposal, cfg)
+        if proposal.followup_kind == "improvement" and followup is not None:
+            if language.startswith("it"):
+                return f"Miglioramento: {title}"
+            return f"Upgrade: {title}"
         if followup is not None:
             if language.startswith("it"):
                 return f"Affinamento: {title}"
@@ -3279,7 +3312,12 @@ class _ReactionsStepsMixin:
 
         followup = self._proposal_followup_target(proposal)
         if followup is not None:
-            details.extend(self._proposal_tuning_review_details(proposal, followup, language))
+            if proposal.followup_kind == "improvement":
+                details.extend(
+                    self._proposal_improvement_review_details(proposal, followup, language)
+                )
+            else:
+                details.extend(self._proposal_tuning_review_details(proposal, followup, language))
 
         pattern_description = str(proposal.description or "").strip()
         title = self._proposal_human_label(proposal, cfg)
@@ -3345,6 +3383,32 @@ class _ReactionsStepsMixin:
             details.extend(presenter.learned_review_details(self, proposal, cfg, language))
 
         return "\n".join(details)
+
+    def _proposal_improvement_review_details(
+        self,
+        proposal: ReactionProposal,
+        followup: dict[str, Any],
+        language: str,
+    ) -> list[str]:
+        is_it = language.startswith("it")
+        reaction_label = str(followup.get("reaction_label") or followup.get("reaction_id") or "")
+        lines = [
+            (
+                f"Questa proposta sostituisce la reaction esistente: {reaction_label}"
+                if is_it
+                else f"This proposal replaces the existing reaction: {reaction_label}"
+            )
+        ]
+        reason = str(proposal.improvement_reason or "").strip()
+        if reason == "contextual_variation":
+            lines.append(
+                (
+                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia oraria o contesto."
+                    if is_it
+                    else "Reason: darkness-triggered lighting varies consistently by time window or context."
+                )
+            )
+        return lines
 
     def _proposal_tuning_review_details(
         self,

@@ -54,11 +54,13 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room_cooling_assist",
         "room_air_quality_assist",
         "room_darkness_lighting_assist",
+        "room_contextual_lighting_assist",
         "room_vacancy_lighting_off",
     )
     assert descriptors[-2].reaction_targets == (
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
+        "RoomContextualLightingAssistReaction",
         "RoomLightingVacancyOffReaction",
     )
     assert descriptors[0].supports_admin_authored is False
@@ -128,11 +130,13 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             "room_cooling_assist",
             "room_air_quality_assist",
             "room_darkness_lighting_assist",
+            "room_contextual_lighting_assist",
             "room_vacancy_lighting_off",
         ],
         "reaction_targets": [
             "RoomSignalAssistReaction",
             "RoomLightingAssistReaction",
+            "RoomContextualLightingAssistReaction",
             "RoomLightingVacancyOffReaction",
         ],
         "has_lifecycle_hooks": True,
@@ -238,6 +242,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     registry = create_builtin_learning_plugin_registry()
 
     assert registry.lifecycle_hooks_for("presence_preheat") is not None
+    assert registry.lifecycle_hooks_for("room_contextual_lighting_assist") is not None
     assert registry.lifecycle_hooks_for("heating_preference") is not None
     assert registry.lifecycle_hooks_for("heating_eco") is not None
     assert registry.lifecycle_hooks_for("lighting_scene_schedule") is not None

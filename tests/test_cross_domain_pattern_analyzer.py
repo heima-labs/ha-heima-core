@@ -33,12 +33,12 @@ class _StoreStub:
         return events
 
 
-def _ctx(*, room: str, minute: int = 480) -> EventContext:
+def _ctx(*, room: str, minute: int = 480, house_state: str = "home") -> EventContext:
     return EventContext(
         weekday=0,
         minute_of_day=minute,
         month=3,
-        house_state="home",
+        house_state=house_state,
         occupants_count=1,
         occupied_rooms=(room,),
         outdoor_lux=None,
@@ -86,11 +86,13 @@ def _room_signal_threshold(
     to_bucket: str,
     device_class: str = "illuminance",
     signal_name: str = "room_lux",
+    minute: int = 480,
+    house_state: str = "home",
 ) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
         event_type="room_signal_threshold",
-        context=_ctx(room=room),
+        context=_ctx(room=room, minute=minute, house_state=house_state),
         source=None,
         domain="sensor",
         subject_type="signal",
@@ -175,11 +177,13 @@ def _lighting_event(
     brightness: int | None = 128,
     color_temp_kelvin: int | None = 3000,
     rgb_color: list[int] | None = None,
+    minute: int = 480,
+    house_state: str = "home",
 ) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
         event_type="lighting",
-        context=_ctx(room=room),
+        context=_ctx(room=room, minute=minute, house_state=house_state),
         source="user",
         domain="light",
         subject_type="entity",
@@ -461,6 +465,78 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
     assert diagnostics["pattern_id"] == "room_darkness_lighting_assist"
     assert diagnostics["primary_signal"] == "room_lux"
     assert diagnostics["followup_signal"] == "lighting_replay"
+
+
+async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darkness_variation():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+    events = []
+    for i in range(3):
+        current = base + timedelta(days=i * 7)
+        events.extend(
+            [
+                _room_signal_threshold(
+                    entity_id="sensor.study_lux",
+                    room="studio",
+                    ts=current.isoformat(),
+                    from_bucket="ok",
+                    to_bucket="dim",
+                    minute=9 * 60,
+                    house_state="working",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=2)).isoformat(),
+                    action="on",
+                    brightness=180,
+                    color_temp_kelvin=4300,
+                    minute=9 * 60 + 2,
+                    house_state="working",
+                ),
+            ]
+        )
+    for i in range(3, 6):
+        current = base + timedelta(days=i * 7, hours=12)
+        events.extend(
+            [
+                _room_signal_threshold(
+                    entity_id="sensor.study_lux",
+                    room="studio",
+                    ts=current.isoformat(),
+                    from_bucket="ok",
+                    to_bucket="dim",
+                    minute=20 * 60,
+                    house_state="home",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=2)).isoformat(),
+                    action="on",
+                    brightness=90,
+                    color_temp_kelvin=2700,
+                    minute=20 * 60 + 2,
+                    house_state="home",
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
+    assert len(contextual) == 1
+    proposal = contextual[0]
+    cfg = proposal.suggested_reaction_config
+    assert cfg["room_id"] == "studio"
+    assert cfg["primary_signal_name"] == "room_lux"
+    assert cfg["primary_bucket"] == "dim"
+    assert cfg["primary_bucket_match_mode"] == "lte"
+    assert sorted(cfg["profiles"]) == ["evening_relax", "workday_focus"]
+    assert cfg["default_profile"] in {"evening_relax", "workday_focus"}
+    diagnostics = cfg["learning_diagnostics"]
+    assert diagnostics["pattern_id"] == "room_contextual_lighting_assist"
+    assert diagnostics["contextual_profiles"] == ["evening_relax", "workday_focus"]
+    assert "time_window" in diagnostics["contextual_variation_dimensions"]
 
 
 async def test_cross_domain_analyzer_does_not_treat_humidity_state_changes_as_primary_signal():

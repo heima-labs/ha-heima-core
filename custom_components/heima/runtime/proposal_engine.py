@@ -119,6 +119,9 @@ class ProposalEngine:
 
         merged = list(self._proposals)
         for candidate in generated:
+            candidate = self._normalize_generated_candidate(candidate, merged)
+            if candidate is None:
+                continue
             now = datetime.now(UTC).isoformat()
             identity_key = self._identity_key(candidate)
             followup_slot_key = self._followup_slot_key(candidate)
@@ -146,6 +149,8 @@ class ProposalEngine:
                     target_reaction_type=candidate.target_reaction_type,
                     target_reaction_origin=candidate.target_reaction_origin,
                     target_template_id=candidate.target_template_id,
+                    improves_reaction_type=candidate.improves_reaction_type,
+                    improvement_reason=candidate.improvement_reason,
                 )
                 continue
 
@@ -196,6 +201,8 @@ class ProposalEngine:
                                 or ""
                             )
                         ),
+                        improves_reaction_type=candidate.improves_reaction_type,
+                        improvement_reason=candidate.improvement_reason,
                     )
                 )
                 continue
@@ -207,6 +214,55 @@ class ProposalEngine:
         self._proposals = pruned
         await self._store.async_save(self._serialize())
         self._write_sensor()
+
+    def _normalize_generated_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+    ) -> ReactionProposal | None:
+        if candidate.reaction_type != "room_contextual_lighting_assist":
+            return candidate
+        if candidate.followup_kind == "improvement":
+            return candidate
+        source = self._accepted_darkness_target_for_contextual_candidate(candidate, proposals)
+        if source is None:
+            return None
+        source_cfg = _safe_dict(source.suggested_reaction_config)
+        return replace(
+            candidate,
+            followup_kind="improvement",
+            target_reaction_id=source.proposal_id,
+            target_reaction_type=source.reaction_type,
+            target_reaction_origin=source.origin,
+            target_template_id=str(source_cfg.get("admin_authored_template_id") or ""),
+            improves_reaction_type=source.reaction_type,
+            improvement_reason=candidate.improvement_reason or "contextual_variation",
+        )
+
+    def _accepted_darkness_target_for_contextual_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+    ) -> ReactionProposal | None:
+        cfg = _safe_dict(candidate.suggested_reaction_config)
+        room_id = str(cfg.get("room_id") or "").strip()
+        primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+        if not room_id:
+            return None
+        for proposal in proposals:
+            if proposal.status != "accepted":
+                continue
+            if proposal.reaction_type != "room_darkness_lighting_assist":
+                continue
+            source_cfg = _safe_dict(proposal.suggested_reaction_config)
+            if str(source_cfg.get("room_id") or "").strip() != room_id:
+                continue
+            if primary_signal_name and (
+                str(source_cfg.get("primary_signal_name") or "").strip() != primary_signal_name
+            ):
+                continue
+            return proposal
+        return None
 
     async def async_accept_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "accepted")
@@ -257,6 +313,8 @@ class ProposalEngine:
                 target_reaction_type=proposal.target_reaction_type,
                 target_reaction_origin=proposal.target_reaction_origin,
                 target_template_id=proposal.target_template_id,
+                improves_reaction_type=proposal.improves_reaction_type,
+                improvement_reason=proposal.improvement_reason,
             )
             self._proposals[existing_idx] = reopened
             await self._store.async_save(self._serialize())
@@ -274,6 +332,13 @@ class ProposalEngine:
             updated_at=now,
             last_observed_at=proposal.last_observed_at or now,
             identity_key=identity_key,
+            followup_kind=proposal.followup_kind,
+            target_reaction_id=proposal.target_reaction_id,
+            target_reaction_type=proposal.target_reaction_type,
+            target_reaction_origin=proposal.target_reaction_origin,
+            target_template_id=proposal.target_template_id,
+            improves_reaction_type=proposal.improves_reaction_type,
+            improvement_reason=proposal.improvement_reason,
         )
         self._proposals[existing_idx] = updated
         await self._store.async_save(self._serialize())
@@ -350,6 +415,8 @@ class ProposalEngine:
                     "target_reaction_type": p.target_reaction_type,
                     "target_reaction_origin": p.target_reaction_origin,
                     "target_template_id": p.target_template_id,
+                    "improves_reaction_type": p.improves_reaction_type,
+                    "improvement_reason": p.improvement_reason,
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p),
@@ -374,6 +441,13 @@ class ProposalEngine:
                 "learned": sum(1 for p in ordered if p.origin == "learned"),
                 "admin_authored": sum(1 for p in ordered if p.origin == "admin_authored"),
             },
+            "by_followup_kind": {
+                "discovery": sum(1 for p in ordered if p.followup_kind == "discovery"),
+                "tuning_suggestion": sum(
+                    1 for p in ordered if p.followup_kind == "tuning_suggestion"
+                ),
+                "improvement": sum(1 for p in ordered if p.followup_kind == "improvement"),
+            },
             "by_type": _proposal_type_counts(ordered),
             "items": {
                 p.proposal_id: {
@@ -386,6 +460,8 @@ class ProposalEngine:
                     "updated_at": p.updated_at,
                     "target_reaction_id": p.target_reaction_id,
                     "target_reaction_type": p.target_reaction_type,
+                    "improves_reaction_type": p.improves_reaction_type,
+                    "improvement_reason": p.improvement_reason,
                     "is_stale": self._is_stale(p),
                 }
                 for p in ordered

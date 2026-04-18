@@ -207,12 +207,38 @@ def _lighting_should_suppress_followup(
 
 
 def _composite_room_identity_key(proposal: ReactionProposal) -> str:
+    if proposal.followup_kind == "improvement":
+        return _improvement_identity_key(proposal)
     cfg = _safe_dict(proposal.suggested_reaction_config)
     primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
     suffix = f"|primary={primary_signal}" if primary_signal else ""
     house_state_filter = cfg.get("house_state_filter") or None
     hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
     return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}{hs_suffix}"
+
+
+def _improvement_identity_key(proposal: ReactionProposal) -> str:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    room_id = str(cfg.get("room_id") or "").strip()
+    primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+    source_type = str(
+        proposal.improves_reaction_type or proposal.target_reaction_type or ""
+    ).strip()
+    target_type = str(proposal.reaction_type or "").strip()
+    target_reaction_id = str(proposal.target_reaction_id or "").strip()
+
+    parts = ["improvement"]
+    if target_reaction_id:
+        parts.append(f"target={target_reaction_id}")
+    if room_id:
+        parts.append(f"room={room_id}")
+    if primary_signal:
+        parts.append(f"primary={primary_signal}")
+    if source_type:
+        parts.append(f"from={source_type}")
+    if target_type:
+        parts.append(f"to={target_type}")
+    return "|".join(parts)
 
 
 def _security_presence_simulation_identity_key(proposal: ReactionProposal) -> str:
