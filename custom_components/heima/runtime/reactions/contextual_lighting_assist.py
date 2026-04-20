@@ -151,6 +151,8 @@ class RoomContextualLightingAssistReaction(_BaseRoomLightingAssist):
         self._current_house_state = str(snapshot.house_state or "unknown")
         if self._room_id not in snapshot.occupied_rooms:
             self._last_applied_profile = None
+            self._last_fired_ts = None
+            self._last_fired_iso = None
             self._occupancy_age_s = None
             self._occupancy_reason = "generic"
             self._selected_profile = None

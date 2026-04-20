@@ -354,6 +354,121 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement(
     assert proposal.improvement_reason == "contextual_variation"
 
 
+async def test_proposal_engine_normalizes_contextual_candidate_into_improvement_from_configured_darkness(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = create_builtin_learning_plugin_registry()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+        configured_reactions_provider=lambda: {
+            "darkness-configured": {
+                "reaction_type": "room_darkness_lighting_assist",
+                "room_id": "studio",
+                "primary_signal_name": "room_lux",
+                "origin": "admin_authored",
+                "source_template_id": "room.darkness_lighting_assist.basic",
+            }
+        },
+    )
+    engine.register_analyzer(
+        _AnalyzerStub(
+            [
+                ReactionProposal(
+                    analyzer_id="CompositePatternCatalogAnalyzer",
+                    reaction_type="room_contextual_lighting_assist",
+                    description="studio contextual candidate",
+                    confidence=0.82,
+                    suggested_reaction_config={
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_bucket": "dim",
+                    },
+                )
+            ]
+        )
+    )
+    await engine.async_initialize()
+
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    proposal = pending[0]
+    assert proposal.reaction_type == "room_contextual_lighting_assist"
+    assert proposal.followup_kind == "improvement"
+    assert proposal.target_reaction_id == "darkness-configured"
+    assert proposal.target_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.target_reaction_origin == "admin_authored"
+    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.improvement_reason == "contextual_variation"
+
+
+async def test_proposal_engine_prefers_configured_darkness_over_accepted_history_for_improvement(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = create_builtin_learning_plugin_registry()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+        configured_reactions_provider=lambda: {
+            "darkness-configured": {
+                "reaction_type": "room_darkness_lighting_assist",
+                "room_id": "studio",
+                "primary_signal_name": "room_lux",
+                "origin": "admin_authored",
+                "source_template_id": "room.darkness_lighting_assist.basic",
+            }
+        },
+    )
+    engine.register_analyzer(
+        _AnalyzerStub(
+            [
+                ReactionProposal(
+                    analyzer_id="CompositePatternCatalogAnalyzer",
+                    reaction_type="room_contextual_lighting_assist",
+                    description="studio contextual candidate",
+                    confidence=0.82,
+                    suggested_reaction_config={
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_bucket": "dim",
+                    },
+                )
+            ]
+        )
+    )
+    await engine.async_initialize()
+    engine._proposals = [  # noqa: SLF001
+        ReactionProposal(
+            proposal_id="darkness-accepted",
+            analyzer_id="CompositePatternCatalogAnalyzer",
+            reaction_type="room_darkness_lighting_assist",
+            description="studio darkness",
+            confidence=0.84,
+            status="accepted",
+            suggested_reaction_config={
+                "room_id": "studio",
+                "primary_signal_name": "room_lux",
+                "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+            },
+        )
+    ]
+
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    proposal = pending[0]
+    assert proposal.followup_kind == "improvement"
+    assert proposal.target_reaction_id == "darkness-configured"
+    assert proposal.target_reaction_origin == "admin_authored"
+
+
 async def test_proposal_engine_accepted_history_generates_followup_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

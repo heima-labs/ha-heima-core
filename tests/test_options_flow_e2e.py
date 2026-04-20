@@ -4859,7 +4859,7 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
 
     result = await flow.async_step_reactions_edit_form()
     assert result["type"] == "form"
-    assert result["step_id"] == "reactions_edit_contextual_lighting_assist"
+    assert result["step_id"] == "reactions_edit_form"
     assert "preset" in result["data_schema"].schema
 
     payload = json.dumps(
@@ -4894,6 +4894,62 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
     assert stored["enabled"] is False
     assert stored["followup_window_s"] == 600
     assert list(stored["profiles"]) == ["day_generic"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_contextual_lighting_assist_delete_uses_public_edit_step():
+    flow = _flow(
+        {
+            "rooms": [_room_with_signals()],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_contextual_lighting_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_lux",
+                        "primary_signal_entities": ["sensor.studio_lux"],
+                        "primary_bucket": "ok",
+                        "primary_bucket_match_mode": "lte",
+                        "profiles": {
+                            "day_generic": {
+                                "entity_steps": [
+                                    {
+                                        "entity_id": "light.studio_main",
+                                        "action": "on",
+                                        "brightness": 140,
+                                        "color_temp_kelvin": 3600,
+                                    }
+                                ]
+                            }
+                        },
+                        "rules": [],
+                        "default_profile": "day_generic",
+                        "followup_window_s": 900,
+                        "enabled": True,
+                    }
+                }
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "preset": "custom",
+            "config_json": flow._contextual_lighting_policy_for_form(
+                flow.options["reactions"]["configured"]["r1"]
+            ),
+            "delete_reaction": True,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_delete_confirm"
 
 
 @pytest.mark.asyncio

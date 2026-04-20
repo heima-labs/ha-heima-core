@@ -1186,17 +1186,33 @@ def _aggregate_lighting_followup_steps(
     for entity_id, group in sorted(by_entity.items()):
         if entity_id not in stable_entities:
             continue
-        last = group[-1]
-        action = str(last.data.get("action") or "on")
+        action_counts: dict[str, int] = {}
+        for event in group:
+            action_name = str(event.data.get("action") or "on").strip() or "on"
+            action_counts[action_name] = action_counts.get(action_name, 0) + 1
+        action = max(
+            action_counts.items(),
+            key=lambda item: (item[1], item[0] == "on", item[0]),
+        )[0]
+        matching_events = [
+            event for event in group if str(event.data.get("action") or "on").strip() == action
+        ]
+        selected_events = matching_events or group
         brightness = (
-            _median_int([e.data.get("brightness") for e in group]) if action == "on" else None
-        )
-        color_temp = (
-            _median_int([e.data.get("color_temp_kelvin") for e in group])
+            _median_int([e.data.get("brightness") for e in selected_events])
             if action == "on"
             else None
         )
-        rgb = _mode_rgb([e.data.get("rgb_color") for e in group]) if action == "on" else None
+        color_temp = (
+            _median_int([e.data.get("color_temp_kelvin") for e in selected_events])
+            if action == "on"
+            else None
+        )
+        rgb = (
+            _mode_rgb([e.data.get("rgb_color") for e in selected_events])
+            if action == "on"
+            else None
+        )
         steps.append(
             {
                 "entity_id": entity_id,

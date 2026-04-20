@@ -88,6 +88,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             hass,
             self._event_store,
             learning_plugin_registry=self._learning_plugin_registry,
+            configured_reactions_provider=lambda: dict(
+                (((entry.options or {}).get("reactions") or {}).get("configured") or {})
+            ),
             sensor_writer=self._write_proposals_sensor,
         )
         for plugin in self._learning_plugin_registry.analyzers():

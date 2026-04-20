@@ -1027,7 +1027,7 @@ class _ReactionsStepsMixin:
 
         if user_input is None:
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults=defaults,
                 reaction_description=label,
                 room_id=room_id,
@@ -1051,7 +1051,7 @@ class _ReactionsStepsMixin:
                 raise ValueError
         except (TypeError, ValueError, json.JSONDecodeError):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,
@@ -1067,7 +1067,7 @@ class _ReactionsStepsMixin:
 
         if not validate_contextual_lighting_contract(contract):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,
@@ -1094,7 +1094,7 @@ class _ReactionsStepsMixin:
         )
         if self._has_redacted_payload(cfg):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,

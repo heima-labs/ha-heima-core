@@ -471,7 +471,7 @@ async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darknes
     analyzer = CompositePatternCatalogAnalyzer()
     base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
     events = []
-    for i in range(3):
+    for i in range(5):
         current = base + timedelta(days=i * 7)
         events.extend(
             [
@@ -537,6 +537,89 @@ async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darknes
     assert diagnostics["pattern_id"] == "room_contextual_lighting_assist"
     assert diagnostics["contextual_profiles"] == ["evening_relax", "workday_focus"]
     assert "time_window" in diagnostics["contextual_variation_dimensions"]
+
+
+async def test_cross_domain_analyzer_contextual_upgrade_prefers_on_steps_over_cleanup_off_events():
+    analyzer = CompositePatternCatalogAnalyzer()
+    base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+    events = []
+    for i in range(5):
+        current = base + timedelta(days=i * 7, hours=9)
+        events.extend(
+            [
+                _room_signal_threshold(
+                    entity_id="sensor.study_lux",
+                    room="studio",
+                    ts=current.isoformat(),
+                    from_bucket="ok",
+                    to_bucket="dim",
+                    minute=10 * 60,
+                    house_state="working",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=2)).isoformat(),
+                    action="on",
+                    brightness=180,
+                    color_temp_kelvin=4300,
+                    minute=10 * 60 + 2,
+                    house_state="working",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=3)).isoformat(),
+                    action="off",
+                    brightness=None,
+                    color_temp_kelvin=None,
+                    minute=10 * 60 + 3,
+                    house_state="working",
+                ),
+            ]
+        )
+    for i in range(5):
+        current = base + timedelta(days=i * 7, hours=17)
+        events.extend(
+            [
+                _room_signal_threshold(
+                    entity_id="sensor.study_lux",
+                    room="studio",
+                    ts=current.isoformat(),
+                    from_bucket="ok",
+                    to_bucket="dim",
+                    minute=20 * 60,
+                    house_state="home",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=2)).isoformat(),
+                    action="on",
+                    brightness=96,
+                    color_temp_kelvin=2800,
+                    minute=20 * 60 + 2,
+                    house_state="home",
+                ),
+                _lighting_event(
+                    entity_id="light.studio_main",
+                    room="studio",
+                    ts=(current + timedelta(minutes=3)).isoformat(),
+                    action="off",
+                    brightness=None,
+                    color_temp_kelvin=None,
+                    minute=20 * 60 + 3,
+                    house_state="home",
+                ),
+            ]
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
+    assert len(contextual) == 1
+    cfg = contextual[0].suggested_reaction_config
+    assert cfg["profiles"]["workday_focus"]["entity_steps"][0]["action"] == "on"
+    assert cfg["profiles"]["evening_relax"]["entity_steps"][0]["action"] == "on"
 
 
 async def test_cross_domain_analyzer_does_not_treat_humidity_state_changes_as_primary_signal():

@@ -32,6 +32,7 @@ class ProposalEngine:
         event_store: EventStore,
         *,
         learning_plugin_registry: LearningPluginRegistry | None = None,
+        configured_reactions_provider: Callable[[], dict[str, Any]] | None = None,
         min_confidence: float = 0.4,
         stale_after: timedelta | None = None,
         prune_pending_stale_after: timedelta | None = None,
@@ -45,6 +46,7 @@ class ProposalEngine:
             prune_pending_stale_after or self.DEFAULT_PRUNE_PENDING_STALE_AFTER
         )
         self._sensor_writer = sensor_writer
+        self._configured_reactions_provider = configured_reactions_provider
         self._learning_plugin_registry = (
             learning_plugin_registry or create_builtin_learning_plugin_registry()
         )
@@ -230,33 +232,33 @@ class ProposalEngine:
             for descriptor in registry.improvement_descriptors()
         ):
             return candidate
-        source = self._accepted_source_for_improvement_candidate(candidate, proposals)
+        source = self._source_for_improvement_candidate(candidate, proposals)
         if source is None:
             return None
         descriptor = registry.improvement_descriptor_for(
             target_reaction_type=candidate.reaction_type,
-            source_reaction_type=source.reaction_type,
+            source_reaction_type=str(source.get("reaction_type") or ""),
             improvement_reason=candidate.improvement_reason,
         )
         if descriptor is None:
             return candidate
-        source_cfg = _safe_dict(source.suggested_reaction_config)
+        source_cfg = _safe_dict(source.get("cfg"))
         return replace(
             candidate,
             followup_kind="improvement",
-            target_reaction_id=source.proposal_id,
-            target_reaction_type=source.reaction_type,
-            target_reaction_origin=source.origin,
+            target_reaction_id=str(source.get("target_id") or ""),
+            target_reaction_type=str(source.get("reaction_type") or ""),
+            target_reaction_origin=str(source.get("origin") or ""),
             target_template_id=str(source_cfg.get("admin_authored_template_id") or ""),
-            improves_reaction_type=source.reaction_type,
+            improves_reaction_type=str(source.get("reaction_type") or ""),
             improvement_reason=candidate.improvement_reason or descriptor.improvement_reason,
         )
 
-    def _accepted_source_for_improvement_candidate(
+    def _source_for_improvement_candidate(
         self,
         candidate: ReactionProposal,
         proposals: list[ReactionProposal],
-    ) -> ReactionProposal | None:
+    ) -> dict[str, Any] | None:
         registry = self._learning_plugin_registry
         if registry is None:
             return None
@@ -264,6 +266,37 @@ class ProposalEngine:
         room_id = str(cfg.get("room_id") or "").strip()
         primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
         if not room_id:
+            return None
+        configured = self._configured_source_for_improvement_candidate(
+            candidate,
+            room_id=room_id,
+            primary_signal_name=primary_signal_name,
+        )
+        if configured is not None:
+            return configured
+        accepted = self._accepted_source_for_improvement_candidate(
+            candidate, proposals, room_id=room_id, primary_signal_name=primary_signal_name
+        )
+        if accepted is None:
+            return None
+        accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
+        return {
+            "target_id": accepted.proposal_id,
+            "reaction_type": accepted.reaction_type,
+            "origin": accepted.origin,
+            "cfg": accepted_cfg,
+        }
+
+    def _accepted_source_for_improvement_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+        *,
+        room_id: str,
+        primary_signal_name: str,
+    ) -> ReactionProposal | None:
+        registry = self._learning_plugin_registry
+        if registry is None:
             return None
         for proposal in proposals:
             if proposal.status != "accepted":
@@ -283,6 +316,43 @@ class ProposalEngine:
             ):
                 continue
             return proposal
+        return None
+
+    def _configured_source_for_improvement_candidate(
+        self,
+        candidate: ReactionProposal,
+        *,
+        room_id: str,
+        primary_signal_name: str,
+    ) -> dict[str, Any] | None:
+        registry = self._learning_plugin_registry
+        if registry is None or self._configured_reactions_provider is None:
+            return None
+        configured = self._configured_reactions_provider()
+        if not isinstance(configured, dict):
+            return None
+        for reaction_id, raw in configured.items():
+            reaction_cfg = _safe_dict(raw)
+            reaction_type = resolve_reaction_type(reaction_cfg)
+            descriptor = registry.improvement_descriptor_for(
+                target_reaction_type=candidate.reaction_type,
+                source_reaction_type=reaction_type,
+                improvement_reason=candidate.improvement_reason,
+            )
+            if descriptor is None:
+                continue
+            if str(reaction_cfg.get("room_id") or "").strip() != room_id:
+                continue
+            if primary_signal_name and (
+                str(reaction_cfg.get("primary_signal_name") or "").strip() != primary_signal_name
+            ):
+                continue
+            return {
+                "target_id": str(reaction_id),
+                "reaction_type": reaction_type,
+                "origin": str(reaction_cfg.get("origin") or ""),
+                "cfg": reaction_cfg,
+            }
         return None
 
     async def async_accept_proposal(self, proposal_id: str) -> bool:
