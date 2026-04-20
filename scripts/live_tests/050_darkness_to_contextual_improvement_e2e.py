@@ -108,6 +108,42 @@ def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return event_store if isinstance(event_store, dict) else {}
 
 
+def _wait_canonical_darkness_fixture_baseline(
+    client: HAClient,
+    entry_id: str,
+    *,
+    minimum_room_signal_thresholds: int,
+    minimum_lighting_events: int,
+    timeout_s: int,
+    poll_s: float,
+) -> dict[str, int]:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        diag = _event_store_diagnostics(client, entry_id)
+        by_type = diag.get("by_type", {}) or {}
+        threshold_count = _to_int(by_type.get("room_signal_threshold"))
+        lighting_count = _to_int(by_type.get("lighting"))
+        if (
+            threshold_count >= minimum_room_signal_thresholds
+            and lighting_count >= minimum_lighting_events
+        ):
+            return {
+                "room_signal_threshold": threshold_count,
+                "lighting": lighting_count,
+            }
+        time.sleep(poll_s)
+    diag = _event_store_diagnostics(client, entry_id)
+    by_type = diag.get("by_type", {}) or {}
+    raise AssertionError(
+        "canonical darkness fixture baseline not loaded: "
+        f"expected room_signal_threshold>={minimum_room_signal_thresholds} and "
+        f"lighting>={minimum_lighting_events}, found "
+        f"room_signal_threshold={_to_int(by_type.get('room_signal_threshold'))} "
+        f"lighting={_to_int(by_type.get('lighting'))}. "
+        "Run scripts/live_tests/006_restore_learning_fixtures.sh first."
+    )
+
+
 def _find_darkness_proposal(diag: dict[str, Any], *, status: str) -> dict[str, Any] | None:
     proposals = diag.get("proposals")
     if not isinstance(proposals, list):
@@ -158,6 +194,59 @@ def _find_configured_darkness_reaction(
             continue
         return reaction_id, cfg
     return None
+
+
+def _configured_contextual_reactions(
+    client: HAClient,
+    entry_id: str,
+) -> list[tuple[str, dict[str, Any]]]:
+    configured = _configured_reactions(client, entry_id)
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for reaction_id, cfg in configured.items():
+        if str(cfg.get("reaction_type") or "") != "room_contextual_lighting_assist":
+            continue
+        if str(cfg.get("room_id") or "") != "studio":
+            continue
+        matches.append((reaction_id, cfg))
+    return matches
+
+
+def _delete_reaction_via_flow(client: HAFlowClient, entry_id: str, reaction_id: str) -> None:
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init.get("flow_id") or "")
+    try:
+        step = _menu_next(client, flow_id, "reactions_edit")
+        _expect_step(step, "reactions_edit")
+        step = client.options_flow_configure(flow_id, {"reaction": reaction_id})
+        _assert(
+            str(step.get("step_id") or "").startswith("reactions_edit"),
+            f"unexpected edit step for delete: {step}",
+        )
+        payload = {"delete_reaction": True}
+        data_schema = step.get("data_schema")
+        if isinstance(data_schema, list):
+            names = {
+                str(field.get("name") or "") for field in data_schema if isinstance(field, dict)
+            }
+            if "enabled" in names:
+                payload["enabled"] = bool(
+                    _configured_reactions(client, entry_id)
+                    .get(reaction_id, {})
+                    .get("enabled", True)
+                )
+            if "preset" in names:
+                payload["preset"] = "all_day_adaptive"
+            if "config_json" in names:
+                payload["config_json"] = "{}"
+        step = client.options_flow_configure(flow_id, payload)
+        _expect_step(step, "reactions_delete_confirm")
+        step = client.options_flow_configure(flow_id, {"confirm": True})
+        _assert(
+            step.get("type") == "menu" and step.get("step_id") == "init",
+            f"unexpected result after delete confirm: {step}",
+        )
+    finally:
+        client.options_flow_abort(flow_id)
 
 
 def _wait_fixture_baseline(
@@ -282,13 +371,120 @@ def _seek_review_for_proposal(
     for _ in range(32):
         details = _proposal_details(step)
         label = _proposal_label(step)
+        normalized_label = label.lower()
+        normalized_details = details.lower()
         if proposal_id in details or proposal_id in label:
+            return step
+        if (
+            (
+                "illuminazione contestuale stanza: studio" in normalized_label
+                and "reaction esistente" in normalized_details
+                and "contesto" in normalized_details
+            )
+            or (
+                "contextual room lighting: studio" in normalized_label
+                and "existing reaction" in normalized_details
+                and "context" in normalized_details
+            )
+            or (
+                "miglioramento:" in normalized_label
+                and "studio" in normalized_label
+                and "reaction esistente" in normalized_details
+                and "contesto" in normalized_details
+            )
+            or (
+                "upgrade:" in normalized_label
+                and "studio" in normalized_label
+                and "existing reaction" in normalized_details
+                and "context" in normalized_details
+            )
+        ):
             return step
         step = client.options_flow_configure(flow_id, {"review_action": "skip"})
         if step.get("type") == "menu":
             break
         _expect_step(step, "proposals")
     raise AssertionError(f"proposal {proposal_id} not found in review queue")
+
+
+def _extract_select_values(step_result: dict[str, Any], field_name: str) -> list[str]:
+    data_schema = step_result.get("data_schema")
+    if not isinstance(data_schema, list):
+        return []
+    for field in data_schema:
+        if not isinstance(field, dict) or str(field.get("name")) != field_name:
+            continue
+        options = field.get("options")
+        values: list[str] = []
+        if isinstance(options, list):
+            for item in options:
+                if isinstance(item, str):
+                    values.append(item)
+                elif isinstance(item, (list, tuple)) and item:
+                    values.append(str(item[0]))
+                elif isinstance(item, dict):
+                    value = item.get("value")
+                    if value not in (None, ""):
+                        values.append(str(value))
+        elif isinstance(options, dict):
+            values.extend(str(key) for key in options.keys())
+        return [value for value in values if value]
+    return []
+
+
+def _create_admin_authored_darkness_reaction(
+    client: HAFlowClient,
+    entry_id: str,
+    *,
+    room_id: str,
+) -> tuple[str, dict[str, Any]]:
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init.get("flow_id") or "")
+    try:
+        step = _menu_next(client, flow_id, "admin_authored_create")
+        _expect_step(step, "admin_authored_create")
+        template_ids = _extract_select_values(step, "template_id")
+        _assert(
+            "room.darkness_lighting_assist.basic" in template_ids,
+            f"darkness template not exposed: {template_ids}",
+        )
+        step = client.options_flow_configure(
+            flow_id,
+            {"template_id": "room.darkness_lighting_assist.basic"},
+        )
+        _expect_step(step, "admin_authored_room_darkness_lighting_assist")
+        step = client.options_flow_configure(
+            flow_id,
+            {
+                "room_id": room_id,
+                "primary_signal_name": "room_lux",
+                "primary_bucket": "dim",
+                "primary_bucket_match_mode": "lte",
+                "light_entities": ["light.test_heima_studio_main"],
+                "action": "on",
+                "brightness": 144,
+                "color_temp_kelvin": 2900,
+            },
+        )
+        _assert(
+            step.get("step_id") in {"proposals", "init"},
+            f"unexpected result after darkness submit: {step}",
+        )
+        if step.get("step_id") == "proposals":
+            step = client.options_flow_configure(flow_id, {"review_action": "accept"})
+            _assert(
+                (step.get("type") == "menu" and step.get("step_id") == "init")
+                or step.get("step_id") == "proposals",
+                f"unexpected result after darkness accept: {step}",
+            )
+    finally:
+        client.options_flow_abort(flow_id)
+
+    darkness_reaction = _find_configured_darkness_reaction(client, entry_id)
+    _assert(
+        darkness_reaction is not None, "configured darkness reaction missing after admin create"
+    )
+    return darkness_reaction
 
 
 def _accept_proposal(client: HAFlowClient, entry_id: str, *, proposal_id: str) -> dict[str, Any]:
@@ -300,7 +496,8 @@ def _accept_proposal(client: HAFlowClient, entry_id: str, *, proposal_id: str) -
         print(f"Review details:\n{_proposal_details(review)}")
         result = client.options_flow_configure(flow_id, {"review_action": "accept"})
         _assert(
-            result.get("type") == "menu" and result.get("step_id") == "init",
+            (result.get("type") == "menu" and result.get("step_id") == "init")
+            or result.get("step_id") == "proposals",
             f"unexpected result after accept: {result}",
         )
         return result
@@ -319,19 +516,10 @@ def _seed_darkness_episode(
 ) -> None:
     client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
     if work_mode:
-        client.call_service(
-            "input_boolean",
-            "turn_on",
-            {"entity_id": "input_boolean.test_heima_work_mode"},
-        )
-        _wait_state(client, "binary_sensor.test_heima_work_window", "on", timeout_s, poll_s)
+        client.call_service("heima", "set_mode", {"mode": "working", "state": True})
         _wait_state(client, "sensor.heima_house_state", "working", timeout_s, poll_s)
     else:
-        client.call_service(
-            "input_boolean",
-            "turn_off",
-            {"entity_id": "input_boolean.test_heima_work_mode"},
-        )
+        client.call_service("heima", "set_mode", {"mode": "working", "state": False})
     _wait_state(client, "binary_sensor.test_heima_room_studio_motion", "off", timeout_s, poll_s)
     _wait_state(client, "light.test_heima_studio_main", "off", timeout_s, poll_s)
     _wait_numeric_state(
@@ -367,9 +555,13 @@ def _seed_darkness_episode(
         {"entity_id": "input_number.test_heima_light_studio_main_color_temp", "value": kelvin},
     )
     client.call_service(
-        "input_boolean",
+        "light",
         "turn_on",
-        {"entity_id": "input_boolean.test_heima_light_studio_main_raw"},
+        {
+            "entity_id": "light.test_heima_studio_main",
+            "brightness": brightness,
+            "color_temp_kelvin": kelvin,
+        },
     )
     _wait_light_brightness(
         client,
@@ -394,28 +586,24 @@ def main() -> int:
     entry_id = client.find_heima_entry_id()
     print(f"Using heima entry_id={entry_id}")
 
-    _wait_fixture_baseline(
+    _wait_canonical_darkness_fixture_baseline(
         client,
         entry_id,
-        minimum_state_changes=36,
+        minimum_room_signal_thresholds=4,
+        minimum_lighting_events=1,
         timeout_s=min(args.timeout_s, 30),
         poll_s=args.poll_s,
     )
 
-    configured_before = _configured_reactions(client, entry_id)
-    if any(
-        str(cfg.get("reaction_type") or "") == "room_contextual_lighting_assist"
-        and str(cfg.get("room_id") or "") == "studio"
-        for cfg in configured_before.values()
-    ):
-        raise AssertionError(
-            "studio contextual reaction already configured; recover the test lab first"
-        )
+    for reaction_id, _cfg in _configured_contextual_reactions(client, entry_id):
+        print(f"Cleaning pre-existing studio contextual reaction: {reaction_id}")
+        _delete_reaction_via_flow(client, entry_id, reaction_id)
 
+    darkness_reaction = _find_configured_darkness_reaction(client, entry_id)
     accepted_darkness = _find_darkness_proposal(
         _proposal_diagnostics(client, entry_id), status="accepted"
     )
-    if accepted_darkness is None:
+    if darkness_reaction is None and accepted_darkness is None:
         pending_darkness = _find_darkness_proposal(
             _proposal_diagnostics(client, entry_id), status="pending"
         )
@@ -429,25 +617,39 @@ def main() -> int:
                 kelvin=2900,
                 work_mode=False,
             )
-            pending_darkness = _wait_for_darkness_pending(
+            try:
+                pending_darkness = _wait_for_darkness_pending(
+                    client,
+                    entry_id,
+                    timeout_s=args.timeout_s,
+                    poll_s=args.poll_s,
+                )
+            except AssertionError:
+                pending_darkness = None
+        if pending_darkness is None:
+            print(
+                "No learned darkness proposal available; creating admin-authored darkness baseline..."
+            )
+            darkness_reaction = _create_admin_authored_darkness_reaction(
                 client,
                 entry_id,
-                timeout_s=args.timeout_s,
-                poll_s=args.poll_s,
+                room_id="studio",
             )
-        darkness_proposal_id = str(pending_darkness.get("id") or "")
-        print(f"Accepting darkness proposal: {darkness_proposal_id}")
-        _accept_proposal(client, entry_id, proposal_id=darkness_proposal_id)
-        accepted_darkness = _find_darkness_proposal(
-            _proposal_diagnostics(client, entry_id), status="accepted"
-        )
-        _assert(accepted_darkness is not None, "darkness proposal not accepted")
+        else:
+            darkness_proposal_id = str(pending_darkness.get("id") or "")
+            print(f"Accepting darkness proposal: {darkness_proposal_id}")
+            _accept_proposal(client, entry_id, proposal_id=darkness_proposal_id)
+            accepted_darkness = _find_darkness_proposal(
+                _proposal_diagnostics(client, entry_id), status="accepted"
+            )
+            _assert(accepted_darkness is not None, "darkness proposal not accepted")
 
-    darkness_proposal_id = str(accepted_darkness.get("id") or "")
-    darkness_reaction = _find_configured_darkness_reaction(
-        client, entry_id, proposal_id=darkness_proposal_id
-    )
-    _assert(darkness_reaction is not None, "configured darkness reaction missing after accept")
+    if darkness_reaction is None:
+        darkness_proposal_id = str(accepted_darkness.get("id") or "")
+        darkness_reaction = _find_configured_darkness_reaction(
+            client, entry_id, proposal_id=darkness_proposal_id
+        )
+        _assert(darkness_reaction is not None, "configured darkness reaction missing after accept")
     darkness_reaction_id, _ = darkness_reaction
     print(f"Accepted darkness reaction ready: {darkness_reaction_id}")
 
@@ -458,6 +660,33 @@ def main() -> int:
     )
     print("Muted darkness reaction to capture user-driven contextual evidence")
 
+    print("Generating generic contextual evidence episode 1 ...")
+    _seed_darkness_episode(
+        client,
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+        brightness=144,
+        kelvin=2900,
+        work_mode=False,
+    )
+    print("Generating generic contextual evidence episode 2 ...")
+    _seed_darkness_episode(
+        client,
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+        brightness=144,
+        kelvin=2900,
+        work_mode=False,
+    )
+    print("Generating generic contextual evidence episode 3 ...")
+    _seed_darkness_episode(
+        client,
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+        brightness=144,
+        kelvin=2900,
+        work_mode=False,
+    )
     print("Generating workday contextual evidence episode 1 ...")
     _seed_darkness_episode(
         client,
@@ -468,6 +697,15 @@ def main() -> int:
         work_mode=True,
     )
     print("Generating workday contextual evidence episode 2 ...")
+    _seed_darkness_episode(
+        client,
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+        brightness=180,
+        kelvin=4300,
+        work_mode=True,
+    )
+    print("Generating workday contextual evidence episode 3 ...")
     _seed_darkness_episode(
         client,
         timeout_s=args.timeout_s,
