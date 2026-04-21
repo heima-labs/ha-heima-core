@@ -65,6 +65,20 @@ def _object_selector() -> Any:
     return selector({"object": {}})
 
 
+def _number_box_selector(
+    *,
+    min_value: int | float | None = None,
+    max_value: int | float | None = None,
+    step: int | float = 1,
+) -> Any:
+    config: dict[str, Any] = {"mode": "box", "step": step}
+    if min_value is not None:
+        config["min"] = min_value
+    if max_value is not None:
+        config["max"] = max_value
+    return selector({"number": config})
+
+
 # ---------------------------------------------------------------------------
 # Formatting helpers (in-memory → display string)
 # ---------------------------------------------------------------------------
