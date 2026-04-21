@@ -541,14 +541,27 @@ def present_room_signal_assist_label(
     """Return a human label for persisted room signal assist reactions."""
     try:
         room_id = str(cfg.get("room_id", "")).strip() or reaction_id
-        humidity_entities = list(cfg.get("trigger_signal_entities", []))
-        temperature_entities = list(cfg.get("temperature_signal_entities", []))
+        reaction_type = str(cfg.get("reaction_type") or "").strip()
+        primary_signal_name = str(cfg.get("primary_signal_name") or "").strip().lower()
+        corroboration_signal_name = str(cfg.get("corroboration_signal_name") or "").strip().lower()
+        primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
+        house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
         observed = int(cfg.get("episodes_observed", 0))
-        parts = [f"Assist {room_id}"]
-        if humidity_entities:
-            parts.append(f"hum:{len(humidity_entities)}")
-        if temperature_entities:
-            parts.append(f"temp:{len(temperature_entities)}")
+        if reaction_type == "room_cooling_assist":
+            parts = [f"Raffrescamento {room_id}"]
+        elif reaction_type == "room_air_quality_assist":
+            parts = [f"Aria {room_id}"]
+        else:
+            parts = [f"Assist {room_id}"]
+        if primary_signal_name:
+            signal_bits = [primary_signal_name]
+            if corroboration_signal_name:
+                signal_bits.append(corroboration_signal_name)
+            parts.append(" + ".join(signal_bits))
+        if primary_trigger_mode:
+            parts.append(primary_trigger_mode)
+        if house_state_filter:
+            parts.append(f"stato:{house_state_filter}")
         if observed > 0:
             parts.append(f"{observed} episodi")
         return " — ".join(parts)

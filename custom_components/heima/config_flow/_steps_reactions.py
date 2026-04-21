@@ -66,6 +66,123 @@ class _ReactionsStepsMixin:
                 return True
         return False
 
+    @staticmethod
+    def _configured_reaction_slot_key(cfg: dict[str, Any]) -> str:
+        """Return a coarse slot key used to avoid duplicate configured reactions."""
+        reaction_type = resolve_reaction_type(cfg)
+        room_id = str(cfg.get("room_id") or "").strip()
+        house_state_filter = str(cfg.get("house_state_filter") or "").strip()
+        house_state_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
+
+        if reaction_type in {
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
+        }:
+            primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+            primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
+            trigger_mode_suffix = (
+                f"|mode={primary_trigger_mode}" if reaction_type == "room_signal_assist" else ""
+            )
+            return (
+                f"{reaction_type}|room={room_id}|primary={primary_signal}"
+                f"{trigger_mode_suffix}{house_state_suffix}"
+            )
+
+        if reaction_type in {
+            "room_darkness_lighting_assist",
+            "room_contextual_lighting_assist",
+        }:
+            primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
+            return f"{reaction_type}|room={room_id}|primary={primary_signal}{house_state_suffix}"
+
+        if reaction_type == "room_vacancy_lighting_off":
+            return f"{reaction_type}|room={room_id}"
+
+        if reaction_type == "lighting_scene_schedule":
+            scheduled_min = cfg.get("scheduled_min")
+            bucket = None
+            if isinstance(scheduled_min, (int, float)):
+                bucket = (int(scheduled_min) // 30) * 30
+            return (
+                f"{reaction_type}|room={room_id}|weekday={cfg.get('weekday')}|bucket={bucket}"
+                f"{house_state_suffix}"
+            )
+
+        return ""
+
+    def _configured_slot_matches_for_proposal(
+        self,
+        proposal: ReactionProposal,
+        configured: dict[str, Any],
+        *,
+        exclude_ids: set[str] | None = None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Return configured reactions that occupy the same canonical slot."""
+        exclude = exclude_ids or set()
+        slot_key = self._configured_reaction_slot_key(
+            _safe_mapping(proposal.suggested_reaction_config)
+        )
+        if not slot_key:
+            return []
+
+        matches: list[tuple[str, dict[str, Any]]] = []
+        for reaction_id, raw in configured.items():
+            if reaction_id in exclude:
+                continue
+            reaction_cfg = _safe_mapping(raw)
+            if self._configured_reaction_slot_key(reaction_cfg) != slot_key:
+                continue
+            matches.append((str(reaction_id), reaction_cfg))
+        matches.sort(key=lambda item: item[0])
+        return matches
+
+    def _resolve_configured_target_for_proposal(
+        self,
+        proposal: ReactionProposal,
+        configured: dict[str, Any],
+    ) -> tuple[ReactionProposal, str, dict[str, Any] | None, list[str]]:
+        """Resolve the configured reaction target for a proposal accept/update."""
+        accepted_proposal = proposal
+        target_id = proposal.proposal_id
+        existing_cfg: dict[str, Any] | None = None
+        duplicate_ids: list[str] = []
+
+        followup = self._proposal_followup_target(proposal)
+        if followup is not None:
+            target_id = str(followup["reaction_id"])
+            existing_cfg = dict(followup["reaction_cfg"])
+            if proposal.followup_kind == "discovery":
+                accepted_proposal = replace(
+                    proposal,
+                    followup_kind="tuning_suggestion",
+                    target_reaction_id=target_id,
+                    target_reaction_type=self._reaction_type_from_cfg(existing_cfg),
+                    target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
+                    target_template_id=str(followup.get("target_template_id") or ""),
+                )
+            return accepted_proposal, target_id, existing_cfg, duplicate_ids
+
+        slot_matches = self._configured_slot_matches_for_proposal(
+            proposal,
+            configured,
+            exclude_ids={proposal.proposal_id},
+        )
+        if not slot_matches:
+            return accepted_proposal, target_id, existing_cfg, duplicate_ids
+
+        target_id, existing_cfg = slot_matches[0]
+        duplicate_ids = [reaction_id for reaction_id, _cfg in slot_matches[1:]]
+        accepted_proposal = replace(
+            proposal,
+            followup_kind="tuning_suggestion",
+            target_reaction_id=target_id,
+            target_reaction_type=self._reaction_type_from_cfg(existing_cfg),
+            target_reaction_origin=str(existing_cfg.get("origin") or ""),
+            target_template_id=str(existing_cfg.get("source_template_id") or ""),
+        )
+        return accepted_proposal, target_id, existing_cfg, duplicate_ids
+
     async def _store_admin_authored_reaction_directly(
         self, proposal: ReactionProposal
     ) -> "FlowResult":
@@ -1643,24 +1760,10 @@ class _ReactionsStepsMixin:
         reactions_cfg = dict(self.options.get(OPT_REACTIONS, {}))
         configured = dict(reactions_cfg.get("configured", {}))
         labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
-        followup = self._proposal_followup_target(current)
-
         if action == "accept":
-            accepted_proposal = current
-            if followup is not None and current.followup_kind == "discovery":
-                accepted_proposal = replace(
-                    current,
-                    followup_kind="tuning_suggestion",
-                    target_reaction_id=str(followup["reaction_id"]),
-                    target_reaction_type=self._reaction_type_from_cfg(followup["reaction_cfg"]),
-                    target_reaction_origin=str(followup.get("target_reaction_origin") or ""),
-                    target_template_id=str(followup.get("target_template_id") or ""),
-                )
-            target_id = current_id
-            existing_cfg: dict[str, Any] | None = None
-            if followup is not None:
-                target_id = str(followup["reaction_id"])
-                existing_cfg = dict(followup["reaction_cfg"])
+            accepted_proposal, target_id, existing_cfg, duplicate_ids = (
+                self._resolve_configured_target_for_proposal(current, configured)
+            )
             if current.followup_kind == "improvement":
                 strategy = self._improvement_acceptance_strategy(current)
                 if strategy != "convert_replace":
@@ -1721,6 +1824,9 @@ class _ReactionsStepsMixin:
             if target_id != current_id:
                 configured.pop(current_id, None)
                 labels.pop(current_id, None)
+            for duplicate_id in duplicate_ids:
+                configured.pop(duplicate_id, None)
+                labels.pop(duplicate_id, None)
             labels[target_id] = current.description
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
@@ -1788,8 +1894,14 @@ class _ReactionsStepsMixin:
             reactions_cfg = dict(self._reactions_options())
             configured = dict(reactions_cfg.get("configured", {}))
             labels = dict(reactions_cfg.get("labels", {}))
+            accepted_proposal, resolved_target_id, resolved_existing_cfg, duplicate_ids = (
+                self._resolve_configured_target_for_proposal(proposal, configured)
+            )
+            target_id = resolved_target_id
+            if resolved_existing_cfg is not None:
+                existing_cfg = resolved_existing_cfg
             cfg = self._configured_reaction_from_proposal(
-                proposal,
+                accepted_proposal,
                 existing_config=existing_cfg,
             )
             cfg["steps"] = steps
@@ -1821,6 +1933,9 @@ class _ReactionsStepsMixin:
             if target_id != proposal_id:
                 configured.pop(proposal_id, None)
                 labels.pop(proposal_id, None)
+            for duplicate_id in duplicate_ids:
+                configured.pop(duplicate_id, None)
+                labels.pop(duplicate_id, None)
             labels[target_id] = str(current_draft.get("label") or target_id)
             reactions_cfg["configured"] = configured
             reactions_cfg["labels"] = labels
@@ -4392,14 +4507,28 @@ class _ReactionsStepsMixin:
         }:
             try:
                 room_id = str(cfg.get("room_id", "")).strip() or reaction_id
-                humidity_entities = list(cfg.get("trigger_signal_entities", []))
-                temperature_entities = list(cfg.get("temperature_signal_entities", []))
+                primary_signal_name = str(cfg.get("primary_signal_name") or "").strip().lower()
+                corroboration_signal_name = (
+                    str(cfg.get("corroboration_signal_name") or "").strip().lower()
+                )
+                primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
+                house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
                 observed = int(cfg.get("episodes_observed", 0))
-                parts = [f"Assist {room_id}"]
-                if humidity_entities:
-                    parts.append(f"hum:{len(humidity_entities)}")
-                if temperature_entities:
-                    parts.append(f"temp:{len(temperature_entities)}")
+                if reaction_type == "room_cooling_assist":
+                    parts = [f"Raffrescamento {room_id}"]
+                elif reaction_type == "room_air_quality_assist":
+                    parts = [f"Aria {room_id}"]
+                else:
+                    parts = [f"Assist {room_id}"]
+                if primary_signal_name:
+                    signal_bits = [primary_signal_name]
+                    if corroboration_signal_name:
+                        signal_bits.append(corroboration_signal_name)
+                    parts.append(" + ".join(signal_bits))
+                if primary_trigger_mode:
+                    parts.append(primary_trigger_mode)
+                if house_state_filter:
+                    parts.append(f"stato:{house_state_filter}")
                 if observed > 0:
                     parts.append(f"{observed} episodi")
                 return " — ".join(parts)
