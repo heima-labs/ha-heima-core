@@ -3727,18 +3727,30 @@ async def test_proposal_configure_action_rejects_redacted_payload_without_accept
 async def test_reactions_edit_form_can_disable_configured_reaction():
     flow = _flow(
         {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "area_id": "living"},
+            ],
             "reactions": {
                 "configured": {
                     "r1": {
                         "reaction_class": "LightingScheduleReaction",
                         "reaction_type": "lighting_scene_schedule",
                         "enabled": True,
-                        "steps": [{"service": "scene.turn_on", "target": "scene.relax"}],
-                        "pre_condition_min": 20,
+                        "room_id": "living",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.living_main",
+                                "action": "on",
+                                "brightness": 190,
+                                "color_temp_kelvin": 2850,
+                            }
+                        ],
                     }
                 },
                 "labels": {"r1": "Living lights"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -3746,8 +3758,12 @@ async def test_reactions_edit_form_can_disable_configured_reaction():
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": False,
-            "action_entities": ["scene.relax"],
-            "pre_condition_min": 15,
+            "weekday": "0",
+            "scheduled_time": "20:00",
+            "light_entities": ["light.living_main"],
+            "action": "on",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
             "delete_reaction": False,
         }
     )
@@ -3756,7 +3772,7 @@ async def test_reactions_edit_form_can_disable_configured_reaction():
     assert result["step_id"] == "init"
     stored = flow.options["reactions"]["configured"]["r1"]
     assert stored["enabled"] is False
-    assert stored["pre_condition_min"] == 15
+    assert stored["scheduled_min"] == 1200
 
 
 @pytest.mark.asyncio
@@ -4502,6 +4518,221 @@ async def test_room_signal_assist_create_and_edit_forms_share_common_fields():
     assert "enabled" in edit_keys
     assert "delete_reaction" not in create_keys
     assert "delete_reaction" in edit_keys
+
+
+@pytest.mark.asyncio
+async def test_room_cooling_assist_edit_uses_signal_editor_fields():
+    flow = _flow_with_rooms(
+        {
+            "configured": {
+                "r1": {
+                    "reaction_type": "room_cooling_assist",
+                    "room_id": "studio",
+                    "primary_signal_name": "room_temperature",
+                    "primary_trigger_mode": "burst",
+                    "primary_signal_entities": ["sensor.studio_temperature"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.studio_fan",
+                            "action": "switch.turn_on",
+                        }
+                    ],
+                    "enabled": True,
+                }
+            },
+            "labels": {"r1": "Studio cooling assist"},
+        }
+    )
+
+    flow._editing_reaction_id = "r1"
+    result = await flow.async_step_reactions_edit_form()
+
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_name" in schema_keys
+    assert "primary_trigger_mode" in schema_keys
+    assert "action_entities" in schema_keys
+    assert "pre_condition_min" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_lighting_schedule_edit_uses_real_contract_and_updates_schedule():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "lighting_scene_schedule",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 0,
+                        "scheduled_min": 1200,
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_main",
+                                "action": "on",
+                                "brightness": 190,
+                                "color_temp_kelvin": 2850,
+                            }
+                        ],
+                    }
+                },
+                "labels": {"r1": "Studio schedule"},
+            },
+        }
+    )
+
+    flow._editing_reaction_id = "r1"
+    result = await flow.async_step_reactions_edit_form()
+
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert {"weekday", "scheduled_time", "light_entities", "action"} <= schema_keys
+    assert "pre_condition_min" not in schema_keys
+    assert "action_entities" not in schema_keys
+
+    saved = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "weekday": "2",
+            "scheduled_time": "21:30",
+            "light_entities": ["light.studio_main", "light.studio_spot"],
+            "action": "off",
+            "brightness": 190,
+            "color_temp_kelvin": 2850,
+            "delete_reaction": False,
+        }
+    )
+
+    assert saved["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["weekday"] == 2
+    assert stored["scheduled_min"] == 1290
+    assert len(stored["entity_steps"]) == 2
+    assert all(step["action"] == "off" for step in stored["entity_steps"])
+
+
+@pytest.mark.asyncio
+async def test_room_vacancy_lighting_off_edit_uses_delay_field_and_updates_delay():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "room_vacancy_lighting_off",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "vacancy_delay_s": 420,
+                        "entity_steps": [
+                            {"entity_id": "light.studio_main", "action": "off"},
+                        ],
+                    }
+                },
+                "labels": {"r1": "Spegni studio dopo 7m"},
+            },
+        }
+    )
+
+    flow._editing_reaction_id = "r1"
+    result = await flow.async_step_reactions_edit_form()
+
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "vacancy_delay_min" in schema_keys
+    assert "light_entities" in schema_keys
+    assert "pre_condition_min" not in schema_keys
+    assert "action_entities" not in schema_keys
+
+    saved = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "light_entities": ["light.studio_main", "light.studio_spot"],
+            "vacancy_delay_min": 11,
+            "delete_reaction": False,
+        }
+    )
+
+    assert saved["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["vacancy_delay_s"] == 660
+    assert [step["entity_id"] for step in stored["entity_steps"]] == [
+        "light.studio_main",
+        "light.studio_spot",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_vacation_presence_simulation_edit_uses_real_contract_fields():
+    flow = _flow(
+        {
+            "rooms": [
+                {"room_id": "living", "display_name": "Living", "area_id": "living"},
+                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
+            ],
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "allowed_rooms": ["living"],
+                        "allowed_entities": ["light.living_main"],
+                        "requires_dark_outside": True,
+                        "simulation_aggressiveness": "medium",
+                        "min_jitter_override_min": 5,
+                        "max_jitter_override_min": 15,
+                        "max_events_per_evening_override": 4,
+                        "latest_end_time_override": "23:15",
+                        "skip_if_presence_detected": True,
+                        "dynamic_policy": True,
+                        "source_profile_kind": "accepted_lighting_reactions",
+                    }
+                },
+                "labels": {"r1": "Vacation presence simulation"},
+            },
+        }
+    )
+
+    flow._editing_reaction_id = "r1"
+    result = await flow.async_step_reactions_edit_form()
+
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert {
+        "allowed_rooms",
+        "allowed_entities",
+        "requires_dark_outside",
+        "simulation_aggressiveness",
+        "latest_end_time_override",
+    } <= schema_keys
+    assert "pre_condition_min" not in schema_keys
+    assert "action_entities" not in schema_keys
+
+    saved = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "allowed_rooms": ["living", "studio"],
+            "allowed_entities": ["light.living_main", "light.studio_main"],
+            "requires_dark_outside": False,
+            "simulation_aggressiveness": "high",
+            "min_jitter_override_min": 3,
+            "max_jitter_override_min": 9,
+            "max_events_per_evening_override": 5,
+            "latest_end_time_override": "22:45",
+            "skip_if_presence_detected": False,
+            "delete_reaction": False,
+        }
+    )
+
+    assert saved["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["allowed_rooms"] == ["living", "studio"]
+    assert stored["requires_dark_outside"] is False
+    assert stored["simulation_aggressiveness"] == "high"
+    assert stored["latest_end_time_override"] == "22:45"
+    assert stored["skip_if_presence_detected"] is False
 
 
 @pytest.mark.asyncio

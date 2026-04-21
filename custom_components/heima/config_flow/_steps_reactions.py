@@ -28,7 +28,7 @@ from ..runtime.reactions import (
     resolve_reaction_type,
     validate_contextual_lighting_contract,
 )
-from ._common import _entity_selector, _multiline_text_selector
+from ._common import _entity_selector, _multiline_text_selector, _number_box_selector
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
@@ -147,11 +147,13 @@ class _ReactionsStepsMixin:
                 template_title=template.title,
                 template_description=template.description,
             )
-        current_input, resolved, errors = (
-            self._normalize_admin_authored_lighting_schedule_submission(
-                user_input=user_input,
-                defaults=defaults,
-            )
+        current_input, resolved, errors = self._normalize_lighting_schedule_editor_submission(
+            user_input=user_input,
+            defaults=defaults,
+            room_id="",
+            include_room_id=True,
+            include_enabled=False,
+            include_delete=False,
         )
         if errors:
             return self._show_admin_authored_lighting_schedule_form(
@@ -226,32 +228,28 @@ class _ReactionsStepsMixin:
         if user_input is None:
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
-                data_schema=self._admin_authored_security_presence_simulation_schema(defaults),
+                data_schema=self._vacation_presence_simulation_editor_schema(
+                    defaults,
+                    include_delete=False,
+                ),
                 description_placeholders={
                     "template_title": template.title,
                     "template_description": template.description,
                 },
             )
-
-        min_jitter = self._coerce_optional_int(user_input.get("min_jitter_override_min"))
-        max_jitter = self._coerce_optional_int(user_input.get("max_jitter_override_min"))
-        max_events = self._coerce_optional_int(user_input.get("max_events_per_evening_override"))
-        latest_end = str(user_input.get("latest_end_time_override") or "").strip()
-        if latest_end and _parse_hhmm_to_min(latest_end) is None:
-            errors["latest_end_time_override"] = "invalid_hhmm"
-        if min_jitter is not None and min_jitter < 0:
-            errors["min_jitter_override_min"] = "invalid_number"
-        if max_jitter is not None and max_jitter < 0:
-            errors["max_jitter_override_min"] = "invalid_number"
-        if min_jitter is not None and max_jitter is not None and min_jitter > max_jitter:
-            errors["max_jitter_override_min"] = "invalid_number"
-        if max_events is not None and max_events <= 0:
-            errors["max_events_per_evening_override"] = "invalid_number"
+        current_input, resolved, errors = self._normalize_security_presence_simulation_submission(
+            user_input=user_input,
+            defaults=defaults,
+            include_delete=False,
+        )
 
         if errors:
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
-                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
+                data_schema=self._vacation_presence_simulation_editor_schema(
+                    current_input,
+                    include_delete=False,
+                ),
                 errors=errors,
                 description_placeholders={
                     "template_title": template.title,
@@ -260,21 +258,24 @@ class _ReactionsStepsMixin:
             )
 
         proposal = self._build_admin_authored_security_presence_simulation_proposal(
-            enabled=bool(user_input.get("enabled", True)),
-            allowed_rooms=self._normalize_multi_value(user_input.get("allowed_rooms")),
-            allowed_entities=self._normalize_multi_value(user_input.get("allowed_entities")),
-            requires_dark_outside=bool(user_input.get("requires_dark_outside", True)),
-            simulation_aggressiveness=str(user_input.get("simulation_aggressiveness") or "medium"),
-            min_jitter_override_min=min_jitter,
-            max_jitter_override_min=max_jitter,
-            max_events_per_evening_override=max_events,
-            latest_end_time_override=latest_end or None,
-            skip_if_presence_detected=bool(user_input.get("skip_if_presence_detected", True)),
+            enabled=bool(resolved["enabled"]),
+            allowed_rooms=list(resolved["allowed_rooms"]),
+            allowed_entities=list(resolved["allowed_entities"]),
+            requires_dark_outside=bool(resolved["requires_dark_outside"]),
+            simulation_aggressiveness=str(resolved["simulation_aggressiveness"]),
+            min_jitter_override_min=resolved["min_jitter_override_min"],
+            max_jitter_override_min=resolved["max_jitter_override_min"],
+            max_events_per_evening_override=resolved["max_events_per_evening_override"],
+            latest_end_time_override=resolved["latest_end_time_override"],
+            skip_if_presence_detected=bool(resolved["skip_if_presence_detected"]),
         )
         if self._admin_authored_identity_conflicts(proposal):
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
-                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
+                data_schema=self._vacation_presence_simulation_editor_schema(
+                    current_input,
+                    include_delete=False,
+                ),
                 errors={"base": "duplicate"},
                 description_placeholders={
                     "template_title": template.title,
@@ -285,7 +286,10 @@ class _ReactionsStepsMixin:
         if self._has_redacted_payload(proposal.suggested_reaction_config):
             return self.async_show_form(
                 step_id="admin_authored_security_presence_simulation",
-                data_schema=self._admin_authored_security_presence_simulation_schema(user_input),
+                data_schema=self._vacation_presence_simulation_editor_schema(
+                    current_input,
+                    include_delete=False,
+                ),
                 errors={"base": "redacted_payload"},
                 description_placeholders={
                     "template_title": template.title,
@@ -522,7 +526,7 @@ class _ReactionsStepsMixin:
                 },
             )
 
-        room_id = str(user_input.get("room_id") or "").strip()
+        room_id = str(user_input.get("room_id") or defaults.get("room_id") or "").strip()
         primary_signal_name = str(user_input.get("primary_signal_name") or "room_lux").strip()
         primary_bucket = str(user_input.get("primary_bucket") or "").strip()
         primary_bucket_match_mode = str(
@@ -702,9 +706,15 @@ class _ReactionsStepsMixin:
                 template_title=template.title,
                 template_description=template.description,
             )
-        current_input, resolved, errors = self._normalize_admin_authored_room_vacancy_submission(
-            user_input=user_input,
-            defaults=defaults,
+        current_input, resolved, errors = (
+            self._normalize_room_vacancy_lighting_off_editor_submission(
+                user_input=user_input,
+                defaults=defaults,
+                room_id="",
+                include_room_id=True,
+                include_enabled=False,
+                include_delete=False,
+            )
         )
         if errors:
             return self._show_admin_authored_room_vacancy_lighting_off_form(
@@ -844,6 +854,46 @@ class _ReactionsStepsMixin:
                 user_input=user_input,
             )
 
+        if reaction_type == "room_cooling_assist":
+            return await self._async_step_reactions_edit_room_signal_assist(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
+        if reaction_type == "lighting_scene_schedule":
+            return await self._async_step_reactions_edit_lighting_scene_schedule(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
+        if reaction_type == "room_vacancy_lighting_off":
+            return await self._async_step_reactions_edit_room_vacancy_lighting_off(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
+        if reaction_type == "vacation_presence_simulation":
+            return await self._async_step_reactions_edit_vacation_presence_simulation(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
         if user_input is None:
             current_steps = cfg.get("steps", [])
             current_entities = [
@@ -856,8 +906,8 @@ class _ReactionsStepsMixin:
                     vol.Optional("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
-                    vol.Optional("pre_condition_min", default=current_pre): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=120)
+                    vol.Optional("pre_condition_min", default=current_pre): _number_box_selector(
+                        min_value=1, max_value=120, step=1
                     ),
                     vol.Optional("delete_reaction", default=False): bool,
                 }
@@ -890,6 +940,272 @@ class _ReactionsStepsMixin:
         cfg["steps"] = steps
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_lighting_scene_schedule(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a lighting scene schedule using its real config contract."""
+        room_id = str(cfg.get("room_id") or "").strip()
+        current_steps = [
+            step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
+        ]
+        current_entities = [
+            str(step.get("entity_id") or "").strip()
+            for step in current_steps
+            if str(step.get("entity_id") or "").strip()
+        ]
+        first_step = current_steps[0] if current_steps else {}
+        scheduled_min = int(cfg.get("scheduled_min") or 0)
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "weekday": str(cfg.get("weekday") or "0"),
+            "scheduled_time": f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}",
+            "light_entities": current_entities,
+            "action": str(first_step.get("action") or "on").strip() or "on",
+            "brightness": int(first_step.get("brightness") or 190),
+            "color_temp_kelvin": int(first_step.get("color_temp_kelvin") or 2850),
+            "delete_reaction": False,
+        }
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        room_id_placeholder = room_id or "-"
+
+        if user_input is None:
+            return self._show_lighting_schedule_editor(
+                step_id="reactions_edit_form",
+                defaults=defaults,
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        current_input, resolved, errors = self._normalize_lighting_schedule_editor_submission(
+            user_input=user_input,
+            defaults=defaults,
+            room_id=room_id,
+            include_room_id=False,
+            include_enabled=True,
+            include_delete=True,
+        )
+        if errors:
+            return self._show_lighting_schedule_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors=errors,
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        cfg["enabled"] = bool(resolved["enabled"])
+        cfg["weekday"] = int(resolved["weekday"])
+        cfg["scheduled_min"] = int(resolved["scheduled_min"])
+        cfg["entity_steps"] = [
+            {
+                "entity_id": entity_id,
+                "action": str(resolved["action"]),
+                "brightness": (resolved["brightness"] if str(resolved["action"]) == "on" else None),
+                "color_temp_kelvin": (
+                    resolved["color_temp_kelvin"] if str(resolved["action"]) == "on" else None
+                ),
+                "rgb_color": None,
+            }
+            for entity_id in list(resolved["light_entities"])
+        ]
+        if self._has_redacted_payload(cfg):
+            return self._show_lighting_schedule_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors={"base": "redacted_payload"},
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_room_vacancy_lighting_off(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a vacancy lights-off reaction using its real config contract."""
+        room_id = str(cfg.get("room_id") or "").strip()
+        current_steps = [
+            step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
+        ]
+        current_entities = [
+            str(step.get("entity_id") or "").strip()
+            for step in current_steps
+            if str(step.get("entity_id") or "").strip()
+        ]
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "light_entities": current_entities,
+            "vacancy_delay_min": max(1, int(cfg.get("vacancy_delay_s") or 0) // 60),
+            "delete_reaction": False,
+        }
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        room_id_placeholder = room_id or "-"
+
+        if user_input is None:
+            return self._show_room_vacancy_lighting_off_editor(
+                step_id="reactions_edit_form",
+                defaults=defaults,
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        current_input, resolved, errors = (
+            self._normalize_room_vacancy_lighting_off_editor_submission(
+                user_input=user_input,
+                defaults=defaults,
+                room_id=room_id,
+                include_room_id=False,
+                include_enabled=True,
+                include_delete=True,
+            )
+        )
+        if errors:
+            return self._show_room_vacancy_lighting_off_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors=errors,
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        cfg["enabled"] = bool(resolved["enabled"])
+        cfg["vacancy_delay_s"] = int(resolved["vacancy_delay_min"]) * 60
+        cfg["entity_steps"] = [
+            {"entity_id": entity_id, "action": "off", "brightness": None, "color_temp_kelvin": None}
+            for entity_id in list(resolved["light_entities"])
+        ]
+        if self._has_redacted_payload(cfg):
+            return self._show_room_vacancy_lighting_off_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors={"base": "redacted_payload"},
+                reaction_description=label,
+                room_id=room_id_placeholder,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_vacation_presence_simulation(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a vacation presence simulation policy using its real contract."""
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "allowed_rooms": list(cfg.get("allowed_rooms", [])),
+            "allowed_entities": list(cfg.get("allowed_entities", [])),
+            "requires_dark_outside": bool(cfg.get("requires_dark_outside", True)),
+            "simulation_aggressiveness": str(
+                cfg.get("simulation_aggressiveness", "medium") or "medium"
+            ),
+            "min_jitter_override_min": cfg.get("min_jitter_override_min"),
+            "max_jitter_override_min": cfg.get("max_jitter_override_min"),
+            "max_events_per_evening_override": cfg.get("max_events_per_evening_override"),
+            "latest_end_time_override": str(cfg.get("latest_end_time_override", "") or ""),
+            "skip_if_presence_detected": bool(cfg.get("skip_if_presence_detected", True)),
+            "delete_reaction": False,
+        }
+
+        if user_input is None:
+            return self._show_vacation_presence_simulation_editor(
+                step_id="reactions_edit_form",
+                defaults=defaults,
+                reaction_description=label,
+                include_delete=True,
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        current_input, resolved, errors = self._normalize_security_presence_simulation_submission(
+            user_input=user_input,
+            defaults=defaults,
+            include_delete=True,
+        )
+        if errors:
+            return self._show_vacation_presence_simulation_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors=errors,
+                reaction_description=label,
+                include_delete=True,
+            )
+
+        cfg["enabled"] = bool(resolved["enabled"])
+        cfg["allowed_rooms"] = list(resolved["allowed_rooms"])
+        cfg["allowed_entities"] = list(resolved["allowed_entities"])
+        cfg["requires_dark_outside"] = bool(resolved["requires_dark_outside"])
+        cfg["simulation_aggressiveness"] = str(resolved["simulation_aggressiveness"])
+        cfg["min_jitter_override_min"] = resolved["min_jitter_override_min"]
+        cfg["max_jitter_override_min"] = resolved["max_jitter_override_min"]
+        cfg["max_events_per_evening_override"] = resolved["max_events_per_evening_override"]
+        cfg["latest_end_time_override"] = resolved["latest_end_time_override"]
+        cfg["skip_if_presence_detected"] = bool(resolved["skip_if_presence_detected"])
+        if self._has_redacted_payload(cfg):
+            return self._show_vacation_presence_simulation_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors={"base": "redacted_payload"},
+                reaction_description=label,
+                include_delete=True,
+            )
+
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
@@ -1448,8 +1764,8 @@ class _ReactionsStepsMixin:
                     vol.Optional("action_entities"): _entity_selector(
                         ["scene", "script"], multiple=True
                     ),
-                    vol.Optional("pre_condition_min", default=20): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=120)
+                    vol.Optional("pre_condition_min", default=20): _number_box_selector(
+                        min_value=1, max_value=120, step=1
                     ),
                 }
             )
@@ -1486,9 +1802,9 @@ class _ReactionsStepsMixin:
                             vol.Optional("action_entities"): _entity_selector(
                                 ["scene", "script"], multiple=True
                             ),
-                            vol.Optional("pre_condition_min", default=pre_condition_min): vol.All(
-                                vol.Coerce(int), vol.Range(min=1, max=120)
-                            ),
+                            vol.Optional(
+                                "pre_condition_min", default=pre_condition_min
+                            ): _number_box_selector(min_value=1, max_value=120, step=1),
                         }
                     ),
                     errors={"base": "redacted_payload"},
@@ -1526,7 +1842,7 @@ class _ReactionsStepsMixin:
                                 ),
                                 vol.Optional(
                                     "pre_condition_min", default=pre_condition_min
-                                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
+                                ): _number_box_selector(min_value=1, max_value=120, step=1),
                             }
                         ),
                         errors={"base": "redacted_payload"},
@@ -1695,78 +2011,19 @@ class _ReactionsStepsMixin:
     def _admin_authored_lighting_schedule_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
-        defaults = defaults or {}
-        room_options = {room_id: room_id for room_id in self._room_ids()}
-        action_options = self._admin_authored_lighting_action_options()
-        return self._with_suggested(
-            vol.Schema(
-                {
-                    vol.Required("room_id"): vol.In(room_options),
-                    vol.Required("weekday"): vol.In(self._weekday_options()),
-                    vol.Required("scheduled_time"): str,
-                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
-                    vol.Required("action", default="on"): vol.In(action_options),
-                    vol.Optional("brightness", default=190): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=255)
-                    ),
-                    vol.Optional("color_temp_kelvin", default=2850): vol.All(
-                        vol.Coerce(int), vol.Range(min=1500, max=9000)
-                    ),
-                }
-            ),
+        return self._lighting_schedule_editor_schema(
             defaults,
+            include_room_id=True,
+            include_enabled=False,
+            include_delete=False,
         )
 
     def _admin_authored_security_presence_simulation_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
-        defaults = defaults or {}
-        room_options = {room_id: room_id for room_id in self._room_ids()}
-        aggressiveness = (
-            {"low": "Bassa", "medium": "Media", "high": "Alta"}
-            if self._flow_language().startswith("it")
-            else {"low": "Low", "medium": "Medium", "high": "High"}
-        )
-        return self._with_suggested(
-            vol.Schema(
-                {
-                    vol.Required("enabled", default=bool(defaults.get("enabled", True))): bool,
-                    vol.Optional(
-                        "allowed_rooms",
-                        default=defaults.get("allowed_rooms", []),
-                    ): cv.multi_select(room_options),
-                    vol.Optional("allowed_entities"): _entity_selector(["light"], multiple=True),
-                    vol.Required(
-                        "requires_dark_outside",
-                        default=bool(defaults.get("requires_dark_outside", True)),
-                    ): bool,
-                    vol.Required(
-                        "simulation_aggressiveness",
-                        default=str(
-                            defaults.get("simulation_aggressiveness", "medium") or "medium"
-                        ),
-                    ): vol.In(aggressiveness),
-                    vol.Optional(
-                        "min_jitter_override_min", default=defaults.get("min_jitter_override_min")
-                    ): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional(
-                        "max_jitter_override_min", default=defaults.get("max_jitter_override_min")
-                    ): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional(
-                        "max_events_per_evening_override",
-                        default=defaults.get("max_events_per_evening_override"),
-                    ): vol.Any(None, vol.Coerce(int)),
-                    vol.Optional(
-                        "latest_end_time_override",
-                        default=str(defaults.get("latest_end_time_override", "") or ""),
-                    ): str,
-                    vol.Required(
-                        "skip_if_presence_detected",
-                        default=bool(defaults.get("skip_if_presence_detected", True)),
-                    ): bool,
-                }
-            ),
+        return self._vacation_presence_simulation_editor_schema(
             defaults,
+            include_delete=False,
         )
 
     def _admin_authored_lighting_action_options(self) -> dict[str, str]:
@@ -2004,6 +2261,32 @@ class _ReactionsStepsMixin:
             },
         )
 
+    def _show_lighting_schedule_editor(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        reaction_description: str = "",
+        room_id: str = "",
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._lighting_schedule_editor_schema(
+                defaults,
+                include_room_id=False,
+                include_enabled=include_enabled,
+                include_delete=include_delete,
+            ),
+            errors=errors,
+            description_placeholders={
+                "reaction_description": reaction_description,
+                "room_id": room_id,
+            },
+        )
+
     def _show_admin_authored_room_vacancy_lighting_off_form(
         self,
         *,
@@ -2021,6 +2304,51 @@ class _ReactionsStepsMixin:
                 "template_title": template_title,
                 "template_description": template_description,
             },
+        )
+
+    def _show_room_vacancy_lighting_off_editor(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        reaction_description: str = "",
+        room_id: str = "",
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._room_vacancy_lighting_off_editor_schema(
+                defaults,
+                include_room_id=False,
+                include_enabled=include_enabled,
+                include_delete=include_delete,
+            ),
+            errors=errors,
+            description_placeholders={
+                "reaction_description": reaction_description,
+                "room_id": room_id,
+            },
+        )
+
+    def _show_vacation_presence_simulation_editor(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        reaction_description: str = "",
+        include_delete: bool,
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._vacation_presence_simulation_editor_schema(
+                defaults,
+                include_delete=include_delete,
+            ),
+            errors=errors,
+            description_placeholders={"reaction_description": reaction_description},
         )
 
     def _normalize_room_darkness_lighting_editor_submission(
@@ -2268,7 +2596,7 @@ class _ReactionsStepsMixin:
         defaults: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
         errors: dict[str, str] = {}
-        room_id = str(user_input.get("room_id") or "").strip()
+        room_id = str(user_input.get("room_id") or defaults.get("room_id") or "").strip()
         action = str(user_input.get("action") or "on").strip()
         light_entities = self._normalize_multi_value(user_input.get("light_entities"))
         weekday_raw = user_input.get("weekday")
@@ -2331,6 +2659,37 @@ class _ReactionsStepsMixin:
         }
         return current_input, resolved, errors
 
+    def _normalize_lighting_schedule_editor_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+        room_id: str,
+        include_room_id: bool,
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        resolved_room_id = (
+            str(user_input.get("room_id") or "").strip() if include_room_id else room_id
+        )
+        current_input, resolved, errors = (
+            self._normalize_admin_authored_lighting_schedule_submission(
+                user_input=user_input,
+                defaults={"room_id": resolved_room_id or room_id, **defaults},
+            )
+        )
+        if not include_room_id:
+            current_input.pop("room_id", None)
+        if include_enabled:
+            current_input["enabled"] = bool(
+                user_input.get("enabled", defaults.get("enabled", True))
+            )
+        if include_delete:
+            current_input["delete_reaction"] = False
+        resolved["room_id"] = resolved_room_id or room_id
+        resolved["enabled"] = bool(current_input.get("enabled", True))
+        return current_input, resolved, errors
+
     def _normalize_admin_authored_room_vacancy_submission(
         self,
         *,
@@ -2338,7 +2697,7 @@ class _ReactionsStepsMixin:
         defaults: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
         errors: dict[str, str] = {}
-        room_id = str(user_input.get("room_id") or "").strip()
+        room_id = str(user_input.get("room_id") or defaults.get("room_id") or "").strip()
         light_entities = self._normalize_multi_value(user_input.get("light_entities"))
 
         if not room_id:
@@ -2366,23 +2725,206 @@ class _ReactionsStepsMixin:
         }
         return current_input, resolved, errors
 
+    def _normalize_room_vacancy_lighting_off_editor_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+        room_id: str,
+        include_room_id: bool,
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        resolved_room_id = (
+            str(user_input.get("room_id") or "").strip() if include_room_id else room_id
+        )
+        current_input, resolved, errors = self._normalize_admin_authored_room_vacancy_submission(
+            user_input=user_input,
+            defaults={"room_id": resolved_room_id or room_id, **defaults},
+        )
+        if not include_room_id:
+            current_input.pop("room_id", None)
+        if include_enabled:
+            current_input["enabled"] = bool(
+                user_input.get("enabled", defaults.get("enabled", True))
+            )
+        if include_delete:
+            current_input["delete_reaction"] = False
+        resolved["room_id"] = resolved_room_id or room_id
+        resolved["enabled"] = bool(current_input.get("enabled", True))
+        return current_input, resolved, errors
+
+    def _normalize_security_presence_simulation_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+        include_delete: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        min_jitter = self._coerce_optional_int(user_input.get("min_jitter_override_min"))
+        max_jitter = self._coerce_optional_int(user_input.get("max_jitter_override_min"))
+        max_events = self._coerce_optional_int(user_input.get("max_events_per_evening_override"))
+        latest_end = str(user_input.get("latest_end_time_override") or "").strip()
+        errors: dict[str, str] = {}
+        if latest_end and _parse_hhmm_to_min(latest_end) is None:
+            errors["latest_end_time_override"] = "invalid_hhmm"
+        if min_jitter is not None and min_jitter < 0:
+            errors["min_jitter_override_min"] = "invalid_number"
+        if max_jitter is not None and max_jitter < 0:
+            errors["max_jitter_override_min"] = "invalid_number"
+        if min_jitter is not None and max_jitter is not None and min_jitter > max_jitter:
+            errors["max_jitter_override_min"] = "invalid_number"
+        if max_events is not None and max_events <= 0:
+            errors["max_events_per_evening_override"] = "invalid_number"
+
+        current_input = {
+            "enabled": bool(user_input.get("enabled", defaults.get("enabled", True))),
+            "allowed_rooms": self._normalize_multi_value(
+                user_input.get("allowed_rooms", defaults.get("allowed_rooms", []))
+            ),
+            "allowed_entities": self._normalize_multi_value(
+                user_input.get("allowed_entities", defaults.get("allowed_entities", []))
+            ),
+            "requires_dark_outside": bool(
+                user_input.get("requires_dark_outside", defaults.get("requires_dark_outside", True))
+            ),
+            "simulation_aggressiveness": str(
+                user_input.get(
+                    "simulation_aggressiveness",
+                    defaults.get("simulation_aggressiveness", "medium"),
+                )
+                or "medium"
+            ),
+            "min_jitter_override_min": min_jitter,
+            "max_jitter_override_min": max_jitter,
+            "max_events_per_evening_override": max_events,
+            "latest_end_time_override": latest_end,
+            "skip_if_presence_detected": bool(
+                user_input.get(
+                    "skip_if_presence_detected",
+                    defaults.get("skip_if_presence_detected", True),
+                )
+            ),
+        }
+        if include_delete:
+            current_input["delete_reaction"] = False
+
+        resolved = dict(current_input)
+        return current_input, resolved, errors
+
     def _admin_authored_room_vacancy_lighting_off_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
+        return self._room_vacancy_lighting_off_editor_schema(
+            defaults,
+            include_room_id=True,
+            include_enabled=False,
+            include_delete=False,
+        )
+
+    def _lighting_schedule_editor_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_room_id: bool,
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> vol.Schema:
         defaults = defaults or {}
         room_options = {room_id: room_id for room_id in self._room_ids()}
-        return self._with_suggested(
-            vol.Schema(
-                {
-                    vol.Required("room_id"): vol.In(room_options),
-                    vol.Required("light_entities"): _entity_selector(["light"], multiple=True),
-                    vol.Required("vacancy_delay_min", default=5): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=180)
-                    ),
-                }
-            ),
-            defaults,
+        action_options = self._admin_authored_lighting_action_options()
+        schema_dict: dict[Any, Any] = {}
+        if include_room_id:
+            schema_dict[vol.Required("room_id")] = vol.In(room_options)
+        if include_enabled:
+            schema_dict[vol.Optional("enabled", default=bool(defaults.get("enabled", True)))] = bool
+        schema_dict[vol.Required("weekday")] = vol.In(self._weekday_options())
+        schema_dict[vol.Required("scheduled_time")] = str
+        schema_dict[vol.Required("light_entities")] = _entity_selector(["light"], multiple=True)
+        schema_dict[vol.Required("action", default="on")] = vol.In(action_options)
+        schema_dict[vol.Optional("brightness", default=190)] = vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=255)
         )
+        schema_dict[vol.Optional("color_temp_kelvin", default=2850)] = vol.All(
+            vol.Coerce(int), vol.Range(min=1500, max=9000)
+        )
+        if include_delete:
+            schema_dict[vol.Optional("delete_reaction", default=False)] = bool
+        return self._with_suggested(vol.Schema(schema_dict), defaults)
+
+    def _room_vacancy_lighting_off_editor_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_room_id: bool,
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        schema_dict: dict[Any, Any] = {}
+        if include_room_id:
+            schema_dict[vol.Required("room_id")] = vol.In(room_options)
+        if include_enabled:
+            schema_dict[vol.Optional("enabled", default=bool(defaults.get("enabled", True)))] = bool
+        schema_dict[vol.Required("light_entities")] = _entity_selector(["light"], multiple=True)
+        schema_dict[vol.Required("vacancy_delay_min", default=5)] = _number_box_selector(
+            min_value=1, max_value=180, step=1
+        )
+        if include_delete:
+            schema_dict[vol.Optional("delete_reaction", default=False)] = bool
+        return self._with_suggested(vol.Schema(schema_dict), defaults)
+
+    def _vacation_presence_simulation_editor_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_delete: bool,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        room_options = {room_id: room_id for room_id in self._room_ids()}
+        aggressiveness = (
+            {"low": "Bassa", "medium": "Media", "high": "Alta"}
+            if self._flow_language().startswith("it")
+            else {"low": "Low", "medium": "Medium", "high": "High"}
+        )
+        schema_dict: dict[Any, Any] = {
+            vol.Required("enabled", default=bool(defaults.get("enabled", True))): bool,
+            vol.Optional(
+                "allowed_rooms",
+                default=defaults.get("allowed_rooms", []),
+            ): cv.multi_select(room_options),
+            vol.Optional("allowed_entities"): _entity_selector(["light"], multiple=True),
+            vol.Required(
+                "requires_dark_outside",
+                default=bool(defaults.get("requires_dark_outside", True)),
+            ): bool,
+            vol.Required(
+                "simulation_aggressiveness",
+                default=str(defaults.get("simulation_aggressiveness", "medium") or "medium"),
+            ): vol.In(aggressiveness),
+            vol.Optional(
+                "min_jitter_override_min", default=defaults.get("min_jitter_override_min")
+            ): vol.Any(None, _number_box_selector(min_value=0, step=1)),
+            vol.Optional(
+                "max_jitter_override_min", default=defaults.get("max_jitter_override_min")
+            ): vol.Any(None, _number_box_selector(min_value=0, step=1)),
+            vol.Optional(
+                "max_events_per_evening_override",
+                default=defaults.get("max_events_per_evening_override"),
+            ): vol.Any(None, _number_box_selector(min_value=1, step=1)),
+            vol.Optional(
+                "latest_end_time_override",
+                default=str(defaults.get("latest_end_time_override", "") or ""),
+            ): str,
+            vol.Required(
+                "skip_if_presence_detected",
+                default=bool(defaults.get("skip_if_presence_detected", True)),
+            ): bool,
+        }
+        if include_delete:
+            schema_dict[vol.Optional("delete_reaction", default=False)] = bool
+        return self._with_suggested(vol.Schema(schema_dict), defaults)
 
     def _reactions_edit_room_lighting_assist_schema(
         self, defaults: dict[str, Any] | None = None
