@@ -1,558 +1,604 @@
 {
-    "config": {
-        "abort": {
-            "admin_required": "Solo un amministratore di Home Assistant può configurare Heima."
-        },
-        "step": {
-            "user": {
-                "title": "Heima",
-                "description": "Configurazione iniziale di Heima. Le opzioni avanzate sono disponibili nella sezione Opzioni.",
-                "data": {"engine_enabled": "Abilita motore"},
-            }
-        },
+  "config": {
+    "abort": {
+      "admin_required": "Solo un amministratore di Home Assistant può configurare Heima."
     },
-    "options": {
-        "abort": {
-            "admin_required": "Solo un amministratore di Home Assistant può configurare Heima."
-        },
-        "step": {
-            "init": {
-                "title": "Configurazione Heima",
-                "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nAssist stanza: {composite_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in revisione: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
-                "menu_options": {
-                    "general": "Generale",
-                    "people_menu": "Persone",
-                    "rooms_menu": "Stanze",
-                    "lighting_rooms_menu": "Illuminazione",
-                    "heating": "Riscaldamento",
-                    "security": "Sicurezza",
-                    "notifications": "Notifiche",
-                    "calendar": "Calendario",
-                    "learning": "Apprendimento",
-                    "reactions": "Reazioni",
-                    "admin_authored_create": "Crea automazione",
-                    "proposals": "Revisione proposte",
-                    "save": "Salva e chiudi",
-                    "reactions_edit": "Modifica reazione",
-                },
-            },
-            "general": {
-                "title": "Generale",
-                "description": "{delegate_warning}",
-                "data": {
-                    "engine_enabled": "Abilita motore",
-                    "timezone": "Fuso orario",
-                    "language": "Lingua",
-                    "lighting_apply_mode": "Modalità applicazione illuminazione",
-                    "vacation_mode_entity": "Entità modalità vacanza",
-                    "guest_mode_entity": "Entità modalità ospiti",
-                    "sleep_window_entity": "Entità finestra riposo",
-                    "relax_mode_entity": "Entità modalità relax",
-                    "work_window_entity": "Entità finestra lavoro",
-                    "media_active_entities": "Entità media attivi",
-                    "sleep_charging_entities": "Entità dispositivi in carica (rilevamento sonno)",
-                    "workday_entity": "Entità giorno lavorativo",
-                    "sleep_enter_min": "Inizio finestra riposo (min)",
-                    "sleep_exit_min": "Fine finestra riposo (min)",
-                    "work_enter_min": "Inizio finestra lavoro (min)",
-                    "relax_enter_min": "Inizio modalità relax (min)",
-                    "relax_exit_min": "Fine modalità relax (min)",
-                    "sleep_requires_media_off": "Richiede media spenti per rilevare riposo",
-                    "sleep_charging_min_count": "Numero minimo dispositivi in carica per rilevare riposo",
-                },
-                "submit": "OK",
-            },
-            "people_menu": {
-                "title": "Persone",
-                "description": "Configurate: {summary}",
-                "menu_options": {
-                    "people_edit": "Modifica persona",
-                    "people_anonymous": "Presenza anonima",
-                    "people_debug_aliases": "Alias debug",
-                    "people_save": "Salva e chiudi",
-                    "people_next": "Avanti",
-                },
-            },
-            "people_edit": {
-                "title": "Modifica Persona",
-                "data": {"person": "Persona"},
-                "submit": "OK",
-            },
-            "people_edit_form": {
-                "title": "Modifica Persona",
-                "data": {
-                    "slug": "Slug",
-                    "display_name": "Nome visualizzato",
-                    "presence_method": "Metodo rilevamento presenza",
-                    "presence_rule": "Regola presenza",
-                    "person_entity": "Entità persona",
-                    "sources": "Sorgenti",
-                    "required": "Sorgenti obbligatorie",
-                    "arrive_hold_s": "Ritardo conferma arrivo (s)",
-                    "leave_hold_s": "Ritardo conferma uscita (s)",
-                    "enable_override": "Abilita override manuale",
-                },
-                "submit": "OK",
-            },
-            "people_anonymous": {
-                "title": "Presenza Anonima",
-                "data": {
-                    "enabled": "Abilita presenza anonima",
-                    "sources": "Sorgenti",
-                    "required": "Sorgenti obbligatorie",
-                    "anonymous_count_weight": "Peso nel conteggio occupanti",
-                    "arrive_hold_s": "Ritardo conferma arrivo (s)",
-                    "leave_hold_s": "Ritardo conferma uscita (s)",
-                },
-                "submit": "OK",
-            },
-            "people_debug_aliases": {
-                "title": "Alias Debug Persone",
-                "description": "{debug_aliases_help}",
-                "data": {"enabled": "Abilita alias debug", "aliases": "Mappa alias"},
-                "submit": "OK",
-            },
-            "rooms_menu": {
-                "title": "Stanze",
-                "description": "Configurate: {summary}",
-                "menu_options": {
-                    "rooms_add": "Aggiungi stanza",
-                    "rooms_edit": "Modifica stanza",
-                    "rooms_remove": "Rimuovi stanza",
-                    "rooms_import_areas": "Riscansiona Home Assistant",
-                    "rooms_save": "Salva e chiudi",
-                    "rooms_next": "Avanti",
-                },
-            },
-            "rooms_add": {
-                "title": "Aggiungi Stanza",
-                "description": "{signals_help}\nEsempio:\n{signals_example}",
-                "data": {
-                    "room_id": "ID stanza",
-                    "display_name": "Nome visualizzato",
-                    "area_id": "Area HA",
-                    "learning_sources": "Sorgenti apprendimento",
-                    "signals": "Segnali stanza (JSON)",
-                    "occupancy_sources": "Sorgenti occupancy",
-                    "logic": "Logica occupancy",
-                    "on_dwell_s": "Tempo attivazione (s)",
-                    "off_dwell_s": "Tempo disattivazione (s)",
-                    "max_on_s": "Durata massima attiva (s)",
-                },
-                "submit": "OK",
-            },
-            "rooms_edit": {"title": "Modifica Stanza", "data": {"room": "Stanza"}, "submit": "OK"},
-            "rooms_edit_actions": {
-                "title": "Modifica Stanza",
-                "description": "Stanza selezionata: {room_label}",
-                "menu_options": {
-                    "rooms_edit_form": "Dettagli stanza",
-                    "rooms_edit_lighting": "Configura illuminazione stanza",
-                },
-            },
-            "rooms_edit_form": {
-                "title": "Modifica Stanza",
-                "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti apprendimento suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}\n\n{signals_help}\nEsempio:\n{signals_example}",
-                "data": {
-                    "room_id": "ID stanza",
-                    "display_name": "Nome visualizzato",
-                    "area_id": "Area HA",
-                    "learning_sources": "Sorgenti apprendimento",
-                    "signals": "Segnali stanza (JSON)",
-                    "occupancy_sources": "Sorgenti occupancy",
-                    "logic": "Logica occupancy",
-                    "on_dwell_s": "Tempo attivazione (s)",
-                    "off_dwell_s": "Tempo disattivazione (s)",
-                    "max_on_s": "Durata massima attiva (s)",
-                },
-                "submit": "OK",
-            },
-            "rooms_remove": {"title": "Rimuovi Stanza", "data": {"room": "Stanza"}, "submit": "OK"},
-            "rooms_remove_confirm": {
-                "title": "Conferma Rimozione Stanza",
-                "description": "Rimuovere {room_label}? Verrà rimossa anche l'area collegata in Home Assistant.",
-                "data": {"confirm": "Confermo la rimozione"},
-                "submit": "OK",
-            },
-            "lighting_rooms_menu": {
-                "title": "Illuminazione Stanze",
-                "description": "Scene configurate: {summary}",
-                "menu_options": {
-                    "lighting_rooms_edit": "Modifica scene stanza",
-                    "lighting_rooms_save": "Salva e chiudi",
-                    "lighting_rooms_next": "Avanti",
-                },
-            },
-            "lighting_rooms_edit": {
-                "title": "Seleziona Stanza",
-                "data": {"room": "Stanza"},
-                "submit": "OK",
-            },
-            "lighting_rooms_edit_form": {
-                "title": "Scene Stanza",
-                "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nLuci HA rilevate nella stanza: {suggested_lighting}",
-                "data": {
-                    "room_id": "ID stanza",
-                    "scene_evening": "Scena sera",
-                    "scene_relax": "Scena relax",
-                    "scene_night": "Scena notte",
-                    "scene_off": "Scena spenta",
-                    "enable_manual_hold": "Abilita blocco manuale",
-                },
-                "submit": "OK",
-            },
-            "lighting_zones_menu": {
-                "title": "Zone Illuminazione",
-                "menu_options": {
-                    "lighting_zones_add": "Aggiungi zona",
-                    "lighting_zones_edit": "Modifica zona",
-                    "lighting_zones_remove": "Rimuovi zona",
-                    "lighting_zones_save": "Salva e chiudi",
-                    "lighting_zones_next": "Avanti",
-                },
-            },
-            "lighting_zones_add": {
-                "title": "Aggiungi Zona Illuminazione",
-                "data": {
-                    "zone_id": "ID zona",
-                    "display_name": "Nome visualizzato",
-                    "rooms": "Stanze",
-                },
-                "submit": "OK",
-            },
-            "lighting_zones_edit": {
-                "title": "Modifica Zona Illuminazione",
-                "data": {"zone": "Zona"},
-                "submit": "OK",
-            },
-            "lighting_zones_edit_form": {
-                "title": "Modifica Zona Illuminazione",
-                "data": {
-                    "zone_id": "ID zona",
-                    "display_name": "Nome visualizzato",
-                    "rooms": "Stanze",
-                },
-                "submit": "OK",
-            },
-            "lighting_zones_remove": {
-                "title": "Rimuovi Zona Illuminazione",
-                "data": {"zone": "Zona"},
-                "submit": "OK",
-            },
-            "lighting_zones_remove_confirm": {
-                "title": "Conferma Rimozione Zona",
-                "description": "Rimuovere {zone_label}?",
-                "data": {"confirm": "Confermo la rimozione"},
-                "submit": "OK",
-            },
-            "heating": {
-                "title": "Riscaldamento",
-                "data": {
-                    "climate_entity": "Entità clima",
-                    "apply_mode": "Modalità applicazione",
-                    "temperature_step": "Step temperatura",
-                    "manual_override_guard": "Blocca con override manuale",
-                    "outdoor_temperature_entity": "Entità temperatura esterna",
-                    "vacation_hours_from_start_entity": "Entità ore vacanza dall'inizio",
-                    "vacation_hours_to_end_entity": "Entità ore alla fine vacanza",
-                    "vacation_total_hours_entity": "Entità durata totale vacanza (ore)",
-                    "vacation_is_long_entity": "Entità vacanza lunga",
-                    "context_entities": "Entità contesto ambientale",
-                },
-                "submit": "OK",
-            },
-            "security": {
-                "title": "Sicurezza",
-                "description": "Configura il binding dello stato sicurezza della casa e, opzionalmente, le sorgenti di evidenza da telecamera.\n\n{camera_sources_help}",
-                "data": {
-                    "enabled": "Abilita controlli sicurezza",
-                    "security_state_entity": "Entità stato sicurezza",
-                    "armed_away_value": "Valore armed away",
-                    "armed_home_value": "Valore armed home",
-                    "camera_evidence_sources": "Sorgenti camera evidence (mappa: source_id → config)",
-                },
-                "submit": "OK",
-            },
-            "notifications": {
-                "title": "Notifiche",
-                "data": {
-                    "routes": "Route legacy (deprecate)",
-                    "recipients": "Alias destinatari (mappa: alias → [servizi notify])",
-                    "recipient_groups": "Gruppi destinatari (mappa: gruppo → [alias])",
-                    "route_targets": "Target notifica predefiniti (alias o gruppi)",
-                    "enabled_event_categories": "Categorie evento abilitate",
-                    "dedup_window_s": "Finestra deduplicazione (s)",
-                    "rate_limit_per_key_s": "Rate limit per chiave (s)",
-                    "occupancy_mismatch_policy": "Policy mismatch occupancy",
-                    "occupancy_mismatch_min_derived_rooms": "Stanze minime per mismatch occupancy",
-                    "occupancy_mismatch_persist_s": "Persistenza mismatch occupancy (s)",
-                    "security_mismatch_policy": "Policy mismatch sicurezza",
-                    "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
-                    "security_mismatch_event_mode": "Modalità evento mismatch sicurezza",
-                },
-                "submit": "OK",
-            },
-            "calendar": {
-                "title": "Calendario",
-                "data": {
-                    "calendar_entities": "Entità calendario",
-                    "lookahead_days": "Giorni di anticipo",
-                    "cache_ttl_hours": "Cache TTL (ore)",
-                    "calendar_keywords": "Parole chiave per categoria (YAML: categoria: [kw1, kw2])",
-                    "priority_text": "Priorità categorie (dalla più alta, separate da virgola)",
-                },
-                "submit": "OK",
-            },
-            "learning": {
-                "title": "Apprendimento",
-                "description": "Configura i segnali contestuali registrati da Heima insieme a ogni evento. Permettono al sistema di rilevare pattern correlati a condizioni specifiche (es. luminosità esterna, meteo).",
-                "data": {
-                    "outdoor_lux_entity": "Entità luminosità esterna (sensor)",
-                    "outdoor_temp_entity": "Entità temperatura esterna (sensor)",
-                    "weather_entity": "Entità meteo (fallback per temperatura e condizione)",
-                    "context_signal_entities": "Segnali contestuali aggiuntivi (max 10 entità)",
-                    "enabled_plugin_families": "Famiglie plugin apprendimento abilitate",
-                },
-                "data_description": {
-                    "context_signal_entities": "Entità il cui stato viene registrato insieme a ogni evento. Usa per segnali contestuali forti come un proiettore o un media player specifico. Max 10.",
-                    "enabled_plugin_families": "Scegli quali famiglie di plugin built-in possono generare proposte.",
-                },
-                "submit": "OK",
-            },
-            "reactions": {
-                "title": "Reazioni",
-                "data": {"muted_reactions": "Reazioni silenziose"},
-                "data_description": {
-                    "muted_reactions": "Seleziona le reazioni da silenziare. Le reazioni silenziate vengono saltate finché non vengono riabilitate. Lo stato è persistente tra i riavvii."
-                },
-                "submit": "OK",
-            },
-            "admin_authored_create": {
-                "title": "Crea automazione",
-                "description": "Seleziona un template di automazione predefinito. Heima creerà una proposta nel normale flusso di revisione.\n{availability_notes}",
-                "data": {"template_id": "Template"},
-                "submit": "OK",
-            },
-            "admin_authored_security_presence_simulation": {
-                "title": "Nuova simulazione presenza (vacanza)",
-                "description": "Template: {template_title}\n{template_description}",
-                "data": {
-                    "enabled": "Abilitata",
-                    "allowed_rooms": "Stanze consentite",
-                    "allowed_entities": "Entità consentite",
-                    "requires_dark_outside": "Richiede oscurità esterna",
-                    "simulation_aggressiveness": "Intensità simulazione",
-                    "min_jitter_override_min": "Jitter minimo override (min)",
-                    "max_jitter_override_min": "Jitter massimo override (min)",
-                    "max_events_per_evening_override": "Massimo eventi per sera (override)",
-                    "latest_end_time_override": "Orario massimo fine (HH:MM)",
-                    "skip_if_presence_detected": "Sospendi se rilevata presenza",
-                },
-                "submit": "OK",
-            },
-            "admin_authored_lighting_schedule": {
-                "title": "Nuova schedulazione luci",
-                "description": "Template: {template_title}\n{template_description}",
-                "data": {
-                    "room_id": "Stanza",
-                    "weekday": "Giorno",
-                    "scheduled_time": "Orario (HH:MM)",
-                    "light_entities": "Luci da controllare",
-                    "action": "Azione",
-                    "brightness": "Luminosità",
-                    "color_temp_kelvin": "Temperatura colore (K)",
-                },
-                "submit": "OK",
-            },
-            "admin_authored_room_signal_assist": {
-                "title": "Nuovo assist segnali stanza",
-                "description": "Template: {template_title}\n{template_description}\n\n{available_signals}",
-                "data": {
-                    "room_id": "Stanza",
-                    "primary_signal_name": "Nome segnale primario",
-                    "primary_trigger_mode": "Modalità di trigger",
-                    "primary_bucket": "Bucket primario",
-                    "primary_bucket_match_mode": "Match mode bucket",
-                    "corroboration_signal_name": "Nome corroborazione",
-                    "corroboration_bucket": "Bucket corroborante",
-                    "corroboration_bucket_match_mode": "Match mode corroborazione",
-                    "action_entities": "Azioni da attivare",
-                },
-                "data_description": {
-                    "primary_trigger_mode": "Bucket: si attiva mentre il segnale è nel bucket indicato. Burst: si attiva quando il segnale varia rapidamente (richiede burst_threshold nella config segnali stanza).",
-                    "primary_bucket": "Obbligatorio in modalità Bucket. {available_signals}",
-                },
-                "submit": "OK",
-            },
-            "admin_authored_room_darkness_lighting_assist": {
-                "title": "Nuovo assist luce per oscurità stanza",
-                "description": "Template: {template_title}\n{template_description}\n{available_signals}",
-                "data": {
-                    "room_id": "Stanza",
-                    "primary_signal_name": "Nome segnale",
-                    "primary_bucket": "Bucket oscurità",
-                    "light_entities": "Luci da accendere",
-                    "action": "Azione",
-                    "brightness": "Luminosità",
-                    "color_temp_kelvin": "Temperatura colore (K)",
-                },
-                "submit": "OK",
-            },
-            "admin_authored_room_contextual_lighting_assist": {
-                "title": "Nuovo assist luce contestuale stanza",
-                "description": "Template: {template_title}\n{template_description}\n\nSegnali stanza disponibili:\n{available_signals}\n\nPreset integrati:\n{preset_previews}",
-                "data": {
-                    "room_id": "Stanza",
-                    "primary_signal_name": "Nome segnale primario",
-                    "primary_bucket": "Bucket oscurità",
-                    "primary_bucket_match_mode": "Match mode bucket",
-                    "preset": "Preset",
-                    "light_entities": "Luci da controllare",
-                },
-                "submit": "Avanti",
-            },
-            "admin_authored_room_contextual_lighting_assist_json": {
-                "title": "Rivedi policy luce contestuale",
-                "description": "Template: {template_title}\n{template_description}\n\nPreset: {preset_label}\n{preset_description}\n\nAnteprima policy:\n{policy_summary}",
-                "data": {"preset": "Preset", "config_json": "JSON policy luce contestuale"},
-                "submit": "Crea reazione",
-            },
-            "admin_authored_room_vacancy_lighting_off": {
-                "title": "Nuovo spegnimento luci per assenza",
-                "description": "Template: {template_title}\n{template_description}",
-                "data": {
-                    "room_id": "Stanza",
-                    "light_entities": "Luci da spegnere",
-                    "vacancy_delay_min": "Ritardo spegnimento (min)",
-                },
-                "submit": "OK",
-            },
-            "proposals": {
-                "title": "Revisione Proposte",
-                "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
-                "data": {"review_action": "Decisione"},
-                "submit": "OK",
-            },
-            "heating_branches_menu": {
-                "title": "Override Branch Riscaldamento",
-                "description": "{summary}",
-                "menu_options": {
-                    "heating_branches_edit": "Modifica branch",
-                    "heating_branches_save": "Fatto",
-                },
-            },
-            "heating_branches_edit": {
-                "title": "Seleziona Stato Casa",
-                "data": {"house_state": "Stato casa"},
-                "submit": "OK",
-            },
-            "heating_branch_select": {
-                "title": "Seleziona Tipo Branch",
-                "data": {"branch": "Tipo branch"},
-                "submit": "OK",
-            },
-            "heating_branch_edit_form": {
-                "title": "Modifica Branch Riscaldamento",
-                "data": {
-                    "target_temperature": "Temperatura target",
-                    "vacation_ramp_down_h": "Ore ramp-down vacanza",
-                    "vacation_ramp_up_h": "Ore ramp-up vacanza",
-                    "vacation_min_temp": "Temperatura minima vacanza",
-                    "vacation_comfort_temp": "Temperatura preriscaldamento rientro vacanza",
-                    "vacation_min_total_hours_for_ramp": "Durata minima vacanza per attivare ramp (ore)",
-                },
-                "submit": "OK",
-            },
-            "proposal_configure_action": {
-                "title": "Configura azione pre-arrivo",
-                "description": "Proposta accettata: {proposal_description}\n\nSeleziona le azioni da eseguire prima del tuo arrivo tipico.",
-                "data": {
-                    "action_entities": "Scene o script da attivare",
-                    "pre_condition_min": "Anticipo (minuti)",
-                },
-            },
-            "reactions_edit": {
-                "title": "Modifica reazione",
-                "description": "Seleziona la reazione da modificare.",
-                "data": {"reaction": "Reazione"},
-            },
-            "reactions_edit_form": {
-                "title": "Modifica reazione",
-                "description": "{reaction_description}{active_house_states}",
-                "data": {
-                    "enabled": "Abilitata",
-                    "primary_signal_name": "Nome segnale",
-                    "primary_trigger_mode": "Modalità trigger",
-                    "primary_bucket": "Bucket",
-                    "primary_bucket_match_mode": "Match mode bucket",
-                    "corroboration_signal_name": "Nome corroborazione",
-                    "corroboration_bucket": "Bucket corroborante",
-                    "corroboration_bucket_match_mode": "Match mode corroborazione",
-                    "light_entities": "Luci da controllare",
-                    "action": "Azione luci",
-                    "brightness": "Luminosità",
-                    "color_temp_kelvin": "Temperatura colore (K)",
-                    "weekday": "Giorno",
-                    "scheduled_time": "Orario (HH:MM)",
-                    "vacancy_delay_min": "Ritardo spegnimento (min)",
-                    "action_entities": "Scene o script da attivare",
-                    "pre_condition_min": "Anticipo (minuti)",
-                    "allowed_rooms": "Stanze consentite",
-                    "allowed_entities": "Entità consentite",
-                    "requires_dark_outside": "Richiede oscurità esterna",
-                    "simulation_aggressiveness": "Intensità simulazione",
-                    "min_jitter_override_min": "Jitter minimo override (min)",
-                    "max_jitter_override_min": "Jitter massimo override (min)",
-                    "max_events_per_evening_override": "Massimo eventi per sera (override)",
-                    "latest_end_time_override": "Orario massimo fine (HH:MM)",
-                    "skip_if_presence_detected": "Sospendi se rilevata presenza",
-                    "delete_reaction": "Elimina questa reazione",
-                },
-                "data_description": {
-                    "primary_signal_name": "Segnali e bucket disponibili: {available_signals}",
-                    "primary_trigger_mode": "Bucket: si attiva mentre il segnale è nel bucket indicato. Burst: si attiva quando il segnale varia rapidamente (richiede burst_threshold nella config segnali stanza).",
-                    "primary_bucket": "Obbligatorio in modalità Bucket. Bucket validi per segnale: {available_signals}",
-                },
-            },
-            "reactions_edit_contextual_lighting_assist": {
-                "title": "Modifica reazione luce contestuale",
-                "description": "{reaction_description}\n\nAnteprima policy:\n{policy_summary}",
-                "data": {
-                    "enabled": "Abilitata",
-                    "preset": "Preset",
-                    "config_json": "JSON policy luce contestuale",
-                    "delete_reaction": "Elimina questa reazione",
-                },
-            },
-            "reactions_delete_confirm": {
-                "title": "Conferma Rimozione Reazione",
-                "description": "Rimuovere {reaction_description}?",
-                "data": {"confirm": "Confermo la rimozione"},
-            },
-        },
-        "error": {
-            "required": "Campo obbligatorio",
-            "duplicate": "Già esistente",
-            "template_unavailable": "Template non disponibile",
-            "invalid_required": "Il numero richiesto deve essere minore o uguale al numero di sorgenti",
-            "unknown_person": "La persona Home Assistant selezionata non esiste",
-            "duplicate_person_entity": "Questa persona Home Assistant è già collegata",
-            "reserved_prefix": "Il valore non può iniziare con 'heima_'",
-            "invalid_time_zone": "Fuso orario non valido",
-            "invalid_slug": "Slug non valido",
-            "unknown_area": "L'area Home Assistant selezionata non esiste",
-            "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
-            "invalid_json": "JSON non valido",
-            "invalid_contextual_contract": "Contratto luce contestuale non valido",
-            "invalid_signal_config": "Configurazione segnali stanza non valida",
-            "duplicate_signal_name": "Nome segnale duplicato nella stanza",
-            "invalid_number": "Inserisci un numero positivo valido",
-            "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
-            "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna",
-            "redacted_payload": "Configurazione non valida: il payload contiene valori redatti",
-            "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
-            "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale",
-            "no_burst_config": "Il segnale non ha burst_threshold configurato nei segnali della stanza",
-        },
+    "step": {
+      "user": {
+        "title": "Heima",
+        "description": "Configurazione iniziale di Heima. Le opzioni avanzate sono disponibili nella sezione Opzioni.",
+        "data": {
+          "engine_enabled": "Abilita motore"
+        }
+      }
+    }
+  },
+  "options": {
+    "abort": {
+      "admin_required": "Solo un amministratore di Home Assistant può configurare Heima."
     },
+    "step": {
+      "init": {
+        "title": "Configurazione Heima",
+        "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nAssist stanza: {composite_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in revisione: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
+        "menu_options": {
+          "general": "Generale",
+          "people_menu": "Persone",
+          "rooms_menu": "Stanze",
+          "lighting_rooms_menu": "Illuminazione",
+          "heating": "Riscaldamento",
+          "security": "Sicurezza",
+          "notifications": "Notifiche",
+          "calendar": "Calendario",
+          "learning": "Apprendimento",
+          "reactions": "Reazioni",
+          "admin_authored_create": "Crea automazione",
+          "proposals": "Revisione proposte",
+          "save": "Salva e chiudi",
+          "reactions_edit": "Modifica reazione"
+        }
+      },
+      "general": {
+        "title": "Generale",
+        "description": "{delegate_warning}",
+        "data": {
+          "engine_enabled": "Abilita motore",
+          "timezone": "Fuso orario",
+          "language": "Lingua",
+          "lighting_apply_mode": "Modalità applicazione illuminazione",
+          "vacation_mode_entity": "Entità modalità vacanza",
+          "guest_mode_entity": "Entità modalità ospiti",
+          "sleep_window_entity": "Entità finestra riposo",
+          "relax_mode_entity": "Entità modalità relax",
+          "work_window_entity": "Entità finestra lavoro",
+          "media_active_entities": "Entità media attivi",
+          "sleep_charging_entities": "Entità dispositivi in carica (rilevamento sonno)",
+          "workday_entity": "Entità giorno lavorativo",
+          "sleep_enter_min": "Inizio finestra riposo (min)",
+          "sleep_exit_min": "Fine finestra riposo (min)",
+          "work_enter_min": "Inizio finestra lavoro (min)",
+          "relax_enter_min": "Inizio modalità relax (min)",
+          "relax_exit_min": "Fine modalità relax (min)",
+          "sleep_requires_media_off": "Richiede media spenti per rilevare riposo",
+          "sleep_charging_min_count": "Numero minimo dispositivi in carica per rilevare riposo"
+        },
+        "submit": "OK"
+      },
+      "people_menu": {
+        "title": "Persone",
+        "description": "Configurate: {summary}",
+        "menu_options": {
+          "people_edit": "Modifica persona",
+          "people_anonymous": "Presenza anonima",
+          "people_debug_aliases": "Alias debug",
+          "people_save": "Salva e chiudi",
+          "people_next": "Avanti"
+        }
+      },
+      "people_edit": {
+        "title": "Modifica Persona",
+        "data": {
+          "person": "Persona"
+        },
+        "submit": "OK"
+      },
+      "people_edit_form": {
+        "title": "Modifica Persona",
+        "data": {
+          "slug": "Slug",
+          "display_name": "Nome visualizzato",
+          "presence_method": "Metodo rilevamento presenza",
+          "presence_rule": "Regola presenza",
+          "person_entity": "Entità persona",
+          "sources": "Sorgenti",
+          "required": "Sorgenti obbligatorie",
+          "arrive_hold_s": "Ritardo conferma arrivo (s)",
+          "leave_hold_s": "Ritardo conferma uscita (s)",
+          "enable_override": "Abilita override manuale"
+        },
+        "submit": "OK"
+      },
+      "people_anonymous": {
+        "title": "Presenza Anonima",
+        "data": {
+          "enabled": "Abilita presenza anonima",
+          "sources": "Sorgenti",
+          "required": "Sorgenti obbligatorie",
+          "anonymous_count_weight": "Peso nel conteggio occupanti",
+          "arrive_hold_s": "Ritardo conferma arrivo (s)",
+          "leave_hold_s": "Ritardo conferma uscita (s)"
+        },
+        "submit": "OK"
+      },
+      "people_debug_aliases": {
+        "title": "Alias Debug Persone",
+        "description": "{debug_aliases_help}",
+        "data": {
+          "enabled": "Abilita alias debug",
+          "aliases": "Mappa alias"
+        },
+        "submit": "OK"
+      },
+      "rooms_menu": {
+        "title": "Stanze",
+        "description": "Configurate: {summary}",
+        "menu_options": {
+          "rooms_add": "Aggiungi stanza",
+          "rooms_edit": "Modifica stanza",
+          "rooms_remove": "Rimuovi stanza",
+          "rooms_import_areas": "Riscansiona Home Assistant",
+          "rooms_save": "Salva e chiudi",
+          "rooms_next": "Avanti"
+        }
+      },
+      "rooms_add": {
+        "title": "Aggiungi Stanza",
+        "description": "{signals_help}\nEsempio:\n{signals_example}",
+        "data": {
+          "room_id": "ID stanza",
+          "display_name": "Nome visualizzato",
+          "area_id": "Area HA",
+          "learning_sources": "Sorgenti apprendimento",
+          "signals": "Segnali stanza (JSON)",
+          "occupancy_sources": "Sorgenti occupancy",
+          "logic": "Logica occupancy",
+          "on_dwell_s": "Tempo attivazione (s)",
+          "off_dwell_s": "Tempo disattivazione (s)",
+          "max_on_s": "Durata massima attiva (s)"
+        },
+        "submit": "OK"
+      },
+      "rooms_edit": {
+        "title": "Modifica Stanza",
+        "data": {
+          "room": "Stanza"
+        },
+        "submit": "OK"
+      },
+      "rooms_edit_actions": {
+        "title": "Modifica Stanza",
+        "description": "Stanza selezionata: {room_label}",
+        "menu_options": {
+          "rooms_edit_form": "Dettagli stanza",
+          "rooms_edit_lighting": "Configura illuminazione stanza"
+        }
+      },
+      "rooms_edit_form": {
+        "title": "Modifica Stanza",
+        "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nSorgenti occupancy suggerite: {suggested_occupancy}\nSorgenti apprendimento suggerite: {suggested_learning}\nLuci suggerite: {suggested_lighting}\nConfigurazioni fuori area: {configured_mismatch}\n\n{signals_help}\nEsempio:\n{signals_example}",
+        "data": {
+          "room_id": "ID stanza",
+          "display_name": "Nome visualizzato",
+          "area_id": "Area HA",
+          "learning_sources": "Sorgenti apprendimento",
+          "signals": "Segnali stanza (JSON)",
+          "occupancy_sources": "Sorgenti occupancy",
+          "logic": "Logica occupancy",
+          "on_dwell_s": "Tempo attivazione (s)",
+          "off_dwell_s": "Tempo disattivazione (s)",
+          "max_on_s": "Durata massima attiva (s)"
+        },
+        "submit": "OK"
+      },
+      "rooms_remove": {
+        "title": "Rimuovi Stanza",
+        "data": {
+          "room": "Stanza"
+        },
+        "submit": "OK"
+      },
+      "rooms_remove_confirm": {
+        "title": "Conferma Rimozione Stanza",
+        "description": "Rimuovere {room_label}? Verrà rimossa anche l'area collegata in Home Assistant.",
+        "data": {
+          "confirm": "Confermo la rimozione"
+        },
+        "submit": "OK"
+      },
+      "lighting_rooms_menu": {
+        "title": "Illuminazione Stanze",
+        "description": "Scene configurate: {summary}",
+        "menu_options": {
+          "lighting_rooms_edit": "Modifica scene stanza",
+          "lighting_rooms_save": "Salva e chiudi",
+          "lighting_rooms_next": "Avanti"
+        }
+      },
+      "lighting_rooms_edit": {
+        "title": "Seleziona Stanza",
+        "data": {
+          "room": "Stanza"
+        },
+        "submit": "OK"
+      },
+      "lighting_rooms_edit_form": {
+        "title": "Scene Stanza",
+        "description": "Area HA collegata: {area_label}\nEntità HA trovate nella stanza: {inventory_entity_total}\nLuci HA rilevate nella stanza: {suggested_lighting}",
+        "data": {
+          "room_id": "ID stanza",
+          "scene_evening": "Scena sera",
+          "scene_relax": "Scena relax",
+          "scene_night": "Scena notte",
+          "scene_off": "Scena spenta",
+          "enable_manual_hold": "Abilita blocco manuale"
+        },
+        "submit": "OK"
+      },
+      "lighting_zones_menu": {
+        "title": "Zone Illuminazione",
+        "menu_options": {
+          "lighting_zones_add": "Aggiungi zona",
+          "lighting_zones_edit": "Modifica zona",
+          "lighting_zones_remove": "Rimuovi zona",
+          "lighting_zones_save": "Salva e chiudi",
+          "lighting_zones_next": "Avanti"
+        }
+      },
+      "lighting_zones_add": {
+        "title": "Aggiungi Zona Illuminazione",
+        "data": {
+          "zone_id": "ID zona",
+          "display_name": "Nome visualizzato",
+          "rooms": "Stanze"
+        },
+        "submit": "OK"
+      },
+      "lighting_zones_edit": {
+        "title": "Modifica Zona Illuminazione",
+        "data": {
+          "zone": "Zona"
+        },
+        "submit": "OK"
+      },
+      "lighting_zones_edit_form": {
+        "title": "Modifica Zona Illuminazione",
+        "data": {
+          "zone_id": "ID zona",
+          "display_name": "Nome visualizzato",
+          "rooms": "Stanze"
+        },
+        "submit": "OK"
+      },
+      "lighting_zones_remove": {
+        "title": "Rimuovi Zona Illuminazione",
+        "data": {
+          "zone": "Zona"
+        },
+        "submit": "OK"
+      },
+      "lighting_zones_remove_confirm": {
+        "title": "Conferma Rimozione Zona",
+        "description": "Rimuovere {zone_label}?",
+        "data": {
+          "confirm": "Confermo la rimozione"
+        },
+        "submit": "OK"
+      },
+      "heating": {
+        "title": "Riscaldamento",
+        "data": {
+          "climate_entity": "Entità clima",
+          "apply_mode": "Modalità applicazione",
+          "temperature_step": "Step temperatura",
+          "manual_override_guard": "Blocca con override manuale",
+          "outdoor_temperature_entity": "Entità temperatura esterna",
+          "vacation_hours_from_start_entity": "Entità ore vacanza dall'inizio",
+          "vacation_hours_to_end_entity": "Entità ore alla fine vacanza",
+          "vacation_total_hours_entity": "Entità durata totale vacanza (ore)",
+          "vacation_is_long_entity": "Entità vacanza lunga",
+          "context_entities": "Entità contesto ambientale"
+        },
+        "submit": "OK"
+      },
+      "security": {
+        "title": "Sicurezza",
+        "description": "Configura il binding dello stato sicurezza della casa e, opzionalmente, le sorgenti di evidenza da telecamera.\n\n{camera_sources_help}",
+        "data": {
+          "enabled": "Abilita controlli sicurezza",
+          "security_state_entity": "Entità stato sicurezza",
+          "armed_away_value": "Valore armed away",
+          "armed_home_value": "Valore armed home",
+          "camera_evidence_sources": "Sorgenti camera evidence (mappa: source_id → config)"
+        },
+        "submit": "OK"
+      },
+      "notifications": {
+        "title": "Notifiche",
+        "data": {
+          "routes": "Route legacy (deprecate)",
+          "recipients": "Alias destinatari (mappa: alias → [servizi notify])",
+          "recipient_groups": "Gruppi destinatari (mappa: gruppo → [alias])",
+          "route_targets": "Target notifica predefiniti (alias o gruppi)",
+          "enabled_event_categories": "Categorie evento abilitate",
+          "dedup_window_s": "Finestra deduplicazione (s)",
+          "rate_limit_per_key_s": "Rate limit per chiave (s)",
+          "occupancy_mismatch_policy": "Policy mismatch occupancy",
+          "occupancy_mismatch_min_derived_rooms": "Stanze minime per mismatch occupancy",
+          "occupancy_mismatch_persist_s": "Persistenza mismatch occupancy (s)",
+          "security_mismatch_policy": "Policy mismatch sicurezza",
+          "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
+          "security_mismatch_event_mode": "Modalità evento mismatch sicurezza"
+        },
+        "submit": "OK"
+      },
+      "calendar": {
+        "title": "Calendario",
+        "data": {
+          "calendar_entities": "Entità calendario",
+          "lookahead_days": "Giorni di anticipo",
+          "cache_ttl_hours": "Cache TTL (ore)",
+          "calendar_keywords": "Parole chiave per categoria (YAML: categoria: [kw1, kw2])",
+          "priority_text": "Priorità categorie (dalla più alta, separate da virgola)"
+        },
+        "submit": "OK"
+      },
+      "learning": {
+        "title": "Apprendimento",
+        "description": "Configura i segnali contestuali registrati da Heima insieme a ogni evento. Permettono al sistema di rilevare pattern correlati a condizioni specifiche (es. luminosità esterna, meteo).",
+        "data": {
+          "outdoor_lux_entity": "Entità luminosità esterna (sensor)",
+          "outdoor_temp_entity": "Entità temperatura esterna (sensor)",
+          "weather_entity": "Entità meteo (fallback per temperatura e condizione)",
+          "context_signal_entities": "Segnali contestuali aggiuntivi (max 10 entità)",
+          "enabled_plugin_families": "Famiglie plugin apprendimento abilitate"
+        },
+        "data_description": {
+          "context_signal_entities": "Entità il cui stato viene registrato insieme a ogni evento. Usa per segnali contestuali forti come un proiettore o un media player specifico. Max 10.",
+          "enabled_plugin_families": "Scegli quali famiglie di plugin built-in possono generare proposte."
+        },
+        "submit": "OK"
+      },
+      "reactions": {
+        "title": "Reazioni",
+        "data": {
+          "muted_reactions": "Reazioni silenziose"
+        },
+        "data_description": {
+          "muted_reactions": "Seleziona le reazioni da silenziare. Le reazioni silenziate vengono saltate finché non vengono riabilitate. Lo stato è persistente tra i riavvii."
+        },
+        "submit": "OK"
+      },
+      "admin_authored_create": {
+        "title": "Crea automazione",
+        "description": "Seleziona un template di automazione predefinito. Heima creerà una proposta nel normale flusso di revisione.\n{availability_notes}",
+        "data": {
+          "template_id": "Template"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_security_presence_simulation": {
+        "title": "Nuova simulazione presenza (vacanza)",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "enabled": "Abilitata",
+          "allowed_rooms": "Stanze consentite",
+          "allowed_entities": "Entità consentite",
+          "requires_dark_outside": "Richiede oscurità esterna",
+          "simulation_aggressiveness": "Intensità simulazione",
+          "min_jitter_override_min": "Jitter minimo override (min)",
+          "max_jitter_override_min": "Jitter massimo override (min)",
+          "max_events_per_evening_override": "Massimo eventi per sera (override)",
+          "latest_end_time_override": "Orario massimo fine (HH:MM)",
+          "skip_if_presence_detected": "Sospendi se rilevata presenza"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_lighting_schedule": {
+        "title": "Nuova schedulazione luci",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "weekday": "Giorno",
+          "scheduled_time": "Orario (HH:MM)",
+          "light_entities": "Luci da controllare",
+          "action": "Azione",
+          "brightness": "Luminosità",
+          "color_temp_kelvin": "Temperatura colore (K)"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_room_signal_assist": {
+        "title": "Nuovo assist segnali stanza",
+        "description": "Template: {template_title}\n{template_description}\n\n{available_signals}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_name": "Nome segnale primario",
+          "primary_trigger_mode": "Modalità di trigger",
+          "primary_bucket": "Bucket primario",
+          "primary_bucket_match_mode": "Match mode bucket",
+          "corroboration_signal_name": "Nome corroborazione",
+          "corroboration_bucket": "Bucket corroborante",
+          "corroboration_bucket_match_mode": "Match mode corroborazione",
+          "action_entities": "Azioni da attivare"
+        },
+        "data_description": {
+          "primary_trigger_mode": "Bucket: si attiva mentre il segnale è nel bucket indicato. Burst: si attiva quando il segnale varia rapidamente (richiede burst_threshold nella config segnali stanza).",
+          "primary_bucket": "Obbligatorio in modalità Bucket. {available_signals}"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_room_darkness_lighting_assist": {
+        "title": "Nuovo assist luce per oscurità stanza",
+        "description": "Template: {template_title}\n{template_description}\n{available_signals}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_name": "Nome segnale",
+          "primary_bucket": "Bucket oscurità",
+          "light_entities": "Luci da accendere",
+          "action": "Azione",
+          "brightness": "Luminosità",
+          "color_temp_kelvin": "Temperatura colore (K)"
+        },
+        "submit": "OK"
+      },
+      "admin_authored_room_contextual_lighting_assist": {
+        "title": "Nuovo assist luce contestuale stanza",
+        "description": "Template: {template_title}\n{template_description}\n\nSegnali stanza disponibili:\n{available_signals}\n\nPreset integrati:\n{preset_previews}",
+        "data": {
+          "room_id": "Stanza",
+          "primary_signal_name": "Nome segnale primario",
+          "primary_bucket": "Bucket oscurità",
+          "primary_bucket_match_mode": "Match mode bucket",
+          "preset": "Preset",
+          "light_entities": "Luci da controllare"
+        },
+        "submit": "Avanti"
+      },
+      "admin_authored_room_contextual_lighting_assist_json": {
+        "title": "Rivedi policy luce contestuale",
+        "description": "Template: {template_title}\n{template_description}\n\nPreset: {preset_label}\n{preset_description}\n\nAnteprima policy:\n{policy_summary}",
+        "data": {
+          "preset": "Preset",
+          "config_json": "JSON policy luce contestuale"
+        },
+        "submit": "Crea reazione"
+      },
+      "admin_authored_room_vacancy_lighting_off": {
+        "title": "Nuovo spegnimento luci per assenza",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "room_id": "Stanza",
+          "light_entities": "Luci da spegnere",
+          "vacancy_delay_min": "Ritardo spegnimento (min)"
+        },
+        "submit": "OK"
+      },
+      "proposals": {
+        "title": "Revisione Proposte",
+        "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
+        "data": {
+          "review_action": "Decisione"
+        },
+        "submit": "OK"
+      },
+      "heating_branches_menu": {
+        "title": "Override Branch Riscaldamento",
+        "description": "{summary}",
+        "menu_options": {
+          "heating_branches_edit": "Modifica branch",
+          "heating_branches_save": "Fatto"
+        }
+      },
+      "heating_branches_edit": {
+        "title": "Seleziona Stato Casa",
+        "data": {
+          "house_state": "Stato casa"
+        },
+        "submit": "OK"
+      },
+      "heating_branch_select": {
+        "title": "Seleziona Tipo Branch",
+        "data": {
+          "branch": "Tipo branch"
+        },
+        "submit": "OK"
+      },
+      "heating_branch_edit_form": {
+        "title": "Modifica Branch Riscaldamento",
+        "data": {
+          "target_temperature": "Temperatura target",
+          "vacation_ramp_down_h": "Ore ramp-down vacanza",
+          "vacation_ramp_up_h": "Ore ramp-up vacanza",
+          "vacation_min_temp": "Temperatura minima vacanza",
+          "vacation_comfort_temp": "Temperatura preriscaldamento rientro vacanza",
+          "vacation_min_total_hours_for_ramp": "Durata minima vacanza per attivare ramp (ore)"
+        },
+        "submit": "OK"
+      },
+      "proposal_configure_action": {
+        "title": "Configura azione pre-arrivo",
+        "description": "Proposta accettata: {proposal_description}\n\nSeleziona le azioni da eseguire prima del tuo arrivo tipico.",
+        "data": {
+          "action_entities": "Scene o script da attivare",
+          "pre_condition_min": "Anticipo (minuti)"
+        }
+      },
+      "reactions_edit": {
+        "title": "Modifica reazione",
+        "description": "Seleziona la reazione da modificare.",
+        "data": {
+          "reaction": "Reazione"
+        }
+      },
+      "reactions_edit_form": {
+        "title": "Modifica reazione",
+        "description": "{reaction_description}{active_house_states}",
+        "data": {
+          "enabled": "Abilitata",
+          "primary_signal_name": "Nome segnale",
+          "primary_trigger_mode": "Modalità trigger",
+          "primary_bucket": "Bucket",
+          "primary_bucket_match_mode": "Match mode bucket",
+          "corroboration_signal_name": "Nome corroborazione",
+          "corroboration_bucket": "Bucket corroborante",
+          "corroboration_bucket_match_mode": "Match mode corroborazione",
+          "light_entities": "Luci da controllare",
+          "action": "Azione luci",
+          "brightness": "Luminosità",
+          "color_temp_kelvin": "Temperatura colore (K)",
+          "weekday": "Giorno",
+          "scheduled_time": "Orario (HH:MM)",
+          "vacancy_delay_min": "Ritardo spegnimento (min)",
+          "action_entities": "Scene o script da attivare",
+          "pre_condition_min": "Anticipo (minuti)",
+          "allowed_rooms": "Stanze consentite",
+          "allowed_entities": "Entità consentite",
+          "requires_dark_outside": "Richiede oscurità esterna",
+          "simulation_aggressiveness": "Intensità simulazione",
+          "min_jitter_override_min": "Jitter minimo override (min)",
+          "max_jitter_override_min": "Jitter massimo override (min)",
+          "max_events_per_evening_override": "Massimo eventi per sera (override)",
+          "latest_end_time_override": "Orario massimo fine (HH:MM)",
+          "skip_if_presence_detected": "Sospendi se rilevata presenza",
+          "delete_reaction": "Elimina questa reazione"
+        },
+        "data_description": {
+          "primary_signal_name": "Segnali e bucket disponibili: {available_signals}",
+          "primary_trigger_mode": "Bucket: si attiva mentre il segnale è nel bucket indicato. Burst: si attiva quando il segnale varia rapidamente (richiede burst_threshold nella config segnali stanza).",
+          "primary_bucket": "Obbligatorio in modalità Bucket. Bucket validi per segnale: {available_signals}"
+        }
+      },
+      "reactions_edit_contextual_lighting_assist": {
+        "title": "Modifica reazione luce contestuale",
+        "description": "{reaction_description}\n\nAnteprima policy:\n{policy_summary}",
+        "data": {
+          "enabled": "Abilitata",
+          "preset": "Preset",
+          "config_json": "JSON policy luce contestuale",
+          "delete_reaction": "Elimina questa reazione"
+        }
+      },
+      "reactions_delete_confirm": {
+        "title": "Conferma Rimozione Reazione",
+        "description": "Rimuovere {reaction_description}?",
+        "data": {
+          "confirm": "Confermo la rimozione"
+        }
+      }
+    },
+    "error": {
+      "required": "Campo obbligatorio",
+      "duplicate": "Già esistente",
+      "template_unavailable": "Template non disponibile",
+      "invalid_required": "Il numero richiesto deve essere minore o uguale al numero di sorgenti",
+      "unknown_person": "La persona Home Assistant selezionata non esiste",
+      "duplicate_person_entity": "Questa persona Home Assistant è già collegata",
+      "reserved_prefix": "Il valore non può iniziare con 'heima_'",
+      "invalid_time_zone": "Fuso orario non valido",
+      "invalid_slug": "Slug non valido",
+      "unknown_area": "L'area Home Assistant selezionata non esiste",
+      "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
+      "invalid_json": "JSON non valido",
+      "invalid_contextual_contract": "Contratto luce contestuale non valido",
+      "invalid_signal_config": "Configurazione segnali stanza non valida",
+      "duplicate_signal_name": "Nome segnale duplicato nella stanza",
+      "invalid_number": "Inserisci un numero positivo valido",
+      "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
+      "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna",
+      "redacted_payload": "Configurazione non valida: il payload contiene valori redatti",
+      "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
+      "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale",
+      "no_burst_config": "Il segnale non ha burst_threshold configurato nei segnali della stanza"
+    }
+  }
 }

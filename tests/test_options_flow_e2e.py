@@ -2116,6 +2116,13 @@ async def test_proposals_step_accept_reuses_existing_same_slot_composite_reactio
 
     result = await flow.async_step_proposals({"review_action": "accept"})
 
+    assert result["type"] == "form"
+    assert result["step_id"] == "proposal_configure_action"
+
+    result = await flow.async_step_proposal_configure_action(
+        {"action_entities": ["script.cooling_boost"], "pre_condition_min": 20}
+    )
+
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
@@ -2125,6 +2132,15 @@ async def test_proposals_step_accept_reuses_existing_same_slot_composite_reactio
     assert stored["reaction_type"] == "room_cooling_assist"
     assert stored["episodes_observed"] == 6
     assert stored["last_tuned_at"] == proposal.updated_at
+    assert stored["steps"] == [
+        {
+            "domain": "script",
+            "target": "script.cooling_boost",
+            "action": "script.turn_on",
+            "params": {"entity_id": "script.cooling_boost"},
+        }
+    ]
+    assert stored["pre_condition_min"] == 20
 
 
 @pytest.mark.asyncio
