@@ -149,36 +149,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "flow_step_id": "admin_authored_security_presence_simulation",
             },
         ],
-        "improvement_proposals": [
-            {
-                "source_reaction_type": "room_darkness_lighting_assist",
-                "target_reaction_type": "room_contextual_lighting_assist",
-                "improvement_reason": "contextual_variation",
-                "acceptance_strategy": "convert_replace",
-                "review_reason_en": (
-                    "Reason: darkness-triggered lighting varies consistently by time "
-                    "window or context."
-                ),
-                "review_reason_it": (
-                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
-                    "oraria o contesto."
-                ),
-            },
-            {
-                "source_reaction_type": "room_signal_assist",
-                "target_reaction_type": "room_cooling_assist",
-                "improvement_reason": "cooling_specialization",
-                "acceptance_strategy": "convert_replace",
-                "review_reason_en": (
-                    "Reason: the learned signal-followup pattern is consistently cooling-"
-                    "specific and is better represented as a cooling assist."
-                ),
-                "review_reason_it": (
-                    "Motivo: il pattern segnale-followup osservato e' stabilmente specifico "
-                    "del raffrescamento ed e' espresso meglio come cooling assist."
-                ),
-            },
-        ],
+        "improvement_proposals": [],
         "enabled": True,
     }
     assert registry.diagnostics()[-2] == {
@@ -237,6 +208,36 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "config_schema_id": "room_vacancy_lighting_off.basic.v1",
                 "implemented": True,
                 "flow_step_id": "admin_authored_room_vacancy_lighting_off",
+            },
+        ],
+        "improvement_proposals": [
+            {
+                "source_reaction_type": "room_darkness_lighting_assist",
+                "target_reaction_type": "room_contextual_lighting_assist",
+                "improvement_reason": "contextual_variation",
+                "acceptance_strategy": "convert_replace",
+                "review_reason_en": (
+                    "Reason: darkness-triggered lighting varies consistently by time "
+                    "window or context."
+                ),
+                "review_reason_it": (
+                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
+                    "oraria o contesto."
+                ),
+            },
+            {
+                "source_reaction_type": "room_signal_assist",
+                "target_reaction_type": "room_cooling_assist",
+                "improvement_reason": "cooling_specialization",
+                "acceptance_strategy": "convert_replace",
+                "review_reason_en": (
+                    "Reason: the learned signal-followup pattern is consistently cooling-"
+                    "specific and is better represented as a cooling assist."
+                ),
+                "review_reason_it": (
+                    "Motivo: il pattern segnale-followup osservato e' stabilmente specifico "
+                    "del raffrescamento ed e' espresso meglio come cooling assist."
+                ),
             },
         ],
         "enabled": True,

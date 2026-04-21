@@ -121,12 +121,12 @@ class ProposalEngine:
 
         merged = list(self._proposals)
         for candidate in generated:
-            candidate = self._normalize_generated_candidate(candidate, merged)
-            if candidate is None:
+            normalized_candidate = self._normalize_generated_candidate(candidate, merged)
+            if normalized_candidate is None:
                 continue
             now = datetime.now(UTC).isoformat()
-            identity_key = self._identity_key(candidate)
-            followup_slot_key = self._followup_slot_key(candidate)
+            identity_key = self._identity_key(normalized_candidate)
+            followup_slot_key = self._followup_slot_key(normalized_candidate)
             matching = [
                 (idx, current)
                 for idx, current in enumerate(merged)
@@ -140,19 +140,21 @@ class ProposalEngine:
                 existing_idx, existing = pending_match
                 merged[existing_idx] = replace(
                     existing,
-                    confidence=candidate.confidence,
-                    description=candidate.description,
-                    suggested_reaction_config=_safe_dict(candidate.suggested_reaction_config),
+                    confidence=normalized_candidate.confidence,
+                    description=normalized_candidate.description,
+                    suggested_reaction_config=_safe_dict(
+                        normalized_candidate.suggested_reaction_config
+                    ),
                     updated_at=now,
                     last_observed_at=now,
                     identity_key=identity_key,
-                    followup_kind=candidate.followup_kind,
-                    target_reaction_id=candidate.target_reaction_id,
-                    target_reaction_type=candidate.target_reaction_type,
-                    target_reaction_origin=candidate.target_reaction_origin,
-                    target_template_id=candidate.target_template_id,
-                    improves_reaction_type=candidate.improves_reaction_type,
-                    improvement_reason=candidate.improvement_reason,
+                    followup_kind=normalized_candidate.followup_kind,
+                    target_reaction_id=normalized_candidate.target_reaction_id,
+                    target_reaction_type=normalized_candidate.target_reaction_type,
+                    target_reaction_origin=normalized_candidate.target_reaction_origin,
+                    target_template_id=normalized_candidate.target_template_id,
+                    improves_reaction_type=normalized_candidate.improves_reaction_type,
+                    improvement_reason=normalized_candidate.improvement_reason,
                 )
                 continue
 
@@ -163,13 +165,13 @@ class ProposalEngine:
             if accepted_match is None and followup_slot_key:
                 accepted_match = self._fallback_followup_match(
                     merged,
-                    candidate,
+                    normalized_candidate,
                     followup_slot_key=followup_slot_key,
                 )
             if accepted_match is None and not matching:
                 merged.append(
                     replace(
-                        candidate,
+                        normalized_candidate,
                         identity_key=identity_key,
                         last_observed_at=now,
                     )
@@ -178,24 +180,24 @@ class ProposalEngine:
 
             if accepted_match is not None:
                 _, accepted = accepted_match
-                if self._should_suppress_followup(candidate, accepted):
+                if self._should_suppress_followup(normalized_candidate, accepted):
                     continue
                 merged.append(
                     replace(
-                        candidate,
+                        normalized_candidate,
                         identity_key=identity_key,
                         last_observed_at=now,
                         followup_kind="tuning_suggestion",
                         target_reaction_type=(
-                            candidate.target_reaction_type
+                            normalized_candidate.target_reaction_type
                             or resolve_reaction_type(_safe_dict(accepted.suggested_reaction_config))
                             or accepted.reaction_type
                         ),
                         target_reaction_origin=(
-                            candidate.target_reaction_origin or accepted.origin
+                            normalized_candidate.target_reaction_origin or accepted.origin
                         ),
                         target_template_id=(
-                            candidate.target_template_id
+                            normalized_candidate.target_template_id
                             or str(
                                 _safe_dict(accepted.suggested_reaction_config).get(
                                     "admin_authored_template_id"
@@ -203,8 +205,8 @@ class ProposalEngine:
                                 or ""
                             )
                         ),
-                        improves_reaction_type=candidate.improves_reaction_type,
-                        improvement_reason=candidate.improvement_reason,
+                        improves_reaction_type=normalized_candidate.improves_reaction_type,
+                        improvement_reason=normalized_candidate.improvement_reason,
                     )
                 )
                 continue
