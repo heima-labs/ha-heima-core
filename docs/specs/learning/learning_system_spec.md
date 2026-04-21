@@ -2233,6 +2233,32 @@ Normative rules:
 - corroboration may affect confidence and explanation, but must not silently redefine the primary
   pattern semantics
 
+### P10.6a house_state consolidation for composite assists
+
+`house_state` is valid evidence for composite room-assist learning, but it should usually refine
+the activation scope of one reaction rather than create multiple near-identical configured
+reactions.
+
+Normative product rule:
+- when composite evidence differs only by `house_state`, Heima SHOULD converge toward one configured
+  reaction whose activation contract explicitly covers the learned states
+- a generic variant and a state-bound variant SHOULD NOT coexist as separate long-lived configured
+  reactions unless they differ on more than `house_state`
+- if the analyzer first learns a generic contract and later accumulates state-specific evidence,
+  the later evidence should normally be expressed as tuning or consolidation of the same slot
+
+Examples:
+- preferred:
+  - one `room_cooling_assist` active for `house_state_in=[home, working]`
+- not preferred:
+  - one `room_cooling_assist` for `home`
+  - another visually identical `room_cooling_assist` with no state scope
+
+Rationale:
+- this produces a clearer control plane
+- avoids edit-flow ambiguity
+- better matches how users think about one room automation with multiple valid contexts
+
 ### P10.7 Standard pattern fields
 
 Every catalog pattern in the v1 composite engine MUST define:
@@ -2366,6 +2392,12 @@ The initial v1 catalog contains at least these named patterns:
 - follow-up action class: discrete user lighting actuation in the same room
 - canonical example: occupied room becomes too dark and the user turns on lights with a learned
   brightness level
+
+For patterns 1-4 above, `house_state` should be treated as a bounded contextual dimension of the
+same room assist whenever possible. The system should prefer:
+- one reaction with an explicit activation scope across relevant house states
+over:
+- several configured reactions that differ only by state scoping
 - first expected output mode in v1: replay the observed discrete lighting actuation
 - non-goal for the first iteration: adaptive closed-loop brightness maintenance
 

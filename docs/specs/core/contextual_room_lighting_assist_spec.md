@@ -261,6 +261,13 @@ Version 1 should support only explicit or strongly justified proxies:
 - presence age in room
 - optional room-local mode signal later
 
+Product-direction clarification:
+- `house_state` is a contextual selector inside one lighting reaction
+- it is not, by itself, a good reason to create parallel room-lighting reactions that differ only
+  by state scoping
+- when learned lighting behavior varies by `house_state`, Heima should prefer one contextual
+  reaction with multiple `house_state_in` branches over several separate room-lighting reactions
+
 ### Proposed `occupancy_reason`
 
 Version 1 should compute a derived reason with a conservative resolver:

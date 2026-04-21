@@ -190,6 +190,39 @@ The corollary: if an analyzer previously emitted a proposal without a filter, an
 the pattern is state-bound, the identity key changes and the old proposal is treated as a separate
 slot — not an in-place refresh. This is intentional: the behavioral contract has changed.
 
+### 4.2b Consolidation rule for composite room-assist families
+
+For the room-scoped composite assist family, `house_state` should generally be treated as a
+**tuning/consolidation dimension**, not as a reason to multiply near-identical configured
+reactions.
+
+This applies in particular to:
+- `room_signal_assist`
+- `room_cooling_assist`
+- `room_air_quality_assist`
+- `room_darkness_lighting_assist`
+
+Normative product rule:
+- if two learned variants differ only by `house_state_filter`, they SHOULD converge toward one
+  configured reaction with an explicit activation scope (for example `house_state_in=[home,
+  working]` or an equivalent normalized representation)
+- the system SHOULD NOT keep parallel configured reactions that are otherwise behaviorally
+  equivalent just because one was learned under `house_state=home` and another under
+  `house_state=None`
+- a separate configured reaction remains valid only when the resulting behavioral contract is
+  materially different beyond `house_state` alone
+
+Implication for lifecycle:
+- for these composite families, a newly learned state-specialized variant should normally be treated
+  as a tuning or consolidation of the existing slot
+- not as an independent long-lived configured reaction
+
+Rationale:
+- users understand one cooling automation that works in `[home, working]`
+- they do not understand two visually similar cooling automations that differ only by hidden
+  state-scoping metadata
+- the lifecycle system should converge toward fewer, clearer room-assist reactions
+
 ### 4.3 Built-in identity strategy
 
 Built-in proposals should converge on these identity keys:
@@ -205,6 +238,13 @@ Built-in proposals should converge on these identity keys:
 
 The `[|house_state=<house_state>]` suffix is included **only** when `house_state_filter` is set in
 the corresponding `suggested_reaction_config` (see §4.2a and learning_system_spec §3.0.2).
+
+Product-direction clarification for composite room-assist families:
+- the identity strategy above remains valid for proposal lifecycle and evidence separation
+- but accepted/configured reactions SHOULD subsequently be consolidated when the only meaningful
+  difference is `house_state`
+- identity separation at proposal time must not be misread as a requirement to keep multiple
+  configured reactions permanently
 
 Product-direction clarification:
 - `lighting_scene_schedule` remains a valid lifecycle family
