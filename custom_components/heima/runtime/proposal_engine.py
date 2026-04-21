@@ -142,8 +142,9 @@ class ProposalEngine:
                     existing,
                     confidence=normalized_candidate.confidence,
                     description=normalized_candidate.description,
-                    suggested_reaction_config=_safe_dict(
-                        normalized_candidate.suggested_reaction_config
+                    suggested_reaction_config=self._merge_pending_reaction_config(
+                        existing.suggested_reaction_config,
+                        normalized_candidate.suggested_reaction_config,
                     ),
                     updated_at=now,
                     last_observed_at=now,
@@ -218,6 +219,44 @@ class ProposalEngine:
         self._proposals = pruned
         await self._store.async_save(self._serialize())
         self._write_sensor()
+
+    def _merge_pending_reaction_config(
+        self,
+        existing_cfg: dict[str, Any],
+        incoming_cfg: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = _safe_dict(existing_cfg)
+        incoming = _safe_dict(incoming_cfg)
+        merged.update(incoming)
+
+        reaction_type = resolve_reaction_type(merged)
+        if reaction_type in {
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
+            "room_darkness_lighting_assist",
+        }:
+            existing_scope = self._normalized_house_state_scope(existing_cfg)
+            incoming_scope = self._normalized_house_state_scope(incoming_cfg)
+            scope = list(dict.fromkeys(existing_scope + incoming_scope))
+            if scope:
+                merged["house_state_in"] = scope
+            else:
+                merged.pop("house_state_in", None)
+            merged["house_state_filter"] = scope[0] if len(scope) == 1 else None
+        return merged
+
+    @staticmethod
+    def _normalized_house_state_scope(cfg: dict[str, Any]) -> list[str]:
+        scope = [
+            str(item).strip().lower()
+            for item in list(_safe_dict(cfg).get("house_state_in") or [])
+            if str(item).strip()
+        ]
+        if scope:
+            return list(dict.fromkeys(scope))
+        house_state_filter = str(_safe_dict(cfg).get("house_state_filter") or "").strip().lower()
+        return [house_state_filter] if house_state_filter else []
 
     def _normalize_generated_candidate(
         self,

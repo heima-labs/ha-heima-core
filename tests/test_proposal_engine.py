@@ -1482,6 +1482,56 @@ async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(m
     assert pending[0].identity_key == "room_signal_assist|room=bathroom|primary=room_humidity"
 
 
+async def test_proposal_engine_merges_house_state_scope_for_pending_composite_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    analyzer = _AnalyzerStub(
+        [
+            _composite_proposal(
+                reaction_type="room_signal_assist",
+                room_id="studio",
+                primary_signal_name="room_temperature",
+            )
+        ]
+    )
+    analyzer._proposals[0].suggested_reaction_config.update(
+        {
+            "corroboration_signal_name": "room_humidity",
+            "house_state_in": ["home"],
+            "house_state_filter": "home",
+        }
+    )
+    engine.register_analyzer(analyzer)
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    analyzer.set_proposals(
+        [
+            _composite_proposal(
+                reaction_type="room_signal_assist",
+                room_id="studio",
+                primary_signal_name="room_temperature",
+            )
+        ]
+    )
+    analyzer._proposals[0].suggested_reaction_config.update(
+        {
+            "corroboration_signal_name": "room_humidity",
+            "house_state_in": ["working"],
+            "house_state_filter": "working",
+        }
+    )
+
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].identity_key == "room_signal_assist|room=studio|primary=room_temperature"
+    assert pending[0].suggested_reaction_config["house_state_in"] == ["home", "working"]
+    assert pending[0].suggested_reaction_config["house_state_filter"] is None
+
+
 async def test_proposal_engine_composite_config_summary_exposes_signal_fields(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
