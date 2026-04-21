@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
+from custom_components.heima.config_flow._steps_reactions import _ReactionsStepsMixin
 from custom_components.heima.const import (
     DEFAULT_CALENDAR_CACHE_TTL_HOURS,
     DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
@@ -2010,6 +2011,99 @@ async def test_proposals_step_accepts_cooling_improvement_by_replacing_signal_ta
     assert stored["improvement_reason"] == "cooling_specialization"
     assert stored["improvement_acceptance_strategy"] == "convert_replace"
     assert stored["corroboration_signal_name"] == "room_humidity"
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_accept_reuses_existing_same_slot_composite_reaction():
+    flow = _flow(
+        options={
+            "reactions": {
+                "configured": {
+                    "cooling-existing": {
+                        "reaction_type": "room_cooling_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_temperature",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                        "corroboration_signal_name": "room_humidity",
+                        "corroboration_signal_entities": ["sensor.studio_humidity"],
+                        "episodes_observed": 5,
+                        "origin": "learned",
+                    }
+                },
+                "labels": {"cooling-existing": "Raffrescamento studio"},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-cooling-duplicate-slot",
+        analyzer_id="RoomCoolingPatternAnalyzer",
+        reaction_type="room_cooling_assist",
+        description="studio cooling assist",
+        confidence=0.82,
+        suggested_reaction_config={
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "primary_signal_entities": ["sensor.studio_temperature"],
+            "corroboration_signal_name": "room_humidity",
+            "corroboration_signal_entities": ["sensor.studio_humidity"],
+            "episodes_observed": 6,
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    assert "proposal-cooling-duplicate-slot" not in configured
+    assert list(configured) == ["cooling-existing"]
+    stored = configured["cooling-existing"]
+    assert stored["reaction_type"] == "room_cooling_assist"
+    assert stored["episodes_observed"] == 6
+    assert stored["last_tuned_at"] == proposal.updated_at
+
+
+def test_reaction_label_from_config_distinguishes_cooling_variants():
+    labels_map: dict[str, str] = {}
+
+    home_label = _ReactionsStepsMixin._reaction_label_from_config(
+        "r-home",
+        {
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "corroboration_signal_name": "room_humidity",
+            "house_state_filter": "home",
+            "episodes_observed": 5,
+        },
+        labels_map,
+    )
+    generic_label = _ReactionsStepsMixin._reaction_label_from_config(
+        "r-generic",
+        {
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "corroboration_signal_name": "room_humidity",
+            "episodes_observed": 5,
+        },
+        labels_map,
+    )
+
+    assert (
+        home_label
+        == "Raffrescamento studio — room_temperature + room_humidity — stato:home — 5 episodi"
+    )
+    assert generic_label == "Raffrescamento studio — room_temperature + room_humidity — 5 episodi"
 
 
 def test_proposal_review_label_includes_context_confidence_and_last_seen():
