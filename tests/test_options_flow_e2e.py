@@ -14,6 +14,12 @@ from custom_components.heima.const import (
     DOMAIN,
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
+from custom_components.heima.runtime.reactions.lighting_assist import (
+    present_learned_room_lighting_assist_details,
+)
+from custom_components.heima.runtime.reactions.signal_assist import (
+    present_learned_room_signal_assist_details,
+)
 
 
 class _FakeAreaRegistry:
@@ -1730,15 +1736,64 @@ async def test_reaction_label_from_room_signal_assist_config_is_readable():
         "proposal-bathroom",
         {
             "reaction_class": "RoomSignalAssistReaction",
+            "reaction_type": "room_signal_assist",
             "room_id": "bathroom",
-            "trigger_signal_entities": ["sensor.bathroom_humidity"],
-            "temperature_signal_entities": ["sensor.bathroom_temperature"],
+            "primary_signal_name": "room_humidity",
+            "corroboration_signal_name": "room_temperature",
+            "house_state_in": ["home", "relax"],
             "episodes_observed": 5,
         },
         {},
     )
 
-    assert label == "Assist bathroom — hum:1 — temp:1 — 5 episodi"
+    assert (
+        label == "Assist bathroom — room_humidity + room_temperature — stati:home,relax — 5 episodi"
+    )
+
+
+def test_learned_room_signal_assist_details_include_house_state_scope():
+    flow = _flow()
+    proposal = ReactionProposal(
+        reaction_type="room_cooling_assist",
+        suggested_reaction_config={},
+    )
+    details = present_learned_room_signal_assist_details(
+        flow,
+        proposal,
+        {
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "corroboration_signal_name": "room_humidity",
+            "house_state_in": ["home", "working"],
+            "primary_bucket": "high",
+        },
+        "it",
+    )
+
+    assert "Stati casa: home, working" in details
+
+
+def test_learned_room_lighting_assist_details_include_house_state_scope():
+    flow = _flow()
+    proposal = ReactionProposal(
+        reaction_type="room_darkness_lighting_assist",
+        suggested_reaction_config={},
+    )
+    details = present_learned_room_lighting_assist_details(
+        flow,
+        proposal,
+        {
+            "reaction_type": "room_darkness_lighting_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "house_state_in": ["home", "relax"],
+            "primary_bucket": "dim",
+        },
+        "it",
+    )
+
+    assert "Stati casa: home, relax" in details
 
 
 @pytest.mark.asyncio
@@ -2070,6 +2125,117 @@ async def test_proposals_step_accept_reuses_existing_same_slot_composite_reactio
     assert stored["reaction_type"] == "room_cooling_assist"
     assert stored["episodes_observed"] == 6
     assert stored["last_tuned_at"] == proposal.updated_at
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_consolidates_house_state_scope_for_composite_room_assist():
+    flow = _flow(
+        options={
+            "reactions": {
+                "configured": {
+                    "cooling-1": {
+                        "reaction_type": "room_cooling_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_temperature",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                        "corroboration_signal_name": "room_humidity",
+                        "corroboration_signal_entities": ["sensor.studio_humidity"],
+                        "house_state_in": ["home"],
+                        "house_state_filter": "home",
+                        "episodes_observed": 5,
+                        "origin": "learned",
+                        "steps": [
+                            {
+                                "entity_id": "fan.studio_fan",
+                                "service": "fan.turn_on",
+                                "service_data": {"entity_id": "fan.studio_fan"},
+                            }
+                        ],
+                    }
+                },
+                "labels": {"cooling-1": "Raffrescamento studio"},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-cooling-working",
+        analyzer_id="RoomCoolingPatternAnalyzer",
+        reaction_type="room_cooling_assist",
+        description="studio cooling assist",
+        confidence=0.84,
+        suggested_reaction_config={
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "primary_signal_entities": ["sensor.studio_temperature"],
+            "corroboration_signal_name": "room_humidity",
+            "corroboration_signal_entities": ["sensor.studio_humidity"],
+            "house_state_in": ["working"],
+            "house_state_filter": "working",
+            "episodes_observed": 6,
+            "steps": [
+                {
+                    "entity_id": "fan.studio_fan",
+                    "service": "fan.turn_on",
+                    "service_data": {"entity_id": "fan.studio_fan"},
+                }
+            ],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["cooling-1"]
+    assert stored["reaction_type"] == "room_cooling_assist"
+    assert stored["house_state_in"] == ["home", "working"]
+    assert stored["house_state_filter"] is None
+    assert "proposal-cooling-working" not in flow.options["reactions"]["configured"]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_shows_active_house_states_for_composite_room_assist():
+    flow = _flow(
+        options={
+            "reactions": {
+                "configured": {
+                    "cooling-1": {
+                        "reaction_type": "room_cooling_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_temperature",
+                        "primary_trigger_mode": "bucket",
+                        "primary_bucket": "high",
+                        "primary_bucket_match_mode": "eq",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                        "corroboration_signal_name": "room_humidity",
+                        "corroboration_bucket": "humid",
+                        "corroboration_bucket_match_mode": "eq",
+                        "corroboration_signal_entities": ["sensor.studio_humidity"],
+                        "steps": [{"service": "switch.turn_on", "target": "switch.studio_fan"}],
+                        "house_state_in": ["home", "working"],
+                        "enabled": True,
+                    }
+                }
+            }
+        }
+    )
+    flow._editing_reaction_id = "cooling-1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    assert result["description_placeholders"]["active_house_states"] == (
+        "\n\nStati casa attivi: home, working"
+    )
 
 
 def test_reaction_label_from_config_distinguishes_cooling_variants():

@@ -16,6 +16,16 @@ HOUSE_STATE_CONCENTRATION_THRESHOLD: float = 0.75
 HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS: int = 8
 
 
+def compute_house_state_scope(events: "list[HeimaEvent]") -> list[str]:
+    """Return the ordered set of observed non-empty house states for the given events."""
+    counts: dict[str, int] = {}
+    for e in events:
+        state = str(getattr(getattr(e, "context", None), "house_state", None) or "").strip()
+        if state:
+            counts[state] = counts.get(state, 0) + 1
+    return [state for state, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+
 def compute_house_state_filter(events: "list[HeimaEvent]") -> str | None:
     """Return the dominant house_state if it meets concentration thresholds, else None.
 
@@ -24,6 +34,8 @@ def compute_house_state_filter(events: "list[HeimaEvent]") -> str | None:
     - dominant_count >= HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS (8)
     """
     counts: dict[str, int] = {}
+    for state in compute_house_state_scope(events):
+        counts[state] = counts.get(state, 0)
     for e in events:
         state = str(getattr(getattr(e, "context", None), "house_state", None) or "").strip()
         if state:

@@ -52,9 +52,13 @@ class RoomLightingAssistReaction(_BaseRoomLightingAssist):
         correlation_window_s: int = 600,
         followup_window_s: int = 900,
         house_state_filter: str | None = None,
+        house_state_in: list[str] | None = None,
         reaction_id: str | None = None,
     ) -> None:
         self._house_state_filter = str(house_state_filter).strip() if house_state_filter else None
+        self._house_state_in = tuple(
+            str(item).strip() for item in (house_state_in or []) if str(item).strip()
+        )
         super().__init__(
             hass=hass,
             bucket_getter=bucket_getter,
@@ -100,6 +104,8 @@ class RoomLightingAssistReaction(_BaseRoomLightingAssist):
             self._steady_condition_active = False
             self._last_fired_ts = None
             self._last_fired_iso = None
+            return []
+        if self._house_state_in and snapshot.house_state not in self._house_state_in:
             return []
         if self._house_state_filter and snapshot.house_state != self._house_state_filter:
             return []
@@ -222,6 +228,7 @@ def build_room_lighting_assist_reaction(
         correlation_window_s=correlation_window_s,
         followup_window_s=followup_window_s,
         house_state_filter=cfg.get("house_state_filter") or None,
+        house_state_in=list(cfg.get("house_state_in") or []),
         reaction_id=proposal_id,
     )
 
@@ -236,14 +243,42 @@ def present_room_lighting_assist_label(
         room_id = str(cfg.get("room_id", "")).strip() or reaction_id
         primary_entities = list(cfg.get("primary_signal_entities", []))
         entity_steps = list(cfg.get("entity_steps", []))
+        house_state_in = [
+            str(item).strip().lower()
+            for item in list(cfg.get("house_state_in") or [])
+            if str(item).strip()
+        ]
+        house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
         parts = [f"Luce {room_id}"]
         if primary_entities:
             parts.append(f"lux:{len(primary_entities)}")
         if entity_steps:
             parts.append(f"{len(entity_steps)} entità")
+        if house_state_in:
+            parts.append(f"stati:{','.join(house_state_in)}")
+        elif house_state_filter:
+            parts.append(f"stato:{house_state_filter}")
         return " — ".join(parts)
     except (TypeError, ValueError):
         return labels_map.get(reaction_id)
+
+
+def _house_state_scope_detail_lines(cfg: dict[str, Any], *, language: str) -> list[str]:
+    is_it = language.startswith("it")
+    house_state_in = [
+        str(item).strip().lower()
+        for item in list(cfg.get("house_state_in") or [])
+        if str(item).strip()
+    ]
+    if house_state_in:
+        joined = ", ".join(house_state_in)
+        return [f"Stati casa: {joined}" if is_it else f"House states: {joined}"]
+    house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
+    if house_state_filter:
+        return [
+            f"Stato casa: {house_state_filter}" if is_it else f"House state: {house_state_filter}"
+        ]
+    return []
 
 
 def present_admin_authored_room_lighting_assist_details(
@@ -256,6 +291,7 @@ def present_admin_authored_room_lighting_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
+    details.extend(_house_state_scope_detail_lines(cfg, language=language))
     primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
     if primary_signal_name:
         details.append(
@@ -299,6 +335,7 @@ def present_learned_room_lighting_assist_details(
     is_it = language.startswith("it")
     details: list[str] = []
 
+    details.extend(_house_state_scope_detail_lines(cfg, language=language))
     primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
     if primary_signal_name:
         details.append(

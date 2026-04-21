@@ -4,7 +4,7 @@ Coverage:
 - compute_house_state_filter helper (unit)
 - LightingPatternAnalyzer: house_state_filter set when concentrated
 - CrossDomainPatternAnalyzer: house_state_filter set in composite proposals
-- lifecycle identity_key: suffix present/absent
+- lifecycle identity_key: lighting keeps house-state suffix, composite ignores it
 - RoomSignalAssistReaction: gate on house_state_filter
 - RoomLightingAssistReaction: gate on house_state_filter
 """
@@ -19,6 +19,7 @@ import pytest
 from custom_components.heima.runtime.analyzers.base import (
     ReactionProposal,
     compute_house_state_filter,
+    compute_house_state_scope,
 )
 from custom_components.heima.runtime.analyzers.lifecycle import (
     composite_room_assist_lifecycle_hooks,
@@ -73,6 +74,11 @@ def _event(house_state: str, ts: str = _WEEK1) -> HeimaEvent:
 def test_compute_house_state_filter_returns_dominant_when_concentrated():
     events = [_event("relax")] * 9 + [_event("home")] * 1
     assert compute_house_state_filter(events) == "relax"
+
+
+def test_compute_house_state_scope_returns_observed_states_by_frequency():
+    events = [_event("working")] * 3 + [_event("home")] * 5 + [_event("relax")] * 2
+    assert compute_house_state_scope(events) == ["home", "working", "relax"]
 
 
 def test_compute_house_state_filter_returns_none_when_below_threshold():
@@ -258,7 +264,7 @@ def test_lighting_identity_key_no_suffix_when_filter_none():
     assert "house_state" not in key
 
 
-def test_composite_identity_key_includes_house_state_suffix_when_set():
+def test_composite_identity_key_ignores_house_state_suffix_when_set():
     hooks = composite_room_assist_lifecycle_hooks()
     proposal = _proposal(
         "room_signal_assist",
@@ -269,7 +275,7 @@ def test_composite_identity_key_includes_house_state_suffix_when_set():
         },
     )
     key = hooks.identity_key(proposal)
-    assert "|house_state=relax" in key
+    assert key == "room_signal_assist|room=bathroom|primary=room_humidity"
 
 
 def test_composite_identity_key_no_suffix_when_filter_none():
@@ -283,7 +289,21 @@ def test_composite_identity_key_no_suffix_when_filter_none():
         },
     )
     key = hooks.identity_key(proposal)
-    assert "house_state" not in key
+    assert key == "room_signal_assist|room=bathroom|primary=room_humidity"
+
+
+def test_composite_identity_key_ignores_house_state_scope():
+    hooks = composite_room_assist_lifecycle_hooks()
+    proposal = _proposal(
+        "room_signal_assist",
+        {
+            "room_id": "bathroom",
+            "primary_signal_name": "room_humidity",
+            "house_state_in": ["home", "relax"],
+        },
+    )
+    key = hooks.identity_key(proposal)
+    assert key == "room_signal_assist|room=bathroom|primary=room_humidity"
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +382,22 @@ def test_signal_assist_no_gate_when_filter_none():
     assert isinstance(result, list)
 
 
+def test_signal_assist_gate_accepts_house_state_in_scope():
+    from custom_components.heima.runtime.reactions.signal_assist import RoomSignalAssistReaction
+
+    reaction = RoomSignalAssistReaction(
+        hass=_fake_hass(),
+        room_id="bathroom",
+        steps=[],
+        primary_bucket="high",
+        primary_signal_entities=["sensor.humidity"],
+        house_state_in=["home", "working"],
+    )
+    snap = _snapshot(house_state="working")
+    result = reaction.evaluate([snap])
+    assert isinstance(result, list)
+
+
 # ---------------------------------------------------------------------------
 # 5. RoomLightingAssistReaction — gate on house_state_filter
 # ---------------------------------------------------------------------------
@@ -395,3 +431,18 @@ def test_lighting_assist_no_gate_when_filter_none():
     snap = _snapshot(house_state="away", room_id="living")
     result = reaction.evaluate([snap])
     assert isinstance(result, list)
+
+
+def test_lighting_assist_gate_rejects_house_state_outside_scope():
+    from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
+
+    reaction = RoomLightingAssistReaction(
+        hass=_fake_hass(),
+        room_id="living",
+        entity_steps=[{"entity_id": "light.test", "action": "on"}],
+        primary_signal_entities=["sensor.lux"],
+        house_state_in=["home", "relax"],
+    )
+    snap = _snapshot(house_state="away", room_id="living")
+    result = reaction.evaluate([snap])
+    assert result == []

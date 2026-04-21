@@ -71,8 +71,6 @@ class _ReactionsStepsMixin:
         """Return a coarse slot key used to avoid duplicate configured reactions."""
         reaction_type = resolve_reaction_type(cfg)
         room_id = str(cfg.get("room_id") or "").strip()
-        house_state_filter = str(cfg.get("house_state_filter") or "").strip()
-        house_state_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
 
         if reaction_type in {
             "room_signal_assist",
@@ -84,17 +82,14 @@ class _ReactionsStepsMixin:
             trigger_mode_suffix = (
                 f"|mode={primary_trigger_mode}" if reaction_type == "room_signal_assist" else ""
             )
-            return (
-                f"{reaction_type}|room={room_id}|primary={primary_signal}"
-                f"{trigger_mode_suffix}{house_state_suffix}"
-            )
+            return f"{reaction_type}|room={room_id}|primary={primary_signal}{trigger_mode_suffix}"
 
         if reaction_type in {
             "room_darkness_lighting_assist",
             "room_contextual_lighting_assist",
         }:
             primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
-            return f"{reaction_type}|room={room_id}|primary={primary_signal}{house_state_suffix}"
+            return f"{reaction_type}|room={room_id}|primary={primary_signal}"
 
         if reaction_type == "room_vacancy_lighting_off":
             return f"{reaction_type}|room={room_id}"
@@ -104,12 +99,53 @@ class _ReactionsStepsMixin:
             bucket = None
             if isinstance(scheduled_min, (int, float)):
                 bucket = (int(scheduled_min) // 30) * 30
+            house_state_filter = str(cfg.get("house_state_filter") or "").strip()
+            house_state_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
             return (
                 f"{reaction_type}|room={room_id}|weekday={cfg.get('weekday')}|bucket={bucket}"
                 f"{house_state_suffix}"
             )
 
         return ""
+
+    @staticmethod
+    def _normalized_house_state_scope(cfg: dict[str, Any]) -> list[str]:
+        scope = [
+            str(item).strip().lower()
+            for item in list(cfg.get("house_state_in") or [])
+            if str(item).strip()
+        ]
+        if scope:
+            return list(dict.fromkeys(scope))
+        house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
+        return [house_state_filter] if house_state_filter else []
+
+    @staticmethod
+    def _merge_house_state_scope(
+        current_cfg: dict[str, Any],
+        incoming_cfg: dict[str, Any],
+    ) -> tuple[list[str], str | None]:
+        merged = list(
+            dict.fromkeys(
+                _ReactionsStepsMixin._normalized_house_state_scope(current_cfg)
+                + _ReactionsStepsMixin._normalized_house_state_scope(incoming_cfg)
+            )
+        )
+        if not merged:
+            return [], None
+        if len(merged) == 1:
+            return merged, merged[0]
+        return merged, None
+
+    @staticmethod
+    def _active_house_states_placeholder(cfg: dict[str, Any], *, language: str = "it") -> str:
+        states = _ReactionsStepsMixin._normalized_house_state_scope(cfg)
+        if not states:
+            return ""
+        joined = ", ".join(states)
+        if language.startswith("it"):
+            return f"\n\nStati casa attivi: {joined}"
+        return f"\n\nActive house states: {joined}"
 
     def _configured_slot_matches_for_proposal(
         self,
@@ -1364,6 +1400,9 @@ class _ReactionsStepsMixin:
         }
         label = self._reaction_label_from_config(pid, cfg, labels_map)
         room_id_placeholder = room_id or "-"
+        active_house_states = self._active_house_states_placeholder(
+            cfg, language=getattr(self.hass.config, "language", "it")
+        )
 
         if user_input is None:
             return self._show_room_darkness_lighting_editor(
@@ -1371,6 +1410,7 @@ class _ReactionsStepsMixin:
                 defaults=defaults,
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1396,6 +1436,7 @@ class _ReactionsStepsMixin:
                 errors=errors,
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1427,6 +1468,7 @@ class _ReactionsStepsMixin:
                 errors={"base": "redacted_payload"},
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1584,6 +1626,9 @@ class _ReactionsStepsMixin:
         }
         label = self._reaction_label_from_config(pid, cfg, labels_map)
         room_id_placeholder = room_id or "-"
+        active_house_states = self._active_house_states_placeholder(
+            cfg, language=getattr(self.hass.config, "language", "it")
+        )
 
         if user_input is None:
             return self._show_room_signal_assist_editor(
@@ -1591,6 +1636,7 @@ class _ReactionsStepsMixin:
                 defaults=defaults,
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1616,6 +1662,7 @@ class _ReactionsStepsMixin:
                 errors=errors,
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1655,6 +1702,7 @@ class _ReactionsStepsMixin:
                 errors={"base": "redacted_payload"},
                 reaction_description=label,
                 room_id=room_id_placeholder,
+                active_house_states=active_house_states,
                 include_room_id=False,
                 include_enabled=True,
                 include_delete=True,
@@ -1994,9 +2042,27 @@ class _ReactionsStepsMixin:
         existing_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
-        configured = dict(_safe_mapping(existing_config))
+        previous = dict(_safe_mapping(existing_config))
+        configured = dict(previous)
         configured.update(cfg)
         configured.pop("reaction_class", None)
+
+        reaction_type = str(proposal.reaction_type or configured.get("reaction_type") or "").strip()
+        if reaction_type in {
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
+            "room_darkness_lighting_assist",
+        }:
+            merged_scope, merged_filter = self._merge_house_state_scope(previous, cfg)
+            if merged_scope:
+                configured["house_state_in"] = merged_scope
+            else:
+                configured.pop("house_state_in", None)
+            if merged_filter:
+                configured["house_state_filter"] = merged_filter
+            else:
+                configured["house_state_filter"] = None
 
         is_followup = proposal.followup_kind == "tuning_suggestion" and bool(
             _safe_mapping(existing_config)
@@ -2303,6 +2369,7 @@ class _ReactionsStepsMixin:
         template_description: str = "",
         reaction_description: str = "",
         room_id: str = "",
+        active_house_states: str = "",
         include_room_id: bool,
         include_enabled: bool,
         include_delete: bool,
@@ -2322,6 +2389,7 @@ class _ReactionsStepsMixin:
                 "reaction_description": reaction_description,
                 "room_id": room_id,
                 "available_signals": self._format_room_signals_placeholder(self._rooms(), room_id),
+                "active_house_states": active_house_states,
             },
         )
 
@@ -2335,6 +2403,7 @@ class _ReactionsStepsMixin:
         template_description: str = "",
         reaction_description: str = "",
         room_id: str = "",
+        active_house_states: str = "",
         include_room_id: bool,
         include_enabled: bool,
         include_delete: bool,
@@ -2354,6 +2423,7 @@ class _ReactionsStepsMixin:
                 "reaction_description": reaction_description,
                 "room_id": room_id,
                 "available_signals": self._format_room_signals_placeholder(self._rooms(), room_id),
+                "active_house_states": active_house_states,
             },
         )
 
@@ -4513,6 +4583,11 @@ class _ReactionsStepsMixin:
                 )
                 primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
                 house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
+                house_state_in = [
+                    str(item).strip().lower()
+                    for item in list(cfg.get("house_state_in") or [])
+                    if str(item).strip()
+                ]
                 observed = int(cfg.get("episodes_observed", 0))
                 if reaction_type == "room_cooling_assist":
                     parts = [f"Raffrescamento {room_id}"]
@@ -4527,7 +4602,9 @@ class _ReactionsStepsMixin:
                     parts.append(" + ".join(signal_bits))
                 if primary_trigger_mode:
                     parts.append(primary_trigger_mode)
-                if house_state_filter:
+                if house_state_in:
+                    parts.append(f"stati:{','.join(house_state_in)}")
+                elif house_state_filter:
                     parts.append(f"stato:{house_state_filter}")
                 if observed > 0:
                     parts.append(f"{observed} episodi")
@@ -4540,11 +4617,21 @@ class _ReactionsStepsMixin:
                 room_id = str(cfg.get("room_id", "")).strip() or reaction_id
                 primary_entities = list(cfg.get("primary_signal_entities", []))
                 entity_steps = list(cfg.get("entity_steps", []))
+                house_state_in = [
+                    str(item).strip().lower()
+                    for item in list(cfg.get("house_state_in") or [])
+                    if str(item).strip()
+                ]
+                house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
                 parts = [f"Luce {room_id}"]
                 if primary_entities:
                     parts.append(f"lux:{len(primary_entities)}")
                 if entity_steps:
                     parts.append(f"{len(entity_steps)} entità")
+                if house_state_in:
+                    parts.append(f"stati:{','.join(house_state_in)}")
+                elif house_state_filter:
+                    parts.append(f"stato:{house_state_filter}")
                 return " — ".join(parts)
             except (TypeError, ValueError):
                 pass

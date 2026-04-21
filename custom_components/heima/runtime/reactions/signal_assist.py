@@ -75,10 +75,14 @@ class RoomSignalAssistReaction(HeimaReaction):
         correlation_window_s: int = 600,
         followup_window_s: int = 900,
         house_state_filter: str | None = None,
+        house_state_in: list[str] | None = None,
         reaction_id: str | None = None,
     ) -> None:
         self._hass = hass
         self._house_state_filter = str(house_state_filter).strip() if house_state_filter else None
+        self._house_state_in = tuple(
+            str(item).strip() for item in (house_state_in or []) if str(item).strip()
+        )
         self._bucket_getter = bucket_getter or (lambda _room_id, _signal_name: None)
         self._burst_getter = burst_getter or (lambda _room_id, _signal_name, *, window_s: False)
         self._use_burst_accessor = use_burst_accessor
@@ -172,6 +176,8 @@ class RoomSignalAssistReaction(HeimaReaction):
             self._steady_condition_active = False
             self._last_fired_ts = None
             self._last_fired_iso = None
+            return []
+        if self._house_state_in and snapshot.house_state not in self._house_state_in:
             return []
         if self._house_state_filter and snapshot.house_state != self._house_state_filter:
             return []
@@ -501,6 +507,7 @@ def _build_normalized_room_signal_assist_reaction(
         followup_window_s=followup_window_s,
         steps=steps,
         house_state_filter=cfg.get("house_state_filter") or None,
+        house_state_in=list(cfg.get("house_state_in") or []),
         reaction_id=proposal_id,
     )
 
@@ -546,6 +553,11 @@ def present_room_signal_assist_label(
         corroboration_signal_name = str(cfg.get("corroboration_signal_name") or "").strip().lower()
         primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
         house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
+        house_state_in = [
+            str(item).strip().lower()
+            for item in list(cfg.get("house_state_in") or [])
+            if str(item).strip()
+        ]
         observed = int(cfg.get("episodes_observed", 0))
         if reaction_type == "room_cooling_assist":
             parts = [f"Raffrescamento {room_id}"]
@@ -560,13 +572,33 @@ def present_room_signal_assist_label(
             parts.append(" + ".join(signal_bits))
         if primary_trigger_mode:
             parts.append(primary_trigger_mode)
-        if house_state_filter:
+        if house_state_in:
+            parts.append(f"stati:{','.join(house_state_in)}")
+        elif house_state_filter:
             parts.append(f"stato:{house_state_filter}")
         if observed > 0:
             parts.append(f"{observed} episodi")
         return " — ".join(parts)
     except (TypeError, ValueError):
         return labels_map.get(reaction_id)
+
+
+def _house_state_scope_detail_lines(cfg: dict[str, Any], *, language: str) -> list[str]:
+    is_it = language.startswith("it")
+    house_state_in = [
+        str(item).strip().lower()
+        for item in list(cfg.get("house_state_in") or [])
+        if str(item).strip()
+    ]
+    if house_state_in:
+        joined = ", ".join(house_state_in)
+        return [f"Stati casa: {joined}" if is_it else f"House states: {joined}"]
+    house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
+    if house_state_filter:
+        return [
+            f"Stato casa: {house_state_filter}" if is_it else f"House state: {house_state_filter}"
+        ]
+    return []
 
 
 def present_admin_authored_room_signal_assist_details(
@@ -581,6 +613,7 @@ def present_admin_authored_room_signal_assist_details(
     reaction_type = str(
         cfg.get("reaction_type") or getattr(proposal, "reaction_type", "") or ""
     ).strip()
+    details.extend(_house_state_scope_detail_lines(cfg, language=language))
     primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
         details.append(
@@ -689,6 +722,7 @@ def present_learned_room_signal_assist_details(
     reaction_type = str(
         cfg.get("reaction_type") or getattr(proposal, "reaction_type", "") or ""
     ).strip()
+    details.extend(_house_state_scope_detail_lines(cfg, language=language))
     primary_signal_name = _human_signal_name(str(cfg.get("primary_signal_name") or "").strip())
     if primary_signal_name:
         details.append(
