@@ -50,7 +50,7 @@ class ReactionProposal:
     description: str = ""
     confidence: float = 0.0
     origin: Literal["learned", "admin_authored"] = "learned"
-    followup_kind: Literal["discovery", "tuning_suggestion"] = "discovery"
+    followup_kind: Literal["discovery", "tuning_suggestion", "improvement"] = "discovery"
     status: Literal["pending", "accepted", "rejected"] = "pending"
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -62,6 +62,8 @@ class ReactionProposal:
     target_reaction_type: str = ""
     target_reaction_origin: str = ""
     target_template_id: str = ""
+    improves_reaction_type: str = ""
+    improvement_reason: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +85,8 @@ class ReactionProposal:
             "target_reaction_type": self.target_reaction_type,
             "target_reaction_origin": self.target_reaction_origin,
             "target_template_id": self.target_template_id,
+            "improves_reaction_type": self.improves_reaction_type,
+            "improvement_reason": self.improvement_reason,
         }
 
     @classmethod
@@ -91,7 +95,7 @@ class ReactionProposal:
         if origin not in {"learned", "admin_authored"}:
             origin = "learned"
         followup_kind = str(raw.get("followup_kind") or "discovery")
-        if followup_kind not in {"discovery", "tuning_suggestion"}:
+        if followup_kind not in {"discovery", "tuning_suggestion", "improvement"}:
             followup_kind = "discovery"
         status = str(raw.get("status") or "pending")
         if status not in {"pending", "accepted", "rejected"}:
@@ -120,6 +124,8 @@ class ReactionProposal:
             target_reaction_type=str(raw.get("target_reaction_type") or ""),
             target_reaction_origin=str(raw.get("target_reaction_origin") or ""),
             target_template_id=str(raw.get("target_template_id") or ""),
+            improves_reaction_type=str(raw.get("improves_reaction_type") or ""),
+            improvement_reason=str(raw.get("improvement_reason") or ""),
         )
 
 

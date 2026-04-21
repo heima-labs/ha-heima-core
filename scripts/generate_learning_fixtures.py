@@ -20,10 +20,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-
-DEFAULT_STORAGE_DIR = Path(
-    "docs/examples/ha_test_instance/docker/ha_config/.storage"
-)
+DEFAULT_STORAGE_DIR = Path("docs/examples/ha_test_instance/docker/ha_config/.storage")
 UTC = timezone.utc
 LOCAL_TZ = ZoneInfo("Europe/Rome")
 SCENE_MINUTE_OF_DAY = 19 * 60 + 30
@@ -145,6 +142,126 @@ def _state_change_event(
     }
 
 
+def _room_signal_threshold_event(
+    *,
+    day: date,
+    at: time,
+    entity_id: str,
+    room_id: str,
+    signal_name: str,
+    from_bucket: str,
+    to_bucket: str,
+    value: float,
+    device_class: str | None,
+    correlation_id: str,
+    direction: str,
+    house_state: str = "home",
+) -> dict[str, object]:
+    local_dt = datetime.combine(day, at, tzinfo=LOCAL_TZ)
+    utc_ts = local_dt.astimezone(UTC).isoformat()
+    return {
+        "ts": utc_ts,
+        "event_type": "room_signal_threshold",
+        "context": {
+            **_room_event_context(day=day, room_id=room_id, at=at),
+            "house_state": house_state,
+        },
+        "source": None,
+        "data": {
+            "signal_name": signal_name,
+            "entity_id": entity_id,
+            "from_bucket": from_bucket,
+            "to_bucket": to_bucket,
+            "direction": direction,
+            "value": value,
+            "device_class": device_class,
+        },
+        "domain": entity_id.split(".", 1)[0],
+        "subject_type": "signal",
+        "subject_id": signal_name,
+        "room_id": room_id,
+        "correlation_id": correlation_id,
+    }
+
+
+def _room_signal_burst_event(
+    *,
+    day: date,
+    at: time,
+    entity_id: str,
+    room_id: str,
+    signal_name: str,
+    baseline_value: float,
+    value: float,
+    burst_threshold: float,
+    burst_window_s: int,
+    direction: str,
+    device_class: str | None,
+    correlation_id: str,
+    house_state: str = "home",
+) -> dict[str, object]:
+    local_dt = datetime.combine(day, at, tzinfo=LOCAL_TZ)
+    utc_ts = local_dt.astimezone(UTC).isoformat()
+    return {
+        "ts": utc_ts,
+        "event_type": "room_signal_burst",
+        "context": {
+            **_room_event_context(day=day, room_id=room_id, at=at),
+            "house_state": house_state,
+        },
+        "source": None,
+        "data": {
+            "signal_name": signal_name,
+            "entity_id": entity_id,
+            "baseline_value": baseline_value,
+            "value": value,
+            "delta": value - baseline_value,
+            "burst_threshold": burst_threshold,
+            "burst_window_s": burst_window_s,
+            "direction": direction,
+            "device_class": device_class,
+        },
+        "domain": entity_id.split(".", 1)[0],
+        "subject_type": "signal",
+        "subject_id": signal_name,
+        "room_id": room_id,
+        "correlation_id": correlation_id,
+    }
+
+
+def _actuation_event(
+    *,
+    day: date,
+    at: time,
+    entity_id: str,
+    room_id: str,
+    action: str,
+    correlation_id: str,
+    house_state: str = "home",
+) -> dict[str, object]:
+    local_dt = datetime.combine(day, at, tzinfo=LOCAL_TZ)
+    utc_ts = local_dt.astimezone(UTC).isoformat()
+    domain = entity_id.split(".", 1)[0]
+    return {
+        "ts": utc_ts,
+        "event_type": "actuation",
+        "context": {
+            **_room_event_context(day=day, room_id=room_id, at=at),
+            "house_state": house_state,
+        },
+        "source": "user",
+        "data": {
+            "entity_id": entity_id,
+            "action": action,
+        },
+        "domain": domain,
+        "subject_type": "entity",
+        "subject_id": entity_id,
+        "room_id": room_id,
+        "correlation_id": correlation_id,
+    }
+
+
 def build_pattern_events(today_local: date) -> dict[str, object]:
     events: list[dict[str, object]] = []
     scene_entities = [
@@ -230,40 +347,40 @@ def build_cooling_events(today_local: date) -> list[dict[str, object]]:
         correlation_id = f"fixture-studio-cooling-{day.isoformat()}"
         events.extend(
             [
-                _state_change_event(
+                _room_signal_burst_event(
                     day=day,
                     at=time(15, 0),
                     entity_id="sensor.test_heima_studio_temperature",
                     room_id="studio",
-                    context_at=time(15, 0),
-                    old_state="24.0",
-                    new_state="25.8",
-                    unit_of_measurement="°C",
+                    signal_name="room_temperature",
+                    baseline_value=24.0,
+                    value=25.8,
+                    burst_threshold=1.0,
+                    burst_window_s=600,
+                    direction="up",
                     device_class="temperature",
                     correlation_id=correlation_id,
                 ),
-                _state_change_event(
+                _room_signal_burst_event(
                     day=day,
                     at=time(15, 2),
                     entity_id="sensor.test_heima_studio_humidity",
                     room_id="studio",
-                    context_at=time(15, 0),
-                    old_state="52",
-                    new_state="58",
-                    unit_of_measurement="%",
+                    signal_name="room_humidity",
+                    baseline_value=52.0,
+                    value=58.0,
+                    burst_threshold=4.0,
+                    burst_window_s=600,
+                    direction="up",
                     device_class="humidity",
                     correlation_id=correlation_id,
                 ),
-                _state_change_event(
+                _actuation_event(
                     day=day,
                     at=time(15, 5),
                     entity_id="switch.test_heima_studio_fan",
                     room_id="studio",
-                    context_at=time(15, 0),
-                    old_state="off",
-                    new_state="on",
-                    unit_of_measurement=None,
-                    device_class=None,
+                    action="on",
                     correlation_id=correlation_id,
                 ),
             ]
@@ -278,28 +395,25 @@ def build_air_quality_events(today_local: date) -> list[dict[str, object]]:
         correlation_id = f"fixture-studio-air-quality-{day.isoformat()}"
         events.extend(
             [
-                _state_change_event(
+                _room_signal_threshold_event(
                     day=day,
                     at=time(10, 0),
                     entity_id="sensor.test_heima_studio_co2",
                     room_id="studio",
-                    context_at=time(10, 0),
-                    old_state="700",
-                    new_state="940",
-                    unit_of_measurement="ppm",
+                    signal_name="room_co2",
+                    from_bucket="ok",
+                    to_bucket="elevated",
+                    value=940.0,
                     device_class="carbon_dioxide",
                     correlation_id=correlation_id,
+                    direction="up",
                 ),
-                _state_change_event(
+                _actuation_event(
                     day=day,
                     at=time(10, 4),
                     entity_id="switch.test_heima_studio_fan",
                     room_id="studio",
-                    context_at=time(10, 0),
-                    old_state="off",
-                    new_state="on",
-                    unit_of_measurement=None,
-                    device_class=None,
+                    action="on",
                     correlation_id=correlation_id,
                 ),
             ]
@@ -314,20 +428,23 @@ def build_darkness_lighting_events(today_local: date) -> list[dict[str, object]]
         correlation_id = f"fixture-studio-darkness-{day.isoformat()}"
         events.extend(
             [
-                _state_change_event(
+                _room_signal_threshold_event(
                     day=day,
                     at=time(18, 0),
                     entity_id="sensor.test_heima_studio_lux",
                     room_id="studio",
-                    context_at=time(18, 0),
-                    old_state="180",
-                    new_state="90",
-                    unit_of_measurement="lx",
+                    signal_name="room_lux",
+                    from_bucket="ok",
+                    to_bucket="dim",
+                    value=90.0,
                     device_class="illuminance",
                     correlation_id=correlation_id,
+                    direction="down",
                 ),
                 {
-                    "ts": datetime.combine(day, time(18, 2), tzinfo=LOCAL_TZ).astimezone(UTC).isoformat(),
+                    "ts": datetime.combine(day, time(18, 2), tzinfo=LOCAL_TZ)
+                    .astimezone(UTC)
+                    .isoformat(),
                     "event_type": "lighting",
                     "context": _room_event_context(day=day, room_id="studio", at=time(18, 0)),
                     "source": "user",

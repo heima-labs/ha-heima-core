@@ -68,7 +68,7 @@ class RoomScopedCompositeMatcher:
         ]
 
         episodes: list[CompositeEpisode] = []
-        for event in primary_events:
+        for idx, event in enumerate(primary_events):
             ts = parse_event_ts(event)
             if ts is None:
                 continue
@@ -105,10 +105,22 @@ class RoomScopedCompositeMatcher:
             if missing_required:
                 continue
 
+            next_primary_ts = None
+            for later in primary_events[idx + 1 :]:
+                later_ts = parse_event_ts(later)
+                if later_ts is not None:
+                    next_primary_ts = later_ts
+                    break
+
             matched_followups = tuple(
                 candidate
                 for candidate in followup_events
-                if within_followup(ts, parse_event_ts(candidate), spec.followup_window_s)
+                if within_followup(
+                    ts,
+                    parse_event_ts(candidate),
+                    spec.followup_window_s,
+                    next_primary_ts=next_primary_ts,
+                )
                 and _signal_matches_event(candidate, spec.followup if spec.followup else None)
                 and subject_entity_id(candidate)
             )
@@ -164,11 +176,21 @@ def within_window(origin: datetime, candidate: datetime | None, seconds: int) ->
     return abs((candidate - origin).total_seconds()) <= seconds
 
 
-def within_followup(origin: datetime, candidate: datetime | None, seconds: int) -> bool:
+def within_followup(
+    origin: datetime,
+    candidate: datetime | None,
+    seconds: int,
+    *,
+    next_primary_ts: datetime | None = None,
+) -> bool:
     if candidate is None:
         return False
     delta = (candidate - origin).total_seconds()
-    return 0 <= delta <= seconds
+    if not (0 <= delta <= seconds):
+        return False
+    if next_primary_ts is not None and candidate >= next_primary_ts:
+        return False
+    return True
 
 
 def _signal_matches_event(event: HeimaEvent, spec: CompositeSignalSpec | None) -> bool:

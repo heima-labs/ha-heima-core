@@ -288,6 +288,14 @@ async def _analyze_definition(
                 ),
             )
         )
+        if definition.reaction_type == "room_darkness_lighting_assist":
+            contextual_candidate = _build_contextual_lighting_candidate(
+                room_id=room_id,
+                confirmed=confirmed,
+                quality_policy=quality_policy,
+            )
+            if contextual_candidate is not None:
+                proposals.append(contextual_candidate)
     return proposals
 
 
@@ -649,6 +657,103 @@ def _build_darkness_lighting_assist_config(
         "episodes_observed": len(confirmed),
         "observed_followup_entities": followup_entities,
     }
+
+
+def _build_contextual_lighting_candidate(
+    *,
+    room_id: str,
+    confirmed: list,
+    quality_policy: CompositeProposalQualityPolicy,
+) -> ReactionProposal | None:
+    grouped = _contextual_episode_groups(confirmed)
+    stable_groups: dict[str, list] = {}
+    profiles: dict[str, dict[str, Any]] = {}
+    for profile_name, episodes in grouped.items():
+        if len(episodes) < 2:
+            continue
+        entity_steps = _aggregate_lighting_followup_steps(episodes, quality_policy=quality_policy)
+        if not entity_steps:
+            continue
+        stable_groups[profile_name] = episodes
+        profiles[profile_name] = {"entity_steps": entity_steps}
+    if len(stable_groups) < 2:
+        return None
+
+    step_signatures = {
+        _lighting_steps_signature(payload.get("entity_steps") or [])
+        for payload in profiles.values()
+        if payload.get("entity_steps")
+    }
+    if len(step_signatures) < 2:
+        return None
+
+    lux_entities = sorted({ep.primary_entity for ep in confirmed if ep.primary_entity})
+    observed_followup_entities = sorted(
+        {
+            step["entity_id"]
+            for payload in profiles.values()
+            for step in list(payload.get("entity_steps") or [])
+            if isinstance(step, dict) and step.get("entity_id")
+        }
+    )
+    diagnostics = build_learning_diagnostics(
+        pattern_id="room_contextual_lighting_assist",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_contextual_lighting_assist",
+        plugin_family="composite_room_assist",
+        room_id=room_id,
+        primary_signal="room_lux",
+        corroboration_signals=[],
+        followup_signal="lighting_replay",
+        require_room_occupancy=True,
+        correlation_window_s=_CORRELATION_WINDOW_S,
+        followup_window_s=_FOLLOWUP_WINDOW_S,
+        episodes_detected=len(confirmed),
+        episodes_confirmed=len(confirmed),
+        weeks_observed=_episode_week_count(confirmed),
+        corroborated_episodes=0,
+        followup_entity_min_ratio=quality_policy.followup_entity_min_ratio,
+        followup_entity_min_episodes=quality_policy.followup_entity_min_episodes,
+        corroboration_promote_min_ratio=quality_policy.corroboration_promote_min_ratio,
+        corroboration_promote_min_episodes=quality_policy.corroboration_promote_min_episodes,
+        matched_primary_entities=lux_entities,
+        matched_corroboration_entities=[],
+        observed_followup_entities=observed_followup_entities,
+    )
+    diagnostics["contextual_profiles"] = sorted(profiles)
+    diagnostics["contextual_variation_dimensions"] = _contextual_variation_dimensions(stable_groups)
+
+    suggested = {
+        "reaction_type": "room_contextual_lighting_assist",
+        "room_id": room_id,
+        "primary_signal_entities": lux_entities,
+        "primary_signal_name": "room_lux",
+        "primary_bucket": "dim",
+        "primary_bucket_match_mode": "lte",
+        "followup_window_s": _FOLLOWUP_WINDOW_S,
+        "profiles": profiles,
+        "rules": _contextual_rules_for_profiles(sorted(profiles)),
+        "default_profile": _contextual_default_profile(profiles),
+        "episodes_observed": len(confirmed),
+        "observed_followup_entities": observed_followup_entities,
+        "improvement_reason": "contextual_variation",
+        "learning_diagnostics": diagnostics,
+    }
+    return ReactionProposal(
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_contextual_lighting_assist",
+        description=(
+            f"{room_id}: contextual lighting upgrade — darkness-triggered lighting varies "
+            f"by time/context ({len(confirmed)} observed episodes)."
+        ),
+        confidence=round(min(0.91, 0.50 + (0.04 * len(confirmed))), 3),
+        followup_kind="discovery",
+        suggested_reaction_config=suggested,
+        fingerprint=(
+            "CompositePatternCatalogAnalyzer|room_contextual_lighting_assist|"
+            f"{room_id}|darkness_context_variation"
+        ),
+    )
 
 
 def _build_vacancy_lighting_off_config(
@@ -1081,17 +1186,33 @@ def _aggregate_lighting_followup_steps(
     for entity_id, group in sorted(by_entity.items()):
         if entity_id not in stable_entities:
             continue
-        last = group[-1]
-        action = str(last.data.get("action") or "on")
+        action_counts: dict[str, int] = {}
+        for event in group:
+            action_name = str(event.data.get("action") or "on").strip() or "on"
+            action_counts[action_name] = action_counts.get(action_name, 0) + 1
+        action = max(
+            action_counts.items(),
+            key=lambda item: (item[1], item[0] == "on", item[0]),
+        )[0]
+        matching_events = [
+            event for event in group if str(event.data.get("action") or "on").strip() == action
+        ]
+        selected_events = matching_events or group
         brightness = (
-            _median_int([e.data.get("brightness") for e in group]) if action == "on" else None
-        )
-        color_temp = (
-            _median_int([e.data.get("color_temp_kelvin") for e in group])
+            _median_int([e.data.get("brightness") for e in selected_events])
             if action == "on"
             else None
         )
-        rgb = _mode_rgb([e.data.get("rgb_color") for e in group]) if action == "on" else None
+        color_temp = (
+            _median_int([e.data.get("color_temp_kelvin") for e in selected_events])
+            if action == "on"
+            else None
+        )
+        rgb = (
+            _mode_rgb([e.data.get("rgb_color") for e in selected_events])
+            if action == "on"
+            else None
+        )
         steps.append(
             {
                 "entity_id": entity_id,
@@ -1102,6 +1223,101 @@ def _aggregate_lighting_followup_steps(
             }
         )
     return steps
+
+
+def _lighting_steps_signature(entity_steps: list[dict[str, Any]]) -> tuple[tuple[Any, ...], ...]:
+    signature: list[tuple[Any, ...]] = []
+    for step in entity_steps:
+        signature.append(
+            (
+                str(step.get("entity_id") or ""),
+                str(step.get("action") or ""),
+                step.get("brightness"),
+                step.get("color_temp_kelvin"),
+                tuple(step.get("rgb_color") or []) or None,
+            )
+        )
+    return tuple(sorted(signature))
+
+
+def _contextual_episode_groups(confirmed: list) -> dict[str, list]:
+    grouped: dict[str, list] = {}
+    for episode in confirmed:
+        profile_name = _contextual_profile_name_for_episode(episode)
+        grouped.setdefault(profile_name, []).append(episode)
+    return grouped
+
+
+def _contextual_profile_name_for_episode(episode: Any) -> str:
+    context = getattr(next(iter(getattr(episode, "followup_events", ())), None), "context", None)
+    house_state = str(getattr(context, "house_state", "") or "").strip()
+    minute = getattr(context, "minute_of_day", None)
+    if minute is None:
+        ts = getattr(episode, "ts", None)
+        if ts is not None:
+            minute = int(ts.hour) * 60 + int(ts.minute)
+        else:
+            minute = 0
+    minute = int(minute or 0)
+    if 8 * 60 <= minute < 18 * 60 + 30 and house_state == "working":
+        return "workday_focus"
+    if 18 * 60 + 30 <= minute < 23 * 60 + 30:
+        return "evening_relax"
+    if minute >= 23 * 60 + 30 or minute < 6 * 60 + 30:
+        return "night_navigation"
+    return "day_generic"
+
+
+def _contextual_rules_for_profiles(profile_names: list[str]) -> list[dict[str, Any]]:
+    ordered_rules: list[dict[str, Any]] = []
+    if "workday_focus" in profile_names:
+        ordered_rules.append(
+            {
+                "profile": "workday_focus",
+                "house_state_in": ["working"],
+                "time_window": {"start": "08:00", "end": "18:30"},
+            }
+        )
+    if "day_generic" in profile_names:
+        ordered_rules.append(
+            {
+                "profile": "day_generic",
+                "time_window": {"start": "08:00", "end": "18:30"},
+            }
+        )
+    if "evening_relax" in profile_names:
+        ordered_rules.append(
+            {
+                "profile": "evening_relax",
+                "time_window": {"start": "18:30", "end": "23:30"},
+            }
+        )
+    if "night_navigation" in profile_names:
+        ordered_rules.append(
+            {
+                "profile": "night_navigation",
+                "time_window": {"start": "23:30", "end": "06:30"},
+            }
+        )
+    return ordered_rules
+
+
+def _contextual_default_profile(profiles: dict[str, dict[str, Any]]) -> str:
+    for profile_name in ("day_generic", "evening_relax", "workday_focus", "night_navigation"):
+        if profile_name in profiles:
+            return profile_name
+    return next(iter(profiles), "day_generic")
+
+
+def _contextual_variation_dimensions(grouped: dict[str, list]) -> list[str]:
+    dimensions: list[str] = []
+    if any(name == "workday_focus" for name in grouped) and any(
+        name in grouped for name in ("day_generic", "evening_relax", "night_navigation")
+    ):
+        dimensions.append("house_state")
+    if any(name in grouped for name in ("evening_relax", "night_navigation", "day_generic")):
+        dimensions.append("time_window")
+    return dimensions
 
 
 def _median_int(values: list[Any]) -> int | None:

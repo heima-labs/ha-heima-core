@@ -22,6 +22,7 @@ from ..room_sources import (
 )
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     resolve_reaction_type,
@@ -1027,7 +1028,7 @@ class _ReactionsStepsMixin:
 
         if user_input is None:
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults=defaults,
                 reaction_description=label,
                 room_id=room_id,
@@ -1051,7 +1052,7 @@ class _ReactionsStepsMixin:
                 raise ValueError
         except (TypeError, ValueError, json.JSONDecodeError):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,
@@ -1067,7 +1068,7 @@ class _ReactionsStepsMixin:
 
         if not validate_contextual_lighting_contract(contract):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,
@@ -1094,7 +1095,7 @@ class _ReactionsStepsMixin:
         )
         if self._has_redacted_payload(cfg):
             return self._show_contextual_lighting_policy_editor(
-                step_id="reactions_edit_contextual_lighting_assist",
+                step_id="reactions_edit_form",
                 defaults={
                     "enabled": bool(user_input.get("enabled", defaults["enabled"])),
                     "preset": normalized_preset,
@@ -1330,7 +1331,7 @@ class _ReactionsStepsMixin:
 
         if action == "accept":
             accepted_proposal = current
-            if followup is not None and current.followup_kind != "tuning_suggestion":
+            if followup is not None and current.followup_kind == "discovery":
                 accepted_proposal = replace(
                     current,
                     followup_kind="tuning_suggestion",
@@ -1344,6 +1345,25 @@ class _ReactionsStepsMixin:
             if followup is not None:
                 target_id = str(followup["reaction_id"])
                 existing_cfg = dict(followup["reaction_cfg"])
+            if current.followup_kind == "improvement":
+                strategy = self._improvement_acceptance_strategy(current)
+                if strategy != "convert_replace":
+                    self._proposal_review_queue = [current_id, *queue]
+                    return self.async_show_form(
+                        step_id="proposals",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Required(
+                                    "review_action",
+                                    default="accept",
+                                ): vol.In(self._proposal_review_action_options()),
+                            }
+                        ),
+                        errors={"base": "unsupported_improvement_strategy"},
+                        description_placeholders=self._proposal_review_placeholders(
+                            pending, current, len(self._proposal_review_queue)
+                        ),
+                    )
             if self._proposal_requires_action_completion(current):
                 pending_drafts = list(getattr(self, "_pending_action_drafts", []))
                 pending_drafts.append(
@@ -1536,8 +1556,8 @@ class _ReactionsStepsMixin:
     def _reactions_options(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_REACTIONS, {}))
 
-    @staticmethod
     def _configured_reaction_from_proposal(
+        self,
         proposal: ReactionProposal,
         *,
         existing_config: dict[str, Any] | None = None,
@@ -1557,6 +1577,18 @@ class _ReactionsStepsMixin:
             configured["last_tuning_origin"] = proposal.origin
             configured["last_tuning_followup_kind"] = proposal.followup_kind
             return configured
+
+        is_improvement = proposal.followup_kind == "improvement" and bool(
+            _safe_mapping(existing_config)
+        )
+        if is_improvement:
+            previous = _safe_mapping(existing_config)
+            registry = self._learning_plugin_registry()
+            if registry is not None:
+                return registry.build_improvement_config(
+                    proposal,
+                    existing_config=previous,
+                )
 
         origin = proposal.origin
         configured["reaction_type"] = str(proposal.reaction_type or "").strip()
@@ -3161,6 +3193,7 @@ class _ReactionsStepsMixin:
         if reaction_type in {
             "lighting_scene_schedule",
             "room_darkness_lighting_assist",
+            "room_contextual_lighting_assist",
             "vacation_presence_simulation",
         }:
             return False
@@ -3255,6 +3288,10 @@ class _ReactionsStepsMixin:
             if title:
                 return title
         title = self._proposal_human_label(proposal, cfg)
+        if proposal.followup_kind == "improvement" and followup is not None:
+            if language.startswith("it"):
+                return f"Miglioramento: {title}"
+            return f"Upgrade: {title}"
         if followup is not None:
             if language.startswith("it"):
                 return f"Affinamento: {title}"
@@ -3279,7 +3316,12 @@ class _ReactionsStepsMixin:
 
         followup = self._proposal_followup_target(proposal)
         if followup is not None:
-            details.extend(self._proposal_tuning_review_details(proposal, followup, language))
+            if proposal.followup_kind == "improvement":
+                details.extend(
+                    self._proposal_improvement_review_details(proposal, followup, language)
+                )
+            else:
+                details.extend(self._proposal_tuning_review_details(proposal, followup, language))
 
         pattern_description = str(proposal.description or "").strip()
         title = self._proposal_human_label(proposal, cfg)
@@ -3345,6 +3387,49 @@ class _ReactionsStepsMixin:
             details.extend(presenter.learned_review_details(self, proposal, cfg, language))
 
         return "\n".join(details)
+
+    def _proposal_improvement_review_details(
+        self,
+        proposal: ReactionProposal,
+        followup: dict[str, Any],
+        language: str,
+    ) -> list[str]:
+        is_it = language.startswith("it")
+        reaction_label = str(followup.get("reaction_label") or followup.get("reaction_id") or "")
+        lines = [
+            (
+                f"Questa proposta sostituisce la reaction esistente: {reaction_label}"
+                if is_it
+                else f"This proposal replaces the existing reaction: {reaction_label}"
+            )
+        ]
+        descriptor = self._improvement_descriptor(proposal)
+        if descriptor is not None:
+            localized_reason = descriptor.review_reason_it if is_it else descriptor.review_reason_en
+            if localized_reason:
+                lines.append(localized_reason)
+        return lines
+
+    def _improvement_descriptor(
+        self, proposal: ReactionProposal
+    ) -> ImprovementProposalDescriptor | None:
+        registry = self._learning_plugin_registry()
+        if registry is None:
+            return None
+        return registry.improvement_descriptor_for(
+            target_reaction_type=str(proposal.reaction_type or "").strip(),
+            source_reaction_type=str(
+                proposal.improves_reaction_type or proposal.target_reaction_type or ""
+            ).strip(),
+            improvement_reason=str(proposal.improvement_reason or "").strip(),
+            enabled_only=False,
+        )
+
+    def _improvement_acceptance_strategy(self, proposal: ReactionProposal) -> str:
+        descriptor = self._improvement_descriptor(proposal)
+        if descriptor is None:
+            return "convert_replace"
+        return str(descriptor.acceptance_strategy or "convert_replace")
 
     def _proposal_tuning_review_details(
         self,

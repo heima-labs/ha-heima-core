@@ -32,6 +32,7 @@ class ProposalEngine:
         event_store: EventStore,
         *,
         learning_plugin_registry: LearningPluginRegistry | None = None,
+        configured_reactions_provider: Callable[[], dict[str, Any]] | None = None,
         min_confidence: float = 0.4,
         stale_after: timedelta | None = None,
         prune_pending_stale_after: timedelta | None = None,
@@ -45,6 +46,7 @@ class ProposalEngine:
             prune_pending_stale_after or self.DEFAULT_PRUNE_PENDING_STALE_AFTER
         )
         self._sensor_writer = sensor_writer
+        self._configured_reactions_provider = configured_reactions_provider
         self._learning_plugin_registry = (
             learning_plugin_registry or create_builtin_learning_plugin_registry()
         )
@@ -119,9 +121,12 @@ class ProposalEngine:
 
         merged = list(self._proposals)
         for candidate in generated:
+            normalized_candidate = self._normalize_generated_candidate(candidate, merged)
+            if normalized_candidate is None:
+                continue
             now = datetime.now(UTC).isoformat()
-            identity_key = self._identity_key(candidate)
-            followup_slot_key = self._followup_slot_key(candidate)
+            identity_key = self._identity_key(normalized_candidate)
+            followup_slot_key = self._followup_slot_key(normalized_candidate)
             matching = [
                 (idx, current)
                 for idx, current in enumerate(merged)
@@ -135,17 +140,21 @@ class ProposalEngine:
                 existing_idx, existing = pending_match
                 merged[existing_idx] = replace(
                     existing,
-                    confidence=candidate.confidence,
-                    description=candidate.description,
-                    suggested_reaction_config=_safe_dict(candidate.suggested_reaction_config),
+                    confidence=normalized_candidate.confidence,
+                    description=normalized_candidate.description,
+                    suggested_reaction_config=_safe_dict(
+                        normalized_candidate.suggested_reaction_config
+                    ),
                     updated_at=now,
                     last_observed_at=now,
                     identity_key=identity_key,
-                    followup_kind=candidate.followup_kind,
-                    target_reaction_id=candidate.target_reaction_id,
-                    target_reaction_type=candidate.target_reaction_type,
-                    target_reaction_origin=candidate.target_reaction_origin,
-                    target_template_id=candidate.target_template_id,
+                    followup_kind=normalized_candidate.followup_kind,
+                    target_reaction_id=normalized_candidate.target_reaction_id,
+                    target_reaction_type=normalized_candidate.target_reaction_type,
+                    target_reaction_origin=normalized_candidate.target_reaction_origin,
+                    target_template_id=normalized_candidate.target_template_id,
+                    improves_reaction_type=normalized_candidate.improves_reaction_type,
+                    improvement_reason=normalized_candidate.improvement_reason,
                 )
                 continue
 
@@ -156,13 +165,13 @@ class ProposalEngine:
             if accepted_match is None and followup_slot_key:
                 accepted_match = self._fallback_followup_match(
                     merged,
-                    candidate,
+                    normalized_candidate,
                     followup_slot_key=followup_slot_key,
                 )
             if accepted_match is None and not matching:
                 merged.append(
                     replace(
-                        candidate,
+                        normalized_candidate,
                         identity_key=identity_key,
                         last_observed_at=now,
                     )
@@ -171,24 +180,24 @@ class ProposalEngine:
 
             if accepted_match is not None:
                 _, accepted = accepted_match
-                if self._should_suppress_followup(candidate, accepted):
+                if self._should_suppress_followup(normalized_candidate, accepted):
                     continue
                 merged.append(
                     replace(
-                        candidate,
+                        normalized_candidate,
                         identity_key=identity_key,
                         last_observed_at=now,
                         followup_kind="tuning_suggestion",
                         target_reaction_type=(
-                            candidate.target_reaction_type
+                            normalized_candidate.target_reaction_type
                             or resolve_reaction_type(_safe_dict(accepted.suggested_reaction_config))
                             or accepted.reaction_type
                         ),
                         target_reaction_origin=(
-                            candidate.target_reaction_origin or accepted.origin
+                            normalized_candidate.target_reaction_origin or accepted.origin
                         ),
                         target_template_id=(
-                            candidate.target_template_id
+                            normalized_candidate.target_template_id
                             or str(
                                 _safe_dict(accepted.suggested_reaction_config).get(
                                     "admin_authored_template_id"
@@ -196,6 +205,8 @@ class ProposalEngine:
                                 or ""
                             )
                         ),
+                        improves_reaction_type=normalized_candidate.improves_reaction_type,
+                        improvement_reason=normalized_candidate.improvement_reason,
                     )
                 )
                 continue
@@ -207,6 +218,148 @@ class ProposalEngine:
         self._proposals = pruned
         await self._store.async_save(self._serialize())
         self._write_sensor()
+
+    def _normalize_generated_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+    ) -> ReactionProposal | None:
+        registry = self._learning_plugin_registry
+        if registry is None:
+            return candidate
+        if candidate.followup_kind == "improvement":
+            return candidate
+        if not any(
+            descriptor.target_reaction_type == candidate.reaction_type
+            for descriptor in registry.improvement_descriptors()
+        ):
+            return candidate
+        source = self._source_for_improvement_candidate(candidate, proposals)
+        if source is None:
+            return None
+        descriptor = registry.improvement_descriptor_for(
+            target_reaction_type=candidate.reaction_type,
+            source_reaction_type=str(source.get("reaction_type") or ""),
+            improvement_reason=candidate.improvement_reason,
+        )
+        if descriptor is None:
+            return candidate
+        source_cfg = _safe_dict(source.get("cfg"))
+        return replace(
+            candidate,
+            followup_kind="improvement",
+            target_reaction_id=str(source.get("target_id") or ""),
+            target_reaction_type=str(source.get("reaction_type") or ""),
+            target_reaction_origin=str(source.get("origin") or ""),
+            target_template_id=str(
+                source_cfg.get("source_template_id")
+                or source_cfg.get("admin_authored_template_id")
+                or ""
+            ),
+            improves_reaction_type=str(source.get("reaction_type") or ""),
+            improvement_reason=candidate.improvement_reason or descriptor.improvement_reason,
+        )
+
+    def _source_for_improvement_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+    ) -> dict[str, Any] | None:
+        registry = self._learning_plugin_registry
+        if registry is None:
+            return None
+        cfg = _safe_dict(candidate.suggested_reaction_config)
+        room_id = str(cfg.get("room_id") or "").strip()
+        primary_signal_name = str(cfg.get("primary_signal_name") or "").strip()
+        if not room_id:
+            return None
+        configured = self._configured_source_for_improvement_candidate(
+            candidate,
+            room_id=room_id,
+            primary_signal_name=primary_signal_name,
+        )
+        if configured is not None:
+            return configured
+        accepted = self._accepted_source_for_improvement_candidate(
+            candidate, proposals, room_id=room_id, primary_signal_name=primary_signal_name
+        )
+        if accepted is None:
+            return None
+        accepted_cfg = _safe_dict(accepted.suggested_reaction_config)
+        return {
+            "target_id": accepted.proposal_id,
+            "reaction_type": accepted.reaction_type,
+            "origin": accepted.origin,
+            "cfg": accepted_cfg,
+        }
+
+    def _accepted_source_for_improvement_candidate(
+        self,
+        candidate: ReactionProposal,
+        proposals: list[ReactionProposal],
+        *,
+        room_id: str,
+        primary_signal_name: str,
+    ) -> ReactionProposal | None:
+        registry = self._learning_plugin_registry
+        if registry is None:
+            return None
+        for proposal in proposals:
+            if proposal.status != "accepted":
+                continue
+            descriptor = registry.improvement_descriptor_for(
+                target_reaction_type=candidate.reaction_type,
+                source_reaction_type=proposal.reaction_type,
+                improvement_reason=candidate.improvement_reason,
+            )
+            if descriptor is None:
+                continue
+            source_cfg = _safe_dict(proposal.suggested_reaction_config)
+            if str(source_cfg.get("room_id") or "").strip() != room_id:
+                continue
+            if primary_signal_name and (
+                str(source_cfg.get("primary_signal_name") or "").strip() != primary_signal_name
+            ):
+                continue
+            return proposal
+        return None
+
+    def _configured_source_for_improvement_candidate(
+        self,
+        candidate: ReactionProposal,
+        *,
+        room_id: str,
+        primary_signal_name: str,
+    ) -> dict[str, Any] | None:
+        registry = self._learning_plugin_registry
+        if registry is None or self._configured_reactions_provider is None:
+            return None
+        configured = self._configured_reactions_provider()
+        if not isinstance(configured, dict):
+            return None
+        for reaction_id, raw in configured.items():
+            reaction_cfg = _safe_dict(raw)
+            reaction_type = resolve_reaction_type(reaction_cfg)
+            descriptor = registry.improvement_descriptor_for(
+                target_reaction_type=candidate.reaction_type,
+                source_reaction_type=reaction_type,
+                improvement_reason=candidate.improvement_reason,
+            )
+            if descriptor is None:
+                continue
+            if str(reaction_cfg.get("room_id") or "").strip() != room_id:
+                continue
+            if primary_signal_name and (
+                str(reaction_cfg.get("primary_signal_name") or "").strip() != primary_signal_name
+            ):
+                continue
+            return {
+                "target_id": str(reaction_id),
+                "reaction_type": reaction_type,
+                "origin": str(reaction_cfg.get("origin") or ""),
+                "cfg": reaction_cfg,
+            }
+        return None
 
     async def async_accept_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "accepted")
@@ -257,6 +410,8 @@ class ProposalEngine:
                 target_reaction_type=proposal.target_reaction_type,
                 target_reaction_origin=proposal.target_reaction_origin,
                 target_template_id=proposal.target_template_id,
+                improves_reaction_type=proposal.improves_reaction_type,
+                improvement_reason=proposal.improvement_reason,
             )
             self._proposals[existing_idx] = reopened
             await self._store.async_save(self._serialize())
@@ -274,6 +429,13 @@ class ProposalEngine:
             updated_at=now,
             last_observed_at=proposal.last_observed_at or now,
             identity_key=identity_key,
+            followup_kind=proposal.followup_kind,
+            target_reaction_id=proposal.target_reaction_id,
+            target_reaction_type=proposal.target_reaction_type,
+            target_reaction_origin=proposal.target_reaction_origin,
+            target_template_id=proposal.target_template_id,
+            improves_reaction_type=proposal.improves_reaction_type,
+            improvement_reason=proposal.improvement_reason,
         )
         self._proposals[existing_idx] = updated
         await self._store.async_save(self._serialize())
@@ -350,6 +512,8 @@ class ProposalEngine:
                     "target_reaction_type": p.target_reaction_type,
                     "target_reaction_origin": p.target_reaction_origin,
                     "target_template_id": p.target_template_id,
+                    "improves_reaction_type": p.improves_reaction_type,
+                    "improvement_reason": p.improvement_reason,
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p),
@@ -374,6 +538,13 @@ class ProposalEngine:
                 "learned": sum(1 for p in ordered if p.origin == "learned"),
                 "admin_authored": sum(1 for p in ordered if p.origin == "admin_authored"),
             },
+            "by_followup_kind": {
+                "discovery": sum(1 for p in ordered if p.followup_kind == "discovery"),
+                "tuning_suggestion": sum(
+                    1 for p in ordered if p.followup_kind == "tuning_suggestion"
+                ),
+                "improvement": sum(1 for p in ordered if p.followup_kind == "improvement"),
+            },
             "by_type": _proposal_type_counts(ordered),
             "items": {
                 p.proposal_id: {
@@ -386,6 +557,8 @@ class ProposalEngine:
                     "updated_at": p.updated_at,
                     "target_reaction_id": p.target_reaction_id,
                     "target_reaction_type": p.target_reaction_type,
+                    "improves_reaction_type": p.improves_reaction_type,
+                    "improvement_reason": p.improvement_reason,
                     "is_stale": self._is_stale(p),
                 }
                 for p in ordered

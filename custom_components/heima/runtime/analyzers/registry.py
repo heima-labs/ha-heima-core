@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
-from .base import IPatternAnalyzer
+from .base import IPatternAnalyzer, ReactionProposal
 from .cross_domain import (
     DEFAULT_COMPOSITE_PATTERN_CATALOG,
     CompositePatternCatalogAnalyzer,
@@ -43,6 +43,24 @@ class AdminAuthoredTemplateDescriptor:
 
 
 @dataclass(frozen=True)
+class ImprovementProposalDescriptor:
+    """Metadata for one supported improvement proposal family."""
+
+    source_reaction_type: str
+    target_reaction_type: str
+    improvement_reason: str
+    acceptance_strategy: str = "convert_replace"
+    review_reason_en: str = ""
+    review_reason_it: str = ""
+    conversion_builder: (
+        Callable[
+            ["ImprovementProposalDescriptor", ReactionProposal, dict[str, Any]], dict[str, Any]
+        ]
+        | None
+    ) = None
+
+
+@dataclass(frozen=True)
 class LearningPatternPluginDescriptor:
     """Minimal built-in metadata for one Learning Pattern Plugin."""
 
@@ -54,6 +72,7 @@ class LearningPatternPluginDescriptor:
     lifecycle_hooks: ProposalLifecycleHooks | None = None
     supports_admin_authored: bool = False
     admin_authored_templates: tuple[AdminAuthoredTemplateDescriptor, ...] = ()
+    improvement_proposals: tuple[ImprovementProposalDescriptor, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -152,6 +171,9 @@ class LearningPluginRegistry:
                 "admin_authored_templates": list(
                     _template_diagnostics(item.descriptor.admin_authored_templates)
                 ),
+                "improvement_proposals": list(
+                    _improvement_diagnostics(item.descriptor.improvement_proposals)
+                ),
                 "enabled": item.enabled,
             }
             for item in self._plugins
@@ -172,6 +194,64 @@ class LearningPluginRegistry:
             if target in item.descriptor.proposal_types:
                 return item.descriptor.lifecycle_hooks
         return None
+
+    def improvement_descriptor_for(
+        self,
+        *,
+        target_reaction_type: str,
+        source_reaction_type: str,
+        improvement_reason: str = "",
+        enabled_only: bool = False,
+    ) -> ImprovementProposalDescriptor | None:
+        target = str(target_reaction_type or "").strip()
+        source = str(source_reaction_type or "").strip()
+        reason = str(improvement_reason or "").strip()
+        if not target or not source:
+            return None
+        for item in self._plugins:
+            if enabled_only and not item.enabled:
+                continue
+            for descriptor in item.descriptor.improvement_proposals:
+                if descriptor.target_reaction_type != target:
+                    continue
+                if descriptor.source_reaction_type != source:
+                    continue
+                if reason and descriptor.improvement_reason != reason:
+                    continue
+                return descriptor
+        return None
+
+    def improvement_descriptors(
+        self,
+        *,
+        enabled_only: bool = False,
+    ) -> tuple[ImprovementProposalDescriptor, ...]:
+        items: list[ImprovementProposalDescriptor] = []
+        for plugin in self._plugins:
+            if enabled_only and not plugin.enabled:
+                continue
+            items.extend(plugin.descriptor.improvement_proposals)
+        return tuple(items)
+
+    def build_improvement_config(
+        self,
+        proposal: ReactionProposal,
+        *,
+        existing_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        descriptor = self.improvement_descriptor_for(
+            target_reaction_type=str(proposal.reaction_type or "").strip(),
+            source_reaction_type=str(
+                proposal.improves_reaction_type or proposal.target_reaction_type or ""
+            ).strip(),
+            improvement_reason=str(proposal.improvement_reason or "").strip(),
+            enabled_only=False,
+        )
+        return _build_improvement_config(
+            descriptor=descriptor,
+            proposal=proposal,
+            existing_config=existing_config,
+        )
 
     def __len__(self) -> int:
         return len(self._plugins)
@@ -250,11 +330,13 @@ def create_builtin_learning_plugin_registry(
                 "room_cooling_assist",
                 "room_air_quality_assist",
                 "room_darkness_lighting_assist",
+                "room_contextual_lighting_assist",
                 "room_vacancy_lighting_off",
             ),
             reaction_targets=(
                 "RoomSignalAssistReaction",
                 "RoomLightingAssistReaction",
+                "RoomContextualLightingAssistReaction",
                 "RoomLightingVacancyOffReaction",
             ),
             lifecycle_hooks=composite_room_assist_lifecycle_hooks(
@@ -297,6 +379,36 @@ def create_builtin_learning_plugin_registry(
                     config_schema_id="room_vacancy_lighting_off.basic.v1",
                     implemented=True,
                     flow_step_id="admin_authored_room_vacancy_lighting_off",
+                ),
+            ),
+            improvement_proposals=(
+                ImprovementProposalDescriptor(
+                    source_reaction_type="room_darkness_lighting_assist",
+                    target_reaction_type="room_contextual_lighting_assist",
+                    improvement_reason="contextual_variation",
+                    acceptance_strategy="convert_replace",
+                    review_reason_en=(
+                        "Reason: darkness-triggered lighting varies consistently by time "
+                        "window or context."
+                    ),
+                    review_reason_it=(
+                        "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
+                        "oraria o contesto."
+                    ),
+                ),
+                ImprovementProposalDescriptor(
+                    source_reaction_type="room_signal_assist",
+                    target_reaction_type="room_cooling_assist",
+                    improvement_reason="cooling_specialization",
+                    acceptance_strategy="convert_replace",
+                    review_reason_en=(
+                        "Reason: the learned signal-followup pattern is consistently cooling-"
+                        "specific and is better represented as a cooling assist."
+                    ),
+                    review_reason_it=(
+                        "Motivo: il pattern segnale-followup osservato e' stabilmente specifico "
+                        "del raffrescamento ed e' espresso meglio come cooling assist."
+                    ),
                 ),
             ),
         ),
@@ -357,3 +469,69 @@ def _template_diagnostics(
         }
         for item in templates
     ]
+
+
+def _improvement_diagnostics(
+    improvements: tuple[ImprovementProposalDescriptor, ...],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "source_reaction_type": item.source_reaction_type,
+            "target_reaction_type": item.target_reaction_type,
+            "improvement_reason": item.improvement_reason,
+            "acceptance_strategy": item.acceptance_strategy,
+            "review_reason_en": item.review_reason_en,
+            "review_reason_it": item.review_reason_it,
+        }
+        for item in improvements
+    ]
+
+
+def _build_improvement_config(
+    *,
+    descriptor: ImprovementProposalDescriptor | None,
+    proposal: ReactionProposal,
+    existing_config: dict[str, Any],
+) -> dict[str, Any]:
+    previous = _safe_dict(existing_config)
+    if descriptor is not None and descriptor.conversion_builder is not None:
+        return descriptor.conversion_builder(descriptor, proposal, previous)
+    return _default_improvement_conversion_builder(descriptor, proposal, previous)
+
+
+def _default_improvement_conversion_builder(
+    descriptor: ImprovementProposalDescriptor | None,
+    proposal: ReactionProposal,
+    existing_config: dict[str, Any],
+) -> dict[str, Any]:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    converted = dict(cfg)
+    converted.pop("reaction_class", None)
+    converted["reaction_type"] = str(proposal.reaction_type or "").strip()
+    converted["origin"] = proposal.origin
+    converted["author_kind"] = "admin" if proposal.origin == "admin_authored" else "heima"
+    converted["source_proposal_id"] = proposal.proposal_id
+    if proposal.identity_key:
+        converted["source_proposal_identity_key"] = proposal.identity_key
+    converted["source_request"] = "learned_pattern"
+    converted["created_at"] = str(
+        existing_config.get("created_at") or proposal.created_at or ""
+    ).strip()
+    converted["last_improved_at"] = str(proposal.updated_at or proposal.created_at or "").strip()
+    converted["improved_from_reaction_type"] = str(
+        existing_config.get("reaction_type") or proposal.improves_reaction_type or ""
+    ).strip()
+    converted["improvement_reason"] = str(proposal.improvement_reason or "").strip()
+    converted["improvement_acceptance_strategy"] = str(
+        (descriptor.acceptance_strategy if descriptor is not None else "convert_replace")
+        or "convert_replace"
+    )
+    if "enabled" in existing_config:
+        converted["enabled"] = existing_config.get("enabled")
+    return converted
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}

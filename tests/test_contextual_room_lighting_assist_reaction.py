@@ -336,6 +336,38 @@ def test_contextual_lighting_reaction_resets_last_applied_profile_when_room_empt
     assert reaction.diagnostics()["last_applied_profile"] is None
 
 
+def test_contextual_lighting_reaction_resets_cooldown_when_room_empties() -> None:
+    hass = MagicMock()
+    hass.states.get.side_effect = lambda eid: SimpleNamespace(state="off")
+    reaction = RoomContextualLightingAssistReaction(
+        hass=hass,
+        bucket_getter=lambda room_id, signal_name: "dark",
+        occupancy_age_getter=lambda room_id: 700.0,
+        room_id="studio",
+        primary_signal_entities=["sensor.studio_lux"],
+        primary_bucket="ok",
+        primary_bucket_match_mode="lte",
+        primary_bucket_labels=["dark", "dim", "ok", "bright"],
+        profiles={
+            "day_generic": {
+                "entity_steps": [
+                    {"entity_id": "light.studio_desk", "action": "on", "brightness": 140}
+                ]
+            }
+        },
+        rules=[],
+        default_profile="day_generic",
+        followup_window_s=999,
+    )
+    ts1 = datetime(2026, 4, 18, 10, 0, tzinfo=UTC).isoformat()
+    ts2 = datetime(2026, 4, 18, 10, 1, tzinfo=UTC).isoformat()
+    ts3 = datetime(2026, 4, 18, 10, 2, tzinfo=UTC).isoformat()
+
+    assert len(reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts1)])) == 1
+    assert reaction.evaluate([_snapshot(occupied_rooms=[], ts=ts2)]) == []
+    assert len(reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts3)])) == 1
+
+
 def test_build_contextual_lighting_reaction_rejects_missing_default_profile() -> None:
     engine = SimpleNamespace(
         _hass=MagicMock(),

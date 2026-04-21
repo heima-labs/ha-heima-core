@@ -11,16 +11,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import json
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.ha_client import HAApiError, HAClient
 from lib.ha_websocket import HAWebSocketClient, HAWebSocketError
-
 
 # ---------------------------------------------------------------------------
 # Canonical baseline configuration
@@ -88,6 +88,56 @@ ROOMS_BASELINE = [
         "on_dwell_s": 5,
         "off_dwell_s": 120,
         "max_on_s": None,
+        "signals": [
+            {
+                "entity_id": "sensor.test_heima_studio_lux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [
+                    {"label": "dark", "upper_bound": 30.0},
+                    {"label": "dim", "upper_bound": 100.0},
+                    {"label": "ok", "upper_bound": 300.0},
+                    {"label": "bright", "upper_bound": None},
+                ],
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "low", "upper_bound": 40.0},
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+                "burst_threshold": 5.0,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_temperature",
+                "signal_name": "room_temperature",
+                "device_class": "temperature",
+                "buckets": [
+                    {"label": "cool", "upper_bound": 20.0},
+                    {"label": "ok", "upper_bound": 24.0},
+                    {"label": "warm", "upper_bound": 27.0},
+                    {"label": "hot", "upper_bound": None},
+                ],
+                "burst_threshold": 1.5,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_co2",
+                "signal_name": "room_co2",
+                "device_class": "carbon_dioxide",
+                "buckets": [
+                    {"label": "ok", "upper_bound": 800.0},
+                    {"label": "elevated", "upper_bound": 1200.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+            },
+        ],
     },
     {
         "room_id": "bathroom",
@@ -103,6 +153,35 @@ ROOMS_BASELINE = [
         "on_dwell_s": 5,
         "off_dwell_s": 180,
         "max_on_s": None,
+        "signals": [
+            {
+                "entity_id": "sensor.test_heima_bathroom_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "low", "upper_bound": 40.0},
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+                "burst_threshold": 5.0,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_bathroom_temperature",
+                "signal_name": "room_temperature",
+                "device_class": "temperature",
+                "buckets": [
+                    {"label": "cool", "upper_bound": 20.0},
+                    {"label": "ok", "upper_bound": 24.0},
+                    {"label": "warm", "upper_bound": 27.0},
+                    {"label": "hot", "upper_bound": None},
+                ],
+                "burst_threshold": 0.8,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+        ],
     },
     {
         "room_id": "living",
@@ -235,6 +314,7 @@ MQTT_BASELINE = {
 # Flow client
 # ---------------------------------------------------------------------------
 
+
 class HAFlowClient(HAClient):
     def config_flow_init(self, handler: str) -> dict[str, Any]:
         data = self.post("/api/config/config_entries/flow", {"handler": handler})
@@ -293,7 +373,12 @@ def _select_room_for_edit(
     candidates = [str(room["room_id"])]
     display_name = str(room.get("display_name") or room["room_id"]).strip()
     if display_name:
-        candidates.append(f"{display_name} [configured]")
+        candidates.extend(
+            [
+                f"{display_name} [configured]",
+                f"{display_name} [new]",
+            ]
+        )
 
     last_error: Exception | None = None
     for candidate in candidates:
@@ -305,6 +390,35 @@ def _select_room_for_edit(
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"unable to select room for edit: {room}")
+
+
+def _select_room_choice(
+    client: HAFlowClient,
+    flow_id: str,
+    room: dict[str, Any],
+) -> dict[str, Any]:
+    candidates = [str(room.get("room_id") or "").strip()]
+    display_name = str(room.get("display_name") or room.get("room_id") or "").strip()
+    if display_name:
+        candidates.extend(
+            [
+                f"{display_name} [configured]",
+                f"{display_name} [new]",
+            ]
+        )
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return client.options_flow_configure(flow_id, {"room": candidate})
+        except HAApiError as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"unable to select room choice: {room}")
 
 
 def _enter_room_edit_form(
@@ -320,14 +434,27 @@ def _enter_room_edit_form(
         step = _menu_next(client, flow_id, "rooms_edit_form")
         _expect_step(step, "rooms_edit_form")
         return step
-    raise RuntimeError(
-        f"expected rooms_edit_form or rooms_edit_actions, got: {step}"
-    )
+    raise RuntimeError(f"expected rooms_edit_form or rooms_edit_actions, got: {step}")
+
+
+def _configured_rooms(client: HAFlowClient, entry_id: str) -> list[dict[str, Any]]:
+    root = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    entry = root.get("data", {}).get("entry", {}) if isinstance(root, dict) else {}
+    if not isinstance(entry, dict) or not entry:
+        entry = client.get_entry(entry_id)
+    options = entry.get("options", {}) if isinstance(entry, dict) else {}
+    if not isinstance(options, dict):
+        return []
+    rooms = options.get("rooms", [])
+    if not isinstance(rooms, list):
+        return []
+    return [room for room in rooms if isinstance(room, dict)]
 
 
 # ---------------------------------------------------------------------------
 # Recovery steps
 # ---------------------------------------------------------------------------
+
 
 def recover_general(client: HAFlowClient, entry_id: str) -> None:
     print("  → general + house signals")
@@ -358,14 +485,33 @@ def recover_lighting_areas(client: HAFlowClient) -> dict[str, str]:
     Uses WebSocket API (area/entity registry are not available via REST).
     """
     area_ids: dict[str, str] = {}
+    entry_id = client.find_heima_entry_id()
+    current_rooms = {
+        str(room.get("room_id") or "").strip(): room
+        for room in _configured_rooms(client, entry_id)
+        if isinstance(room, dict)
+    }
     with HAWebSocketClient(client.base_url, client.token) as ws:
+        existing_areas = {
+            str(area.get("area_id") or ""): area
+            for area in ws.list_areas()
+            if isinstance(area, dict)
+        }
         for room_id, area_name in ROOM_AREA_NAMES.items():
-            area_id = ws.get_or_create_area(area_name)
+            preferred_area_id = str(
+                (current_rooms.get(room_id, {}) or {}).get("area_id") or ""
+            ).strip()
+            if preferred_area_id and preferred_area_id in existing_areas:
+                area_id = preferred_area_id
+            else:
+                area_id = ws.get_or_create_area(area_name)
             area_ids[room_id] = area_id
             print(f"     area '{area_name}' → {area_id}")
             entity_ids = ROOM_AREA_ENTITIES.get(room_id, [])
             if not entity_ids:
-                print(f"     WARN: no lab entities configured for room {room_id}, skipping area assignment")
+                print(
+                    f"     WARN: no lab entities configured for room {room_id}, skipping area assignment"
+                )
                 continue
             for entity_id in entity_ids:
                 if client.entity_exists(entity_id):
@@ -401,15 +547,45 @@ def recover_lighting_areas_with_retry(
     return {}
 
 
-def recover_rooms(client: HAFlowClient, entry_id: str, area_ids: dict[str, str] | None = None) -> None:
+def recover_rooms(
+    client: HAFlowClient, entry_id: str, area_ids: dict[str, str] | None = None
+) -> None:
     print("  → rooms")
     flow_id, _ = _open_rooms_menu(client, entry_id)
+
+    baseline_room_ids = {str(room["room_id"]) for room in ROOMS_BASELINE}
+    current_rooms = _configured_rooms(client, entry_id)
+    extra_rooms = [
+        room
+        for room in current_rooms
+        if str(room.get("room_id") or "").strip()
+        and str(room.get("room_id") or "").strip() not in baseline_room_ids
+    ]
+    for room in extra_rooms:
+        room_id = str(room.get("room_id") or "").strip()
+        print(f"    pruning extra room: {room_id}")
+        step = _menu_next(client, flow_id, "rooms_remove")
+        _expect_step(step, "rooms_remove")
+        result = _select_room_choice(client, flow_id, room)
+        _expect_step(result, "rooms_remove_confirm")
+        result = client.options_flow_configure(flow_id, {"confirm": True})
+        _expect_step(result, "rooms_menu")
+
+    if extra_rooms and area_ids is not None:
+        refreshed_area_ids = recover_lighting_areas(client)
+        area_ids.clear()
+        area_ids.update(refreshed_area_ids)
+    if extra_rooms:
+        client.options_flow_abort(flow_id)
+        flow_id, _ = _open_rooms_menu(client, entry_id)
 
     for room in ROOMS_BASELINE:
         room_data = dict(room)
         if area_ids and room_data.get("area_id") is None:
             room_data["area_id"] = area_ids.get(room_data["room_id"])
         payload = {k: v for k, v in room_data.items() if v is not None}
+        if "signals" in payload:
+            payload["signals"] = json.dumps(payload["signals"], ensure_ascii=True, indent=2)
 
         # Try add first; if duplicate, abort + reopen + edit existing.
         step = _menu_next(client, flow_id, "rooms_add")
@@ -418,6 +594,22 @@ def recover_rooms(client: HAFlowClient, entry_id: str, area_ids: dict[str, str] 
 
         if result.get("step_id") == "rooms_menu":
             continue  # added OK
+
+        if result.get("step_id") in {"rooms_edit_form", "rooms_edit_actions"}:
+            client.options_flow_abort(flow_id)
+            flow_id, _ = _open_rooms_menu(client, entry_id)
+            step = _menu_next(client, flow_id, "rooms_edit")
+            _expect_step(step, "rooms_edit")
+            step = _enter_room_edit_form(client, flow_id, room)
+            result = client.options_flow_configure(flow_id, payload)
+            if result.get("step_id") == "rooms_edit_form":
+                errors = result.get("errors") or {}
+                if errors.get("area_id") == "duplicate" and "area_id" in payload:
+                    fallback_payload = dict(payload)
+                    fallback_payload.pop("area_id", None)
+                    result = client.options_flow_configure(flow_id, fallback_payload)
+            _expect_step(result, "rooms_menu")
+            continue
 
         errors = result.get("errors") or {}
         if errors.get("room_id") != "duplicate":
@@ -552,7 +744,9 @@ def recover_learning(client: HAFlowClient, entry_id: str) -> None:
 
 def recover_mqtt(client: HAFlowClient) -> None:
     print("  → mqtt")
-    existing = [entry for entry in client.list_config_entries() if str(entry.get("domain") or "") == "mqtt"]
+    existing = [
+        entry for entry in client.list_config_entries() if str(entry.get("domain") or "") == "mqtt"
+    ]
     if existing:
         title = str(existing[0].get("title") or "")
         print(f"    mqtt already configured: {title or '<untitled>'}")
@@ -571,6 +765,7 @@ def recover_mqtt(client: HAFlowClient) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Restore Heima test-lab configuration to baseline")
@@ -627,7 +822,10 @@ def main() -> int:
             )
             print(f"  ✓ lighting_areas: {area_ids}")
         except Exception as exc:  # noqa: BLE001
-            print(f"  WARN: lighting_areas failed ({exc}), continuing without area_ids", file=sys.stderr)
+            print(
+                f"  WARN: lighting_areas failed ({exc}), continuing without area_ids",
+                file=sys.stderr,
+            )
 
     sections = {
         "mqtt": lambda c, _eid: recover_mqtt(c),
