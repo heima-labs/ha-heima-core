@@ -251,7 +251,11 @@ class ProposalEngine:
             target_reaction_id=str(source.get("target_id") or ""),
             target_reaction_type=str(source.get("reaction_type") or ""),
             target_reaction_origin=str(source.get("origin") or ""),
-            target_template_id=str(source_cfg.get("admin_authored_template_id") or ""),
+            target_template_id=str(
+                source_cfg.get("source_template_id")
+                or source_cfg.get("admin_authored_template_id")
+                or ""
+            ),
             improves_reaction_type=str(source.get("reaction_type") or ""),
             improvement_reason=candidate.improvement_reason or descriptor.improvement_reason,
         )

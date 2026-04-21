@@ -517,6 +517,7 @@ async def test_proposal_engine_normalizes_cooling_candidate_into_improvement_fro
     assert proposal.target_reaction_id == "signal-configured"
     assert proposal.target_reaction_type == "room_signal_assist"
     assert proposal.target_reaction_origin == "admin_authored"
+    assert proposal.target_template_id == "room.signal_assist.basic"
     assert proposal.improves_reaction_type == "room_signal_assist"
     assert proposal.improvement_reason == "cooling_specialization"
 
