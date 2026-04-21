@@ -1932,8 +1932,84 @@ async def test_proposals_step_accepts_contextual_improvement_by_replacing_darkne
     assert stored["reaction_type"] == "room_contextual_lighting_assist"
     assert stored["improved_from_reaction_type"] == "room_darkness_lighting_assist"
     assert stored["improvement_reason"] == "contextual_variation"
+    assert stored["improvement_acceptance_strategy"] == "convert_replace"
     assert stored["default_profile"] == "day_generic"
     assert "entity_steps" not in stored
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_accepts_cooling_improvement_by_replacing_signal_target():
+    flow = _flow(
+        options={
+            "reactions": {
+                "configured": {
+                    "signal-1": {
+                        "reaction_type": "room_signal_assist",
+                        "room_id": "studio",
+                        "primary_signal_name": "room_temperature",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                        "steps": [
+                            {
+                                "entity_id": "fan.studio_fan",
+                                "service": "fan.turn_on",
+                                "service_data": {"entity_id": "fan.studio_fan"},
+                            }
+                        ],
+                        "created_at": "2026-03-01T08:00:00+00:00",
+                    }
+                },
+                "labels": {"signal-1": "Ventola studio"},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-cooling-upgrade",
+        analyzer_id="RoomCoolingPatternAnalyzer",
+        reaction_type="room_cooling_assist",
+        description="studio cooling upgrade",
+        confidence=0.84,
+        followup_kind="improvement",
+        target_reaction_id="signal-1",
+        target_reaction_type="room_signal_assist",
+        target_reaction_origin="learned",
+        improves_reaction_type="room_signal_assist",
+        improvement_reason="cooling_specialization",
+        suggested_reaction_config={
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "primary_signal_entities": ["sensor.studio_temperature"],
+            "corroboration_signal_name": "room_humidity",
+            "corroboration_signal_entities": ["sensor.studio_humidity"],
+            "steps": [
+                {
+                    "entity_id": "fan.studio_fan",
+                    "service": "fan.turn_on",
+                    "service_data": {"entity_id": "fan.studio_fan"},
+                }
+            ],
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-cooling-upgrade")
+    stored = flow.options["reactions"]["configured"]["signal-1"]
+    assert stored["reaction_type"] == "room_cooling_assist"
+    assert stored["improved_from_reaction_type"] == "room_signal_assist"
+    assert stored["improvement_reason"] == "cooling_specialization"
+    assert stored["improvement_acceptance_strategy"] == "convert_replace"
+    assert stored["corroboration_signal_name"] == "room_humidity"
 
 
 def test_proposal_review_label_includes_context_confidence_and_last_seen():

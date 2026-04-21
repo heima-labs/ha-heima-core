@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -87,6 +88,56 @@ ROOMS_BASELINE = [
         "on_dwell_s": 5,
         "off_dwell_s": 120,
         "max_on_s": None,
+        "signals": [
+            {
+                "entity_id": "sensor.test_heima_studio_lux",
+                "signal_name": "room_lux",
+                "device_class": "illuminance",
+                "buckets": [
+                    {"label": "dark", "upper_bound": 30.0},
+                    {"label": "dim", "upper_bound": 100.0},
+                    {"label": "ok", "upper_bound": 300.0},
+                    {"label": "bright", "upper_bound": None},
+                ],
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "low", "upper_bound": 40.0},
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+                "burst_threshold": 5.0,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_temperature",
+                "signal_name": "room_temperature",
+                "device_class": "temperature",
+                "buckets": [
+                    {"label": "cool", "upper_bound": 20.0},
+                    {"label": "ok", "upper_bound": 24.0},
+                    {"label": "warm", "upper_bound": 27.0},
+                    {"label": "hot", "upper_bound": None},
+                ],
+                "burst_threshold": 1.5,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_studio_co2",
+                "signal_name": "room_co2",
+                "device_class": "carbon_dioxide",
+                "buckets": [
+                    {"label": "ok", "upper_bound": 800.0},
+                    {"label": "elevated", "upper_bound": 1200.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+            },
+        ],
     },
     {
         "room_id": "bathroom",
@@ -102,6 +153,35 @@ ROOMS_BASELINE = [
         "on_dwell_s": 5,
         "off_dwell_s": 180,
         "max_on_s": None,
+        "signals": [
+            {
+                "entity_id": "sensor.test_heima_bathroom_humidity",
+                "signal_name": "room_humidity",
+                "device_class": "humidity",
+                "buckets": [
+                    {"label": "low", "upper_bound": 40.0},
+                    {"label": "ok", "upper_bound": 70.0},
+                    {"label": "high", "upper_bound": None},
+                ],
+                "burst_threshold": 5.0,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+            {
+                "entity_id": "sensor.test_heima_bathroom_temperature",
+                "signal_name": "room_temperature",
+                "device_class": "temperature",
+                "buckets": [
+                    {"label": "cool", "upper_bound": 20.0},
+                    {"label": "ok", "upper_bound": 24.0},
+                    {"label": "warm", "upper_bound": 27.0},
+                    {"label": "hot", "upper_bound": None},
+                ],
+                "burst_threshold": 0.8,
+                "burst_window_s": 600,
+                "burst_direction": "rise",
+            },
+        ],
     },
     {
         "room_id": "living",
@@ -504,6 +584,8 @@ def recover_rooms(
         if area_ids and room_data.get("area_id") is None:
             room_data["area_id"] = area_ids.get(room_data["room_id"])
         payload = {k: v for k, v in room_data.items() if v is not None}
+        if "signals" in payload:
+            payload["signals"] = json.dumps(payload["signals"], ensure_ascii=True, indent=2)
 
         # Try add first; if duplicate, abort + reopen + edit existing.
         step = _menu_next(client, flow_id, "rooms_add")

@@ -469,6 +469,58 @@ async def test_proposal_engine_prefers_configured_darkness_over_accepted_history
     assert proposal.target_reaction_origin == "admin_authored"
 
 
+async def test_proposal_engine_normalizes_cooling_candidate_into_improvement_from_configured_signal(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = create_builtin_learning_plugin_registry()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+        configured_reactions_provider=lambda: {
+            "signal-configured": {
+                "reaction_type": "room_signal_assist",
+                "room_id": "studio",
+                "primary_signal_name": "room_temperature",
+                "origin": "admin_authored",
+                "source_template_id": "room.signal_assist.basic",
+            }
+        },
+    )
+    engine.register_analyzer(
+        _AnalyzerStub(
+            [
+                ReactionProposal(
+                    analyzer_id="RoomCoolingPatternAnalyzer",
+                    reaction_type="room_cooling_assist",
+                    description="studio cooling candidate",
+                    confidence=0.82,
+                    suggested_reaction_config={
+                        "room_id": "studio",
+                        "primary_signal_name": "room_temperature",
+                        "primary_signal_entities": ["sensor.studio_temperature"],
+                    },
+                )
+            ]
+        )
+    )
+    await engine.async_initialize()
+
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    proposal = pending[0]
+    assert proposal.reaction_type == "room_cooling_assist"
+    assert proposal.followup_kind == "improvement"
+    assert proposal.target_reaction_id == "signal-configured"
+    assert proposal.target_reaction_type == "room_signal_assist"
+    assert proposal.target_reaction_origin == "admin_authored"
+    assert proposal.improves_reaction_type == "room_signal_assist"
+    assert proposal.improvement_reason == "cooling_specialization"
+
+
 async def test_proposal_engine_accepted_history_generates_followup_pending(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

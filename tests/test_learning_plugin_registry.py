@@ -7,6 +7,7 @@ from custom_components.heima.runtime.analyzers import (
     builtin_learning_pattern_plugins,
     create_builtin_learning_plugin_registry,
 )
+from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.analyzers.cross_domain import (
     DEFAULT_COMPOSITE_PATTERN_CATALOG,
     composite_quality_policy_from_learning_config,
@@ -82,6 +83,27 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
             target_reaction_type="room_contextual_lighting_assist",
             improvement_reason="contextual_variation",
             acceptance_strategy="convert_replace",
+            review_reason_en=(
+                "Reason: darkness-triggered lighting varies consistently by time window or context."
+            ),
+            review_reason_it=(
+                "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
+                "oraria o contesto."
+            ),
+        ),
+        type(descriptors[3].improvement_proposals[0])(
+            source_reaction_type="room_signal_assist",
+            target_reaction_type="room_cooling_assist",
+            improvement_reason="cooling_specialization",
+            acceptance_strategy="convert_replace",
+            review_reason_en=(
+                "Reason: the learned signal-followup pattern is consistently cooling-"
+                "specific and is better represented as a cooling assist."
+            ),
+            review_reason_it=(
+                "Motivo: il pattern segnale-followup osservato e' stabilmente specifico "
+                "del raffrescamento ed e' espresso meglio come cooling assist."
+            ),
         ),
     )
     assert descriptors[4].supports_admin_authored is True
@@ -133,7 +155,29 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "target_reaction_type": "room_contextual_lighting_assist",
                 "improvement_reason": "contextual_variation",
                 "acceptance_strategy": "convert_replace",
-            }
+                "review_reason_en": (
+                    "Reason: darkness-triggered lighting varies consistently by time "
+                    "window or context."
+                ),
+                "review_reason_it": (
+                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
+                    "oraria o contesto."
+                ),
+            },
+            {
+                "source_reaction_type": "room_signal_assist",
+                "target_reaction_type": "room_cooling_assist",
+                "improvement_reason": "cooling_specialization",
+                "acceptance_strategy": "convert_replace",
+                "review_reason_en": (
+                    "Reason: the learned signal-followup pattern is consistently cooling-"
+                    "specific and is better represented as a cooling assist."
+                ),
+                "review_reason_it": (
+                    "Motivo: il pattern segnale-followup osservato e' stabilmente specifico "
+                    "del raffrescamento ed e' espresso meglio come cooling assist."
+                ),
+            },
         ],
         "enabled": True,
     }
@@ -250,6 +294,19 @@ def test_builtin_learning_plugin_registry_exposes_improvement_descriptor_lookup(
 
     assert descriptor is not None
     assert descriptor.acceptance_strategy == "convert_replace"
+    assert descriptor.review_reason_en == (
+        "Reason: darkness-triggered lighting varies consistently by time window or context."
+    )
+    assert descriptor.review_reason_it == (
+        "Motivo: l'uso delle luci al buio varia in modo stabile per fascia oraria o contesto."
+    )
+    cooling = registry.improvement_descriptor_for(
+        target_reaction_type="room_cooling_assist",
+        source_reaction_type="room_signal_assist",
+        improvement_reason="cooling_specialization",
+    )
+    assert cooling is not None
+    assert cooling.acceptance_strategy == "convert_replace"
     assert (
         registry.get_admin_authored_template("room.signal_assist.basic").reaction_type
         == "room_signal_assist"
@@ -265,6 +322,92 @@ def test_builtin_learning_plugin_registry_exposes_improvement_descriptor_lookup(
         == "room_signal_assist"
     )
     assert registry.get_admin_authored_template("missing.template") is None
+
+
+def test_builtin_learning_plugin_registry_builds_improvement_config():
+    registry = create_builtin_learning_plugin_registry()
+    proposal = ReactionProposal(
+        proposal_id="proposal-contextual-upgrade",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_contextual_lighting_assist",
+        description="studio contextual upgrade",
+        confidence=0.86,
+        followup_kind="improvement",
+        target_reaction_id="darkness-1",
+        target_reaction_type="room_darkness_lighting_assist",
+        target_reaction_origin="learned",
+        improves_reaction_type="room_darkness_lighting_assist",
+        improvement_reason="contextual_variation",
+        suggested_reaction_config={
+            "reaction_type": "room_contextual_lighting_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "dim",
+            "primary_bucket_match_mode": "lte",
+            "followup_window_s": 900,
+            "profiles": {"day_generic": {"entity_steps": []}},
+            "rules": [{"profile": "day_generic"}],
+            "default_profile": "day_generic",
+        },
+    )
+
+    stored = registry.build_improvement_config(
+        proposal,
+        existing_config={
+            "reaction_type": "room_darkness_lighting_assist",
+            "room_id": "studio",
+            "enabled": False,
+            "created_at": "2026-03-01T08:00:00+00:00",
+        },
+    )
+
+    assert stored["reaction_type"] == "room_contextual_lighting_assist"
+    assert stored["improved_from_reaction_type"] == "room_darkness_lighting_assist"
+    assert stored["improvement_reason"] == "contextual_variation"
+    assert stored["improvement_acceptance_strategy"] == "convert_replace"
+    assert stored["enabled"] is False
+    assert stored["created_at"] == "2026-03-01T08:00:00+00:00"
+
+
+def test_builtin_learning_plugin_registry_builds_cooling_improvement_config():
+    registry = create_builtin_learning_plugin_registry()
+    proposal = ReactionProposal(
+        proposal_id="proposal-cooling-upgrade",
+        analyzer_id="RoomCoolingPatternAnalyzer",
+        reaction_type="room_cooling_assist",
+        description="studio cooling upgrade",
+        confidence=0.83,
+        followup_kind="improvement",
+        target_reaction_id="signal-1",
+        target_reaction_type="room_signal_assist",
+        target_reaction_origin="learned",
+        improves_reaction_type="room_signal_assist",
+        improvement_reason="cooling_specialization",
+        suggested_reaction_config={
+            "reaction_type": "room_cooling_assist",
+            "room_id": "studio",
+            "primary_signal_name": "room_temperature",
+            "primary_signal_entities": ["sensor.studio_temperature"],
+            "corroboration_signal_name": "room_humidity",
+            "corroboration_signal_entities": ["sensor.studio_humidity"],
+            "steps": [{"entity_id": "fan.studio_fan", "action": "turn_on"}],
+        },
+    )
+
+    stored = registry.build_improvement_config(
+        proposal,
+        existing_config={
+            "reaction_type": "room_signal_assist",
+            "room_id": "studio",
+            "enabled": True,
+            "created_at": "2026-03-01T08:00:00+00:00",
+        },
+    )
+
+    assert stored["reaction_type"] == "room_cooling_assist"
+    assert stored["improved_from_reaction_type"] == "room_signal_assist"
+    assert stored["improvement_reason"] == "cooling_specialization"
+    assert stored["improvement_acceptance_strategy"] == "convert_replace"
 
 
 def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_type():

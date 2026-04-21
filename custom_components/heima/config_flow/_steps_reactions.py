@@ -22,6 +22,7 @@ from ..room_sources import (
 )
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     resolve_reaction_type,
@@ -1555,8 +1556,8 @@ class _ReactionsStepsMixin:
     def _reactions_options(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_REACTIONS, {}))
 
-    @staticmethod
     def _configured_reaction_from_proposal(
+        self,
         proposal: ReactionProposal,
         *,
         existing_config: dict[str, Any] | None = None,
@@ -1582,29 +1583,12 @@ class _ReactionsStepsMixin:
         )
         if is_improvement:
             previous = _safe_mapping(existing_config)
-            converted = dict(cfg)
-            converted.pop("reaction_class", None)
-            converted["reaction_type"] = str(proposal.reaction_type or "").strip()
-            converted["origin"] = proposal.origin
-            converted["author_kind"] = "admin" if proposal.origin == "admin_authored" else "heima"
-            converted["source_proposal_id"] = proposal.proposal_id
-            if proposal.identity_key:
-                converted["source_proposal_identity_key"] = proposal.identity_key
-            converted["source_request"] = "learned_pattern"
-            converted["created_at"] = str(
-                previous.get("created_at") or proposal.created_at or ""
-            ).strip()
-            converted["last_improved_at"] = str(
-                proposal.updated_at or proposal.created_at or ""
-            ).strip()
-            converted["improved_from_reaction_type"] = str(
-                previous.get("reaction_type") or proposal.improves_reaction_type or ""
-            ).strip()
-            converted["improvement_reason"] = str(proposal.improvement_reason or "").strip()
-            converted["improvement_acceptance_strategy"] = "convert_replace"
-            if "enabled" in previous:
-                converted["enabled"] = previous.get("enabled")
-            return converted
+            registry = self._learning_plugin_registry()
+            if registry is not None:
+                return registry.build_improvement_config(
+                    proposal,
+                    existing_config=previous,
+                )
 
         origin = proposal.origin
         configured["reaction_type"] = str(proposal.reaction_type or "").strip()
@@ -3419,22 +3403,20 @@ class _ReactionsStepsMixin:
                 else f"This proposal replaces the existing reaction: {reaction_label}"
             )
         ]
-        reason = str(proposal.improvement_reason or "").strip()
-        if reason == "contextual_variation":
-            lines.append(
-                (
-                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia oraria o contesto."
-                    if is_it
-                    else "Reason: darkness-triggered lighting varies consistently by time window or context."
-                )
-            )
+        descriptor = self._improvement_descriptor(proposal)
+        if descriptor is not None:
+            localized_reason = descriptor.review_reason_it if is_it else descriptor.review_reason_en
+            if localized_reason:
+                lines.append(localized_reason)
         return lines
 
-    def _improvement_acceptance_strategy(self, proposal: ReactionProposal) -> str:
+    def _improvement_descriptor(
+        self, proposal: ReactionProposal
+    ) -> ImprovementProposalDescriptor | None:
         registry = self._learning_plugin_registry()
         if registry is None:
-            return "convert_replace"
-        descriptor = registry.improvement_descriptor_for(
+            return None
+        return registry.improvement_descriptor_for(
             target_reaction_type=str(proposal.reaction_type or "").strip(),
             source_reaction_type=str(
                 proposal.improves_reaction_type or proposal.target_reaction_type or ""
@@ -3442,6 +3424,9 @@ class _ReactionsStepsMixin:
             improvement_reason=str(proposal.improvement_reason or "").strip(),
             enabled_only=False,
         )
+
+    def _improvement_acceptance_strategy(self, proposal: ReactionProposal) -> str:
+        descriptor = self._improvement_descriptor(proposal)
         if descriptor is None:
             return "convert_replace"
         return str(descriptor.acceptance_strategy or "convert_replace")
