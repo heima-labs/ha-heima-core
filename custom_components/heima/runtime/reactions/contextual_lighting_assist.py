@@ -192,7 +192,10 @@ class RoomContextualLightingAssistReaction(_BaseRoomLightingAssist):
         entity_steps = self._apply_ambient_modulation(entity_steps)
         if not self._needs_apply(profile_name, entity_steps):
             return []
-        if not self._is_cooled_down():
+        if (
+            not self._is_cooled_down()
+            and not self._profile_transition_needs_immediate_apply(profile_name)
+        ):
             self._mark_suppressed()
             return []
 
@@ -243,6 +246,14 @@ class RoomContextualLightingAssistReaction(_BaseRoomLightingAssist):
         if self._last_applied_ambient_scale != self._ambient_brightness_scale:
             return True
         return super()._entity_steps_need_apply(entity_steps)
+
+    def _profile_transition_needs_immediate_apply(self, profile_name: str) -> bool:
+        """Allow contextual transitions to re-apply immediately despite cooldown."""
+        if self._last_applied_profile != profile_name:
+            return True
+        if self._last_applied_ambient_scale != self._ambient_brightness_scale:
+            return True
+        return False
 
     def _apply_ambient_modulation(self, entity_steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         self._ambient_source_bucket = None

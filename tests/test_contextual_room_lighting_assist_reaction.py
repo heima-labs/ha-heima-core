@@ -257,7 +257,7 @@ def test_contextual_lighting_reaction_reapplies_when_ambient_scale_changes() -> 
     assert reaction.diagnostics()["ambient_brightness_scale"] == 1.15
 
 
-def test_contextual_lighting_reaction_suppresses_profile_switch_during_cooldown() -> None:
+def test_contextual_lighting_reaction_reapplies_profile_switch_during_cooldown() -> None:
     hass = MagicMock()
     hass.states.get.side_effect = lambda eid: SimpleNamespace(state="on")
     reaction = RoomContextualLightingAssistReaction(
@@ -297,10 +297,11 @@ def test_contextual_lighting_reaction_suppresses_profile_switch_during_cooldown(
         )
         == 1
     )
-    assert (
-        reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2, house_state="home")]) == []
-    )
-    assert reaction.diagnostics()["suppressed_count"] == 1
+    second = reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2, house_state="home")])
+    assert len(second) == 1
+    assert second[0].params["entity_id"] == "light.studio_main"
+    assert reaction.diagnostics()["last_applied_profile"] == "evening_relax"
+    assert reaction.diagnostics()["suppressed_count"] == 0
 
 
 def test_contextual_lighting_reaction_resets_last_applied_profile_when_room_empties() -> None:
