@@ -301,8 +301,8 @@ def create_builtin_learning_plugin_registry(
             plugin_id="builtin.lighting_routines",
             analyzer_id="LightingPatternAnalyzer",
             plugin_family="lighting",
-            proposal_types=("lighting_scene_schedule",),
-            reaction_targets=("LightingScheduleReaction",),
+            proposal_types=("lighting_scene_schedule", "context_conditioned_lighting_scene"),
+            reaction_targets=("LightingScheduleReaction", "ContextConditionedLightingReaction"),
             lifecycle_hooks=lighting_lifecycle_hooks(),
             supports_admin_authored=True,
             admin_authored_templates=(

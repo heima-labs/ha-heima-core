@@ -58,6 +58,7 @@ def _lighting(
     color_temp_kelvin: int | None = None,
     rgb_color: list | None = None,
     occupied_rooms: tuple[str, ...] | None = None,
+    signals: dict[str, str] | None = None,
 ) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
@@ -72,7 +73,7 @@ def _lighting(
             outdoor_lux=None,
             outdoor_temp=None,
             weather_condition=None,
-            signals={},
+            signals=signals or {},
         ),
         source=source,
         domain="light",
@@ -516,6 +517,140 @@ async def test_lighting_analyzer_confidence_rewards_more_evidence():
 
     assert minimal_p and richer_p
     assert richer_p[0].confidence > minimal_p[0].confidence
+
+
+async def test_lighting_analyzer_promotes_context_conditioned_scene_when_context_explains_pattern():
+    analyzer = LightingPatternAnalyzer()
+    events: list[HeimaEvent] = []
+    positive_pairs = [
+        ("2026-03-03T20:00:00+00:00", "2026-03-03T20:04:00+00:00", 0),
+        ("2026-03-10T20:00:00+00:00", "2026-03-10T20:04:00+00:00", 0),
+        ("2026-03-17T20:00:00+00:00", "2026-03-17T20:04:00+00:00", 0),
+        ("2026-03-24T20:00:00+00:00", "2026-03-24T20:04:00+00:00", 0),
+        ("2026-03-31T20:00:00+00:00", "2026-03-31T20:04:00+00:00", 0),
+    ]
+    for on_ts, off_ts, minute_offset in positive_pairs:
+        events.extend(
+            [
+                _lighting(
+                    ts=on_ts,
+                    entity_id="light.studio_main",
+                    room_id="studio",
+                    weekday=1,
+                    minute=20 * 60 + minute_offset,
+                    action="off",
+                    signals={"media_player.projector": "playing"},
+                ),
+                _lighting(
+                    ts=on_ts,
+                    entity_id="light.studio_spot",
+                    room_id="studio",
+                    weekday=1,
+                    minute=20 * 60 + minute_offset,
+                    action="on",
+                    brightness=80,
+                    signals={"media_player.projector": "playing"},
+                ),
+            ]
+        )
+        events.append(
+            _lighting(
+                ts=off_ts,
+                entity_id="light.studio_main",
+                room_id="studio",
+                weekday=1,
+                minute=20 * 60 + minute_offset + 4,
+                action="on",
+                brightness=120,
+                signals={"media_player.projector": "off"},
+            )
+        )
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.reaction_type == "context_conditioned_lighting_scene"
+    cfg = proposal.suggested_reaction_config
+    assert cfg["reaction_type"] == "context_conditioned_lighting_scene"
+    assert cfg["context_conditions"] == [
+        {"signal_name": "projector_context", "state_in": ["active"]}
+    ]
+    diagnostics = cfg["learning_diagnostics"]
+    assert diagnostics["contrast_status"] == "verified"
+    assert diagnostics["competing_explanation_type"] == "context"
+
+
+async def test_lighting_analyzer_keeps_schedule_when_context_is_weak():
+    analyzer = LightingPatternAnalyzer()
+    events = [
+        _lighting(
+            ts="2026-03-03T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "playing"},
+        ),
+        _lighting(
+            ts="2026-03-10T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "off"},
+        ),
+        _lighting(
+            ts="2026-03-17T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "off"},
+        ),
+        _lighting(
+            ts="2026-03-24T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "playing"},
+        ),
+        _lighting(
+            ts="2026-03-31T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "off"},
+        ),
+        _lighting(
+            ts="2026-04-07T20:00:00+00:00",
+            entity_id="light.studio_spot",
+            room_id="studio",
+            weekday=1,
+            minute=20 * 60,
+            action="on",
+            brightness=80,
+            signals={"media_player.projector": "playing"},
+        ),
+    ]
+
+    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    assert len(proposals) == 1
+    proposal = proposals[0]
+    assert proposal.reaction_type == "lighting_scene_schedule"
+    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
+    assert diagnostics["competing_explanation_type"] == "schedule"
 
 
 async def test_lighting_analyzer_skips_minimal_evidence_with_wide_iqr():

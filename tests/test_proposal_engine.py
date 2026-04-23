@@ -864,6 +864,60 @@ async def test_proposal_engine_diagnostics_include_summary_and_explainability(mo
     assert item["explainability"]["observations_count"] == 6
 
 
+async def test_proposal_engine_explainability_includes_context_condition_metrics(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    proposal = _proposal(conf=0.94, weekday=3)
+    proposal.reaction_type = "context_conditioned_lighting_scene"
+    proposal.description = "studio: Thursday ~10:05 — test_heima_studio_desk on (160bri, 3300K)"
+    proposal.suggested_reaction_config = {
+        "reaction_type": "context_conditioned_lighting_scene",
+        "room_id": "studio",
+        "weekday": 3,
+        "scheduled_min": 605,
+        "entity_steps": [{"entity_id": "light.test_heima_studio_desk", "action": "on"}],
+        "context_conditions": [
+            {"signal_name": "test_heima_studio_fan_context", "state_in": ["active"]}
+        ],
+        "learning_diagnostics": {
+            "pattern_id": "context_conditioned_lighting_scene",
+            "analyzer_id": "LightingPatternAnalyzer",
+            "reaction_type": "context_conditioned_lighting_scene",
+            "plugin_family": "lighting",
+            "room_id": "studio",
+            "weekday": 3,
+            "scheduled_min": 605,
+            "observations_count": 5,
+            "weeks_observed": 3,
+            "iqr_min": 0,
+            "entity_steps_count": 1,
+            "positive_episode_count": 5,
+            "selected_context_condition": {
+                "signal_name": "test_heima_studio_fan_context",
+                "state_in": ["active"],
+            },
+            "concentration": 1.0,
+            "lift": float("inf"),
+            "negative_episode_count": 4,
+            "contrast_status": "verified",
+        },
+    }
+    engine._store._data = {"data": {"proposals": [proposal.as_dict()]}}
+
+    await engine.async_initialize()
+
+    item = engine.diagnostics()["proposals"][0]
+    explainability = item["explainability"]
+    assert explainability["selected_context_condition"] == {
+        "signal_name": "test_heima_studio_fan_context",
+        "state_in": ["active"],
+    }
+    assert explainability["concentration"] == 1.0
+    assert explainability["negative_episode_count"] == 4
+    assert explainability["contrast_status"] == "verified"
+    assert explainability["lift"] == float("inf")
+
+
 async def test_proposal_engine_marks_old_pending_proposal_as_stale(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub(), stale_after=timedelta(days=7))  # type: ignore[arg-type]

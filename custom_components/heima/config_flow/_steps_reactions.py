@@ -3852,6 +3852,9 @@ class _ReactionsStepsMixin:
             "room_darkness_lighting_assist",
             "room_contextual_lighting_assist",
             "vacation_presence_simulation",
+            "room_signal_assist",
+            "room_cooling_assist",
+            "room_air_quality_assist",
         }:
             return False
         steps = cfg.get("steps")
@@ -4511,6 +4514,10 @@ class _ReactionsStepsMixin:
                 corroboration_signal_name = (
                     str(cfg.get("corroboration_signal_name") or "").strip().lower()
                 )
+                primary_entities = list(cfg.get("primary_signal_entities") or [])
+                corroboration_entities = list(cfg.get("corroboration_signal_entities") or [])
+                legacy_trigger_entities = list(cfg.get("trigger_signal_entities") or [])
+                legacy_temperature_entities = list(cfg.get("temperature_signal_entities") or [])
                 primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
                 house_state_filter = str(cfg.get("house_state_filter") or "").strip().lower()
                 observed = int(cfg.get("episodes_observed", 0))
@@ -4525,6 +4532,15 @@ class _ReactionsStepsMixin:
                     if corroboration_signal_name:
                         signal_bits.append(corroboration_signal_name)
                     parts.append(" + ".join(signal_bits))
+                elif legacy_trigger_entities or legacy_temperature_entities:
+                    if legacy_trigger_entities:
+                        parts.append(f"hum:{len(legacy_trigger_entities)}")
+                    if legacy_temperature_entities:
+                        parts.append(f"temp:{len(legacy_temperature_entities)}")
+                elif primary_entities:
+                    parts.append(f"sig:{len(primary_entities)}")
+                    if corroboration_entities:
+                        parts.append(f"corr:{len(corroboration_entities)}")
                 if primary_trigger_mode:
                     parts.append(primary_trigger_mode)
                 if house_state_filter:

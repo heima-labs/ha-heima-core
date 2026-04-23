@@ -255,6 +255,10 @@ Product-direction clarification:
 - when a room already qualifies for `room_darkness_lighting_assist`, the preferred suppression
   point for a redundant `lighting_scene_schedule` candidate SHOULD be the analyzer stage rather
   than lifecycle collision handling
+- the same principle applies when repeated lighting behavior is better explained by bounded
+  abstract context conditions derived from canonical context signals; in that case the preferred
+  suppression point for a weaker `lighting_scene_schedule` candidate SHOULD also be the analyzer
+  stage rather than lifecycle collision handling
 
 Composite domain clarification for the next iteration:
 - the current composite identity remains intentionally coarse and room-scoped

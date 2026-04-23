@@ -1,7 +1,7 @@
 # Heima — Specifications Index
 ## Canonical Specs Structure
 
-**Last verified against code:** 2026-04-03 (`main`)
+**Last verified against code:** 2026-04-23 (`main`)
 
 This folder is organized by maturity and scope:
 
@@ -58,6 +58,7 @@ Related practical guides live outside this tree:
 - `learning/learning_system_spec.md` — event store, analyzers, proposals
 - `learning/canonical_signal_pipeline_spec.md` — canonical signal and burst pipeline used by learning/proposals
 - `learning/proposal_lifecycle_spec.md` — v1 proposal identity, refresh, and staleness
+- `learning/context_conditioned_lighting_learning_spec.md` — learned context-scoped lighting proposals and review contract
 - `learning/admin_authored_automation_spec.md` — admin-requested automations and follow-up tuning
 - `learning/inference_engine_spec.md` — inference v2 draft
 

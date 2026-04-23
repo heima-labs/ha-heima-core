@@ -213,6 +213,7 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     lighting = summary["families"]["lighting"]
     assert lighting["pending"] == 1
     assert "lighting_scene_schedule" in lighting["proposal_types"]
+    assert "context_conditioned_lighting_scene" in lighting["proposal_types"]
     assert lighting["admin_authorable"] is True
     assert lighting["admin_authored_templates"] == ["lighting.scene_schedule.basic"]
     assert lighting["implemented_admin_authored_templates"] == ["lighting.scene_schedule.basic"]

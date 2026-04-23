@@ -1813,6 +1813,18 @@ Normative product rule:
 It SHOULD be considered a weaker fit for ordinary “use the room and turn lights on when needed”
 behavior.
 
+Product-direction extension:
+- strong canonical context signals from `rooms[*].learning_sources` and
+  `learning.context_signal_entities` SHOULD also be considered valid explanatory dimensions for
+  learned lighting behavior
+- when a repeated lighting scene is better explained by a bounded context condition than by pure
+  weekday/time replay, Heima SHOULD prefer the context-conditioned explanation
+- this context layer MUST remain abstract and signal-driven:
+  - not media-specific
+  - not projector-specific
+  - not tied to raw HA entity names in the learned reaction contract
+- see spec: `context_conditioned_lighting_learning_spec.md`
+
 ### P9.3 Output proposal
 
 Una proposta per `SceneCandidate` (= per stanza × giorno × cluster orario):

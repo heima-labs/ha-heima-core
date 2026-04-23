@@ -118,6 +118,13 @@ def _lighting_identity_key(proposal: ReactionProposal) -> str:
     scene_signature = _lighting_scene_signature(cfg)
     house_state_filter = cfg.get("house_state_filter") or None
     hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
+    if proposal.reaction_type == "context_conditioned_lighting_scene":
+        context_signature = _context_conditions_signature(cfg)
+        return (
+            f"context_conditioned_lighting_scene|room={cfg.get('room_id')}"
+            f"|weekday={cfg.get('weekday')}|bucket={bucket}|scene={scene_signature}"
+            f"|context={context_signature}{hs_suffix}"
+        )
     return (
         f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
         f"|bucket={bucket}|scene={scene_signature}{hs_suffix}"
@@ -130,10 +137,12 @@ def _lighting_followup_slot_key(proposal: ReactionProposal) -> str:
     bucket = None
     if isinstance(scheduled_min, (int, float)):
         bucket = (int(scheduled_min) // 30) * 30
-    return (
-        f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-        f"|bucket={bucket}"
+    prefix = (
+        "context_conditioned_lighting_scene"
+        if proposal.reaction_type == "context_conditioned_lighting_scene"
+        else "lighting_scene_schedule"
     )
+    return f"{prefix}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}|bucket={bucket}"
 
 
 def _lighting_fallback_followup_match(
@@ -413,6 +422,27 @@ def _lighting_scene_signature(cfg: dict[str, Any]) -> str:
         return "none"
     normalized_steps.sort()
     return "||".join(normalized_steps)
+
+
+def _context_conditions_signature(cfg: dict[str, Any]) -> str:
+    raw_conditions = cfg.get("context_conditions")
+    if not isinstance(raw_conditions, list):
+        return "none"
+    normalized: list[str] = []
+    for raw in raw_conditions:
+        if not isinstance(raw, dict):
+            continue
+        signal_name = str(raw.get("signal_name") or "").strip()
+        states = sorted(
+            {str(item).strip() for item in list(raw.get("state_in") or []) if str(item).strip()}
+        )
+        if not signal_name or not states:
+            continue
+        normalized.append(f"{signal_name}={'/'.join(states)}")
+    if not normalized:
+        return "none"
+    normalized.sort()
+    return "||".join(normalized)
 
 
 def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:

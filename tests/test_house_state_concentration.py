@@ -258,6 +258,25 @@ def test_lighting_identity_key_no_suffix_when_filter_none():
     assert "house_state" not in key
 
 
+def test_context_conditioned_lighting_identity_key_includes_context_signature():
+    hooks = lighting_lifecycle_hooks()
+    proposal = _proposal(
+        "context_conditioned_lighting_scene",
+        {
+            "room_id": "living",
+            "weekday": 0,
+            "scheduled_min": 1200,
+            "entity_steps": [{"entity_id": "light.test", "action": "on"}],
+            "context_conditions": [
+                {"signal_name": "projector_context", "state_in": ["active"]},
+            ],
+        },
+    )
+    key = hooks.identity_key(proposal)
+    assert key.startswith("context_conditioned_lighting_scene|")
+    assert "|context=projector_context=active" in key
+
+
 def test_composite_identity_key_includes_house_state_suffix_when_set():
     hooks = composite_room_assist_lifecycle_hooks()
     proposal = _proposal(

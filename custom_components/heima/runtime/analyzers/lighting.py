@@ -8,6 +8,8 @@ from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
 from .base import ReactionProposal, compute_house_state_filter
+from .context_condition_promotion import evaluate_context_condition_promotion
+from .context_episode_sampling import build_lighting_context_dataset
 from .cross_domain import rooms_with_confirmed_pattern_evidence
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import LightingLearningPolicy
@@ -191,21 +193,34 @@ class LightingPatternAnalyzer:
 
                 cluster_events = [e for p in normalized_cluster for e in p.source_events]
                 house_state_filter = compute_house_state_filter(cluster_events)
+                context_dataset = build_lighting_context_dataset(
+                    events=events,
+                    room_id=room_id,
+                    weekday=weekday,
+                    scheduled_min=scheduled_min,
+                    window_half_min=window_half_min,
+                    entity_steps=entity_steps,
+                )
+                context_decision = evaluate_context_condition_promotion(context_dataset)
+                if context_decision.should_promote:
+                    reaction_type = "context_conditioned_lighting_scene"
+                    pattern_id = "context_conditioned_lighting_scene"
+                else:
+                    reaction_type = "lighting_scene_schedule"
+                    pattern_id = "lighting_scene_schedule"
 
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
-                fingerprint = (
-                    f"{self.analyzer_id}|lighting_scene_schedule|{room_id}|{weekday}|{fp_min}"
-                )
+                fingerprint = f"{self.analyzer_id}|{reaction_type}|{room_id}|{weekday}|{fp_min}"
 
                 proposals.append(
                     ReactionProposal(
                         analyzer_id=self.analyzer_id,
-                        reaction_type="lighting_scene_schedule",
+                        reaction_type=reaction_type,
                         description=_describe(room_id, weekday, scheduled_min, entity_steps),
                         confidence=round(confidence, 3),
                         suggested_reaction_config={
-                            "reaction_type": "lighting_scene_schedule",
+                            "reaction_type": reaction_type,
                             "room_id": room_id,
                             "weekday": weekday,
                             "scheduled_min": scheduled_min,
@@ -213,9 +228,9 @@ class LightingPatternAnalyzer:
                             "house_state_filter": house_state_filter,  # computed via §3.0.2
                             "entity_steps": entity_steps,
                             "learning_diagnostics": build_learning_diagnostics(
-                                pattern_id="lighting_scene_schedule",
+                                pattern_id=pattern_id,
                                 analyzer_id=self.analyzer_id,
-                                reaction_type="lighting_scene_schedule",
+                                reaction_type=reaction_type,
                                 plugin_family="lighting",
                                 room_id=room_id,
                                 weekday=weekday,
@@ -233,6 +248,20 @@ class LightingPatternAnalyzer:
                                 iqr_min=max(pattern.iqr_min for pattern in normalized_cluster),
                                 scheduled_min=scheduled_min,
                                 entity_steps_count=len(entity_steps),
+                                positive_episode_count=len(context_dataset.positive_episodes),
+                                competing_explanation_type=(
+                                    "context" if context_decision.should_promote else "schedule"
+                                ),
+                                **context_decision.diagnostics(),
+                            ),
+                            **(
+                                {
+                                    "context_conditions": [
+                                        context_decision.selected_condition.as_dict()
+                                    ]
+                                }
+                                if context_decision.selected_condition is not None
+                                else {}
                             ),
                         },
                         fingerprint=fingerprint,

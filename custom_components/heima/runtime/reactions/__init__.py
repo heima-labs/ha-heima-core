@@ -12,6 +12,15 @@ from ._compat import (
 )
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
+from .context_conditioned_lighting import (
+    ContextConditionedLightingReaction,
+    build_context_conditioned_lighting_reaction,
+    present_context_conditioned_lighting_label,
+    present_context_conditioned_lighting_proposal_label,
+    present_context_conditioned_lighting_review_title,
+    present_learned_context_conditioned_lighting_details,
+    present_tuning_context_conditioned_lighting_details,
+)
 from .contextual_lighting_assist import (
     RoomContextualLightingAssistReaction,
     build_room_contextual_lighting_assist_reaction,
@@ -175,6 +184,22 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_presence_pattern_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_presence_pattern_label,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
+                reaction_type="context_conditioned_lighting_scene",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("context_conditioned_lighting_scene",),
+                supports_normalizer=False,
+            ),
+            builder=build_context_conditioned_lighting_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_context_conditioned_lighting_label,
+                proposal_human_label=present_context_conditioned_lighting_proposal_label,
+                proposal_review_title=present_context_conditioned_lighting_review_title,
+                learned_review_details=present_learned_context_conditioned_lighting_details,
+                tuning_review_details=present_tuning_context_conditioned_lighting_details,
             ),
         ),
         RegisteredReactionPlugin(
