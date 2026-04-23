@@ -37,6 +37,7 @@ from ..const import (
 from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
+from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .domains.calendar import CalendarDomain
@@ -830,6 +831,7 @@ class HeimaEngine:
             occupied_rooms=occupied_rooms,
             lighting_intents=lighting_intents,
             security_state=security_state,
+            context_signals=self._current_context_signals(options),
             notes=f"reason={reason}",
             heating_setpoint=self._heating_domain.trace.get("current_setpoint"),
             heating_source=str(self._heating_domain.trace.get("observed_source") or "unknown"),
@@ -1174,6 +1176,37 @@ class HeimaEngine:
             if room_id:
                 configs[str(room_id)] = dict(room)
         return configs
+
+    def _current_context_signals(self, options: dict[str, Any]) -> dict[str, str]:
+        learning = dict(options.get("learning", {}) or {})
+        raw_entities: list[str] = []
+        room_configs = options.get(OPT_ROOMS, [])
+        if isinstance(room_configs, list):
+            for room in room_configs:
+                if not isinstance(room, dict):
+                    continue
+                for raw_signal in list(room.get("learning_sources") or []):
+                    if not isinstance(raw_signal, dict):
+                        continue
+                    entity_id = str(raw_signal.get("entity_id") or "").strip()
+                    if entity_id:
+                        raw_entities.append(entity_id)
+        for entity_id in list(learning.get("context_signal_entities") or []):
+            clean = str(entity_id or "").strip()
+            if clean:
+                raw_entities.append(clean)
+
+        deduped: set[str] = set()
+        raw_snapshot: dict[str, str] = {}
+        for entity_id in raw_entities:
+            if entity_id in deduped:
+                continue
+            deduped.add(entity_id)
+            state = self._hass.states.get(entity_id)
+            if state is None:
+                continue
+            raw_snapshot[entity_id] = str(state.state or "")
+        return canonicalize_context_snapshot(raw_snapshot)
 
     def _queue_event(self, event: HeimaEvent) -> None:
         self._events_domain.queue_event(event)

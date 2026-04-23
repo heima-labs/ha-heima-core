@@ -60,6 +60,7 @@ SUPPORTED_COMMANDS = {
     "unmute_reaction_type",
     "learning_reset",
     "seed_lighting_events",
+    "seed_lighting_scene_events",
     "upsert_configured_reactions",
 }
 
@@ -309,6 +310,72 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     count=count,
                 )
             _LOGGER.info("seed_lighting_events: injected %d events for %s", total, entity_id)
+            return
+
+        if command == "seed_lighting_scene_events":
+            p = params
+            room_id = str(p.get("room_id") or "")
+            entity_steps = p.get("entity_steps")
+            if not room_id or not isinstance(entity_steps, list) or not entity_steps:
+                raise ServiceValidationError(
+                    "seed_lighting_scene_events requires 'room_id' and non-empty "
+                    "'entity_steps' in params"
+                )
+            normalized_steps: list[dict[str, object]] = []
+            for raw_step in entity_steps:
+                if not isinstance(raw_step, dict):
+                    raise ServiceValidationError(
+                        "seed_lighting_scene_events entity_steps must contain only dict items"
+                    )
+                entity_id = str(raw_step.get("entity_id") or "").strip()
+                action = str(raw_step.get("action") or "").strip().lower()
+                if not entity_id or action not in {"on", "off"}:
+                    raise ServiceValidationError(
+                        "seed_lighting_scene_events step requires entity_id and action in "
+                        "{'on','off'}"
+                    )
+                normalized_steps.append(
+                    {
+                        "entity_id": entity_id,
+                        "action": action,
+                        "brightness": (
+                            int(raw_step["brightness"])
+                            if raw_step.get("brightness") is not None
+                            else None
+                        ),
+                        "color_temp_kelvin": (
+                            int(raw_step["color_temp_kelvin"])
+                            if raw_step.get("color_temp_kelvin") is not None
+                            else None
+                        ),
+                        "rgb_color": raw_step.get("rgb_color"),
+                    }
+                )
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1200))
+            count = int(p.get("count", 6))
+            signals = p.get("signals") or {}
+            if not isinstance(signals, dict):
+                raise ServiceValidationError(
+                    "seed_lighting_scene_events 'signals' must be a dict when provided"
+                )
+            house_state = str(p.get("house_state") or "home").strip() or "home"
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_lighting_scene_events(
+                    room_id=room_id,
+                    entity_steps=normalized_steps,
+                    weekday=weekday,
+                    minute=minute,
+                    count=count,
+                    signals={str(k): str(v) for k, v in signals.items()},
+                    house_state=house_state,
+                )
+            _LOGGER.info(
+                "seed_lighting_scene_events: injected %d events for room %s",
+                total,
+                room_id,
+            )
             return
 
         if command == "upsert_configured_reactions":

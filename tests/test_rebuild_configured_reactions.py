@@ -11,6 +11,9 @@ from custom_components.heima.runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     normalize_reaction_options_payload,
 )
+from custom_components.heima.runtime.reactions.context_conditioned_lighting import (
+    ContextConditionedLightingReaction,
+)
 from custom_components.heima.runtime.reactions.heating import (
     HeatingEcoReaction,
     HeatingPreferenceReaction,
@@ -97,6 +100,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
 
     assert {descriptor.reaction_type for descriptor in registry.descriptors()} == {
         "presence_preheat",
+        "context_conditioned_lighting_scene",
         "lighting_scene_schedule",
         "heating_preference",
         "heating_eco",
@@ -117,6 +121,7 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
 
     assert [d.reaction_type for d in descriptors] == [
         "presence_preheat",
+        "context_conditioned_lighting_scene",
         "lighting_scene_schedule",
         "heating_preference",
         "heating_eco",
@@ -142,6 +147,8 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
     assert descriptors[-6].supports_normalizer is True
     assert descriptors[-7].supported_config_contracts == ("room_signal_assist",)
     assert descriptors[-7].supports_normalizer is True
+    assert descriptors[1].supported_config_contracts == ("context_conditioned_lighting_scene",)
+    assert descriptors[1].supports_normalizer is False
 
 
 def test_presence_reaction_built_and_registered():
@@ -209,6 +216,38 @@ def test_contextual_lighting_reaction_built_and_registered():
     assert len(engine._reactions) == 1
     assert engine._reactions[0].reaction_id == "contextual-1"
     assert "contextual-1" in engine._configured_reaction_ids
+
+
+def test_context_conditioned_lighting_reaction_built_and_registered():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "context-scene-1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "room_id": "studio",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "window_half_min": 10,
+                        "context_conditions": [
+                            {
+                                "signal_name": "projector_context",
+                                "state_in": ["active"],
+                            }
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_spot", "action": "on"}],
+                    }
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    assert isinstance(engine._reactions[0], ContextConditionedLightingReaction)
+    assert engine._reactions[0].reaction_id == "context-scene-1"
+    assert "context-scene-1" in engine._configured_reaction_ids
 
 
 def test_reaction_pre_seeded_with_synthetic_arrivals():

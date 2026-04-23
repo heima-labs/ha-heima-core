@@ -418,6 +418,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("room_contextual_lighting_assist") is not None
     assert registry.lifecycle_hooks_for("heating_preference") is not None
     assert registry.lifecycle_hooks_for("heating_eco") is not None
+    assert registry.lifecycle_hooks_for("context_conditioned_lighting_scene") is not None
     assert registry.lifecycle_hooks_for("lighting_scene_schedule") is not None
     assert registry.lifecycle_hooks_for("room_signal_assist") is not None
     assert registry.lifecycle_hooks_for("vacation_presence_simulation") is not None

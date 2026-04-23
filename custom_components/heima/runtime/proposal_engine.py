@@ -765,6 +765,14 @@ class ProposalEngine:
             "matched_primary_entities",
             "matched_corroboration_entities",
             "observed_followup_entities",
+            "positive_episode_count",
+            "competing_explanation_type",
+            "selected_context_condition",
+            "context_conditions_considered",
+            "concentration",
+            "lift",
+            "negative_episode_count",
+            "contrast_status",
         )
         return {
             key: diagnostics[key]

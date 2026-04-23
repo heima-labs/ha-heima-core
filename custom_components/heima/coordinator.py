@@ -385,6 +385,84 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._write_event_store_sensor()
         return count
 
+    async def async_seed_lighting_scene_events(
+        self,
+        *,
+        room_id: str,
+        entity_steps: list[dict[str, object]],
+        weekday: int,
+        minute: int,
+        count: int = 6,
+        signals: dict[str, str] | None = None,
+        house_state: str = "home",
+    ) -> int:
+        """Inject synthetic multi-entity lighting scene events across 2 ISO weeks.
+
+        Unlike ``async_seed_lighting_events()``, all entity steps belonging to the
+        same synthetic episode share the exact same timestamp and context so
+        lighting scene matching and context-conditioned sampling remain stable.
+        """
+        from datetime import timedelta
+
+        from .runtime.event_store import EventContext, HeimaEvent
+
+        now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        n_week1 = count // 2
+        n_week2 = count - n_week1
+        offsets = [timedelta(weeks=-2)] * n_week1 + [timedelta(weeks=-1)] * n_week2
+        raw_signals = {
+            str(entity_id): str(state)
+            for entity_id, state in dict(signals or {}).items()
+            if str(entity_id or "").strip() and str(state or "").strip()
+        }
+
+        total = 0
+        for offset in offsets:
+            ts = (now_utc + offset).isoformat()
+            ctx = EventContext(
+                weekday=weekday,
+                minute_of_day=minute,
+                month=now_utc.month,
+                house_state=house_state,
+                occupants_count=1,
+                occupied_rooms=(room_id,),
+                outdoor_lux=None,
+                outdoor_temp=None,
+                weather_condition=None,
+                signals=raw_signals,
+            )
+            for step in entity_steps:
+                entity_id = str(step.get("entity_id") or "").strip()
+                action = str(step.get("action") or "").strip().lower()
+                if not entity_id or action not in {"on", "off"}:
+                    continue
+                event = HeimaEvent(
+                    ts=ts,
+                    event_type="lighting",
+                    context=ctx,
+                    source="user",
+                    domain="lighting",
+                    subject_type="entity",
+                    subject_id=entity_id,
+                    room_id=room_id,
+                    data={
+                        "entity_id": entity_id,
+                        "room_id": room_id,
+                        "action": action,
+                        "brightness": step.get("brightness") if action == "on" else None,
+                        "color_temp_kelvin": (
+                            step.get("color_temp_kelvin") if action == "on" else None
+                        ),
+                        "rgb_color": step.get("rgb_color") if action == "on" else None,
+                    },
+                )
+                await self._event_store.async_append(event)
+                total += 1
+
+        await self._event_store.async_flush()
+        self._write_event_store_sensor()
+        return total
+
     async def async_shutdown(self) -> None:
         """Shutdown runtime."""
         self._unsubscribe_state_changes()

@@ -580,6 +580,77 @@ async def test_heima_command_seed_lighting_events_rejects_invalid_action(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_heima_command_seed_lighting_scene_events_passes_signals(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    coordinator = SimpleNamespace(async_seed_lighting_scene_events=AsyncMock(return_value=8))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "seed_lighting_scene_events",
+                "target": {},
+                "params": {
+                    "room_id": "studio",
+                    "weekday": 2,
+                    "minute": 1260,
+                    "count": 4,
+                    "signals": {"switch.test_heima_studio_fan": "on"},
+                    "entity_steps": [
+                        {
+                            "entity_id": "light.test_heima_studio_main",
+                            "action": "on",
+                            "brightness": 144,
+                            "color_temp_kelvin": 3000,
+                        },
+                        {
+                            "entity_id": "light.test_heima_studio_desk",
+                            "action": "on",
+                            "brightness": 110,
+                            "color_temp_kelvin": 3300,
+                        },
+                    ],
+                },
+            }
+        )
+    )
+
+    coordinator.async_seed_lighting_scene_events.assert_awaited_once_with(
+        room_id="studio",
+        entity_steps=[
+            {
+                "entity_id": "light.test_heima_studio_main",
+                "action": "on",
+                "brightness": 144,
+                "color_temp_kelvin": 3000,
+                "rgb_color": None,
+            },
+            {
+                "entity_id": "light.test_heima_studio_desk",
+                "action": "on",
+                "brightness": 110,
+                "color_temp_kelvin": 3300,
+                "rgb_color": None,
+            },
+        ],
+        weekday=2,
+        minute=1260,
+        count=4,
+        signals={"switch.test_heima_studio_fan": "on"},
+        house_state="home",
+    )
+
+
+@pytest.mark.asyncio
 async def test_heima_command_upsert_configured_reactions_rejects_invalid_payload(monkeypatch):
     services = _FakeServicesRegistry()
     hass = SimpleNamespace(
