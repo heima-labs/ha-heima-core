@@ -37,6 +37,7 @@ def build_lighting_context_dataset(
     scheduled_min: int,
     window_half_min: int,
     entity_steps: list[dict[str, Any]],
+    house_state_filter: str | None = None,
 ) -> LightingContextDataset:
     """Build comparable positive/negative episodes around one learned scene window.
 
@@ -55,6 +56,10 @@ def build_lighting_context_dataset(
             continue
         if event.room_id != room_id or event.context.weekday != weekday:
             continue
+        if house_state_filter is not None:
+            current_house_state = str(event.context.house_state or "").strip().lower()
+            if current_house_state != str(house_state_filter).strip().lower():
+                continue
         if abs(int(event.context.minute_of_day) - int(scheduled_min)) > int(window_half_min):
             continue
         grouped.setdefault(event.ts, []).append(event)

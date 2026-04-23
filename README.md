@@ -56,6 +56,8 @@ v1's plugin architecture is designed to be replaced and extended. The v2 DAG int
 
 **Corroboration signal supports bucket mode only.** In `room_signal_assist` reactions, the primary signal supports both `bucket` (fire while signal is in a given range) and `burst` (fire when signal changes rapidly) trigger modes. The corroboration signal — when present — is always evaluated in bucket mode. Dual-burst reactions (e.g., fire when both humidity and CO₂ rise rapidly at the same time) are not supported in v1. The main reasons: (1) two independent burst windows are unlikely to overlap precisely without explicit synchronization, increasing the risk of false negatives; (2) the use case is narrow enough not to justify the added config surface and runtime complexity. If a real production case emerges, this is a natural v2 extension.
 
+**Context-conditioned lighting uses global abstract context signals at runtime.** Learned `context_conditioned_lighting_scene` proposals use abstract `context_conditions` such as `projector_context=active`, but the current runtime snapshot flattens all configured context entities into one global map. If two rooms expose the same abstract context signal name, the runtime cannot yet distinguish which room's context is active when evaluating the reaction. The learning model is valid, but room-scoped context disambiguation is not implemented in v1.
+
 ## Project Icon
 ![Heima icon](docs/assets/heima-icon.svg)
 

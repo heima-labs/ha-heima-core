@@ -19,6 +19,7 @@ def _lighting(
     action: str = "on",
     brightness: int | None = None,
     signals: dict[str, str] | None = None,
+    house_state: str = "home",
 ) -> HeimaEvent:
     return HeimaEvent(
         ts=ts,
@@ -27,7 +28,7 @@ def _lighting(
             weekday=weekday,
             minute_of_day=minute,
             month=4,
-            house_state="home",
+            house_state=house_state,
             occupants_count=1,
             occupied_rooms=(room_id,),
             outdoor_lux=None,
@@ -181,6 +182,40 @@ def test_build_lighting_context_dataset_excludes_unrelated_room_and_time():
         scheduled_min=20 * 60,
         window_half_min=10,
         entity_steps=target_steps,
+    )
+
+    assert len(dataset.positive_episodes) == 1
+    assert len(dataset.negative_episodes) == 0
+
+
+def test_build_lighting_context_dataset_respects_house_state_filter():
+    target_steps = [{"entity_id": "light.studio_spot", "action": "on", "brightness": 80}]
+    events = [
+        _lighting(
+            ts="2026-04-07T18:00:00+00:00",
+            entity_id="light.studio_spot",
+            action="on",
+            brightness=80,
+            house_state="home",
+            signals={"media_player.projector": "playing"},
+        ),
+        _lighting(
+            ts="2026-04-14T18:00:00+00:00",
+            entity_id="light.studio_spot",
+            action="off",
+            house_state="working",
+            signals={"media_player.projector": "off"},
+        ),
+    ]
+
+    dataset = build_lighting_context_dataset(
+        events=events,
+        room_id="studio",
+        weekday=1,
+        scheduled_min=20 * 60,
+        window_half_min=10,
+        entity_steps=target_steps,
+        house_state_filter="home",
     )
 
     assert len(dataset.positive_episodes) == 1

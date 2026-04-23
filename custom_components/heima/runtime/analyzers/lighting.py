@@ -200,6 +200,7 @@ class LightingPatternAnalyzer:
                     scheduled_min=scheduled_min,
                     window_half_min=window_half_min,
                     entity_steps=entity_steps,
+                    house_state_filter=house_state_filter,
                 )
                 context_decision = evaluate_context_condition_promotion(context_dataset)
                 if context_decision.should_promote:

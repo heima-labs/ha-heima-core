@@ -23,6 +23,7 @@ class ContextConditionPromotionDecision:
     selected_condition: ContextCondition | None
     selected_score: ContextConditionScore | None
     considered_scores: tuple[ContextConditionScore, ...]
+    total_negative_episode_count: int
 
     @property
     def should_promote(self) -> bool:
@@ -41,7 +42,7 @@ class ContextConditionPromotionDecision:
             "negative_episode_count": (
                 self.selected_score.negative_episode_count
                 if self.selected_score is not None
-                else len(self.considered_scores)
+                else self.total_negative_episode_count
             ),
             "contrast_status": (
                 self.selected_score.contrast_status if self.selected_score is not None else None
@@ -64,6 +65,7 @@ def evaluate_context_condition_promotion(
             selected_condition=None,
             selected_score=None,
             considered_scores=(),
+            total_negative_episode_count=len(dataset.negative_episodes),
         )
 
     scores: list[ContextConditionScore] = []
@@ -107,6 +109,7 @@ def evaluate_context_condition_promotion(
         selected_condition=selected_condition,
         selected_score=selected_score,
         considered_scores=tuple(ordered),
+        total_negative_episode_count=negative_count,
     )
 
 

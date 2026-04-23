@@ -218,3 +218,43 @@ def test_evaluate_context_condition_promotion_rejects_weak_lift():
 
     assert decision.should_promote is False
     assert decision.selected_condition is None
+
+
+def test_context_condition_promotion_diagnostics_keep_true_negative_episode_count_without_selection():
+    dataset = LightingContextDataset(
+        positive_episodes=(
+            _episode(
+                ts="2026-04-07T18:00:00+00:00",
+                context_signals={"projector_context": "active"},
+                matches_target_scene=True,
+            ),
+            _episode(
+                ts="2026-04-14T18:00:00+00:00",
+                context_signals={"projector_context": "inactive"},
+                matches_target_scene=True,
+            ),
+        ),
+        negative_episodes=(
+            _episode(
+                ts="2026-04-08T18:00:00+00:00",
+                context_signals={"projector_context": "inactive"},
+                matches_target_scene=False,
+            ),
+            _episode(
+                ts="2026-04-15T18:00:00+00:00",
+                context_signals={"projector_context": "inactive"},
+                matches_target_scene=False,
+            ),
+            _episode(
+                ts="2026-04-22T18:00:00+00:00",
+                context_signals={"projector_context": "inactive"},
+                matches_target_scene=False,
+            ),
+        ),
+    )
+
+    decision = evaluate_context_condition_promotion(dataset)
+
+    assert decision.should_promote is False
+    diagnostics = decision.diagnostics()
+    assert diagnostics["negative_episode_count"] == 3
