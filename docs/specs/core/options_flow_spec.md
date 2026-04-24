@@ -605,6 +605,10 @@ Current v1 implementation:
     availability and flow delegation
   - proposal/reaction presentation should progressively move behind plugin-owned
     presenter hooks
-- the current admin-authored template implemented end-to-end in the options flow is:
-  - `lighting.scene_schedule.basic`
+- there is currently no generic admin-authored `scheduled_routine` implemented end-to-end in the
+  options flow
+- when introduced, that capability SHOULD be:
+  - generic across actuator domains
+  - explicitly admin-authored only
+  - outside learned discovery and improvement flows
 - REST-driven options-flow tests may intentionally return HTTP 400 for invalid schema values; this is expected validation behavior.

@@ -99,16 +99,6 @@ class _ReactionsStepsMixin:
         if reaction_type == "room_vacancy_lighting_off":
             return f"{reaction_type}|room={room_id}"
 
-        if reaction_type == "lighting_scene_schedule":
-            scheduled_min = cfg.get("scheduled_min")
-            bucket = None
-            if isinstance(scheduled_min, (int, float)):
-                bucket = (int(scheduled_min) // 30) * 30
-            return (
-                f"{reaction_type}|room={room_id}|weekday={cfg.get('weekday')}|bucket={bucket}"
-                f"{house_state_suffix}"
-            )
-
         return ""
 
     def _configured_slot_matches_for_proposal(
@@ -237,78 +227,6 @@ class _ReactionsStepsMixin:
                 self._selected_admin_authored_template_id = template_id
                 return await step()
         return await self.async_step_init()
-
-    async def async_step_admin_authored_lighting_schedule(
-        self, user_input: dict[str, Any] | None = None
-    ) -> "FlowResult":
-        """Create a bounded admin-authored lighting schedule proposal."""
-        template = self._admin_authored_template("lighting.scene_schedule.basic")
-        room_ids = self._room_ids()
-        if template is None or not room_ids:
-            return await self.async_step_init()
-
-        defaults = {
-            "room_id": room_ids[0],
-            "weekday": "0",
-            "scheduled_time": "20:00",
-            "action": "on",
-            "brightness": 190,
-            "color_temp_kelvin": 2850,
-        }
-        errors: dict[str, str] = {}
-
-        if user_input is None:
-            return self._show_admin_authored_lighting_schedule_form(
-                step_id="admin_authored_lighting_schedule",
-                defaults=defaults,
-                template_title=template.title,
-                template_description=template.description,
-            )
-        current_input, resolved, errors = self._normalize_lighting_schedule_editor_submission(
-            user_input=user_input,
-            defaults=defaults,
-            room_id="",
-            include_room_id=True,
-            include_enabled=False,
-            include_delete=False,
-        )
-        if errors:
-            return self._show_admin_authored_lighting_schedule_form(
-                step_id="admin_authored_lighting_schedule",
-                defaults=current_input,
-                errors=errors,
-                template_title=template.title,
-                template_description=template.description,
-            )
-
-        proposal = self._build_admin_authored_lighting_schedule_proposal(
-            room_id=str(resolved["room_id"]),
-            weekday=int(resolved["weekday"]),
-            scheduled_min=int(resolved["scheduled_min"]),
-            entity_ids=list(resolved["light_entities"]),
-            action=str(resolved["action"]),
-            brightness=resolved["brightness"],
-            color_temp_kelvin=resolved["color_temp_kelvin"],
-        )
-        if self._admin_authored_identity_conflicts(proposal):
-            return self._show_admin_authored_lighting_schedule_form(
-                step_id="admin_authored_lighting_schedule",
-                defaults=current_input,
-                errors={"base": "duplicate"},
-                template_title=template.title,
-                template_description=template.description,
-            )
-
-        if self._has_redacted_payload(proposal.suggested_reaction_config):
-            return self._show_admin_authored_lighting_schedule_form(
-                step_id="admin_authored_lighting_schedule",
-                defaults=current_input,
-                errors={"base": "redacted_payload"},
-                template_title=template.title,
-                template_description=template.description,
-            )
-
-        return await self._store_admin_authored_reaction_directly(proposal)
 
     async def async_step_admin_authored_security_presence_simulation(
         self, user_input: dict[str, Any] | None = None
@@ -981,16 +899,6 @@ class _ReactionsStepsMixin:
                 user_input=user_input,
             )
 
-        if reaction_type == "lighting_scene_schedule":
-            return await self._async_step_reactions_edit_lighting_scene_schedule(
-                pid=pid,
-                reactions_cfg=reactions_cfg,
-                configured=configured,
-                labels_map=labels_map,
-                cfg=cfg,
-                user_input=user_input,
-            )
-
         if reaction_type == "room_vacancy_lighting_off":
             return await self._async_step_reactions_edit_room_vacancy_lighting_off(
                 pid=pid,
@@ -1057,106 +965,6 @@ class _ReactionsStepsMixin:
         cfg["steps"] = steps
         cfg["enabled"] = bool(user_input.get("enabled", True))
         cfg["pre_condition_min"] = int(user_input.get("pre_condition_min") or 20)
-        configured[pid] = cfg
-        reactions_cfg["configured"] = configured
-        self._store_reactions_options(reactions_cfg)
-        self._editing_reaction_id = None
-        return await self.async_step_init()
-
-    async def _async_step_reactions_edit_lighting_scene_schedule(
-        self,
-        *,
-        pid: str,
-        reactions_cfg: dict[str, Any],
-        configured: dict[str, Any],
-        labels_map: dict[str, str],
-        cfg: dict[str, Any],
-        user_input: dict[str, Any] | None,
-    ) -> "FlowResult":
-        """Edit a lighting scene schedule using its real config contract."""
-        room_id = str(cfg.get("room_id") or "").strip()
-        current_steps = [
-            step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
-        ]
-        current_entities = [
-            str(step.get("entity_id") or "").strip()
-            for step in current_steps
-            if str(step.get("entity_id") or "").strip()
-        ]
-        first_step = current_steps[0] if current_steps else {}
-        scheduled_min = int(cfg.get("scheduled_min") or 0)
-        defaults = {
-            "enabled": bool(cfg.get("enabled", True)),
-            "weekday": str(cfg.get("weekday") or "0"),
-            "scheduled_time": f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}",
-            "light_entities": current_entities,
-            "action": str(first_step.get("action") or "on").strip() or "on",
-            "brightness": int(first_step.get("brightness") or 190),
-            "color_temp_kelvin": int(first_step.get("color_temp_kelvin") or 2850),
-            "delete_reaction": False,
-        }
-        label = self._reaction_label_from_config(pid, cfg, labels_map)
-        room_id_placeholder = room_id or "-"
-
-        if user_input is None:
-            return self._show_lighting_schedule_editor(
-                step_id="reactions_edit_form",
-                defaults=defaults,
-                reaction_description=label,
-                room_id=room_id_placeholder,
-                include_enabled=True,
-                include_delete=True,
-            )
-
-        if bool(user_input.get("delete_reaction", False)):
-            self._deleting_reaction_id = pid
-            return await self.async_step_reactions_delete_confirm()
-
-        current_input, resolved, errors = self._normalize_lighting_schedule_editor_submission(
-            user_input=user_input,
-            defaults=defaults,
-            room_id=room_id,
-            include_room_id=False,
-            include_enabled=True,
-            include_delete=True,
-        )
-        if errors:
-            return self._show_lighting_schedule_editor(
-                step_id="reactions_edit_form",
-                defaults=current_input,
-                errors=errors,
-                reaction_description=label,
-                room_id=room_id_placeholder,
-                include_enabled=True,
-                include_delete=True,
-            )
-
-        cfg["enabled"] = bool(resolved["enabled"])
-        cfg["weekday"] = int(resolved["weekday"])
-        cfg["scheduled_min"] = int(resolved["scheduled_min"])
-        cfg["entity_steps"] = [
-            {
-                "entity_id": entity_id,
-                "action": str(resolved["action"]),
-                "brightness": (resolved["brightness"] if str(resolved["action"]) == "on" else None),
-                "color_temp_kelvin": (
-                    resolved["color_temp_kelvin"] if str(resolved["action"]) == "on" else None
-                ),
-                "rgb_color": None,
-            }
-            for entity_id in list(resolved["light_entities"])
-        ]
-        if self._has_redacted_payload(cfg):
-            return self._show_lighting_schedule_editor(
-                step_id="reactions_edit_form",
-                defaults=current_input,
-                errors={"base": "redacted_payload"},
-                reaction_description=label,
-                room_id=room_id_placeholder,
-                include_enabled=True,
-                include_delete=True,
-            )
-
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
@@ -2065,30 +1873,22 @@ class _ReactionsStepsMixin:
         template_id = str(template_id or "").strip()
         if not template_id:
             return False, ""
-        if template_id != "security.vacation_presence_simulation.basic":
-            return True, ""
-        configured = dict(self._reactions_options().get("configured", {}))
-        for cfg in configured.values():
-            if not isinstance(cfg, dict):
-                continue
-            reaction_type = str(cfg.get("reaction_type") or "").strip()
-            if reaction_type == "lighting_scene_schedule":
-                return True, ""
-            if self._reaction_type_from_cfg(cfg) == "lighting_scene_schedule":
-                return True, ""
-            template = str(cfg.get("source_template_id") or "").strip()
-            if template == "lighting.scene_schedule.basic":
-                return True, ""
-        lang = self._flow_language()
-        if lang.startswith("it"):
-            return (
-                False,
-                "Template non disponibile: servono routine luci già accettate per costruire un profilo credibile.",
+        if template_id == "security.vacation_presence_simulation.basic":
+            configured = self._reactions_options().get("configured", {})
+            has_lighting = any(
+                resolve_reaction_type(cfg) == "context_conditioned_lighting_scene"
+                for cfg in configured.values()
+                if isinstance(cfg, dict)
             )
-        return (
-            False,
-            "Template unavailable: accepted lighting routines are required to build a credible source profile.",
-        )
+            if not has_lighting:
+                is_it = self._flow_language().startswith("it")
+                reason = (
+                    "Servono routine luci già accettate per costruire un profilo credibile."
+                    if is_it
+                    else "Accepted lighting routines are required to build a credible presence profile."
+                )
+                return False, reason
+        return True, ""
 
     def _admin_authored_template_availability_notes(self) -> str:
         registry = self._learning_plugin_registry()
@@ -2122,16 +1922,6 @@ class _ReactionsStepsMixin:
             return int(value)
         except (TypeError, ValueError):
             return None
-
-    def _admin_authored_lighting_schedule_schema(
-        self, defaults: dict[str, Any] | None = None
-    ) -> vol.Schema:
-        return self._lighting_schedule_editor_schema(
-            defaults,
-            include_room_id=True,
-            include_enabled=False,
-            include_delete=False,
-        )
 
     def _admin_authored_security_presence_simulation_schema(
         self, defaults: dict[str, Any] | None = None
@@ -2354,51 +2144,6 @@ class _ReactionsStepsMixin:
                 "reaction_description": reaction_description,
                 "room_id": room_id,
                 "available_signals": self._format_room_signals_placeholder(self._rooms(), room_id),
-            },
-        )
-
-    def _show_admin_authored_lighting_schedule_form(
-        self,
-        *,
-        step_id: str,
-        defaults: dict[str, Any],
-        errors: dict[str, str] | None = None,
-        template_title: str = "",
-        template_description: str = "",
-    ) -> "FlowResult":
-        return self.async_show_form(
-            step_id=step_id,
-            data_schema=self._admin_authored_lighting_schedule_schema(defaults),
-            errors=errors,
-            description_placeholders={
-                "template_title": template_title,
-                "template_description": template_description,
-            },
-        )
-
-    def _show_lighting_schedule_editor(
-        self,
-        *,
-        step_id: str,
-        defaults: dict[str, Any],
-        errors: dict[str, str] | None = None,
-        reaction_description: str = "",
-        room_id: str = "",
-        include_enabled: bool,
-        include_delete: bool,
-    ) -> "FlowResult":
-        return self.async_show_form(
-            step_id=step_id,
-            data_schema=self._lighting_schedule_editor_schema(
-                defaults,
-                include_room_id=False,
-                include_enabled=include_enabled,
-                include_delete=include_delete,
-            ),
-            errors=errors,
-            description_placeholders={
-                "reaction_description": reaction_description,
-                "room_id": room_id,
             },
         )
 
@@ -2704,107 +2449,6 @@ class _ReactionsStepsMixin:
         }
         return current_input, resolved, errors
 
-    def _normalize_admin_authored_lighting_schedule_submission(
-        self,
-        *,
-        user_input: dict[str, Any],
-        defaults: dict[str, Any],
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
-        errors: dict[str, str] = {}
-        room_id = str(user_input.get("room_id") or defaults.get("room_id") or "").strip()
-        action = str(user_input.get("action") or "on").strip()
-        light_entities = self._normalize_multi_value(user_input.get("light_entities"))
-        weekday_raw = user_input.get("weekday")
-        scheduled_time = str(user_input.get("scheduled_time") or "").strip()
-
-        if not room_id:
-            errors["room_id"] = "required"
-        if not light_entities:
-            errors["light_entities"] = "required"
-
-        weekday: int | None = None
-        try:
-            weekday = int(weekday_raw)
-            if weekday < 0 or weekday > 6:
-                raise ValueError
-        except (TypeError, ValueError):
-            errors["weekday"] = "invalid_number"
-
-        scheduled_min = _parse_hhmm_to_min(scheduled_time)
-        if scheduled_min is None:
-            errors["scheduled_time"] = "invalid_hhmm"
-
-        brightness: int | None = None
-        color_temp_kelvin: int | None = None
-        if action == "on":
-            try:
-                brightness = int(user_input.get("brightness") or 0)
-                if brightness < 1 or brightness > 255:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errors["brightness"] = "invalid_number"
-            try:
-                color_temp_kelvin = int(user_input.get("color_temp_kelvin") or 0)
-                if color_temp_kelvin < 1500 or color_temp_kelvin > 9000:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errors["color_temp_kelvin"] = "invalid_number"
-
-        current_input = {
-            "room_id": room_id or defaults["room_id"],
-            "weekday": str(weekday_raw or defaults["weekday"]),
-            "scheduled_time": scheduled_time or defaults["scheduled_time"],
-            "light_entities": light_entities,
-            "action": action or defaults["action"],
-            "brightness": user_input.get("brightness", defaults["brightness"]),
-            "color_temp_kelvin": user_input.get("color_temp_kelvin", defaults["color_temp_kelvin"]),
-        }
-        resolved = {
-            "room_id": room_id,
-            "weekday": weekday if weekday is not None else int(defaults["weekday"]),
-            "scheduled_min": (
-                scheduled_min
-                if scheduled_min is not None
-                else _parse_hhmm_to_min(str(defaults["scheduled_time"])) or 0
-            ),
-            "light_entities": light_entities,
-            "action": action,
-            "brightness": brightness,
-            "color_temp_kelvin": color_temp_kelvin,
-        }
-        return current_input, resolved, errors
-
-    def _normalize_lighting_schedule_editor_submission(
-        self,
-        *,
-        user_input: dict[str, Any],
-        defaults: dict[str, Any],
-        room_id: str,
-        include_room_id: bool,
-        include_enabled: bool,
-        include_delete: bool,
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
-        resolved_room_id = (
-            str(user_input.get("room_id") or "").strip() if include_room_id else room_id
-        )
-        current_input, resolved, errors = (
-            self._normalize_admin_authored_lighting_schedule_submission(
-                user_input=user_input,
-                defaults={"room_id": resolved_room_id or room_id, **defaults},
-            )
-        )
-        if not include_room_id:
-            current_input.pop("room_id", None)
-        if include_enabled:
-            current_input["enabled"] = bool(
-                user_input.get("enabled", defaults.get("enabled", True))
-            )
-        if include_delete:
-            current_input["delete_reaction"] = False
-        resolved["room_id"] = resolved_room_id or room_id
-        resolved["enabled"] = bool(current_input.get("enabled", True))
-        return current_input, resolved, errors
-
     def _normalize_admin_authored_room_vacancy_submission(
         self,
         *,
@@ -2936,36 +2580,6 @@ class _ReactionsStepsMixin:
             include_enabled=False,
             include_delete=False,
         )
-
-    def _lighting_schedule_editor_schema(
-        self,
-        defaults: dict[str, Any] | None = None,
-        *,
-        include_room_id: bool,
-        include_enabled: bool,
-        include_delete: bool,
-    ) -> vol.Schema:
-        defaults = defaults or {}
-        room_options = {room_id: room_id for room_id in self._room_ids()}
-        action_options = self._admin_authored_lighting_action_options()
-        schema_dict: dict[Any, Any] = {}
-        if include_room_id:
-            schema_dict[vol.Required("room_id")] = vol.In(room_options)
-        if include_enabled:
-            schema_dict[vol.Optional("enabled", default=bool(defaults.get("enabled", True)))] = bool
-        schema_dict[vol.Required("weekday")] = vol.In(self._weekday_options())
-        schema_dict[vol.Required("scheduled_time")] = str
-        schema_dict[vol.Required("light_entities")] = _entity_selector(["light"], multiple=True)
-        schema_dict[vol.Required("action", default="on")] = vol.In(action_options)
-        schema_dict[vol.Optional("brightness", default=190)] = vol.All(
-            vol.Coerce(int), vol.Range(min=1, max=255)
-        )
-        schema_dict[vol.Optional("color_temp_kelvin", default=2850)] = vol.All(
-            vol.Coerce(int), vol.Range(min=1500, max=9000)
-        )
-        if include_delete:
-            schema_dict[vol.Optional("delete_reaction", default=False)] = bool
-        return self._with_suggested(vol.Schema(schema_dict), defaults)
 
     def _room_vacancy_lighting_off_editor_schema(
         self,
@@ -3197,57 +2811,6 @@ class _ReactionsStepsMixin:
                 "policy_summary": self._contextual_lighting_policy_summary(
                     str(defaults.get("config_json") or "")
                 ),
-            },
-        )
-
-    def _build_admin_authored_lighting_schedule_proposal(
-        self,
-        *,
-        room_id: str,
-        weekday: int,
-        scheduled_min: int,
-        entity_ids: list[str],
-        action: str,
-        brightness: int | None,
-        color_temp_kelvin: int | None,
-    ) -> ReactionProposal:
-        template_id = "lighting.scene_schedule.basic"
-        entity_steps = [
-            {
-                "entity_id": entity_id,
-                "action": action,
-                "brightness": brightness if action == "on" else None,
-                "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
-                "rgb_color": None,
-            }
-            for entity_id in entity_ids
-        ]
-        identity_key = self._lighting_identity_key(
-            room_id=room_id,
-            weekday=weekday,
-            scheduled_min=scheduled_min,
-            entity_steps=entity_steps,
-        )
-        hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
-        day = self._weekday_label(weekday, "en")
-        description = f"{room_id}: {day} ~{hhmm} — {len(entity_steps)} entities"
-        return ReactionProposal(
-            analyzer_id="AdminAuthoredLightingTemplate",
-            reaction_type="lighting_scene_schedule",
-            description=description,
-            confidence=1.0,
-            origin="admin_authored",
-            identity_key=identity_key,
-            fingerprint=identity_key,
-            suggested_reaction_config={
-                "reaction_type": "lighting_scene_schedule",
-                "room_id": room_id,
-                "weekday": weekday,
-                "scheduled_min": scheduled_min,
-                "window_half_min": 10,
-                "entity_steps": entity_steps,
-                "plugin_family": "lighting",
-                "admin_authored_template_id": template_id,
             },
         )
 
@@ -3848,7 +3411,6 @@ class _ReactionsStepsMixin:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         reaction_type = resolve_reaction_type(cfg) or str(proposal.reaction_type or "").strip()
         if reaction_type in {
-            "lighting_scene_schedule",
             "room_darkness_lighting_assist",
             "room_contextual_lighting_assist",
             "vacation_presence_simulation",
@@ -4260,74 +3822,7 @@ class _ReactionsStepsMixin:
                 "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
             }
 
-        followup_slot_key = self._proposal_followup_slot_key(proposal)
-        if followup_slot_key:
-            ranked: list[tuple[tuple[int, int, int, str], str, dict[str, Any]]] = []
-            proposal_cfg = _safe_mapping(proposal.suggested_reaction_config)
-            proposal_entities = self._lighting_entity_actions(proposal_cfg)
-            proposal_min = int(proposal_cfg.get("scheduled_min") or 0)
-            for reaction_id, raw in configured.items():
-                reaction_cfg = _safe_mapping(raw)
-                if self._lighting_followup_slot_key_from_cfg(reaction_cfg) != followup_slot_key:
-                    continue
-                reaction_entities = self._lighting_entity_actions(reaction_cfg)
-                overlap = len(proposal_entities & reaction_entities)
-                symmetric_diff = len(proposal_entities ^ reaction_entities)
-                reaction_min = int(reaction_cfg.get("scheduled_min") or 0)
-                ranked.append(
-                    (
-                        (
-                            -overlap,
-                            symmetric_diff,
-                            abs(proposal_min - reaction_min),
-                            str(reaction_id),
-                        ),
-                        str(reaction_id),
-                        reaction_cfg,
-                    )
-                )
-            if ranked:
-                ranked.sort(key=lambda item: item[0])
-                _, reaction_id, reaction_cfg = ranked[0]
-                return {
-                    "reaction_id": reaction_id,
-                    "reaction_cfg": reaction_cfg,
-                    "reaction_label": self._reaction_label_from_config(
-                        reaction_id, reaction_cfg, labels_map
-                    ),
-                    "target_reaction_origin": str(reaction_cfg.get("origin") or ""),
-                    "target_template_id": str(reaction_cfg.get("source_template_id") or ""),
-                }
         return None
-
-    @staticmethod
-    def _proposal_followup_slot_key(proposal: ReactionProposal) -> str:
-        cfg = _safe_mapping(proposal.suggested_reaction_config)
-        reaction_type = str(proposal.reaction_type or "").strip() or resolve_reaction_type(cfg)
-        if reaction_type != "lighting_scene_schedule":
-            return ""
-        scheduled_min = cfg.get("scheduled_min")
-        bucket = None
-        if isinstance(scheduled_min, (int, float)):
-            bucket = (int(scheduled_min) // 30) * 30
-        return (
-            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-            f"|bucket={bucket}"
-        )
-
-    @staticmethod
-    def _lighting_followup_slot_key_from_cfg(cfg: dict[str, Any]) -> str:
-        reaction_type = resolve_reaction_type(cfg)
-        if reaction_type != "lighting_scene_schedule":
-            return ""
-        scheduled_min = cfg.get("scheduled_min")
-        bucket = None
-        if isinstance(scheduled_min, (int, float)):
-            bucket = (int(scheduled_min) // 30) * 30
-        return (
-            f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-            f"|bucket={bucket}"
-        )
 
     @staticmethod
     def _lighting_entity_actions(cfg: dict[str, Any]) -> set[tuple[str, str]]:
@@ -4343,21 +3838,6 @@ class _ReactionsStepsMixin:
             if entity_id:
                 pairs.add((entity_id, action))
         return pairs
-
-    @staticmethod
-    def _lighting_identity_key(
-        *,
-        room_id: str,
-        weekday: int,
-        scheduled_min: int,
-        entity_steps: list[dict[str, Any]],
-    ) -> str:
-        bucket = (scheduled_min // 30) * 30
-        scene_signature = _lighting_scene_signature(entity_steps)
-        return (
-            f"lighting_scene_schedule|room={room_id}|weekday={weekday}"
-            f"|bucket={bucket}|scene={scene_signature}"
-        )
 
     def _configured_reaction_cfg(self, reaction_id: str) -> dict[str, Any] | None:
         configured = dict(self._reactions_options().get("configured", {}))
@@ -4491,18 +3971,6 @@ class _ReactionsStepsMixin:
             except (KeyError, TypeError, ValueError, IndexError):
                 pass
 
-        if reaction_type == "lighting_scene_schedule":
-            try:
-                weekday = int(cfg["weekday"])
-                scheduled_min = int(cfg["scheduled_min"])
-                room_id = str(cfg.get("room_id", ""))
-                hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
-                day = _ReactionsStepsMixin._weekday_label(weekday, "it")
-                n_steps = len(cfg.get("entity_steps", []))
-                return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
-            except (KeyError, TypeError, ValueError, IndexError):
-                pass
-
         if reaction_type in {
             "room_signal_assist",
             "room_cooling_assist",
@@ -4604,34 +4072,6 @@ def _parse_hhmm_to_min(value: str) -> int | None:
         return None
     return hour * 60 + minute
 
-
-def _lighting_scene_signature(entity_steps: list[dict[str, Any]]) -> str:
-    normalized_steps: list[str] = []
-    for raw_step in entity_steps:
-        if not isinstance(raw_step, dict):
-            continue
-        entity_id = str(raw_step.get("entity_id") or "").strip()
-        action = str(raw_step.get("action") or "").strip() or "unknown"
-        if not entity_id:
-            continue
-        brightness = _coarse_numeric_bucket(raw_step.get("brightness"), step=32)
-        color_temp = _coarse_numeric_bucket(raw_step.get("color_temp_kelvin"), step=250)
-        rgb = _normalize_rgb(raw_step.get("rgb_color"))
-        normalized_steps.append(
-            "|".join(
-                [
-                    entity_id,
-                    action,
-                    f"b={brightness if brightness is not None else '-'}",
-                    f"k={color_temp if color_temp is not None else '-'}",
-                    f"rgb={rgb if rgb is not None else '-'}",
-                ]
-            )
-        )
-    if not normalized_steps:
-        return "none"
-    normalized_steps.sort()
-    return "||".join(normalized_steps)
 
 
 def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:

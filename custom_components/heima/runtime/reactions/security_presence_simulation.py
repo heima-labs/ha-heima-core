@@ -1286,11 +1286,14 @@ def _select_source_profile_from_config(
 
 
 def _is_lighting_source_candidate(cfg: dict[str, Any]) -> bool:
+    # Vacation presence simulation uses context_conditioned_lighting_scene reactions as
+    # behavioural templates: it extracts entity_steps and timing, then fires them
+    # independently without re-evaluating the context conditions. This is intentional —
+    # during vacation nobody is home to satisfy conditions (e.g. projector_active), but
+    # the historical activation pattern (which entities, which room, which time) is still
+    # a credible presence profile. The context gate is a live filter, not a historical fact.
     reaction_type = resolve_reaction_type(cfg)
-    template_id = str(cfg.get("source_template_id") or "").strip()
-    if reaction_type != "lighting_scene_schedule":
-        return False
-    if template_id and template_id != "lighting.scene_schedule.basic":
+    if reaction_type != "context_conditioned_lighting_scene":
         return False
     room_id = str(cfg.get("room_id") or "").strip()
     entity_steps = cfg.get("entity_steps")

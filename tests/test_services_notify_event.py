@@ -383,7 +383,7 @@ async def test_heima_command_upsert_configured_reactions_calls_coordinator(monke
                 "params": {
                     "configured": {
                         "r-collision": {
-                            "reaction_class": "LightingScheduleReaction",
+                            "reaction_class": "ContextConditionedLightingReaction",
                             "room_id": "living",
                         }
                     },
@@ -395,7 +395,7 @@ async def test_heima_command_upsert_configured_reactions_calls_coordinator(monke
 
     assert coordinator.last_configured_updates == {
         "r-collision": {
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": "living",
         }
     }

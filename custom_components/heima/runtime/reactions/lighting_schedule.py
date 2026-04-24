@@ -1,4 +1,4 @@
-"""LightingScheduleReaction — fires a learned per-entity lighting config at a scheduled time."""
+"""_ScheduledLightingBase — internal base class for scheduled per-entity lighting reactions."""
 
 from __future__ import annotations
 
@@ -11,21 +11,17 @@ from homeassistant.util import dt as dt_util
 from ..contracts import ApplyStep
 from ..scheduler import ScheduledRuntimeJob
 from ..snapshot import DecisionSnapshot
-from ._lighting_review import (
-    render_entity_steps_discovery_details,
-    render_entity_steps_tuning_details,
-)
+from ._lighting_review import render_entity_steps_tuning_details
 from .base import HeimaReaction
 
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-class LightingScheduleReaction(HeimaReaction):
-    """Applies a learned per-entity lighting configuration at a scheduled weekday + time.
+class _ScheduledLightingBase(HeimaReaction):
+    """Internal base: fires a per-entity lighting configuration at a scheduled weekday + time.
 
-    Built from an accepted `lighting_scene_schedule` proposal. Fires at
-    `scheduled_min ± window_half_min` on the configured weekday, applying each
-    entity_step as a separate ApplyStep (light.turn_on or light.turn_off).
+    Not a user-facing reaction type. Subclasses (e.g. ContextConditionedLightingReaction)
+    add gating logic on top of the scheduling mechanism.
 
     Debounced: fires at most once per calendar day.
     """
@@ -64,7 +60,7 @@ class LightingScheduleReaction(HeimaReaction):
         return {
             job_id: ScheduledRuntimeJob(
                 job_id=job_id,
-                owner="LightingScheduleReaction",
+                owner=self.__class__.__name__,
                 entry_id=entry_id,
                 due_monotonic=due_monotonic,
                 label=(
@@ -200,52 +196,6 @@ def _minute_of_day(dt: datetime) -> int:
     return dt.hour * 60 + dt.minute
 
 
-def build_lighting_schedule_reaction(
-    engine: Any,
-    proposal_id: str,
-    cfg: dict[str, Any],
-) -> LightingScheduleReaction | None:
-    """Build a LightingScheduleReaction from persisted config."""
-    try:
-        room_id = str(cfg["room_id"]).strip()
-        weekday = int(cfg["weekday"])
-        scheduled_min = int(cfg["scheduled_min"])
-        window_half = int(cfg.get("window_half_min", 10))
-        house_state_filter = cfg.get("house_state_filter") or None
-        entity_steps = list(cfg.get("entity_steps", []))
-        if not room_id or not entity_steps:
-            raise ValueError("room_id or entity_steps missing")
-    except (KeyError, TypeError, ValueError):
-        return None
-    return LightingScheduleReaction(
-        room_id=room_id,
-        weekday=weekday,
-        scheduled_min=scheduled_min,
-        window_half_min=window_half,
-        house_state_filter=house_state_filter,
-        entity_steps=entity_steps,
-        reaction_id=proposal_id,
-    )
-
-
-def present_lighting_schedule_label(
-    reaction_id: str,
-    cfg: dict[str, Any],
-    labels_map: dict[str, str],
-) -> str | None:
-    """Return a human label for persisted lighting schedule reactions."""
-    weekday_names = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
-    try:
-        weekday = int(cfg["weekday"])
-        scheduled_min = int(cfg["scheduled_min"])
-        room_id = str(cfg.get("room_id", ""))
-        hhmm = f"{scheduled_min // 60:02d}:{scheduled_min % 60:02d}"
-        day = weekday_names[weekday] if 0 <= weekday <= 6 else str(weekday)
-        n_steps = len(cfg.get("entity_steps", []))
-        return f"Luci {room_id} — {day} ~{hhmm} ({n_steps} entità)"
-    except (KeyError, TypeError, ValueError, IndexError):
-        return labels_map.get(reaction_id)
-
 
 def present_admin_authored_lighting_schedule_details(
     flow: Any,
@@ -279,29 +229,6 @@ def present_admin_authored_lighting_schedule_details(
 
     return details
 
-
-def present_learned_lighting_schedule_details(
-    flow: Any,
-    proposal: Any,
-    cfg: dict[str, Any],
-    language: str,
-) -> list[str]:
-    """Return learned/tuning review details for lighting schedule proposals."""
-    is_it = language.startswith("it")
-    details: list[str] = []
-    scheduled_min = cfg.get("scheduled_min")
-    if isinstance(scheduled_min, (int, float)):
-        hhmm = f"{int(scheduled_min) // 60:02d}:{int(scheduled_min) % 60:02d}"
-        details.append(f"Orario proposto: {hhmm}" if is_it else f"Proposed time: {hhmm}")
-    entity_steps = cfg.get("entity_steps")
-    if isinstance(entity_steps, list) and entity_steps:
-        details.extend(
-            render_entity_steps_discovery_details(
-                entity_steps,
-                language=language,
-            )
-        )
-    return details
 
 
 def present_tuning_lighting_schedule_details(
@@ -343,37 +270,3 @@ def present_tuning_lighting_schedule_details(
     return diff_lines
 
 
-def present_lighting_schedule_proposal_label(
-    flow: Any,
-    proposal: Any,
-    cfg: dict[str, Any],
-    language: str,
-) -> str | None:
-    room_id = str(cfg.get("room_id") or "").strip()
-    if not room_id:
-        return None
-    if language.startswith("it"):
-        return f"Luci {room_id}"
-    return f"Lighting {room_id}"
-
-
-def present_lighting_schedule_review_title(
-    flow: Any,
-    proposal: Any,
-    cfg: dict[str, Any],
-    language: str,
-    is_followup: bool,
-) -> str | None:
-    """Return a lighting-specific review title."""
-    if getattr(proposal, "origin", "") == "admin_authored":
-        return None
-    base = present_lighting_schedule_proposal_label(flow, proposal, cfg, language)
-    if not base:
-        return None
-    if language.startswith("it"):
-        if is_followup:
-            return f"Affinamento luci: {base}"
-        return f"Nuova automazione luci: {base}"
-    if is_followup:
-        return f"Lighting tuning: {base}"
-    return f"New lighting automation: {base}"

@@ -189,10 +189,8 @@ async def test_lighting_analyzer_sets_house_state_filter_when_concentrated():
 
     store = _StoreStub(events)
     proposals = await LightingPatternAnalyzer(min_occurrences=5, min_weeks=2).analyze(store)
-    # all events are in "relax" but we need ≥ 8 observations for dominant count
-    # with 12 events all in relax: 12/12 >= 0.75 and 12 >= 8 → filter = "relax"
-    assert proposals, "expected at least one proposal"
-    assert all(p.suggested_reaction_config.get("house_state_filter") == "relax" for p in proposals)
+    # Without context signal the analyzer emits nothing — time-only patterns are not learned.
+    assert proposals == []
 
 
 @pytest.mark.asyncio
@@ -229,13 +227,14 @@ def _proposal(
 def test_lighting_identity_key_includes_house_state_suffix_when_set():
     hooks = lighting_lifecycle_hooks()
     proposal = _proposal(
-        "lighting_scene_schedule",
+        "context_conditioned_lighting_scene",
         {
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1200,
             "house_state_filter": "relax",
             "entity_steps": [{"entity_id": "light.test", "action": "on"}],
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
         },
     )
     key = hooks.identity_key(proposal)
@@ -245,13 +244,14 @@ def test_lighting_identity_key_includes_house_state_suffix_when_set():
 def test_lighting_identity_key_no_suffix_when_filter_none():
     hooks = lighting_lifecycle_hooks()
     proposal = _proposal(
-        "lighting_scene_schedule",
+        "context_conditioned_lighting_scene",
         {
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1200,
             "house_state_filter": None,
             "entity_steps": [{"entity_id": "light.test", "action": "on"}],
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
         },
     )
     key = hooks.identity_key(proposal)

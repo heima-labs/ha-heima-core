@@ -203,12 +203,12 @@ class LightingPatternAnalyzer:
                     house_state_filter=house_state_filter,
                 )
                 context_decision = evaluate_context_condition_promotion(context_dataset)
-                if context_decision.should_promote:
-                    reaction_type = "context_conditioned_lighting_scene"
-                    pattern_id = "context_conditioned_lighting_scene"
-                else:
-                    reaction_type = "lighting_scene_schedule"
-                    pattern_id = "lighting_scene_schedule"
+                if not context_decision.should_promote:
+                    # No causal signal found — time-only patterns are not learned.
+                    continue
+
+                reaction_type = "context_conditioned_lighting_scene"
+                pattern_id = "context_conditioned_lighting_scene"
 
                 # Lifecycle identity uses a coarser 30-minute bucket to avoid proposal churn.
                 fp_min = (scheduled_min // 30) * 30
@@ -250,9 +250,7 @@ class LightingPatternAnalyzer:
                                 scheduled_min=scheduled_min,
                                 entity_steps_count=len(entity_steps),
                                 positive_episode_count=len(context_dataset.positive_episodes),
-                                competing_explanation_type=(
-                                    "context" if context_decision.should_promote else "schedule"
-                                ),
+                                competing_explanation_type="context",
                                 **context_decision.diagnostics(),
                             ),
                             **(

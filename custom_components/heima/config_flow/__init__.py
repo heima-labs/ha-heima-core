@@ -380,7 +380,7 @@ class HeimaOptionsFlowHandler(
             proposal
             for proposal in pending
             if str(getattr(proposal, "reaction_type", "") or "").strip()
-            == "lighting_scene_schedule"
+            == "context_conditioned_lighting_scene"
         ]
         lighting_tuning = [
             proposal
@@ -395,8 +395,8 @@ class HeimaOptionsFlowHandler(
                 continue
             reaction_type = resolve_reaction_type(cfg)
             identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-            if reaction_type == "lighting_scene_schedule" or identity_key.startswith(
-                "lighting_scene_schedule|"
+            if reaction_type == "context_conditioned_lighting_scene" or identity_key.startswith(
+                "context_conditioned_lighting_scene|"
             ):
                 active_lighting += 1
 

@@ -1235,16 +1235,18 @@ Normative rules:
 - follow-up tuning proposals for authored automations MUST preserve the same shared substrate and
   SHOULD keep enough provenance to relate the tuning proposal back to the authored origin
 
-Lighting tuning clarification:
-- when a tuning proposal targets an active `LightingScheduleReaction`, the proposal/review layer
-  SHOULD support a structured diff over the active reaction rather than only generic follow-up text
-- minimum diff categories for v1 lighting tuning:
-  - schedule/time change
-  - brightness change
-  - color temperature change
-  - entity-set change
-- the follow-up review SHOULD show only the categories that actually differ between the active
-  reaction config and the proposed config
+Lighting routine clarification:
+- ordinary time-based lighting replay is no longer considered a learned family in Heima
+- a routine whose only stable explanatory dimension is weekday/time belongs to the admin-authored
+  channel, not the learned channel
+- the intended family for that use case is a future generic admin-authored `scheduled_routine`
+  capability:
+  - actuator-agnostic
+  - not lighting-specific
+  - not emitted by `LightingPatternAnalyzer`
+  - not a target for automatic tuning/improvement proposals
+- lighting-specific learned follow-up work therefore applies to context-conditioned or other
+  behaviorally grounded lighting families, not to pure clock schedules
 
 Composite tuning clarification:
 - when a tuning proposal targets an active composite room-assist reaction, the proposal/review
@@ -1310,8 +1312,7 @@ Current v1 implementation notes:
   - `supports_admin_authored`
   - `admin_authored_templates`
 - the registry may declare more authorable templates than the options flow currently exposes
-- the first end-to-end implemented admin-authored template is:
-  - `lighting.scene_schedule.basic`
+- there is currently no generic scheduled-routine family implemented end-to-end in the options flow
 - room-scoped composite templates are declared in plugin metadata but are not yet all exposed as
   dedicated authoring wizards
 
@@ -1782,10 +1783,9 @@ calcolate, con un algoritmo molto più semplice.
 direttamente tramite il service `light.turn_on`/`light.turn_off`. La logica è self-contained e non
 dipende dalla configurazione scene dell'utente.
 
-### P9.2b Product direction: scheduled lighting is not the default smart-room model
+### P9.2b Product direction: learned lighting requires more than clock time
 
-`lighting_scene_schedule` remains a valid learned family, but it SHOULD NOT be treated as the
-default smart-lighting strategy for ordinary occupied rooms.
+Pure schedule replay is not a valid learned lighting family for ordinary occupied rooms.
 
 Reason:
 - fixed weekday/time replay ignores current room occupancy
@@ -1800,18 +1800,16 @@ Normative product rule:
   - room dark / lux below threshold
   - replay the observed lighting response
 - if a room already has enough confirmed evidence for `room_darkness_lighting_assist`, the
-  scheduled-lighting analyzer SHOULD NOT emit a `lighting_scene_schedule` proposal for that room
-  from the same evidence window
-- this suppression is about ordinary room-lighting proposals only; it MUST NOT invalidate the
-  `lighting_scene_schedule` reaction contract itself
+  lighting analyzer SHOULD NOT emit any weaker time-owned learned proposal for that room from the
+  same evidence window
+- if no strong context-conditioned explanation exists, the analyzer SHOULD emit no learned lighting
+  proposal rather than a weak schedule fallback
 
-`lighting_scene_schedule` remains appropriate mainly for:
-- decorative or ambient routines
-- strongly schedule-owned behaviors
-- future security / presence-simulation profiles
-
-It SHOULD be considered a weaker fit for ordinary “use the room and turn lights on when needed”
-behavior.
+Pure time-based routines remain legitimate only as explicit admin-authored intent:
+- they belong to a future generic `scheduled_routine` family
+- they are outside the learned lighting family
+- they are not a target for automatic improvement proposals
+- they may target any actuator, not only lights
 
 Product-direction extension:
 - strong canonical context signals from `rooms[*].learning_sources` and
@@ -1832,7 +1830,7 @@ Una proposta per `SceneCandidate` (= per stanza × giorno × cluster orario):
 ```python
 ReactionProposal(
     analyzer_id="LightingPatternAnalyzer",
-    reaction_type="lighting_scene_schedule",
+    reaction_type="context_conditioned_lighting_scene",
     description=(
         f"{room_id}: {WEEKDAY_NAMES[weekday]} ~{hhmm(scheduled_min)} — "
         + ", ".join(
@@ -1844,12 +1842,18 @@ ReactionProposal(
     ),
     confidence=confidence,
     suggested_reaction_config={
-        "reaction_class": "LightingScheduleReaction",
+        "reaction_class": "ContextConditionedLightingReaction",
         "room_id": room_id,
         "weekday": weekday,
         "scheduled_min": scheduled_min,
         "window_half_min": derived_window_half_min,
         "house_state_filter": house_state_filter,  # computed via §3.0.2 concentration rule; None if pattern spans all states
+        "context_conditions": [
+            {
+                "signal_name": "projector_context",
+                "state_in": ["active"],
+            }
+        ],
         "entity_steps": [
             # Un dict per entità nel cluster
             {
@@ -1881,7 +1885,7 @@ ReactionProposal(
 ### P9.4 Fingerprint for deduplication
 
 ```
-f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{scheduled_min}"
+f"LightingPatternAnalyzer|context_conditioned_lighting_scene|{room_id}|{weekday}|{scheduled_min}"
 ```
 
 Il `scheduled_min` nel fingerprint è la mediana del cluster, arrotondata a 5 minuti per evitare
@@ -1889,7 +1893,7 @@ che piccole variazioni di un'iterazione all'altra creino proposte duplicate.
 
 ```python
 fingerprint_min = (scheduled_min // 5) * 5
-fingerprint = f"LightingPatternAnalyzer|lighting_scene_schedule|{room_id}|{weekday}|{fingerprint_min}"
+fingerprint = f"LightingPatternAnalyzer|context_conditioned_lighting_scene|{room_id}|{weekday}|{fingerprint_min}"
 ```
 
 ### P9.4.1 Scene quality and collision handling
@@ -2027,22 +2031,25 @@ def _build_steps(self) -> list[ApplyStep]:
 #### Config
 
 ```python
-LightingScheduleReaction(
+ContextConditionedLightingReaction(
     room_id="living",
     weekday=0,
     scheduled_min=1200,
     window_half_min=10,
     house_state_filter=house_state_filter,  # computed via §3.0.2; None if pattern spans all states
+    context_conditions=[
+        {"signal_name": "projector_context", "state_in": ["active"]},
+    ],
     entity_steps=[
         {"entity_id": "light.living_main",  "action": "on",  "brightness": 128, "color_temp_kelvin": 3000, "rgb_color": None},
         {"entity_id": "light.living_spot",  "action": "on",  "brightness": 64,  "color_temp_kelvin": 3500, "rgb_color": None},
         {"entity_id": "light.living_floor", "action": "off", "brightness": None, "color_temp_kelvin": None, "rgb_color": None},
     ],
-    reaction_id="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+    reaction_id="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
 )
 ```
 
-Istanziata da `_rebuild_configured_reactions()` quando `reaction_class == "LightingScheduleReaction"`.
+Istanziata da `_rebuild_configured_reactions()` quando `reaction_class == "ContextConditionedLightingReaction"`.
 
 ### P9.6 Registration
 
@@ -2495,7 +2502,7 @@ Normative product rule:
 
 Normative product positioning:
 - for ordinary room lighting learning, `room_darkness_lighting_assist` SHOULD be the preferred
-  learned proposal family over `lighting_scene_schedule`
+  learned proposal family over any weaker time-owned fallback
 - this family models the more correct causal shape:
   - room occupied
   - room dark enough

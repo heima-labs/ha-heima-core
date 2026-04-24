@@ -230,7 +230,7 @@ Built-in proposals should converge on these identity keys:
 - `presence_preheat|weekday=<weekday>`
 - `heating_preference|house_state=<house_state>`
 - `heating_eco`
-- `lighting_scene_schedule|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>[|house_state=<house_state>]`
+- `context_conditioned_lighting_scene|room=<room_id>|weekday=<weekday>|bucket=<time_bucket_30m>|scene=<scene_signature>|context=<context_signature>[|house_state=<house_state>]`
 - `room_signal_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
 - `room_cooling_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
 - `room_air_quality_assist|room=<room_id>|primary=<primary_signal_name>[|house_state=<house_state>]`
@@ -247,18 +247,18 @@ Product-direction clarification for composite room-assist families:
   configured reactions permanently
 
 Product-direction clarification:
-- `lighting_scene_schedule` remains a valid lifecycle family
-- but for ordinary room lighting, product policy SHOULD prefer situation-aware room-scoped
+- `context_conditioned_lighting_scene` is the valid learned lighting lifecycle family in v1.x
+- a pure clock-owned routine is not a learned lighting lifecycle family; it belongs to a future
+  admin-authored-only `scheduled_routine` capability
+- for ordinary room lighting, product policy SHOULD prefer situation-aware room-scoped
   families such as `room_darkness_lighting_assist`
-- scheduled lighting SHOULD therefore be treated as a narrower family, not as the default learned
-  room-lighting proposal type
 - when a room already qualifies for `room_darkness_lighting_assist`, the preferred suppression
-  point for a redundant `lighting_scene_schedule` candidate SHOULD be the analyzer stage rather
+  point for a redundant weaker lighting candidate SHOULD be the analyzer stage rather
   than lifecycle collision handling
 - the same principle applies when repeated lighting behavior is better explained by bounded
   abstract context conditions derived from canonical context signals; in that case the preferred
-  suppression point for a weaker `lighting_scene_schedule` candidate SHOULD also be the analyzer
-  stage rather than lifecycle collision handling
+  suppression point for a weaker time-owned candidate SHOULD also be the analyzer stage rather
+  than lifecycle collision handling
 
 Composite domain clarification for the next iteration:
 - the current composite identity remains intentionally coarse and room-scoped
@@ -376,7 +376,7 @@ structured detail for an administrator to understand the concrete affected entit
 diagnostics or reading raw JSON.
 
 This applies at minimum to:
-- `lighting_scene_schedule`
+- `context_conditioned_lighting_scene`
 - `room_darkness_lighting_assist`
 - `room_vacancy_lighting_off`
 - any future learned or tuning proposal whose suggested config contains `entity_steps`

@@ -212,7 +212,7 @@ materiali dello step, la review SHOULD mostrare anche il delta per-entità dei c
 - `rgb_color`
 
 Questa regola si applica almeno alle famiglie lighting/composite che usano `entity_steps`, incluse:
-- `lighting_scene_schedule`
+- `context_conditioned_lighting_scene`
 - `room_darkness_lighting_assist`
 - `room_vacancy_lighting_off`
 

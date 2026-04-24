@@ -15,7 +15,7 @@ These signals are meant to be a shared substrate for learning, not a domain-spec
 
 Today this substrate is underused for learned lighting proposals:
 
-- `LightingPatternAnalyzer` mainly learns `lighting_scene_schedule`
+- earlier lighting learning centered schedule replay rather than context-conditioned behavior
 - composite room-lighting learning uses hardcoded room signals such as `room_lux`
 - strong context signals like projector / TV / console state are recorded, but they do not
   materially shape the learned lighting proposal family
@@ -94,15 +94,41 @@ The product contract is intentionally abstract:
 - analyzers reason about canonical signal names and bounded states
 - mapping from HA entities to those canonical names belongs to the normalization / context layer
 
+### Alignment with HA normalized signals (HA 2026.4+)
+
+Home Assistant 2026.4 introduced purpose-specific triggers and conditions that abstract
+cross-domain entity types under semantic names (e.g. occupancy, motion, illuminance). This
+feature is currently in Labs preview.
+
+Where HA provides a normalized signal that overlaps with a Heima canonical signal, the
+canonicalization layer SHOULD prefer names that align with HA's vocabulary, to reduce
+configuration friction and improve long-term interoperability.
+
+Alignment examples:
+
+| HA normalized concept | Heima canonical signal |
+|---|---|
+| occupancy | `occupancy_context` |
+| motion | `motion_context` |
+| illuminance | `illuminance_context` |
+
+Signals with no HA equivalent (e.g. projector, media console, TV) remain Heima-owned
+canonical names and are not affected by this alignment rule.
+
+The canonicalization layer MUST NOT consume HA normalized triggers/conditions directly at
+runtime. HA's abstraction targets automation authoring, not programmatic state reading.
+If HA exposes these abstractions as readable entity state in a future release, this constraint
+should be revisited.
+
 ## Product semantics
 
 ### What Heima should learn
 
 Heima should be able to distinguish between:
 
-- a fixed scheduled scene
 - a room-darkness assist
 - a context-conditioned scene
+- a purely time-based admin-authored routine
 
 Example:
 
@@ -117,7 +143,11 @@ Not:
 
 - “every weekday around 21:00, replay this scene”
 
-unless the evidence is better explained by time than by context.
+Normative clarification:
+- pure weekday/time replay is not considered a strong enough learned explanation for ordinary
+  lighting behavior in Heima
+- if no bounded context explanation exists, the analyzer SHOULD emit no learned lighting proposal
+  rather than falling back to a weak schedule-owned automation
 
 ### Preference order for learned lighting explanations
 
@@ -125,15 +155,14 @@ For ordinary room lighting, Heima SHOULD prefer explanations in this order:
 
 1. room-aware contextual reaction
 2. room-darkness reaction
-3. pure scheduled replay
 
 This is a product preference, not a hard guarantee.
 
-The analyzer may still emit `lighting_scene_schedule` when:
+The analyzer may emit no learned lighting proposal when:
 
-- the pattern is genuinely schedule-owned
 - occupancy / darkness evidence is weak
 - context-signal separation is weak
+- the observed behavior is only time-concentrated but lacks a strong causal explanation
 
 ## V1 scope
 
@@ -143,7 +172,7 @@ V1 should stay deliberately bounded.
 
 - context-conditioned learned lighting proposals
 - abstract `context_conditions` contract
-- analyzer logic that can prefer a context-conditioned explanation over pure schedule replay
+- analyzer logic that can prefer a context-conditioned explanation over no learned proposal
 - review UX that explains the context scope clearly
 - lifecycle identity that treats context scope as part of the logical proposal identity
 
@@ -152,8 +181,26 @@ V1 should stay deliberately bounded.
 - arbitrary boolean expressions over many context signals
 - generic multi-family context-conditioned learning across every reaction family
 - user-authored editing of `context_conditions` in options flow
-- improvement proposal automation from `lighting_scene_schedule` to context-conditioned lighting
-  in the first slice
+- generic scheduled routines as a learned family
+- improvement proposal automation from a learned schedule-only family to context-conditioned
+  lighting in the first slice
+
+## Relation to time-based routines
+
+Time-based routines still have a place in Heima, but not as learned lighting behavior.
+
+Normative product rule:
+- a routine whose only stable explanatory dimension is weekday/time belongs to the admin-authored
+  channel, not the learned lighting channel
+- such a routine should eventually be represented by a generic admin-authored family such as
+  `scheduled_routine`
+- that family is intentionally:
+  - generic across actuator types
+  - not lighting-specific
+  - not part of lighting learning
+  - not a target for automatic improvement proposals
+
+This spec therefore covers only learned context-conditioned lighting.
 
 ## Proposal family direction
 
@@ -177,9 +224,10 @@ Product preference:
 
 When repeated lighting sequences are observed, the analyzer SHOULD evaluate whether the sequence is:
 
-- primarily time-owned
 - primarily darkness/occupancy-owned
 - or better explained by one or more context conditions
+
+It SHOULD NOT treat pure time ownership as sufficient for a learned lighting reaction.
 
 ### Minimum useful v1 heuristic
 
@@ -191,7 +239,8 @@ A sufficient heuristic is:
 2. inspect the bounded context signals observed around those episodes
 3. identify context signals whose active state is strongly concentrated in the positive episodes
 4. if that context signal materially improves separation from nearby non-matching episodes,
-   prefer a context-conditioned proposal
+   emit a context-conditioned proposal
+5. otherwise emit no learned lighting proposal
 
 ### Negative evidence requirement
 
@@ -299,8 +348,12 @@ Learned context-conditioned proposals SHOULD expose:
 
 Initial rollout MAY coexist with:
 
-- `lighting_scene_schedule`
 - `room_darkness_lighting_assist`
+
+Legacy note:
+- older installs may still contain accepted `lighting_scene_schedule` reactions as historical
+  artifacts
+- they are not part of the active learned-lighting product direction anymore
 
 but analyzer policy SHOULD avoid emitting a weaker scheduled proposal when a stronger
 context-conditioned explanation exists for the same evidence window.

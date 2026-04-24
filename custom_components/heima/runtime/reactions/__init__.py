@@ -49,16 +49,6 @@ from .lighting_assist import (
     present_room_lighting_assist_review_title,
     present_tuning_room_lighting_assist_details,
 )
-from .lighting_schedule import (
-    LightingScheduleReaction,
-    build_lighting_schedule_reaction,
-    present_admin_authored_lighting_schedule_details,
-    present_learned_lighting_schedule_details,
-    present_lighting_schedule_label,
-    present_lighting_schedule_proposal_label,
-    present_lighting_schedule_review_title,
-    present_tuning_lighting_schedule_details,
-)
 from .lighting_vacancy_off import (
     RoomLightingVacancyOffReaction,
     build_room_lighting_vacancy_off_reaction,
@@ -200,23 +190,6 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
                 proposal_review_title=present_context_conditioned_lighting_review_title,
                 learned_review_details=present_learned_context_conditioned_lighting_details,
                 tuning_review_details=present_tuning_context_conditioned_lighting_details,
-            ),
-        ),
-        RegisteredReactionPlugin(
-            descriptor=ReactionPluginDescriptor(
-                reaction_type="lighting_scene_schedule",
-                reaction_id_strategy="proposal_id",
-                supported_config_contracts=("lighting_scene_schedule",),
-                supports_normalizer=False,
-            ),
-            builder=build_lighting_schedule_reaction,
-            presenter_hooks=ReactionPresenterHooks(
-                reaction_label_from_config=present_lighting_schedule_label,
-                proposal_human_label=present_lighting_schedule_proposal_label,
-                proposal_review_title=present_lighting_schedule_review_title,
-                admin_authored_review_details=present_admin_authored_lighting_schedule_details,
-                learned_review_details=present_learned_lighting_schedule_details,
-                tuning_review_details=present_tuning_lighting_schedule_details,
             ),
         ),
         RegisteredReactionPlugin(
@@ -400,7 +373,6 @@ __all__ = [
     "ILearningBackend",
     "RoomContextualLightingAssistReaction",
     "RoomLightingAssistReaction",
-    "LightingScheduleReaction",
     "NaiveLearningBackend",
     "PresencePatternReaction",
     "RoomSignalAssistReaction",

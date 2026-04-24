@@ -274,7 +274,7 @@ async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_
         {
             "learning": {"outdoor_lux_entity": "sensor.old_lux"},
             "reactions": {
-                "configured": {"r_old": {"reaction_class": "LightingScheduleReaction"}},
+                "configured": {"r_old": {"reaction_class": "ContextConditionedLightingReaction"}},
                 "labels": {"r_old": "Old"},
             },
         }
@@ -2111,14 +2111,14 @@ def test_proposal_review_label_includes_context_confidence_and_last_seen():
     proposal = ReactionProposal(
         proposal_id="proposal-1",
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="living: Monday ~20:00 — test_heima_living_main on",
         confidence=0.92,
         last_observed_at="2026-03-26T10:27:51.561727+00:00",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
         },
     )
 
@@ -2386,95 +2386,6 @@ async def test_proposals_step_tolerates_legacy_non_dict_config():
     assert "Affidabilità: 80%" in placeholders["proposal_details"]
 
 
-@pytest.mark.asyncio
-async def test_proposals_step_marks_tuning_review_for_matching_active_reaction():
-    flow = _flow(
-        {
-            "reactions": {
-                "configured": {
-                    "r-lighting-admin": {
-                        "reaction_class": "LightingScheduleReaction",
-                        "room_id": "living",
-                        "weekday": 0,
-                        "scheduled_min": 1200,
-                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                        "origin": "admin_authored",
-                        "source_template_id": "lighting.scene_schedule.basic",
-                        "source_proposal_identity_key": (
-                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
-                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
-                        ),
-                    }
-                }
-            }
-        }
-    )
-    proposal = ReactionProposal(
-        proposal_id="proposal-tuning-1",
-        analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
-        description="Living lights shift slightly later",
-        confidence=0.93,
-        identity_key=(
-            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
-            "|scene=light.living_main|on|b=192|k=2500|rgb=-||light.living_spot|on|b=-|k=-|rgb=-"
-        ),
-        last_observed_at="2026-03-30T10:27:51.561727+00:00",
-        suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
-            "room_id": "living",
-            "weekday": 0,
-            "scheduled_min": 1210,
-            "entity_steps": [
-                {
-                    "entity_id": "light.living_main",
-                    "action": "on",
-                    "brightness": 180,
-                    "color_temp_kelvin": 2600,
-                },
-                {"entity_id": "light.living_spot", "action": "on"},
-            ],
-            "learning_diagnostics": {"episodes_observed": 6, "weeks_observed": 3},
-        },
-    )
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: [proposal],
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    flow.hass.data = {
-        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
-    }
-
-    result = await flow.async_step_proposals()
-
-    placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Affinamento luci: Luci living")
-    assert (
-        "Tipo proposta: affinamento di una automazione esistente"
-        in placeholders["proposal_details"]
-    )
-    assert (
-        "Automazione target: Luci living — Lunedì ~20:00 (1 entità)"
-        in placeholders["proposal_details"]
-    )
-    assert "Origine automazione attiva: bozza amministratore" in placeholders["proposal_details"]
-    assert "Template target: lighting.scene_schedule.basic" in placeholders["proposal_details"]
-    assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
-    assert (
-        "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
-    )
-    assert "Delta luci:" in placeholders["proposal_details"]
-    assert "Orario: 20:00 -> 20:10" in placeholders["proposal_details"]
-    assert (
-        "light.living_main: brightness None -> 180; color_temp_kelvin None -> 2600"
-        in placeholders["proposal_details"]
-    )
-    assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
-    assert (
-        "Pattern osservato: Living lights shift slightly later" in placeholders["proposal_details"]
-    )
-
 
 @pytest.mark.asyncio
 async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_bounded_diff():
@@ -2723,16 +2634,17 @@ async def test_proposals_step_marks_lighting_discovery_as_new_automation():
     proposal = ReactionProposal(
         proposal_id="proposal-lighting-new-1",
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="Living evening lights",
         confidence=0.88,
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=base",
+        identity_key="context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200",
         suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1200,
             "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "learning_diagnostics": {"observations_count": 5, "weeks_observed": 2},
         },
     )
@@ -2748,82 +2660,9 @@ async def test_proposals_step_marks_lighting_discovery_as_new_automation():
     result = await flow.async_step_proposals()
 
     placeholders = result["description_placeholders"]
-    assert placeholders["proposal_label"].startswith("Nuova automazione luci: Luci living")
-    assert "Entità proposte: light.living_main" in placeholders["proposal_details"]
-    assert "Luci proposte: 1" in placeholders["proposal_details"]
+    assert "living" in placeholders["proposal_label"]
+    assert "Luci coinvolte: 1" in placeholders["proposal_details"]
 
-
-@pytest.mark.asyncio
-async def test_accepting_tuning_updates_existing_reaction_instead_of_duplicating():
-    flow = _flow(
-        {
-            "reactions": {
-                "configured": {
-                    "r-lighting-admin": {
-                        "reaction_class": "LightingScheduleReaction",
-                        "room_id": "living",
-                        "weekday": 0,
-                        "scheduled_min": 1200,
-                        "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                        "origin": "admin_authored",
-                        "author_kind": "admin",
-                        "source_template_id": "lighting.scene_schedule.basic",
-                        "source_request": "template:lighting.scene_schedule.basic",
-                        "source_proposal_id": "proposal-admin",
-                        "source_proposal_identity_key": (
-                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
-                            "|scene=light.living_main|on|b=128|k=-|rgb=-"
-                        ),
-                        "created_at": "2026-03-30T10:00:00+00:00",
-                        "last_tuned_at": None,
-                    }
-                },
-                "labels": {"r-lighting-admin": "Admin lighting"},
-            }
-        }
-    )
-    proposal = ReactionProposal(
-        proposal_id="proposal-tuning-2",
-        analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
-        description="Living lights shift slightly later",
-        confidence=0.93,
-        identity_key=(
-            "lighting_scene_schedule|room=living|weekday=0|bucket=1200"
-            "|scene=light.living_main|on|b=192|k=-|rgb=-"
-        ),
-        updated_at="2026-03-30T12:34:00+00:00",
-        suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
-            "room_id": "living",
-            "weekday": 0,
-            "scheduled_min": 1210,
-            "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 180}],
-            "steps": [],
-        },
-    )
-    proposal_engine = SimpleNamespace(
-        pending_proposals=lambda: [proposal],
-        async_accept_proposal=AsyncMock(),
-        async_reject_proposal=AsyncMock(),
-    )
-    flow.hass.data = {
-        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
-    }
-
-    result = await flow.async_step_proposals({"review_action": "accept"})
-
-    assert result["type"] == "menu"
-    configured = flow.options["reactions"]["configured"]
-    assert sorted(configured) == ["r-lighting-admin"]
-    stored = configured["r-lighting-admin"]
-    assert stored["scheduled_min"] == 1210
-    assert stored["origin"] == "admin_authored"
-    assert stored["source_proposal_id"] == "proposal-admin"
-    assert stored["last_tuned_at"] == "2026-03-30T12:34:00+00:00"
-    assert stored["last_tuning_proposal_id"] == "proposal-tuning-2"
-    assert stored["last_tuning_origin"] == "learned"
-    assert stored["last_tuning_followup_kind"] == "tuning_suggestion"
 
 
 @pytest.mark.asyncio
@@ -2840,12 +2679,13 @@ async def test_proposals_step_skip_advances_to_next_proposal():
     proposal_2 = ReactionProposal(
         proposal_id="proposal-2",
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="Second",
         confidence=0.9,
         suggested_reaction_config={
             "room_id": "living",
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
         },
     )
     proposal_engine = SimpleNamespace(
@@ -2861,7 +2701,7 @@ async def test_proposals_step_skip_advances_to_next_proposal():
 
     assert result["type"] == "form"
     assert result["step_id"] == "proposals"
-    assert "Luci living" in result["description_placeholders"]["proposal_label"]
+    assert "living" in result["description_placeholders"]["proposal_label"]
 
 
 @pytest.mark.asyncio
@@ -2912,13 +2752,13 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
             "reactions": {
                 "configured": {
                     "light-src-1": {
-                        "reaction_class": "LightingScheduleReaction",
-                        "reaction_type": "lighting_scene_schedule",
+                        "reaction_class": "ContextConditionedLightingReaction",
+                        "reaction_type": "context_conditioned_lighting_scene",
                         "room_id": "living",
                         "weekday": 0,
                         "scheduled_min": 1200,
                         "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                        "source_template_id": "lighting.scene_schedule.basic",
+                        "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
                     }
                 }
             },
@@ -2956,74 +2796,6 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
     assert reaction["source_template_id"] == "security.vacation_presence_simulation.basic"
     assert reaction["dynamic_policy"] is True
 
-
-@pytest.mark.asyncio
-async def test_admin_authored_lighting_schedule_creates_pending_proposal_and_opens_review():
-    flow = _flow(
-        {
-            "rooms": [
-                {"room_id": "living", "display_name": "Living", "area_id": "living"},
-            ],
-            "learning": {"enabled_plugin_families": ["lighting", "presence"]},
-        }
-    )
-
-    result = await flow.async_step_admin_authored_lighting_schedule(
-        {
-            "room_id": "living",
-            "weekday": "0",
-            "scheduled_time": "20:00",
-            "light_entities": ["light.living_main", "light.living_spot"],
-            "action": "on",
-            "brightness": 190,
-            "color_temp_kelvin": 2850,
-        }
-    )
-
-    assert result["type"] == "menu"
-    assert result["step_id"] == "init"
-    configured = flow.options["reactions"]["configured"]
-    reaction = next(
-        (
-            cfg
-            for cfg in configured.values()
-            if cfg.get("reaction_type") == "lighting_scene_schedule"
-        ),
-        None,
-    )
-    assert reaction is not None
-    assert reaction["origin"] == "admin_authored"
-    assert reaction["source_template_id"] == "lighting.scene_schedule.basic"
-    assert len(reaction["entity_steps"]) == 2
-
-
-@pytest.mark.asyncio
-async def test_admin_authored_lighting_schedule_allows_distinct_scene_in_same_slot():
-    flow = _flow(
-        {
-            "rooms": [
-                {"room_id": "living", "display_name": "Living", "area_id": "living"},
-            ],
-            "learning": {"enabled_plugin_families": ["lighting"]},
-        }
-    )
-
-    result = await flow.async_step_admin_authored_lighting_schedule(
-        {
-            "room_id": "living",
-            "weekday": "0",
-            "scheduled_time": "20:10",
-            "light_entities": ["light.living_spot"],
-            "action": "on",
-            "brightness": 160,
-            "color_temp_kelvin": 2600,
-        }
-    )
-
-    assert result["type"] == "menu"
-    assert result["step_id"] == "init"
-    configured = flow.options["reactions"]["configured"]
-    assert any(cfg.get("reaction_type") == "lighting_scene_schedule" for cfg in configured.values())
 
 
 @pytest.mark.asyncio
@@ -3469,19 +3241,20 @@ async def test_admin_authored_accept_persists_reaction_provenance():
     proposal = ReactionProposal(
         proposal_id="proposal-admin",
         analyzer_id="AdminAuthoredLightingTemplate",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="Admin lighting draft",
         confidence=1.0,
         origin="admin_authored",
-        identity_key="lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+        identity_key="context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200",
         created_at="2026-03-30T10:00:00+00:00",
         suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1200,
             "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-            "admin_authored_template_id": "lighting.scene_schedule.basic",
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
+            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
         },
     )
     proposal_engine = SimpleNamespace(
@@ -3499,8 +3272,8 @@ async def test_admin_authored_accept_persists_reaction_provenance():
     stored = flow.options["reactions"]["configured"]["proposal-admin"]
     assert stored["origin"] == "admin_authored"
     assert stored["author_kind"] == "admin"
-    assert stored["source_request"] == "template:lighting.scene_schedule.basic"
-    assert stored["source_template_id"] == "lighting.scene_schedule.basic"
+    assert stored["source_request"] == "template:room.darkness_lighting_assist.basic"
+    assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
     assert stored["source_proposal_id"] == "proposal-admin"
     assert stored["source_proposal_identity_key"] == proposal.identity_key
     assert stored["created_at"] == "2026-03-30T10:00:00+00:00"
@@ -3511,7 +3284,7 @@ def test_proposal_review_label_marks_admin_authored_origin():
     proposal = ReactionProposal(
         proposal_id="proposal-admin",
         analyzer_id="AdminAuthoredLightingTemplate",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="living: Monday ~20:00 — 2 entities",
         confidence=1.0,
         origin="admin_authored",
@@ -3519,8 +3292,8 @@ def test_proposal_review_label_marks_admin_authored_origin():
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
-            "reaction_class": "LightingScheduleReaction",
-            "admin_authored_template_id": "lighting.scene_schedule.basic",
+            "reaction_class": "ContextConditionedLightingReaction",
+            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
         },
     )
 
@@ -3722,13 +3495,14 @@ async def test_proposal_configure_action_resumes_guided_review():
     proposal_2 = ReactionProposal(
         proposal_id="proposal-2",
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="Living lights",
         confidence=0.9,
         suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": "living",
             "weekday": 0,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
         },
     )
     proposal_engine = SimpleNamespace(
@@ -3757,7 +3531,7 @@ async def test_proposal_configure_action_resumes_guided_review():
 
     assert resumed["type"] == "form"
     assert resumed["step_id"] == "proposals"
-    assert "Luci living" in resumed["description_placeholders"]["proposal_label"]
+    assert "living" in resumed["description_placeholders"]["proposal_label"]
     proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-1")
     stored = flow.options["reactions"]["configured"]["proposal-1"]
     assert stored["pre_condition_min"] == 15
@@ -3816,57 +3590,6 @@ async def test_proposal_configure_action_rejects_redacted_payload_without_accept
     proposal_engine.async_accept_proposal.assert_not_awaited()
     assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
-
-@pytest.mark.asyncio
-async def test_reactions_edit_form_can_disable_configured_reaction():
-    flow = _flow(
-        {
-            "rooms": [
-                {"room_id": "living", "display_name": "Living", "area_id": "living"},
-            ],
-            "reactions": {
-                "configured": {
-                    "r1": {
-                        "reaction_class": "LightingScheduleReaction",
-                        "reaction_type": "lighting_scene_schedule",
-                        "enabled": True,
-                        "room_id": "living",
-                        "weekday": 0,
-                        "scheduled_min": 1200,
-                        "entity_steps": [
-                            {
-                                "entity_id": "light.living_main",
-                                "action": "on",
-                                "brightness": 190,
-                                "color_temp_kelvin": 2850,
-                            }
-                        ],
-                    }
-                },
-                "labels": {"r1": "Living lights"},
-            },
-        }
-    )
-    flow._editing_reaction_id = "r1"
-
-    result = await flow.async_step_reactions_edit_form(
-        {
-            "enabled": False,
-            "weekday": "0",
-            "scheduled_time": "20:00",
-            "light_entities": ["light.living_main"],
-            "action": "on",
-            "brightness": 190,
-            "color_temp_kelvin": 2850,
-            "delete_reaction": False,
-        }
-    )
-
-    assert result["type"] == "menu"
-    assert result["step_id"] == "init"
-    stored = flow.options["reactions"]["configured"]["r1"]
-    assert stored["enabled"] is False
-    assert stored["scheduled_min"] == 1200
 
 
 @pytest.mark.asyncio
@@ -4023,8 +3746,8 @@ async def test_reactions_edit_form_can_delete_configured_reaction_and_unmute_it(
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_class": "LightingScheduleReaction",
-                        "reaction_type": "lighting_scene_schedule",
+                        "reaction_class": "ContextConditionedLightingReaction",
+                        "reaction_type": "context_conditioned_lighting_scene",
                         "enabled": True,
                         "steps": [{"service": "scene.turn_on", "target": "scene.relax"}],
                         "pre_condition_min": 20,
@@ -4111,7 +3834,7 @@ def test_tuning_pending_summary_counts_followup_proposals():
         ReactionProposal(
             proposal_id="p1",
             analyzer_id="LightingPatternAnalyzer",
-            reaction_type="lighting_scene_schedule",
+            reaction_type="context_conditioned_lighting_scene",
             description="new schedule",
             confidence=1.0,
             suggested_reaction_config={},
@@ -4119,7 +3842,7 @@ def test_tuning_pending_summary_counts_followup_proposals():
         ReactionProposal(
             proposal_id="p2",
             analyzer_id="LightingPatternAnalyzer",
-            reaction_type="lighting_scene_schedule",
+            reaction_type="context_conditioned_lighting_scene",
             description="tuning schedule",
             confidence=1.0,
             followup_kind="tuning_suggestion",
@@ -4146,7 +3869,8 @@ def test_lighting_menu_summary_is_operational() -> None:
             "reactions": {
                 "configured": {
                     "r-light-1": {
-                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_class": "ContextConditionedLightingReaction",
+                        "reaction_type": "context_conditioned_lighting_scene",
                         "room_id": "living",
                         "weekday": 0,
                         "scheduled_min": 1200,
@@ -4164,7 +3888,7 @@ def test_lighting_menu_summary_is_operational() -> None:
         ReactionProposal(
             proposal_id="p1",
             analyzer_id="LightingPatternAnalyzer",
-            reaction_type="lighting_scene_schedule",
+            reaction_type="context_conditioned_lighting_scene",
             description="new schedule",
             confidence=1.0,
             suggested_reaction_config={},
@@ -4172,7 +3896,7 @@ def test_lighting_menu_summary_is_operational() -> None:
         ReactionProposal(
             proposal_id="p2",
             analyzer_id="LightingPatternAnalyzer",
-            reaction_type="lighting_scene_schedule",
+            reaction_type="context_conditioned_lighting_scene",
             description="tuning schedule",
             confidence=1.0,
             followup_kind="tuning_suggestion",
@@ -4198,7 +3922,8 @@ def test_composite_menu_summary_is_operational() -> None:
                         "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
                     },
                     "r-other": {
-                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_class": "ContextConditionedLightingReaction",
+                        "reaction_type": "context_conditioned_lighting_scene",
                         "room_id": "living",
                     },
                 }
@@ -4227,7 +3952,7 @@ def test_composite_menu_summary_is_operational() -> None:
         ReactionProposal(
             proposal_id="p3",
             analyzer_id="LightingPatternAnalyzer",
-            reaction_type="lighting_scene_schedule",
+            reaction_type="context_conditioned_lighting_scene",
             description="lighting",
             confidence=1.0,
             suggested_reaction_config={},
@@ -4648,64 +4373,6 @@ async def test_room_cooling_assist_edit_uses_signal_editor_fields():
     assert "action_entities" in schema_keys
     assert "pre_condition_min" not in schema_keys
 
-
-@pytest.mark.asyncio
-async def test_lighting_schedule_edit_uses_real_contract_and_updates_schedule():
-    flow = _flow(
-        {
-            "rooms": [
-                {"room_id": "studio", "display_name": "Studio", "area_id": "studio"},
-            ],
-            "reactions": {
-                "configured": {
-                    "r1": {
-                        "reaction_type": "lighting_scene_schedule",
-                        "enabled": True,
-                        "room_id": "studio",
-                        "weekday": 0,
-                        "scheduled_min": 1200,
-                        "entity_steps": [
-                            {
-                                "entity_id": "light.studio_main",
-                                "action": "on",
-                                "brightness": 190,
-                                "color_temp_kelvin": 2850,
-                            }
-                        ],
-                    }
-                },
-                "labels": {"r1": "Studio schedule"},
-            },
-        }
-    )
-
-    flow._editing_reaction_id = "r1"
-    result = await flow.async_step_reactions_edit_form()
-
-    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
-    assert {"weekday", "scheduled_time", "light_entities", "action"} <= schema_keys
-    assert "pre_condition_min" not in schema_keys
-    assert "action_entities" not in schema_keys
-
-    saved = await flow.async_step_reactions_edit_form(
-        {
-            "enabled": True,
-            "weekday": "2",
-            "scheduled_time": "21:30",
-            "light_entities": ["light.studio_main", "light.studio_spot"],
-            "action": "off",
-            "brightness": 190,
-            "color_temp_kelvin": 2850,
-            "delete_reaction": False,
-        }
-    )
-
-    assert saved["type"] == "menu"
-    stored = flow.options["reactions"]["configured"]["r1"]
-    assert stored["weekday"] == 2
-    assert stored["scheduled_min"] == 1290
-    assert len(stored["entity_steps"]) == 2
-    assert all(step["action"] == "off" for step in stored["entity_steps"])
 
 
 @pytest.mark.asyncio

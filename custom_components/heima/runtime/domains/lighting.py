@@ -424,7 +424,7 @@ class LightingDomain:
                 area_id = step.params.get("area_id")
                 entity_id = step.params.get("entity_id")
                 if entity_id:
-                    # Entity-level turn_off (from LightingScheduleReaction)
+                    # Entity-level turn_off (from ContextConditionedLightingReaction)
                     try:
                         await self._hass.services.async_call(
                             "light",
@@ -462,7 +462,7 @@ class LightingDomain:
                         _LOGGER.exception("Lighting apply failed for room area '%s'", area_id)
 
             elif step.action == "light.turn_on":
-                # Entity-level turn_on with attributes (from LightingScheduleReaction)
+                # Entity-level turn_on with attributes (from ContextConditionedLightingReaction)
                 entity_id = step.params.get("entity_id")
                 if not isinstance(entity_id, str) or not entity_id:
                     continue

@@ -118,16 +118,11 @@ def _lighting_identity_key(proposal: ReactionProposal) -> str:
     scene_signature = _lighting_scene_signature(cfg)
     house_state_filter = cfg.get("house_state_filter") or None
     hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
-    if proposal.reaction_type == "context_conditioned_lighting_scene":
-        context_signature = _context_conditions_signature(cfg)
-        return (
-            f"context_conditioned_lighting_scene|room={cfg.get('room_id')}"
-            f"|weekday={cfg.get('weekday')}|bucket={bucket}|scene={scene_signature}"
-            f"|context={context_signature}{hs_suffix}"
-        )
+    context_signature = _context_conditions_signature(cfg)
     return (
-        f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
-        f"|bucket={bucket}|scene={scene_signature}{hs_suffix}"
+        f"context_conditioned_lighting_scene|room={cfg.get('room_id')}"
+        f"|weekday={cfg.get('weekday')}|bucket={bucket}|scene={scene_signature}"
+        f"|context={context_signature}{hs_suffix}"
     )
 
 
@@ -137,12 +132,10 @@ def _lighting_followup_slot_key(proposal: ReactionProposal) -> str:
     bucket = None
     if isinstance(scheduled_min, (int, float)):
         bucket = (int(scheduled_min) // 30) * 30
-    prefix = (
-        "context_conditioned_lighting_scene"
-        if proposal.reaction_type == "context_conditioned_lighting_scene"
-        else "lighting_scene_schedule"
+    return (
+        f"context_conditioned_lighting_scene"
+        f"|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}|bucket={bucket}"
     )
-    return f"{prefix}|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}|bucket={bucket}"
 
 
 def _lighting_fallback_followup_match(

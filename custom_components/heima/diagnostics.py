@@ -451,7 +451,7 @@ def _lighting_summary_diagnostics(
         dict(item)
         for item in proposals
         if isinstance(item, dict)
-        and str(item.get("type") or "") == "lighting_scene_schedule"
+        and str(item.get("type") or "") == "context_conditioned_lighting_scene"
         and str(item.get("status") or "") == "pending"
     ]
 
@@ -490,14 +490,14 @@ def _lighting_summary_diagnostics(
     for _reaction_id, cfg in active:
         reaction_type = resolve_reaction_type(cfg)
         identity_key = str(cfg.get("source_proposal_identity_key") or "").strip()
-        is_lighting = reaction_type == "lighting_scene_schedule" or identity_key.startswith(
-            "lighting_scene_schedule|"
+        is_lighting = reaction_type == "context_conditioned_lighting_scene" or identity_key.startswith(
+            "context_conditioned_lighting_scene|"
         )
         if not is_lighting:
             continue
         configured_total += 1
         room_id = str(cfg.get("room_id") or "").strip()
-        if not room_id and identity_key.startswith("lighting_scene_schedule|"):
+        if not room_id and identity_key.startswith("context_conditioned_lighting_scene|"):
             room_id = _lighting_room_from_identity(identity_key)
         if room_id:
             configured_by_room[room_id] = configured_by_room.get(room_id, 0) + 1
@@ -1115,7 +1115,7 @@ def _template_ids(
 
 def _lighting_slot_key_from_identity(identity_key: str) -> str:
     value = str(identity_key or "").strip()
-    if not value.startswith("lighting_scene_schedule|"):
+    if not value.startswith("context_conditioned_lighting_scene|"):
         return ""
     return value.split("|scene=", 1)[0]
 
@@ -1132,14 +1132,14 @@ def _lighting_room_from_identity(identity_key: str) -> str:
 
 def _lighting_followup_slot_key(cfg: dict[str, Any]) -> str:
     reaction_type = resolve_reaction_type(cfg)
-    if reaction_type != "lighting_scene_schedule":
+    if reaction_type != "context_conditioned_lighting_scene":
         return ""
     scheduled_min = cfg.get("scheduled_min")
     bucket = None
     if isinstance(scheduled_min, (int, float)):
         bucket = (int(scheduled_min) // 30) * 30
     return (
-        f"lighting_scene_schedule|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
+        f"context_conditioned_lighting_scene|room={cfg.get('room_id')}|weekday={cfg.get('weekday')}"
         f"|bucket={bucket}"
     )
 

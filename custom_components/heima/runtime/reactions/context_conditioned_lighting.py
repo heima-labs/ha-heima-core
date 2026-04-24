@@ -8,13 +8,13 @@ from ..analyzers.context_conditions import normalize_context_conditions
 from ..contracts import ApplyStep
 from ..snapshot import DecisionSnapshot
 from .lighting_schedule import (
-    LightingScheduleReaction,
+    _ScheduledLightingBase,
     present_admin_authored_lighting_schedule_details,
     present_tuning_lighting_schedule_details,
 )
 
 
-class ContextConditionedLightingReaction(LightingScheduleReaction):
+class ContextConditionedLightingReaction(_ScheduledLightingBase):
     """Scheduled lighting scene gated by abstract context conditions."""
 
     def __init__(

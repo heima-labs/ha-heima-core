@@ -58,9 +58,8 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     assert any(item["plugin_id"] == "builtin.composite_room_assist" for item in learning)
     assert any(
         item["plugin_id"] == "builtin.lighting_routines"
-        and item["supports_admin_authored"] is True
-        and item["admin_authored_templates"][0]["template_id"] == "lighting.scene_schedule.basic"
-        and item["admin_authored_templates"][0]["implemented"] is True
+        and item["supports_admin_authored"] is False
+        and item["admin_authored_templates"] == []
         for item in learning
     )
     assert any(item["reaction_type"] == "room_signal_assist" for item in reactions)
@@ -161,7 +160,7 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
             "proposals": [
                 {
                     "id": "p1",
-                    "type": "lighting_scene_schedule",
+                    "type": "context_conditioned_lighting_scene",
                     "status": "pending",
                     "confidence": 0.95,
                     "description": "Living lights",
@@ -212,11 +211,11 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
 
     lighting = summary["families"]["lighting"]
     assert lighting["pending"] == 1
-    assert "lighting_scene_schedule" in lighting["proposal_types"]
     assert "context_conditioned_lighting_scene" in lighting["proposal_types"]
-    assert lighting["admin_authorable"] is True
-    assert lighting["admin_authored_templates"] == ["lighting.scene_schedule.basic"]
-    assert lighting["implemented_admin_authored_templates"] == ["lighting.scene_schedule.basic"]
+    assert "lighting_scene_schedule" not in lighting["proposal_types"]
+    assert lighting["admin_authorable"] is False
+    assert lighting["admin_authored_templates"] == []
+    assert lighting["implemented_admin_authored_templates"] == []
     assert lighting["unimplemented_admin_authored_templates"] == []
 
     composite = summary["plugins"]["builtin.composite_room_assist"]
@@ -375,14 +374,14 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
                     "author_kind": "admin",
                     "source_template_id": "lighting.scene_schedule.basic",
                     "source_proposal_identity_key": (
-                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=a"
                     ),
                 },
                 "r2": {
                     "origin": "learned",
                     "author_kind": "heima",
                     "source_proposal_identity_key": (
-                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=b"
+                        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=b"
                     ),
                 },
             }
@@ -404,15 +403,15 @@ async def test_config_entry_diagnostics_exposes_configured_reaction_identity_col
 
     assert summary["identity_collisions"] == {}
     assert summary["lighting_slot_collisions"] == {
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
     assert lighting["configured_total"] == 2
     assert lighting["configured_by_room"] == {"living": 2}
     assert lighting["configured_by_slot"] == {
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": 2
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200": 2
     }
     assert lighting["slot_collisions"] == {
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
 
 
@@ -427,14 +426,14 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
                     "author_kind": "admin",
                     "source_template_id": "lighting.scene_schedule.basic",
                     "source_proposal_identity_key": (
-                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=a"
                     ),
                 },
                 "r2": {
                     "origin": "learned",
                     "author_kind": "heima",
                     "source_proposal_identity_key": (
-                        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a"
+                        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=a"
                     ),
                 },
             }
@@ -454,10 +453,10 @@ async def test_config_entry_diagnostics_exposes_exact_identity_collisions() -> N
     lighting = diagnostics["runtime"]["plugins"]["lighting_summary"]
 
     assert summary["identity_collisions"] == {
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=a": ["r1", "r2"]
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=a": ["r1", "r2"]
     }
     assert summary["lighting_slot_collisions"] == {
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200": ["r1", "r2"]
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200": ["r1", "r2"]
     }
     assert lighting["configured_total"] == 2
 
@@ -843,13 +842,13 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
             "proposals": [
                 {
                     "id": "p1",
-                    "type": "lighting_scene_schedule",
+                    "type": "context_conditioned_lighting_scene",
                     "status": "pending",
                     "confidence": 0.91,
                     "description": "Living tuned lights",
                     "origin": "learned",
                     "followup_kind": "discovery",
-                    "identity_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=tuned",
+                    "identity_key": "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=tuned",
                     "is_stale": False,
                     "updated_at": "2026-03-30T12:00:00+00:00",
                 }
@@ -866,11 +865,11 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
             "reactions": {
                 "configured": {
                     "r-existing": {
-                        "reaction_class": "LightingScheduleReaction",
+                        "reaction_class": "ContextConditionedLightingReaction",
                         "origin": "admin_authored",
                         "source_template_id": "lighting.scene_schedule.basic",
                         "source_proposal_identity_key": (
-                            "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene=base"
+                            "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene=base"
                         ),
                     }
                 }
@@ -898,7 +897,7 @@ async def test_config_entry_diagnostics_marks_tuning_followups_for_matching_iden
             "id": "p1",
             "label": "Living tuned lights",
             "room_id": "",
-            "slot_key": "lighting_scene_schedule|room=living|weekday=0|bucket=1200",
+            "slot_key": "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200",
             "confidence": 0.91,
         }
     ]

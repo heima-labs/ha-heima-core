@@ -87,14 +87,15 @@ def _lighting_proposal(
 ) -> ReactionProposal:
     return ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=conf,
         description=f"{room_id}:{scheduled_min}",
         suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": room_id,
             "weekday": weekday,
             "scheduled_min": scheduled_min,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [
                 {
                     "entity_id": entity_id or f"light.{room_id}_main",
@@ -111,15 +112,16 @@ def _lighting_proposal(
 def _admin_authored_proposal() -> ReactionProposal:
     return ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         description="admin-authored lighting",
         confidence=1.0,
         origin="admin_authored",
         suggested_reaction_config={
-            "reaction_class": "LightingScheduleReaction",
+            "reaction_class": "ContextConditionedLightingReaction",
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1200,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
         },
     )
 
@@ -577,7 +579,7 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
                     room_id="living",
                     weekday=0,
                     scheduled_min=1200,
-                    fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+                    fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
                 )
             ]
         )
@@ -591,7 +593,7 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
 
     pending = engine2.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
+    assert pending[0].fingerprint == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200"
     assert pending[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
 
@@ -614,25 +616,27 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     first = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.8,
         description="living:1205",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1205,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
         },
     )
     second = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.9,
         description="living:1225",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1225,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
         },
     )
@@ -647,7 +651,7 @@ async def test_proposal_engine_lighting_identity_uses_30_minute_bucket(monkeypat
     pending = engine.pending_proposals()
     assert len(pending) == 1
     assert pending[0].identity_key.startswith(
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1200|scene="
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1200|scene="
     )
     assert pending[0].confidence == 0.9
 
@@ -664,7 +668,7 @@ async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fing
                 room_id="living",
                 weekday=0,
                 scheduled_min=1360,
-                fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1350",
+                fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1350",
             )
         ]
     )
@@ -675,9 +679,9 @@ async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fing
 
     pending = engine.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].fingerprint == "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1350"
+    assert pending[0].fingerprint == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1350"
     assert pending[0].identity_key.startswith(
-        "lighting_scene_schedule|room=living|weekday=0|bucket=1350|scene="
+        "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1350|scene="
     )
 
 
@@ -686,25 +690,27 @@ async def test_proposal_engine_lighting_identity_tolerates_minor_scene_drift(mon
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     first = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.8,
         description="living:1205",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1205,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 120}],
         },
     )
     second = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.9,
         description="living:1225",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1225,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 135}],
         },
     )
@@ -726,25 +732,27 @@ async def test_proposal_engine_lighting_identity_separates_materially_different_
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     first = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.8,
         description="living:1205",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1205,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [{"entity_id": "light.living_main", "action": "on", "brightness": 96}],
         },
     )
     second = ReactionProposal(
         analyzer_id="LightingPatternAnalyzer",
-        reaction_type="lighting_scene_schedule",
+        reaction_type="context_conditioned_lighting_scene",
         confidence=0.9,
         description="living:1225",
         suggested_reaction_config={
             "room_id": "living",
             "weekday": 0,
             "scheduled_min": 1225,
+            "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
             "entity_steps": [
                 {"entity_id": "light.living_main", "action": "on", "brightness": 224},
                 {"entity_id": "light.living_spot", "action": "off"},
@@ -763,8 +771,8 @@ async def test_proposal_engine_lighting_identity_separates_materially_different_
 
 async def test_proposal_engine_restart_dedup_uses_persisted_fingerprint(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
-    fp1 = "LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200"
-    fp2 = "LightingPatternAnalyzer|lighting_scene_schedule|bedroom|0|1200"
+    fp1 = "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200"
+    fp2 = "LightingPatternAnalyzer|context_conditioned_lighting_scene|bedroom|0|1200"
 
     engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     engine1.register_analyzer(
@@ -1069,7 +1077,7 @@ async def test_reaction_proposal_from_dict_preserves_admin_authored_origin(monke
                 {
                     "proposal_id": "admin-1",
                     "analyzer_id": "LightingPatternAnalyzer",
-                    "reaction_type": "lighting_scene_schedule",
+                    "reaction_type": "context_conditioned_lighting_scene",
                     "description": "admin",
                     "confidence": 1.0,
                     "origin": "admin_authored",
@@ -1421,7 +1429,7 @@ async def test_lighting_followup_minor_drift_is_suppressed(monkeypatch):
         room_id="living",
         weekday=0,
         scheduled_min=1200,
-        fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+        fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
         brightness=192,
         color_temp_kelvin=2750,
     )
@@ -1430,7 +1438,7 @@ async def test_lighting_followup_minor_drift_is_suppressed(monkeypatch):
         room_id="living",
         weekday=0,
         scheduled_min=1204,
-        fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+        fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
         brightness=176,
         color_temp_kelvin=2850,
     )
@@ -1454,7 +1462,7 @@ async def test_lighting_followup_material_drift_still_creates_tuning(monkeypatch
         room_id="living",
         weekday=0,
         scheduled_min=1200,
-        fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+        fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
         brightness=192,
         color_temp_kelvin=2750,
     )
@@ -1463,7 +1471,7 @@ async def test_lighting_followup_material_drift_still_creates_tuning(monkeypatch
         room_id="living",
         weekday=0,
         scheduled_min=1218,
-        fingerprint="LightingPatternAnalyzer|lighting_scene_schedule|living|0|1200",
+        fingerprint="LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200",
         brightness=96,
         color_temp_kelvin=3250,
     )

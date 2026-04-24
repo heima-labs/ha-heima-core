@@ -142,6 +142,7 @@ Mapper backward-compat (interno, usato solo durante la migration):
 ```python
 _CLASS_TO_TYPE: dict[str, str] = {
     "LightingScheduleReaction": "lighting_scene_schedule",
+    "ContextConditionedLightingReaction": "context_conditioned_lighting_scene",
     "RoomSignalAssistReaction": "room_signal_assist",   # default per i tre N:1
     "RoomLightingAssistReaction": "room_darkness_lighting_assist",
     "RoomLightingVacancyOffReaction": "room_vacancy_lighting_off",
@@ -152,7 +153,9 @@ _CLASS_TO_TYPE: dict[str, str] = {
 }
 ```
 
-**Nota**: per `RoomSignalAssistReaction` il mapper produce `room_signal_assist` di default — `room_cooling_assist` e `room_air_quality_assist` vengono prodotti solo da nuove entry post-riforma. Le entry migrate funzionano correttamente perché `room_signal_assist` è il tipo generico.
+**Nota**:
+- per `RoomSignalAssistReaction` il mapper produce `room_signal_assist` di default — `room_cooling_assist` e `room_air_quality_assist` vengono prodotti solo da nuove entry post-riforma. Le entry migrate funzionano correttamente perché `room_signal_assist` è il tipo generico.
+- `LightingScheduleReaction -> lighting_scene_schedule` remains a legacy migration mapping only; the schedule-owned learned lighting family is no longer part of the active product model.
 
 La migration avviene in `async_reload_options` (o in un helper chiamato da lì) e riscrive `options` se trova entry con `reaction_class` ma senza `reaction_type`.
 

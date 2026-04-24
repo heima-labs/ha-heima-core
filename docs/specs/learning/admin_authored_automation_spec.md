@@ -12,10 +12,16 @@ This spec defines a second, parallel channel that stays inside the same proposal
 
 - the HA admin can request an automation directly
 - Heima helps instantiate a precompiled proposal template
-- Heima can later propose tuning or follow-up on the authored automation
+- Heima can later propose bounded follow-up on the authored automation when the owning family
+  explicitly allows it
 
 The goal is not to replace learned proposals, but to extend the system with an explicit
 admin-authored path whose capabilities are declared by the relevant plugin family.
+
+Normative separation:
+- admin-authored time-based routines are valid
+- learned time-based automations are not
+- the admin-authored path is where explicit clock-based intent belongs
 
 ## 2. Core Model
 
@@ -250,6 +256,13 @@ In other words:
 
 This distinction is especially important for admin-authored automations, because the admin has already expressed explicit intent.
 Heima should therefore prefer improving that intent rather than rediscovering it as if it were unrelated.
+
+Exception for pure time-based admin intent:
+- a future generic `scheduled_routine` family is intentionally admin-authored only
+- that family is expected to support arbitrary actuator targets, not just lighting
+- it SHOULD NOT participate in automatic learned discovery
+- it SHOULD NOT receive automatic improvement proposals
+- it MAY still be editable directly by the admin through the options flow
 
 Example:
 

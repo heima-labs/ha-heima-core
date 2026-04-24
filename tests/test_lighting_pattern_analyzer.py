@@ -242,15 +242,12 @@ async def test_lighting_analyzer_requires_min_weeks():
     assert proposals == []
 
 
-async def test_lighting_analyzer_emits_proposal_when_both_gates_pass():
-    """5 events across 2 weeks → 1 proposal with lighting_scene_schedule type."""
+async def test_lighting_analyzer_emits_no_proposal_without_context_signal():
+    """5 events across 2 weeks but no context signal → no proposal (time-only is not learned)."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2)
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    p = proposals[0]
-    assert p.reaction_type == "lighting_scene_schedule"
-    assert p.analyzer_id == "LightingPatternAnalyzer"
+    assert proposals == []
 
 
 async def test_lighting_analyzer_suppresses_schedule_when_darkness_assist_is_confirmed():
@@ -300,7 +297,7 @@ async def test_lighting_analyzer_suppresses_schedule_when_darkness_assist_is_con
 
 
 async def test_lighting_analyzer_proposal_config_fields():
-    """suggested_reaction_config has room_id, weekday, scheduled_min, entity_steps."""
+    """Without context signal, no proposal is emitted even with valid pattern."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
         3,
@@ -312,31 +309,11 @@ async def test_lighting_analyzer_proposal_config_fields():
         minute=1380,
     )
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    cfg = proposals[0].suggested_reaction_config
-    assert cfg["reaction_type"] == "lighting_scene_schedule"
-    assert cfg["room_id"] == "kitchen"
-    assert cfg["weekday"] == 2
-    assert cfg["scheduled_min"] == 1380
-    assert cfg["window_half_min"] == 5
-    assert len(cfg["entity_steps"]) == 1
-    step = cfg["entity_steps"][0]
-    assert step["entity_id"] == "light.kitchen_spot"
-    assert step["action"] == "off"
-    diagnostics = cfg["learning_diagnostics"]
-    assert diagnostics["pattern_id"] == "lighting_scene_schedule"
-    assert diagnostics["analyzer_id"] == "LightingPatternAnalyzer"
-    assert diagnostics["reaction_type"] == "lighting_scene_schedule"
-    assert diagnostics["plugin_family"] == "lighting"
-    assert diagnostics["room_id"] == "kitchen"
-    assert diagnostics["weekday"] == 2
-    assert diagnostics["observations_count"] == 5
-    assert diagnostics["weeks_observed"] >= 2
-    assert diagnostics["entity_steps_count"] == 1
+    assert proposals == []
 
 
 async def test_lighting_analyzer_entity_steps_contain_attributes():
-    """On-entity step aggregates brightness and color_temp from events."""
+    """Without context signal, no proposal emitted even with brightness/color_temp events."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
         3,
@@ -348,32 +325,23 @@ async def test_lighting_analyzer_entity_steps_contain_attributes():
         color_temp_kelvin=3000,
     )
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    step = proposals[0].suggested_reaction_config["entity_steps"][0]
-    assert step["brightness"] == 128
-    assert step["color_temp_kelvin"] == 3000
+    assert proposals == []
 
 
 async def test_lighting_analyzer_off_step_has_no_attributes():
-    """Off-entity step has all attributes None."""
+    """Without context signal, no proposal emitted for off-action patterns."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, action="off")
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    step = proposals[0].suggested_reaction_config["entity_steps"][0]
-    assert step["brightness"] is None
-    assert step["color_temp_kelvin"] is None
-    assert step["rgb_color"] is None
+    assert proposals == []
 
 
 async def test_lighting_analyzer_fingerprint_set():
-    """Fingerprint encodes room, weekday and rounded scheduled_min."""
+    """Without context signal, no proposal and no fingerprint to check."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, room_id="living", weekday=0, minute=1200)
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    fp = proposals[0].fingerprint
-    assert "LightingPatternAnalyzer" in fp
-    assert "lighting_scene_schedule" in fp
-    assert "living" in fp
-    assert "0" in fp  # weekday
+    assert proposals == []
 
 
 # ---------------------------------------------------------------------------
@@ -382,17 +350,16 @@ async def test_lighting_analyzer_fingerprint_set():
 
 
 async def test_lighting_analyzer_groups_same_room_into_one_proposal():
-    """Two entities in the same room at the same time → 1 proposal, 2 entity_steps."""
+    """Without context signal, two entities in the same room → no proposal."""
     analyzer = LightingPatternAnalyzer()
     main = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1200)
     spot = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1205)
     proposals = await analyzer.analyze(_StoreStub(main + spot))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    assert len(proposals[0].suggested_reaction_config["entity_steps"]) == 2
+    assert proposals == []
 
 
 async def test_lighting_analyzer_collapses_duplicate_entity_candidates_in_same_scene():
-    """A scene candidate keeps at most one step per entity_id."""
+    """Without context signal, same entity on+off in same scene window → no proposal."""
     analyzer = LightingPatternAnalyzer()
     on_events = _multi_week_events(
         3, 2, entity_id="light.living_main", room_id="living", action="on", minute=1200
@@ -401,65 +368,51 @@ async def test_lighting_analyzer_collapses_duplicate_entity_candidates_in_same_s
         3, 2, entity_id="light.living_main", room_id="living", action="off", minute=1205
     )
     proposals = await analyzer.analyze(_StoreStub(on_events + off_events))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    entity_steps = proposals[0].suggested_reaction_config["entity_steps"]
-    assert len(entity_steps) == 1
-    assert entity_steps[0]["entity_id"] == "light.living_main"
-    diagnostics = proposals[0].suggested_reaction_config["learning_diagnostics"]
-    assert diagnostics["cluster_entities"] == ["light.living_main"]
-    assert diagnostics["entity_steps_count"] == 1
+    assert proposals == []
 
 
 async def test_lighting_analyzer_orders_scene_entities_deterministically():
-    """Entity ordering is stable and not dependent on cluster input order."""
+    """Without context signal, no proposal even with multi-entity scene."""
     analyzer = LightingPatternAnalyzer()
     main = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1205)
     spot = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1200)
     proposals = await analyzer.analyze(_StoreStub(spot + main))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    entity_ids = [
-        step["entity_id"] for step in proposals[0].suggested_reaction_config["entity_steps"]
-    ]
-    assert entity_ids == ["light.living_main", "light.living_spot"]
-    assert "living_main" in proposals[0].description
-    assert "living_spot" in proposals[0].description
+    assert proposals == []
 
 
 async def test_lighting_analyzer_splits_distant_times_into_separate_proposals():
-    """Two entities in the same room but 20+ min apart → 2 separate proposals."""
+    """Without context signal, two time-separated patterns → no proposals."""
     analyzer = LightingPatternAnalyzer()
     early = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1200)
     late = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1230)
     proposals = await analyzer.analyze(_StoreStub(early + late))  # type: ignore[arg-type]
-    assert len(proposals) == 2
+    assert proposals == []
 
 
 async def test_lighting_analyzer_different_rooms_separate_proposals():
-    """Entities in different rooms → separate proposals."""
+    """Without context signal, multi-room patterns → no proposals."""
     analyzer = LightingPatternAnalyzer()
     living = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", weekday=0)
     kitchen = _multi_week_events(3, 2, entity_id="light.kitchen_main", room_id="kitchen", weekday=0)
     proposals = await analyzer.analyze(_StoreStub(living + kitchen))  # type: ignore[arg-type]
-    assert len(proposals) == 2
-    rooms = {p.suggested_reaction_config["room_id"] for p in proposals}
-    assert rooms == {"living", "kitchen"}
+    assert proposals == []
 
 
 # ---------------------------------------------------------------------------
-# Confidence
+# Confidence (context required — these become no-op without context signal)
 # ---------------------------------------------------------------------------
 
 
 async def test_lighting_analyzer_confidence_tight_schedule():
-    """Tight IQR → high confidence."""
+    """Without context signal, no proposal regardless of schedule tightness."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, minute=1200)
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    assert proposals[0].confidence > 0.9
+    assert proposals == []
 
 
 async def test_lighting_analyzer_confidence_floor():
-    """Very spread schedule can still floor confidence once evidence is richer."""
+    """Without context signal, no proposal regardless of spread."""
     analyzer = LightingPatternAnalyzer()
     minutes = [600, 720, 840, 960, 1080, 780, 900, 1020]
     timestamps = [
@@ -474,11 +427,11 @@ async def test_lighting_analyzer_confidence_floor():
     ]
     evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
-    assert proposals[0].confidence == 0.3
+    assert proposals == []
 
 
 async def test_lighting_analyzer_confidence_tight_vs_spread():
-    """Tighter schedule → higher confidence than spread."""
+    """Without context signal, both tight and spread patterns emit no proposal."""
     analyzer = LightingPatternAnalyzer()
     tight = _multi_week_events(3, 2, minute=1200)
     tight_p = await analyzer.analyze(_StoreStub(tight))  # type: ignore[arg-type]
@@ -500,12 +453,12 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
     ]
     spread_p = await analyzer.analyze(_StoreStub(spread))  # type: ignore[arg-type]
 
-    assert tight_p and spread_p
-    assert tight_p[0].confidence > spread_p[0].confidence
+    assert tight_p == []
+    assert spread_p == []
 
 
 async def test_lighting_analyzer_confidence_rewards_more_evidence():
-    """Same tight schedule but more observations/weeks -> slightly higher confidence."""
+    """Without context signal, no proposal regardless of evidence richness."""
     analyzer = LightingPatternAnalyzer()
     minimal = _multi_week_events(3, 2, minute=1200)
     richer = _multi_week_events(3, 2, minute=1200) + [
@@ -515,8 +468,8 @@ async def test_lighting_analyzer_confidence_rewards_more_evidence():
     minimal_p = await analyzer.analyze(_StoreStub(minimal))  # type: ignore[arg-type]
     richer_p = await analyzer.analyze(_StoreStub(richer))  # type: ignore[arg-type]
 
-    assert minimal_p and richer_p
-    assert richer_p[0].confidence > minimal_p[0].confidence
+    assert minimal_p == []
+    assert richer_p == []
 
 
 async def test_lighting_analyzer_promotes_context_conditioned_scene_when_context_explains_pattern():
@@ -580,7 +533,7 @@ async def test_lighting_analyzer_promotes_context_conditioned_scene_when_context
     assert diagnostics["competing_explanation_type"] == "context"
 
 
-async def test_lighting_analyzer_keeps_schedule_when_context_is_weak():
+async def test_lighting_analyzer_emits_nothing_when_context_is_weak():
     analyzer = LightingPatternAnalyzer()
     events = [
         _lighting(
@@ -646,11 +599,7 @@ async def test_lighting_analyzer_keeps_schedule_when_context_is_weak():
     ]
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    assert len(proposals) == 1
-    proposal = proposals[0]
-    assert proposal.reaction_type == "lighting_scene_schedule"
-    diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
-    assert diagnostics["competing_explanation_type"] == "schedule"
+    assert proposals == []
 
 
 async def test_lighting_analyzer_skips_minimal_evidence_with_wide_iqr():
@@ -668,7 +617,7 @@ async def test_lighting_analyzer_skips_minimal_evidence_with_wide_iqr():
 
 
 async def test_lighting_analyzer_keeps_wide_iqr_when_evidence_is_richer():
-    """The same spread can still be valid once it has stronger evidence."""
+    """Without context signal, richer evidence still yields no proposal."""
     analyzer = LightingPatternAnalyzer()
     minutes = [1140, 1170, 1200, 1235, 1275, 1190, 1210, 1220]
     timestamps = [
@@ -687,19 +636,19 @@ async def test_lighting_analyzer_keeps_wide_iqr_when_evidence_is_richer():
 
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
 
-    assert len(proposals) == 1
+    assert proposals == []
 
 
 async def test_lighting_analyzer_window_half_min_tight_cluster():
-    """Very tight schedule -> narrow runtime window."""
+    """Without context signal, no proposal even for tight cluster."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, minute=1200)
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    assert proposals[0].suggested_reaction_config["window_half_min"] == 5
+    assert proposals == []
 
 
 async def test_lighting_analyzer_window_half_min_spread_cluster():
-    """Spread schedule -> wider runtime window."""
+    """Without context signal, no proposal even for spread cluster."""
     analyzer = LightingPatternAnalyzer()
     minutes = [1160, 1180, 1200, 1220, 1240, 1170, 1210, 1230]
     timestamps = [
@@ -714,7 +663,7 @@ async def test_lighting_analyzer_window_half_min_spread_cluster():
     ]
     evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
     proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
-    assert proposals[0].suggested_reaction_config["window_half_min"] == 15
+    assert proposals == []
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +730,7 @@ async def test_lighting_analyzer_empty_store():
 
 
 async def test_lighting_analyzer_description_contains_room_and_weekday():
-    """Proposal description mentions room_id and weekday name."""
+    """Without context signal, no proposal and no description to check."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(
         3,
@@ -791,6 +740,4 @@ async def test_lighting_analyzer_description_contains_room_and_weekday():
         weekday=6,
     )
     proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
-    desc = proposals[0].description
-    assert "bedroom" in desc
-    assert "Sunday" in desc
+    assert proposals == []

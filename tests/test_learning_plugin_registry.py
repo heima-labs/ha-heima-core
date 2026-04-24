@@ -66,10 +66,8 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
     )
     assert descriptors[0].supports_admin_authored is False
     assert descriptors[0].admin_authored_templates == ()
-    assert descriptors[2].supports_admin_authored is True
-    assert tuple(item.template_id for item in descriptors[2].admin_authored_templates) == (
-        "lighting.scene_schedule.basic",
-    )
+    assert descriptors[2].supports_admin_authored is False
+    assert descriptors[2].admin_authored_templates == ()
     assert descriptors[3].supports_admin_authored is True
     assert tuple(item.template_id for item in descriptors[3].admin_authored_templates) == (
         "room.signal_assist.basic",
@@ -262,12 +260,10 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
     registry = create_builtin_learning_plugin_registry()
 
     assert [d.plugin_family for d in registry.admin_authored_descriptors()] == [
-        "lighting",
         "composite_room_assist",
         "security_presence_simulation",
     ]
     assert [t.template_id for t in registry.admin_authored_templates()] == [
-        "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
         "room.contextual_lighting_assist.basic",
@@ -275,7 +271,6 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "security.vacation_presence_simulation.basic",
     ]
     assert [t.template_id for t in registry.admin_authored_templates(implemented_only=True)] == [
-        "lighting.scene_schedule.basic",
         "room.signal_assist.basic",
         "room.darkness_lighting_assist.basic",
         "room.contextual_lighting_assist.basic",
@@ -419,7 +414,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("heating_preference") is not None
     assert registry.lifecycle_hooks_for("heating_eco") is not None
     assert registry.lifecycle_hooks_for("context_conditioned_lighting_scene") is not None
-    assert registry.lifecycle_hooks_for("lighting_scene_schedule") is not None
+    assert registry.lifecycle_hooks_for("lighting_scene_schedule") is None
     assert registry.lifecycle_hooks_for("room_signal_assist") is not None
     assert registry.lifecycle_hooks_for("vacation_presence_simulation") is not None
     assert registry.lifecycle_hooks_for("missing.reaction") is None
@@ -547,9 +542,7 @@ def test_builtin_learning_plugin_registry_passes_heating_family_learning_policy(
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
     registry = create_builtin_learning_plugin_registry(enabled_families={"lighting"})
 
-    assert [t.template_id for t in registry.admin_authored_templates()] == [
-        "lighting.scene_schedule.basic"
-    ]
+    assert [t.template_id for t in registry.admin_authored_templates()] == []
     assert registry.get_admin_authored_template("room.signal_assist.basic") is None
     assert (
         registry.get_admin_authored_template(

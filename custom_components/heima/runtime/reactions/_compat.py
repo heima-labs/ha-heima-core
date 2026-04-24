@@ -9,6 +9,7 @@ from ...const import OPT_REACTIONS
 LEGACY_REACTION_CLASS_TO_TYPE: dict[str, str] = {
     "PresencePatternReaction": "presence_preheat",
     "LightingScheduleReaction": "lighting_scene_schedule",
+    "ContextConditionedLightingReaction": "context_conditioned_lighting_scene",
     "HeatingPreferenceReaction": "heating_preference",
     "HeatingEcoReaction": "heating_eco",
     "RoomSignalAssistReaction": "room_signal_assist",
@@ -138,8 +139,10 @@ def _reaction_requires_prune(cfg: dict[str, Any]) -> bool:
         return True
 
     reaction_type = resolve_reaction_type(cfg)
+    if reaction_type == "lighting_scene_schedule":
+        return True
+
     if reaction_type in {
-        "lighting_scene_schedule",
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
     }:
