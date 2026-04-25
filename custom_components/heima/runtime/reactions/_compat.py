@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...const import OPT_REACTIONS
+from .scheduled_routine import normalize_scheduled_routine_config
 
 LEGACY_REACTION_CLASS_TO_TYPE: dict[str, str] = {
     "PresencePatternReaction": "presence_preheat",
@@ -15,6 +16,7 @@ LEGACY_REACTION_CLASS_TO_TYPE: dict[str, str] = {
     "RoomSignalAssistReaction": "room_signal_assist",
     "RoomLightingAssistReaction": "room_darkness_lighting_assist",
     "RoomLightingVacancyOffReaction": "room_vacancy_lighting_off",
+    "ScheduledRoutineReaction": "scheduled_routine",
     "VacationPresenceSimulationReaction": "vacation_presence_simulation",
 }
 _REDACTED_SENTINEL = "**REDACTED**"
@@ -25,6 +27,7 @@ _ENTITY_ID_LIST_FIELDS = {
     "corroboration_signal_entities",
     "observed_followup_entities",
     "allowed_entities",
+    "target_entities",
 }
 
 
@@ -87,6 +90,12 @@ def _normalize_single_reaction_config(raw_cfg: dict[str, Any]) -> tuple[dict[str
         cfg.pop("reaction_class", None)
         changed = True
 
+    if reaction_type == "scheduled_routine":
+        normalized = normalize_scheduled_routine_config(cfg)
+        if normalized != cfg:
+            cfg = normalized
+            changed = True
+
     for field in _ENTITY_ID_LIST_FIELDS:
         if field not in cfg or not isinstance(cfg.get(field), list):
             continue
@@ -141,6 +150,11 @@ def _reaction_requires_prune(cfg: dict[str, Any]) -> bool:
     reaction_type = resolve_reaction_type(cfg)
     if reaction_type == "lighting_scene_schedule":
         return True
+
+    if reaction_type == "scheduled_routine":
+        steps = cfg.get("steps")
+        if not isinstance(steps, list) or not steps:
+            return True
 
     if reaction_type in {
         "room_darkness_lighting_assist",
