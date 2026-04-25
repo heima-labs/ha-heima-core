@@ -28,7 +28,12 @@ from ..runtime.reactions import (
     resolve_reaction_type,
     validate_contextual_lighting_contract,
 )
-from ._common import _entity_selector, _multiline_text_selector, _number_box_selector
+from ._common import (
+    HEATING_HOUSE_STATES,
+    _entity_selector,
+    _multiline_text_selector,
+    _number_box_selector,
+)
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
@@ -785,6 +790,82 @@ class _ReactionsStepsMixin:
 
         return await self._store_admin_authored_reaction_directly(proposal)
 
+    async def async_step_admin_authored_scheduled_routine(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored scheduled routine."""
+        template = self._admin_authored_template("scheduled_routine.basic")
+        if template is None:
+            return await self.async_step_init()
+
+        defaults = {
+            "weekday": "0",
+            "scheduled_time": "20:00",
+            "routine_kind": "scene",
+            "target_entities": [],
+            "entity_action": "turn_on",
+            "house_state_in": [],
+            "skip_if_anyone_home": False,
+        }
+        if user_input is None:
+            return self._show_scheduled_routine_editor(
+                step_id="admin_authored_scheduled_routine",
+                defaults=defaults,
+                template_title=template.title,
+                template_description=template.description,
+                include_enabled=False,
+                include_delete=False,
+            )
+
+        current_input, resolved, errors = self._normalize_scheduled_routine_submission(
+            user_input=user_input,
+            defaults=defaults,
+            include_enabled=False,
+            include_delete=False,
+        )
+        if errors:
+            return self._show_scheduled_routine_editor(
+                step_id="admin_authored_scheduled_routine",
+                defaults=current_input,
+                errors=errors,
+                template_title=template.title,
+                template_description=template.description,
+                include_enabled=False,
+                include_delete=False,
+            )
+
+        proposal = self._build_admin_authored_scheduled_routine_proposal(
+            weekday=int(resolved["weekday"]),
+            scheduled_min=int(resolved["scheduled_min"]),
+            routine_kind=str(resolved["routine_kind"]),
+            target_entities=list(resolved["target_entities"]),
+            entity_action=str(resolved["entity_action"]),
+            house_state_in=list(resolved["house_state_in"]),
+            skip_if_anyone_home=bool(resolved["skip_if_anyone_home"]),
+        )
+        if self._admin_authored_identity_conflicts(proposal):
+            return self._show_scheduled_routine_editor(
+                step_id="admin_authored_scheduled_routine",
+                defaults=current_input,
+                errors={"base": "duplicate"},
+                template_title=template.title,
+                template_description=template.description,
+                include_enabled=False,
+                include_delete=False,
+            )
+        if self._has_redacted_payload(proposal.suggested_reaction_config):
+            return self._show_scheduled_routine_editor(
+                step_id="admin_authored_scheduled_routine",
+                defaults=current_input,
+                errors={"base": "redacted_payload"},
+                template_title=template.title,
+                template_description=template.description,
+                include_enabled=False,
+                include_delete=False,
+            )
+
+        return await self._store_admin_authored_reaction_directly(proposal)
+
     def _store_reactions_options(self, updates: dict[str, Any]) -> None:
         """Persist reaction options without dropping sibling reaction state."""
         reactions_cfg = dict(self._reactions_options())
@@ -901,6 +982,16 @@ class _ReactionsStepsMixin:
 
         if reaction_type == "room_vacancy_lighting_off":
             return await self._async_step_reactions_edit_room_vacancy_lighting_off(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
+        if reaction_type == "scheduled_routine":
+            return await self._async_step_reactions_edit_scheduled_routine(
                 pid=pid,
                 reactions_cfg=reactions_cfg,
                 configured=configured,
@@ -1128,6 +1219,109 @@ class _ReactionsStepsMixin:
                 defaults=current_input,
                 errors={"base": "redacted_payload"},
                 reaction_description=label,
+                include_delete=True,
+            )
+
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
+    async def _async_step_reactions_edit_scheduled_routine(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit a scheduled routine using its real contract."""
+        steps = list(cfg.get("steps") or [])
+        target_entities = [
+            str(step.get("target") or "").strip()
+            for step in steps
+            if isinstance(step, dict) and str(step.get("target") or "").strip()
+        ]
+        routine_kind = str(cfg.get("routine_kind") or "").strip()
+        if not routine_kind and target_entities:
+            domains = {
+                entity_id.split(".", 1)[0] for entity_id in target_entities if "." in entity_id
+            }
+            if domains == {"scene"}:
+                routine_kind = "scene"
+            elif domains == {"script"}:
+                routine_kind = "script"
+            else:
+                routine_kind = "entity_action"
+        defaults = {
+            "enabled": bool(cfg.get("enabled", True)),
+            "weekday": str(cfg.get("weekday", 0)),
+            "scheduled_time": _format_min_to_hhmm(int(cfg.get("scheduled_min", 0))),
+            "routine_kind": routine_kind or "scene",
+            "target_entities": target_entities,
+            "entity_action": str(cfg.get("entity_action") or "turn_on"),
+            "house_state_in": list(cfg.get("house_state_in") or []),
+            "skip_if_anyone_home": bool(cfg.get("skip_if_anyone_home", False)),
+            "delete_reaction": False,
+        }
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+
+        if user_input is None:
+            return self._show_scheduled_routine_editor(
+                step_id="reactions_edit_form",
+                defaults=defaults,
+                reaction_description=label,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        current_input, resolved, errors = self._normalize_scheduled_routine_submission(
+            user_input=user_input,
+            defaults=defaults,
+            include_enabled=True,
+            include_delete=True,
+        )
+        if errors:
+            return self._show_scheduled_routine_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors=errors,
+                reaction_description=label,
+                include_enabled=True,
+                include_delete=True,
+            )
+
+        cfg["enabled"] = bool(resolved["enabled"])
+        cfg["weekday"] = int(resolved["weekday"])
+        cfg["scheduled_min"] = int(resolved["scheduled_min"])
+        cfg["window_half_min"] = int(cfg.get("window_half_min", 0) or 0)
+        cfg["routine_kind"] = str(resolved["routine_kind"])
+        cfg["target_entities"] = list(resolved["target_entities"])
+        cfg["entity_action"] = str(resolved["entity_action"])
+        cfg["entity_domains"] = sorted(
+            {entity_id.split(".", 1)[0] for entity_id in list(resolved["target_entities"])}
+        )
+        cfg["house_state_in"] = list(resolved["house_state_in"])
+        cfg["skip_if_anyone_home"] = bool(resolved["skip_if_anyone_home"])
+        cfg["steps"] = self._scheduled_routine_targets_to_steps(
+            routine_kind=str(resolved["routine_kind"]),
+            target_entities=list(resolved["target_entities"]),
+            entity_action=str(resolved["entity_action"]),
+        )
+        if self._has_redacted_payload(cfg):
+            return self._show_scheduled_routine_editor(
+                step_id="reactions_edit_form",
+                defaults=current_input,
+                errors={"base": "redacted_payload"},
+                reaction_description=label,
+                include_enabled=True,
                 include_delete=True,
             )
 
@@ -2571,6 +2765,82 @@ class _ReactionsStepsMixin:
         resolved = dict(current_input)
         return current_input, resolved, errors
 
+    def _normalize_scheduled_routine_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        errors: dict[str, str] = {}
+        weekday = str(user_input.get("weekday") or defaults.get("weekday") or "0").strip()
+        scheduled_time = str(
+            user_input.get("scheduled_time") or defaults.get("scheduled_time") or "20:00"
+        ).strip()
+        routine_kind = str(
+            user_input.get("routine_kind") or defaults.get("routine_kind") or "scene"
+        ).strip()
+        target_entities = self._normalize_multi_value(user_input.get("target_entities"))
+        entity_action = str(
+            user_input.get("entity_action") or defaults.get("entity_action") or "turn_on"
+        ).strip()
+        house_state_in = self._normalize_multi_value(user_input.get("house_state_in"))
+        skip_if_anyone_home = bool(
+            user_input.get("skip_if_anyone_home", defaults.get("skip_if_anyone_home", False))
+        )
+
+        if weekday not in self._weekday_options():
+            errors["weekday"] = "invalid_option"
+        scheduled_min = _parse_hhmm_to_min(scheduled_time)
+        if scheduled_min is None:
+            errors["scheduled_time"] = "invalid_hhmm"
+        if routine_kind not in self._scheduled_routine_kind_options():
+            errors["routine_kind"] = "invalid_option"
+        if entity_action not in self._scheduled_routine_entity_action_options():
+            errors["entity_action"] = "invalid_option"
+        if not target_entities:
+            errors["target_entities"] = "required"
+
+        allowed_domains = {
+            "scene": {"scene"},
+            "script": {"script"},
+            "entity_action": {"light", "switch", "input_boolean"},
+        }.get(routine_kind, set())
+        if target_entities and any(
+            "." not in entity_id or entity_id.split(".", 1)[0] not in allowed_domains
+            for entity_id in target_entities
+        ):
+            errors["target_entities"] = "invalid_target_domain"
+
+        current_input: dict[str, Any] = {
+            "weekday": weekday,
+            "scheduled_time": scheduled_time,
+            "routine_kind": routine_kind,
+            "target_entities": target_entities,
+            "entity_action": entity_action,
+            "house_state_in": house_state_in,
+            "skip_if_anyone_home": skip_if_anyone_home,
+        }
+        if include_enabled:
+            current_input["enabled"] = bool(
+                user_input.get("enabled", defaults.get("enabled", True))
+            )
+        if include_delete:
+            current_input["delete_reaction"] = False
+
+        resolved = {
+            "weekday": int(weekday) if weekday in self._weekday_options() else 0,
+            "scheduled_min": scheduled_min,
+            "routine_kind": routine_kind,
+            "target_entities": target_entities,
+            "entity_action": entity_action,
+            "house_state_in": house_state_in,
+            "skip_if_anyone_home": skip_if_anyone_home,
+            "enabled": bool(current_input.get("enabled", True)),
+        }
+        return current_input, resolved, errors
+
     def _admin_authored_room_vacancy_lighting_off_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
@@ -2580,6 +2850,53 @@ class _ReactionsStepsMixin:
             include_enabled=False,
             include_delete=False,
         )
+
+    def _admin_authored_scheduled_routine_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        return self._scheduled_routine_editor_schema(
+            defaults,
+            include_enabled=False,
+            include_delete=False,
+        )
+
+    def _scheduled_routine_editor_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        schema_dict: dict[Any, Any] = {}
+        if include_enabled:
+            schema_dict[vol.Optional("enabled", default=bool(defaults.get("enabled", True)))] = bool
+        schema_dict.update(
+            {
+                vol.Required("weekday", default="0"): vol.In(self._weekday_options()),
+                vol.Required("scheduled_time", default="20:00"): str,
+                vol.Required("routine_kind", default="scene"): vol.In(
+                    self._scheduled_routine_kind_options()
+                ),
+                vol.Optional("target_entities"): _entity_selector(
+                    ["scene", "script", "light", "switch", "input_boolean"],
+                    multiple=True,
+                ),
+                vol.Optional("entity_action", default="turn_on"): vol.In(
+                    self._scheduled_routine_entity_action_options()
+                ),
+                vol.Optional("house_state_in", default=defaults.get("house_state_in", [])): (
+                    cv.multi_select({state: state for state in HEATING_HOUSE_STATES})
+                ),
+                vol.Optional(
+                    "skip_if_anyone_home",
+                    default=bool(defaults.get("skip_if_anyone_home", False)),
+                ): bool,
+            }
+        )
+        if include_delete:
+            schema_dict[vol.Optional("delete_reaction", default=False)] = bool
+        return self._with_suggested(vol.Schema(schema_dict), defaults)
 
     def _room_vacancy_lighting_off_editor_schema(
         self,
@@ -2655,6 +2972,33 @@ class _ReactionsStepsMixin:
             schema_dict[vol.Optional("delete_reaction", default=False)] = bool
         return self._with_suggested(vol.Schema(schema_dict), defaults)
 
+    def _show_scheduled_routine_editor(
+        self,
+        *,
+        step_id: str,
+        defaults: dict[str, Any],
+        errors: dict[str, str] | None = None,
+        template_title: str = "",
+        template_description: str = "",
+        reaction_description: str = "",
+        include_enabled: bool,
+        include_delete: bool,
+    ) -> "FlowResult":
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._scheduled_routine_editor_schema(
+                defaults,
+                include_enabled=include_enabled,
+                include_delete=include_delete,
+            ),
+            errors=errors,
+            description_placeholders={
+                "template_title": template_title,
+                "template_description": template_description,
+                "reaction_description": reaction_description,
+            },
+        )
+
     def _reactions_edit_room_lighting_assist_schema(
         self, defaults: dict[str, Any] | None = None
     ) -> vol.Schema:
@@ -2706,6 +3050,26 @@ class _ReactionsStepsMixin:
     def _weekday_options(self) -> dict[str, str]:
         language = self._flow_language()
         return {str(index): self._weekday_label(index, language) for index in range(7)}
+
+    def _scheduled_routine_kind_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        if language.startswith("it"):
+            return {
+                "scene": "Scena",
+                "script": "Script",
+                "entity_action": "Azione entità",
+            }
+        return {
+            "scene": "Scene",
+            "script": "Script",
+            "entity_action": "Entity action",
+        }
+
+    def _scheduled_routine_entity_action_options(self) -> dict[str, str]:
+        language = self._flow_language()
+        if language.startswith("it"):
+            return {"turn_on": "Accendi", "turn_off": "Spegni"}
+        return {"turn_on": "Turn on", "turn_off": "Turn off"}
 
     @staticmethod
     def _bucket_match_mode_options() -> dict[str, str]:
@@ -3047,6 +3411,58 @@ class _ReactionsStepsMixin:
                 "followup_window_s": 900,
                 "entity_steps": entity_steps,
                 "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
+    def _build_admin_authored_scheduled_routine_proposal(
+        self,
+        *,
+        weekday: int,
+        scheduled_min: int,
+        routine_kind: str,
+        target_entities: list[str],
+        entity_action: str,
+        house_state_in: list[str],
+        skip_if_anyone_home: bool,
+    ) -> ReactionProposal:
+        template_id = "scheduled_routine.basic"
+        identity_key = (
+            f"scheduled_routine|weekday={weekday}|scheduled_min={scheduled_min}"
+            f"|kind={routine_kind}|targets={','.join(sorted(target_entities))}"
+        )
+        steps = self._scheduled_routine_targets_to_steps(
+            routine_kind=routine_kind,
+            target_entities=target_entities,
+            entity_action=entity_action,
+        )
+        description = (
+            f"Routine {self._weekday_label(weekday, 'it')} ~{_format_min_to_hhmm(scheduled_min)}"
+            f" ({len(target_entities)} target{'s' if len(target_entities) != 1 else ''})"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredScheduledRoutineTemplate",
+            reaction_type="scheduled_routine",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_type": "scheduled_routine",
+                "weekday": weekday,
+                "scheduled_min": scheduled_min,
+                "window_half_min": 0,
+                "routine_kind": routine_kind,
+                "target_entities": list(target_entities),
+                "entity_action": entity_action,
+                "entity_domains": sorted(
+                    {entity_id.split(".", 1)[0] for entity_id in list(target_entities)}
+                ),
+                "house_state_in": list(house_state_in),
+                "skip_if_anyone_home": skip_if_anyone_home,
+                "steps": steps,
+                "plugin_family": "scheduled_routine",
                 "admin_authored_template_id": template_id,
             },
         )
@@ -3404,6 +3820,34 @@ class _ReactionsStepsMixin:
                         "params": {"entity_id": entity_id},
                     }
                 )
+        return steps
+
+    @staticmethod
+    def _scheduled_routine_targets_to_steps(
+        *,
+        routine_kind: str,
+        target_entities: list[str],
+        entity_action: str,
+    ) -> list[dict[str, Any]]:
+        steps: list[dict[str, Any]] = []
+        for entity_id in target_entities:
+            domain = str(entity_id).split(".", 1)[0]
+            if routine_kind == "scene" and domain == "scene":
+                action = "scene.turn_on"
+            elif routine_kind == "script" and domain == "script":
+                action = "script.turn_on"
+            elif routine_kind == "entity_action" and domain in {"light", "switch", "input_boolean"}:
+                action = f"{domain}.{entity_action}"
+            else:
+                continue
+            steps.append(
+                {
+                    "domain": domain,
+                    "target": entity_id,
+                    "action": action,
+                    "params": {"entity_id": entity_id},
+                }
+            )
         return steps
 
     @staticmethod
@@ -4072,6 +4516,10 @@ def _parse_hhmm_to_min(value: str) -> int | None:
         return None
     return hour * 60 + minute
 
+
+def _format_min_to_hhmm(value: int) -> str:
+    minute_of_day = max(0, min(int(value), 23 * 60 + 59))
+    return f"{minute_of_day // 60:02d}:{minute_of_day % 60:02d}"
 
 
 def _coarse_numeric_bucket(value: Any, *, step: int) -> int | None:

@@ -537,6 +537,95 @@ async def test_execute_apply_plan_ignores_script_turn_on_service_race():
 
 
 @pytest.mark.asyncio
+async def test_execute_apply_plan_runs_scheduled_routine_direct_actuator_steps():
+    options = {}
+    engine = _build_engine(
+        options,
+        {
+            "scene.movie_time": "scening",
+            "light.corner": "off",
+            "switch.fountain": "off",
+            "input_boolean.night_mode": "off",
+        },
+    )
+    plan = SimpleNamespace(
+        steps=[
+            ApplyStep(
+                domain="scene",
+                target="scene.movie_time",
+                action="scene.turn_on",
+                params={"entity_id": "scene.movie_time"},
+                reason="scheduled_routine:test",
+            ),
+            ApplyStep(
+                domain="light",
+                target="light.corner",
+                action="light.turn_on",
+                params={"entity_id": "light.corner", "brightness": 120},
+                reason="scheduled_routine:test",
+            ),
+            ApplyStep(
+                domain="switch",
+                target="switch.fountain",
+                action="switch.turn_off",
+                params={"entity_id": "switch.fountain"},
+                reason="scheduled_routine:test",
+            ),
+            ApplyStep(
+                domain="input_boolean",
+                target="input_boolean.night_mode",
+                action="input_boolean.turn_on",
+                params={"entity_id": "input_boolean.night_mode"},
+                reason="scheduled_routine:test",
+            ),
+        ]
+    )
+
+    await engine._execute_apply_plan(plan)
+
+    assert engine._hass.services.calls == [
+        ("scene", "turn_on", {"entity_id": "scene.movie_time"}, False),
+        ("light", "turn_on", {"entity_id": "light.corner", "brightness": 120}, False),
+        ("switch", "turn_off", {"entity_id": "switch.fountain"}, False),
+        ("input_boolean", "turn_on", {"entity_id": "input_boolean.night_mode"}, False),
+    ]
+
+
+def test_constraints_block_scene_and_light_turn_on_when_armed_away():
+    options = {}
+    engine = _build_engine(options)
+    engine._active_constraints = {"security.armed_away"}
+    plan = ApplyPlan(
+        steps=[
+            ApplyStep(
+                domain="scene",
+                target="scene.movie_time",
+                action="scene.turn_on",
+                params={"entity_id": "scene.movie_time"},
+            ),
+            ApplyStep(
+                domain="light",
+                target="light.corner",
+                action="light.turn_on",
+                params={"entity_id": "light.corner"},
+            ),
+            ApplyStep(
+                domain="switch",
+                target="switch.fountain",
+                action="switch.turn_on",
+                params={"entity_id": "switch.fountain"},
+            ),
+        ]
+    )
+
+    filtered = ApplyPlan(steps=engine._apply_filter(plan.steps, engine._active_constraints))
+
+    assert filtered.steps[0].blocked_by == "security.armed_away"
+    assert filtered.steps[1].blocked_by == "security.armed_away"
+    assert filtered.steps[2].blocked_by == ""
+
+
+@pytest.mark.asyncio
 async def test_scene_missing_event_includes_expected_scene_context():
     options = {
         "people_named": [{"slug": "p1", "presence_method": "manual", "enable_override": True}],

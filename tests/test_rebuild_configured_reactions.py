@@ -692,6 +692,44 @@ def test_vacation_presence_simulation_reaction_uses_learned_source_profiles_from
     ]
 
 
+def test_vacation_presence_simulation_reaction_ignores_scheduled_routine_sources():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "source_profile_kind": "accepted_lighting_reactions",
+                    },
+                    "routine-1": {
+                        "reaction_type": "scheduled_routine",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "routine_kind": "scene",
+                        "target_entities": ["scene.living_evening"],
+                        "steps": [
+                            {
+                                "domain": "scene",
+                                "target": "scene.living_evening",
+                                "action": "scene.turn_on",
+                                "params": {"entity_id": "scene.living_evening"},
+                            }
+                        ],
+                    },
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["source_profile_ready"] is False
+    assert diagnostics["source_reaction_ids"] == []
+
+
 def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_until_plan_exists():
     engine = _make_engine(
         options={

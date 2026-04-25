@@ -2386,7 +2386,6 @@ async def test_proposals_step_tolerates_legacy_non_dict_config():
     assert "Affidabilità: 80%" in placeholders["proposal_details"]
 
 
-
 @pytest.mark.asyncio
 async def test_proposals_step_marks_room_signal_assist_followup_as_tuning_with_bounded_diff():
     flow = _flow(
@@ -2664,7 +2663,6 @@ async def test_proposals_step_marks_lighting_discovery_as_new_automation():
     assert "Luci coinvolte: 1" in placeholders["proposal_details"]
 
 
-
 @pytest.mark.asyncio
 async def test_proposals_step_skip_advances_to_next_proposal():
     flow = _flow()
@@ -2713,6 +2711,8 @@ async def test_admin_authored_create_lists_supported_templates():
     assert result["type"] == "form"
     assert result["step_id"] == "admin_authored_create"
     assert "template_id" in result["data_schema"].schema
+    options = result["data_schema"].schema["template_id"].container
+    assert "scheduled_routine.basic" in options
 
 
 @pytest.mark.asyncio
@@ -2758,7 +2758,9 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
                         "weekday": 0,
                         "scheduled_min": 1200,
                         "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
-                        "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
+                        "context_conditions": [
+                            {"signal_name": "projector_context", "state_in": ["active"]}
+                        ],
                     }
                 }
             },
@@ -2795,7 +2797,6 @@ async def test_admin_authored_security_presence_simulation_creates_pending_propo
     assert reaction["origin"] == "admin_authored"
     assert reaction["source_template_id"] == "security.vacation_presence_simulation.basic"
     assert reaction["dynamic_policy"] is True
-
 
 
 @pytest.mark.asyncio
@@ -3236,6 +3237,52 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
 
 
 @pytest.mark.asyncio
+async def test_admin_authored_scheduled_routine_creates_configured_reaction():
+    flow = _flow()
+
+    result = await flow.async_step_admin_authored_scheduled_routine(
+        {
+            "weekday": "2",
+            "scheduled_time": "21:15",
+            "routine_kind": "entity_action",
+            "target_entities": ["switch.fountain", "input_boolean.night_mode"],
+            "entity_action": "turn_off",
+            "house_state_in": ["vacation"],
+            "skip_if_anyone_home": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    configured = flow.options["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_type") == "scheduled_routine"),
+        None,
+    )
+    assert reaction is not None
+    assert reaction["origin"] == "admin_authored"
+    assert reaction["source_template_id"] == "scheduled_routine.basic"
+    assert reaction["weekday"] == 2
+    assert reaction["scheduled_min"] == 21 * 60 + 15
+    assert reaction["house_state_in"] == ["vacation"]
+    assert reaction["skip_if_anyone_home"] is True
+    assert reaction["steps"] == [
+        {
+            "domain": "switch",
+            "target": "switch.fountain",
+            "action": "switch.turn_off",
+            "params": {"entity_id": "switch.fountain"},
+        },
+        {
+            "domain": "input_boolean",
+            "target": "input_boolean.night_mode",
+            "action": "input_boolean.turn_off",
+            "params": {"entity_id": "input_boolean.night_mode"},
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_admin_authored_accept_persists_reaction_provenance():
     flow = _flow()
     proposal = ReactionProposal(
@@ -3589,7 +3636,6 @@ async def test_proposal_configure_action_rejects_redacted_payload_without_accept
     assert result["errors"]["base"] == "redacted_payload"
     proposal_engine.async_accept_proposal.assert_not_awaited()
     assert flow.options.get("reactions", {}).get("configured", {}) == {}
-
 
 
 @pytest.mark.asyncio
@@ -4374,7 +4420,6 @@ async def test_room_cooling_assist_edit_uses_signal_editor_fields():
     assert "pre_condition_min" not in schema_keys
 
 
-
 @pytest.mark.asyncio
 async def test_room_vacancy_lighting_off_edit_uses_delay_field_and_updates_delay():
     flow = _flow(
@@ -4494,6 +4539,87 @@ async def test_vacation_presence_simulation_edit_uses_real_contract_fields():
     assert stored["simulation_aggressiveness"] == "high"
     assert stored["latest_end_time_override"] == "22:45"
     assert stored["skip_if_presence_detected"] is False
+
+
+@pytest.mark.asyncio
+async def test_scheduled_routine_edit_uses_real_contract_fields_and_updates_config():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "scheduled_routine",
+                        "enabled": True,
+                        "weekday": 2,
+                        "scheduled_min": 21 * 60 + 15,
+                        "window_half_min": 0,
+                        "routine_kind": "entity_action",
+                        "target_entities": ["switch.fountain"],
+                        "entity_action": "turn_off",
+                        "house_state_in": ["vacation"],
+                        "skip_if_anyone_home": True,
+                        "steps": [
+                            {
+                                "domain": "switch",
+                                "target": "switch.fountain",
+                                "action": "switch.turn_off",
+                                "params": {"entity_id": "switch.fountain"},
+                            }
+                        ],
+                    }
+                },
+                "labels": {"r1": "Routine Wednesday ~21:15"},
+            },
+        }
+    )
+
+    flow._editing_reaction_id = "r1"
+    result = await flow.async_step_reactions_edit_form()
+
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert {
+        "weekday",
+        "scheduled_time",
+        "routine_kind",
+        "target_entities",
+        "entity_action",
+        "house_state_in",
+        "skip_if_anyone_home",
+    } <= schema_keys
+    assert "pre_condition_min" not in schema_keys
+    assert "action_entities" not in schema_keys
+
+    saved = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": False,
+            "weekday": "4",
+            "scheduled_time": "22:30",
+            "routine_kind": "scene",
+            "target_entities": ["scene.movie_time"],
+            "entity_action": "turn_on",
+            "house_state_in": ["home", "guest"],
+            "skip_if_anyone_home": False,
+            "delete_reaction": False,
+        }
+    )
+
+    assert saved["type"] == "menu"
+    stored = flow.options["reactions"]["configured"]["r1"]
+    assert stored["enabled"] is False
+    assert stored["weekday"] == 4
+    assert stored["scheduled_min"] == 22 * 60 + 30
+    assert stored["routine_kind"] == "scene"
+    assert stored["target_entities"] == ["scene.movie_time"]
+    assert stored["house_state_in"] == ["home", "guest"]
+    assert stored["skip_if_anyone_home"] is False
+    assert stored["steps"] == [
+        {
+            "domain": "scene",
+            "target": "scene.movie_time",
+            "action": "scene.turn_on",
+            "params": {"entity_id": "scene.movie_time"},
+        }
+    ]
 
 
 @pytest.mark.asyncio

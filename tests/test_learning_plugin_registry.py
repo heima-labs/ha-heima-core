@@ -29,6 +29,7 @@ def test_builtin_learning_pattern_plugins_exposes_default_learning_plugins():
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
+        "ScheduledRoutineAdminTemplate",
         "SecurityPresenceSimulationAnalyzer",
     ]
 
@@ -41,6 +42,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.scheduled_routines",
         "builtin.security_presence_simulation",
     ]
     assert [d.plugin_family for d in descriptors] == [
@@ -48,6 +50,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "heating",
         "lighting",
         "composite_room_assist",
+        "scheduled_routine",
         "security_presence_simulation",
     ]
     assert descriptors[-2].proposal_types == (
@@ -106,6 +109,10 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
     )
     assert descriptors[4].supports_admin_authored is True
     assert tuple(item.template_id for item in descriptors[4].admin_authored_templates) == (
+        "scheduled_routine.basic",
+    )
+    assert descriptors[5].supports_admin_authored is True
+    assert tuple(item.template_id for item in descriptors[5].admin_authored_templates) == (
         "security.vacation_presence_simulation.basic",
     )
 
@@ -113,12 +120,13 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
 def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata():
     registry = create_builtin_learning_plugin_registry()
 
-    assert len(registry) == 5
+    assert len(registry) == 6
     assert [item.descriptor.plugin_id for item in registry] == [
         "builtin.presence_preheat",
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.scheduled_routines",
         "builtin.security_presence_simulation",
     ]
     assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
@@ -126,6 +134,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
+        "ScheduledRoutineAdminTemplate",
         "SecurityPresenceSimulationAnalyzer",
     ]
     assert registry.diagnostics()[-1] == {
@@ -151,6 +160,28 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "enabled": True,
     }
     assert registry.diagnostics()[-2] == {
+        "plugin_id": "builtin.scheduled_routines",
+        "analyzer_id": "ScheduledRoutineAdminTemplate",
+        "plugin_family": "scheduled_routine",
+        "proposal_types": [],
+        "reaction_targets": ["ScheduledRoutineReaction"],
+        "has_lifecycle_hooks": False,
+        "supports_admin_authored": True,
+        "admin_authored_templates": [
+            {
+                "template_id": "scheduled_routine.basic",
+                "reaction_type": "scheduled_routine",
+                "title": "Scheduled Routine",
+                "description": "Create a bounded weekday/time routine for scenes, scripts, or simple actuator actions.",
+                "config_schema_id": "scheduled_routine.basic.v1",
+                "implemented": True,
+                "flow_step_id": "admin_authored_scheduled_routine",
+            },
+        ],
+        "improvement_proposals": [],
+        "enabled": True,
+    }
+    assert registry.diagnostics()[-3] == {
         "plugin_id": "builtin.composite_room_assist",
         "analyzer_id": "CompositePatternCatalogAnalyzer",
         "plugin_family": "composite_room_assist",
@@ -248,11 +279,12 @@ def test_builtin_learning_plugin_registry_can_disable_families():
     assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
         "PresencePatternAnalyzer",
         "LightingPatternAnalyzer",
+        "ScheduledRoutineAdminTemplate",
     ]
     diagnostics = registry.diagnostics()
     enabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is True}
     disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
-    assert enabled == {"presence", "lighting"}
+    assert enabled == {"presence", "lighting", "scheduled_routine"}
     assert disabled == {"heating", "composite_room_assist", "security_presence_simulation"}
 
 
@@ -261,6 +293,7 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
 
     assert [d.plugin_family for d in registry.admin_authored_descriptors()] == [
         "composite_room_assist",
+        "scheduled_routine",
         "security_presence_simulation",
     ]
     assert [t.template_id for t in registry.admin_authored_templates()] == [
@@ -268,6 +301,7 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "room.darkness_lighting_assist.basic",
         "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
+        "scheduled_routine.basic",
         "security.vacation_presence_simulation.basic",
     ]
     assert [t.template_id for t in registry.admin_authored_templates(implemented_only=True)] == [
@@ -275,6 +309,7 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
         "room.darkness_lighting_assist.basic",
         "room.contextual_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
+        "scheduled_routine.basic",
         "security.vacation_presence_simulation.basic",
     ]
 

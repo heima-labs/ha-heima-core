@@ -29,6 +29,20 @@ from .presence import PresencePatternAnalyzer
 from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 
 
+class _NoopPatternAnalyzer:
+    """Admin-authored-only placeholder analyzer."""
+
+    def __init__(self, analyzer_id: str) -> None:
+        self._analyzer_id = analyzer_id
+
+    @property
+    def analyzer_id(self) -> str:
+        return self._analyzer_id
+
+    async def analyze(self, event_store: Any) -> list[ReactionProposal]:  # noqa: ARG002
+        return []
+
+
 @dataclass(frozen=True)
 class AdminAuthoredTemplateDescriptor:
     """A bounded admin-authored proposal template exposed by a plugin."""
@@ -410,6 +424,30 @@ def create_builtin_learning_plugin_registry(
             quality_policy=composite_quality_policy_from_learning_config(learning_config),
         ),
         enabled=_is_enabled("composite_room_assist", enabled_families),
+    )
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="builtin.scheduled_routines",
+            analyzer_id="ScheduledRoutineAdminTemplate",
+            plugin_family="scheduled_routine",
+            proposal_types=(),
+            reaction_targets=("ScheduledRoutineReaction",),
+            lifecycle_hooks=None,
+            supports_admin_authored=True,
+            admin_authored_templates=(
+                AdminAuthoredTemplateDescriptor(
+                    template_id="scheduled_routine.basic",
+                    reaction_type="scheduled_routine",
+                    title="Scheduled Routine",
+                    description="Create a bounded weekday/time routine for scenes, scripts, or simple actuator actions.",
+                    config_schema_id="scheduled_routine.basic.v1",
+                    implemented=True,
+                    flow_step_id="admin_authored_scheduled_routine",
+                ),
+            ),
+        ),
+        analyzer=_NoopPatternAnalyzer("ScheduledRoutineAdminTemplate"),
+        enabled=True,
     )
     registry.register(
         descriptor=LearningPatternPluginDescriptor(

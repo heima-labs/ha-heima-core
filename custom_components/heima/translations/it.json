@@ -463,6 +463,20 @@
         },
         "submit": "OK"
       },
+      "admin_authored_scheduled_routine": {
+        "title": "Nuova routine schedulata",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "weekday": "Giorno",
+          "scheduled_time": "Orario (HH:MM)",
+          "routine_kind": "Tipo routine",
+          "target_entities": "Target",
+          "entity_action": "Azione entità",
+          "house_state_in": "Stati casa ammessi",
+          "skip_if_anyone_home": "Salta se c'è qualcuno in casa"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Revisione Proposte",
         "description": "Heima ha rilevato pattern ricorrenti. Rivedi una proposta alla volta e decidi se accettarla, rifiutarla o saltarla.\n\nCoda: {current_position}\n\nProposta corrente:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
@@ -538,6 +552,11 @@
           "color_temp_kelvin": "Temperatura colore (K)",
           "weekday": "Giorno",
           "scheduled_time": "Orario (HH:MM)",
+          "routine_kind": "Tipo routine",
+          "target_entities": "Target",
+          "entity_action": "Azione entità",
+          "house_state_in": "Stati casa ammessi",
+          "skip_if_anyone_home": "Salta se c'è qualcuno in casa",
           "vacancy_delay_min": "Ritardo spegnimento (min)",
           "action_entities": "Scene o script da attivare",
           "pre_condition_min": "Anticipo (minuti)",
