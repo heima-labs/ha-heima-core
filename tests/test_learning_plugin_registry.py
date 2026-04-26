@@ -53,7 +53,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "scheduled_routine",
         "security_presence_simulation",
     ]
-    assert descriptors[-2].proposal_types == (
+    assert descriptors[3].proposal_types == (
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
@@ -61,7 +61,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room_contextual_lighting_assist",
         "room_vacancy_lighting_off",
     )
-    assert descriptors[-2].reaction_targets == (
+    assert descriptors[3].reaction_targets == (
         "RoomSignalAssistReaction",
         "RoomLightingAssistReaction",
         "RoomContextualLightingAssistReaction",
@@ -575,9 +575,13 @@ def test_builtin_learning_plugin_registry_passes_heating_family_learning_policy(
 
 
 def test_builtin_learning_plugin_registry_filters_disabled_admin_authored_templates():
+    # scheduled_routine is always enabled (pure admin utility, not learning-based)
+    # so only learning-gated templates (composite, security) are filtered out.
     registry = create_builtin_learning_plugin_registry(enabled_families={"lighting"})
 
-    assert [t.template_id for t in registry.admin_authored_templates()] == []
+    assert [t.template_id for t in registry.admin_authored_templates()] == [
+        "scheduled_routine.basic"
+    ]
     assert registry.get_admin_authored_template("room.signal_assist.basic") is None
     assert (
         registry.get_admin_authored_template(

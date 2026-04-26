@@ -178,10 +178,8 @@ class _ReactionsStepsMixin:
         )
         return accepted_proposal, target_id, existing_cfg, duplicate_ids
 
-    async def _store_admin_authored_reaction_directly(
-        self, proposal: ReactionProposal
-    ) -> "FlowResult":
-        """Persist an admin-authored reaction directly, bypassing proposals review."""
+    def _persist_admin_authored_reaction(self, proposal: ReactionProposal) -> None:
+        """Persist an admin-authored reaction to options without closing the flow."""
         reactions_cfg = dict(self._reactions_options())
         configured = dict(reactions_cfg.get("configured", {}))
         labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
@@ -199,7 +197,13 @@ class _ReactionsStepsMixin:
                 config_entry.options = dict(options)
             except (AttributeError, TypeError):
                 pass
-        return self.async_create_entry(title="", data=self._finalize_options())
+
+    async def _store_admin_authored_reaction_directly(
+        self, proposal: ReactionProposal
+    ) -> "FlowResult":
+        """Persist an admin-authored reaction and return to the main menu."""
+        self._persist_admin_authored_reaction(proposal)
+        return await self.async_step_init(None)
 
     async def async_step_admin_authored_create(
         self, user_input: dict[str, Any] | None = None
@@ -796,7 +800,8 @@ class _ReactionsStepsMixin:
                 template_description=template.description,
             )
 
-        return await self._store_admin_authored_reaction_directly(proposal)
+        self._persist_admin_authored_reaction(proposal)
+        return self.async_create_entry(title="", data=self._finalize_options())
 
     async def async_step_admin_authored_scheduled_routine(
         self, user_input: dict[str, Any] | None = None
@@ -872,7 +877,8 @@ class _ReactionsStepsMixin:
                 include_delete=False,
             )
 
-        return await self._store_admin_authored_reaction_directly(proposal)
+        self._persist_admin_authored_reaction(proposal)
+        return self.async_create_entry(title="", data=self._finalize_options())
 
     def _store_reactions_options(self, updates: dict[str, Any]) -> None:
         """Persist reaction options without dropping sibling reaction state."""
