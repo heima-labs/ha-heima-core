@@ -84,12 +84,14 @@ def test_view_model_builder_publishes_core_non_admin_views():
     climate_attrs = state.get_sensor_attributes("heima_climate_view")
     assert climate_attrs["temperature"] == "21,0 °C"
     assert climate_attrs["summary"] == "Comfort stabile"
+    assert climate_attrs["detail"] == "Riscaldamento in mantenimento"
 
     assert state.get_sensor("heima_room_studio_view") == "active"
     room_attrs = state.get_sensor_attributes("heima_room_studio_view")
     assert room_attrs["title"] == "Studio"
-    assert room_attrs["line1"] == "Luci: scene_relax"
+    assert room_attrs["line1"] == "Luci soft attive"
     assert room_attrs["line2"] == "Controllo manuale attivo"
+    assert room_attrs["actions"] == [{"action": "heima_relax"}]
 
 
 def test_view_model_builder_marks_security_alert_when_armed_away_with_presence():
@@ -122,3 +124,37 @@ def test_view_model_builder_prefers_input_select_language_when_available():
     HeimaViewModelBuilder(_hass("it"), entry).publish(state)
 
     assert state.get_sensor_attributes("heima_home_view")["title"] == "Casa in relax"
+
+
+def test_view_model_builder_rewrites_default_reason_and_bedroom_actions():
+    entry = _entry(
+        {
+            "language": "it",
+            "rooms": [{"room_id": "camera", "display_name": "Camera"}],
+            "lighting_rooms": [{"room_id": "camera", "enable_manual_hold": True}],
+            "lighting_zones": [
+                {"zone_id": "camera_zone", "display_name": "Camera", "rooms": ["camera"]}
+            ],
+        }
+    )
+    state = CanonicalState()
+    state.set_sensor("heima_house_state", "home")
+    state.set_sensor("heima_house_state_reason", "default")
+    state.set_binary("heima_anyone_home", True)
+    state.set_sensor("heima_people_count", 1)
+    state.set_sensor("heima_security_state", "disarmed")
+    state.set_sensor("heima_heating_phase", "idle")
+    state.set_binary("heima_occupancy_camera", True)
+    state.set_sensor("heima_occupancy_camera_last_change", "2026-04-27T18:00:00+00:00")
+    state.set_select("heima_lighting_intent_camera_zone", "scene_night")
+
+    HeimaViewModelBuilder(_hass(), entry).publish(state)
+
+    home_attrs = state.get_sensor_attributes("heima_home_view")
+    assert home_attrs["subtitle"] == "Tutto regolare"
+    room_attrs = state.get_sensor_attributes("heima_room_camera_view")
+    assert room_attrs["line1"] == "Luci notturne attive"
+    assert room_attrs["actions"] == [
+        {"action": "heima_relax"},
+        {"action": "heima_buonanotte"},
+    ]

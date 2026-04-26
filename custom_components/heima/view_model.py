@@ -87,10 +87,25 @@ class _Strings:
     room_off: str
     lighting_hold: str
     lighting_auto: str
+    lighting_soft: str
+    lighting_evening: str
+    lighting_night: str
+    lighting_off: str
     climate_comfort: str
     climate_heating: str
     climate_cooling: str
     climate_idle: str
+    climate_detail_maintaining: str
+    climate_detail_heating: str
+    climate_detail_cooling: str
+    climate_detail_idle: str
+    house_reason_default: str
+    house_reason_vacation_override: str
+    house_reason_relax_override: str
+    house_reason_sleeping_override: str
+    house_reason_working_override: str
+    house_reason_guest_override: str
+    house_reason_home_override: str
     unavailable: str
 
 
@@ -119,10 +134,25 @@ def _strings(language: str) -> _Strings:
             room_off="Inattiva",
             lighting_hold="Controllo manuale attivo",
             lighting_auto="Luci in automatico",
+            lighting_soft="Luci soft attive",
+            lighting_evening="Luci serali attive",
+            lighting_night="Luci notturne attive",
+            lighting_off="Luci spente",
             climate_comfort="Comfort stabile",
             climate_heating="Riscaldamento attivo",
             climate_cooling="Raffrescamento attivo",
             climate_idle="Clima in attesa",
+            climate_detail_maintaining="Riscaldamento in mantenimento",
+            climate_detail_heating="Riscaldamento in salita",
+            climate_detail_cooling="Raffrescamento in corso",
+            climate_detail_idle="Sistema in attesa",
+            house_reason_default="Tutto regolare",
+            house_reason_vacation_override="Modalità vacanza attiva",
+            house_reason_relax_override="Modalità relax attiva",
+            house_reason_sleeping_override="Modalità notte attiva",
+            house_reason_working_override="Modalità lavoro attiva",
+            house_reason_guest_override="Modalità ospiti attiva",
+            house_reason_home_override="Casa attiva",
             unavailable="Non disponibile",
         )
     return _Strings(
@@ -148,10 +178,25 @@ def _strings(language: str) -> _Strings:
         room_off="Inactive",
         lighting_hold="Manual control active",
         lighting_auto="Lighting in auto",
+        lighting_soft="Soft lighting active",
+        lighting_evening="Evening lighting active",
+        lighting_night="Night lighting active",
+        lighting_off="Lights off",
         climate_comfort="Comfort stable",
         climate_heating="Heating active",
         climate_cooling="Cooling active",
         climate_idle="Climate idle",
+        climate_detail_maintaining="Heating maintaining comfort",
+        climate_detail_heating="Heating ramping up",
+        climate_detail_cooling="Cooling in progress",
+        climate_detail_idle="System standing by",
+        house_reason_default="Everything looks normal",
+        house_reason_vacation_override="Vacation mode active",
+        house_reason_relax_override="Relax mode active",
+        house_reason_sleeping_override="Night mode active",
+        house_reason_working_override="Working mode active",
+        house_reason_guest_override="Guest mode active",
+        house_reason_home_override="Home active",
         unavailable="Unavailable",
     )
 
@@ -190,7 +235,7 @@ class HeimaViewModelBuilder:
             "vacation": texts.vacation_title,
             "guest": texts.guest_title,
         }.get(house_state, texts.unavailable)
-        reason = str(state.get_sensor("heima_house_state_reason") or texts.unavailable)
+        reason = self._house_reason_text(state.get_sensor("heima_house_state_reason"), texts)
         people_count = int(state.get_sensor("heima_people_count") or 0)
         anyone_home = bool(state.get_binary("heima_anyone_home"))
         security_state = str(state.get_sensor("heima_security_state") or "")
@@ -235,7 +280,7 @@ class HeimaViewModelBuilder:
         self, state: CanonicalState, *, texts: _Strings, language: str, now: datetime
     ) -> None:
         items: list[dict[str, str]] = []
-        reason = str(state.get_sensor("heima_house_state_reason") or "").strip()
+        reason = self._house_reason_text(state.get_sensor("heima_house_state_reason"), texts)
         if reason:
             items.append({"text": reason[:40], "severity": "info"})
 
@@ -338,7 +383,7 @@ class HeimaViewModelBuilder:
             "cooling": texts.climate_cooling,
             "idle": texts.climate_idle,
         }[view_state]
-        detail = str(state.get_sensor("heima_heating_branch") or texts.unavailable)
+        detail = self._heating_detail_text(state.get_sensor("heima_heating_branch"), phase, texts)
 
         state.set_sensor("heima_climate_view", view_state)
         state.set_sensor_attributes(
@@ -382,7 +427,7 @@ class HeimaViewModelBuilder:
                 else ""
             )
             hold = bool(state.get_binary(f"heima_lighting_hold_{room_id}"))
-            line1 = self._room_primary_line(view_state, intent, texts, language)
+            line1 = self._room_primary_line(view_state, intent, texts)
             line2 = (
                 texts.lighting_hold if hold else (texts.lighting_auto if zone_id and intent else "")
             )
@@ -400,7 +445,7 @@ class HeimaViewModelBuilder:
                     "line1": line1,
                     "line2": line2,
                     "features": features,
-                    "actions": [],
+                    "actions": self._room_actions(room_id),
                 },
             )
 
@@ -448,6 +493,40 @@ class HeimaViewModelBuilder:
         return str(dict(self._entry.options).get(CONF_LANGUAGE, "it") or "it").lower()
 
     @staticmethod
+    def _house_reason_text(value: Any, texts: _Strings) -> str:
+        raw = str(value or "").strip()
+        if not raw or raw in {"default", "ok", "unknown", "unavailable"}:
+            return texts.house_reason_default
+        override_map = {
+            "manual_override:vacation": texts.house_reason_vacation_override,
+            "manual_override:relax": texts.house_reason_relax_override,
+            "manual_override:sleeping": texts.house_reason_sleeping_override,
+            "manual_override:working": texts.house_reason_working_override,
+            "manual_override:guest": texts.house_reason_guest_override,
+            "manual_override:home": texts.house_reason_home_override,
+        }
+        return override_map.get(raw, raw)
+
+    @staticmethod
+    def _heating_detail_text(value: Any, phase: str, texts: _Strings) -> str:
+        raw = str(value or "").strip()
+        if raw in {"comfort_hold", "maintaining", "default"}:
+            return texts.climate_detail_maintaining
+        if raw in {"heating", "raise_to_target", "comfort_recovery"}:
+            return texts.climate_detail_heating
+        if raw in {"cooling"}:
+            return texts.climate_detail_cooling
+        if raw in {"idle", "off", ""}:
+            if phase == "heating":
+                return texts.climate_detail_heating
+            if phase == "cooling":
+                return texts.climate_detail_cooling
+            if phase == "maintaining":
+                return texts.climate_detail_maintaining
+            return texts.climate_detail_idle
+        return raw.replace("_", " ")
+
+    @staticmethod
     def _security_summary(security_state: str, anyone_home: bool, texts: _Strings) -> str:
         if security_state == "armed_away" and anyone_home:
             return texts.security_alert
@@ -474,13 +553,27 @@ class HeimaViewModelBuilder:
         return texts.climate_idle
 
     @staticmethod
-    def _room_primary_line(view_state: str, intent: str, texts: _Strings, language: str) -> str:
+    def _room_primary_line(view_state: str, intent: str, texts: _Strings) -> str:
         if view_state == "active" and intent:
-            if language.startswith("it"):
-                return f"Luci: {intent}"
-            return f"Lighting: {intent}"
+            if intent == "scene_relax":
+                return texts.lighting_soft
+            if intent == "scene_evening":
+                return texts.lighting_evening
+            if intent == "scene_night":
+                return texts.lighting_night
+            if intent == "off":
+                return texts.lighting_off
+            if intent == "auto":
+                return texts.lighting_auto
         if view_state == "active":
             return texts.room_active
         if view_state == "idle":
             return texts.room_idle
         return texts.room_off
+
+    @staticmethod
+    def _room_actions(room_id: str) -> list[dict[str, str]]:
+        actions: list[dict[str, str]] = [{"action": "heima_relax"}]
+        if room_id in {"bedroom", "camera"}:
+            actions.append({"action": "heima_buonanotte"})
+        return actions[:2]
