@@ -31,6 +31,7 @@ from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.proposal_engine import ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
+from .view_model import HeimaViewModelBuilder
 
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
@@ -104,6 +105,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             on_job_due=self._async_handle_scheduled_job,
         )
         self._ha_backed_reconciliation_summary: dict[str, object] = {}
+        self._view_model_builder = HeimaViewModelBuilder(hass, entry)
         self.data = HeimaRuntimeState(
             health_ok=True,
             health_reason="booting",
@@ -144,6 +146,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             )
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
+        self._publish_view_model()
         self._schedule_proposal_tick()
         self._subscribe_state_changes()
         self._sync_scheduler()
@@ -182,6 +185,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Reload options and refresh state."""
         await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
+        self._view_model_builder.update_entry(self.entry)
         self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
@@ -195,6 +199,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_decision="options_reloaded",
             last_action="",
         )
+        self._publish_view_model()
         await self.async_refresh()
 
     @property
@@ -213,6 +218,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_action="",
         )
         self._sync_scheduler()
+        self._publish_view_model()
         await self.async_refresh()
 
     async def async_emit_event(
@@ -243,6 +249,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_decision=f"{reason}:{'emitted' if emitted else 'suppressed'}",
             last_action="event_emitted" if emitted else "event_suppressed",
         )
+        self._publish_view_model()
         await self.async_refresh()
         return emitted
 
@@ -281,6 +288,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_action=f"house_state_override:{action}",
         )
         self._sync_scheduler()
+        self._publish_view_model()
         await self.async_refresh()
         return action
 
@@ -291,12 +299,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_clear()
         self.engine.reset_learning_state()
         self._write_event_store_sensor()
+        self._publish_view_model()
         await self.async_refresh()
 
     async def async_run_learning_now(self) -> None:
         """Run learning analyzers immediately and refresh exposed state."""
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
+        self._publish_view_model()
         await self.async_refresh()
 
     async def async_upsert_configured_reactions(
@@ -528,6 +538,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._schedule_proposal_tick()
 
     async def _async_handle_state_changed(self, entity_id: str) -> None:
+        if entity_id == "input_select.heima_language":
+            self._publish_view_model()
+            await self.async_refresh()
+            return
         summary, changed = await self._async_reconcile_ha_backed_objects()
         if changed:
             await self._async_emit_reconciliation_events(summary)
@@ -639,8 +653,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     def _write_proposals_sensor(self, pending_count: int, attributes: dict) -> None:
         self.engine.state.set_sensor("heima_reaction_proposals", pending_count)
         self.engine.state.set_sensor_attributes("heima_reaction_proposals", attributes)
+        self._publish_view_model()
 
     def _write_event_store_sensor(self) -> None:
         diag = self._event_store.diagnostics()
         self.engine.state.set_sensor("heima_event_store", diag["total_events"])
         self.engine.state.set_sensor_attributes("heima_event_store", diag["by_type"])
+        self._publish_view_model()
+
+    def _publish_view_model(self) -> None:
+        self._view_model_builder.publish(self.engine.state)

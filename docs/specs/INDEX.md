@@ -18,6 +18,15 @@ Interpretation notes:
 - legacy root-level `docs/specs/heima_*` redirect stubs have been removed; use only the canonical
   paths listed below
 
+User interface specs live under `user-interfaces/`:
+- `user-interfaces/heima_non_admin_dashboard_spec.md` — household user dashboard (functional & UX spec)
+- `user-interfaces/heima_admin_dashboard_spec.md` — admin control center (functional & UX spec)
+- `user-interfaces/heima_display_interface_specification.md` — kiosk/tablet display architecture
+- `user-interfaces/heima_view_entities_specification.md` — canonical view entity contract (UI data layer)
+- `user-interfaces/heima_view_model_builder_spec.md` — view model builder (transforms canonical signals to view entities)
+- `user-interfaces/heima_view_model_spec.md` — localization and formatting rules for view entities
+- `user-interfaces/heima_investor_ui_development_plan.md` — investor demo UI delivery plan (phases 1–7)
+
 Related practical guides live outside this tree:
 - `docs/guides/scene_and_script_usage.md`
 - `docs/guides/plugin_authoring.md`

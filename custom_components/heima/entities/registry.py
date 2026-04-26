@@ -195,6 +195,18 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
     # Learning
     sensors.append(_s(_k("heima_event_store"), "Heima Event Store"))
 
+    # View model (semantic UI surfaces)
+    sensors.append(_s(_k("heima_home_view"), "Heima Home View"))
+    sensors.append(_s(_k("heima_insights_view"), "Heima Insights View"))
+    sensors.append(_s(_k("heima_security_view"), "Heima Security View"))
+    sensors.append(_s(_k("heima_climate_view"), "Heima Climate View"))
+    for room in options.get(OPT_ROOMS, []):
+        room_id = room.get("room_id")
+        label = _label(room.get("display_name") or room_id)
+        if not room_id:
+            continue
+        sensors.append(_s(_k(f"heima_room_{room_id}_view"), f"Heima Room {label} View"))
+
     return HeimaRegistry(sensors=sensors, binary_sensors=binaries, selects=selects)
 
 
