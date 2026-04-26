@@ -3218,9 +3218,8 @@ async def test_admin_authored_room_vacancy_lighting_off_creates_pending_proposal
         }
     )
 
-    assert result["type"] == "menu"
-    assert result["step_id"] == "init"
-    configured = flow.options["reactions"]["configured"]
+    assert result["type"] == "create_entry"
+    configured = result["data"]["reactions"]["configured"]
     reaction = next(
         (
             cfg
@@ -3252,9 +3251,8 @@ async def test_admin_authored_scheduled_routine_creates_configured_reaction():
         }
     )
 
-    assert result["type"] == "menu"
-    assert result["step_id"] == "init"
-    configured = flow.options["reactions"]["configured"]
+    assert result["type"] == "create_entry"
+    configured = result["data"]["reactions"]["configured"]
     reaction = next(
         (cfg for cfg in configured.values() if cfg.get("reaction_type") == "scheduled_routine"),
         None,
@@ -3280,6 +3278,43 @@ async def test_admin_authored_scheduled_routine_creates_configured_reaction():
             "params": {"entity_id": "input_boolean.night_mode"},
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_scheduled_routine_survives_init_sync_and_save():
+    flow = _flow(states=[_state("person.alex", "Alex")])
+    init = await flow.async_step_init()
+    assert init["type"] == "menu"
+
+    result = await flow.async_step_admin_authored_scheduled_routine(
+        {
+            "weekday": "2",
+            "scheduled_time": "21:15",
+            "routine_kind": "entity_action",
+            "target_entities": ["switch.fountain"],
+            "entity_action": "turn_on",
+            "house_state_in": [],
+            "skip_if_anyone_home": False,
+        }
+    )
+
+    assert result["type"] == "create_entry"
+    configured = result["data"]["reactions"]["configured"]
+    reaction = next(
+        (cfg for cfg in configured.values() if cfg.get("reaction_type") == "scheduled_routine"),
+        None,
+    )
+    assert reaction is not None
+    assert reaction["source_template_id"] == "scheduled_routine.basic"
+    assert reaction["steps"] == [
+        {
+            "domain": "switch",
+            "target": "switch.fountain",
+            "action": "switch.turn_on",
+            "params": {"entity_id": "switch.fountain"},
+        }
+    ]
+    assert result["data"]["people_named"][0]["slug"] == "alex"
 
 
 @pytest.mark.asyncio

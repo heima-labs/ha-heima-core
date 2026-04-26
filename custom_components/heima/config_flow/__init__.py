@@ -157,11 +157,14 @@ class HeimaOptionsFlowHandler(
 
     def _entry_options_snapshot(self) -> dict[str, Any]:
         """Return the freshest available options snapshot for this flow."""
+        snapshot = dict(self.options)
         config_entry = getattr(self, "_config_entry", None)
         entry_options = getattr(config_entry, "options", None)
         if isinstance(entry_options, dict):
-            return dict(entry_options)
-        return dict(self.options)
+            merged = dict(entry_options)
+            merged.update(snapshot)
+            return merged
+        return snapshot
 
     def _update_options(self, updates: dict[str, Any]) -> None:
         """Persist options keys immediately to disk.

@@ -181,7 +181,7 @@ class _ReactionsStepsMixin:
     async def _store_admin_authored_reaction_directly(
         self, proposal: ReactionProposal
     ) -> "FlowResult":
-        """Persist an admin-authored reaction directly to configured, bypassing proposals review."""
+        """Persist an admin-authored reaction directly, bypassing proposals review."""
         reactions_cfg = dict(self._reactions_options())
         configured = dict(reactions_cfg.get("configured", {}))
         labels: dict[str, str] = dict(reactions_cfg.get("labels", {}))
@@ -190,8 +190,16 @@ class _ReactionsStepsMixin:
         labels[reaction_id] = proposal.description
         reactions_cfg["configured"] = configured
         reactions_cfg["labels"] = labels
-        self._store_reactions_options(reactions_cfg)
-        return await self.async_step_init()
+        options = self._entry_options_snapshot()
+        options[OPT_REACTIONS] = reactions_cfg
+        self.options = options
+        config_entry = getattr(self, "_config_entry", None)
+        if config_entry is not None:
+            try:
+                config_entry.options = dict(options)
+            except (AttributeError, TypeError):
+                pass
+        return self.async_create_entry(title="", data=self._finalize_options())
 
     async def async_step_admin_authored_create(
         self, user_input: dict[str, Any] | None = None
