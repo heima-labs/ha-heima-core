@@ -248,9 +248,13 @@ For the current MVP bootstrap:
 - diagnostics SHOULD expose which source reactions are considered recent enough for tonight
 
 Normative exclusion:
-- a future admin-authored `scheduled_routine` family MUST NOT be treated as a valid source profile
+- the admin-authored `scheduled_routine` family MUST NOT be treated as a valid source profile
   for `vacation_presence_simulation`
 - the simulation should replay learned human behavior, not explicit fixed-time admin intent
+- this exclusion is product-defining, not an implementation accident
+- if a house only has admin-authored scheduled routines and no suitable learned behavioral sources,
+  the simulation SHOULD prefer skipping or reporting weak source availability over replaying those
+  routines directly
 
 ### 4.3 Output Shape
 

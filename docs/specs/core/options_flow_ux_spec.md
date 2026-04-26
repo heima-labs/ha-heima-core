@@ -50,6 +50,44 @@ Non-obiettivi:
 
 ## Decisioni di prodotto e contratto
 
+### D0 — Scheduled routine is bounded admin-authored intent
+
+The options flow exposes one bounded admin-authored time-based routine template:
+
+- `scheduled_routine.basic`
+
+Normative UX rules:
+- it represents explicit admin intent, not learned behavior
+- create/edit MUST share the same schema and normalization core
+- the visible fixed guardrails are only:
+  - `house_state_in`
+  - `skip_if_anyone_home`
+- the flow MUST NOT expose:
+  - arbitrary boolean conditions
+  - arbitrary service payload builders
+  - chained delayed steps
+
+Wizard shape:
+1. choose weekday
+2. choose time
+3. choose routine kind
+4. choose bounded targets
+5. optionally constrain:
+   - allowed house states
+   - skip if anyone home
+
+Allowed `routine_kind` values in v1:
+- `scene`
+- `script`
+- `entity_action`
+
+Allowed target domains in v1:
+- `scene`
+- `script`
+- `light`
+- `switch`
+- `input_boolean`
+
 ### D1 — Status block nel menù principale (init)
 
 Il menù `init` mostra un blocco di stato nella `description`, con una riga per ogni sezione configurabile. Ogni riga indica il nome della sezione e il suo stato corrente.
@@ -249,3 +287,4 @@ Interpretation rule:
 
 - Aggiunta di nuovi step o domini
 - Backward compatibility con entry versioni precedenti
+- Trasformare `scheduled_routine` in un automation builder generico

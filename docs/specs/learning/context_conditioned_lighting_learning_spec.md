@@ -192,7 +192,7 @@ Time-based routines still have a place in Heima, but not as learned lighting beh
 Normative product rule:
 - a routine whose only stable explanatory dimension is weekday/time belongs to the admin-authored
   channel, not the learned lighting channel
-- such a routine should eventually be represented by a generic admin-authored family such as
+- such a routine should be represented by the generic admin-authored family
   `scheduled_routine`
 - that family is intentionally:
   - generic across actuator types

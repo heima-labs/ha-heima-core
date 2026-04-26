@@ -43,6 +43,11 @@ Normative clarification for bounded dynamic-policy templates:
 - in those cases, the options flow SHOULD prefer explicit unavailability with a human-readable
   reason over silently creating a weak static fallback
 
+Normative clarification for explicit time-based intent:
+- pure time-based routines are valid only through the admin-authored path
+- the canonical bounded v1 family for this is `scheduled_routine.basic`
+- this family is admin-authored only and does not have a learned proposal counterpart
+
 ## Design Principles
 
 - Incremental configuration (minimal viable setup first)
@@ -93,6 +98,19 @@ Heima Options
 ```
 
 Each step is independently editable after initial setup.
+
+Bounded time-based admin utility:
+- `scheduled_routine.basic`
+- weekday/time driven
+- bounded guardrails:
+  - `house_state_in`
+  - `skip_if_anyone_home`
+- bounded target domains:
+  - `scene`
+  - `script`
+  - `light`
+  - `switch`
+  - `input_boolean`
 
 ---
 
@@ -605,10 +623,9 @@ Current v1 implementation:
     availability and flow delegation
   - proposal/reaction presentation should progressively move behind plugin-owned
     presenter hooks
-- there is currently no generic admin-authored `scheduled_routine` implemented end-to-end in the
-  options flow
-- when introduced, that capability SHOULD be:
-  - generic across actuator domains
+- `scheduled_routine` is implemented end-to-end in the bounded admin-authored path
+- that capability is:
+  - generic across bounded actuator domains
   - explicitly admin-authored only
   - outside learned discovery and improvement flows
 - REST-driven options-flow tests may intentionally return HTTP 400 for invalid schema values; this is expected validation behavior.

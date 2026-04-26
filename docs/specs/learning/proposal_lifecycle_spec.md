@@ -51,6 +51,12 @@ Lifecycle applies equally to learned and admin-authored proposals. The `origin` 
 orthogonal to its review `status`; the same lifecycle rules should work for both unless a specific
 plugin family documents a stricter exception.
 
+Exception:
+- `scheduled_routine` is an admin-authored utility family outside the learned proposal lifecycle
+- it does not participate in discovery, tuning, or improvement review semantics
+- where exposed through options flow, it should be treated as direct admin configuration, not as a
+  learned lifecycle artifact
+
 Normative taxonomy clarification:
 - proposal lifecycle in v1 may operate on proposals that are conceptually:
   - discovery

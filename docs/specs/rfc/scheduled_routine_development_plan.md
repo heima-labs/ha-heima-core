@@ -1,5 +1,8 @@
 # Scheduled Routine Development Plan
 
+**Status:** Historical / deprecated  
+**Superseded by:** `docs/specs/core/scheduled_routine_spec.md`
+
 ## Goal
 
 Implement a bounded **admin-authored only** family for pure time-based routines:
