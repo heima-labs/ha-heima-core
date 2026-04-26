@@ -36,6 +36,7 @@ Related practical guides live outside this tree:
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/reaction_identity_spec.md` — canonical `reaction_type` identity and persisted reaction contract
+- `core/scheduled_routine_spec.md` — bounded admin-authored time-based routine contract
 - `core/contextual_room_lighting_assist_spec.md` — contextual room-lighting reaction contract
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
@@ -64,6 +65,7 @@ Related practical guides live outside this tree:
 
 ## RFC / Historical
 
+- `rfc/scheduled_routine_development_plan.md` — [historical/deprecated] implementation plan superseded by `core/scheduled_routine_spec.md`
 - `rfc/policy_plugin_framework_spec.md`
 - `rfc/extension_strategy_solution_a.md`
 - `rfc/constraints_dependencies_spec.md`

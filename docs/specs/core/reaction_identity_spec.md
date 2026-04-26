@@ -195,6 +195,28 @@ La migration avviene in `async_reload_options` (o in un helper chiamato da lì) 
 - Lifecycle hooks keyed by `reaction_type` in `LearningPluginRegistry`
 - Identity key / deduplication logic (già usa `reaction_type`)
 
+## Scheduled Routine Clarification
+
+`scheduled_routine` is a canonical `reaction_type`, but it is not part of the learned proposal
+lifecycle.
+
+Normative distinction:
+- configured `scheduled_routine` reactions are persisted as normal configured reactions keyed by
+  `reaction_id`
+- the admin-authored template layer currently uses this proposal identity string:
+
+```text
+scheduled_routine|weekday={weekday}|scheduled_min={scheduled_min}|kind={routine_kind}|targets={sorted(target_entities)}
+```
+
+This identity is:
+- a template/proposal materialization key
+- not a learned analyzer identity
+- not a separate runtime reaction identity beyond the configured `reaction_id`
+
+The normalized runtime contract for `scheduled_routine` is defined in:
+- `core/scheduled_routine_spec.md`
+
 ---
 
 ## Rischi

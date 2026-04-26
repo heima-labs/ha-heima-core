@@ -64,6 +64,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     )
     assert any(item["reaction_type"] == "room_signal_assist" for item in reactions)
     assert any(item["reaction_type"] == "room_darkness_lighting_assist" for item in reactions)
+    assert any(item["reaction_type"] == "scheduled_routine" for item in reactions)
 
 
 async def test_config_entry_diagnostics_exposes_canonical_signals_summary():
@@ -258,7 +259,7 @@ async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["learning_summary"]
 
-    assert summary["enabled_plugin_families"] == ["lighting", "presence"]
+    assert summary["enabled_plugin_families"] == ["lighting", "presence", "scheduled_routine"]
     assert summary["disabled_plugin_families"] == [
         "composite_room_assist",
         "heating",

@@ -20,6 +20,10 @@ from custom_components.heima.runtime.reactions.heating import (
 )
 from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
+from custom_components.heima.runtime.reactions.scheduled_routine import (
+    ScheduledRoutineReaction,
+    present_scheduled_routine_label,
+)
 from custom_components.heima.runtime.reactions.security_presence_simulation import (
     VacationPresenceSimulationReaction,
 )
@@ -109,6 +113,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "room_contextual_lighting_assist",
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
+        "scheduled_routine",
         "vacation_presence_simulation",
     }
     assert registry.builder_for("room_signal_assist") is not None
@@ -129,22 +134,25 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "room_contextual_lighting_assist",
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
+        "scheduled_routine",
         "vacation_presence_simulation",
     ]
     assert descriptors[-1].supported_config_contracts == ("vacation_presence_simulation",)
     assert descriptors[-1].supports_normalizer is False
-    assert descriptors[-2].supported_config_contracts == ("room_vacancy_lighting_off",)
-    assert descriptors[-2].supports_normalizer is False
-    assert descriptors[-3].supported_config_contracts == ("room_darkness_lighting_assist",)
+    assert descriptors[-2].supported_config_contracts == ("scheduled_routine",)
+    assert descriptors[-2].supports_normalizer is True
+    assert descriptors[-3].supported_config_contracts == ("room_vacancy_lighting_off",)
     assert descriptors[-3].supports_normalizer is False
-    assert descriptors[-4].supported_config_contracts == ("room_contextual_lighting_assist",)
+    assert descriptors[-4].supported_config_contracts == ("room_darkness_lighting_assist",)
     assert descriptors[-4].supports_normalizer is False
-    assert descriptors[-5].supported_config_contracts == ("room_air_quality_assist",)
-    assert descriptors[-5].supports_normalizer is True
-    assert descriptors[-6].supported_config_contracts == ("room_cooling_assist",)
+    assert descriptors[-5].supported_config_contracts == ("room_contextual_lighting_assist",)
+    assert descriptors[-5].supports_normalizer is False
+    assert descriptors[-6].supported_config_contracts == ("room_air_quality_assist",)
     assert descriptors[-6].supports_normalizer is True
-    assert descriptors[-7].supported_config_contracts == ("room_signal_assist",)
+    assert descriptors[-7].supported_config_contracts == ("room_cooling_assist",)
     assert descriptors[-7].supports_normalizer is True
+    assert descriptors[-8].supported_config_contracts == ("room_signal_assist",)
+    assert descriptors[-8].supports_normalizer is True
     assert descriptors[1].supported_config_contracts == ("context_conditioned_lighting_scene",)
     assert descriptors[1].supports_normalizer is False
 
@@ -246,6 +254,75 @@ def test_context_conditioned_lighting_reaction_built_and_registered():
     assert isinstance(engine._reactions[0], ContextConditionedLightingReaction)
     assert engine._reactions[0].reaction_id == "context-scene-1"
     assert "context-scene-1" in engine._configured_reaction_ids
+
+
+def test_scheduled_routine_reaction_built_and_registered():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "routine-1": {
+                        "reaction_type": "scheduled_routine",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "window_half_min": 0,
+                        "house_state_in": ["vacation"],
+                        "skip_if_anyone_home": True,
+                        "routine_kind": "script",
+                        "target_entities": ["script.evening_routine"],
+                    }
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    assert isinstance(engine._reactions[0], ScheduledRoutineReaction)
+    assert engine._reactions[0].reaction_id == "routine-1"
+    assert engine._reactions[0].diagnostics()["house_state_in"] == ["vacation"]
+    assert engine._reactions[0].diagnostics()["skip_if_anyone_home"] is True
+    assert "routine-1" in engine._configured_reaction_ids
+
+
+def test_normalize_reaction_options_payload_normalizes_scheduled_routine_targets_into_steps():
+    options = {
+        "reactions": {
+            "configured": {
+                "routine-1": {
+                    "reaction_class": "ScheduledRoutineReaction",
+                    "weekday": 5,
+                    "scheduled_min": 1320,
+                    "routine_kind": "scene",
+                    "target_entities": ["scene.movie_time", "**REDACTED**"],
+                    "house_state_in": ["vacation", "vacation"],
+                    "skip_if_anyone_home": True,
+                }
+            }
+        }
+    }
+
+    normalized, changed = normalize_reaction_options_payload(options)
+
+    assert changed is True
+    cfg = normalized["reactions"]["configured"]["routine-1"]
+    assert cfg["reaction_type"] == "scheduled_routine"
+    assert cfg["target_entities"] == ["scene.movie_time"]
+    assert cfg["house_state_in"] == ["vacation"]
+    assert cfg["skip_if_anyone_home"] is True
+    assert cfg["steps"] == [
+        {
+            "domain": "scene",
+            "target": "scene.movie_time",
+            "action": "scene.turn_on",
+            "params": {"entity_id": "scene.movie_time"},
+        }
+    ]
+    assert (
+        present_scheduled_routine_label("routine-1", cfg, {})
+        == "Routine Saturday ~22:00 · scene.movie_time"
+    )
 
 
 def test_reaction_pre_seeded_with_synthetic_arrivals():
@@ -613,6 +690,44 @@ def test_vacation_presence_simulation_reaction_uses_learned_source_profiles_from
         "learned:living:0:1110:on",
         "learned:living:0:1320:off",
     ]
+
+
+def test_vacation_presence_simulation_reaction_ignores_scheduled_routine_sources():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "security-presence": {
+                        "reaction_type": "vacation_presence_simulation",
+                        "enabled": True,
+                        "source_profile_kind": "accepted_lighting_reactions",
+                    },
+                    "routine-1": {
+                        "reaction_type": "scheduled_routine",
+                        "weekday": 1,
+                        "scheduled_min": 1200,
+                        "routine_kind": "scene",
+                        "target_entities": ["scene.living_evening"],
+                        "steps": [
+                            {
+                                "domain": "scene",
+                                "target": "scene.living_evening",
+                                "action": "scene.turn_on",
+                                "params": {"entity_id": "scene.living_evening"},
+                            }
+                        ],
+                    },
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    reaction = next(r for r in engine._reactions if r.reaction_id == "security-presence")
+    diagnostics = reaction.diagnostics()
+    assert diagnostics["source_profile_ready"] is False
+    assert diagnostics["source_reaction_ids"] == []
 
 
 def test_vacation_presence_simulation_reaction_reports_runtime_block_reason_until_plan_exists():

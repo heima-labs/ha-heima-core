@@ -77,7 +77,12 @@ class EngineHealth:
 def _constraint_blocker(step: "ApplyStep", constraints: set[str]) -> str:
     """Return the constraint tag that blocks this step, or '' if none."""
     if "security.armed_away" in constraints:
-        # Block all lighting actions that are not turn-off (don't activate lights when armed away)
+        # Block lighting activations while armed away, regardless of whether they
+        # come from the lighting domain pipeline or a direct scheduled routine.
+        if step.action == "scene.turn_on":
+            return "security.armed_away"
+        if step.action == "light.turn_on":
+            return "security.armed_away"
         if step.domain == "lighting" and step.action != "light.turn_off":
             return "security.armed_away"
     return ""
@@ -1059,8 +1064,69 @@ class HeimaEngine:
         lighting_steps = [s for s in plan.steps if s.domain == "lighting" and not s.blocked_by]
         heating_steps = [s for s in plan.steps if s.domain == "heating" and not s.blocked_by]
         script_steps = [s for s in plan.steps if s.domain == "script" and not s.blocked_by]
+        scene_steps = [s for s in plan.steps if s.domain == "scene" and not s.blocked_by]
+        light_steps = [s for s in plan.steps if s.domain == "light" and not s.blocked_by]
+        switch_steps = [s for s in plan.steps if s.domain == "switch" and not s.blocked_by]
+        input_boolean_steps = [
+            s for s in plan.steps if s.domain == "input_boolean" and not s.blocked_by
+        ]
 
         await self._lighting_domain.execute_lighting_steps(lighting_steps)
+
+        for step in scene_steps:
+            if step.action != "scene.turn_on":
+                continue
+            scene_entity = step.params.get("entity_id")
+            if not isinstance(scene_entity, str) or not scene_entity.startswith("scene."):
+                continue
+            if self._hass.states.get(scene_entity) is None:
+                _LOGGER.warning("Skipping missing scene entity: %s", scene_entity)
+                continue
+            try:
+                await self._hass.services.async_call(
+                    "scene",
+                    "turn_on",
+                    {"entity_id": scene_entity},
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping scene apply during startup/race: service scene.turn_on not available"
+                )
+            except Exception:
+                _LOGGER.exception("Scene apply failed for '%s'", scene_entity)
+
+        for step in light_steps:
+            if step.action not in {"light.turn_on", "light.turn_off"}:
+                continue
+            light_entity = step.params.get("entity_id")
+            if not isinstance(light_entity, str) or not light_entity.startswith("light."):
+                continue
+            if self._hass.states.get(light_entity) is None:
+                _LOGGER.warning("Skipping missing light entity: %s", light_entity)
+                continue
+            try:
+                call_params = {"entity_id": light_entity}
+                if step.action == "light.turn_on":
+                    if step.params.get("brightness") is not None:
+                        call_params["brightness"] = step.params["brightness"]
+                    if step.params.get("rgb_color") is not None:
+                        call_params["rgb_color"] = step.params["rgb_color"]
+                    elif step.params.get("color_temp_kelvin") is not None:
+                        call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
+                await self._hass.services.async_call(
+                    "light",
+                    step.action.split(".", 1)[1],
+                    call_params,
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping light apply during startup/race: service %s not available",
+                    step.action,
+                )
+            except Exception:
+                _LOGGER.exception("Light apply failed for '%s'", light_entity)
 
         for step in heating_steps:
             if step.action == "climate.set_temperature":
@@ -1158,6 +1224,54 @@ class HeimaEngine:
                 )
             except Exception:
                 _LOGGER.exception("Script apply failed for '%s'", script_entity)
+
+        for step in switch_steps:
+            if step.action not in {"switch.turn_on", "switch.turn_off"}:
+                continue
+            switch_entity = step.params.get("entity_id")
+            if not isinstance(switch_entity, str) or not switch_entity.startswith("switch."):
+                continue
+            if self._hass.states.get(switch_entity) is None:
+                _LOGGER.warning("Skipping missing switch entity: %s", switch_entity)
+                continue
+            try:
+                await self._hass.services.async_call(
+                    "switch",
+                    step.action.split(".", 1)[1],
+                    {"entity_id": switch_entity},
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping switch apply during startup/race: service %s not available",
+                    step.action,
+                )
+            except Exception:
+                _LOGGER.exception("Switch apply failed for '%s'", switch_entity)
+
+        for step in input_boolean_steps:
+            if step.action not in {"input_boolean.turn_on", "input_boolean.turn_off"}:
+                continue
+            helper_entity = step.params.get("entity_id")
+            if not isinstance(helper_entity, str) or not helper_entity.startswith("input_boolean."):
+                continue
+            if self._hass.states.get(helper_entity) is None:
+                _LOGGER.warning("Skipping missing input_boolean entity: %s", helper_entity)
+                continue
+            try:
+                await self._hass.services.async_call(
+                    "input_boolean",
+                    step.action.split(".", 1)[1],
+                    {"entity_id": helper_entity},
+                    blocking=False,
+                )
+            except ServiceNotFound:
+                _LOGGER.warning(
+                    "Skipping input_boolean apply during startup/race: service %s not available",
+                    step.action,
+                )
+            except Exception:
+                _LOGGER.exception("Input_boolean apply failed for '%s'", helper_entity)
 
     def _lighting_room_maps(self) -> dict[str, dict[str, Any]]:
         options = dict(self._entry.options)

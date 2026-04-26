@@ -156,12 +156,22 @@ class HeimaOptionsFlowHandler(
         return self.async_create_entry(title="", data=self._finalize_options())
 
     def _entry_options_snapshot(self) -> dict[str, Any]:
-        """Return the freshest available options snapshot for this flow."""
+        """Return the freshest available options snapshot for this flow.
+
+        config_entry.options wins over self.options: the entry may have been updated
+        externally (e.g. another concurrent flow step) while this flow's local state
+        is stale. Keys from self.options that are not in the entry are still preserved.
+        Callers that want their own updates to win must call merged.update(their_updates)
+        after taking the snapshot (see _update_options).
+        """
+        snapshot = dict(self.options)
         config_entry = getattr(self, "_config_entry", None)
         entry_options = getattr(config_entry, "options", None)
         if isinstance(entry_options, dict):
-            return dict(entry_options)
-        return dict(self.options)
+            merged = dict(snapshot)
+            merged.update(entry_options)
+            return merged
+        return snapshot
 
     def _update_options(self, updates: dict[str, Any]) -> None:
         """Persist options keys immediately to disk.

@@ -92,6 +92,11 @@ All three still flow through the same shared proposal substrate:
 This keeps Heima's learning model unified while still allowing the system to suggest not only new
 automations, but also better automations.
 
+Explicit exception:
+- `scheduled_routine` is **not** part of this learned proposal taxonomy
+- it is an admin-authored utility family exposed through the shared options flow surface
+- it has no analyzer-owned discovery path
+
 ### 0.2.1 Learning system model
 
 Heima has one learning system, not multiple competing learning subsystems.
@@ -116,6 +121,11 @@ Examples of learning pattern plugins:
 - temporal room/light routine plugins
 - room-scoped composite assist plugins
 - preference-oriented plugins such as heating or arrival/preheat behavior
+
+Admin-authored utility clarification:
+- not every reaction family visible in the broader Heima registry is a learning pattern plugin
+- `scheduled_routine` is a bounded admin-authored utility family, not a learned family
+- it may appear in admin-authored template surfaces without being eligible for analyzer emission
 
 Normative rule:
 - a new learning capability SHOULD be modeled first as a new learning pattern plugin inside the shared
@@ -1239,7 +1249,7 @@ Lighting routine clarification:
 - ordinary time-based lighting replay is no longer considered a learned family in Heima
 - a routine whose only stable explanatory dimension is weekday/time belongs to the admin-authored
   channel, not the learned channel
-- the intended family for that use case is a future generic admin-authored `scheduled_routine`
+- the intended family for that use case is the generic admin-authored `scheduled_routine`
   capability:
   - actuator-agnostic
   - not lighting-specific
@@ -1806,7 +1816,7 @@ Normative product rule:
   proposal rather than a weak schedule fallback
 
 Pure time-based routines remain legitimate only as explicit admin-authored intent:
-- they belong to a future generic `scheduled_routine` family
+- they belong to the generic `scheduled_routine` family
 - they are outside the learned lighting family
 - they are not a target for automatic improvement proposals
 - they may target any actuator, not only lights

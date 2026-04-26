@@ -22,6 +22,8 @@ Normative separation:
 - admin-authored time-based routines are valid
 - learned time-based automations are not
 - the admin-authored path is where explicit clock-based intent belongs
+- the canonical bounded family for this is `scheduled_routine`
+- template: `scheduled_routine.basic`
 
 ## 2. Core Model
 
@@ -52,6 +54,20 @@ For plugin families that support multiple bounded automations:
 - each template MUST have a stable `template_id`
 - the plugin descriptor remains the source of truth for which templates are declared and which are
   implemented in v1
+
+For `scheduled_routine.basic`, the bounded contract is:
+- weekday + time
+- bounded guardrails only:
+  - `house_state_in`
+  - `skip_if_anyone_home`
+- bounded domains only:
+  - `scene`
+  - `script`
+  - `light`
+  - `switch`
+  - `input_boolean`
+- no arbitrary condition builder
+- no chained delays / sequences
 
 Current planning clarification:
 - the immediate post-lighting domain work should focus on strengthening the existing composite
@@ -258,7 +274,7 @@ This distinction is especially important for admin-authored automations, because
 Heima should therefore prefer improving that intent rather than rediscovering it as if it were unrelated.
 
 Exception for pure time-based admin intent:
-- a future generic `scheduled_routine` family is intentionally admin-authored only
+- the generic `scheduled_routine` family is intentionally admin-authored only
 - that family is expected to support arbitrary actuator targets, not just lighting
 - it SHOULD NOT participate in automatic learned discovery
 - it SHOULD NOT receive automatic improvement proposals

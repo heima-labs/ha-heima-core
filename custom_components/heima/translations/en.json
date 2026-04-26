@@ -463,6 +463,20 @@
         },
         "submit": "OK"
       },
+      "admin_authored_scheduled_routine": {
+        "title": "New scheduled routine",
+        "description": "Template: {template_title}\n{template_description}",
+        "data": {
+          "weekday": "Day",
+          "scheduled_time": "Time (HH:MM)",
+          "routine_kind": "Routine type",
+          "target_entities": "Targets",
+          "entity_action": "Entity action",
+          "house_state_in": "Allowed house states",
+          "skip_if_anyone_home": "Skip if anyone is home"
+        },
+        "submit": "OK"
+      },
       "proposals": {
         "title": "Review Proposals",
         "description": "Heima detected recurring patterns. Review one proposal at a time and decide whether to accept, reject, or skip it.\n\nQueue: {current_position}\n\nCurrent proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",
@@ -538,6 +552,11 @@
           "color_temp_kelvin": "Color temperature (K)",
           "weekday": "Day",
           "scheduled_time": "Time (HH:MM)",
+          "routine_kind": "Routine type",
+          "target_entities": "Targets",
+          "entity_action": "Entity action",
+          "house_state_in": "Allowed house states",
+          "skip_if_anyone_home": "Skip if anyone is home",
           "vacancy_delay_min": "Lights-off delay (min)",
           "action_entities": "Scenes or scripts to activate",
           "pre_condition_min": "Lead time (minutes)",

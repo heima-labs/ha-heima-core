@@ -65,6 +65,12 @@ from .presence import (
     build_presence_pattern_reaction,
     present_presence_pattern_label,
 )
+from .scheduled_routine import (
+    ScheduledRoutineReaction,
+    build_scheduled_routine_reaction,
+    normalize_scheduled_routine_config,
+    present_scheduled_routine_label,
+)
 from .security_presence_simulation import (
     VacationPresenceSimulationReaction,
     build_vacation_presence_simulation_reaction,
@@ -314,6 +320,18 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="scheduled_routine",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("scheduled_routine",),
+                supports_normalizer=True,
+            ),
+            builder=build_scheduled_routine_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_scheduled_routine_label,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
                 reaction_type="vacation_presence_simulation",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("vacation_presence_simulation",),
@@ -376,6 +394,9 @@ __all__ = [
     "NaiveLearningBackend",
     "PresencePatternReaction",
     "RoomSignalAssistReaction",
+    "ScheduledRoutineReaction",
     "VacationPresenceSimulationReaction",
     "validate_contextual_lighting_contract",
+    "normalize_room_signal_assist_config",
+    "normalize_scheduled_routine_config",
 ]
