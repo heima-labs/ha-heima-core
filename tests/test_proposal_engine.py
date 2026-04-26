@@ -593,7 +593,10 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
 
     pending = engine2.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].fingerprint == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200"
+    assert (
+        pending[0].fingerprint
+        == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1200"
+    )
     assert pending[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
 
@@ -679,7 +682,10 @@ async def test_proposal_engine_lighting_identity_prefers_semantic_slot_over_fing
 
     pending = engine.pending_proposals()
     assert len(pending) == 1
-    assert pending[0].fingerprint == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1350"
+    assert (
+        pending[0].fingerprint
+        == "LightingPatternAnalyzer|context_conditioned_lighting_scene|living|0|1350"
+    )
     assert pending[0].identity_key.startswith(
         "context_conditioned_lighting_scene|room=living|weekday=0|bucket=1350|scene="
     )

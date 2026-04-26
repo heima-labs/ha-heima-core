@@ -192,9 +192,8 @@ class RoomContextualLightingAssistReaction(_BaseRoomLightingAssist):
         entity_steps = self._apply_ambient_modulation(entity_steps)
         if not self._needs_apply(profile_name, entity_steps):
             return []
-        if (
-            not self._is_cooled_down()
-            and not self._profile_transition_needs_immediate_apply(profile_name)
+        if not self._is_cooled_down() and not self._profile_transition_needs_immediate_apply(
+            profile_name
         ):
             self._mark_suppressed()
             return []

@@ -196,7 +196,6 @@ def _minute_of_day(dt: datetime) -> int:
     return dt.hour * 60 + dt.minute
 
 
-
 def present_admin_authored_lighting_schedule_details(
     flow: Any,
     proposal: Any,
@@ -228,7 +227,6 @@ def present_admin_authored_lighting_schedule_details(
         )
 
     return details
-
 
 
 def present_tuning_lighting_schedule_details(
@@ -268,5 +266,3 @@ def present_tuning_lighting_schedule_details(
     if not diff_lines:
         return []
     return diff_lines
-
-
