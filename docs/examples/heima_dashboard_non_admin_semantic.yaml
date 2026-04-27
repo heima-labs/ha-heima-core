@@ -1,17 +1,20 @@
-# Heima Non-Admin Semantic Dashboard (tablet-first example)
+# Heima Non-Admin Semantic Dashboard
 #
-# Purpose:
-# - consume only semantic heima_*_view sensors for the main user-facing story
-# - avoid raw entity inspection in the presentation layer
-# - provide a bounded demo-ready surface for non-admin users
+# Investor/demo-oriented tablet surface.
+# This dashboard is intentionally built from semantic `heima_*_view` entities
+# rather than raw runtime sensors.
 #
-# Notes:
-# - quick actions assume the following scripts exist in the installation:
-#   script.heima_relax
-#   script.heima_buongiorno
-#   script.heima_buonanotte
-#   script.heima_ospiti
-# - duplicate/adjust room cards for your configured rooms
+# Expected actions/scripts:
+# - script.heima_relax
+# - script.heima_buongiorno
+# - script.heima_buonanotte
+# - script.heima_ospiti
+#
+# Replace room ids if your installation does not use:
+# - living
+# - studio
+# - bathroom
+# - bedroom
 
 title: Heima Home
 path: heima-home
@@ -32,21 +35,26 @@ sections:
 
           {% set pills = state_attr('sensor.heima_home_view', 'pills') or [] %}
           {% if pills %}
-          **{{ pills | join(' · ') }}**
+          <sub>{{ pills | join('  ·  ') }}</sub>
           {% endif %}
 
-      - type: entities
-        title: House Summary
-        show_header_toggle: false
-        entities:
-          - type: attribute
-            entity: sensor.heima_home_view
-            attribute: priority
-            name: Priority
-          - type: attribute
-            entity: sensor.heima_home_view
-            attribute: last_update
-            name: Last update
+      - type: tile
+        entity: sensor.heima_home_view
+        name: House mode
+        color: state
+      - type: tile
+        entity: sensor.heima_security_view
+        name: Security
+        color: state
+      - type: tile
+        entity: sensor.heima_climate_view
+        name: Comfort
+        color: state
+      - type: tile
+        entity: sensor.heima_insights_view
+        name: Insights
+        color: state
+
       - type: markdown
         content: >-
           {% set status = state_attr('sensor.heima_home_view', 'status') or {} %}
@@ -68,24 +76,28 @@ sections:
           - type: button
             name: Relax
             icon: mdi:sofa
+            show_state: false
             tap_action:
               action: call-service
               service: script.heima_relax
           - type: button
             name: Buongiorno
             icon: mdi:weather-sunset-up
+            show_state: false
             tap_action:
               action: call-service
               service: script.heima_buongiorno
           - type: button
             name: Buonanotte
             icon: mdi:weather-night
+            show_state: false
             tap_action:
               action: call-service
               service: script.heima_buonanotte
           - type: button
             name: Ospiti
             icon: mdi:account-group
+            show_state: false
             tap_action:
               action: call-service
               service: script.heima_ospiti
@@ -95,6 +107,7 @@ sections:
       - type: markdown
         content: |
           ## Main rooms
+
       - type: markdown
         content: >-
           ### {{ state_attr('sensor.heima_room_living_view', 'title') or 'Living' }}
@@ -102,6 +115,7 @@ sections:
           {{ state_attr('sensor.heima_room_living_view', 'line1') or '' }}
 
           {{ state_attr('sensor.heima_room_living_view', 'line2') or '' }}
+
       - type: markdown
         content: >-
           ### {{ state_attr('sensor.heima_room_studio_view', 'title') or 'Studio' }}
@@ -109,6 +123,7 @@ sections:
           {{ state_attr('sensor.heima_room_studio_view', 'line1') or '' }}
 
           {{ state_attr('sensor.heima_room_studio_view', 'line2') or '' }}
+
       - type: markdown
         content: >-
           ### {{ state_attr('sensor.heima_room_bathroom_view', 'title') or 'Bathroom' }}
@@ -116,6 +131,7 @@ sections:
           {{ state_attr('sensor.heima_room_bathroom_view', 'line1') or '' }}
 
           {{ state_attr('sensor.heima_room_bathroom_view', 'line2') or '' }}
+
       - type: markdown
         content: >-
           ### {{ state_attr('sensor.heima_room_bedroom_view', 'title') or 'Bedroom' }}
@@ -126,27 +142,21 @@ sections:
 
   - type: grid
     cards:
-      - type: entities
-        title: Heima Insights
-        show_header_toggle: false
-        entities:
-          - entity: sensor.heima_insights_view
-            name: Status
+      - type: markdown
+        content: |
+          ## Heima insights
       - type: markdown
         content: >-
           {% for item in state_attr('sensor.heima_insights_view', 'items') or [] %}
           - {{ item.get('text', '') }}
           {% endfor %}
 
-      - type: entities
-        title: Security
-        show_header_toggle: false
-        entities:
-          - entity: sensor.heima_security_view
-            name: Security
+      - type: markdown
+        content: |
+          ## Security
       - type: markdown
         content: >-
-          {{ state_attr('sensor.heima_security_view', 'summary') or '' }}
+          **{{ state_attr('sensor.heima_security_view', 'summary') or '' }}**
 
           {% for item in state_attr('sensor.heima_security_view', 'items') or [] %}
           - {{ item }}
@@ -158,15 +168,12 @@ sections:
 
   - type: grid
     cards:
-      - type: entities
-        title: Climate & Comfort
-        show_header_toggle: false
-        entities:
-          - entity: sensor.heima_climate_view
-            name: Climate
+      - type: markdown
+        content: |
+          ## Climate & comfort
       - type: markdown
         content: >-
-          **{{ state_attr('sensor.heima_climate_view', 'temperature') or '' }}**
+          # {{ state_attr('sensor.heima_climate_view', 'temperature') or '—' }}
 
           {{ state_attr('sensor.heima_climate_view', 'summary') or '' }}
 
