@@ -63,6 +63,15 @@ Related practical guides live outside this tree:
 - `learning/admin_authored_automation_spec.md` — admin-requested automations and follow-up tuning
 - `learning/inference_engine_spec.md` — inference v2 draft
 
+## Adapters
+
+Spec per custom integration esterne che normalizzano fonti dati verso il contratto Heima.
+Ogni adapter vive in un repo separato sotto `heima-labs/`.
+
+- `adapters/external_context_contract.md` — contratto normativo v1.0: entity ID, semantica, degradazione, versioning
+- `adapters/owm_adapter_spec.md` — adapter OpenWeatherMap (`heima-labs/ha-heima-owm-adapter`)
+- `adapters/protezione_civile_adapter_spec.md` — adapter Protezione Civile italiana (`heima-labs/ha-heima-pc-adapter`)
+
 ## RFC / Historical
 
 - `rfc/scheduled_routine_development_plan.md` — [historical/deprecated] implementation plan superseded by `core/scheduled_routine_spec.md`

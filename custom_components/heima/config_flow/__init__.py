@@ -35,6 +35,7 @@ from ._common import _default_language, _default_timezone
 from ._steps_calendar import _CalendarStepsMixin
 from ._steps_general import _GeneralStepsMixin
 from ._steps_heating import _HeatingStepsMixin
+from ._steps_external_context import _ExternalContextStepsMixin
 from ._steps_learning import _LearningStepsMixin
 from ._steps_lighting import _LightingStepsMixin
 from ._steps_notifications import _NotificationsStepsMixin
@@ -107,6 +108,7 @@ class HeimaOptionsFlowHandler(
     _ReactionsStepsMixin,
     _CalendarStepsMixin,
     _LearningStepsMixin,
+    _ExternalContextStepsMixin,
     config_entries.OptionsFlow,
 ):
     """Handle Heima options."""
@@ -142,6 +144,7 @@ class HeimaOptionsFlowHandler(
                 "notifications",
                 "calendar",
                 "learning",
+                "external_context",
                 "reactions",
                 "reactions_edit",
                 "admin_authored_create",

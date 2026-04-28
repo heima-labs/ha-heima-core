@@ -10,6 +10,7 @@ from homeassistant.util import dt as dt_util
 
 from ..room_sources import room_learning_source_entity_ids
 from .event_store import EventContext
+from .external_context import ExternalContext
 from .snapshot import DecisionSnapshot
 
 _MAX_SIGNALS = 10
@@ -36,8 +37,13 @@ class ContextBuilder:
         self._outdoor_temp_entity: str | None = None
         self._weather_entity: str | None = None
         self._signal_entities: list[str] = []
+        self._ext_ctx: ExternalContext | None = None
         if config:
             self.update_config(config)
+
+    def update_ext_ctx(self, ext_ctx: ExternalContext | None) -> None:
+        """Store the latest ExternalContext so behaviors don't need to pass it explicitly."""
+        self._ext_ctx = ext_ctx
 
     def update_config(self, config: dict[str, Any]) -> None:
         """Update builder from options or learning config (called on options reload)."""
@@ -63,8 +69,17 @@ class ContextBuilder:
             deduped.append(clean)
         self._signal_entities = deduped[:_MAX_SIGNALS]
 
-    def build(self, snapshot: DecisionSnapshot) -> EventContext:
-        """Build an EventContext from snapshot + current HA state."""
+    def build(
+        self,
+        snapshot: DecisionSnapshot,
+        ext_ctx: ExternalContext | None = None,
+    ) -> EventContext:
+        """Build an EventContext from snapshot + current HA state.
+
+        ext_ctx (explicit) takes precedence; falls back to self._ext_ctx (set by engine each cycle)
+        when no direct entity is configured in learning settings.
+        """
+        effective = ext_ctx or self._ext_ctx
         dt = datetime.fromisoformat(snapshot.ts)
         local_dt = dt_util.as_local(dt)
         return EventContext(
@@ -74,9 +89,9 @@ class ContextBuilder:
             house_state=snapshot.house_state,
             occupants_count=snapshot.people_count,
             occupied_rooms=tuple(snapshot.occupied_rooms),
-            outdoor_lux=self._read_float(self._outdoor_lux_entity),
-            outdoor_temp=self._read_outdoor_temp(),
-            weather_condition=self._read_weather_condition(),
+            outdoor_lux=self._read_float(self._outdoor_lux_entity) or (effective.outdoor_lux if effective else None),
+            outdoor_temp=self._read_outdoor_temp() or (effective.outdoor_temp if effective else None),
+            weather_condition=self._read_weather_condition() or (effective.weather_condition if effective else None),
             signals=self._read_signals(),
         )
 

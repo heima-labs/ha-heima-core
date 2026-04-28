@@ -49,6 +49,7 @@ from .domains.occupancy import OccupancyDomain
 from .domains.people import PeopleDomain
 from .domains.security import SecurityDomain
 from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
+from .external_context import ExternalContext, ExternalContextNormalizer
 from .normalization.service import InputNormalizer
 from .reactions import (
     create_builtin_reaction_plugin_registry,
@@ -101,6 +102,9 @@ class HeimaEngine:
         self._apply_plan = ApplyPlan.empty()
         self._last_engine_enabled_state: bool | None = None
         self._normalizer = InputNormalizer(hass)
+        self._ext_ctx_normalizer = ExternalContextNormalizer(hass)
+        self._external_context: ExternalContext = ExternalContext.empty()
+        self._context_builder: Any = None
         self._events_domain = EventsDomain(hass)
         self._security_camera_evidence_provider = SecurityCameraEvidenceProvider(
             hass, self._normalizer
@@ -260,6 +264,7 @@ class HeimaEngine:
         self._entry = entry
         self._migrate_legacy_reaction_types()
         self._options = HeimaOptions.from_entry(entry)
+        self._ext_ctx_normalizer.update_config(dict(entry.options))
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
@@ -326,6 +331,10 @@ class HeimaEngine:
     # ------------------------------------------------------------------
     # Behavior registration
     # ------------------------------------------------------------------
+
+    def set_context_builder(self, context_builder: Any) -> None:
+        """Wire the coordinator's ContextBuilder so ext_ctx is propagated each cycle."""
+        self._context_builder = context_builder
 
     def register_behavior(self, behavior: HeimaBehavior) -> None:
         """Register a behavior. Call before first async_evaluate."""
@@ -670,6 +679,10 @@ class HeimaEngine:
         now = datetime.now(timezone.utc).isoformat()
         self._timed_rechecks = {}
 
+        self._external_context = self._ext_ctx_normalizer.compute()
+        if self._context_builder is not None:
+            self._context_builder.update_ext_ctx(self._external_context)
+
         security_cfg = dict(options.get(OPT_SECURITY, {}))
         security_camera_evidence = self._security_camera_evidence_provider.compute(security_cfg)
 
@@ -748,6 +761,7 @@ class HeimaEngine:
             state=self._state,
             events=self._events_domain,
             schedule_recheck=self._schedule_timed_recheck_deadline,
+            ext_outdoor_temp=self._external_context.outdoor_temp,
         )
 
         self._state.set_binary("heima_anyone_home", anyone_home)
