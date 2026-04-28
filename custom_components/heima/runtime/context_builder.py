@@ -80,6 +80,15 @@ class ContextBuilder:
         when no direct entity is configured in learning settings.
         """
         effective = ext_ctx or self._ext_ctx
+        outdoor_lux = self._read_float(self._outdoor_lux_entity)
+        if outdoor_lux is None and effective is not None:
+            outdoor_lux = effective.outdoor_lux
+        outdoor_temp = self._read_outdoor_temp()
+        if outdoor_temp is None and effective is not None:
+            outdoor_temp = effective.outdoor_temp
+        weather_condition = self._read_weather_condition()
+        if weather_condition is None and effective is not None:
+            weather_condition = effective.weather_condition
         dt = datetime.fromisoformat(snapshot.ts)
         local_dt = dt_util.as_local(dt)
         return EventContext(
@@ -89,9 +98,9 @@ class ContextBuilder:
             house_state=snapshot.house_state,
             occupants_count=snapshot.people_count,
             occupied_rooms=tuple(snapshot.occupied_rooms),
-            outdoor_lux=self._read_float(self._outdoor_lux_entity) or (effective.outdoor_lux if effective else None),
-            outdoor_temp=self._read_outdoor_temp() or (effective.outdoor_temp if effective else None),
-            weather_condition=self._read_weather_condition() or (effective.weather_condition if effective else None),
+            outdoor_lux=outdoor_lux,
+            outdoor_temp=outdoor_temp,
+            weather_condition=weather_condition,
             signals=self._read_signals(),
         )
 

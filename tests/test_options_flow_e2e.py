@@ -269,6 +269,38 @@ async def test_learning_flow_persists_enabled_plugin_families():
 
 
 @pytest.mark.asyncio
+async def test_external_context_flow_persists_slot_mapping():
+    flow = _flow()
+
+    result = await flow.async_step_external_context(
+        {
+            "outdoor_temp": "sensor.heima_ext_outdoor_temp",
+            "outdoor_humidity": "",
+            "outdoor_lux": "sensor.heima_ext_outdoor_lux",
+            "wind_speed": "",
+            "rain_last_1h": "",
+            "rain_forecast_next_6h": "",
+            "weather_condition": "sensor.heima_ext_weather_condition",
+            "weather_alert_level": "sensor.heima_ext_weather_alert_level",
+            "weather_alert_phenomena": "",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["external_context"] == {
+        "outdoor_temp": "sensor.heima_ext_outdoor_temp",
+        "outdoor_humidity": None,
+        "outdoor_lux": "sensor.heima_ext_outdoor_lux",
+        "wind_speed": None,
+        "rain_last_1h": None,
+        "rain_forecast_next_6h": None,
+        "weather_condition": "sensor.heima_ext_weather_condition",
+        "weather_alert_level": "sensor.heima_ext_weather_alert_level",
+        "weather_alert_phenomena": None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_stale():
     flow = _flow(
         {

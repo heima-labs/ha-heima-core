@@ -103,6 +103,7 @@ class HeimaEngine:
         self._last_engine_enabled_state: bool | None = None
         self._normalizer = InputNormalizer(hass)
         self._ext_ctx_normalizer = ExternalContextNormalizer(hass)
+        self._ext_ctx_normalizer.update_config(dict(entry.options))
         self._external_context: ExternalContext = ExternalContext.empty()
         self._context_builder: Any = None
         self._events_domain = EventsDomain(hass)
