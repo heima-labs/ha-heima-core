@@ -121,10 +121,11 @@ class HeatingDomain:
             temperature_step=temperature_step,
         )
         observed_provenance = self._observed_provenance(observed_source=observed_source)
-        outdoor_temperature = (
-            self._coerce_float_from_entity(heating_cfg.get("outdoor_temperature_entity"))
-            or ext_outdoor_temp
+        outdoor_temperature = self._coerce_float_from_entity(
+            heating_cfg.get("outdoor_temperature_entity")
         )
+        if outdoor_temperature is None:
+            outdoor_temperature = ext_outdoor_temp
         climate_preset_mode = self._coerce_text(self._state_attr(climate_entity, "preset_mode"))
         climate_manual_override = self._heating_climate_manual_override_detected(
             climate_preset_mode

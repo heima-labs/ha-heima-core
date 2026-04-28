@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from custom_components.heima.runtime.context_builder import ContextBuilder
+from custom_components.heima.runtime.external_context import ExternalContext
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -79,6 +80,13 @@ def test_context_builder_outdoor_lux_none_when_unavailable():
     assert ctx.outdoor_lux is None
 
 
+def test_context_builder_outdoor_lux_preserves_zero_value():
+    hass = _FakeHass({"sensor.lux": _FakeState("0")})
+    builder = ContextBuilder(hass, {"outdoor_lux_entity": "sensor.lux"})
+    ctx = builder.build(_snapshot(), ext_ctx=ExternalContext(outdoor_lux=500.0))
+    assert ctx.outdoor_lux == 0.0
+
+
 def test_context_builder_outdoor_temp_from_dedicated_entity():
     hass = _FakeHass({"sensor.outdoor_temp": _FakeState("12.3")})
     builder = ContextBuilder(hass, {"outdoor_temp_entity": "sensor.outdoor_temp"})
@@ -115,6 +123,22 @@ def test_context_builder_weather_condition():
     hass = _FakeHass({"weather.home": _FakeState("rainy", {})})
     builder = ContextBuilder(hass, {"weather_entity": "weather.home"})
     ctx = builder.build(_snapshot())
+    assert ctx.weather_condition == "rainy"
+
+
+def test_context_builder_falls_back_to_external_context():
+    hass = _FakeHass()
+    builder = ContextBuilder(hass)
+    ctx = builder.build(
+        _snapshot(),
+        ext_ctx=ExternalContext(
+            outdoor_lux=100.0,
+            outdoor_temp=0.0,
+            weather_condition="rainy",
+        ),
+    )
+    assert ctx.outdoor_lux == 100.0
+    assert ctx.outdoor_temp == 0.0
     assert ctx.weather_condition == "rainy"
 
 

@@ -31,12 +31,29 @@
           "notifications": "Notifiche",
           "calendar": "Calendario",
           "learning": "Apprendimento",
+          "external_context": "Contesto esterno",
           "reactions": "Reazioni",
           "admin_authored_create": "Crea automazione",
           "proposals": "Revisione proposte",
           "save": "Salva e chiudi",
           "reactions_edit": "Modifica reazione"
         }
+      },
+      "external_context": {
+        "title": "Contesto Esterno",
+        "description": "Mappa le entità normalizzate degli adapter negli slot canonici di contesto esterno di Heima.",
+        "data": {
+          "outdoor_temp": "Entità temperatura esterna",
+          "outdoor_humidity": "Entità umidità esterna",
+          "outdoor_lux": "Entità luminosità esterna",
+          "wind_speed": "Entità velocità vento",
+          "rain_last_1h": "Entità pioggia ultima ora",
+          "rain_forecast_next_6h": "Entità previsione pioggia prossime 6h",
+          "weather_condition": "Entità condizione meteo",
+          "weather_alert_level": "Entità livello allerta meteo",
+          "weather_alert_phenomena": "Entità fenomeni allerta meteo"
+        },
+        "submit": "OK"
       },
       "general": {
         "title": "Generale",

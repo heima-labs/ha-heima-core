@@ -31,12 +31,29 @@
           "notifications": "Notifications",
           "calendar": "Calendar",
           "learning": "Learning context",
+          "external_context": "External context",
           "reactions": "Reactions",
           "admin_authored_create": "Create automation",
           "proposals": "Review proposals",
           "save": "Save and close",
           "reactions_edit": "Edit reaction"
         }
+      },
+      "external_context": {
+        "title": "External Context",
+        "description": "Map normalized adapter entities into Heima's canonical external context slots.",
+        "data": {
+          "outdoor_temp": "Outdoor temperature entity",
+          "outdoor_humidity": "Outdoor humidity entity",
+          "outdoor_lux": "Outdoor light level entity",
+          "wind_speed": "Wind speed entity",
+          "rain_last_1h": "Rain in last hour entity",
+          "rain_forecast_next_6h": "Rain forecast next 6h entity",
+          "weather_condition": "Weather condition entity",
+          "weather_alert_level": "Weather alert level entity",
+          "weather_alert_phenomena": "Weather alert phenomena entity"
+        },
+        "submit": "OK"
       },
       "general": {
         "title": "General",

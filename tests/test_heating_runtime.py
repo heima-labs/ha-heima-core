@@ -614,6 +614,106 @@ def test_vacation_curve_captures_start_temperature_on_branch_activation_and_reus
     assert engine.diagnostics()["heating"]["vacation"]["start_temp"] == 21.0
 
 
+def test_heating_runtime_uses_external_context_outdoor_temp_on_cold_boot():
+    options = _with_house_signal_binding(
+        {
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "vacation_hours_from_start_entity": "sensor.vacation_from",
+                "vacation_hours_to_end_entity": "sensor.vacation_to",
+                "vacation_total_hours_entity": "sensor.vacation_total",
+                "vacation_is_long_entity": "binary_sensor.vacation_long",
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            },
+            "external_context": {
+                "outdoor_temp": "sensor.heima_ext_outdoor_temp",
+            },
+        },
+        vacation_mode="input_boolean.vacation_mode",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "input_boolean.vacation_mode": "on",
+            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+            "sensor.heima_ext_outdoor_temp": "0.0",
+            "sensor.vacation_from": "2.0",
+            "sensor.vacation_to": "30.0",
+            "sensor.vacation_total": "32.0",
+            "binary_sensor.vacation_long": "on",
+        },
+    )
+
+    engine._compute_snapshot(reason="cold_boot")
+
+    trace = engine.diagnostics()["heating"]
+    assert trace["outdoor_temperature"] == 0.0
+    assert trace["vacation"]["min_safety"] == 17.0
+
+
+def test_heating_runtime_preserves_zero_from_configured_outdoor_sensor():
+    options = _with_house_signal_binding(
+        {
+            "heating": {
+                "climate_entity": "climate.test_thermostat",
+                "apply_mode": "set_temperature",
+                "temperature_step": 0.5,
+                "manual_override_guard": True,
+                "outdoor_temperature_entity": "sensor.outdoor_temp",
+                "vacation_hours_from_start_entity": "sensor.vacation_from",
+                "vacation_hours_to_end_entity": "sensor.vacation_to",
+                "vacation_total_hours_entity": "sensor.vacation_total",
+                "vacation_is_long_entity": "binary_sensor.vacation_long",
+                "override_branches": {
+                    "vacation": {
+                        "branch": "vacation_curve",
+                        "vacation_ramp_down_h": 8.0,
+                        "vacation_ramp_up_h": 10.0,
+                        "vacation_min_temp": 16.5,
+                        "vacation_comfort_temp": 19.5,
+                        "vacation_min_total_hours_for_ramp": 24.0,
+                    }
+                },
+            },
+            "external_context": {
+                "outdoor_temp": "sensor.heima_ext_outdoor_temp",
+            },
+        },
+        vacation_mode="input_boolean.vacation_mode",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "input_boolean.vacation_mode": "on",
+            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+            "sensor.outdoor_temp": "0.0",
+            "sensor.heima_ext_outdoor_temp": "7.0",
+            "sensor.vacation_from": "2.0",
+            "sensor.vacation_to": "30.0",
+            "sensor.vacation_total": "32.0",
+            "binary_sensor.vacation_long": "on",
+        },
+    )
+
+    engine._compute_snapshot(reason="zero_sensor")
+
+    trace = engine.diagnostics()["heating"]
+    assert trace["outdoor_temperature"] == 0.0
+    assert trace["vacation"]["min_safety"] == 17.0
+
+
 @pytest.mark.asyncio
 async def test_heating_runtime_emits_phase_and_target_events_for_vacation_curve():
     options = _with_house_signal_binding(
