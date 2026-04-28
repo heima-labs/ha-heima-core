@@ -50,6 +50,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine = HeimaEngine(hass, entry)
         self._event_store = EventStore(hass)
         self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
+        self.engine.set_context_builder(self._context_builder)
         self.engine.register_behavior(
             EventRecorderBehavior(hass, self._event_store, self._context_builder)
         )
