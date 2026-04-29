@@ -1,0 +1,313 @@
+# Heima — Home Dashboard (Generated)
+# Generated from scripts/generate_dashboard.py
+# Requires: custom:button-card + visionos theme
+
+title: Heima Home
+button_card_templates:
+  heima_base:
+    show_state: false
+    show_label: false
+    show_name: false
+    show_icon: false
+    styles:
+      card:
+        - border-radius: 24px
+        - background: rgba(255,255,255,0.08)
+        - backdrop-filter: blur(32px)
+        - -webkit-backdrop-filter: blur(32px)
+        - box-shadow: "0 8px 32px rgba(0,0,0,0.28), 0 1px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12)"
+        - border: 1px solid rgba(255,255,255,0.14)
+        - font-family: >-
+            -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif
+        - overflow: hidden
+
+  heima_metric:
+    template: heima_base
+    show_icon: true
+    show_name: true
+    show_label: true
+    styles:
+      card:
+        - height: 78px
+        - padding: 12px 16px
+      grid:
+        - grid-template-areas: '"i n" "i l"'
+        - grid-template-columns: 22px 1fr
+        - grid-template-rows: auto auto
+        - column-gap: 10px
+        - row-gap: 2px
+      icon:
+        - align-self: start
+        - margin-top: 2px
+        - width: 20px
+        - color: rgba(255,255,255,0.78)
+      name:
+        - justify-self: start
+        - align-self: end
+        - font-size: 13px
+        - font-weight: 600
+        - color: rgba(255,255,255,0.86)
+      label:
+        - justify-self: start
+        - align-self: start
+        - font-size: 11.5px
+        - color: rgba(255,255,255,0.48)
+        - white-space: normal
+        - text-align: left
+
+  heima_hero:
+    template: heima_base
+    entity: sensor.heima_home_view
+    show_name: true
+    show_label: true
+    show_icon: false
+    name: >-
+      [[[ return entity?.attributes?.title || 'Heima'; ]]]
+    label: >-
+      [[[ return entity?.attributes?.subtitle || ''; ]]]
+    custom_fields:
+      eyebrow: HEIMA
+      status_bar: >-
+        [[[
+          const clim = states['sensor.heima_climate_view'];
+          const sec  = states['sensor.heima_security_view'];
+          const temp    = clim?.attributes?.temperature || '';
+          const comfort = clim?.attributes?.summary || '';
+          const secSt   = sec?.state || 'ok';
+          const secTxt  = sec?.attributes?.summary || 'Tutto ok';
+          const secColor = secSt === 'alert' ? 'rgba(255,170,162,0.96)'
+                         : secSt === 'warning' ? 'rgba(255,218,138,0.96)'
+                         : 'rgba(255,255,255,0.42)';
+          const secIcon = secSt === 'alert' ? 'mdi:shield-alert-outline'
+                        : secSt === 'warning' ? 'mdi:shield-lock-outline'
+                        : 'mdi:shield-check-outline';
+          const left = [
+            temp ? `<span style="font-size:13px;font-weight:500;color:rgba(255,255,255,0.72)">${temp}</span>` : '',
+            comfort ? `<span style="font-size:12px;color:rgba(255,255,255,0.42)">${comfort}</span>` : '',
+          ].filter(Boolean).join('<span style="margin:0 7px;color:rgba(255,255,255,0.18)">·</span>');
+          const secBg = secSt === 'alert' ? 'rgba(255,69,58,0.12)'
+                      : secSt === 'warning' ? 'rgba(255,184,48,0.12)'
+                      : 'rgba(255,255,255,0.06)';
+          const secBorder = secSt === 'alert' ? 'rgba(255,130,120,0.18)'
+                          : secSt === 'warning' ? 'rgba(255,210,110,0.16)'
+                          : 'rgba(255,255,255,0.08)';
+          return `<div style="display:flex;align-items:center;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px">
+            <div style="display:flex;align-items:center;gap:0">${left}</div>
+            <div style="flex:1"></div>
+            <span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:${secColor};padding:6px 10px;border-radius:999px;background:${secBg};border:1px solid ${secBorder}">
+              <ha-icon icon="${secIcon}" style="width:15px;height:15px;color:${secColor}"></ha-icon>
+              <span>${secTxt}</span>
+            </span>
+          </div>`;
+        ]]]
+      rooms_snapshot: |-
+        [[[
+          const summary = entity?.attributes?.room_summary || {};
+          const sentence = summary.sentence || '';
+          return `<div style="padding-top:0;font-size:13px;color:rgba(255,255,255,0.58);line-height:1.45;text-align:left">${sentence || 'Casa tranquilla'}</div>`;
+        ]]]
+    styles:
+      card:
+        - padding: 22px 24px 18px
+        - background: >-
+            [[[
+              const sec = states['sensor.heima_security_view']?.state || 'ok';
+              if (sec === 'alert') return 'linear-gradient(180deg, rgba(88,26,26,0.18), rgba(255,255,255,0.08))';
+              if (sec === 'warning') return 'linear-gradient(180deg, rgba(96,68,20,0.14), rgba(255,255,255,0.08))';
+              return 'rgba(255,255,255,0.08)';
+            ]]]
+        - border: >-
+            [[[
+              const sec = states['sensor.heima_security_view']?.state || 'ok';
+              if (sec === 'alert') return '1px solid rgba(255,134,124,0.24)';
+              if (sec === 'warning') return '1px solid rgba(255,214,126,0.18)';
+              return '1px solid rgba(255,255,255,0.14)';
+            ]]]
+        - box-shadow: >-
+            [[[
+              const sec = states['sensor.heima_security_view']?.state || 'ok';
+              if (sec === 'alert') return '0 12px 36px rgba(60,14,14,0.18), 0 1px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)';
+              if (sec === 'warning') return '0 12px 36px rgba(70,52,10,0.14), 0 1px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)';
+              return '0 8px 32px rgba(0,0,0,0.28), 0 1px 4px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12)';
+            ]]]
+      grid:
+        - grid-template-areas: '"eyebrow eyebrow" "n n" "l l" "rooms_snapshot rooms_snapshot" "status_bar status_bar"'
+        - grid-template-columns: 1fr 1fr
+        - grid-template-rows: auto auto auto auto auto
+        - row-gap: 6px
+        - column-gap: 12px
+        - align-items: start
+      custom_fields:
+        eyebrow:
+          - justify-self: start
+          - align-self: center
+          - font-size: 10px
+          - font-weight: 600
+          - letter-spacing: 0.24em
+          - text-transform: uppercase
+          - color: rgba(255,255,255,0.36)
+        rooms_snapshot:
+          - justify-self: stretch
+          - width: 100%
+        status_bar:
+          - justify-self: stretch
+          - width: 100%
+      name:
+        - justify-self: start
+        - text-align: left
+        - font-size: 32px
+        - line-height: 1.04
+        - font-weight: 700
+        - letter-spacing: -0.048em
+        - color: rgba(255,255,255,0.94)
+      label:
+        - justify-self: start
+        - text-align: left
+        - color: rgba(255,255,255,0.52)
+        - font-size: 13px
+        - line-height: 1.4
+        - white-space: normal
+        - font-weight: 400
+
+  heima_action:
+    template: heima_base
+    show_icon: true
+    show_name: true
+    styles:
+      card:
+        - height: 92px
+        - cursor: pointer
+      grid:
+        - grid-template-areas: '"i" "n"'
+        - grid-template-columns: 1fr
+        - grid-template-rows: 1fr auto
+        - row-gap: 8px
+        - align-content: center
+        - padding: 14px 10px 14px
+      icon:
+        - justify-self: center
+        - width: 22px
+        - color: rgba(255,255,255,0.76)
+      name:
+        - justify-self: center
+        - font-size: 12px
+        - font-weight: 600
+        - color: rgba(255,255,255,0.80)
+        - text-align: center
+        - letter-spacing: -0.010em
+
+  heima_room:
+    template: heima_base
+    show_icon: true
+    show_name: true
+    show_label: true
+    state:
+      - value: active
+        styles:
+          card:
+            - background: rgba(255,196,48,0.16)
+            - border: 1px solid rgba(255,196,48,0.26)
+          icon:
+            - color: rgba(255,210,80,0.96)
+          name:
+            - color: rgba(255,255,255,0.96)
+      - value: idle
+        styles:
+          icon:
+            - color: rgba(255,255,255,0.44)
+          name:
+            - color: rgba(255,255,255,0.74)
+      - value: "off"
+        styles:
+          card:
+            - background: rgba(255,255,255,0.04)
+          icon:
+            - color: rgba(255,255,255,0.24)
+          name:
+            - color: rgba(255,255,255,0.46)
+          label:
+            - color: rgba(255,255,255,0.28)
+    styles:
+      card:
+        - height: 82px
+        - padding: 12px 16px
+      grid:
+        - grid-template-areas: '"i n" "i l"'
+        - grid-template-columns: 20px 1fr
+        - grid-template-rows: auto auto
+        - column-gap: 12px
+        - row-gap: 2px
+        - align-content: center
+      icon:
+        - align-self: start
+        - justify-self: start
+        - margin-top: 2px
+        - width: 18px
+        - color: rgba(255,255,255,0.50)
+      name:
+        - justify-self: start
+        - align-self: end
+        - font-size: 13px
+        - font-weight: 600
+        - color: rgba(255,255,255,0.86)
+        - letter-spacing: -0.016em
+      label:
+        - justify-self: start
+        - align-self: start
+        - font-size: 11px
+        - color: rgba(255,255,255,0.44)
+        - white-space: normal
+        - text-align: left
+        - line-height: 1.36
+
+views:
+  - title: Home
+    path: heima-home
+    icon: mdi:home
+    theme: visionos
+    type: sections
+    max_columns: 2
+
+    sections:
+      - type: grid
+        cards:
+          - type: custom:button-card
+            template: heima_hero
+
+      - type: grid
+        column_span: 2
+        cards:
+          - type: grid
+            columns: 4
+            square: false
+            cards:
+              - type: custom:button-card
+                template: heima_action
+                name: Relax
+                icon: mdi:sofa
+                tap_action:
+                  action: call-service
+                  service: script.heima_relax
+              - type: custom:button-card
+                template: heima_action
+                name: Buongiorno
+                icon: mdi:weather-sunset-up
+                tap_action:
+                  action: call-service
+                  service: script.heima_buongiorno
+              - type: custom:button-card
+                template: heima_action
+                name: Buonanotte
+                icon: mdi:weather-night
+                tap_action:
+                  action: call-service
+                  service: script.heima_buonanotte
+              - type: custom:button-card
+                template: heima_action
+                name: Ospiti
+                icon: mdi:account-group-outline
+                tap_action:
+                  action: call-service
+                  service: script.heima_ospiti
+            grid_options:
+              columns: full
