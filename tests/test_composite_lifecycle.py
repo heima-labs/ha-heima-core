@@ -139,3 +139,61 @@ def test_composite_lifecycle_does_not_suppress_room_signal_when_corroboration_bu
     )
 
     assert hooks.should_suppress_followup(candidate, accepted) is False
+
+
+def test_composite_lifecycle_suppresses_vacancy_lighting_when_delay_and_steps_match():
+    hooks = composite_room_assist_lifecycle_hooks()
+    accepted = _proposal(
+        "room_vacancy_lighting_off",
+        {
+            "room_id": "studio",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+            ],
+        },
+    )
+    candidate = _proposal(
+        "room_vacancy_lighting_off",
+        {
+            "room_id": "studio",
+            "vacancy_delay_s": 330,
+            "entity_steps": [
+                {"entity_id": "light.studio_door", "action": "off"},
+                {"entity_id": "light.studio_window", "action": "off"},
+            ],
+            "episodes_observed": 18,
+        },
+    )
+
+    assert hooks.should_suppress_followup(candidate, accepted) is True
+
+
+def test_composite_lifecycle_does_not_suppress_vacancy_lighting_when_steps_change():
+    hooks = composite_room_assist_lifecycle_hooks()
+    accepted = _proposal(
+        "room_vacancy_lighting_off",
+        {
+            "room_id": "studio",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+            ],
+        },
+    )
+    candidate = _proposal(
+        "room_vacancy_lighting_off",
+        {
+            "room_id": "studio",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+                {"entity_id": "light.studio_led", "action": "off"},
+            ],
+        },
+    )
+
+    assert hooks.should_suppress_followup(candidate, accepted) is False

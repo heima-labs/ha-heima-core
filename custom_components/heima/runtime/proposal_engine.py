@@ -133,6 +133,28 @@ class ProposalEngine:
                 for idx, current in enumerate(merged)
                 if self._identity_key(current) == identity_key
             ]
+            accepted_matches = [
+                (idx, current) for idx, current in matching if current.status == "accepted"
+            ]
+            suppressing_accepted_match = next(
+                (
+                    (idx, current)
+                    for idx, current in accepted_matches
+                    if self._should_suppress_followup(normalized_candidate, current)
+                ),
+                None,
+            )
+            if suppressing_accepted_match is not None:
+                merged = [
+                    current
+                    for current in merged
+                    if not (
+                        current.status == "pending"
+                        and self._identity_key(current) == identity_key
+                    )
+                ]
+                continue
+
             pending_match = next(
                 ((idx, current) for idx, current in matching if current.status == "pending"),
                 None,
@@ -159,10 +181,7 @@ class ProposalEngine:
                 )
                 continue
 
-            accepted_match = next(
-                ((idx, current) for idx, current in matching if current.status == "accepted"),
-                None,
-            )
+            accepted_match = _latest_proposal_match(accepted_matches)
             if accepted_match is None and followup_slot_key:
                 accepted_match = self._fallback_followup_match(
                     merged,
@@ -181,8 +200,6 @@ class ProposalEngine:
 
             if accepted_match is not None:
                 _, accepted = accepted_match
-                if self._should_suppress_followup(normalized_candidate, accepted):
-                    continue
                 merged.append(
                     replace(
                         normalized_candidate,
@@ -789,6 +806,14 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _latest_proposal_match(
+    matches: list[tuple[int, ReactionProposal]],
+) -> tuple[int, ReactionProposal] | None:
+    if not matches:
+        return None
+    return max(matches, key=lambda item: item[1].updated_at or item[1].created_at)
 
 
 def _proposal_type_counts(proposals: list[ReactionProposal]) -> dict[str, int]:

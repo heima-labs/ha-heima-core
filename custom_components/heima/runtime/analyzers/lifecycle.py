@@ -273,6 +273,11 @@ def _composite_should_suppress_followup(
             accepted_cfg,
             policy=policy,
         )
+    if candidate.reaction_type == "room_vacancy_lighting_off":
+        return _room_vacancy_lighting_off_should_suppress_followup(
+            candidate_cfg,
+            accepted_cfg,
+        )
     return False
 
 
@@ -372,6 +377,29 @@ def _room_darkness_lighting_assist_should_suppress_followup(
         ):
             return False
         if _normalize_rgb(current.get("rgb_color")) != _normalize_rgb(proposed.get("rgb_color")):
+            return False
+
+    return True
+
+
+def _room_vacancy_lighting_off_should_suppress_followup(
+    candidate_cfg: dict[str, Any],
+    accepted_cfg: dict[str, Any],
+) -> bool:
+    if _delay_minute(candidate_cfg.get("vacancy_delay_s")) != _delay_minute(
+        accepted_cfg.get("vacancy_delay_s")
+    ):
+        return False
+
+    candidate_steps = _lighting_steps_by_entity(candidate_cfg)
+    accepted_steps = _lighting_steps_by_entity(accepted_cfg)
+    if set(candidate_steps) != set(accepted_steps):
+        return False
+
+    for entity_id in sorted(candidate_steps):
+        current = accepted_steps[entity_id]
+        proposed = candidate_steps[entity_id]
+        if _normalize_str(current.get("action")) != _normalize_str(proposed.get("action")):
             return False
 
     return True
@@ -504,6 +532,12 @@ def _steps_count(value: Any) -> int:
 
 def _normalize_str(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _delay_minute(value: Any) -> int | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return max(1, int(value) // 60)
 
 
 def _coerce_non_negative_float(value: Any, default: float) -> float:

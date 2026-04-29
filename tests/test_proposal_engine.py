@@ -1900,3 +1900,100 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
     await engine.async_run()
 
     assert len(engine.pending_proposals()) == 0
+
+
+async def test_proposal_engine_suppresses_against_any_matching_accepted_followup(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    old_base = _composite_proposal(
+        reaction_type="room_vacancy_lighting_off",
+        room_id="studio",
+        primary_signal_name="",
+    )
+    old_base = ReactionProposal.from_dict(
+        {
+            **old_base.as_dict(),
+            "proposal_id": "old-base",
+            "status": "accepted",
+            "origin": "admin_authored",
+            "updated_at": "2026-04-09T00:00:00+00:00",
+        }
+    )
+    old_base.suggested_reaction_config.update(
+        {
+            "reaction_type": "room_vacancy_lighting_off",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+            ],
+        }
+    )
+    newer_base = _composite_proposal(
+        reaction_type="room_vacancy_lighting_off",
+        room_id="studio",
+        primary_signal_name="",
+    )
+    newer_base = ReactionProposal.from_dict(
+        {
+            **newer_base.as_dict(),
+            "proposal_id": "newer-base",
+            "status": "accepted",
+            "origin": "learned",
+            "updated_at": "2026-04-28T00:00:00+00:00",
+        }
+    )
+    newer_base.suggested_reaction_config.update(
+        {
+            "reaction_type": "room_vacancy_lighting_off",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+                {"entity_id": "light.studio_led", "action": "off"},
+            ],
+        }
+    )
+    stale_pending = ReactionProposal.from_dict(
+        {
+            **newer_base.as_dict(),
+            "proposal_id": "stale-pending",
+            "status": "pending",
+            "origin": "learned",
+            "updated_at": "2026-04-29T00:00:00+00:00",
+        }
+    )
+    candidate = _composite_proposal(
+        reaction_type="room_vacancy_lighting_off",
+        room_id="studio",
+        primary_signal_name="",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "reaction_type": "room_vacancy_lighting_off",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+                {"entity_id": "light.studio_led", "action": "off"},
+            ],
+        }
+    )
+
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine._store._data = {
+        "data": {
+            "proposals": [
+                old_base.as_dict(),
+                newer_base.as_dict(),
+                stale_pending.as_dict(),
+            ]
+        }
+    }
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    diagnostics = engine.diagnostics()
+    assert diagnostics["pending"] == 0
+    assert {item["id"] for item in diagnostics["proposals"]} == {"old-base", "newer-base"}
