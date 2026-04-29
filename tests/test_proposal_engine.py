@@ -237,6 +237,7 @@ async def test_proposal_engine_sensor_writer_exposes_improvement_metadata(monkey
     assert item["target_reaction_type"] == "room_contextual_lighting_assist"
     assert item["improves_reaction_type"] == "room_darkness_lighting_assist"
     assert item["improvement_reason"] == "house_state_variation"
+    assert "description" not in item
 
 
 async def test_proposal_engine_dedup_pending_improvement_by_target_reaction(monkeypatch):
@@ -1300,8 +1301,35 @@ async def test_proposal_engine_sensor_writer_keeps_count_in_state_and_payload_in
     assert isinstance(count, int)
     assert len(str(count)) < 255
     assert attrs["total"] == 5
+    assert attrs["pending_items_total"] == 5
+    assert attrs["pending_items_included"] == 5
+    assert attrs["pending_items_truncated"] is False
     assert len(attrs["items"]) == 5
     assert attrs["items"][proposal_ids[0]]["origin"] == "admin_authored"
+
+
+async def test_proposal_engine_sensor_writer_limits_items_payload(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    await engine.async_initialize()
+    proposal_ids = []
+    for index in range(ProposalEngine.SENSOR_ITEMS_LIMIT + 5):
+        proposal = _admin_authored_proposal()
+        proposal.suggested_reaction_config["scheduled_min"] = 1200 + (index * 30)
+        proposal_ids.append(await engine.async_submit_proposal(proposal))
+
+    count, attrs = sensor_updates[-1]
+    assert count == ProposalEngine.SENSOR_ITEMS_LIMIT + 5
+    assert attrs["pending_items_total"] == ProposalEngine.SENSOR_ITEMS_LIMIT + 5
+    assert attrs["pending_items_included"] == ProposalEngine.SENSOR_ITEMS_LIMIT
+    assert attrs["pending_items_truncated"] is True
+    assert len(attrs["items"]) == ProposalEngine.SENSOR_ITEMS_LIMIT
+    assert set(attrs["items"]).issubset(set(proposal_ids))
 
 
 async def test_proposal_engine_async_submit_proposal_creates_pending_admin_authored(monkeypatch):
