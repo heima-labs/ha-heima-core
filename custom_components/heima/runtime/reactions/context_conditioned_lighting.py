@@ -125,22 +125,24 @@ def present_learned_context_conditioned_lighting_details(
             else f"Context: {condition.signal_name} in [{state_label}]"
         )
     diagnostics = dict(cfg.get("learning_diagnostics") or {})
-    if diagnostics.get("concentration") is not None:
+    concentration = diagnostics.get("concentration")
+    if isinstance(concentration, (int, float)):
         details.append(
-            f"Concentrazione: {float(diagnostics.get('concentration')):.2f}"
+            f"Concentrazione: {float(concentration):.2f}"
             if is_it
-            else f"Concentration: {float(diagnostics.get('concentration')):.2f}"
+            else f"Concentration: {float(concentration):.2f}"
         )
     lift = diagnostics.get("lift")
     if isinstance(lift, (int, float)):
         details.append(f"Lift: {float(lift):.2f}")
     else:
         details.append("Lift: n/d" if is_it else "Lift: n/a")
-    if diagnostics.get("negative_episode_count") is not None:
+    negative_episode_count = diagnostics.get("negative_episode_count")
+    if isinstance(negative_episode_count, (int, float)):
         details.append(
-            f"Episodi negativi: {int(diagnostics.get('negative_episode_count'))}"
+            f"Episodi negativi: {int(negative_episode_count)}"
             if is_it
-            else f"Negative episodes: {int(diagnostics.get('negative_episode_count'))}"
+            else f"Negative episodes: {int(negative_episode_count)}"
         )
     if "contrast_status" in diagnostics:
         details.append(

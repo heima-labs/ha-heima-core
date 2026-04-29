@@ -33,9 +33,9 @@ from ..reconciliation import reconcile_ha_backed_options
 from ..runtime.reactions import resolve_reaction_type
 from ._common import _default_language, _default_timezone
 from ._steps_calendar import _CalendarStepsMixin
+from ._steps_external_context import _ExternalContextStepsMixin
 from ._steps_general import _GeneralStepsMixin
 from ._steps_heating import _HeatingStepsMixin
-from ._steps_external_context import _ExternalContextStepsMixin
 from ._steps_learning import _LearningStepsMixin
 from ._steps_lighting import _LightingStepsMixin
 from ._steps_notifications import _NotificationsStepsMixin
@@ -115,7 +115,7 @@ class HeimaOptionsFlowHandler(
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
-        self.options = dict(config_entry.options)
+        self.options: dict[str, Any] = dict(config_entry.options)
         self._editing_person_slug: str | None = None
         self._editing_room_id: str | None = None
         self._editing_zone_id: str | None = None
@@ -211,16 +211,16 @@ class HeimaOptionsFlowHandler(
     # ---- Shared state helpers ----
 
     def _people_named(self) -> list[dict[str, Any]]:
-        return list(self.options.get(OPT_PEOPLE_NAMED, []))
+        return _option_dict_list(self.options, OPT_PEOPLE_NAMED)
 
     def _rooms(self) -> list[dict[str, Any]]:
-        return list(self.options.get(OPT_ROOMS, []))
+        return _option_dict_list(self.options, OPT_ROOMS)
 
     def _lighting_rooms(self) -> list[dict[str, Any]]:
-        return list(self.options.get(OPT_LIGHTING_ROOMS, []))
+        return _option_dict_list(self.options, OPT_LIGHTING_ROOMS)
 
     def _lighting_zones(self) -> list[dict[str, Any]]:
-        return list(self.options.get(OPT_LIGHTING_ZONES, []))
+        return _option_dict_list(self.options, OPT_LIGHTING_ZONES)
 
     def _ha_people_inventory(self) -> list[dict[str, str]]:
         states = getattr(self.hass, "states", None)
@@ -642,3 +642,10 @@ class HeimaOptionsFlowHandler(
 
         self.options = options
         return options
+
+
+def _option_dict_list(options: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    raw = options.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [dict(item) for item in raw if isinstance(item, dict)]

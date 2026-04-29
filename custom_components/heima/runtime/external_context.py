@@ -57,6 +57,7 @@ class ExternalContextNormalizer:
 
     def update_config(self, options: dict[str, Any]) -> None:
         from ..const import OPT_EXTERNAL_CONTEXT
+
         raw = options.get(OPT_EXTERNAL_CONTEXT) or {}
         self._mapping = {k: v for k, v in raw.items() if v and k in SLOTS}
 
@@ -80,7 +81,9 @@ class ExternalContextNormalizer:
             except (ValueError, TypeError):
                 _LOGGER.warning(
                     "ExternalContext: cannot coerce slot '%s' from entity '%s' (value=%r)",
-                    slot, entity_id, value,
+                    slot,
+                    entity_id,
+                    value,
                 )
 
         return ctx

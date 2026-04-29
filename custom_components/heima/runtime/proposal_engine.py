@@ -149,8 +149,7 @@ class ProposalEngine:
                     current
                     for current in merged
                     if not (
-                        current.status == "pending"
-                        and self._identity_key(current) == identity_key
+                        current.status == "pending" and self._identity_key(current) == identity_key
                     )
                 ]
                 continue

@@ -45,9 +45,7 @@ class _ExternalContextStepsMixin:
         self._update_options({OPT_EXTERNAL_CONTEXT: normalized})
         return await self.async_step_init()
 
-    def _external_context_schema(
-        self, defaults: dict[str, Any] | None = None
-    ) -> vol.Schema:
+    def _external_context_schema(self, defaults: dict[str, Any] | None = None) -> vol.Schema:
         defaults = defaults or {}
         schema = vol.Schema(
             {
@@ -57,9 +55,7 @@ class _ExternalContextStepsMixin:
         )
         return self._with_suggested(schema, defaults)
 
-    def _normalize_external_context_payload(
-        self, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _normalize_external_context_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for slot in _SLOT_DOMAINS:
             val = payload.get(slot)
