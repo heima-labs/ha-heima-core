@@ -25,6 +25,7 @@ class ProposalEngine:
     STORAGE_VERSION = 1
     DEFAULT_STALE_AFTER = timedelta(days=14)
     DEFAULT_PRUNE_PENDING_STALE_AFTER = timedelta(days=45)
+    SENSOR_ITEMS_LIMIT = 20
 
     def __init__(
         self,
@@ -531,9 +532,13 @@ class ProposalEngine:
             return
         pending = self.pending_proposals()
         ordered = self._sort_proposals(self._proposals)
+        sensor_items = pending[: self.SENSOR_ITEMS_LIMIT]
         attributes = {
             "total": len(ordered),
             "pending": len(pending),
+            "pending_items_total": len(pending),
+            "pending_items_included": len(sensor_items),
+            "pending_items_truncated": len(pending) > self.SENSOR_ITEMS_LIMIT,
             "by_origin": {
                 "learned": sum(1 for p in ordered if p.origin == "learned"),
                 "admin_authored": sum(1 for p in ordered if p.origin == "admin_authored"),
@@ -549,7 +554,6 @@ class ProposalEngine:
             "items": {
                 p.proposal_id: {
                     "type": p.reaction_type,
-                    "description": p.description,
                     "confidence": round(p.confidence, 2),
                     "origin": p.origin,
                     "followup_kind": p.followup_kind,
@@ -561,7 +565,7 @@ class ProposalEngine:
                     "improvement_reason": p.improvement_reason,
                     "is_stale": self._is_stale(p),
                 }
-                for p in ordered
+                for p in sensor_items
             },
         }
         self._sensor_writer(len(pending), attributes)
