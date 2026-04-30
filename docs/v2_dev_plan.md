@@ -98,18 +98,27 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase D — InferenceEngine v2 base, slice D1/D2.
-**Active phase:** None. Next Phase D slice must be agreed before implementation.
+**Last completed phase:** Phase D — slice D3 (learning modules + SignalRouter + ApprovalStore stub).
+**Active phase:** None. Next slice is D4: engine wiring (`_collect_signals`, `_record_snapshot_if_changed`, domain `signals` param, coordinator wiring).
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review D1/D2 results and agree the next Phase D slice before implementation.
+Implement slice D4: engine integration and coordinator wiring.
 
 ### Current Working Notes
 
-- Current slice: Phase D1/D2 — complete.
-- Status: inference foundation and snapshot persistence are implemented without runtime behavior
-  changes.
+- Current slice: Phase D3 — complete.
+- Status: WeekdayStateModule, HeatingPreferenceModule, SignalRouter, ApprovalStore stub implemented.
+  No runtime behavior changes. All 989 tests green.
+- Key design decisions:
+  - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
+    is separate from the signal dataclass (avoids mutating frozen D1 contracts).
+  - TTL expiry: `age_s = (now - emit_time).total_seconds() > signal.ttl_s` → dropped.
+  - Conflict WARNING threshold: confidence >= 0.60 AND different predicted values.
+  - `_importance()` maps: 0.40-0.60 → OBSERVE, 0.60-0.80 → SUGGEST, >0.80 → ASSERT.
+  - `ApprovalStore` is a stub (always returns unapproved); full implementation in Phase F.
+  - WeekdayStateModule/HeatingPreferenceModule precompute their model in `analyze()` so
+    `infer()` is a pure dict lookup (< 1ms verified in tests).
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -215,9 +224,20 @@ Review D1/D2 results and agree the next Phase D slice before implementation.
   - [x] Add `SnapshotStore` persisted with HA Store key `heima_snapshots`.
   - [x] Enforce max 10,000 records, 90-day TTL, and semantic write-on-change deduplication.
   - [x] Add tests for load/save, pruning, TTL, and dedup.
-- Explicitly out of scope for this slice:
-  - `_collect_signals()`, `_record_snapshot_if_changed()`, `SignalRouter`, learning modules,
-    coordinator wiring, and domain signal consumption.
+- D3 — Learning Modules + SignalRouter + ApprovalStore stub:
+  - [x] Add `runtime/inference/modules/weekday_state.py` — `WeekdayStateModule`.
+  - [x] Add `runtime/inference/modules/heating_preference.py` — `HeatingPreferenceModule`.
+  - [x] Add `runtime/inference/router.py` — `SignalRouter`.
+  - [x] Add `runtime/inference/approval_store.py` — `ApprovalStore` stub.
+  - [x] Add tests: modules (importance ranges, min support, timing < 1ms), router (grouping,
+    expiry, sorting, conflict warning).
+- D4 — Engine wiring (next slice):
+  - [ ] Add `_collect_signals()` to `engine.py` — calls `module.infer(context)` for each module.
+  - [ ] Add `_record_snapshot_if_changed()` to `engine.py` — calls
+    `SnapshotStore.async_append_if_changed()`.
+  - [ ] Add `signals: list[...] = []` param to `LightingDomain.compute()`,
+    `HeatingDomain.compute()`, `OccupancyDomain.compute()` (spec §10.8).
+  - [ ] Wire `SignalRouter`, `SnapshotStore`, and learning modules in `coordinator.py`.
 
 #### Phase A slices 2/3 implementation decision
 
@@ -394,11 +414,11 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ### Acceptance criteria
 
-- [ ] `SnapshotStore` persists to HA Store key `heima_snapshots`
-- [ ] `_record_snapshot_if_changed()` only writes on state change (deduplication)
-- [ ] `WeekdayStateModule` and `HeatingPreferenceModule` return typed signals
-- [ ] `ILearningModule.infer()` completes in < 1ms (verified via test timing)
-- [ ] All 660 tests pass
+- [x] `SnapshotStore` persists to HA Store key `heima_snapshots`
+- [ ] `_record_snapshot_if_changed()` only writes on state change (deduplication) — wired in D4
+- [x] `WeekdayStateModule` and `HeatingPreferenceModule` return typed signals
+- [x] `ILearningModule.infer()` completes in < 1ms (verified via test timing)
+- [ ] All 660 tests pass — 989 tests pass (D1–D3 added 329 new tests)
 
 ---
 
