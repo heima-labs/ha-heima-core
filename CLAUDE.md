@@ -5,7 +5,9 @@ Intent-driven home intelligence engine as Home Assistant custom integration.
 GitHub org: Heima Labs. Repo: `ha-heima-component`.
 
 ## Language
-Respond in Italian unless code, identifiers, or spec content requires English.
+Respond in Italian in chat.
+Write code, documentation, comments, specs, changelog entries, commit messages, branch names,
+test names, and any persistent project artifact in English.
 
 ## Communication style
 - Risposte stringate. Dettagli solo se richiesti esplicitamente.
@@ -13,7 +15,11 @@ Respond in Italian unless code, identifiers, or spec content requires English.
 
 ## Commit style
 - Messaggi brevi: titolo imperativo + 2-3 righe di contesto max.
-- Non committare mai senza richiesta esplicita dell'utente.
+- Non committare su `main` senza richiesta esplicita dell'utente.
+- Su branch di sviluppo v2 (`feat/v2`) sono ammessi commit intermedi a fine slice stabile,
+  se aiutano continuità tra sessioni/compattamenti. Prima del commit: test mirati verdi o
+  stato dei test documentato in `docs/v2_dev_plan.md`.
+- Non fare push, merge o release commit senza richiesta esplicita dell'utente.
 - Aggiungere sempre `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`.
 
 ## Branch model
@@ -73,6 +79,20 @@ Lo sviluppo attivo è su `feat/v2`. Il piano di sviluppo è in `docs/v2_dev_plan
 **Ogni sessione che lavora su v2 deve iniziare leggendo `docs/v2_dev_plan.md`.**
 Il documento traccia fase corrente, stato, prossima azione e criteri di accettazione per ogni fase.
 Non prendere decisioni architetturali non già presenti nella spec o nel piano.
+
+### Continuità tra sessioni e compattamenti
+
+`docs/v2_dev_plan.md` è anche il registro operativo per riprendere il lavoro dopo nuove chat
+o compattamenti del prompt. Durante una fase attiva, mantenere una sezione `Current Working Notes`
+con:
+- slice corrente e stato;
+- file modificati;
+- test eseguiti e risultato;
+- prossimo passo concreto;
+- blocker o decisioni aperte.
+
+Aggiornare le note prima di pause rischiose, a fine slice significativa, e prima di commit intermedi.
+Se una scelta architetturale non è già coperta da spec o piano, fermarsi e chiedere al developer.
 
 ## Key specs
 - v1: `docs/specs/rfc/heima_spec_v1.md`
