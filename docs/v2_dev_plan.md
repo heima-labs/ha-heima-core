@@ -219,7 +219,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 | File | Change |
 |---|---|
-| `runtime/domains/lighting.py` | Add `IDomainPlugin` compliance: `domain_name`, `depends_on`, `compute(canonical_state, domain_results, signals)` wrapping existing logic |
+| `runtime/domains/lighting.py` | Add `IDomainPlugin` compliance: `domain_id`, `depends_on`, `compute(canonical_state, domain_results, signals)` wrapping existing logic |
 | `runtime/domains/heating.py` | Same as lighting |
 | `runtime/domains/security.py` | Same as lighting |
 | `runtime/engine.py` | Add `register_plugin()`, `finalize_dag()`, replace hardcoded Lighting/Heating/Security calls with DAG loop |
@@ -263,7 +263,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 - [x] All existing analyzers satisfy `IBehaviorAnalyzer` Protocol
 - [x] `FindingRouter` routes `kind="pattern"` → `ProposalEngine.submit()`
-- [x] `FindingRouter` routes `kind="anomaly"` → notification
+- [x] `FindingRouter` routes `kind="anomaly"` → `AnomalyEngine.submit_statistical()` (spec §8.3)
 - [x] `FindingRouter` routes `kind="activity"` → `ProposalEngine.submit()` (stubbed, used in Phase H)
 - [x] All existing tests pass
 
@@ -290,14 +290,16 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 | File | Change |
 |---|---|
 | `runtime/plugin_contracts.py` | Add `IInvariantCheck` Protocol, `InvariantViolation` | §9.2–9.3 |
-| `runtime/engine.py` | Add `_run_invariant_checks()` call after Apply step |
+| `runtime/engine.py` | Add `_run_invariant_checks()` call after all domains computed, before Apply |
 | `coordinator.py` | Register built-in invariant checks |
 
 ### Acceptance criteria
 
 - [ ] Each built-in check: at least 1 test for violation, 1 for resolution, 1 for debounce
-- [ ] Checks run after Apply, before next cycle
+- [ ] Checks run after all domains computed, before Apply (spec §9 — pre-Apply guard)
 - [ ] Checks never read EventStore or SnapshotStore (enforce in code review)
+- [ ] Each `InvariantViolation` is immediately converted to `HeimaEvent(type=f"anomaly.{anomaly_type}")` with debounce per `check_id` (spec §9.3)
+- [ ] Config defaults implemented: `anomaly_enabled=true`, `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`, `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600` (spec §9.6)
 - [ ] All 660 tests pass
 
 ---
@@ -452,7 +454,7 @@ grace → absent      : grace_period_s elapsed without signal
 
 - `activity.active_names`: `tuple[str, ...]`
 - `activity.candidate_names`: `tuple[str, ...]`
-- `activity.last_started`: `dict[str, float]` (activity_name → monotonic ts)
+- `activity.last_started`: `str` — ISO-8601 timestamp of most recent `activity.started` event (spec §7.8)
 
 ### Acceptance criteria
 
