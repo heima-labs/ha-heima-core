@@ -81,7 +81,9 @@ class OccupancyDomain:
         schedule_recheck: Callable[..., None],
         state: Any,  # CanonicalState - avoided circular to keep simple
         now: str,
+        signals: list[Any] | None = None,  # OccupancySignal stub — not applied in v2
     ) -> OccupancyResult:
+        del signals
         occupied_rooms: list[str] = []
         sensorized_room_count = 0
 

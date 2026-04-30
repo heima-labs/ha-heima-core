@@ -30,12 +30,19 @@ from .runtime.context_builder import ContextBuilder
 from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.finding_router import FindingRouter
+from .runtime.inference import (
+    ApprovalStore,
+    HeatingPreferenceModule,
+    SnapshotStore,
+    WeekdayStateModule,
+)
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
+_ANALYZE_INTERVAL_S = 6 * 60 * 60
 
 
 class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
@@ -107,6 +114,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             proposal_engine=self._proposal_engine,
             anomaly_handler=self._async_handle_anomaly_finding,
         )
+        self._house_snapshot_store = SnapshotStore(hass)
+        self._approval_store = ApprovalStore(hass)
+        self._weekday_module = WeekdayStateModule()
+        self._heating_module = HeatingPreferenceModule()
+        self.engine.set_snapshot_store(self._house_snapshot_store)
+        self.engine.register_learning_module(self._weekday_module)
+        self.engine.register_learning_module(self._heating_module)
+        self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self.last_options_snapshot: dict = dict(entry.options)
@@ -152,6 +167,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Initialize runtime and publish base state."""
         summary, changed = await self._async_reconcile_ha_backed_objects()
         await self._event_store.async_load()
+        await self._house_snapshot_store.async_load()
+        await self._approval_store.async_load()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         if changed:
@@ -161,6 +178,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
         self._schedule_proposal_tick()
+        self._schedule_analyze_tick()
         self._subscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -497,6 +515,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Shutdown runtime."""
         self._unsubscribe_state_changes()
         self._cancel_proposal_tick()
+        self._cancel_analyze_tick()
         await self._proposal_engine.async_shutdown()
         await self._scheduler.async_shutdown()
         await self._event_store.async_flush()
@@ -545,6 +564,27 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if self._unsub_proposal_tick:
             self._unsub_proposal_tick()
             self._unsub_proposal_tick = None
+
+    def _cancel_analyze_tick(self) -> None:
+        if self._unsub_analyze_tick:
+            self._unsub_analyze_tick()
+            self._unsub_analyze_tick = None
+
+    def _schedule_analyze_tick(self) -> None:
+        self._cancel_analyze_tick()
+
+        @callback
+        def _handle(_now) -> None:  # type: ignore[no-untyped-def]
+            self.hass.async_create_task(self._async_run_analyze_tick())
+
+        self._unsub_analyze_tick = async_call_later(self.hass, _ANALYZE_INTERVAL_S, _handle)
+
+    async def _async_run_analyze_tick(self) -> None:
+        try:
+            for module in (self._weekday_module, self._heating_module):
+                await module.analyze(self._house_snapshot_store)
+        finally:
+            self._schedule_analyze_tick()
 
     async def _async_run_proposal_tick(self) -> None:
         try:

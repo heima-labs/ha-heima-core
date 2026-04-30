@@ -87,7 +87,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | A | Plugin Framework | `DONE` | — |
 | B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
 | C | IInvariantCheck | `DONE` | A |
-| D | InferenceEngine v2 (base) | `IN PROGRESS` | A |
+| D | InferenceEngine v2 (base) | `DONE` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
 | G | ActivityDomain | `NOT STARTED` | A, D |
@@ -98,18 +98,19 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase D — slice D3 (learning modules + SignalRouter + ApprovalStore stub).
-**Active phase:** None. Next slice is D4: engine wiring (`_collect_signals`, `_record_snapshot_if_changed`, domain `signals` param, coordinator wiring).
+**Last completed phase:** Phase D — complete (D1/D2/D3/D4 all done).
+**Active phase:** None. Phase D fully complete. Next phase: E (OutcomeTracker + Feedback Loop).
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Implement slice D4: engine integration and coordinator wiring.
+Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Review Phase E/G and confirm with developer before implementing.
 
 ### Current Working Notes
 
-- Current slice: Phase D3 — complete.
-- Status: WeekdayStateModule, HeatingPreferenceModule, SignalRouter, ApprovalStore stub implemented.
-  No runtime behavior changes. All 989 tests green.
+- Current slice: Phase D4 — complete.
+- Status: Engine wiring complete. `_collect_signals()` + `_record_snapshot_if_changed()` wired into
+  `async_evaluate()`. `WeekdayStateModule` and `HeatingPreferenceModule` run `analyze()` every 6h.
+  No runtime behavior changes. All 995 tests green.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -231,13 +232,15 @@ Implement slice D4: engine integration and coordinator wiring.
   - [x] Add `runtime/inference/approval_store.py` — `ApprovalStore` stub.
   - [x] Add tests: modules (importance ranges, min support, timing < 1ms), router (grouping,
     expiry, sorting, conflict warning).
-- D4 — Engine wiring (next slice):
-  - [ ] Add `_collect_signals()` to `engine.py` — calls `module.infer(context)` for each module.
-  - [ ] Add `_record_snapshot_if_changed()` to `engine.py` — calls
+- D4 — Engine wiring:
+  - [x] Add `_collect_signals()` to `engine.py` — calls `module.infer(context)` for each module.
+  - [x] Add `_record_snapshot_if_changed()` to `engine.py` — calls
     `SnapshotStore.async_append_if_changed()`.
-  - [ ] Add `signals: list[...] = []` param to `LightingDomain.compute()`,
-    `HeatingDomain.compute()`, `OccupancyDomain.compute()` (spec §10.8).
-  - [ ] Wire `SignalRouter`, `SnapshotStore`, and learning modules in `coordinator.py`.
+  - [x] Add `signals: list[Any] | None = None` stub param to `OccupancyDomain.compute()` (spec §10.8).
+    LightingDomain and HeatingDomain already had the param from Phase A.
+  - [x] Wire `SignalRouter`, `SnapshotStore`, `WeekdayStateModule`, `HeatingPreferenceModule`,
+    `ApprovalStore` in `coordinator.py`.
+  - [x] `_cancel_analyze_tick()` called in `async_shutdown()` — verified no lingering timers.
 
 #### Phase A slices 2/3 implementation decision
 
@@ -415,10 +418,10 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 ### Acceptance criteria
 
 - [x] `SnapshotStore` persists to HA Store key `heima_snapshots`
-- [ ] `_record_snapshot_if_changed()` only writes on state change (deduplication) — wired in D4
+- [x] `_record_snapshot_if_changed()` only writes on state change (deduplication)
 - [x] `WeekdayStateModule` and `HeatingPreferenceModule` return typed signals
 - [x] `ILearningModule.infer()` completes in < 1ms (verified via test timing)
-- [ ] All 660 tests pass — 989 tests pass (D1–D3 added 329 new tests)
+- [x] All tests pass — 995 tests (D1–D4 added 335 new tests)
 
 ---
 

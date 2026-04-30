@@ -55,6 +55,16 @@ from .domains.security_camera_evidence import (
     SecurityCameraEvidenceResult,
 )
 from .external_context import ExternalContext, ExternalContextNormalizer
+from .inference import (
+    HeatingSignal,
+    HouseSnapshot,
+    ILearningModule,
+    InferenceContext,
+    InferenceSignal,
+    LightingSignal,
+    SignalRouter,
+    SnapshotStore,
+)
 from .invariant_check import InvariantCheckState, evaluate_invariant_state
 from .invariants import (
     HeatingHomeEmpty,
@@ -78,6 +88,12 @@ from .state_store import CanonicalState
 _LOGGER = logging.getLogger(__name__)
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
+
+# Maps plugin domain_id to the InferenceSignal subclass it can consume (spec §10.8).
+_PLUGIN_SIGNAL_TYPE: dict[str, type] = {
+    "lighting": LightingSignal,
+    "heating": HeatingSignal,
+}
 
 
 @dataclass(frozen=True)
@@ -147,6 +163,9 @@ class HeimaEngine:
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
+        self._signal_router = SignalRouter()
+        self._learning_modules: list[ILearningModule] = []
+        self._house_snapshot_store: SnapshotStore | None = None
         self._bind_domain_plugin_runtime()
 
     @property
@@ -184,6 +203,14 @@ class HeimaEngine:
             for script_id, payload in self._recent_script_applies.items()
         }
         return state
+
+    def register_learning_module(self, module: ILearningModule) -> None:
+        """Register a learning module for per-cycle signal collection."""
+        self._learning_modules.append(module)
+
+    def set_snapshot_store(self, store: SnapshotStore) -> None:
+        """Set the snapshot store for write-on-change persistence."""
+        self._house_snapshot_store = store
 
     def _infer_step_room_id(self, step: ApplyStep) -> str | None:
         """Best-effort room scope for a reaction-generated step."""
@@ -595,6 +622,7 @@ class HeimaEngine:
         calendar_cfg = dict(self._entry.options.get(OPT_CALENDAR, {}))
         await self._calendar_domain.async_maybe_refresh(calendar_cfg)
         snapshot = self._compute_snapshot(reason=reason)
+        await self._record_snapshot_if_changed(snapshot)
         self._snapshot = snapshot
         self._snapshot_buffer.push(snapshot)
         self._apply_snapshot_to_canonical_state(snapshot)
@@ -838,7 +866,14 @@ class HeimaEngine:
             .with_result("calendar", calendar_result)
             .with_result("house_state", hs_result)
         )
-        domain_results = self._compute_domain_plugins(domain_results)
+        now_utc = datetime.now(timezone.utc)
+        signal_buckets = self._collect_signals(
+            anyone_home=anyone_home,
+            named_present=tuple(sorted(people_result.people_home_list)),
+            occupied_rooms=occupied_rooms,
+            now_utc=now_utc,
+        )
+        domain_results = self._compute_domain_plugins(domain_results, signal_buckets=signal_buckets)
         self._last_domain_results = domain_results
 
         lighting_result = domain_results.require("lighting")
@@ -934,13 +969,73 @@ class HeimaEngine:
             heating_provenance=heating_result.observed_provenance,
         )
 
-    def _compute_domain_plugins(self, domain_results: DomainResultBag) -> DomainResultBag:
+    def _compute_domain_plugins(
+        self,
+        domain_results: DomainResultBag,
+        signal_buckets: dict[type, list[InferenceSignal]] | None = None,
+    ) -> DomainResultBag:
         self._ensure_domain_plugins_finalized()
         results = domain_results
+        buckets = signal_buckets or {}
         for plugin in self._domain_plugin_order:
-            plugin_result = plugin.compute(self._state, results, signals=None)
+            signal_type = _PLUGIN_SIGNAL_TYPE.get(plugin.domain_id)
+            plugin_signals = buckets.get(signal_type) if signal_type is not None else None
+            plugin_result = plugin.compute(self._state, results, signals=plugin_signals)
             results = results.with_result(plugin.domain_id, plugin_result)
         return results
+
+    def _collect_signals(
+        self,
+        *,
+        anyone_home: bool,
+        named_present: tuple[str, ...],
+        occupied_rooms: list[str],
+        now_utc: datetime,
+    ) -> dict[type, list[InferenceSignal]]:
+        """Call each learning module synchronously and route the resulting signals."""
+        if not self._learning_modules:
+            return {}
+        context = InferenceContext(
+            now_local=now_utc,
+            weekday=now_utc.weekday(),
+            minute_of_day=now_utc.hour * 60 + now_utc.minute,
+            anyone_home=anyone_home,
+            named_present=named_present,
+            room_occupancy={room: True for room in occupied_rooms},
+            previous_house_state=str(self._snapshot.house_state or "unknown"),
+            previous_heating_setpoint=self._snapshot.heating_setpoint,
+            previous_lighting_scenes=dict(self._snapshot.lighting_intents or {}),
+            previous_activity_names=(),
+        )
+        paired: list[tuple[InferenceSignal, datetime]] = []
+        for module in self._learning_modules:
+            for signal in module.infer(context):
+                paired.append((signal, now_utc))
+        return self._signal_router.route(paired, now_utc)
+
+    async def _record_snapshot_if_changed(self, snapshot: DecisionSnapshot) -> None:
+        """Persist a HouseSnapshot for inference learning, only on state change."""
+        if self._house_snapshot_store is None:
+            return
+        ts_utc = datetime.now(timezone.utc)
+        people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
+        named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
+        room_occupancy = {room: True for room in snapshot.occupied_rooms}
+        security_armed = snapshot.security_state not in ("disarmed", "unknown", "disabled", "")
+        house_snap = HouseSnapshot(
+            ts=snapshot.ts,
+            weekday=ts_utc.weekday(),
+            minute_of_day=ts_utc.hour * 60 + ts_utc.minute,
+            anyone_home=snapshot.anyone_home,
+            named_present=named_present,
+            room_occupancy=room_occupancy,
+            detected_activities=(),
+            house_state=snapshot.house_state,
+            heating_setpoint=snapshot.heating_setpoint,
+            lighting_scenes=dict(snapshot.lighting_intents or {}),
+            security_armed=security_armed,
+        )
+        await self._house_snapshot_store.async_append_if_changed(house_snap)
 
     def _run_invariant_checks(self, snapshot: DecisionSnapshot) -> None:
         if not self._invariant_config()["enabled"]:
