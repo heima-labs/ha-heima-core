@@ -40,7 +40,15 @@ Non fare merge se `ci_local.sh` fallisce.
 - Prima di modificare un file: leggerlo.
 
 ## Architecture invariants
-- Il DAG di valutazione è: InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply.
+
+**v1 (branch `main`, codice attivo):**
+DAG fisso: `InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply`.
+
+**v2 (branch `feat/v2`, in sviluppo):**
+DAG: core fisso `People → Occupancy → Activity → HouseState`, poi plugin ordinati per DAG (`Lighting`, `Heating`, `Security`).
+ActivityDomain è il 4° core domain, inserito tra Occupancy e HouseState.
+
+**Invarianti comuni a entrambe le versioni:**
 - I domini leggono CanonicalState (ciclo precedente), NON gli output degli altri domini nel ciclo corrente.
 - Nessuna dipendenza circolare tra domini.
 - Apply plan è l'unico canale di output per le azioni su HA.
@@ -52,8 +60,8 @@ v1 apprende pattern a livello household, non per persona. È una limitazione not
 non un bug. Per-person learning è pianificato per v2, non schedulato.
 
 ### Inference Engine v2
-La spec esiste in `docs/specs/learning/inference_engine_spec.md` ma l'implementazione è 0%.
-Stato: RFC/on-hold. Non schedulare lavoro su v2 inference senza decisione esplicita dell'utente.
+Incorporato in `docs/specs/heima_v2_spec.md` §10. Pianificato per Phase D di `feat/v2`.
+Il file `docs/specs/learning/inference_engine_spec.md` è superato dalla spec v2.1.0-draft.
 
 ### Plugin API
 In v1 i registry sono built-in. Il caricamento dinamico di plugin di terze parti non è supportato.

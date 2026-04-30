@@ -1,6 +1,6 @@
 # Heima v2 — Formal Specification
 
-**Status:** RFC — implementation planned on `main`
+**Status:** RFC — implementation on branch `feat/v2`
 **Date:** 2026-04-30
 **Version:** 2.1.0-draft
 **Supersedes:** 2.0.0-draft (2026-03-12). Incorporates Activity Layer (§7), Event-Driven Trigger
