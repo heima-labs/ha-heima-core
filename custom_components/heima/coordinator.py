@@ -29,6 +29,8 @@ from .runtime.behaviors import (
 from .runtime.context_builder import ContextBuilder
 from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
+from .runtime.finding_router import FindingRouter
+from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 
@@ -99,6 +101,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
+        self._finding_router = FindingRouter(
+            proposal_engine=self._proposal_engine,
+            anomaly_handler=self._async_handle_anomaly_finding,
+        )
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self.last_options_snapshot: dict = dict(entry.options)
@@ -128,6 +134,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     @property
     def learning_plugin_registry(self):
         return self._learning_plugin_registry
+
+    @property
+    def finding_router(self) -> FindingRouter:
+        return self._finding_router
 
     async def _async_update_data(self) -> HeimaRuntimeState:
         """Return current runtime state for coordinator refreshes.
@@ -180,6 +190,20 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         return create_builtin_learning_plugin_registry(
             enabled_families=enabled_families,
             learning_config=learning,
+        )
+
+    async def _async_handle_anomaly_finding(self, signal: AnomalySignal) -> None:
+        await self.engine.async_emit_external_event(
+            event_type="learning.anomaly",
+            key=f"learning.anomaly.{signal.anomaly_type}",
+            severity=signal.severity,
+            title="Learning anomaly",
+            message=signal.description,
+            context={
+                "anomaly_type": signal.anomaly_type,
+                "confidence": signal.confidence,
+                **dict(signal.context),
+            },
         )
 
     async def async_reload_options(self, *, changed_keys: set[str] | None = None) -> None:

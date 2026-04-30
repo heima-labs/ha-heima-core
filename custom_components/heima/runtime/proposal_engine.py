@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 from .analyzers.base import IPatternAnalyzer, ReactionProposal
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
+from .plugin_contracts import BehaviorFinding
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
@@ -113,7 +114,8 @@ class ProposalEngine:
                 except TypeError:
                     self._last_analyzer_output_errors += 1
                     continue
-            for proposal in proposals:
+            for raw_proposal in proposals:
+                proposal = self._proposal_from_analyzer_output(raw_proposal)
                 if not isinstance(proposal, ReactionProposal):
                     self._last_analyzer_output_errors += 1
                     continue
@@ -245,6 +247,18 @@ class ProposalEngine:
         self._proposals = pruned
         await self._store.async_save(self._serialize())
         self._write_sensor()
+
+    @staticmethod
+    def _proposal_from_analyzer_output(value: object) -> ReactionProposal | None:
+        if isinstance(value, ReactionProposal):
+            return value
+        if not isinstance(value, BehaviorFinding):
+            return None
+        if value.kind not in {"pattern", "proposal", "activity"}:
+            return None
+        if isinstance(value.payload, ReactionProposal):
+            return value.payload
+        return None
 
     def _normalize_generated_candidate(
         self,

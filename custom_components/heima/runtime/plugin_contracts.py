@@ -2,12 +2,41 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from .domain_result_bag import DomainResultBag
+from .event_store import EventStore
 from .state_store import CanonicalState
 
 DomainResult = Any
+BehaviorFindingKind = Literal["pattern", "proposal", "activity", "anomaly", "correlation"]
+
+
+@dataclass(frozen=True)
+class AnomalySignal:
+    """Statistical anomaly emitted by offline behavior analyzers."""
+
+    anomaly_type: str
+    severity: Literal["info", "warning", "critical"]
+    description: str
+    confidence: float
+    context: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BehaviorFinding:
+    """Typed output from an offline behavior analyzer."""
+
+    kind: BehaviorFindingKind
+    analyzer_id: str
+    description: str
+    confidence: float
+    payload: Any
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate legacy read access to the payload during analyzer migration."""
+        return getattr(self.payload, name)
 
 
 @runtime_checkable
@@ -53,4 +82,22 @@ class IOptionsSchemaProvider(Protocol):
 
     def options_defaults(self) -> dict[str, Any]:
         """Return default options for this plugin."""
+        ...
+
+
+@runtime_checkable
+class IBehaviorAnalyzer(Protocol):
+    """Offline analyzer producing typed behavior findings."""
+
+    @property
+    def analyzer_id(self) -> str:
+        """Stable analyzer identifier."""
+        ...
+
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        """Analyze persisted history and return findings."""
         ...

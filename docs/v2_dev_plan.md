@@ -85,7 +85,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | Phase | Title | Status | Depends on |
 |---|---|---|---|
 | A | Plugin Framework | `DONE` | — |
-| B | IBehaviorAnalyzer + FindingRouter | `NOT STARTED` | A |
+| B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
 | C | IInvariantCheck | `NOT STARTED` | A |
 | D | InferenceEngine v2 (base) | `NOT STARTED` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
@@ -98,17 +98,17 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase A — Plugin Framework.
+**Last completed phase:** Phase B — IBehaviorAnalyzer + FindingRouter.
 **Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase B spec (§8) and begin `IBehaviorAnalyzer + FindingRouter`.
+Review Phase C spec (§9) and begin `IInvariantCheck`.
 
 ### Current Working Notes
 
-- Current slice: Phase A — complete.
-- Status: built-in plugin framework is implemented and verified.
+- Current slice: Phase B — complete.
+- Status: analyzer contracts, finding router, and proposal pipeline compatibility are implemented.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -128,17 +128,39 @@ Review Phase B spec (§8) and begin `IBehaviorAnalyzer + FindingRouter`.
   - `custom_components/heima/coordinator.py`
   - `tests/test_domain_plugin_dag.py`
   - `tests/test_calendar_domain.py`
+  - `custom_components/heima/runtime/plugin_contracts.py`
+  - `custom_components/heima/runtime/finding_router.py`
+  - `custom_components/heima/runtime/proposal_engine.py`
+  - `custom_components/heima/runtime/analyzers/presence.py`
+  - `custom_components/heima/runtime/analyzers/heating.py`
+  - `custom_components/heima/runtime/analyzers/anomaly.py`
+  - `custom_components/heima/runtime/analyzers/correlation.py`
+  - `custom_components/heima/coordinator.py`
+  - `tests/test_proposal_engine.py`
+- Phase B implementation notes:
+  - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
+  - Keep existing v1 analyzer registry behavior-compatible. Analyzers that still return bare
+    `ReactionProposal` objects remain accepted during migration.
+  - New/migrated analyzers should return `BehaviorFinding` objects.
+  - `FindingRouter` will expose async routing because `ProposalEngine` persistence is async.
 - Tests run:
   - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py -q` — passed, 8 tests.
   - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py tests/test_security_mismatch_policy.py -q` — passed, 53 tests.
   - `.venv/bin/python -m pytest tests/test_engine_normalization_migration.py tests/test_engine_behavior_error_event.py tests/test_constraints_layer.py tests/test_sensor_entities.py -q` — passed, 23 tests.
-  - `.venv/bin/python -m pytest tests/ -q` — passed, 944 tests.
+  - `.venv/bin/python -m pytest tests/test_proposal_engine.py tests/test_presence_pattern_analyzer.py tests/test_heating_pattern_analyzer.py -q` — passed, 78 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 949 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
-- Next concrete step: read Phase B spec and plan the analyzer/router migration.
+  - Presence and Heating analyzers now return `BehaviorFinding(kind="pattern")` with the existing
+    `ReactionProposal` as payload.
+  - `ProposalEngine` still accepts legacy bare `ReactionProposal` outputs while remaining analyzers
+    migrate.
+  - `BehaviorFinding` delegates read-only legacy attribute access to its payload during migration.
+  - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
+- Next concrete step: read Phase C spec and plan invariant check implementation.
 - Open decisions: none.
 
 #### Phase A slices 2/3 implementation decision
@@ -236,11 +258,11 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ### Acceptance criteria
 
-- [ ] All existing analyzers satisfy `IBehaviorAnalyzer` Protocol
-- [ ] `FindingRouter` routes `kind="proposal"` → `ProposalEngine.submit()`
-- [ ] `FindingRouter` routes `kind="anomaly"` → notification
-- [ ] `FindingRouter` routes `kind="activity"` → `ProposalEngine.submit()` (stubbed, used in Phase H)
-- [ ] All 660 tests pass
+- [x] All existing analyzers satisfy `IBehaviorAnalyzer` Protocol
+- [x] `FindingRouter` routes `kind="pattern"` → `ProposalEngine.submit()`
+- [x] `FindingRouter` routes `kind="anomaly"` → notification
+- [x] `FindingRouter` routes `kind="activity"` → `ProposalEngine.submit()` (stubbed, used in Phase H)
+- [x] All existing tests pass
 
 ---
 

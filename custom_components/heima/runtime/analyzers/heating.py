@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
+from ..plugin_contracts import BehaviorFinding
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import HeatingLearningPolicy
@@ -40,7 +41,25 @@ class HeatingPatternAnalyzer:
     def analyzer_id(self) -> str:
         return "HeatingPatternAnalyzer"
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
+        proposals = await self._analyze_proposals(event_store)
+        return [
+            BehaviorFinding(
+                kind="pattern",
+                analyzer_id=self.analyzer_id,
+                description=proposal.description,
+                confidence=proposal.confidence,
+                payload=proposal,
+            )
+            for proposal in proposals
+        ]
+
+    async def _analyze_proposals(self, event_store: EventStore) -> list[ReactionProposal]:
         raw_heating = await event_store.async_query(event_type="heating")
         heating_events: list[HeimaEvent] = [e for e in raw_heating if isinstance(e, HeimaEvent)]
         if not heating_events:
