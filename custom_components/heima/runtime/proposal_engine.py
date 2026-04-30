@@ -136,6 +136,16 @@ class ProposalEngine:
             accepted_matches = [
                 (idx, current) for idx, current in matching if current.status == "accepted"
             ]
+            if self._configured_reaction_suppresses_candidate(normalized_candidate):
+                merged = [
+                    current
+                    for current in merged
+                    if not (
+                        current.status == "pending" and self._identity_key(current) == identity_key
+                    )
+                ]
+                continue
+
             suppressing_accepted_match = next(
                 (
                     (idx, current)
@@ -377,6 +387,45 @@ class ProposalEngine:
                 "cfg": reaction_cfg,
             }
         return None
+
+    def _configured_reaction_suppresses_candidate(self, candidate: ReactionProposal) -> bool:
+        if self._configured_reactions_provider is None:
+            return False
+        configured = self._configured_reactions_provider()
+        if not isinstance(configured, dict):
+            return False
+        for raw in configured.values():
+            reaction_cfg = _safe_dict(raw)
+            if not reaction_cfg:
+                continue
+            if self._configured_reaction_cfg_suppresses_candidate(candidate, reaction_cfg):
+                return True
+        return False
+
+    def _configured_reaction_cfg_suppresses_candidate(
+        self,
+        candidate: ReactionProposal,
+        reaction_cfg: dict[str, Any],
+    ) -> bool:
+        reaction_type = resolve_reaction_type(reaction_cfg)
+        if not reaction_type:
+            return False
+        if reaction_type == candidate.reaction_type:
+            accepted_proxy = replace(
+                candidate,
+                status="accepted",
+                suggested_reaction_config=reaction_cfg,
+            )
+            return self._should_suppress_followup(candidate, accepted_proxy)
+        if (
+            candidate.reaction_type == "room_darkness_lighting_assist"
+            and reaction_type == "room_contextual_lighting_assist"
+        ):
+            return _configured_contextual_lighting_covers_darkness_candidate(
+                candidate.suggested_reaction_config,
+                reaction_cfg,
+            )
+        return False
 
     async def async_accept_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "accepted")
@@ -815,8 +864,44 @@ def _latest_proposal_match(
     return max(matches, key=lambda item: item[1].updated_at or item[1].created_at)
 
 
+def _configured_contextual_lighting_covers_darkness_candidate(
+    candidate_cfg: dict[str, Any],
+    reaction_cfg: dict[str, Any],
+) -> bool:
+    if (
+        str(candidate_cfg.get("room_id") or "").strip()
+        != str(reaction_cfg.get("room_id") or "").strip()
+    ):
+        return False
+    candidate_signal = str(candidate_cfg.get("primary_signal_name") or "").strip().lower()
+    reaction_signal = str(reaction_cfg.get("primary_signal_name") or "").strip().lower()
+    if candidate_signal and reaction_signal and candidate_signal != reaction_signal:
+        return False
+    if candidate_signal and not reaction_signal:
+        return False
+
+    candidate_entities = _sorted_strings(candidate_cfg.get("primary_signal_entities"))
+    reaction_entities = _sorted_strings(reaction_cfg.get("primary_signal_entities"))
+    if candidate_entities and reaction_entities and candidate_entities != reaction_entities:
+        return False
+
+    profiles = reaction_cfg.get("profiles")
+    if not isinstance(profiles, dict) or not profiles:
+        return False
+    return any(
+        isinstance(profile, dict) and isinstance(profile.get("entity_steps"), list)
+        for profile in profiles.values()
+    )
+
+
 def _proposal_type_counts(proposals: list[ReactionProposal]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for proposal in proposals:
         counts[proposal.reaction_type] = counts.get(proposal.reaction_type, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _sorted_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return sorted(str(item).strip() for item in value if str(item).strip())

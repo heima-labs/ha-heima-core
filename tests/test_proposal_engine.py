@@ -1997,3 +1997,114 @@ async def test_proposal_engine_suppresses_against_any_matching_accepted_followup
     diagnostics = engine.diagnostics()
     assert diagnostics["pending"] == 0
     assert {item["id"] for item in diagnostics["proposals"]} == {"old-base", "newer-base"}
+
+
+async def test_proposal_engine_suppresses_followup_covered_by_configured_reaction(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    candidate = _composite_proposal(
+        reaction_type="room_vacancy_lighting_off",
+        room_id="studio",
+        primary_signal_name="",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "reaction_type": "room_vacancy_lighting_off",
+            "vacancy_delay_s": 300,
+            "entity_steps": [
+                {"entity_id": "light.studio_window", "action": "off"},
+                {"entity_id": "light.studio_door", "action": "off"},
+            ],
+        }
+    )
+    stale_pending = ReactionProposal.from_dict(
+        {
+            **candidate.as_dict(),
+            "proposal_id": "stale-pending",
+            "status": "pending",
+        }
+    )
+
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        configured_reactions_provider=lambda: {
+            "configured-vacancy": {
+                "reaction_type": "room_vacancy_lighting_off",
+                "room_id": "studio",
+                "vacancy_delay_s": 330,
+                "entity_steps": [
+                    {"entity_id": "light.studio_door", "action": "off"},
+                    {"entity_id": "light.studio_window", "action": "off"},
+                ],
+            }
+        },
+    )
+    engine._store._data = {"data": {"proposals": [stale_pending.as_dict()]}}
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    assert len(engine.pending_proposals()) == 0
+
+
+async def test_proposal_engine_suppresses_darkness_when_configured_contextual_covers_room(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    candidate = _composite_proposal(
+        reaction_type="room_darkness_lighting_assist",
+        room_id="studio",
+        primary_signal_name="room_lux",
+    )
+    candidate.suggested_reaction_config.update(
+        {
+            "reaction_type": "room_darkness_lighting_assist",
+            "primary_signal_entities": ["sensor.studio_lux"],
+            "entity_steps": [
+                {
+                    "entity_id": "light.studio_window",
+                    "action": "on",
+                    "brightness": 160,
+                }
+            ],
+        }
+    )
+    stale_pending = ReactionProposal.from_dict(
+        {
+            **candidate.as_dict(),
+            "proposal_id": "stale-darkness",
+            "status": "pending",
+        }
+    )
+
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        configured_reactions_provider=lambda: {
+            "configured-contextual": {
+                "reaction_type": "room_contextual_lighting_assist",
+                "room_id": "studio",
+                "primary_signal_name": "room_lux",
+                "primary_signal_entities": ["sensor.studio_lux"],
+                "profiles": {
+                    "evening": {
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.studio_window",
+                                "action": "on",
+                                "brightness": 160,
+                            }
+                        ]
+                    }
+                },
+            }
+        },
+    )
+    engine._store._data = {"data": {"proposals": [stale_pending.as_dict()]}}
+    engine.register_analyzer(_AnalyzerStub([candidate]))
+
+    await engine.async_initialize()
+    await engine.async_run()
+
+    assert len(engine.pending_proposals()) == 0

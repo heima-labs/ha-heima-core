@@ -20,6 +20,7 @@ Respond in Italian unless code, identifiers, or spec content requires English.
 - `main` è il branch di produzione. Si fa merge solo quando la feature/fix è completa.
 - Il lavoro avviene su branch dedicati (es. `feat/...`, `fix/...`).
 - Non committare direttamente su `main` a meno che non sia un fix banale o documentazione.
+- Ogni merge su `main` deve includere bump versione e aggiornamento changelog.
 
 ## Code rules
 - Nessun backward compatibility: unico utente del progetto.
