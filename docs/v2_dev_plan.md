@@ -87,7 +87,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | A | Plugin Framework | `DONE` | — |
 | B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
 | C | IInvariantCheck | `DONE` | A |
-| D | InferenceEngine v2 (base) | `NOT STARTED` | A |
+| D | InferenceEngine v2 (base) | `IN PROGRESS` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
 | G | ActivityDomain | `NOT STARTED` | A, D |
@@ -98,18 +98,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase C — IInvariantCheck.
-**Active phase:** None. Next phase must be agreed before implementation.
+**Last completed phase:** Phase D — InferenceEngine v2 base, slice D1/D2.
+**Active phase:** None. Next Phase D slice must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase C results and agree the next slice before implementation.
+Review D1/D2 results and agree the next Phase D slice before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase C — complete.
-- Status: invariant contracts, built-in checks, debounce state machine, and pre-Apply engine
-  wiring are implemented.
+- Current slice: Phase D1/D2 — complete.
+- Status: inference foundation and snapshot persistence are implemented without runtime behavior
+  changes.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -146,6 +146,11 @@ Review Phase C results and agree the next slice before implementation.
   - `custom_components/heima/runtime/invariants/sensor.py`
   - `custom_components/heima/runtime/domains/occupancy.py`
   - `tests/test_invariant_checks.py`
+  - `custom_components/heima/runtime/inference/__init__.py`
+  - `custom_components/heima/runtime/inference/base.py`
+  - `custom_components/heima/runtime/inference/signals.py`
+  - `custom_components/heima/runtime/inference/snapshot_store.py`
+  - `tests/test_inference_foundation.py`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
   - `kind="proposal"` is not supported.
@@ -164,6 +169,10 @@ Review Phase C results and agree the next slice before implementation.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 957 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_inference_foundation.py -q` — passed, 6 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 963 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
@@ -176,7 +185,7 @@ Review Phase C results and agree the next slice before implementation.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: agree the next phase/slice before writing more runtime code.
+- Next concrete step: discuss the next Phase D slice before runtime wiring.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -190,6 +199,25 @@ Review Phase C results and agree the next slice before implementation.
     `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`,
     `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600`.
 - Open decisions: none.
+
+#### Phase D slice plan
+
+- D1 — Inference Foundation:
+  - [x] Add `runtime/inference/base.py` with `ILearningModule`, `HeimaLearningModule`, and
+    `InferenceContext`.
+  - [x] Add `runtime/inference/signals.py` with `Importance`, `InferenceSignal`,
+    `HouseStateSignal`, `HeatingSignal`, `LightingSignal`, `ActivitySignal`, and
+    `OccupancySignal`.
+  - [x] Add `runtime/inference/__init__.py` public exports.
+  - [x] Add tests for contracts and typed signal payloads.
+- D2 — SnapshotStore:
+  - [x] Add `HouseSnapshot` with `detected_activities`.
+  - [x] Add `SnapshotStore` persisted with HA Store key `heima_snapshots`.
+  - [x] Enforce max 10,000 records, 90-day TTL, and semantic write-on-change deduplication.
+  - [x] Add tests for load/save, pruning, TTL, and dedup.
+- Explicitly out of scope for this slice:
+  - `_collect_signals()`, `_record_snapshot_if_changed()`, `SignalRouter`, learning modules,
+    coordinator wiring, and domain signal consumption.
 
 #### Phase A slices 2/3 implementation decision
 
