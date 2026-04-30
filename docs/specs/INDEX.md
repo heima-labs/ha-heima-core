@@ -1,7 +1,7 @@
 # Heima — Specifications Index
 ## Canonical Specs Structure
 
-**Last verified against code:** 2026-04-23 (`main`)
+**Last verified against code:** 2026-04-30 (`main`)
 
 This folder is organized by maturity and scope:
 
@@ -92,8 +92,10 @@ Ogni adapter vive in un repo separato sotto `heima-labs/`.
 `InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply`.
 No plugin registration mechanism exists in v1.
 
-**v2** (RFC — `heima_v2_spec.md`) introduces a **declarative DAG** with `depends_on` and topological sort.
-Core domains (People, Occupancy, HouseState) remain fixed-order; plugin domains are sorted by dependency graph.
+**v2** (RFC — `heima_v2_spec.md` v2.1.0-draft) introduces a **declarative DAG** with `depends_on` and
+topological sort, a fourth core domain `ActivityDomain` (between Occupancy and HouseState), an
+event-driven evaluation trigger, and a full activity recognition + inference pipeline.
+Core domains (People, Occupancy, Activity, HouseState) remain fixed-order; plugin domains are sorted by dependency graph.
 
 These are **not alternative implementations**. v2 replaces v1 when implemented and scheduled.
 Until then, the v1 hardcoded order is the only runtime contract.

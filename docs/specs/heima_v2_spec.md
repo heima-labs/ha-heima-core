@@ -1,21 +1,48 @@
 # Heima v2 — Formal Specification
 
 **Status:** RFC — implementation planned on `main`
-**Date:** 2026-03-12
-**Version:** 2.0.0-draft
-**Supersedes:** Previous v2 draft (2026-03-11). Incorporates architectural decisions A, B, C, IBehaviorAnalyzer unification, IInvariantCheck separation.
+**Date:** 2026-04-30
+**Version:** 2.1.0-draft
+**Supersedes:** 2.0.0-draft (2026-03-12). Incorporates Activity Layer (§7), Event-Driven Trigger
+(§11), enriched `InferenceContext` / `HouseSnapshot`, updated DAG and phase plan.
 
 ---
 
 ## §1 Vision
 
-Heima is an intent-driven home intelligence engine distributed as a Home Assistant custom integration. Its purpose is **invisible intelligence**: the home adapts transparently, with minimum configuration, and without requiring inhabitants to think about it. Heima is an autonomous policy engine — it ingests canonical signals from all configured HA entities, evaluates structured domain rules, extrapolates behavioral patterns, detects cross-domain anomalies, and makes Home Assistant act intelligently and unobtrusively. The success metric is invisibility: if inhabitants never notice the system, it is working correctly.
+Heima is an intent-driven home intelligence engine distributed as a Home Assistant custom
+integration. Its purpose is **invisible intelligence**: the home adapts transparently, with minimum
+configuration, and without requiring inhabitants to think about it. Heima is an autonomous policy
+engine — it ingests canonical signals from all configured HA entities, evaluates structured domain
+rules, extrapolates behavioral patterns, detects cross-domain anomalies, and makes Home Assistant
+act intelligently and unobtrusively. The success metric is invisibility: if inhabitants never
+notice the system, it is working correctly.
+
+The v2 model is **event-driven**: evaluation is triggered by meaningful state changes in the home,
+not by a fixed timer. Time is a contextual dimension used to interpret events, not a trigger.
+The system does not learn "at 22:00 dim the lights" — it learns "when the `movie_night` activity
+is active, dim the lights in the living room". Clock time surfaces only as a feature in
+pattern recognition.
 
 ---
 
 ## §2 v1 Baseline Summary
 
-v1 delivers a complete deterministic control plane: a fixed DAG evaluation pipeline (InputNormalizer → PeopleDomain → OccupancyDomain → HouseStateDomain → LightingDomain → HeatingDomain → SecurityDomain → Apply + Execute), persistent inter-cycle memory via `CanonicalState`, a durable `EventStore` recording presence/heating/house_state transitions, a learning pipeline (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`, `ProposalEngine`, user-approval flow), a `HeimaReaction` framework with `PresencePatternReaction` and `ConsecutiveStateReaction`, and a full notification routing layer. All implemented phases have 263 passing tests. The DAG is hardcoded: domain order is fixed in `engine.py`, with no plugin registration mechanism. v2 replaces the hardcoded DAG with a declarative plugin framework, migrates the three control domains (Lighting, Heating, Security) to built-in plugins, unifies the behavior analysis interface, and introduces a structural constraint layer.
+v1 delivers a complete deterministic control plane: a fixed DAG evaluation pipeline
+(`InputNormalizer → PeopleDomain → OccupancyDomain → HouseStateDomain → LightingDomain →
+HeatingDomain → SecurityDomain → Apply + Execute`), persistent inter-cycle memory via
+`CanonicalState`, a durable `EventStore` recording presence/heating/house_state transitions,
+a learning pipeline (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`, `ProposalEngine`,
+user-approval flow), a `HeimaReaction` framework with `PresencePatternReaction` and
+`ConsecutiveStateReaction`, and a full notification routing layer. All implemented phases have
+660 passing tests. The DAG is hardcoded: domain order is fixed in `engine.py`, with no plugin
+registration mechanism.
+
+v2 replaces the hardcoded DAG with a declarative plugin framework, adds `ActivityDomain` as a
+fourth core domain between `OccupancyDomain` and `HouseStateDomain`, introduces an event-driven
+evaluation trigger, migrates the three control domains to built-in plugins, unifies behavior
+analysis under `IBehaviorAnalyzer`, introduces `IInvariantCheck`, and adds a full inference
+pipeline with `ILearningModule` and `ActivityInferenceModule`.
 
 ---
 
@@ -24,108 +51,129 @@ v1 delivers a complete deterministic control plane: a fixed DAG evaluation pipel
 | # | Goal |
 |---|---|
 | G1 | Replace hardcoded DAG ordering with declarative `depends_on` and topological sort |
-| G2 | Migrate LightingDomain, HeatingDomain, SecurityDomain to built-in plugins; keep core minimal and stable |
+| G2 | Migrate LightingDomain, HeatingDomain, SecurityDomain to built-in plugins |
 | G3 | Unify behavior analysis under `IBehaviorAnalyzer` / `BehaviorFinding` with routed kind dispatch |
-| G4 | Introduce `IInvariantCheck`: synchronous per-cycle structural constraint checks, decoupled from domain logic |
+| G4 | Introduce `IInvariantCheck`: synchronous per-cycle structural constraint checks |
 | G5 | Detect cross-domain structural inconsistencies every cycle and surface them as typed events |
 | G6 | Detect statistical deviations from learned patterns offline and surface them as typed events |
-| G7 | Enable multi-signal contextual reasoning: learned `P(state | context)` influences domain resolution when hard inputs are ambiguous |
-| G8 | Close the act→verify loop: confirm that reactions produced their expected outcome, degrade unreliable reactions |
-| G9 | Allow plugins to extend the options flow with their own `vol.Schema` via `IOptionsSchemaProvider` |
+| G7 | Enable multi-signal contextual reasoning: learned `P(state \| context)` influences domain resolution when hard inputs are ambiguous |
+| G8 | Close the act→verify loop: confirm that reactions produced their expected outcome |
+| G9 | Allow plugins to extend the options flow via `IOptionsSchemaProvider` |
+| G10 | Introduce `ActivityDomain` as fourth core domain: detect primitive home activities from normalized sensor observations with candidate/grace hysteresis |
+| G11 | Replace the periodic-only eval trigger with a hybrid event-driven model: subscribe to HA `state_changed` on registered signal entities, batch with per-class debounce, periodic fallback every 5 minutes |
+| G12 | Discover composite activity patterns offline via `ActivityAnalyzer`; surface as `ActivityProposal` for user approval |
 
 | # | Non-Goal |
 |---|---|
-| NG1 | Modify core domain logic (PeopleDomain, OccupancyDomain, HouseStateDomain) in a behavior-changing way |
+| NG1 | Modify core PeopleDomain or OccupancyDomain behavior |
 | NG2 | Introduce external ML libraries (all inference uses pure Python + `statistics` stdlib) |
-| NG3 | Apply anomaly detections as automated actions (anomalies are surfaced only; actuation remains in reaction/domain layer) |
+| NG3 | Apply anomaly detections as automated actions (anomalies are surfaced only) |
 | NG4 | Implement cross-home or cloud learning (all data stays in HA local storage) |
-| NG5 | Deliver a UI for signal inspection in v2 (diagnostics endpoint and sensor attributes are sufficient) |
+| NG5 | Deliver a UI for signal inspection in v2 |
+| NG6 | Per-person activity tracking (contract is forward-compatible via `Activity.context`; implementation deferred) |
 
 ---
 
 ## §4 Architecture Overview
 
-The following diagram shows the complete v2 pipeline. Components present in v1 are unlabeled; components new in v2 are marked `[v2]`.
+### §4.1 Hot Path
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│  engine.async_evaluate()  —  HOT PATH (every cycle)                                       │
-│                                                                                           │
-│  ┌─────────────────────────────┐                                                          │
-│  │  IInputNormalizerPlugin × N │  raw HA state → NormalizedObservation                   │
-│  └──────────────┬──────────────┘                                                          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  [v2]  _collect_signals()                                                   │          │
-│  │        ILearningModule.infer(InferenceContext) × N                          │          │
-│  │        → list[InferenceSignal]  →  SignalRouter  →  per-domain buckets     │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  [v2]  DAG evaluation  (topological order, resolved at registration)        │          │
-│  │                                                                             │          │
-│  │   ┌──────────────────────────────────────────────────┐                     │          │
-│  │   │  CORE DOMAINS (non-plugin, always first in DAG)  │                     │          │
-│  │   │   PeopleDomain    → PeopleResult                 │                     │          │
-│  │   │   OccupancyDomain → OccupancyResult              │                     │          │
-│  │   │   HouseStateDomain→ HouseStateResult             │                     │          │
-│  │   └──────────────────────────────────────────────────┘                     │          │
-│  │                                                                             │          │
-│  │   ┌──────────────────────────────────────────────────┐                     │          │
-│  │   │  BUILT-IN DOMAIN PLUGINS  [v2 — IDomainPlugin]   │                     │          │
-│  │   │   LightingPlugin  → LightingResult               │                     │          │
-│  │   │   HeatingPlugin   → HeatingResult                │                     │          │
-│  │   │   SecurityPlugin  → SecurityResult               │                     │          │
-│  │   └──────────────────────────────────────────────────┘                     │          │
-│  │                                                                             │          │
-│  │   Third-party IDomainPlugin instances (ordered by topological sort)        │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  [v2]  IInvariantCheck layer                                                │          │
-│  │        check(snapshot, domain_results) → InvariantViolation | None × N     │          │
-│  │        → HeimaEvent(type="anomaly.*")  →  EventStore + notification        │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  Apply + Execute  (IApplyExecutor per domain)                               │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  HeimaReaction pipeline                                                     │          │
-│  │     [v2]  OutcomeTracker.on_reaction_fired(reaction_id, ...)                │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  [v2]  OutcomeTracker.check_pending(snapshot)                               │          │
-│  │        → positive / negative outcomes  →  ILearningBackend                 │          │
-│  └──────────────┬──────────────────────────────────────────────────────────────┘          │
-│                 │                                                                         │
-│  ┌──────────────▼──────────────────────────────────────────────────────────────┐          │
-│  │  CanonicalState update  (key/value, string-namespaced by plugin_id.key)     │          │
-│  │     [v2]  SnapshotStore.async_append(HouseSnapshot) on-change              │          │
-│  └─────────────────────────────────────────────────────────────────────────────┘          │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────┐
+│  engine.async_evaluate()  —  HOT PATH (triggered by event or periodic fallback)            │
+│                                                                                             │
+│  ┌──────────────────────────────────┐                                                       │
+│  │  IInputNormalizerPlugin × N      │  raw HA state → NormalizedObservation                │
+│  └───────────────┬──────────────────┘                                                       │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  [v2]  _collect_signals()                                                    │           │
+│  │        ILearningModule.infer(InferenceContext) × N                           │           │
+│  │        → list[InferenceSignal]  →  SignalRouter  →  per-type buckets        │           │
+│  │        (InferenceContext includes previous_activity_names from CanonicalState)│           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  [v2]  DAG evaluation  (topological order, resolved at registration)         │           │
+│  │                                                                              │           │
+│  │   ┌────────────────────────────────────────────────────────┐                │           │
+│  │   │  CORE DOMAINS (non-plugin, fixed order)                │                │           │
+│  │   │   PeopleDomain     → PeopleResult                      │                │           │
+│  │   │   OccupancyDomain  → OccupancyResult                   │                │           │
+│  │   │   ActivityDomain   → ActivityResult          [v2 NEW]  │                │           │
+│  │   │   HouseStateDomain → HouseStateResult                  │                │           │
+│  │   └────────────────────────────────────────────────────────┘                │           │
+│  │                                                                              │           │
+│  │   ┌────────────────────────────────────────────────────────┐                │           │
+│  │   │  BUILT-IN DOMAIN PLUGINS  [v2 — IDomainPlugin]         │                │           │
+│  │   │   LightingPlugin  → LightingResult                     │                │           │
+│  │   │   HeatingPlugin   → HeatingResult                      │                │           │
+│  │   │   SecurityPlugin  → SecurityResult                     │                │           │
+│  │   └────────────────────────────────────────────────────────┘                │           │
+│  │                                                                              │           │
+│  │   Third-party IDomainPlugin instances (ordered by topological sort)         │           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  [v2]  IInvariantCheck layer → InvariantViolation | None × N                │           │
+│  │        → HeimaEvent(type="anomaly.*")  →  EventStore + notification         │           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  Apply + Execute  (IApplyExecutor per domain)                                │           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  HeimaReaction pipeline                                                      │           │
+│  │     [v2]  OutcomeTracker.on_reaction_fired(reaction_id, ...)                 │           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  [v2]  OutcomeTracker.check_pending(snapshot)                                │           │
+│  │        → positive / negative outcomes  →  ILearningBackend                  │           │
+│  └───────────────┬──────────────────────────────────────────────────────────────┘           │
+│                  │                                                                          │
+│  ┌───────────────▼──────────────────────────────────────────────────────────────┐           │
+│  │  CanonicalState update  (key/value, string-namespaced by plugin_id.key)      │           │
+│  │     [v2]  SnapshotStore.async_append(HouseSnapshot) on-change               │           │
+│  └──────────────────────────────────────────────────────────────────────────────┘           │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-OFFLINE PATH — coordinator-owned, every 6h:
+### §4.2 Offline Path
+
+```
+OFFLINE — coordinator-owned, every 6h:
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  [v2]  IBehaviorAnalyzer.analyze(event_store, snapshot_store) × N           │
+│  [v2]  IBehaviorAnalyzer.analyze(event_store, snapshot_store) × N            │
 │        → list[BehaviorFinding]                                               │
 │        → FindingRouter:                                                      │
 │            kind="pattern"     → ProposalEngine  (ReactionProposal)          │
-│            kind="anomaly"     → AnomalyEngine   (AnomalySignal → HeimaEvent)│
+│            kind="activity"    → ProposalEngine  (ActivityProposal)  [NEW]   │
+│            kind="anomaly"     → AnomalyEngine   (AnomalySignal)            │
 │            kind="correlation" → InferenceEngine (InferenceSignal)           │
 └──────────────────────────────────────────────────────────────────────────────┘
+```
 
-INFERENCE PATH — every cycle, before domain evaluation:
+### §4.3 Inference Path
+
+```
+INFERENCE — every cycle, before domain evaluation:
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  [v2]  ILearningModule.infer(InferenceContext) × N                           │
-│        → SignalRouter → domain signal buckets                                │
+│        → SignalRouter → domain/type signal buckets                           │
+│        InferenceContext includes previous_activity_names from CanonicalState │
 └──────────────────────────────────────────────────────────────────────────────┘
+```
 
-FEEDBACK PATH — after every resolved outcome verification:
+### §4.4 Event-Driven Trigger
+
+```
+EVENT TRIGGER — replaces periodic-only timer:
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  [v2]  OutcomeTracker.check_pending()  →  ILearningBackend.observe()         │
+│  HA state_changed subscription × registered signal entity classes            │
+│  → per-class debounce (2–10s) → async_evaluate()                            │
+│  Periodic fallback: every 300s (sunset, calendar, slow-changing sensors)     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -133,9 +181,10 @@ FEEDBACK PATH — after every resolved outcome verification:
 - No v2 component may block the hot-path eval cycle with I/O.
 - All v2 writes from the hot path are scheduled as fire-and-forget tasks.
 - Signals and invariant violations are additive inputs; they never silently replace hard sensor data.
-- Core domains (People, Occupancy, HouseState) are not plugins: they are always evaluated first, in fixed order.
+- Core domains (People, Occupancy, Activity, HouseState) are not plugins: always evaluated first, in fixed order.
 - Plugin domains are evaluated in topological order after core domains.
-- `CanonicalState` is unchanged: generic key/value, string-namespaced by convention (`plugin_id.key`). No typed isolation.
+- `CanonicalState` is unchanged: generic key/value, string-namespaced by convention.
+- Time is a contextual feature, not an evaluation trigger.
 
 ---
 
@@ -145,241 +194,372 @@ FEEDBACK PATH — after every resolved outcome verification:
 
 All plugin interfaces are Protocols defined in `runtime/plugin_contracts.py`.
 
-| Interface | Kind | Sync/Async | Description | Example |
-|---|---|---|---|---|
-| `IInputNormalizerPlugin` | Normalizer | Sync | Maps raw HA entity states → canonical observations | `DeviceTrackerNormalizer` |
-| `IDomainPlugin` | Domain | `compute()` sync | Domain node in the DAG; declares `domain_id`, `depends_on`, `compute()`, `reset()`, `diagnostics()` | `LightingPlugin`, `HeatingPlugin` |
-| `IApplyExecutor` | Executor | Async | Executes a specific action type (e.g. lighting, heating) | `LightingExecutor` |
-| `IHeimaBehavior` | Behavior | Async | Side effect post-cycle (already exists in v1) | `LightingBehavior` |
-| `IHeimaReaction` | Reaction | Async | Reactive behavior triggered on snapshot history (already exists in v1) | `PresencePatternReaction` |
-| `IBehaviorAnalyzer` | Analyzer | Async | Offline analysis of EventStore + SnapshotStore; produces `BehaviorFinding` objects | `PresencePatternAnalyzer` |
-| `ILearningModule` | Learning | `analyze()` async, `infer()` sync | Offline model training + per-cycle synchronous inference | `WeekdayStateModule` |
-| `IInvariantCheck` | Constraint | Sync | Per-cycle structural constraint check on current snapshot + domain results | `PresenceWithoutOccupancy` |
-| `IOutcomeVerifier` | Verifier | Sync | Verifies reaction outcomes against expected post-condition | `OutcomeTracker` |
-| `IOptionsSchemaProvider` | Config | Sync | Plugin extends the options flow with its own `vol.Schema` | `HeatingPlugin` |
+| Interface | Kind | Sync/Async | Description |
+|---|---|---|---|
+| `IInputNormalizerPlugin` | Normalizer | Sync | Maps raw HA entity states → canonical observations |
+| `IDomainPlugin` | Domain | `compute()` sync | Domain node in the DAG; declares `domain_id`, `depends_on`, `compute()`, `reset()`, `diagnostics()` |
+| `IActivityDetector` | Activity | `detect()` sync | Primitive activity detector registered with `ActivityDomain` |
+| `IApplyExecutor` | Executor | Async | Executes a specific action type |
+| `IHeimaBehavior` | Behavior | Async | Side effect post-cycle |
+| `IHeimaReaction` | Reaction | Async | Reactive behavior triggered on snapshot history |
+| `IBehaviorAnalyzer` | Analyzer | Async | Offline analysis of EventStore + SnapshotStore |
+| `ILearningModule` | Learning | `analyze()` async, `infer()` sync | Offline model training + per-cycle synchronous inference |
+| `IInvariantCheck` | Constraint | Sync | Per-cycle structural constraint check |
+| `IOutcomeVerifier` | Verifier | Sync | Verifies reaction outcomes |
+| `IOptionsSchemaProvider` | Config | Sync | Plugin extends the options flow |
 
 ### §5.2 IDomainPlugin in Detail
 
 ```python
-# runtime/plugin_contracts.py
-
 class IDomainPlugin(Protocol):
     @property
-    def domain_id(self) -> str:
-        """Unique domain identifier. Used as the key in DomainResultBag."""
-        ...
+    def domain_id(self) -> str: ...
 
     @property
-    def depends_on(self) -> list[str]:
-        """
-        List of domain_ids whose results this domain requires in compute().
-        The engine resolves evaluation order by topological sort at registration time.
-        Core domain IDs ("people", "occupancy", "house_state") are valid dependency targets.
-        """
-        ...
+    def depends_on(self) -> list[str]: ...
 
     def compute(
         self,
         canonical_state: CanonicalState,
         domain_results: DomainResultBag,
         signals: list[InferenceSignal] | None = None,
-    ) -> DomainResult:
-        """
-        Compute this domain's result for the current cycle.
-        Must be synchronous and I/O-free.
-        canonical_state: read-only snapshot of previous cycle's persisted state.
-        domain_results: results of all already-computed dependencies (guaranteed by DAG order).
-        signals: optional inference signals for this domain_id (may be None or empty).
-        """
-        ...
+    ) -> DomainResult: ...
 
-    def reset(self) -> None:
-        """Reset all in-memory state (called on config change or manual reset)."""
-        ...
+    def reset(self) -> None: ...
 
-    def diagnostics(self) -> dict[str, Any]:
-        """Return a diagnostics dict for engine.diagnostics()["plugins"][domain_id]."""
-        ...
+    def diagnostics(self) -> dict[str, Any]: ...
 ```
 
-`compute()` must never read from sibling domain results outside `domain_results` (i.e. must not call engine state directly). This preserves DAG purity.
+`compute()` must never perform I/O. Core domain IDs (`"people"`, `"occupancy"`, `"activity"`,
+`"house_state"`) are valid `depends_on` targets.
 
 ### §5.3 DAG Resolution
 
-DAG order is resolved once at registration time, not at every cycle.
-
-**Algorithm:**
-1. Collect all registered `IDomainPlugin` instances.
-2. Build a directed graph: edge `(A → B)` means "A depends on B" (B must run before A).
-3. Run Kahn's topological sort.
-4. If a cycle is detected → raise `HeimaDomainCycleError` at startup; integration fails to load.
-5. If a declared dependency `domain_id` is not registered → raise `HeimaMissingDependencyError` at startup.
-6. Core domains (`people`, `occupancy`, `house_state`) are always prepended to the sorted list, in fixed order.
-
-**Implementation:**
-
-```python
-# runtime/dag.py
-
-def resolve_dag(plugins: list[IDomainPlugin]) -> list[IDomainPlugin]:
-    """
-    Returns plugins in evaluation order (dependencies first).
-    Raises HeimaDomainCycleError on circular dependency.
-    Raises HeimaMissingDependencyError if a declared dependency is not registered.
-    """
-```
-
-This function is called in `engine.register_plugin(plugin)` and after all plugins are registered, a final `engine.finalize_dag()` call produces the ordered list stored as `_eval_order`.
+Resolved once at `finalize_dag()`. Kahn's topological sort. `HeimaDomainCycleError` on cycle;
+`HeimaMissingDependencyError` on missing dependency. Core domains always prepended in fixed order.
 
 ### §5.4 DomainResultBag
 
-`DomainResultBag` is a typed container passed to each domain's `compute()`. It contains the results of all already-evaluated domains in the current cycle.
+Immutable per-cycle accumulator. Plugins access dependencies via
+`domain_results.require("activity")` etc.
 
-```python
-# runtime/domain_result_bag.py
+**CanonicalState vs DomainResultBag coherence rule:** `canonical_state` = stable last committed
+state. `domain_results` = current-cycle output of upstream domains (not yet committed). Never
+merge or average the two views.
 
-class DomainResultBag:
-    """
-    Immutable view of domain results computed so far in this cycle.
-    Populated incrementally as the engine walks the topological order.
-    """
-
-    def get(self, domain_id: str) -> DomainResult | None:
-        """Return the result for the given domain_id, or None if not yet computed."""
-        ...
-
-    def require(self, domain_id: str) -> DomainResult:
-        """Return the result or raise KeyError if not present (programming error)."""
-        ...
-
-    def __contains__(self, domain_id: str) -> bool: ...
-```
-
-Domains access dependencies via `domain_results.require("house_state")` etc. Type-narrowing (casting to a concrete result type) is the plugin's responsibility.
-
-**CanonicalState vs DomainResultBag coherence rule:**
-
-A domain plugin may read from both `canonical_state` (previous cycle) and `domain_results` (current cycle). When the two diverge:
-
-- `canonical_state` is the authoritative view **during evaluation** — it reflects the last committed state and is stable across the entire cycle.
-- `domain_results` contains the current-cycle output of upstream domains, which has not yet been committed to `CanonicalState`.
-- If a plugin needs the "stable last known state", it MUST read from `canonical_state`.
-- If a plugin needs the "freshest current-cycle output of an upstream domain", it reads from `domain_results.require(...)`.
-- **Never merge or average the two views** — treat them as distinct temporal snapshots.
-
-### §5.5 Core vs Built-in Plugins vs Third-Party Plugins
+### §5.5 Core vs Built-in vs Third-Party Plugins
 
 | Category | Examples | Characteristics |
 |---|---|---|
-| **Core domains** | `PeopleDomain`, `OccupancyDomain`, `HouseStateDomain` | Not plugins. Implemented as concrete classes in `runtime/domains/`. Always evaluated first, in fixed order. Cannot be replaced or removed. Minimal and stable. |
-| **Built-in plugins** | `LightingPlugin`, `HeatingPlugin`, `SecurityPlugin` | `IDomainPlugin` implementations shipped with Heima. Fully privileged (access all HA APIs). Architecturally equivalent to third-party plugins: they declare `depends_on`, are registered by the coordinator, and are evaluated in topological order after core domains. Can be disabled or replaced by third-party plugins. |
-| **Third-party plugins** | Any user/developer plugin | `IDomainPlugin` implementations loaded from external packages or the HA custom_components directory. Subject to the same rules as built-in plugins. Isolated from core. |
-
-The core is intentionally minimal and stable: adding new home control areas never requires modifying core domains.
+| **Core domains** | `PeopleDomain`, `OccupancyDomain`, `ActivityDomain`, `HouseStateDomain` | Not plugins. Concrete classes in `runtime/domains/`. Fixed order. Cannot be replaced. |
+| **Built-in plugins** | `LightingPlugin`, `HeatingPlugin`, `SecurityPlugin` | `IDomainPlugin` shipped with Heima. Declare `depends_on`, sorted by DAG after core. Can be disabled. |
+| **Third-party plugins** | Any external plugin | Subject to same rules as built-in plugins. |
 
 ### §5.6 IOptionsSchemaProvider
-
-Plugins that require configuration can extend the options flow by implementing `IOptionsSchemaProvider`:
 
 ```python
 class IOptionsSchemaProvider(Protocol):
     @property
-    def options_schema(self) -> vol.Schema:
-        """
-        Returns a voluptuous schema for this plugin's configuration section.
-        The engine merges this schema into the options flow under the key plugin_id.
-        Called at options flow initialization; must be synchronous and side-effect-free.
-        """
-        ...
-
-    def options_defaults(self) -> dict[str, Any]:
-        """Default values for this plugin's options keys."""
-        ...
+    def options_schema(self) -> vol.Schema: ...
+    def options_defaults(self) -> dict[str, Any]: ...
 ```
 
-The options flow step for domain plugins iterates all registered `IOptionsSchemaProvider` instances and renders each plugin's config section in sequence. Plugin config is stored under `options["plugins"][plugin_id]`.
+Plugin config stored under `options["plugins"][plugin_id]`.
 
 ### §5.7 Plugin Lifecycle
 
 ```
-register(plugin)
-  → validate: domain_id unique, depends_on resolvable
-  → store in _registered_plugins
-
-finalize_dag()
-  → topological sort → _eval_order
-  → startup validation complete (errors raised here)
-
-per cycle:
-  for plugin in _eval_order:
-      result = plugin.compute(canonical_state, domain_results, signals.get(plugin.domain_id))
-      domain_results[plugin.domain_id] = result
-
-on config change:
-  for plugin in _registered_plugins:
-      plugin.reset()
-
-on shutdown:
-  (no explicit shutdown hook in v2; plugins are garbage-collected)
+register(plugin) → finalize_dag() → per-cycle compute() → on-config reset() → no shutdown hook
 ```
 
 ---
 
 ## §6 Home Control Taxonomy
 
-The table below lists all home control areas and their implementation status under the v2 plugin framework.
-
 | Area | Sub-aspects | Status |
 |---|---|---|
 | **Presence** | Named persons, anonymous, quorum, away/home detection | Core (PeopleDomain) |
 | **Occupancy** | Room occupancy, dwell state machine | Core (OccupancyDomain) |
+| **Activity** | Primitive activity detection, hysteresis, composite signal routing | Core (ActivityDomain) — v2 new |
 | **House state** | Signals, override, policy resolution, vacation | Core (HouseStateDomain) |
 | **Lighting** | Intent resolution, scene apply, hold, manual override | Built-in plugin (LightingPlugin) |
-| **Heating** | Branch selection, vacation curve, setpoint apply, hvac_mode | Built-in plugin (HeatingPlugin) |
+| **Heating** | Branch selection, vacation curve, setpoint apply | Built-in plugin (HeatingPlugin) |
 | **Security** | Normalization, arm/disarm, mismatch detection | Built-in plugin (SecurityPlugin) |
-| **Events** | Queue, dedup, rate-limit, routing | Core service (EventsDomain, not a plugin) |
-| **Watering** | Schedule, soil moisture, rain skip | Plugin (planned, not in v2) |
+| **Events** | Queue, dedup, rate-limit, routing | Core service (not a plugin) |
+| **Watering** | Schedule, soil moisture, rain skip | Plugin (planned) |
 | **Energy** | Load shifting, tariff-aware scheduling | Plugin (not planned) |
-| **Audio/AV** | Scene-linked audio, presence-triggered TV | Plugin (not planned) |
 | **Ventilation** | CO₂/humidity-driven fan control | Plugin (not planned) |
 
-**Explicit statement:** core domains are stable and immutable between major versions. Built-in plugins are the reference implementations for their area. Third-party plugins can replace any built-in plugin (by registering with the same `domain_id`) or add entirely new domains.
+Core domains are stable and immutable between major versions. Built-in plugins are reference
+implementations. Third-party plugins can replace any built-in plugin or add new domains.
 
 ---
 
-## §7 IBehaviorAnalyzer and FindingRouter
+## §7 Activity Layer
 
-### §7.1 BehaviorFinding
+### §7.1 Concept
 
-`IBehaviorAnalyzer` replaces `IPatternAnalyzer` (v1). It produces `BehaviorFinding` objects with a `kind` field that determines routing.
+An **activity** is a home state observable at the device/sensor level, more granular than
+`house_state`. Activities are two-tiered:
+
+- **Primitive activities**: deterministically detected from `NormalizedObservation`. A primitive
+  activity is a fact, not an inference (e.g., `stove_on` = stove circuit power > threshold).
+  Computed by built-in `IActivityDetector` implementations registered with `ActivityDomain`.
+
+- **Composite activities**: inferred patterns of co-occurring primitives + context (e.g.,
+  `movie_night` = `tv_active` + low lux + evening + no movement). Learned offline by
+  `ActivityInferenceModule`; emitted as `ActivitySignal` per cycle.
+
+`house_state` and activities are **orthogonal dimensions**. A single activity can be active across
+multiple house states (`cooking` is valid in both `house_state=home` and `house_state=working`).
+Reactions and domain plugins can condition on either or both.
+
+### §7.2 Data Models
+
+```python
+# runtime/domains/activity.py
+
+@dataclass(frozen=True)
+class Activity:
+    name: str
+    confidence: float              # 1.0 for primitive (deterministic); 0–1 for composite
+    room_id: str | None            # None = house-level activity
+    started_at: float              # monotonic timestamp of phase ACTIVE entry
+    duration_s: float              # total seconds spent in ACTIVE phase this session
+    context: dict[str, Any]        # extensible; keys namespaced by contributor (e.g. "people.person_id")
+
+@dataclass(frozen=True)
+class ActivityResult:
+    active: tuple[Activity, ...]      # confirmed active activities, sorted by confidence desc
+    candidates: tuple[Activity, ...]  # in candidate window, not yet confirmed
+```
+
+`Activity.context` is the generic extension point. It is empty in all v2 built-in detectors.
+Future plugins (e.g., a per-person activity tracker) store their attributes here under a
+namespaced key (e.g., `"people.person_id": "alice"`), consistent with the `CanonicalState`
+namespacing convention. Adding new attributes to `context` is non-breaking.
+
+### §7.3 ActivityDomain
+
+`ActivityDomain` is a core domain (not a plugin). It is evaluated in fixed order after
+`OccupancyDomain` and before `HouseStateDomain`.
+
+```python
+# runtime/domains/activity_domain.py
+
+class ActivityDomain:
+    def evaluate(
+        self,
+        observation: NormalizedObservation,
+        canonical_state: CanonicalState,
+        activity_signals: list[ActivitySignal] | None = None,
+    ) -> ActivityResult:
+        """
+        1. Run all registered IActivityDetector.detect() — produces ActivityDetection | None per detector.
+        2. Advance each detector's HysteresisState machine.
+        3. Collect confirmed-active primitives (phase=ACTIVE) into ActivityResult.active.
+        4. Collect candidate primitives into ActivityResult.candidates.
+        5. Merge composite ActivitySignal objects into ActivityResult.active
+           (confidence from signal, already filtered by SignalRouter).
+        Must be synchronous and I/O-free.
+        """
+
+    def register_detector(self, detector: "IActivityDetector") -> None:
+        """Register a primitive activity detector. Called at coordinator startup."""
+
+    def reset(self) -> None: ...
+    def diagnostics(self) -> dict[str, Any]: ...
+```
+
+`ActivitySignal` objects (from `ActivityInferenceModule`) are merged into `ActivityResult.active`
+at step 5, alongside confirmed primitive activities. Composite activities in the result carry the
+signal's confidence.
+
+### §7.4 IActivityDetector
 
 ```python
 # runtime/plugin_contracts.py
 
-from typing import Literal
-from dataclasses import dataclass
+class IActivityDetector(Protocol):
+    @property
+    def activity_name(self) -> str:
+        """Unique activity name. Used as Activity.name."""
+        ...
 
+    @property
+    def room_id(self) -> str | None:
+        """Room scope, or None for house-level."""
+        ...
+
+    @property
+    def candidate_period_s(self) -> float:
+        """Seconds condition must hold before activity is confirmed."""
+        ...
+
+    @property
+    def grace_period_s(self) -> float:
+        """Seconds activity remains active after condition disappears."""
+        ...
+
+    def detect(
+        self,
+        observation: NormalizedObservation,
+        canonical_state: CanonicalState,
+    ) -> ActivityDetection | None:
+        """
+        Return ActivityDetection if the activity condition is currently met,
+        None otherwise. Synchronous, I/O-free, O(1).
+        """
+        ...
+
+@dataclass(frozen=True)
+class ActivityDetection:
+    activity_name: str
+    confidence: float = 1.0
+    room_id: str | None = None
+    context: dict[str, Any] = field(default_factory=dict)
+```
+
+### §7.5 Hysteresis State Machine
+
+Each registered `IActivityDetector` has independent per-cycle hysteresis state:
+
+```python
+@dataclass
+class ActivityHysteresisState:
+    activity_name: str
+    phase: Literal["absent", "candidate", "active", "grace"]
+    phase_since_ts: float   # monotonic; time of last phase transition
+    duration_s: float       # cumulative time in "active" phase (current session)
+    context: dict[str, Any] # from last ActivityDetection
+```
+
+Per-cycle transition logic (run by `ActivityDomain.evaluate()`):
+
+```
+detection = detector.detect(observation, canonical_state)
+now = monotonic()
+
+match state.phase:
+    case "absent":
+        if detection:
+            state.phase = "candidate"
+            state.phase_since_ts = now
+            state.context = detection.context
+
+    case "candidate":
+        if not detection:
+            state.phase = "absent"        # false start — reset
+        elif (now - state.phase_since_ts) >= detector.candidate_period_s:
+            state.phase = "active"
+            state.phase_since_ts = now
+            state.duration_s = 0.0
+            emit HeimaEvent(type="activity.started", activity_name=..., room_id=...)
+
+    case "active":
+        if detection:
+            state.duration_s += now - state.phase_since_ts
+            state.phase_since_ts = now
+            state.context = detection.context
+        else:
+            state.phase = "grace"
+            state.phase_since_ts = now
+
+    case "grace":
+        if detection:
+            state.phase = "active"        # signal returned — stay active
+            state.phase_since_ts = now
+        elif (now - state.phase_since_ts) >= detector.grace_period_s:
+            state.phase = "absent"
+            emit HeimaEvent(type="activity.ended", activity_name=..., duration_s=...)
+```
+
+Activities in phase `"active"` appear in `ActivityResult.active`.
+Activities in phase `"candidate"` appear in `ActivityResult.candidates`.
+
+### §7.6 Built-in Primitive Activity Taxonomy
+
+All built-in detectors require entity bindings configured in the options flow
+(section `activity_bindings`). An unbound detector is silently inactive.
+
+| activity_name | Detection condition | candidate_s | grace_s | Required binding |
+|---|---|---|---|---|
+| `stove_on` | power_sensor > 200 W (configurable) | 5 | 30 | `stove_power_entity` |
+| `oven_on` | power_sensor > 500 W (configurable) | 10 | 120 | `oven_power_entity` |
+| `tv_active` | `media_player.state` in `{playing, paused}` OR power > 20 W | 10 | 120 | `tv_entity` |
+| `pc_active` | power_sensor > 50 W sustained (configurable) | 30 | 60 | `pc_power_entity` |
+| `shower_running` | humidity_sensor > threshold AND rate_of_change > 0 | 60 | 300 | `bathroom_humidity_entity` |
+| `washing_machine_running` | power_sensor > 200 W OR appliance state = on | 60 | 300 | `washing_machine_entity` |
+| `dishwasher_running` | power_sensor > 200 W OR appliance state = on | 60 | 300 | `dishwasher_entity` |
+
+Thresholds are configurable under `options["activity_bindings"][activity_name]`. Defaults above
+are conservative and suitable for European households.
+
+### §7.7 Composite Activities and ActivityProposal
+
+Composite activities are **not hardcoded**. They are discovered offline by `ActivityAnalyzer`
+(§8) and surfaced as `ActivityProposal` objects for user approval. Until approved, no composite
+activity is emitted.
+
+After approval, `ActivityInferenceModule` starts emitting `ActivitySignal` for the pattern each
+cycle it is detected (§10.5). The user sees the activity name in diagnostics and can deactivate
+it from the options flow.
+
+```python
+@dataclass
+class ActivityProposal:
+    proposal_type: str = "activity_discovered"
+    activity_name: str                   # auto-generated slug (e.g. "movie_night")
+    primitive_pattern: frozenset[str]    # set of primitive activity names that co-occur
+    context_conditions: dict[str, Any]   # e.g. {"hour_range": [20, 24], "room_id": "living_room"}
+    occurrence_count: int
+    confidence: float
+    representative_ts: list[str]         # ISO-8601 timestamps of example occurrences
+```
+
+`ActivityProposal` flows through the existing `ProposalEngine` (same review/approval surface
+as `ReactionProposal`). Accepted proposals are stored in `ApprovalStore` and loaded by
+`ActivityInferenceModule` at startup.
+
+### §7.8 CanonicalState Keys
+
+`ActivityDomain` writes to `CanonicalState` under the `activity.*` namespace:
+
+| Key | Type | Description |
+|---|---|---|
+| `activity.active_names` | `list[str]` | Names of currently active activities (primitive + composite) |
+| `activity.candidate_names` | `list[str]` | Names of activities in candidate window |
+| `activity.last_started` | `str` | ISO-8601 timestamp of most recent activity.started event |
+
+These keys are available to all downstream domains and plugins via `canonical_state.get("activity.active_names")`.
+
+---
+
+## §8 IBehaviorAnalyzer and FindingRouter
+
+### §8.1 BehaviorFinding
+
+```python
 @dataclass
 class BehaviorFinding:
-    kind: Literal["pattern", "anomaly", "correlation"]
+    kind: Literal["pattern", "activity", "anomaly", "correlation"]
     analyzer_id: str
     description: str
-    confidence: float                                      # 0.0–1.0
-    payload: ReactionProposal | AnomalySignal | InferenceSignal
+    confidence: float
+    payload: ReactionProposal | ActivityProposal | AnomalySignal | InferenceSignal
 ```
 
 - `kind="pattern"` → payload is `ReactionProposal` → routed to `ProposalEngine`
-- `kind="anomaly"` → payload is `AnomalySignal` → routed to `AnomalyEngine` → emitted as `HeimaEvent` + stored in `EventStore`
-- `kind="correlation"` → payload is `InferenceSignal` → routed to `InferenceEngine` for model update
+- `kind="activity"` → payload is `ActivityProposal` → routed to `ProposalEngine` (new kind)
+- `kind="anomaly"` → payload is `AnomalySignal` → routed to `AnomalyEngine`
+- `kind="correlation"` → payload is `InferenceSignal` → routed to `InferenceEngine`
 
-### §7.2 IBehaviorAnalyzer Protocol
+### §8.2 IBehaviorAnalyzer Protocol
 
 ```python
 class IBehaviorAnalyzer(Protocol):
     @property
-    def analyzer_id(self) -> str:
-        """Unique analyzer identifier."""
-        ...
+    def analyzer_id(self) -> str: ...
 
     async def analyze(
         self,
@@ -387,258 +567,194 @@ class IBehaviorAnalyzer(Protocol):
         snapshot_store: SnapshotStore,
     ) -> list[BehaviorFinding]:
         """
-        Offline analysis. Called every 6h by the coordinator scheduler.
-        May use async I/O freely. Must not mutate EventStore or SnapshotStore.
-        Returns an empty list if no findings; never raises.
+        Offline analysis. Called every 6h. May use async I/O freely.
+        Must not mutate EventStore or SnapshotStore. Returns [] on no findings; never raises.
         """
-        ...
 ```
 
-This replaces the v1 `IPatternAnalyzer` Protocol. Existing analyzers (`PresencePatternAnalyzer`, `HeatingPatternAnalyzer`) are migrated by adding `snapshot_store` to their signature and returning `BehaviorFinding(kind="pattern", ...)` wrapping their existing `ReactionProposal` output.
-
-### §7.3 FindingRouter
+### §8.3 FindingRouter
 
 ```python
-# runtime/finding_router.py
-
 class FindingRouter:
-    def __init__(
-        self,
-        proposal_engine: ProposalEngine,
-        anomaly_engine: AnomalyEngine,
-        inference_engine: InferenceEngine,
-    ) -> None: ...
-
     def route(self, findings: list[BehaviorFinding]) -> None:
-        """
-        Routes each finding to the appropriate engine by kind.
-        Synchronous. Called by the coordinator after IBehaviorAnalyzer.analyze() completes.
-        """
         for f in findings:
             match f.kind:
                 case "pattern":
                     self._proposal_engine.submit(f.payload)
+                case "activity":
+                    self._proposal_engine.submit(f.payload)   # same engine, different proposal_type
                 case "anomaly":
                     self._anomaly_engine.submit_statistical(f.payload)
                 case "correlation":
                     self._inference_engine.submit_correlation(f.payload)
 ```
 
-### §7.4 Built-in Analyzers
+### §8.4 Built-in Analyzers
 
-| Analyzer | kind emitted | What it detects | Min support | v1 / v2 |
-|---|---|---|---|---|
-| `PresencePatternAnalyzer` | `pattern` | Arrival/departure time patterns per weekday | 7 events/weekday | v1, migrated |
-| `HeatingPatternAnalyzer` | `pattern` | Preferred setpoints per house_state | 10 events/state | v1, migrated |
-| `AnomalyAnalyzer` | `anomaly` | Statistical deviations: unusual arrival time, heating setpoint outlier | 10 events | v2 new |
-| `CorrelationAnalyzer` | `correlation` | Multi-signal correlations: room pattern → house_state | 15 snapshots/pattern | v2 new |
+| Analyzer | kind | What it detects | Min support |
+|---|---|---|---|
+| `PresencePatternAnalyzer` | `pattern` | Arrival/departure time patterns per weekday | 7 events/weekday |
+| `HeatingPatternAnalyzer` | `pattern` | Preferred setpoints per house_state | 10 events/state |
+| `ActivityAnalyzer` | `activity` | Co-occurring primitive activity patterns → composite activity proposals | 10 co-occurrences |
+| `AnomalyAnalyzer` | `anomaly` | Statistical deviations: unusual arrival time, heating outlier | 10 events |
+| `CorrelationAnalyzer` | `correlation` | Multi-signal correlations: room pattern → house_state | 15 snapshots/pattern |
 
-All built-in analyzers are registered by the coordinator at startup. Third-party `IBehaviorAnalyzer` implementations can be registered via `coordinator.register_analyzer(analyzer)`.
+`ActivityAnalyzer` reads `HouseSnapshot.detected_activities` to find recurring patterns.
+Min support: 10 distinct occurrences of the same primitive co-occurrence pattern, across at least
+3 different days. Proposals include an auto-generated `activity_name` (slugified description) that
+the user can rename before accepting.
 
 ---
 
-## §8 IInvariantCheck
+## §9 IInvariantCheck
 
-### §8.1 Concept and Separation from IBehaviorAnalyzer
+### §9.1 Concept
 
-`IInvariantCheck` is separate from `IBehaviorAnalyzer` by design. The distinction is:
+`IInvariantCheck` runs synchronously every cycle after all domains have computed and before Apply.
+It checks structural constraints using only the current `DecisionSnapshot` and `DomainResultBag`.
+It must never read `EventStore` or `SnapshotStore`.
 
 | | `IInvariantCheck` | `IBehaviorAnalyzer` |
 |---|---|---|
-| When | Every cycle (synchronous) | Periodic, offline (async, every 6h) |
-| Input | Current `DecisionSnapshot` + `DomainResultBag` | `EventStore` + `SnapshotStore` (historical) |
-| Nature | Structural inconsistency (binary: violated or not) | Statistical / behavioral finding (probabilistic) |
-| Cost | O(1) | O(N) — may read thousands of records |
-| Output | `InvariantViolation` (immediate) | `BehaviorFinding` (routed by kind) |
+| When | Every cycle (sync) | Every 6h (async) |
+| Input | Current snapshot + domain results | EventStore + SnapshotStore |
+| Nature | Structural (binary) | Statistical / behavioral (probabilistic) |
+| Cost | O(1) | O(N) |
+| Output | `InvariantViolation` (immediate) | `BehaviorFinding` (routed) |
 
-Invariant checks must never use `EventStore` or `SnapshotStore`. They operate only on the current cycle's snapshot and domain results.
-
-### §8.2 IInvariantCheck Protocol
+### §9.2 IInvariantCheck Protocol
 
 ```python
-# runtime/plugin_contracts.py
-
 class IInvariantCheck(Protocol):
     @property
-    def check_id(self) -> str:
-        """Unique check identifier. Used as the key for debounce state."""
-        ...
+    def check_id(self) -> str: ...
 
     def check(
         self,
         snapshot: DecisionSnapshot,
         domain_results: DomainResultBag,
     ) -> InvariantViolation | None:
-        """
-        Synchronous. Must complete in < 0.5 ms — no I/O, no heavy compute.
-        Returns InvariantViolation if the constraint is violated, None otherwise.
-        Called after all domains have computed, before Apply.
-        """
-        ...
+        """Synchronous. Must complete in < 0.5 ms — no I/O, no heavy compute."""
 ```
 
-### §8.3 InvariantViolation
+### §9.3 InvariantViolation
 
 ```python
 @dataclass(frozen=True)
 class InvariantViolation:
     check_id: str
     severity: Literal["info", "warning", "critical"]
-    anomaly_type: str           # becomes the HeimaEvent type: f"anomaly.{anomaly_type}"
+    anomaly_type: str
     description: str
-    context: dict[str, Any]     # arbitrary key/value for diagnostics and notification body
+    context: dict[str, Any]
 ```
 
-An `InvariantViolation` is immediately converted by the engine to a `HeimaEvent(type=f"anomaly.{anomaly_type}")` and emitted to the notification pipeline and `EventStore`. Debounce is applied per `check_id` before emission (see §8.5).
+Immediately converted to `HeimaEvent(type=f"anomaly.{anomaly_type}")` with debounce per check_id.
 
-### §8.4 Built-in Invariant Checks
+### §9.4 Built-in Invariant Checks
 
-All four built-in checks are registered by the engine core (not by plugins). They cannot be disabled individually, but their debounce windows are configurable.
-
-| check_id | Trigger condition | severity | Default debounce_s |
+| check_id | Trigger | severity | Default debounce_s |
 |---|---|---|---|
-| `presence_without_occupancy` | `anyone_home=True` AND `len(occupied_rooms)==0` AND house has at least 1 sensorized room | `warning` | 300 |
+| `presence_without_occupancy` | `anyone_home=True` AND no occupied rooms AND house has sensorized rooms | `warning` | 300 |
 | `security_presence_mismatch` | `security_intent="armed_away"` AND `anyone_home=True` | `critical` | 60 |
-| `heating_home_empty` | Heating apply active AND `anyone_home=False` AND `house_state="away"` duration > `anomaly_heating_empty_threshold_s` (default 1800 s) | `warning` | 600 |
-| `sensor_stuck` | Any configured presence/occupancy sensor has not changed state for longer than `anomaly_sensor_stuck_threshold_s` (default 86400 s) | `info` | 3600 |
+| `heating_home_empty` | Heating active AND `anyone_home=False` AND `house_state="away"` > threshold | `warning` | 600 |
+| `sensor_stuck` | Presence/occupancy sensor unchanged > threshold | `info` | 3600 |
 
-Note: `security_presence_mismatch` migrates the existing mismatch detection logic from `SecurityDomain`. The domain continues to produce its result unchanged; the check merely asserts the cross-domain invariant.
+### §9.5 Debounce State Machine
 
-### §8.5 Debounce State Machine
+Per-check state: `first_seen_ts`, `last_emitted_ts`, `is_active`. Condition must hold for
+`debounce_s` before emission. Re-emits every `re_emit_interval_s` (default 3600 s) if persistent.
+Emits `anomaly.resolved` on condition clearing.
 
-Each check has independent per-cycle state:
+### §9.6 Configuration
 
-```python
-@dataclass
-class InvariantCheckState:
-    check_id: str
-    first_seen_ts: float      # monotonic; set when condition first becomes true
-    last_emitted_ts: float    # monotonic; 0 = never emitted
-    is_active: bool
-```
-
-Per-cycle logic:
-
-```
-condition_violated = check.check(snapshot, domain_results) is not None
-
-if condition_violated:
-    if not state.is_active:
-        state.first_seen_ts = now()
-        state.is_active = True
-    elapsed = now() - state.first_seen_ts
-    if elapsed >= debounce_s and (now() - state.last_emitted_ts) >= re_emit_interval_s:
-        emit HeimaEvent(type=f"anomaly.{violation.anomaly_type}", ...)
-        state.last_emitted_ts = now()
-else:
-    if state.is_active:
-        emit HeimaEvent(type="anomaly.resolved", context={"resolved_type": check_id})
-        state.is_active = False
-        state.first_seen_ts = 0
-```
-
-`re_emit_interval_s` (default: 3600 s) prevents flooding when a persistent violation is never resolved.
-
-### §8.6 Integration Point
-
-The invariant check layer is called in `engine.async_evaluate()` after all domain plugins have computed, before `Apply + Execute`:
-
-```python
-# in engine.async_evaluate():
-violations = self._run_invariant_checks(snapshot, domain_results)
-for v in violations:
-    self._emit_anomaly_event(v)
-```
-
-`_run_invariant_checks()` is synchronous and applies debounce before returning violations to emit.
-
-### §8.7 Configuration
-
-New keys in options (under `general`):
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `anomaly_enabled` | bool | `true` | Global on/off for invariant check emission |
-| `anomaly_sensor_stuck_threshold_s` | int | `86400` | Sensor stuck detection window |
-| `anomaly_heating_empty_threshold_s` | int | `1800` | Heating-with-empty-house grace period |
-| `anomaly_notify_on_info` | bool | `false` | Whether `info`-severity violations trigger notifications |
-| `anomaly_re_emit_interval_s` | int | `3600` | Re-emit interval for persistent violations |
+| Key | Type | Default |
+|---|---|---|
+| `anomaly_enabled` | bool | `true` |
+| `anomaly_sensor_stuck_threshold_s` | int | `86400` |
+| `anomaly_heating_empty_threshold_s` | int | `1800` |
+| `anomaly_notify_on_info` | bool | `false` |
+| `anomaly_re_emit_interval_s` | int | `3600` |
 
 ---
 
-## §9 InferenceEngine v2
+## §10 InferenceEngine v2
 
-The InferenceEngine v2 provides per-cycle learned signals to domain plugins, replacing ambiguous hard-input situations with probabilistic guidance.
+### §10.1 HouseSnapshot
 
-### §9.1 HouseSnapshot
-
-The unit of observation written by the hot path to `SnapshotStore`. Derived from `DecisionSnapshot` (domain outputs, not raw HA entity values).
+Unit of observation written on-change to `SnapshotStore`.
 
 ```python
-# runtime/inference/snapshot_store.py
-
 @dataclass(frozen=True)
 class HouseSnapshot:
-    ts: str                              # ISO-8601 UTC
-    weekday: int                         # 0=Monday … 6=Sunday
-    minute_of_day: int                   # 0–1439 local time
+    ts: str                               # ISO-8601 UTC
+    weekday: int                          # 0=Monday … 6=Sunday
+    minute_of_day: int                    # 0–1439 local time
+
+    # PeopleDomain output
     anyone_home: bool
-    named_present: tuple[str, ...]       # sorted person slugs
-    room_occupancy: dict[str, bool]      # room_id → occupied
+    named_present: tuple[str, ...]        # sorted person slugs
+
+    # OccupancyDomain output
+    room_occupancy: dict[str, bool]       # room_id → occupied
+
+    # ActivityDomain output — [v2 new]
+    detected_activities: tuple[str, ...]  # sorted names of active activities (primitive + composite)
+
+    # HouseStateDomain output
     house_state: str
+
+    # HeatingDomain output
     heating_setpoint: float | None
-    lighting_scenes: dict[str, str]      # room_id → scene name applied
+
+    # LightingDomain output
+    lighting_scenes: dict[str, str]       # room_id → scene name applied
+
+    # SecurityDomain output
     security_armed: bool
 ```
 
-Written on-change only: appended only if at least one field differs from the previous snapshot. Typical household: 50–150 records/day. `SnapshotStore`: max 10,000 records, 90-day TTL, persisted via HA `Store`.
+Written on-change only. Typical household: 50–200 records/day.
+`SnapshotStore`: max 10,000 records, 90-day TTL, persisted via HA `Store`.
 
-### §9.2 ILearningModule Contract
+### §10.2 InferenceContext
+
+Read-only view passed to `ILearningModule.infer()` each cycle.
 
 ```python
-# runtime/inference/base.py
-
-class ILearningModule(Protocol):
-    @property
-    def module_id(self) -> str: ...
-
-    async def analyze(self, store: SnapshotStore) -> None:
-        """
-        Offline phase. Reads snapshot history; updates internal model.
-        Called every 6h off-cycle. May use async I/O freely.
-        Must not emit signals; must not write to SnapshotStore.
-        """
-
-    def infer(self, context: InferenceContext) -> list[InferenceSignal]:
-        """
-        Online phase. Reads pre-computed model + context; emits signals.
-        Synchronous. Must complete in < 1 ms — no I/O, no heavy compute.
-        Called once per eval cycle, before domain evaluation.
-        """
-
-    def diagnostics(self) -> dict[str, Any]:
-        """Current model summary for engine.diagnostics()["inference"]["modules"]."""
+@dataclass(frozen=True)
+class InferenceContext:
+    now_local: datetime
+    weekday: int
+    minute_of_day: int
+    anyone_home: bool
+    named_present: tuple[str, ...]
+    room_occupancy: dict[str, bool]
+    previous_house_state: str
+    previous_heating_setpoint: float | None
+    previous_lighting_scenes: dict[str, str]
+    previous_activity_names: tuple[str, ...]   # [v2 new] from CanonicalState activity.active_names
 ```
 
-Exceptions in `infer()` are caught by the engine; the offending module emits no signals for that cycle. The eval cycle is unaffected.
+`previous_activity_names` is populated from `CanonicalState.get("activity.active_names", [])`.
+This means `ActivityInferenceModule.infer()` uses the previous cycle's confirmed activities
+as features — one-cycle lag is acceptable for composite pattern inference.
 
-### §9.3 InferenceSignal Hierarchy
+### §10.3 InferenceSignal Hierarchy
 
 ```python
-# runtime/inference/signals.py
-
 class Importance(IntEnum):
     OBSERVE = 0   # logged only; never applied in domain resolution
     SUGGEST = 1   # applied only when no hard signal is active
-    ASSERT  = 2   # soft override; domain still decides final outcome (reserved, not used in v2)
+    ASSERT  = 2   # soft override; domain still decides (reserved, not used in v2)
 
 @dataclass(frozen=True)
 class InferenceSignal:
     source_id: str
-    confidence: float       # 0.0–1.0
+    confidence: float        # 0.0–1.0
     importance: Importance
     ttl_s: int
-    label: str              # human-readable reason (for diagnostics)
+    label: str               # human-readable reason (diagnostics)
 
 @dataclass(frozen=True)
 class HouseStateSignal(InferenceSignal):
@@ -655,89 +771,243 @@ class LightingSignal(InferenceSignal):
     predicted_scene: str
 
 @dataclass(frozen=True)
+class ActivitySignal(InferenceSignal):    # [v2 new]
+    activity_name: str
+    room_id: str | None
+    context: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True)
 class OccupancySignal(InferenceSignal):
     room_id: str
     predicted_occupied: bool    # stub; not applied in v2
 ```
 
-### §9.4 SignalRouter
+`ActivitySignal` is consumed by `ActivityDomain.evaluate()` at step 5 (§7.3): each signal with
+`confidence >= 0.60` and `importance >= SUGGEST` is merged into `ActivityResult.active` as a
+composite activity.
+
+### §10.4 ILearningModule Contract
 
 ```python
-# runtime/inference/router.py
+class ILearningModule(Protocol):
+    @property
+    def module_id(self) -> str: ...
 
-class SignalRouter:
-    def route(self, signals: list[InferenceSignal]) -> dict[type, list[InferenceSignal]]:
-        """
-        Groups signals by concrete subclass type.
-        Filters expired signals (based on ttl_s vs signal creation time).
-        Sorts each bucket by confidence descending.
-        Returns a dict keyed by concrete InferenceSignal subclass.
-        """
+    async def analyze(self, store: SnapshotStore) -> None:
+        """Offline phase. Reads snapshot history; updates internal model. Called every 6h."""
+
+    def infer(self, context: InferenceContext) -> list[InferenceSignal]:
+        """Online phase. Synchronous. Must complete in < 1 ms. Returns [] before first analyze()."""
+
+    def diagnostics(self) -> dict[str, Any]: ...
 ```
 
-Each domain plugin receives only the signal type matching its domain via `signals.get(domain_id)` in `compute()`. Routing is pure (no side effects, no I/O).
+### §10.5 ActivityInferenceModule
 
-### §9.5 Built-in Learning Modules
+`ActivityInferenceModule` is a built-in `ILearningModule` that emits `ActivitySignal` for
+user-approved composite activity patterns.
+
+**Model:**
+```python
+# For each approved ActivityProposal p:
+#   pattern_key = frozenset(p.primitive_pattern)
+#   context_key = hash of (hour_range, room_id, weekday_filter)
+#   counts[(pattern_key, context_key)] = int   # occurrences
+#   total[pattern_key] = int
+```
+
+**analyze():**
+```
+For each snapshot in store:
+  active_set = frozenset(snapshot.detected_activities)
+  for approved_proposal in approval_store.get_approved("activity_discovered"):
+    if approved_proposal.primitive_pattern ⊆ active_set:
+      if context_matches(snapshot, approved_proposal.context_conditions):
+        counts[(pattern_key, context_key)] += 1
+        total[pattern_key] += 1
+```
+
+**infer():**
+```
+current_set = frozenset(context.previous_activity_names)
+for approved_proposal in approval_store.get_approved("activity_discovered"):
+  if approved_proposal.primitive_pattern ⊆ current_set:
+    if context_matches_now(context, approved_proposal.context_conditions):
+      p = counts[(pk, ck)] / total[pk]   # 0 if unseen
+      if p >= 0.60 and support >= 10:
+        emit ActivitySignal(
+          activity_name=approved_proposal.activity_name,
+          room_id=approved_proposal.context_conditions.get("room_id"),
+          confidence=p,
+          importance=SUGGEST,
+          ttl_s=600,
+        )
+```
+
+Before any `ActivityProposal` is approved, `ActivityInferenceModule.infer()` returns `[]`.
+
+### §10.6 Built-in Learning Modules
 
 | Module | What it learns | Signal emitted | Min support |
 |---|---|---|---|
 | `WeekdayStateModule` | `P(house_state \| weekday, hour_bucket)` | `HouseStateSignal` | 10 snapshots/slot |
 | `RoomStateCorrelationModule` | `P(house_state \| occupied_room_pattern)` | `HouseStateSignal` | 15 snapshots/pattern |
-| `HeatingPreferenceModule` | `preferred_setpoint[house_state]` from observed setpoints | `HeatingSignal` | 10 snapshots/state |
+| `HeatingPreferenceModule` | `preferred_setpoint[house_state]` | `HeatingSignal` | 10 snapshots/state |
 | `LightingPatternModule` | `P(scene \| room_id, house_state, hour_bucket)` | `LightingSignal` | 8 snapshots/slot |
-| `HouseStateInferenceModule` | `P(house_state \| weekday, hour_bucket, occupied_rooms, anyone_home)` | `HouseStateSignal` | 20 snapshots/context key |
+| `HouseStateInferenceModule` | `P(house_state \| weekday, hour, rooms, anyone_home)` | `HouseStateSignal` | 20 snapshots/context |
+| `ActivityInferenceModule` | `P(composite_activity \| primitive_pattern, context)` | `ActivitySignal` | 10 occurrences/pattern |
 
-Hour bucket = `minute_of_day // 60` (24 buckets/day). All models use frequency tables and index-based percentiles — no external libraries.
+### §10.7 SignalRouter
 
-### §9.6 Domain Signal Consumption Policy
+Groups signals by subclass type. Filters expired signals. Sorts each bucket by confidence desc.
+Returns `dict[type, list[InferenceSignal]]`.
 
-Signals are optional parameters to each plugin's `compute()`. Hard inputs always take precedence.
+**Conflict resolution:** highest confidence wins. Tie-break: most conservative `Importance`. Log
+`WARNING` when ≥ 2 signals in the same bucket have `confidence >= 0.60` and different predicted
+values.
 
-| Domain plugin | Signal type accepted | Condition for use | Min confidence |
+### §10.8 Domain Signal Consumption Policy
+
+| Domain | Signal type accepted | Condition for use | Min confidence |
 |---|---|---|---|
+| `ActivityDomain` | `ActivitySignal` | Approved composite activity; no hard primitive already covering same name | 0.60 |
 | `HouseStateDomain` | `HouseStateSignal` | No definitive hard signal (no override, no unambiguous presence, no vacation) | 0.60 |
-| `HeatingPlugin` | `HeatingSignal` | `apply_allowed=True` AND `target_temperature is None` from branch config AND no manual override guard | 0.55 |
-| `LightingPlugin` | `LightingSignal` | No explicit scene configured for current house_state AND `manual_hold=False` for that room | 0.65 |
+| `HeatingPlugin` | `HeatingSignal` | `apply_allowed=True` AND `target_temperature is None` AND no manual override | 0.55 |
+| `LightingPlugin` | `LightingSignal` | No explicit scene for current house_state AND `manual_hold=False` | 0.65 |
 | `SecurityPlugin` | — | Not applicable in v2 | — |
 | `OccupancyDomain` | `OccupancySignal` | Stub — accepted in signature; not applied in v2 | n/a |
 
 Signals never override: active user overrides, explicit config values, or safety guards.
 
-### §9.7 House State Learning and User Approval
+### §10.9 House State Learning and User Approval
 
-When a `HouseStateSignal` from `HouseStateInferenceModule` would change the resolved house state, a `ReactionProposal` is generated on first application. While the proposal is pending, the signal is applied transiently. After user acceptance, it is applied silently. After rejection, the signal is computed but not consumed; no re-proposal for the same `(context_key, predicted_state)` pair (stored in `ApprovalStore`, persisted across restarts).
+`HouseStateInferenceModule` learns `P(house_state | weekday, hour_bucket, occupied_rooms,
+anyone_home)`. First application triggers a `ReactionProposal`. While pending: applied
+transiently. After acceptance: applied silently. After rejection: computed but not consumed;
+no re-proposal for the same `(context_key_hash, predicted_state)` pair
+(`ApprovalStore`, persisted across restarts).
 
-Confidence model:
-```
-confidence = probability × min(1.0, support / MIN_SUPPORT)
-```
+Confidence model: `confidence = probability × min(1.0, support / MIN_SUPPORT)`.
 
 | confidence range | Behavior |
 |---|---|
-| < 0.40 | Signal not emitted |
-| 0.40–0.60 | Emitted as `OBSERVE` (logged, not applied) |
-| 0.60–0.80 | Emitted as `SUGGEST`; applied when hard inputs ambiguous |
+| < 0.40 | Not emitted |
+| 0.40–0.60 | Emitted as `OBSERVE` |
+| 0.60–0.80 | Emitted as `SUGGEST` |
 | > 0.80 | Applied; may generate auto-apply proposal |
 
 ---
 
-## §10 OutcomeTracker
+## §11 Event-Driven Trigger
 
-### §10.1 Concept
+### §11.1 Model
 
-The `OutcomeTracker` closes the learn→act→verify loop. When a `HeimaReaction` fires, it registers a pending verification. On each subsequent eval cycle, the tracker checks whether the predicted event materialized within the timeout window. The result feeds `ILearningBackend` and, after repeated failures, triggers a degradation proposal.
+The evaluation cycle is triggered by **meaningful state changes** in the home. The periodic timer
+is a fallback, not the primary trigger. Time is a contextual dimension for interpreting events,
+not a cause.
 
-### §10.2 Data Models
+Two trigger sources coexist:
+
+| Source | When | Debounce |
+|---|---|---|
+| HA `state_changed` on registered signal entities | Entity state changes | Per-class (§11.2) |
+| Periodic fallback | Always | 300 s |
+
+The coordinator maintains a `_eval_pending: bool` flag. Both trigger sources set it to `True` and
+schedule a debounced call to `async_evaluate()`. Concurrent triggers within the debounce window
+are collapsed into a single evaluation.
+
+### §11.2 Signal Entity Classes
+
+| Class | Entity patterns | Debounce | Rationale |
+|---|---|---|---|
+| `presence` | `device_tracker.*`, `person.*` | 5 s | Group simultaneous device updates |
+| `motion` | `binary_sensor.*motion*`, `binary_sensor.*occupancy*` | 3 s | Brief bursts |
+| `door_window` | `binary_sensor.*door*`, `binary_sensor.*window*`, `binary_sensor.*contact*` | 2 s | Edge detection |
+| `power_threshold` | `sensor.*power*`, `sensor.*energy*` — only on configured threshold crossings | 5 s | Avoids continuous noise |
+| `calendar` | `calendar.*` | 0 s | Calendar transitions are semantically exact |
+| `override` | `heima.set_mode` service call | 0 s | User intent is immediate |
+| `weather` | Configured weather entity | 10 s | Slow-changing; coarse trigger |
+
+Environmental sensors (lux, temperature, humidity, CO₂) do **not** trigger evaluations. They are
+read passively from `NormalizedObservation` on each cycle. Continuous small changes in ambient
+sensors should not flood the eval pipeline.
+
+For `power_threshold`: the coordinator tracks the last-evaluated value per entity and only
+triggers on crossing a configured threshold (e.g., stove from < 200 W to > 200 W), not on every
+watt change.
+
+### §11.3 Debounce Implementation
 
 ```python
-# runtime/outcome_tracker.py
+# coordinator.py (simplified)
 
+def _on_state_changed(self, event: Event) -> None:
+    entity_id = event.data["entity_id"]
+    entity_class = self._classify_entity(entity_id)
+    if entity_class is None:
+        return
+    debounce_s = DEBOUNCE_BY_CLASS[entity_class]
+    if self._debounce_handles.get(entity_class):
+        self._debounce_handles[entity_class].cancel()
+    self._debounce_handles[entity_class] = self._hass.async_call_later(
+        debounce_s, self._trigger_eval
+    )
+
+async def _trigger_eval(self, _now=None) -> None:
+    if not self._eval_running:
+        await self.async_evaluate()
+```
+
+`_eval_running` prevents re-entrant evaluation. If a trigger fires while evaluation is in
+progress, it schedules a follow-up evaluation after the current one completes.
+
+Entity classification uses a priority list: entities explicitly configured by the user
+(in `options["signal_entities"]`) are classified first; HA domain pattern matching is the
+fallback.
+
+### §11.4 Periodic Fallback
+
+The 300-second timer fires unconditionally and calls `async_evaluate()`. Its purpose:
+- Time-of-day transitions not caused by any sensor change (sunset, schedule windows)
+- Calendar events that fire when no other entity changes
+- Slow environmental drift that doesn't cross power thresholds but changes context
+- Recovery if a state_changed subscription is missed
+
+The periodic fallback does NOT replace event-driven evaluation for presence/activity triggers.
+
+### §11.5 Subscription Lifecycle
+
+At `async_setup_entry()` the coordinator:
+1. Subscribes to `EVENT_STATE_CHANGED` with `_on_state_changed` as listener.
+2. Schedules the 300-second periodic fallback via `async_call_later` with recursive reschedule.
+
+At `async_unload_entry()`:
+1. Cancels all `_debounce_handles`.
+2. Cancels the periodic fallback handle.
+3. Removes the `EVENT_STATE_CHANGED` listener.
+
+`_classify_entity()` is rebuilt when the options flow changes the `signal_entities` config.
+
+---
+
+## §12 OutcomeTracker
+
+### §12.1 Concept
+
+Closes the learn→act→verify loop. When a `HeimaReaction` fires, registers a pending
+verification. On each subsequent cycle, checks whether the predicted event materialized within
+the timeout window. Feeds `ILearningBackend` and triggers degradation proposals.
+
+### §12.2 Data Models
+
+```python
 @dataclass
 class PendingVerification:
     reaction_id: str
-    expected_event_type: str        # e.g. "presence.arrive", "house_state.change"
+    expected_event_type: str
     expected_within_s: float
-    fired_at_ts: float              # monotonic
+    fired_at_ts: float
     snapshot_at_fire: HouseSnapshot
 
 @dataclass
@@ -750,196 +1020,198 @@ class OutcomeRecord:
     context: dict[str, Any]
 ```
 
-### §10.3 Mechanism
+### §12.3 Timeout Policy
 
-**Registration (hot path, synchronous):**
-
-```
-On reaction.fire():
-    if reaction.outcome_spec is not None:
-        tracker.register(PendingVerification(...))
-```
-
-**Verification check (hot path, synchronous, every cycle):**
-
-```
-For each pending verification:
-    elapsed = monotonic() - fired_at_ts
-    recent_events = event_store.query_since(fired_at_ts, event_type=expected_event_type)
-
-    if recent_events:
-        record OutcomeRecord(outcome="positive")
-        remove from pending
-        backend.observe(reaction_id, "positive")
-
-    elif elapsed > expected_within_s:
-        record OutcomeRecord(outcome="negative")
-        remove from pending
-        backend.observe(reaction_id, "negative")
-        _check_degradation(reaction_id)
-```
-
-`event_store.query_since()` is a synchronous in-memory read. Safe on the hot path.
-
-### §10.4 Timeout Policy
-
-| Reaction type | Default `expected_within_s` | Rationale |
-|---|---|---|
-| `PresencePatternReaction` | 1800 | Fires 20 min before expected arrival; 30 min window is generous |
-| `ConsecutiveStateReaction` | 600 | State change expected promptly after trigger |
-| Custom reactions | 900 (default) | Falls back to `outcome_spec.timeout_s` |
-
-### §10.5 Degradation Proposal
-
-After K=5 consecutive negative outcomes for a reaction, `OutcomeTracker` submits a `ReactionProposal` to `ProposalEngine`. Submitted at most once per reaction until the user accepts or rejects. Rejection resets the streak counter.
-
-### §10.6 Integration Points
-
-| Integration point | Detail |
+| Reaction type | Default `expected_within_s` |
 |---|---|
-| `HeimaReaction.fire()` | Call `OutcomeTracker.register()` if `outcome_spec` is set |
-| `engine.async_evaluate()` | Call `OutcomeTracker.check_pending(snapshot)` after Apply, before CanonicalState update |
-| `ProposalEngine` | `OutcomeTracker` holds a reference; calls `submit()` on degradation |
-| `engine.diagnostics()` | `"outcome_tracker"` key: pending count, per-reaction positive/negative counts |
+| `PresencePatternReaction` | 1800 |
+| `ConsecutiveStateReaction` | 600 |
+| Custom reactions | 900 (fallback to `outcome_spec.timeout_s`) |
+
+### §12.4 Degradation Proposal
+
+After K=5 consecutive negative outcomes, `OutcomeTracker` submits a `ReactionProposal` to
+`ProposalEngine`. At most once per reaction until user accepts or rejects.
 
 ---
 
-## §11 House State Learning
+## §13 House State Learning
 
-See §9.7 for the complete specification. Summary:
-
-- Implemented as `HouseStateInferenceModule` (an `ILearningModule`).
-- Learns `P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)` from `SnapshotStore`.
+Implemented as `HouseStateInferenceModule` (§10.6). Summary:
+- Learns `P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)`.
 - Emits `HouseStateSignal(importance=SUGGEST)` when confidence ≥ 0.60.
-- `HouseStateDomain` consumes the signal only when no definitive hard input is active.
-- First application triggers a `ReactionProposal`; silent after user approval.
-- `ApprovalStore` persists approval/rejection decisions across restarts (`STORAGE_KEY = "heima_inference_approvals"`).
-- Rejection is permanent per `(context_key_hash, predicted_state)` pair until cleared.
+- `HouseStateDomain` consumes only when no definitive hard input is active.
+- First application triggers a `ReactionProposal`; silent after approval.
+- `ApprovalStore` persists decisions: `STORAGE_KEY = "heima_inference_approvals"`.
+- Rejection is permanent per `(context_key_hash, predicted_state)` until cleared.
 
 ---
 
-## §12 Implementation Phases
+## §14 Implementation Phases
 
 ### Phase A — Plugin Framework
 
-**Unlocks:** declarative DAG, plugin registration, built-in plugins as IDomainPlugin, IOptionsSchemaProvider.
-
+**Unlocks:** declarative DAG, plugin registration, built-in plugins as IDomainPlugin.
 **Dependencies:** none (refactor of existing code).
 
 | Deliverable | File(s) |
 |---|---|
-| `IDomainPlugin`, `DomainResultBag`, `IOptionsSchemaProvider` protocols | `runtime/plugin_contracts.py` |
-| `resolve_dag()` with cycle detection and missing-dependency detection | `runtime/dag.py` |
-| Engine plugin registration API: `register_plugin()`, `finalize_dag()` | `runtime/engine.py` |
-| Migrate `LightingDomain` → `LightingPlugin(IDomainPlugin)` | `runtime/domains/lighting.py` |
-| Migrate `HeatingDomain` → `HeatingPlugin(IDomainPlugin)` | `runtime/domains/heating.py` |
-| Migrate `SecurityDomain` → `SecurityPlugin(IDomainPlugin)` | `runtime/domains/security.py` |
-| Coordinator: register all plugins, call `finalize_dag()` | `coordinator.py` |
-| All existing tests green; add DAG cycle detection tests | `tests/` |
+| `IDomainPlugin`, `DomainResultBag`, `IOptionsSchemaProvider` | `runtime/plugin_contracts.py` |
+| `resolve_dag()` with cycle/missing-dep detection | `runtime/dag.py` |
+| Engine plugin registration: `register_plugin()`, `finalize_dag()` | `runtime/engine.py` |
+| Migrate `LightingDomain` → `LightingPlugin` | `runtime/domains/lighting.py` |
+| Migrate `HeatingDomain` → `HeatingPlugin` | `runtime/domains/heating.py` |
+| Migrate `SecurityDomain` → `SecurityPlugin` | `runtime/domains/security.py` |
+| Coordinator: register plugins, `finalize_dag()` | `coordinator.py` |
+| All existing tests green; DAG cycle detection tests | `tests/` |
 
 ### Phase B — IBehaviorAnalyzer + FindingRouter
 
-**Unlocks:** unified behavior analysis interface, AnomalyEngine routing for statistical findings, CorrelationAnalyzer.
-
-**Dependencies:** Phase A complete (FindingRouter references InferenceEngine, which requires Phase D infrastructure — can be stubbed).
+**Unlocks:** unified behavior analysis interface, AnomalyEngine, CorrelationAnalyzer.
+**Dependencies:** Phase A.
 
 | Deliverable | File(s) |
 |---|---|
 | `IBehaviorAnalyzer`, `BehaviorFinding`, `AnomalySignal` | `runtime/plugin_contracts.py` |
-| `FindingRouter` | `runtime/finding_router.py` |
-| Migrate `PresencePatternAnalyzer` to `IBehaviorAnalyzer` | `runtime/analyzers/presence_pattern.py` |
-| Migrate `HeatingPatternAnalyzer` to `IBehaviorAnalyzer` | `runtime/analyzers/heating_pattern.py` |
-| New: `AnomalyAnalyzer` (statistical deviations) | `runtime/analyzers/anomaly.py` |
-| New: `CorrelationAnalyzer` (multi-signal correlations) | `runtime/analyzers/correlation.py` |
+| `FindingRouter` (extended for `"activity"` kind) | `runtime/finding_router.py` |
+| Migrate `PresencePatternAnalyzer`, `HeatingPatternAnalyzer` | `runtime/analyzers/` |
+| New: `AnomalyAnalyzer`, `CorrelationAnalyzer` | `runtime/analyzers/` |
 | Coordinator: register analyzers, wire `FindingRouter` | `coordinator.py` |
 
 ### Phase C — IInvariantCheck
 
-**Unlocks:** per-cycle structural constraint layer, migration of SecurityDomain mismatch detection.
-
-**Dependencies:** Phase A complete (requires `DomainResultBag` to be available).
+**Unlocks:** per-cycle structural constraint layer.
+**Dependencies:** Phase A.
 
 | Deliverable | File(s) |
 |---|---|
 | `IInvariantCheck`, `InvariantViolation`, `InvariantCheckState` | `runtime/plugin_contracts.py`, `runtime/invariant_check.py` |
-| Engine invariant check loop: `_run_invariant_checks()` | `runtime/engine.py` |
-| Built-in check: `PresenceWithoutOccupancy` | `runtime/invariants/presence.py` |
-| Built-in check: `SecurityPresenceMismatch` (migrate from SecurityDomain) | `runtime/invariants/security.py` |
-| Built-in check: `HeatingHomeEmpty` | `runtime/invariants/heating.py` |
-| Built-in check: `SensorStuck` | `runtime/invariants/sensor.py` |
-| Debounce state machine in engine | `runtime/engine.py` |
-| Tests: ≥ 1 test per check, debounce behavior, resolution event | `tests/invariants/` |
+| Engine invariant check loop | `runtime/engine.py` |
+| Built-in checks: `PresenceWithoutOccupancy`, `SecurityPresenceMismatch`, `HeatingHomeEmpty`, `SensorStuck` | `runtime/invariants/` |
+| Tests: ≥ 1 per check, debounce behavior, resolution event | `tests/invariants/` |
 
-### Phase D — InferenceEngine v2
+### Phase D — InferenceEngine v2 (base)
 
-**Unlocks:** per-cycle learned signals to domain plugins, SnapshotStore, HouseStateInferenceModule.
-
-**Dependencies:** Phase A complete (plugins must expose `compute(signals=...)` signature).
+**Unlocks:** SnapshotStore, basic learning modules, per-cycle signal collection.
+**Dependencies:** Phase A.
 
 | Deliverable | File(s) |
 |---|---|
-| `ILearningModule`, `InferenceContext`, `InferenceSignal` hierarchy | `runtime/inference/base.py`, `runtime/inference/signals.py` |
-| `SnapshotStore` with persistence | `runtime/inference/snapshot_store.py` |
+| `ILearningModule`, `InferenceContext`, `InferenceSignal` hierarchy (including `ActivitySignal`) | `runtime/inference/` |
+| `SnapshotStore` with `detected_activities` field | `runtime/inference/snapshot_store.py` |
 | `SignalRouter` | `runtime/inference/router.py` |
 | `WeekdayStateModule`, `HeatingPreferenceModule` | `runtime/inference/modules/` |
 | Engine: `_collect_signals()`, `_record_snapshot_if_changed()` | `runtime/engine.py` |
-| Coordinator: module registration, 6h offline scheduling | `coordinator.py` |
 | Domain plugins: `compute(signals=...)` signature update | `runtime/domains/*.py` |
 | `RoomStateCorrelationModule`, `LightingPatternModule` | Phase D2 (deferred) |
 
 ### Phase E — OutcomeTracker + Feedback Loop
 
-**Unlocks:** act→verify loop, degradation proposals, `StatsLearningBackend`.
-
-**Dependencies:** Phase D complete (OutcomeTracker reads `HouseSnapshot` from SnapshotStore context).
+**Unlocks:** act→verify loop, degradation proposals.
+**Dependencies:** Phase D.
 
 | Deliverable | File(s) |
 |---|---|
 | `OutcomeTracker`, `PendingVerification`, `OutcomeRecord` | `runtime/outcome_tracker.py` |
-| `HeimaReaction.outcome_spec` attribute | `runtime/reactions/base.py` |
-| `PresencePatternReaction`: populate `outcome_spec` | `runtime/reactions/presence_pattern.py` |
-| `StatsLearningBackend` (replaces `NaiveLearningBackend`) | `runtime/learning_backend.py` |
-| Engine integration: `check_pending()` after Apply | `runtime/engine.py` |
-| Degradation proposal path | `runtime/proposal_engine.py` |
-| Tests: positive outcome, negative outcome, degradation trigger | `tests/outcome_tracker/` |
+| `HeimaReaction.outcome_spec` | `runtime/reactions/base.py` |
+| `StatsLearningBackend` | `runtime/learning_backend.py` |
+| Engine: `check_pending()` after Apply | `runtime/engine.py` |
+| Tests: positive/negative outcome, degradation trigger | `tests/outcome_tracker/` |
 
 ### Phase F — House State Learning
 
 **Unlocks:** `HouseStateInferenceModule`, `ApprovalStore`, user-approval gate.
-
-**Dependencies:** Phases D and E complete.
+**Dependencies:** Phases D and E.
 
 | Deliverable | File(s) |
 |---|---|
 | `HouseStateInferenceModule` | `runtime/inference/modules/house_state_inference.py` |
 | `ApprovalStore` | `runtime/inference/approval_store.py` |
 | Approval gate in `HouseStateDomain.evaluate()` | `runtime/domains/house_state.py` |
-| Options Flow: `proposals` step extended for `house_state_learned_context` | `config_flow/` |
-| `AnomalyAnalyzer` registered in `FindingRouter` (statistical anomalies) | `coordinator.py` |
-| Tests: confidence model, approval path, rejection persistence | `tests/inference/` |
+| Options Flow: `house_state_learned_context` proposal type | `config_flow/` |
+
+### Phase G — ActivityDomain
+
+**Unlocks:** primitive activity detection, hysteresis, `ActivityResult` in DAG.
+**Dependencies:** Phase A (uses `DomainResultBag`), Phase D (writes `detected_activities` to `HouseSnapshot`).
+
+| Deliverable | File(s) |
+|---|---|
+| `Activity`, `ActivityResult`, `ActivityDetection`, `ActivityHysteresisState` | `runtime/domains/activity_domain.py` |
+| `IActivityDetector` Protocol | `runtime/plugin_contracts.py` |
+| `ActivityDomain` with hysteresis state machine | `runtime/domains/activity_domain.py` |
+| Built-in detectors: `StoveOnDetector`, `OvenOnDetector`, `TvActiveDetector`, `PcActiveDetector`, `ShowerRunningDetector`, `WashingMachineDetector`, `DishwasherDetector` | `runtime/activity_detectors/` |
+| Engine: insert `ActivityDomain` in core evaluation order | `runtime/engine.py` |
+| `activity_bindings` section in options flow | `config_flow/` |
+| `activity.*` keys in `CanonicalState` | `runtime/domains/activity_domain.py` |
+| `InferenceContext.previous_activity_names` populated from CanonicalState | `runtime/engine.py` |
+| `HouseSnapshot.detected_activities` populated from `ActivityResult` | `runtime/inference/snapshot_store.py` |
+| Tests: hysteresis transitions, candidate/grace, event emission | `tests/activity/` |
+
+### Phase H — Activity Inference and Learning
+
+**Unlocks:** composite activity discovery, `ActivityProposal`, `ActivityInferenceModule`.
+**Dependencies:** Phases D, F, and G.
+
+| Deliverable | File(s) |
+|---|---|
+| `ActivityProposal` dataclass | `runtime/proposal_engine.py` |
+| `ActivityAnalyzer(IBehaviorAnalyzer)` | `runtime/analyzers/activity.py` |
+| `FindingRouter`: handle `kind="activity"` | `runtime/finding_router.py` |
+| `ActivityInferenceModule(ILearningModule)` | `runtime/inference/modules/activity_inference.py` |
+| `ApprovalStore`: support `"activity_discovered"` proposal type | `runtime/inference/approval_store.py` |
+| Options Flow: `activity_discovered` proposal review surface | `config_flow/` |
+| `ActivityDomain.evaluate()`: consume `ActivitySignal` (step 5) | `runtime/domains/activity_domain.py` |
+| Tests: ActivityAnalyzer min-support, ActivityInferenceModule infer, signal merge | `tests/activity/` |
+
+### Phase I — Event-Driven Trigger
+
+**Unlocks:** HA `state_changed`-driven evaluation, per-class debounce, reduced periodic interval.
+**Dependencies:** Phase G (power threshold detection depends on activity binding config).
+
+| Deliverable | File(s) |
+|---|---|
+| `_on_state_changed()` listener with entity classification | `coordinator.py` |
+| `_classify_entity()` with pattern matching + explicit config | `coordinator.py` |
+| Per-class debounce handles | `coordinator.py` |
+| `_eval_running` guard against re-entrant evaluation | `coordinator.py` |
+| Periodic fallback: 300 s (reduced from current interval) | `coordinator.py` |
+| Power threshold crossing detection | `coordinator.py` |
+| `signal_entities` section in options flow (explicit entity → class mapping) | `config_flow/` |
+| Tests: debounce batching, concurrent trigger collapse, eval guard | `tests/coordinator/` |
 
 ---
 
-## §13 File Structure
+## §15 File Structure
 
 ### New files
 
 | File | Purpose |
 |---|---|
-| `runtime/plugin_contracts.py` | All plugin interface Protocols: `IDomainPlugin`, `IBehaviorAnalyzer`, `IInvariantCheck`, `ILearningModule`, `IOptionsSchemaProvider`, `BehaviorFinding`, `InvariantViolation` |
-| `runtime/dag.py` | `resolve_dag()`, `HeimaDomainCycleError`, `HeimaMissingDependencyError` |
+| `runtime/plugin_contracts.py` | All plugin interface Protocols + `IActivityDetector` |
+| `runtime/dag.py` | `resolve_dag()`, cycle/missing-dep errors |
 | `runtime/domain_result_bag.py` | `DomainResultBag` |
-| `runtime/finding_router.py` | `FindingRouter` |
-| `runtime/invariant_check.py` | `InvariantCheckState`, engine invariant loop helpers |
-| `runtime/invariants/presence.py` | `PresenceWithoutOccupancy` check |
-| `runtime/invariants/security.py` | `SecurityPresenceMismatch` check |
-| `runtime/invariants/heating.py` | `HeatingHomeEmpty` check |
-| `runtime/invariants/sensor.py` | `SensorStuck` check |
-| `runtime/analyzers/anomaly.py` | `AnomalyAnalyzer` (statistical, `IBehaviorAnalyzer`) |
-| `runtime/analyzers/correlation.py` | `CorrelationAnalyzer` (multi-signal, `IBehaviorAnalyzer`) |
+| `runtime/finding_router.py` | `FindingRouter` (handles `"activity"` kind) |
+| `runtime/invariant_check.py` | `InvariantCheckState`, invariant loop helpers |
+| `runtime/invariants/presence.py` | `PresenceWithoutOccupancy` |
+| `runtime/invariants/security.py` | `SecurityPresenceMismatch` |
+| `runtime/invariants/heating.py` | `HeatingHomeEmpty` |
+| `runtime/invariants/sensor.py` | `SensorStuck` |
+| `runtime/analyzers/anomaly.py` | `AnomalyAnalyzer` |
+| `runtime/analyzers/correlation.py` | `CorrelationAnalyzer` |
+| `runtime/analyzers/activity.py` | `ActivityAnalyzer` |
+| `runtime/domains/activity_domain.py` | `ActivityDomain`, `Activity`, `ActivityResult`, `ActivityHysteresisState` |
+| `runtime/activity_detectors/__init__.py` | Public exports |
+| `runtime/activity_detectors/stove.py` | `StoveOnDetector` |
+| `runtime/activity_detectors/oven.py` | `OvenOnDetector` |
+| `runtime/activity_detectors/tv.py` | `TvActiveDetector` |
+| `runtime/activity_detectors/pc.py` | `PcActiveDetector` |
+| `runtime/activity_detectors/shower.py` | `ShowerRunningDetector` |
+| `runtime/activity_detectors/washing.py` | `WashingMachineDetector` |
+| `runtime/activity_detectors/dishwasher.py` | `DishwasherDetector` |
 | `runtime/inference/__init__.py` | Public API exports |
-| `runtime/inference/base.py` | `ILearningModule`, `InferenceContext` |
-| `runtime/inference/signals.py` | `Importance`, `InferenceSignal` hierarchy |
+| `runtime/inference/base.py` | `ILearningModule`, `HeimaLearningModule`, `InferenceContext` |
+| `runtime/inference/signals.py` | `Importance`, `InferenceSignal` hierarchy + `ActivitySignal` |
 | `runtime/inference/snapshot_store.py` | `HouseSnapshot`, `SnapshotStore` |
 | `runtime/inference/router.py` | `SignalRouter` |
 | `runtime/inference/approval_store.py` | `ApprovalStore` |
@@ -948,41 +1220,46 @@ See §9.7 for the complete specification. Summary:
 | `runtime/inference/modules/heating_preference.py` | `HeatingPreferenceModule` |
 | `runtime/inference/modules/lighting_pattern.py` | `LightingPatternModule` |
 | `runtime/inference/modules/house_state_inference.py` | `HouseStateInferenceModule` |
+| `runtime/inference/modules/activity_inference.py` | `ActivityInferenceModule` |
 | `runtime/outcome_tracker.py` | `OutcomeTracker`, `PendingVerification`, `OutcomeRecord` |
 
 ### Modified files
 
 | File | Change |
 |---|---|
-| `runtime/engine.py` | Plugin registration API, DAG evaluation loop, `_collect_signals()`, `_record_snapshot_if_changed()`, `_run_invariant_checks()`, `OutcomeTracker.check_pending()` call, diagnostics extensions |
-| `runtime/domains/lighting.py` | Implement `IDomainPlugin`; `compute(canonical_state, domain_results, signals)` |
-| `runtime/domains/heating.py` | Implement `IDomainPlugin`; `compute(canonical_state, domain_results, signals)` |
-| `runtime/domains/security.py` | Implement `IDomainPlugin`; `compute(canonical_state, domain_results, signals)`; remove internal mismatch detection (migrated to `SecurityPresenceMismatch` invariant check) |
+| `runtime/engine.py` | Plugin registration, DAG loop, `ActivityDomain` in core order, `_collect_signals()`, `_record_snapshot_if_changed()`, `_run_invariant_checks()`, `OutcomeTracker.check_pending()`, diagnostics |
+| `runtime/domains/lighting.py` | `IDomainPlugin`; `compute(canonical_state, domain_results, signals)` |
+| `runtime/domains/heating.py` | `IDomainPlugin`; `compute(canonical_state, domain_results, signals)` |
+| `runtime/domains/security.py` | `IDomainPlugin`; remove internal mismatch detection |
 | `runtime/domains/house_state.py` | Signal consumption + approval gate for `HouseStateSignal` |
 | `runtime/domains/occupancy.py` | `compute(signals: list[OccupancySignal] = [])` stub |
-| `runtime/analyzers/presence_pattern.py` | Migrate `IPatternAnalyzer` → `IBehaviorAnalyzer`; return `BehaviorFinding(kind="pattern", ...)` |
-| `runtime/analyzers/heating_pattern.py` | Same migration |
-| `runtime/reactions/base.py` | Add `outcome_spec: OutcomeSpec \| None = None` |
+| `runtime/analyzers/presence_pattern.py` | Migrate to `IBehaviorAnalyzer` |
+| `runtime/analyzers/heating_pattern.py` | Migrate to `IBehaviorAnalyzer` |
+| `runtime/reactions/base.py` | Add `outcome_spec` |
 | `runtime/reactions/presence_pattern.py` | Populate `outcome_spec` |
 | `runtime/reactions/consecutive_state.py` | Populate `outcome_spec` |
-| `runtime/proposal_engine.py` | Add `submit(proposal)` for tracker-triggered proposals; accept `IBehaviorAnalyzer` registrations |
-| `coordinator.py` | Register plugins, invariant checks, analyzers, learning modules; call `finalize_dag()`; schedule 6h offline pass |
-| `config_flow/` | Handle `house_state_learned_context` and `reaction_degraded` proposal types; `IOptionsSchemaProvider` rendering loop |
-| `translations/en.json`, `it.json` | Labels for new proposal types and anomaly notifications |
+| `runtime/proposal_engine.py` | Add `ActivityProposal` support; `submit()` for tracker-triggered proposals |
+| `coordinator.py` | All plugin/analyzer/module registrations; event-driven trigger; debounce |
+| `config_flow/` | `activity_bindings`, `signal_entities`, `activity_discovered` proposal review |
+| `translations/en.json`, `it.json` | Labels for new proposal types, activity names, anomaly notifications |
 
 ---
 
-## §14 Design Constraints
+## §16 Design Constraints
 
-| # | Constraint | Rationale |
-|---|---|---|
-| 1 | **No ML libraries in built-in implementations.** All built-in analyzers and modules use pure Python stdlib: `sorted()`, index-based percentile arithmetic, `statistics.median()`, `statistics.correlation()`, `collections.defaultdict`. Conditional probability tables (Naive Bayes with Laplace smoothing) and z-score/IQR outlier detection cover all v2 use cases. This is a deliberate fit for the domain: homes produce small datasets (tens to hundreds of observations) where simple statistics outperform complex models that overfit. Explainability is a hard requirement — every decision must be expressible in a human-readable sentence. `IBehaviorAnalyzer` and `ILearningModule` are the explicit plug-in boundaries: a third-party plugin may provide ML-backed implementations (GMM, ARIMA, a local LLM) without any change to the core. |
-| 2 | **No blocking I/O on the hot path.** `infer()`, `_run_invariant_checks()`, `OutcomeTracker.check_pending()`, and `OutcomeTracker.register()` are synchronous and I/O-free. All writes to stores are scheduled as `hass.async_create_task(store.async_append(...))`. | HA's event loop is single-threaded; any blocking call degrades the entire HA instance. |
-| 3 | **HA async patterns only.** `analyze()` and `async_append()` are coroutines. Batched writes use `store.async_delay_save(fn, delay=30)`. Off-cycle tasks use `async_call_later` with recursive reschedule. | Consistent with existing v1 patterns (EventStore, ProposalEngine). |
-| 4 | **DAG is resolved once at startup, not per cycle.** `finalize_dag()` runs topological sort at registration time. Cycle and missing-dependency errors are fatal at integration load. | Per-cycle sort would add unnecessary overhead and mask configuration errors until runtime. |
-| 5 | **CanonicalState remains generic key/value.** Plugin state is namespaced by convention (`plugin_id.key`). No typed isolation per plugin. | Avoids over-engineering; namespacing by convention is sufficient and already used in v1. |
-| 6 | **Core domains are not plugins.** `PeopleDomain`, `OccupancyDomain`, `HouseStateDomain` are concrete classes evaluated in fixed order before all plugin domains. | Core must be stable and minimal. Making it pluggable would risk instability in the foundational layer. |
-| 7 | **IInvariantCheck must not read EventStore or SnapshotStore.** It receives only the current `DecisionSnapshot` and `DomainResultBag`. | Invariant checks are O(1) per-cycle; allowing historical reads would break this guarantee and conflate structural checks with statistical analysis. |
-| 8 | **Signals are additive, never substitutes.** A domain with fully determined hard inputs must ignore all `InferenceSignal` objects. Signals never override active user overrides, explicit config values, or safety guards. | Prevents inference from silently masking real sensor data. |
-| 9 | **All persistent stores use HA `homeassistant.helpers.storage.Store`.** Keys: `heima_snapshots`, `heima_inference_approvals`. | Consistent with v1 stores; survives HA restarts; included in HA backup. |
-| 10 | **Behavior-preserving refactor for Phase A.** The migration of Lighting/Heating/Security to IDomainPlugin must not change any externally observable behavior. All 263 existing tests must remain green after Phase A. | Prevents regressions during the architectural migration and validates that the plugin framework is a true structural improvement. |
+| # | Constraint |
+|---|---|
+| 1 | **No ML libraries in built-in implementations.** All built-in analyzers and modules use pure Python stdlib. `IBehaviorAnalyzer` and `ILearningModule` are explicit plug-in boundaries for advanced third-party implementations. |
+| 2 | **No blocking I/O on the hot path.** `infer()`, `detect()`, `_run_invariant_checks()`, `OutcomeTracker.check_pending()`, all hysteresis transitions — all synchronous and I/O-free. All hot-path writes to stores are fire-and-forget tasks. |
+| 3 | **HA async patterns only.** `analyze()` and `async_append()` are coroutines. Off-cycle tasks use `async_call_later` with recursive reschedule. |
+| 4 | **DAG is resolved once at startup.** `finalize_dag()` runs topological sort at registration time. Cycle and missing-dependency errors are fatal at integration load. |
+| 5 | **CanonicalState remains generic key/value.** Plugin state namespaced by convention (`plugin_id.key`). |
+| 6 | **Core domains are not plugins.** People, Occupancy, Activity, HouseState are concrete classes in fixed order. Core must be stable and minimal. |
+| 7 | **IInvariantCheck must not read EventStore or SnapshotStore.** O(1) structural checks only. |
+| 8 | **Signals are additive, never substitutes.** Domains with fully determined hard inputs ignore all `InferenceSignal` objects. Signals never override active user overrides or safety guards. |
+| 9 | **All persistent stores use HA `Store`.** Keys: `heima_snapshots`, `heima_inference_approvals`. |
+| 10 | **Phase A is behavior-preserving.** Migration of Lighting/Heating/Security to `IDomainPlugin` must not change any externally observable behavior. All existing tests must remain green. |
+| 11 | **Time is a contextual dimension, not a trigger.** Evaluation is triggered by state changes. The periodic fallback exists for completeness, not as the primary mechanism. Clock time appears only as a feature in `InferenceContext`, never as the cause of a domain decision. |
+| 12 | **Activity.context is the sole forward-compatibility hook.** New per-activity metadata (person scope, intensity, device source) must go into `Activity.context` with a namespaced key. The `Activity` dataclass fields are frozen beyond v2.0. |
+| 13 | **Composite activities are always user-approved.** `ActivityInferenceModule.infer()` returns `[]` until at least one `ActivityProposal` is accepted. The system never autonomously activates a composite activity without explicit user consent. |
+| 14 | **Event-driven trigger is additive.** The `state_changed` subscription augments, never replaces, the CanonicalState/NormalizedObservation evaluation model. The engine receives no raw HA event payloads — it reads entity state from `hass.states` at eval time, as in v1. |

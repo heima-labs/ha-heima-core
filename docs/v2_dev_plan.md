@@ -1,0 +1,465 @@
+# Heima v2.1 — Development Plan
+
+**Spec:** `docs/specs/heima_v2_spec.md` (v2.1.0-draft)
+**Branch:** `feat/v2` (to be created from `main`)
+**Solo developer:** Stefano — no backward compatibility with v1 required during development.
+
+---
+
+## How to use this document
+
+This file is the single source of truth for development state.
+**Any agent (Claude, Codex, or other) starting a new session must:**
+
+1. Read this file in full.
+2. Go to [Current State](#current-state) — it tells you exactly where development is and what to do next.
+3. Read the relevant Phase section below for deliverables and acceptance criteria.
+4. Read the referenced spec section for full contracts and interface definitions.
+5. Run `cd /Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component && git status` to verify the branch.
+
+**Do not make architectural decisions not already in the spec.** If something is ambiguous, stop and ask the developer before implementing.
+
+---
+
+## Repository layout
+
+```
+custom_components/heima/     ← integration root
+  runtime/                   ← engine, domains, analyzers, reactions, behaviors
+    domains/                 ← PeopleDomain, OccupancyDomain, CalendarDomain, HouseStateDomain,
+                               LightingDomain, HeatingDomain, SecurityDomain (v1 hardcoded DAG)
+    analyzers/               ← IBehaviorAnalyzer impls (v1: unregistered, called directly)
+    reactions/               ← HeimaReaction impls
+    behaviors/               ← HeimaBehavior impls
+    normalization/           ← InputNormalizer
+    engine.py                ← core evaluation loop (1629 lines — rewrite in v2)
+    contracts.py             ← HeimaEvent, ApplyStep, ApplyPlan (78 lines)
+    proposal_engine.py       ← ProposalEngine
+    event_store.py           ← EventStore
+    snapshot.py / snapshot_buffer.py
+  coordinator.py             ← HA DataUpdateCoordinator wrapper (647 lines)
+  config_flow/               ← Options flow steps
+  entities/                  ← HA entity wrappers
+  models.py / const.py
+tests/                       ← 660 tests (all must pass at end of each phase)
+docs/specs/                  ← canonical specs
+```
+
+---
+
+## Running tests
+
+```bash
+cd /Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component
+pytest tests/ -x -q
+```
+
+All 660 tests must pass at the **end** of each phase. Tests may be temporarily broken mid-phase.
+
+---
+
+## Architecture non-negotiables
+
+These constraints must never be violated. See spec §16 for rationale.
+
+| # | Rule |
+|---|---|
+| 1 | No ML libraries. Pure Python stdlib only in all built-in code. |
+| 2 | No blocking I/O on the hot path (`infer()`, `detect()`, invariant checks, hysteresis). |
+| 3 | HA async patterns: coroutines for I/O, `async_call_later` for off-cycle tasks. |
+| 4 | DAG resolved once at startup via `finalize_dag()`. Cycle errors are fatal at load. |
+| 5 | `CanonicalState` stays generic key/value. Plugin state namespaced as `plugin_id.key`. |
+| 6 | Core domains (People, Occupancy, **Activity**, HouseState) are NOT plugins. Fixed order. |
+| 7 | `IInvariantCheck` must not read EventStore or SnapshotStore. O(1) only. |
+| 8 | `InferenceSignal` objects are additive hints. They never override user overrides or safety guards. |
+| 9 | All persistent stores use HA `Store`. Keys: `heima_snapshots`, `heima_inference_approvals`. |
+| 10 | Phase A is behavior-preserving: zero observable behavior change, all 660 tests green. |
+| 11 | Time is context, not trigger. Evaluation is driven by state changes + 300s fallback. |
+| 12 | `Activity.context: dict[str, Any]` is the only forward-compatibility hook on Activity. Keys namespaced by contributor. |
+| 13 | Composite activities always require user approval before `ActivityInferenceModule` emits signals. |
+
+---
+
+## Phase overview
+
+| Phase | Title | Status | Depends on |
+|---|---|---|---|
+| A | Plugin Framework | `NOT STARTED` | — |
+| B | IBehaviorAnalyzer + FindingRouter | `NOT STARTED` | A |
+| C | IInvariantCheck | `NOT STARTED` | A |
+| D | InferenceEngine v2 (base) | `NOT STARTED` | A |
+| E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
+| F | House State Learning | `NOT STARTED` | D, E |
+| G | ActivityDomain | `NOT STARTED` | A, D |
+| H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
+| I | Event-Driven Trigger | `NOT STARTED` | G |
+
+---
+
+## Current State
+
+**Last completed phase:** none — v2 not started.
+**Active phase:** none.
+**Branch:** `feat/v2` — NOT YET CREATED.
+**Next action:**
+
+```bash
+git checkout main && git pull
+git checkout -b feat/v2
+```
+
+Then begin Phase A.
+
+**Open blockers:** none.
+
+---
+
+## Phase A — Plugin Framework
+
+**Spec section:** §5 (Plugin Framework), §15 (File Structure — new files + modified files)
+**Goal:** introduce `IDomainPlugin`, declarative DAG, and migrate Lighting/Heating/Security to plugins.
+No new behavior — pure structural refactor. All 660 tests must be green at end of phase.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/plugin_contracts.py` | `IDomainPlugin`, `DomainResultBag`, `IOptionsSchemaProvider` Protocols | §5.1–5.6 |
+| `runtime/dag.py` | `resolve_dag(plugins) -> list[IDomainPlugin]` with cycle + missing-dep detection | §5.3 |
+| `runtime/domain_result_bag.py` | `DomainResultBag` dataclass | §5.4 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/domains/lighting.py` | Add `IDomainPlugin` compliance: `domain_name`, `depends_on`, `compute(canonical_state, domain_results, signals)` wrapping existing logic |
+| `runtime/domains/heating.py` | Same as lighting |
+| `runtime/domains/security.py` | Same as lighting |
+| `runtime/engine.py` | Add `register_plugin()`, `finalize_dag()`, replace hardcoded Lighting/Heating/Security calls with DAG loop |
+| `coordinator.py` | Call `register_plugin()` for each built-in plugin, call `finalize_dag()` on init |
+
+### Acceptance criteria
+
+- [ ] `resolve_dag()` raises on cycles and missing dependencies
+- [ ] `LightingDomain`, `HeatingDomain`, `SecurityDomain` satisfy `IDomainPlugin` Protocol
+- [ ] Engine evaluates plugins via DAG loop (not hardcoded order)
+- [ ] Core domains (People, Occupancy, HouseState, Calendar) remain untouched
+- [ ] All 660 existing tests pass without modification
+- [ ] New tests: DAG cycle detection, missing dependency detection (at least 2 tests each)
+
+---
+
+## Phase B — IBehaviorAnalyzer + FindingRouter
+
+**Spec section:** §8
+**Goal:** unify behavior analysis under `IBehaviorAnalyzer`; introduce `FindingRouter`.
+**Depends on:** Phase A complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/finding_router.py` | `FindingRouter` — routes `BehaviorFinding` by `kind` to `ProposalEngine` or logger | §8.3 |
+| `runtime/analyzers/anomaly.py` | `AnomalyAnalyzer(IBehaviorAnalyzer)` | §8.4 |
+| `runtime/analyzers/correlation.py` | `CorrelationAnalyzer(IBehaviorAnalyzer)` | §8.4 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/plugin_contracts.py` | Add `IBehaviorAnalyzer` Protocol, `BehaviorFinding`, `AnomalySignal` | §8.1–8.2 |
+| `runtime/analyzers/presence.py` | Migrate `PresencePatternAnalyzer` to `IBehaviorAnalyzer` |
+| `runtime/analyzers/heating.py` | Migrate `HeatingPatternAnalyzer` to `IBehaviorAnalyzer` |
+| `coordinator.py` | Register analyzers, wire `FindingRouter` |
+
+### Acceptance criteria
+
+- [ ] All existing analyzers satisfy `IBehaviorAnalyzer` Protocol
+- [ ] `FindingRouter` routes `kind="proposal"` → `ProposalEngine.submit()`
+- [ ] `FindingRouter` routes `kind="anomaly"` → notification
+- [ ] `FindingRouter` routes `kind="activity"` → `ProposalEngine.submit()` (stubbed, used in Phase H)
+- [ ] All 660 tests pass
+
+---
+
+## Phase C — IInvariantCheck
+
+**Spec section:** §9
+**Goal:** per-cycle structural constraint checks with debounce and resolution events.
+**Depends on:** Phase A complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/invariant_check.py` | `InvariantCheckState`, debounce loop helper | §9.5 |
+| `runtime/invariants/presence.py` | `PresenceWithoutOccupancy` | §9.4 |
+| `runtime/invariants/security.py` | `SecurityPresenceMismatch` | §9.4 |
+| `runtime/invariants/heating.py` | `HeatingHomeEmpty` | §9.4 |
+| `runtime/invariants/sensor.py` | `SensorStuck` | §9.4 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/plugin_contracts.py` | Add `IInvariantCheck` Protocol, `InvariantViolation` | §9.2–9.3 |
+| `runtime/engine.py` | Add `_run_invariant_checks()` call after Apply step |
+| `coordinator.py` | Register built-in invariant checks |
+
+### Acceptance criteria
+
+- [ ] Each built-in check: at least 1 test for violation, 1 for resolution, 1 for debounce
+- [ ] Checks run after Apply, before next cycle
+- [ ] Checks never read EventStore or SnapshotStore (enforce in code review)
+- [ ] All 660 tests pass
+
+---
+
+## Phase D — InferenceEngine v2 (base)
+
+**Spec section:** §10 (InferenceEngine v2)
+**Goal:** `SnapshotStore`, `ILearningModule`, `InferenceContext`, per-cycle signal collection.
+**Depends on:** Phase A complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/inference/__init__.py` | Public API exports | — |
+| `runtime/inference/base.py` | `ILearningModule`, `HeimaLearningModule`, `InferenceContext` | §10.4, §10.2 |
+| `runtime/inference/signals.py` | `Importance`, `InferenceSignal` hierarchy, `ActivitySignal` | §10.3 |
+| `runtime/inference/snapshot_store.py` | `HouseSnapshot` (with `detected_activities`), `SnapshotStore` | §10.1 |
+| `runtime/inference/router.py` | `SignalRouter` | §10.7 |
+| `runtime/inference/approval_store.py` | `ApprovalStore` (stub for Phase F) | §10.9 |
+| `runtime/inference/modules/weekday_state.py` | `WeekdayStateModule` | §10.6 |
+| `runtime/inference/modules/heating_preference.py` | `HeatingPreferenceModule` | §10.6 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/engine.py` | Add `_collect_signals()`, `_record_snapshot_if_changed()` | §10 |
+| `runtime/domains/lighting.py` | Add `compute(signals: list[...] = [])` parameter | §10.8 |
+| `runtime/domains/heating.py` | Same |
+| `runtime/domains/occupancy.py` | Add `compute(signals: list[OccupancySignal] = [])` stub | §10.8 |
+| `coordinator.py` | Register learning modules, wire `SignalRouter` |
+
+### Notes
+
+- `RoomStateCorrelationModule` and `LightingPatternModule` are deferred to Phase D2 (post-Phase I).
+- `HouseSnapshot.detected_activities` is created empty here; populated in Phase G.
+- `InferenceContext.previous_activity_names` is created empty here; populated in Phase G.
+
+### Acceptance criteria
+
+- [ ] `SnapshotStore` persists to HA Store key `heima_snapshots`
+- [ ] `_record_snapshot_if_changed()` only writes on state change (deduplication)
+- [ ] `WeekdayStateModule` and `HeatingPreferenceModule` return typed signals
+- [ ] `ILearningModule.infer()` completes in < 1ms (verified via test timing)
+- [ ] All 660 tests pass
+
+---
+
+## Phase E — OutcomeTracker + Feedback Loop
+
+**Spec section:** §12 (OutcomeTracker)
+**Goal:** act→verify loop; degrade reactions that consistently fail.
+**Depends on:** Phase D complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/outcome_tracker.py` | `OutcomeTracker`, `PendingVerification`, `OutcomeRecord` | §12.2 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/reactions/base.py` | Add `outcome_spec: OutcomeSpec | None` field | §12.2 |
+| `runtime/engine.py` | Call `OutcomeTracker.check_pending()` after Apply | §12 |
+| `proposal_engine.py` | Add `submit()` entry point for tracker-triggered degradation proposals | §12.4 |
+| `coordinator.py` | Wire `OutcomeTracker` |
+
+### Acceptance criteria
+
+- [ ] Positive outcome (entity state matches expected within timeout) → recorded
+- [ ] Negative outcome (timeout, no match) → degradation proposal emitted
+- [ ] `check_pending()` is synchronous and completes in O(pending count)
+- [ ] Tests: positive outcome, negative outcome, timeout policy
+- [ ] All 660 tests pass
+
+---
+
+## Phase F — House State Learning
+
+**Spec section:** §13 (House State Learning), §10.9
+**Goal:** `HouseStateInferenceModule`, user-approval gate.
+**Depends on:** Phases D and E complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/inference/modules/house_state_inference.py` | `HouseStateInferenceModule` | §13, §10.6 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/inference/approval_store.py` | Full implementation (was stub in Phase D) | §10.9 |
+| `runtime/domains/house_state.py` | Consume `HouseStateSignal`; approval gate | §10.9 |
+| `config_flow/` | `house_state_learned_context` proposal type review screen |
+
+### Acceptance criteria
+
+- [ ] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
+- [ ] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
+- [ ] Unapproved signals are ignored by `HouseStateDomain`
+- [ ] User approval/rejection survives HA restart
+- [ ] All 660 tests pass
+
+---
+
+## Phase G — ActivityDomain
+
+**Spec section:** §7 (Activity Layer)
+**Goal:** primitive activity detection, hysteresis state machine, `ActivityResult` in DAG.
+**Depends on:** Phase A (DomainResultBag) and Phase D (HouseSnapshot.detected_activities).
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/domains/activity_domain.py` | `Activity`, `ActivityResult`, `ActivityDetection`, `ActivityHysteresisState`, `ActivityDomain` | §7.2–7.4 |
+| `runtime/activity_detectors/__init__.py` | Exports | — |
+| `runtime/activity_detectors/stove.py` | `StoveOnDetector` (power ≥ 200W, candidate 5s, grace 30s) | §7.6 |
+| `runtime/activity_detectors/oven.py` | `OvenOnDetector` (power ≥ 500W, candidate 10s, grace 120s) | §7.6 |
+| `runtime/activity_detectors/tv.py` | `TvActiveDetector` (media_player + power, candidate 10s, grace 120s) | §7.6 |
+| `runtime/activity_detectors/pc.py` | `PcActiveDetector` (power ≥ 50W, candidate 30s, grace 60s) | §7.6 |
+| `runtime/activity_detectors/shower.py` | `ShowerRunningDetector` (humidity + rate_of_change, candidate 60s, grace 300s) | §7.6 |
+| `runtime/activity_detectors/washing.py` | `WashingMachineDetector` (power ≥ 200W, candidate 60s, grace 300s) | §7.6 |
+| `runtime/activity_detectors/dishwasher.py` | `DishwasherDetector` (power ≥ 200W, candidate 60s, grace 300s) | §7.6 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/plugin_contracts.py` | Add `IActivityDetector` Protocol | §7.4 |
+| `runtime/engine.py` | Insert `ActivityDomain` between OccupancyDomain and HouseStateDomain in core evaluation order; populate `InferenceContext.previous_activity_names` from CanonicalState | §7.3 |
+| `runtime/inference/snapshot_store.py` | Populate `HouseSnapshot.detected_activities` from `ActivityResult` | §10.1 |
+| `config_flow/` | Add `activity_bindings` section (maps detector names to HA entity IDs) | §7.3 |
+
+### Hysteresis state machine (implement exactly as spec §7.5)
+
+```
+absent → candidate  : detector.detect() returns ActivityDetection
+candidate → absent  : detect() returns None before candidate_period_s elapsed
+candidate → active  : detect() returns non-None AND candidate_period_s elapsed
+active → grace      : detect() returns None
+grace → active      : detect() returns non-None (signal returned)
+grace → absent      : grace_period_s elapsed without signal
+```
+
+### CanonicalState keys written by ActivityDomain
+
+- `activity.active_names`: `tuple[str, ...]`
+- `activity.candidate_names`: `tuple[str, ...]`
+- `activity.last_started`: `dict[str, float]` (activity_name → monotonic ts)
+
+### Acceptance criteria
+
+- [ ] All 5 hysteresis transitions tested
+- [ ] `ActivityResult.active` contains only phase=ACTIVE detectors
+- [ ] `ActivityResult.candidates` contains only phase=CANDIDATE detectors
+- [ ] `CanonicalState` keys written correctly each cycle
+- [ ] `InferenceContext.previous_activity_names` reads from CanonicalState (one-cycle lag)
+- [ ] `HouseSnapshot.detected_activities` populated
+- [ ] All 660 existing tests pass; new tests ≥ 20
+
+---
+
+## Phase H — Activity Inference and Learning
+
+**Spec section:** §7.7 (ActivityProposal), §10.5 (ActivityInferenceModule)
+**Goal:** composite activity discovery; `ActivityAnalyzer`; user-approved `ActivitySignal`.
+**Depends on:** Phases D, F, and G complete.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/analyzers/activity.py` | `ActivityAnalyzer(IBehaviorAnalyzer)` — min 10 co-occurrences across 3+ days | §7.7 |
+| `runtime/inference/modules/activity_inference.py` | `ActivityInferenceModule(ILearningModule)` — emits `ActivitySignal` for approved proposals only | §10.5 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/proposal_engine.py` | Add `ActivityProposal` dataclass support | §7.7 |
+| `runtime/finding_router.py` | Handle `kind="activity"` → `ProposalEngine.submit(ActivityProposal)` | §8.3 |
+| `runtime/inference/approval_store.py` | Support `"activity_discovered"` proposal type |
+| `runtime/domains/activity_domain.py` | Step 5: merge `ActivitySignal` from `ActivityInferenceModule` into `ActivityResult` | §7.3 |
+| `config_flow/` | `activity_discovered` proposal review surface |
+
+### Acceptance criteria
+
+- [ ] `ActivityAnalyzer` does not emit `ActivityProposal` with < 10 co-occurrences or < 3 distinct days
+- [ ] `ActivityInferenceModule.infer()` returns `[]` until at least one `ActivityProposal` approved
+- [ ] Approved composite activity appears in `ActivityResult.active` when signal fired
+- [ ] Approval survives HA restart (via `ApprovalStore`)
+- [ ] All 660 tests pass; new tests ≥ 15
+
+---
+
+## Phase I — Event-Driven Trigger
+
+**Spec section:** §11 (Event-Driven Trigger)
+**Goal:** HA `state_changed`-driven evaluation, per-class debounce, 300s periodic fallback.
+**Depends on:** Phase G (power threshold binding config).
+
+### Files to modify
+
+| File | Change | Spec ref |
+|---|---|---|
+| `coordinator.py` | `_on_state_changed()` listener | §11.1 |
+| `coordinator.py` | `_classify_entity()` — pattern matching + explicit config | §11.2 |
+| `coordinator.py` | Per-class debounce handles (see table below) | §11.3 |
+| `coordinator.py` | `_eval_running` guard against re-entrant evaluation | §11.3 |
+| `coordinator.py` | Periodic fallback: 300s (reduce from current fixed interval) | §11.4 |
+| `coordinator.py` | Power threshold crossing detection (feeds activity detector bindings) | §11.2 |
+
+### Entity class debounce table (implement exactly)
+
+| Class | Debounce |
+|---|---|
+| `presence` | 5s |
+| `motion` | 3s |
+| `door_window` | 2s |
+| `power_threshold` | 5s |
+| `calendar` | 0s |
+| `override` | 0s |
+| `weather` | 10s |
+| environmental sensors | no trigger (read passively) |
+
+### Acceptance criteria
+
+- [ ] State change on a classified entity triggers evaluation within debounce window
+- [ ] Re-entrant evaluation is skipped (guard active)
+- [ ] Periodic 300s fallback fires even with no state changes
+- [ ] Environmental sensors do not trigger evaluation
+- [ ] All 660 tests pass; new tests cover debounce timing and re-entrancy guard
+
+---
+
+## Updating this document
+
+After completing each phase:
+
+1. Update the phase row in the [Phase overview](#phase-overview) table: `NOT STARTED` → `IN PROGRESS` → `DONE`.
+2. Update [Current State](#current-state): set `Last completed phase`, `Active phase`, `Next action`.
+3. Add any new open blockers or decisions to [Current State](#current-state).
+4. Commit this file together with the phase code.
+
+Do not rewrite completed phase sections — they are the historical record.
+If a spec change causes a phase to be revised, note it in the relevant phase section under a `**Spec revision note:**` heading and update the spec file.
