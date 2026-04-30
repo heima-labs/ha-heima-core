@@ -84,7 +84,7 @@ These constraints must never be violated. See spec §16 for rationale.
 
 | Phase | Title | Status | Depends on |
 |---|---|---|---|
-| A | Plugin Framework | `NOT STARTED` | — |
+| A | Plugin Framework | `IN PROGRESS` | — |
 | B | IBehaviorAnalyzer + FindingRouter | `NOT STARTED` | A |
 | C | IInvariantCheck | `NOT STARTED` | A |
 | D | InferenceEngine v2 (base) | `NOT STARTED` | A |
@@ -99,16 +99,36 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phase:** none — v2 not started.
-**Active phase:** none.
-**Branch:** `feat/v2` — NOT YET CREATED.
+**Active phase:** Phase A — Plugin Framework.
+**Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-```bash
-git checkout main && git pull
-git checkout -b feat/v2
-```
+Review Phase A slices 2/3 before implementation: decide how Lighting, Heating, and Security
+will expose `IDomainPlugin.compute()` without changing current runtime behavior.
 
-Then begin Phase A.
+### Current Working Notes
+
+- Current slice: Phase A / slice 1 — plugin contracts and DAG resolver.
+- Status: complete; plugin contracts, immutable result bag, DAG resolver, and focused tests added.
+- Files read:
+  - `custom_components/heima/runtime/engine.py`
+  - `custom_components/heima/coordinator.py`
+  - `custom_components/heima/runtime/domains/lighting.py`
+  - `custom_components/heima/runtime/domains/heating.py`
+  - `custom_components/heima/runtime/domains/security.py`
+  - `custom_components/heima/runtime/contracts.py`
+  - `custom_components/heima/runtime/snapshot.py`
+- Files changed:
+  - `custom_components/heima/runtime/plugin_contracts.py`
+  - `custom_components/heima/runtime/domain_result_bag.py`
+  - `custom_components/heima/runtime/dag.py`
+  - `tests/test_domain_plugin_dag.py`
+- Tests run:
+  - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py -q` — passed, 7 tests.
+  - `.venv/bin/ruff check custom_components/heima/runtime/dag.py custom_components/heima/runtime/domain_result_bag.py custom_components/heima/runtime/plugin_contracts.py tests/test_domain_plugin_dag.py` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/dag.py custom_components/heima/runtime/domain_result_bag.py custom_components/heima/runtime/plugin_contracts.py tests/test_domain_plugin_dag.py` — passed.
+- Next concrete step: review and agree the adapter shape for Phase A slices 2/3.
+- Open decisions: none.
 
 **Open blockers:** none.
 
@@ -119,6 +139,24 @@ Then begin Phase A.
 **Spec section:** §5 (Plugin Framework), §15 (File Structure — new files + modified files)
 **Goal:** introduce `IDomainPlugin`, declarative DAG, and migrate Lighting/Heating/Security to plugins.
 No new behavior — pure structural refactor. All 660 tests must be green at end of phase.
+
+### Working slices
+
+1. Contracts + DAG
+   - Add `runtime/plugin_contracts.py`, `runtime/domain_result_bag.py`, and `runtime/dag.py`.
+   - Add focused tests for topological ordering, cycle detection, and missing dependencies.
+2. Built-in plugin compliance
+   - Adapt Lighting, Heating, and Security domains to satisfy `IDomainPlugin`.
+   - Preserve existing internal logic and public diagnostics.
+3. Engine plugin loop
+   - Add plugin registration/finalization to `HeimaEngine`.
+   - Replace hardcoded Lighting/Heating/Security evaluation with the resolved plugin loop.
+4. Coordinator wiring
+   - Register built-in plugins and finalize the DAG during coordinator startup.
+   - Preserve reload/reset behavior.
+5. Verification and closeout
+   - Run focused runtime tests, then the full suite.
+   - Update acceptance criteria and Current State.
 
 ### New files to create
 
@@ -140,12 +178,12 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ### Acceptance criteria
 
-- [ ] `resolve_dag()` raises on cycles and missing dependencies
+- [x] `resolve_dag()` raises on cycles and missing dependencies
 - [ ] `LightingDomain`, `HeatingDomain`, `SecurityDomain` satisfy `IDomainPlugin` Protocol
 - [ ] Engine evaluates plugins via DAG loop (not hardcoded order)
 - [ ] Core domains (People, Occupancy, HouseState, Calendar) remain untouched
 - [ ] All 660 existing tests pass without modification
-- [ ] New tests: DAG cycle detection, missing dependency detection (at least 2 tests each)
+- [x] New tests: DAG cycle detection, missing dependency detection (at least 2 tests each)
 
 ---
 
