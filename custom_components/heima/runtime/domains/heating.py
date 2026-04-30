@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
 
 from ..contracts import HeimaEvent
+from ..domain_result_bag import DomainResultBag
 from ..normalization.service import InputNormalizer
 from ..state_store import CanonicalState
 from .events import EventsDomain
@@ -18,6 +20,16 @@ from .events import EventsDomain
 _LOGGER = logging.getLogger(__name__)
 
 _HEATING_MIN_SECONDS_BETWEEN_APPLIES = 60
+
+
+@dataclass(frozen=True)
+class HeatingDomainResult:
+    """Current-cycle Heating plugin output."""
+
+    trace: dict[str, Any]
+    current_setpoint: float | None
+    observed_source: str
+    observed_provenance: dict[str, Any] | None
 
 
 class HeatingDomain:
@@ -34,6 +46,32 @@ class HeatingDomain:
         self._heating_last_reported_phase: str | None = None
         self._heating_last_reported_target: float | None = None
         self._heating_last_reported_branch: str | None = None
+        self._plugin_heating_config_provider: Callable[[], dict[str, Any]] | None = None
+        self._plugin_events_provider: Callable[[], EventsDomain] | None = None
+        self._plugin_schedule_recheck: Callable[..., None] | None = None
+        self._plugin_external_outdoor_temp_provider: Callable[[], float | None] | None = None
+
+    @property
+    def domain_id(self) -> str:
+        return "heating"
+
+    @property
+    def depends_on(self) -> list[str]:
+        return ["house_state"]
+
+    def bind_plugin_runtime(
+        self,
+        *,
+        heating_config_provider: Callable[[], dict[str, Any]],
+        events_provider: Callable[[], EventsDomain],
+        schedule_recheck: Callable[..., None],
+        external_outdoor_temp_provider: Callable[[], float | None],
+    ) -> None:
+        """Bind engine-owned dependencies used by the plugin wrapper."""
+        self._plugin_heating_config_provider = heating_config_provider
+        self._plugin_events_provider = events_provider
+        self._plugin_schedule_recheck = schedule_recheck
+        self._plugin_external_outdoor_temp_provider = external_outdoor_temp_provider
 
     def reset(self) -> None:
         """Called on options reload. Clears transient heating state."""
@@ -78,6 +116,38 @@ class HeatingDomain:
     # ------------------------------------------------------------------
 
     def compute(
+        self,
+        canonical_state: CanonicalState,
+        domain_results: DomainResultBag,
+        signals: list[Any] | None = None,
+    ) -> HeatingDomainResult:
+        """Compute heating through the plugin contract."""
+        del signals
+        if (
+            self._plugin_heating_config_provider is None
+            or self._plugin_events_provider is None
+            or self._plugin_schedule_recheck is None
+            or self._plugin_external_outdoor_temp_provider is None
+        ):
+            raise RuntimeError("Heating plugin runtime is not bound")
+
+        house_state_result = domain_results.require("house_state")
+        self.compute_policy(
+            house_state=str(house_state_result.house_state),
+            heating_cfg=dict(self._plugin_heating_config_provider()),
+            state=canonical_state,
+            events=self._plugin_events_provider(),
+            schedule_recheck=self._plugin_schedule_recheck,
+            ext_outdoor_temp=self._plugin_external_outdoor_temp_provider(),
+        )
+        return HeatingDomainResult(
+            trace=dict(self._heating_trace),
+            current_setpoint=self._heating_trace.get("current_setpoint"),
+            observed_source=str(self._heating_trace.get("observed_source") or "unknown"),
+            observed_provenance=self._heating_trace.get("observed_provenance"),
+        )
+
+    def compute_policy(
         self,
         *,
         house_state: str,

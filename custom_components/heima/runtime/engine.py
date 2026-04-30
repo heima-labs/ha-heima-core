@@ -40,17 +40,23 @@ from ..room_sources import room_all_source_entity_ids
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
+from .dag import resolve_dag
+from .domain_result_bag import DomainResultBag
 from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
-from .domains.heating import HeatingDomain
+from .domains.heating import HeatingDomain, HeatingDomainResult
 from .domains.house_state import HouseStateDomain
-from .domains.lighting import LightingDomain
+from .domains.lighting import LightingDomain, LightingDomainResult
 from .domains.occupancy import OccupancyDomain
 from .domains.people import PeopleDomain
-from .domains.security import SecurityDomain
-from .domains.security_camera_evidence import SecurityCameraEvidenceProvider
+from .domains.security import SecurityDomain, SecurityDomainResult
+from .domains.security_camera_evidence import (
+    SecurityCameraEvidenceProvider,
+    SecurityCameraEvidenceResult,
+)
 from .external_context import ExternalContext, ExternalContextNormalizer
 from .normalization.service import InputNormalizer
+from .plugin_contracts import IDomainPlugin
 from .reactions import (
     create_builtin_reaction_plugin_registry,
     normalize_reaction_options_payload,
@@ -117,6 +123,10 @@ class HeimaEngine:
         self._lighting_domain = LightingDomain(hass, self._normalizer)
         self._heating_domain = HeatingDomain(hass, self._normalizer)
         self._security_domain = SecurityDomain(hass, self._normalizer)
+        self._current_security_camera_evidence: SecurityCameraEvidenceResult | None = None
+        self._registered_domain_plugins: dict[str, IDomainPlugin] = {}
+        self._domain_plugin_order: list[IDomainPlugin] = []
+        self._domain_plugins_finalized = False
         self._timed_rechecks: dict[str, dict[str, Any]] = {}
         self._last_config_issues_fingerprint: str | None = None
         self._active_constraints: set[str] = set()
@@ -127,6 +137,7 @@ class HeimaEngine:
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
+        self._bind_domain_plugin_runtime()
 
     @property
     def health(self) -> EngineHealth:
@@ -312,6 +323,7 @@ class HeimaEngine:
             self._lighting_domain.reset()
             self._heating_domain.reset()
             self._security_domain.reset()
+            self._bind_domain_plugin_runtime()
             return
 
         changed = set(changed_keys)
@@ -328,6 +340,7 @@ class HeimaEngine:
         if OPT_SECURITY in changed:
             self._security_camera_evidence_provider.reset()
             self._security_domain.reset()
+        self._bind_domain_plugin_runtime()
 
     # ------------------------------------------------------------------
     # Behavior registration
@@ -346,6 +359,68 @@ class HeimaEngine:
         """Register a reactive behavior. Call before first async_evaluate."""
         self._reactions.append(reaction)
         _LOGGER.debug("Heima reaction registered: %s", reaction.reaction_id)
+
+    def builtin_domain_plugins(self) -> list[IDomainPlugin]:
+        """Return built-in domain plugins owned by this engine."""
+        return [self._security_domain, self._lighting_domain, self._heating_domain]
+
+    def register_plugin(self, plugin: IDomainPlugin) -> None:
+        """Register a domain plugin before DAG finalization."""
+        domain_id = plugin.domain_id
+        existing = self._registered_domain_plugins.get(domain_id)
+        if existing is plugin:
+            return
+        if self._domain_plugins_finalized:
+            raise RuntimeError("Cannot register domain plugin after finalize_dag()")
+        if existing is not None:
+            raise ValueError(f"Duplicate domain plugin id: {domain_id}")
+        self._registered_domain_plugins[domain_id] = plugin
+        _LOGGER.debug("Heima domain plugin registered: %s", domain_id)
+
+    def finalize_dag(self) -> None:
+        """Resolve the domain plugin DAG once for this engine instance."""
+        self._domain_plugin_order = resolve_dag(self._registered_domain_plugins.values())
+        self._domain_plugins_finalized = True
+        _LOGGER.debug(
+            "Heima domain plugin DAG finalized: %s",
+            [plugin.domain_id for plugin in self._domain_plugin_order],
+        )
+
+    def _ensure_domain_plugins_finalized(self) -> None:
+        if self._domain_plugins_finalized:
+            return
+        for plugin in self.builtin_domain_plugins():
+            self.register_plugin(plugin)
+        self.finalize_dag()
+
+    def _bind_domain_plugin_runtime(self) -> None:
+        """Bind engine-owned providers used by built-in plugin wrappers."""
+        self._lighting_domain.bind_plugin_runtime(
+            options_provider=lambda: dict(self._entry.options),
+            room_configs_provider=self._room_configs,
+            room_occupancy_mode_fn=self._room_occupancy_mode,
+        )
+        self._heating_domain.bind_plugin_runtime(
+            heating_config_provider=lambda: dict(dict(self._entry.options).get(OPT_HEATING, {})),
+            events_provider=lambda: self._events_domain,
+            schedule_recheck=self._schedule_timed_recheck_deadline,
+            external_outdoor_temp_provider=lambda: self._external_context.outdoor_temp,
+        )
+        self._security_domain.bind_plugin_runtime(
+            security_config_provider=lambda: dict(dict(self._entry.options).get(OPT_SECURITY, {})),
+            options_provider=lambda: dict(self._entry.options),
+            camera_evidence_provider=self._security_camera_evidence_for_plugins,
+            events_provider=lambda: self._events_domain,
+            schedule_recheck=self._schedule_timed_recheck_deadline,
+            room_configs_provider=self._room_configs,
+            room_occupancy_mode_fn=self._room_occupancy_mode,
+            notifications_config_provider=self._notifications_config,
+        )
+
+    def _security_camera_evidence_for_plugins(self) -> SecurityCameraEvidenceResult:
+        if self._current_security_camera_evidence is None:
+            return self._security_camera_evidence_provider.compute({})
+        return self._current_security_camera_evidence
 
     def reset_learning_state(self) -> None:
         """Reset runtime-local learning state without re-emitting bootstrap events."""
@@ -686,6 +761,7 @@ class HeimaEngine:
 
         security_cfg = dict(options.get(OPT_SECURITY, {}))
         security_camera_evidence = self._security_camera_evidence_provider.compute(security_cfg)
+        self._current_security_camera_evidence = security_camera_evidence
 
         self._people_domain._normalizer = self._normalizer  # keep in sync if tests swap normalizer
         people_result = self._people_domain.compute(
@@ -713,30 +789,6 @@ class HeimaEngine:
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
 
-        security_state, security_reason = self._security_domain.compute(
-            security_cfg=security_cfg,
-            state=self._state,
-        )
-        self._state.set_sensor_attributes(
-            "heima_security_state",
-            {
-                **(self._state.get_sensor_attributes("heima_security_state") or {}),
-                "camera_evidence": security_camera_evidence.as_dict(),
-            },
-        )
-        self._state.set_sensor_attributes(
-            "heima_security_reason",
-            {
-                **(self._state.get_sensor_attributes("heima_security_reason") or {}),
-                "camera_evidence": security_camera_evidence.as_dict(),
-            },
-        )
-        self._security_domain.consume_camera_evidence(
-            security_state=security_state,
-            camera_evidence=security_camera_evidence,
-            state=self._state,
-        )
-
         self._house_state_domain._normalizer = self._normalizer  # keep in sync
         house_signal_entities = self._configured_house_signal_entities()
         hs_result = self._house_state_domain.compute(
@@ -751,19 +803,28 @@ class HeimaEngine:
         house_state = hs_result.house_state
         house_reason = hs_result.house_reason
 
-        lighting_intents = self._compute_lighting_intents(
-            house_state=house_state,
-            occupied_rooms=occupied_rooms,
+        domain_results = (
+            DomainResultBag.empty()
+            .with_result("people", people_result)
+            .with_result("occupancy", occ_result)
+            .with_result("calendar", calendar_result)
+            .with_result("house_state", hs_result)
         )
+        domain_results = self._compute_domain_plugins(domain_results)
 
-        self._heating_domain.compute(
-            house_state=house_state,
-            heating_cfg=dict(options.get(OPT_HEATING, {})),
-            state=self._state,
-            events=self._events_domain,
-            schedule_recheck=self._schedule_timed_recheck_deadline,
-            ext_outdoor_temp=self._external_context.outdoor_temp,
-        )
+        lighting_result = domain_results.require("lighting")
+        heating_result = domain_results.require("heating")
+        security_result = domain_results.require("security")
+        if not isinstance(lighting_result, LightingDomainResult):
+            raise RuntimeError("Lighting plugin returned an invalid result")
+        if not isinstance(heating_result, HeatingDomainResult):
+            raise RuntimeError("Heating plugin returned an invalid result")
+        if not isinstance(security_result, SecurityDomainResult):
+            raise RuntimeError("Security plugin returned an invalid result")
+
+        lighting_intents = lighting_result.lighting_intents
+        security_state = security_result.security_state
+        security_reason = security_result.security_reason
 
         self._state.set_binary("heima_anyone_home", anyone_home)
         self._state.set_sensor("heima_people_count", people_count)
@@ -825,20 +886,6 @@ class HeimaEngine:
             schedule_recheck=self._schedule_timed_recheck_deadline,
             events=self._events_domain,
         )
-        self._security_domain.queue_security_consistency_events(
-            anyone_home=anyone_home,
-            security_state=security_state,
-            security_reason=security_reason,
-            options=options,
-            people_home_list=people_home_list,
-            occupied_rooms=occupied_rooms,
-            events=self._events_domain,
-            schedule_recheck=self._schedule_timed_recheck_deadline,
-            room_configs=self._room_configs(),
-            state=self._state,
-            room_occupancy_mode_fn=self._room_occupancy_mode,
-            notifications_cfg=self._notifications_config(),
-        )
 
         self._check_and_queue_config_issues(options)
 
@@ -853,10 +900,18 @@ class HeimaEngine:
             security_state=security_state,
             context_signals=self._current_context_signals(options),
             notes=f"reason={reason}",
-            heating_setpoint=self._heating_domain.trace.get("current_setpoint"),
-            heating_source=str(self._heating_domain.trace.get("observed_source") or "unknown"),
-            heating_provenance=self._heating_domain.trace.get("observed_provenance"),
+            heating_setpoint=heating_result.current_setpoint,
+            heating_source=heating_result.observed_source,
+            heating_provenance=heating_result.observed_provenance,
         )
+
+    def _compute_domain_plugins(self, domain_results: DomainResultBag) -> DomainResultBag:
+        self._ensure_domain_plugins_finalized()
+        results = domain_results
+        for plugin in self._domain_plugin_order:
+            plugin_result = plugin.compute(self._state, results, signals=None)
+            results = results.with_result(plugin.domain_id, plugin_result)
+        return results
 
     def scheduled_runtime_jobs(self) -> dict[str, ScheduledRuntimeJob]:
         jobs: dict[str, ScheduledRuntimeJob] = {}

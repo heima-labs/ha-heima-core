@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,6 +14,11 @@ from custom_components.heima.runtime.dag import (
     resolve_dag,
 )
 from custom_components.heima.runtime.domain_result_bag import DomainResultBag
+from custom_components.heima.runtime.domains.heating import HeatingDomain
+from custom_components.heima.runtime.domains.lighting import LightingDomain
+from custom_components.heima.runtime.domains.security import SecurityDomain
+from custom_components.heima.runtime.normalization.service import InputNormalizer
+from custom_components.heima.runtime.plugin_contracts import IDomainPlugin
 
 
 @dataclass
@@ -105,3 +111,12 @@ def test_domain_result_bag_is_immutable_and_requires_results() -> None:
     assert bag.as_dict() == {"lighting": {"intent": "auto"}}
     with pytest.raises(KeyError, match="Missing domain result: heating"):
         bag.require("heating")
+
+
+def test_builtin_control_domains_satisfy_domain_plugin_protocol() -> None:
+    hass = SimpleNamespace(states=SimpleNamespace(get=lambda _entity_id: None))
+    normalizer = InputNormalizer(hass)
+
+    assert isinstance(LightingDomain(hass, normalizer), IDomainPlugin)
+    assert isinstance(HeatingDomain(hass, normalizer), IDomainPlugin)
+    assert isinstance(SecurityDomain(hass, normalizer), IDomainPlugin)

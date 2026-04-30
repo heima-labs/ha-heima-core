@@ -836,7 +836,8 @@ def test_diagnostics_with_events():
         CalendarEvent(
             summary="Ferie",
             start=datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
-            end=datetime(today.year, today.month, today.day + 1, tzinfo=timezone.utc),
+            end=datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
+            + timedelta(days=1),
             all_day=True,
             category="vacation",
             calendar_entity="calendar.test",

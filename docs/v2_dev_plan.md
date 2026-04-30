@@ -84,7 +84,7 @@ These constraints must never be violated. See spec §16 for rationale.
 
 | Phase | Title | Status | Depends on |
 |---|---|---|---|
-| A | Plugin Framework | `IN PROGRESS` | — |
+| A | Plugin Framework | `DONE` | — |
 | B | IBehaviorAnalyzer + FindingRouter | `NOT STARTED` | A |
 | C | IInvariantCheck | `NOT STARTED` | A |
 | D | InferenceEngine v2 (base) | `NOT STARTED` | A |
@@ -98,18 +98,17 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** none — v2 not started.
-**Active phase:** Phase A — Plugin Framework.
+**Last completed phase:** Phase A — Plugin Framework.
+**Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase A slices 2/3 before implementation: decide how Lighting, Heating, and Security
-will expose `IDomainPlugin.compute()` without changing current runtime behavior.
+Review Phase B spec (§8) and begin `IBehaviorAnalyzer + FindingRouter`.
 
 ### Current Working Notes
 
-- Current slice: Phase A / slice 1 — plugin contracts and DAG resolver.
-- Status: complete; plugin contracts, immutable result bag, DAG resolver, and focused tests added.
+- Current slice: Phase A — complete.
+- Status: built-in plugin framework is implemented and verified.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -122,13 +121,37 @@ will expose `IDomainPlugin.compute()` without changing current runtime behavior.
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
   - `custom_components/heima/runtime/dag.py`
+  - `custom_components/heima/runtime/domains/lighting.py`
+  - `custom_components/heima/runtime/domains/heating.py`
+  - `custom_components/heima/runtime/domains/security.py`
+  - `custom_components/heima/runtime/engine.py`
+  - `custom_components/heima/coordinator.py`
   - `tests/test_domain_plugin_dag.py`
+  - `tests/test_calendar_domain.py`
 - Tests run:
-  - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py -q` — passed, 7 tests.
-  - `.venv/bin/ruff check custom_components/heima/runtime/dag.py custom_components/heima/runtime/domain_result_bag.py custom_components/heima/runtime/plugin_contracts.py tests/test_domain_plugin_dag.py` — passed.
-  - `.venv/bin/ruff format --check custom_components/heima/runtime/dag.py custom_components/heima/runtime/domain_result_bag.py custom_components/heima/runtime/plugin_contracts.py tests/test_domain_plugin_dag.py` — passed.
-- Next concrete step: review and agree the adapter shape for Phase A slices 2/3.
+  - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py -q` — passed, 8 tests.
+  - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py tests/test_security_mismatch_policy.py -q` — passed, 53 tests.
+  - `.venv/bin/python -m pytest tests/test_engine_normalization_migration.py tests/test_engine_behavior_error_event.py tests/test_constraints_layer.py tests/test_sensor_entities.py -q` — passed, 23 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 944 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Notes:
+  - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
+    (`today.day + 1`); it was fixed with `timedelta(days=1)`.
+- Next concrete step: read Phase B spec and plan the analyzer/router migration.
 - Open decisions: none.
+
+#### Phase A slices 2/3 implementation decision
+
+- Add lightweight result dataclasses for Lighting, Heating, and Security plugin outputs.
+- Make each built-in domain satisfy `IDomainPlugin` with `domain_id`, `depends_on`, and
+  `compute(canonical_state, domain_results, signals=None)`.
+- Preserve existing internal domain methods; plugin `compute()` wrappers should call current logic
+  instead of duplicating or rewriting behavior.
+- Use explicit runtime bindings/providers supplied by `HeimaEngine` for options, events,
+  scheduler callbacks, room config callbacks, and other engine-owned dependencies.
+- Keep Activity out of Phase A. The Phase A engine loop remains behavior-preserving and does not
+  introduce the future Activity core domain.
 
 **Open blockers:** none.
 
@@ -148,6 +171,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 2. Built-in plugin compliance
    - Adapt Lighting, Heating, and Security domains to satisfy `IDomainPlugin`.
    - Preserve existing internal logic and public diagnostics.
+   - Use explicit runtime bindings rather than hidden globals or ad hoc bag payloads.
 3. Engine plugin loop
    - Add plugin registration/finalization to `HeimaEngine`.
    - Replace hardcoded Lighting/Heating/Security evaluation with the resolved plugin loop.
@@ -179,10 +203,10 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 ### Acceptance criteria
 
 - [x] `resolve_dag()` raises on cycles and missing dependencies
-- [ ] `LightingDomain`, `HeatingDomain`, `SecurityDomain` satisfy `IDomainPlugin` Protocol
-- [ ] Engine evaluates plugins via DAG loop (not hardcoded order)
-- [ ] Core domains (People, Occupancy, HouseState, Calendar) remain untouched
-- [ ] All 660 existing tests pass without modification
+- [x] `LightingDomain`, `HeatingDomain`, `SecurityDomain` satisfy `IDomainPlugin` Protocol
+- [x] Engine evaluates plugins via DAG loop (not hardcoded order)
+- [x] Core domains (People, Occupancy, HouseState, Calendar) remain untouched
+- [x] All existing tests pass
 - [x] New tests: DAG cycle detection, missing dependency detection (at least 2 tests each)
 
 ---

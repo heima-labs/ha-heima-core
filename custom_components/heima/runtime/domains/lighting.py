@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 
 from ..contracts import ApplyStep, HeimaEvent
+from ..domain_result_bag import DomainResultBag
 from ..lighting import pick_scene_for_intent_with_trace, resolve_zone_intent
 from ..normalization.service import InputNormalizer
 from ..snapshot import DecisionSnapshot
@@ -22,6 +24,13 @@ from .events import EventsDomain
 _LOGGER = logging.getLogger(__name__)
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
+
+
+@dataclass(frozen=True)
+class LightingDomainResult:
+    """Current-cycle Lighting plugin output."""
+
+    lighting_intents: dict[str, str]
 
 
 class LightingDomain:
@@ -39,6 +48,56 @@ class LightingDomain:
         self._lighting_zone_trace: dict[str, dict[str, Any]] = {}
         self._lighting_room_trace: dict[str, list[dict[str, Any]]] = {}
         self._lighting_conflicts_last_eval: list[dict[str, Any]] = []
+        self._plugin_options_provider: Any = None
+        self._plugin_room_configs_provider: Any = None
+        self._plugin_room_occupancy_mode_fn: Any = None
+
+    @property
+    def domain_id(self) -> str:
+        return "lighting"
+
+    @property
+    def depends_on(self) -> list[str]:
+        return ["house_state", "occupancy"]
+
+    def bind_plugin_runtime(
+        self,
+        *,
+        options_provider: Any,
+        room_configs_provider: Any,
+        room_occupancy_mode_fn: Any,
+    ) -> None:
+        """Bind engine-owned dependencies used by the plugin wrapper."""
+        self._plugin_options_provider = options_provider
+        self._plugin_room_configs_provider = room_configs_provider
+        self._plugin_room_occupancy_mode_fn = room_occupancy_mode_fn
+
+    def compute(
+        self,
+        canonical_state: CanonicalState,
+        domain_results: DomainResultBag,
+        signals: list[Any] | None = None,
+    ) -> LightingDomainResult:
+        """Compute current-cycle lighting intents through the plugin contract."""
+        del signals
+        if (
+            self._plugin_options_provider is None
+            or self._plugin_room_configs_provider is None
+            or self._plugin_room_occupancy_mode_fn is None
+        ):
+            raise RuntimeError("Lighting plugin runtime is not bound")
+
+        house_state_result = domain_results.require("house_state")
+        occupancy_result = domain_results.require("occupancy")
+        lighting_intents = self.compute_intents(
+            options=dict(self._plugin_options_provider()),
+            house_state=str(house_state_result.house_state),
+            occupied_rooms=list(occupancy_result.occupied_rooms),
+            state=canonical_state,
+            room_configs=dict(self._plugin_room_configs_provider()),
+            room_occupancy_mode_fn=self._plugin_room_occupancy_mode_fn,
+        )
+        return LightingDomainResult(lighting_intents=lighting_intents)
 
     def reset(self) -> None:
         """Called on options reload."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
@@ -14,6 +15,7 @@ from ...const import (
     DEFAULT_SECURITY_MISMATCH_POLICY,
 )
 from ..contracts import HeimaEvent
+from ..domain_result_bag import DomainResultBag
 from ..normalization.config import (
     SECURITY_CORROBORATION_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -24,6 +26,15 @@ from .events import EventsDomain
 from .security_camera_evidence import SecurityCameraEvidenceResult
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SecurityDomainResult:
+    """Current-cycle Security plugin output."""
+
+    security_state: str
+    security_reason: str
+    breach_candidates: list[dict[str, Any]]
 
 
 class SecurityDomain:
@@ -37,6 +48,44 @@ class SecurityDomain:
         self._camera_evidence_trace: dict[str, Any] = {}
         self._security_armed_away_but_home_since: float | None = None
         self._security_armed_away_but_home_emitted: bool = False
+        self._plugin_security_config_provider: Callable[[], dict[str, Any]] | None = None
+        self._plugin_options_provider: Callable[[], dict[str, Any]] | None = None
+        self._plugin_camera_evidence_provider: Callable[[], Any] | None = None
+        self._plugin_events_provider: Callable[[], EventsDomain] | None = None
+        self._plugin_schedule_recheck: Callable[..., None] | None = None
+        self._plugin_room_configs_provider: Callable[[], dict[str, dict[str, Any]]] | None = None
+        self._plugin_room_occupancy_mode_fn: Callable[[dict[str, Any]], str] | None = None
+        self._plugin_notifications_config_provider: Callable[[], dict[str, Any]] | None = None
+
+    @property
+    def domain_id(self) -> str:
+        return "security"
+
+    @property
+    def depends_on(self) -> list[str]:
+        return ["people", "occupancy"]
+
+    def bind_plugin_runtime(
+        self,
+        *,
+        security_config_provider: Callable[[], dict[str, Any]],
+        options_provider: Callable[[], dict[str, Any]],
+        camera_evidence_provider: Callable[[], Any],
+        events_provider: Callable[[], EventsDomain],
+        schedule_recheck: Callable[..., None],
+        room_configs_provider: Callable[[], dict[str, dict[str, Any]]],
+        room_occupancy_mode_fn: Callable[[dict[str, Any]], str],
+        notifications_config_provider: Callable[[], dict[str, Any]],
+    ) -> None:
+        """Bind engine-owned dependencies used by the plugin wrapper."""
+        self._plugin_security_config_provider = security_config_provider
+        self._plugin_options_provider = options_provider
+        self._plugin_camera_evidence_provider = camera_evidence_provider
+        self._plugin_events_provider = events_provider
+        self._plugin_schedule_recheck = schedule_recheck
+        self._plugin_room_configs_provider = room_configs_provider
+        self._plugin_room_occupancy_mode_fn = room_occupancy_mode_fn
+        self._plugin_notifications_config_provider = notifications_config_provider
 
     def reset(self) -> None:
         """Called on options reload."""
@@ -66,6 +115,74 @@ class SecurityDomain:
     # ------------------------------------------------------------------
 
     def compute(
+        self,
+        canonical_state: CanonicalState,
+        domain_results: DomainResultBag,
+        signals: list[Any] | None = None,
+    ) -> SecurityDomainResult:
+        """Compute security through the plugin contract."""
+        del signals
+        if (
+            self._plugin_security_config_provider is None
+            or self._plugin_options_provider is None
+            or self._plugin_camera_evidence_provider is None
+            or self._plugin_events_provider is None
+            or self._plugin_schedule_recheck is None
+            or self._plugin_room_configs_provider is None
+            or self._plugin_room_occupancy_mode_fn is None
+            or self._plugin_notifications_config_provider is None
+        ):
+            raise RuntimeError("Security plugin runtime is not bound")
+
+        security_cfg = dict(self._plugin_security_config_provider())
+        camera_evidence = self._plugin_camera_evidence_provider()
+        people_result = domain_results.require("people")
+        occupancy_result = domain_results.require("occupancy")
+
+        security_state, security_reason = self.compute_security_state(
+            security_cfg=security_cfg,
+            state=canonical_state,
+        )
+        canonical_state.set_sensor_attributes(
+            "heima_security_state",
+            {
+                **(canonical_state.get_sensor_attributes("heima_security_state") or {}),
+                "camera_evidence": camera_evidence.as_dict(),
+            },
+        )
+        canonical_state.set_sensor_attributes(
+            "heima_security_reason",
+            {
+                **(canonical_state.get_sensor_attributes("heima_security_reason") or {}),
+                "camera_evidence": camera_evidence.as_dict(),
+            },
+        )
+        breach_candidates = self.consume_camera_evidence(
+            security_state=security_state,
+            camera_evidence=camera_evidence,
+            state=canonical_state,
+        )
+        self.queue_security_consistency_events(
+            anyone_home=bool(people_result.anyone_home),
+            security_state=security_state,
+            security_reason=security_reason,
+            options=dict(self._plugin_options_provider()),
+            people_home_list=list(people_result.people_home_list),
+            occupied_rooms=list(occupancy_result.occupied_rooms),
+            events=self._plugin_events_provider(),
+            schedule_recheck=self._plugin_schedule_recheck,
+            room_configs=dict(self._plugin_room_configs_provider()),
+            state=canonical_state,
+            room_occupancy_mode_fn=self._plugin_room_occupancy_mode_fn,
+            notifications_cfg=dict(self._plugin_notifications_config_provider()),
+        )
+        return SecurityDomainResult(
+            security_state=security_state,
+            security_reason=security_reason,
+            breach_candidates=breach_candidates,
+        )
+
+    def compute_security_state(
         self,
         *,
         security_cfg: dict[str, Any],
