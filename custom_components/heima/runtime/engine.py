@@ -55,8 +55,15 @@ from .domains.security_camera_evidence import (
     SecurityCameraEvidenceResult,
 )
 from .external_context import ExternalContext, ExternalContextNormalizer
+from .invariant_check import InvariantCheckState, evaluate_invariant_state
+from .invariants import (
+    HeatingHomeEmpty,
+    PresenceWithoutOccupancy,
+    SecurityPresenceMismatch,
+    SensorStuck,
+)
 from .normalization.service import InputNormalizer
-from .plugin_contracts import IDomainPlugin
+from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .reactions import (
     create_builtin_reaction_plugin_registry,
     normalize_reaction_options_payload,
@@ -127,6 +134,9 @@ class HeimaEngine:
         self._registered_domain_plugins: dict[str, IDomainPlugin] = {}
         self._domain_plugin_order: list[IDomainPlugin] = []
         self._domain_plugins_finalized = False
+        self._invariant_checks: list[IInvariantCheck] = []
+        self._invariant_states: dict[str, InvariantCheckState] = {}
+        self._last_domain_results = DomainResultBag.empty()
         self._timed_rechecks: dict[str, dict[str, Any]] = {}
         self._last_config_issues_fingerprint: str | None = None
         self._active_constraints: set[str] = set()
@@ -360,6 +370,23 @@ class HeimaEngine:
         self._reactions.append(reaction)
         _LOGGER.debug("Heima reaction registered: %s", reaction.reaction_id)
 
+    def builtin_invariant_checks(self) -> list[IInvariantCheck]:
+        """Return built-in invariant checks owned by this engine."""
+        return [
+            PresenceWithoutOccupancy(),
+            SecurityPresenceMismatch(),
+            HeatingHomeEmpty(),
+            SensorStuck(),
+        ]
+
+    def register_invariant_check(self, check: IInvariantCheck) -> None:
+        """Register a per-cycle invariant check."""
+        if any(existing.check_id == check.check_id for existing in self._invariant_checks):
+            raise ValueError(f"Duplicate invariant check id: {check.check_id}")
+        self._invariant_checks.append(check)
+        self._invariant_states.setdefault(check.check_id, InvariantCheckState())
+        _LOGGER.debug("Heima invariant check registered: %s", check.check_id)
+
     def builtin_domain_plugins(self) -> list[IDomainPlugin]:
         """Return built-in domain plugins owned by this engine."""
         return [self._security_domain, self._lighting_domain, self._heating_domain]
@@ -572,6 +599,7 @@ class HeimaEngine:
         self._snapshot_buffer.push(snapshot)
         self._apply_snapshot_to_canonical_state(snapshot)
         self._dispatch_on_snapshot(snapshot)
+        self._run_invariant_checks(snapshot)
 
         plan = self._build_apply_plan(snapshot)
         plan = self._dispatch_apply_filter(plan, snapshot)
@@ -811,6 +839,7 @@ class HeimaEngine:
             .with_result("house_state", hs_result)
         )
         domain_results = self._compute_domain_plugins(domain_results)
+        self._last_domain_results = domain_results
 
         lighting_result = domain_results.require("lighting")
         heating_result = domain_results.require("heating")
@@ -912,6 +941,97 @@ class HeimaEngine:
             plugin_result = plugin.compute(self._state, results, signals=None)
             results = results.with_result(plugin.domain_id, plugin_result)
         return results
+
+    def _run_invariant_checks(self, snapshot: DecisionSnapshot) -> None:
+        if not self._invariant_config()["enabled"]:
+            return
+        for check in self._invariant_checks:
+            violation = check.check(snapshot, self._last_domain_results)
+            state = self._invariant_states.setdefault(check.check_id, InvariantCheckState())
+            outcome = evaluate_invariant_state(
+                state=state,
+                violation=violation,
+                debounce_s=self._invariant_debounce_s(check),
+                re_emit_interval_s=self._invariant_config()["re_emit_interval_s"],
+            )
+            if outcome.violation is not None:
+                self._queue_invariant_violation_event(outcome.violation)
+            elif outcome.resolved:
+                self._queue_invariant_resolved_event(check.check_id)
+
+    def _invariant_config(self) -> dict[str, Any]:
+        options = dict(self._entry.options)
+        anomaly_cfg = options.get("anomaly", {})
+        if not isinstance(anomaly_cfg, dict):
+            anomaly_cfg = {}
+        return {
+            "enabled": bool(
+                anomaly_cfg.get("anomaly_enabled", options.get("anomaly_enabled", True))
+            ),
+            "sensor_stuck_threshold_s": int(
+                anomaly_cfg.get(
+                    "anomaly_sensor_stuck_threshold_s",
+                    options.get("anomaly_sensor_stuck_threshold_s", 86400),
+                )
+            ),
+            "heating_empty_threshold_s": int(
+                anomaly_cfg.get(
+                    "anomaly_heating_empty_threshold_s",
+                    options.get("anomaly_heating_empty_threshold_s", 1800),
+                )
+            ),
+            "notify_on_info": bool(
+                anomaly_cfg.get(
+                    "anomaly_notify_on_info",
+                    options.get("anomaly_notify_on_info", False),
+                )
+            ),
+            "re_emit_interval_s": int(
+                anomaly_cfg.get(
+                    "anomaly_re_emit_interval_s",
+                    options.get("anomaly_re_emit_interval_s", 3600),
+                )
+            ),
+        }
+
+    def _invariant_debounce_s(self, check: IInvariantCheck) -> float:
+        cfg = self._invariant_config()
+        if check.check_id == "sensor_stuck":
+            return float(cfg["sensor_stuck_threshold_s"])
+        if check.check_id == "heating_home_empty":
+            return float(cfg["heating_empty_threshold_s"])
+        return float(check.default_debounce_s)
+
+    def _queue_invariant_violation_event(self, violation: InvariantViolation) -> None:
+        cfg = self._invariant_config()
+        context = {
+            "check_id": violation.check_id,
+            "anomaly_type": violation.anomaly_type,
+            "notify": bool(violation.severity != "info" or cfg["notify_on_info"]),
+            **dict(violation.context),
+        }
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type=f"anomaly.{violation.anomaly_type}",
+                key=f"anomaly.{violation.check_id}",
+                severity=violation.severity,
+                title="Invariant violation",
+                message=violation.description,
+                context=context,
+            )
+        )
+
+    def _queue_invariant_resolved_event(self, check_id: str) -> None:
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="anomaly.resolved",
+                key=f"anomaly.resolved.{check_id}",
+                severity="info",
+                title="Invariant resolved",
+                message=f"Invariant '{check_id}' is no longer active.",
+                context={"check_id": check_id},
+            )
+        )
 
     def scheduled_runtime_jobs(self) -> dict[str, ScheduledRuntimeJob]:
         jobs: dict[str, ScheduledRuntimeJob] = {}

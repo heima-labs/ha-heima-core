@@ -86,7 +86,7 @@ These constraints must never be violated. See spec §16 for rationale.
 |---|---|---|---|
 | A | Plugin Framework | `DONE` | — |
 | B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
-| C | IInvariantCheck | `NOT STARTED` | A |
+| C | IInvariantCheck | `DONE` | A |
 | D | InferenceEngine v2 (base) | `NOT STARTED` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
@@ -98,17 +98,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase B — IBehaviorAnalyzer + FindingRouter.
-**Active phase:** none.
+**Last completed phase:** Phase C — IInvariantCheck.
+**Active phase:** None. Next phase must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase C spec (§9) and begin `IInvariantCheck`.
+Review Phase C results and agree the next slice before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase B — complete.
-- Status: analyzer contracts, finding router, and proposal pipeline compatibility are implemented.
+- Current slice: Phase C — complete.
+- Status: invariant contracts, built-in checks, debounce state machine, and pre-Apply engine
+  wiring are implemented.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -137,6 +138,14 @@ Review Phase C spec (§9) and begin `IInvariantCheck`.
   - `custom_components/heima/runtime/analyzers/correlation.py`
   - `custom_components/heima/coordinator.py`
   - `tests/test_proposal_engine.py`
+  - `custom_components/heima/runtime/invariant_check.py`
+  - `custom_components/heima/runtime/invariants/__init__.py`
+  - `custom_components/heima/runtime/invariants/presence.py`
+  - `custom_components/heima/runtime/invariants/security.py`
+  - `custom_components/heima/runtime/invariants/heating.py`
+  - `custom_components/heima/runtime/invariants/sensor.py`
+  - `custom_components/heima/runtime/domains/occupancy.py`
+  - `tests/test_invariant_checks.py`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
   - `kind="proposal"` is not supported.
@@ -151,6 +160,10 @@ Review Phase C spec (§9) and begin `IInvariantCheck`.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 949 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_invariant_checks.py -q` — passed, 8 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 957 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
@@ -163,7 +176,19 @@ Review Phase C spec (§9) and begin `IInvariantCheck`.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: read Phase C spec and plan invariant check implementation.
+- Next concrete step: agree the next phase/slice before writing more runtime code.
+- Phase C implementation notes:
+  - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
+  - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
+    SnapshotStore.
+  - `presence_without_occupancy` uses `OccupancyResult.sensorized_room_count` to avoid false
+    positives for homes without sensorized rooms.
+  - `InvariantViolation` is converted to `HeimaEvent(type=f"anomaly.{anomaly_type}")` after
+    per-check debounce.
+  - `anomaly.resolved` is emitted only after a previously active invariant clears.
+  - Config defaults implemented: `anomaly_enabled=true`,
+    `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`,
+    `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600`.
 - Open decisions: none.
 
 #### Phase A slices 2/3 implementation decision
@@ -295,12 +320,12 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ### Acceptance criteria
 
-- [ ] Each built-in check: at least 1 test for violation, 1 for resolution, 1 for debounce
-- [ ] Checks run after all domains computed, before Apply (spec §9 — pre-Apply guard)
-- [ ] Checks never read EventStore or SnapshotStore (enforce in code review)
-- [ ] Each `InvariantViolation` is immediately converted to `HeimaEvent(type=f"anomaly.{anomaly_type}")` with debounce per `check_id` (spec §9.3)
-- [ ] Config defaults implemented: `anomaly_enabled=true`, `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`, `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600` (spec §9.6)
-- [ ] All 660 tests pass
+- [x] Each built-in check: at least 1 test for violation, 1 for resolution, 1 for debounce
+- [x] Checks run after all domains computed, before Apply (spec §9 — pre-Apply guard)
+- [x] Checks never read EventStore or SnapshotStore (enforce in code review)
+- [x] Each `InvariantViolation` is immediately converted to `HeimaEvent(type=f"anomaly.{anomaly_type}")` with debounce per `check_id` (spec §9.3)
+- [x] Config defaults implemented: `anomaly_enabled=true`, `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`, `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600` (spec §9.6)
+- [x] All tests pass
 
 ---
 

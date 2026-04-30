@@ -94,6 +94,40 @@ class IOptionsSchemaProvider(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class InvariantViolation:
+    """Synchronous structural invariant violation."""
+
+    check_id: str
+    severity: Literal["info", "warning", "critical"]
+    anomaly_type: str
+    description: str
+    context: dict[str, Any] = field(default_factory=dict)
+
+
+@runtime_checkable
+class IInvariantCheck(Protocol):
+    """Per-cycle structural invariant check."""
+
+    @property
+    def check_id(self) -> str:
+        """Stable check identifier."""
+        ...
+
+    @property
+    def default_debounce_s(self) -> float:
+        """Default seconds the condition must hold before emission."""
+        ...
+
+    def check(
+        self,
+        snapshot: Any,
+        domain_results: DomainResultBag,
+    ) -> InvariantViolation | None:
+        """Return a violation when the invariant condition is currently active."""
+        ...
+
+
 @runtime_checkable
 class IBehaviorAnalyzer(Protocol):
     """Offline analyzer producing typed behavior findings."""

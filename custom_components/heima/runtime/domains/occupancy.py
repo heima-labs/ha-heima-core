@@ -29,6 +29,7 @@ class OccupancyResult:
     """Result of OccupancyDomain.compute()."""
 
     occupied_rooms: list[str]
+    sensorized_room_count: int = 0
 
 
 class OccupancyDomain:
@@ -82,11 +83,16 @@ class OccupancyDomain:
         now: str,
     ) -> OccupancyResult:
         occupied_rooms: list[str] = []
+        sensorized_room_count = 0
 
         for room in options.get(OPT_ROOMS, []):
             room_id = room.get("room_id")
             if not room_id:
                 continue
+            if self._room_occupancy_mode(room) == "derived" and room_occupancy_source_entity_ids(
+                room
+            ):
+                sensorized_room_count += 1
             is_occupied, occ_trace = self._compute_room_occupancy(room, schedule_recheck, events)
             prev_value = state.get_binary(f"heima_occupancy_{room_id}")
             state.set_binary(f"heima_occupancy_{room_id}", is_occupied)
@@ -102,7 +108,10 @@ class OccupancyDomain:
             if is_occupied:
                 occupied_rooms.append(room_id)
 
-        return OccupancyResult(occupied_rooms=occupied_rooms)
+        return OccupancyResult(
+            occupied_rooms=occupied_rooms,
+            sensorized_room_count=sensorized_room_count,
+        )
 
     # ------------------------------------------------------------------
     # Consistency events

@@ -53,6 +53,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         for plugin in self.engine.builtin_domain_plugins():
             self.engine.register_plugin(plugin)
         self.engine.finalize_dag()
+        for check in self.engine.builtin_invariant_checks():
+            self.engine.register_invariant_check(check)
         self._event_store = EventStore(hass)
         self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
         self.engine.set_context_builder(self._context_builder)
