@@ -45,8 +45,17 @@ class _AnalyzerStub:
     def set_proposals(self, proposals) -> None:
         self._proposals = list(proposals)
 
-    async def analyze(self, event_store):  # noqa: ANN001, ARG002
-        return list(self._proposals)
+    async def analyze(self, event_store, snapshot_store=None):  # noqa: ANN001, ARG002
+        return [
+            BehaviorFinding(
+                kind="pattern",
+                analyzer_id=self.analyzer_id,
+                description=proposal.description,
+                confidence=proposal.confidence,
+                payload=proposal,
+            )
+            for proposal in self._proposals
+        ]
 
 
 class _AnalyzerErrorStub:
@@ -54,7 +63,7 @@ class _AnalyzerErrorStub:
     def analyzer_id(self) -> str:
         return "broken"
 
-    async def analyze(self, event_store):  # noqa: ANN001, ARG002
+    async def analyze(self, event_store, snapshot_store=None):  # noqa: ANN001, ARG002
         raise RuntimeError("boom")
 
 
@@ -63,8 +72,18 @@ class _AnalyzerInvalidOutputStub:
     def analyzer_id(self) -> str:
         return "invalid_output"
 
-    async def analyze(self, event_store):  # noqa: ANN001, ARG002
-        return ["not-a-proposal", _proposal(conf=0.8, weekday=3)]
+    async def analyze(self, event_store, snapshot_store=None):  # noqa: ANN001, ARG002
+        proposal = _proposal(conf=0.8, weekday=3)
+        return [
+            "not-a-proposal",
+            BehaviorFinding(
+                kind="pattern",
+                analyzer_id=self.analyzer_id,
+                description=proposal.description,
+                confidence=proposal.confidence,
+                payload=proposal,
+            ),
+        ]
 
 
 class _FindingAnalyzerStub:
@@ -72,7 +91,7 @@ class _FindingAnalyzerStub:
     def analyzer_id(self) -> str:
         return "finding_stub"
 
-    async def analyze(self, event_store):  # noqa: ANN001, ARG002
+    async def analyze(self, event_store, snapshot_store=None):  # noqa: ANN001, ARG002
         proposal = _proposal(conf=0.8, weekday=4)
         return [
             BehaviorFinding(
@@ -263,7 +282,7 @@ async def test_finding_router_routes_pattern_and_activity_to_proposal_engine(mon
     await router.async_route(
         [
             BehaviorFinding(
-                kind="proposal",
+                kind="pattern",
                 analyzer_id="pattern",
                 description="pattern",
                 confidence=0.8,

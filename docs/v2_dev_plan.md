@@ -139,9 +139,9 @@ Review Phase C spec (§9) and begin `IInvariantCheck`.
   - `tests/test_proposal_engine.py`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
-  - Keep existing v1 analyzer registry behavior-compatible. Analyzers that still return bare
-    `ReactionProposal` objects remain accepted during migration.
-  - New/migrated analyzers should return `BehaviorFinding` objects.
+  - `kind="proposal"` is not supported.
+  - Analyzer outputs must be `BehaviorFinding` objects; bare `ReactionProposal` outputs are not
+    accepted by `ProposalEngine`.
   - `FindingRouter` will expose async routing because `ProposalEngine` persistence is async.
 - Tests run:
   - `.venv/bin/python -m pytest tests/test_domain_plugin_dag.py -q` — passed, 8 tests.
@@ -154,11 +154,14 @@ Review Phase C spec (§9) and begin `IInvariantCheck`.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
-  - Presence and Heating analyzers now return `BehaviorFinding(kind="pattern")` with the existing
-    `ReactionProposal` as payload.
-  - `ProposalEngine` still accepts legacy bare `ReactionProposal` outputs while remaining analyzers
-    migrate.
-  - `BehaviorFinding` delegates read-only legacy attribute access to its payload during migration.
+  - Remediation after spec correction: only `kind="pattern"` is supported for `ReactionProposal`
+    routing; `kind="proposal"` was removed from runtime and tests.
+  - All registered learning analyzers now return `BehaviorFinding(kind="pattern")` with the
+    existing `ReactionProposal` as payload.
+  - `ProposalEngine` rejects non-`BehaviorFinding` analyzer outputs instead of accepting legacy
+    bare `ReactionProposal` objects.
+  - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
+    delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
 - Next concrete step: read Phase C spec and plan invariant check implementation.
 - Open decisions: none.

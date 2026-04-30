@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
+from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal, compute_house_state_filter
 from .composite import (
     CompositePatternSpec,
@@ -122,13 +123,19 @@ class CrossDomainPatternAnalyzer:
     def analyzer_id(self) -> str:
         return self._definition.analyzer_id
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
-        return await _analyze_definition(
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
+        proposals = await _analyze_definition(
             event_store=event_store,
             matcher=self._matcher,
             definition=self._definition,
             quality_policy=self._quality_policy,
         )
+        return _proposal_findings(self.analyzer_id, proposals)
 
 
 class RoomCoolingPatternAnalyzer:
@@ -147,13 +154,19 @@ class RoomCoolingPatternAnalyzer:
     def analyzer_id(self) -> str:
         return self._definition.analyzer_id
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
-        return await _analyze_definition(
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
+        proposals = await _analyze_definition(
             event_store=event_store,
             matcher=self._matcher,
             definition=self._definition,
             quality_policy=self._quality_policy,
         )
+        return _proposal_findings(self.analyzer_id, proposals)
 
 
 class CompositePatternCatalogAnalyzer:
@@ -173,7 +186,12 @@ class CompositePatternCatalogAnalyzer:
     def analyzer_id(self) -> str:
         return "CompositePatternCatalogAnalyzer"
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
         proposals: list[ReactionProposal] = []
         for definition in self._catalog:
             proposals.extend(
@@ -184,7 +202,7 @@ class CompositePatternCatalogAnalyzer:
                     quality_policy=self._quality_policy,
                 )
             )
-        return _dominant_composite_candidates(proposals)
+        return _proposal_findings(self.analyzer_id, _dominant_composite_candidates(proposals))
 
 
 async def rooms_with_confirmed_pattern_evidence(
@@ -217,6 +235,21 @@ async def rooms_with_confirmed_pattern_evidence(
             continue
         confirmed_rooms.add(room_id)
     return confirmed_rooms
+
+
+def _proposal_findings(
+    analyzer_id: str,
+    proposals: list[ReactionProposal],
+) -> list[BehaviorFinding]:
+    return [
+        pattern_finding(
+            analyzer_id=analyzer_id,
+            description=proposal.description,
+            confidence=proposal.confidence,
+            payload=proposal,
+        )
+        for proposal in proposals
+    ]
 
 
 async def _analyze_definition(

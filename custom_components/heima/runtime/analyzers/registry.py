@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
-from .base import IPatternAnalyzer, ReactionProposal
+from ..plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
+from .base import ReactionProposal
 from .cross_domain import (
     DEFAULT_COMPOSITE_PATTERN_CATALOG,
     CompositePatternCatalogAnalyzer,
@@ -39,7 +40,11 @@ class _NoopPatternAnalyzer:
     def analyzer_id(self) -> str:
         return self._analyzer_id
 
-    async def analyze(self, event_store: Any) -> list[ReactionProposal]:  # noqa: ARG002
+    async def analyze(
+        self,
+        event_store: Any,  # noqa: ARG002
+        snapshot_store: Any | None = None,  # noqa: ARG002
+    ) -> list[BehaviorFinding]:
         return []
 
 
@@ -94,7 +99,7 @@ class RegisteredLearningPlugin:
     """One registered learning plugin entry."""
 
     descriptor: LearningPatternPluginDescriptor
-    analyzer: IPatternAnalyzer
+    analyzer: IBehaviorAnalyzer
     enabled: bool = True
 
 
@@ -108,7 +113,7 @@ class LearningPluginRegistry:
         self,
         *,
         descriptor: LearningPatternPluginDescriptor,
-        analyzer: IPatternAnalyzer,
+        analyzer: IBehaviorAnalyzer,
         enabled: bool = True,
     ) -> None:
         plugin_id = descriptor.plugin_id
@@ -122,7 +127,7 @@ class LearningPluginRegistry:
             )
         )
 
-    def analyzers(self, *, enabled_only: bool = True) -> tuple[IPatternAnalyzer, ...]:
+    def analyzers(self, *, enabled_only: bool = True) -> tuple[IBehaviorAnalyzer, ...]:
         return tuple(item.analyzer for item in self._plugins if item.enabled or not enabled_only)
 
     def descriptors(

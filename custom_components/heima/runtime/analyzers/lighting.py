@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
+from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal, compute_house_state_filter
 from .context_condition_promotion import evaluate_context_condition_promotion
 from .context_episode_sampling import build_lighting_context_dataset
@@ -76,7 +77,24 @@ class LightingPatternAnalyzer:
     def analyzer_id(self) -> str:
         return "LightingPatternAnalyzer"
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
+        proposals = await self._analyze_proposals(event_store)
+        return [
+            pattern_finding(
+                analyzer_id=self.analyzer_id,
+                description=proposal.description,
+                confidence=proposal.confidence,
+                payload=proposal,
+            )
+            for proposal in proposals
+        ]
+
+    async def _analyze_proposals(self, event_store: EventStore) -> list[ReactionProposal]:
         raw = await event_store.async_query(event_type="lighting")
         events: list[HeimaEvent] = [
             e for e in raw if isinstance(e, HeimaEvent) and e.source == "user"

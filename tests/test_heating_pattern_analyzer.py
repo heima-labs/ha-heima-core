@@ -16,6 +16,11 @@ class _StoreStub:
         return [e for e in self._events if event_type is None or e.event_type == event_type]
 
 
+async def _analyze_proposals(analyzer, store):  # noqa: ANN001
+    findings = await analyzer.analyze(store)  # type: ignore[arg-type]
+    return [finding.payload for finding in findings]
+
+
 def _ctx(house_state: str = "home", signals: dict | None = None) -> EventContext:
     return EventContext(
         weekday=0,
@@ -93,14 +98,14 @@ def _multi_week_heating_events(
 async def test_heating_analyzer_requires_min_events():
     analyzer = HeatingPatternAnalyzer()
     events = _multi_week_heating_events(9)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
 async def test_heating_analyzer_pattern_b_emits():
     analyzer = HeatingPatternAnalyzer()
     events = _multi_week_heating_events(10, temperature_set=21.5)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) >= 1
     pref = next(p for p in proposals if p.reaction_type == "heating_preference")
     diagnostics = pref.suggested_reaction_config["learning_diagnostics"]
@@ -115,7 +120,7 @@ async def test_heating_analyzer_pattern_b_emits():
 async def test_heating_analyzer_confidence_consistent():
     analyzer = HeatingPatternAnalyzer()
     events = _multi_week_heating_events(10, temperature_set=21.5)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
     assert pref_proposals
     assert pref_proposals[0].confidence > 0.9
@@ -128,7 +133,7 @@ async def test_heating_analyzer_confidence_spread():
         _heating_event(temperature_set=t, ts=_WEEK_TIMESTAMPS[i % len(_WEEK_TIMESTAMPS)])
         for i, t in enumerate(temps)
     ]
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
     assert pref_proposals
     assert pref_proposals[0].confidence < 0.5
@@ -138,7 +143,7 @@ async def test_heating_analyzer_per_house_state():
     analyzer = HeatingPatternAnalyzer()
     home_events = _multi_week_heating_events(10, house_state="home", temperature_set=21.5)
     away_events = _multi_week_heating_events(4, house_state="away", temperature_set=18.0)
-    proposals = await analyzer.analyze(_StoreStub(home_events + away_events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(home_events + away_events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
     assert len(pref_proposals) == 1
     assert pref_proposals[0].suggested_reaction_config["house_state"] == "home"
@@ -146,7 +151,7 @@ async def test_heating_analyzer_per_house_state():
 
 async def test_heating_analyzer_empty_store():
     analyzer = HeatingPatternAnalyzer()
-    proposals = await analyzer.analyze(_StoreStub([]))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub([]))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -166,7 +171,7 @@ async def test_heating_analyzer_eco_pattern():
             _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     eco_proposals = [p for p in proposals if p.reaction_type == "heating_eco"]
     assert eco_proposals
     assert eco_proposals[0].suggested_reaction_config["eco_sessions_observed"] >= 3
@@ -193,7 +198,7 @@ async def test_heating_analyzer_no_eco_without_house_state_sessions():
             _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert not [p for p in proposals if p.reaction_type == "heating_eco"]
 
 
@@ -203,7 +208,7 @@ async def test_heating_analyzer_only_user_events_for_preference():
     # 10 heima events at 18°C + 10 user events at 22°C for same house_state
     heima_events = _multi_week_heating_events(10, temperature_set=18.0, source="heima")
     user_events = _multi_week_heating_events(10, temperature_set=22.0, source="user")
-    proposals = await analyzer.analyze(_StoreStub(heima_events + user_events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(heima_events + user_events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
     assert pref_proposals
     # median must be 22.0 (user-only), not a mix
@@ -230,7 +235,7 @@ async def test_heating_analyzer_signal_correlation():
             )
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     pref_proposals = [p for p in proposals if p.reaction_type == "heating_preference"]
     assert pref_proposals
     env_corr = pref_proposals[0].suggested_reaction_config.get("env_correlations", {})
@@ -241,7 +246,7 @@ async def test_heating_analyzer_signal_correlation():
 async def test_heating_analyzer_preference_requires_min_weeks():
     analyzer = HeatingPatternAnalyzer()
     events = [_heating_event(temperature_set=21.5) for _ in range(10)]
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert not [p for p in proposals if p.reaction_type == "heating_preference"]
 
 
@@ -261,5 +266,5 @@ async def test_heating_analyzer_eco_requires_min_weeks():
             _heating_event(house_state="home", temperature_set=21.0, ts=home_ts, source="user")
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert not [p for p in proposals if p.reaction_type == "heating_eco"]

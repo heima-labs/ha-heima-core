@@ -33,6 +33,11 @@ class _StoreStub:
         return events
 
 
+async def _analyze_proposals(analyzer, store):  # noqa: ANN001
+    findings = await analyzer.analyze(store)  # type: ignore[arg-type]
+    return [finding.payload for finding in findings]
+
+
 def _ctx(*, room: str, minute: int = 480, house_state: str = "home") -> EventContext:
     return EventContext(
         weekday=0,
@@ -224,7 +229,7 @@ async def test_cross_domain_analyzer_requires_min_confirmed_episodes():
                 ts=fan_ts,
             )
         )
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -262,7 +267,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "room_signal_assist"
@@ -338,7 +343,7 @@ async def test_room_cooling_pattern_analyzer_emits_room_cooling_assist_proposal(
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "room_cooling_assist"
@@ -392,7 +397,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     air_quality = [p for p in proposals if p.reaction_type == "room_air_quality_assist"]
     assert len(air_quality) == 1
     proposal = air_quality[0]
@@ -441,7 +446,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     darkness = [p for p in proposals if p.reaction_type == "room_darkness_lighting_assist"]
     assert len(darkness) == 1
     proposal = darkness[0]
@@ -522,7 +527,7 @@ async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darknes
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
     assert len(contextual) == 1
     proposal = contextual[0]
@@ -614,7 +619,7 @@ async def test_cross_domain_analyzer_contextual_upgrade_prefers_on_steps_over_cl
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
     assert len(contextual) == 1
     cfg = contextual[0].suggested_reaction_config
@@ -656,7 +661,7 @@ async def test_cross_domain_analyzer_does_not_treat_humidity_state_changes_as_pr
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -685,7 +690,7 @@ async def test_catalog_analyzer_does_not_treat_co2_state_changes_as_primary_sign
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert all(proposal.reaction_type != "room_air_quality_assist" for proposal in proposals)
 
 
@@ -717,7 +722,7 @@ async def test_catalog_analyzer_does_not_treat_lux_state_changes_as_primary_sign
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert all(proposal.reaction_type != "room_darkness_lighting_assist" for proposal in proposals)
 
 
@@ -776,7 +781,7 @@ async def test_cross_domain_analyzer_filters_sparse_followup_entities_by_ratio()
                 )
             )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     proposal = proposals[0]
     assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.bathroom_fan"]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
@@ -825,8 +830,8 @@ async def test_cross_domain_analyzer_confidence_grows_with_more_confirmed_weeks(
     for i in range(5, 8):
         stronger_events.extend(_episode_triplet(i))
 
-    weaker = (await analyzer.analyze(_StoreStub(weaker_events)))[0]  # type: ignore[arg-type]
-    stronger = (await analyzer.analyze(_StoreStub(stronger_events)))[0]  # type: ignore[arg-type]
+    weaker = (await _analyze_proposals(analyzer, _StoreStub(weaker_events)))[0]  # type: ignore[arg-type]
+    stronger = (await _analyze_proposals(analyzer, _StoreStub(stronger_events)))[0]  # type: ignore[arg-type]
 
     assert weaker.confidence < stronger.confidence
     assert stronger.confidence <= 0.95
@@ -875,7 +880,7 @@ async def test_room_cooling_pattern_analyzer_can_override_quality_policy():
                 )
             )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     proposal = proposals[0]
     assert proposal.suggested_reaction_config["corroboration_signal_entities"] == []
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
@@ -935,7 +940,7 @@ async def test_catalog_analyzer_keeps_only_dominant_candidate_per_logical_slot()
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert len(proposals) == 1
     proposal = proposals[0]
@@ -992,7 +997,7 @@ async def test_catalog_analyzer_emits_room_vacancy_lighting_off_proposal():
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     vacancy = [p for p in proposals if p.reaction_type == "room_vacancy_lighting_off"]
     assert len(vacancy) == 1
     proposal = vacancy[0]
@@ -1093,7 +1098,7 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     reaction_types = {proposal.reaction_type for proposal in proposals}
     assert reaction_types == {
         "room_signal_assist",

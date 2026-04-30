@@ -14,6 +14,11 @@ class _StoreStub:
         return [e for e in self._events if event_type is None or e.event_type == event_type]
 
 
+async def _analyze_proposals(analyzer, store):  # noqa: ANN001
+    findings = await analyzer.analyze(store)  # type: ignore[arg-type]
+    return [finding.payload for finding in findings]
+
+
 def _ctx(weekday: int = 0, minute: int = 480) -> EventContext:
     return EventContext(
         weekday=weekday,
@@ -54,8 +59,8 @@ def _arrive_multi_week(minutes: list[int], weekday: int = 0) -> list[HeimaEvent]
 
 async def test_presence_analyzer_requires_min_arrivals():
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
-    proposals = await analyzer.analyze(
-        _StoreStub([_arrive(480), _arrive(490), _arrive(500), _arrive(510)])
+    proposals = await _analyze_proposals(
+        analyzer, _StoreStub([_arrive(480), _arrive(490), _arrive(500), _arrive(510)])
     )  # type: ignore[arg-type]
     assert proposals == []
 
@@ -64,14 +69,14 @@ async def test_presence_analyzer_requires_min_weeks():
     """All arrivals in same week: filtered out by min_weeks check."""
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
     samples = [_arrive(470 + i, ts_index=0) for i in range(5)]  # all same week
-    proposals = await analyzer.analyze(_StoreStub(samples))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(samples))  # type: ignore[arg-type]
     assert proposals == []
 
 
 async def test_presence_analyzer_emits_proposal():
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
     samples = _arrive_multi_week([470, 475, 480, 485, 490])
-    proposals = await analyzer.analyze(_StoreStub(samples))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(samples))  # type: ignore[arg-type]
     assert len(proposals) == 1
     p = proposals[0]
     assert p.reaction_type == "presence_preheat"
@@ -89,8 +94,12 @@ async def test_presence_analyzer_emits_proposal():
 
 async def test_presence_analyzer_confidence_tight_vs_spread():
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
-    tight = await analyzer.analyze(_StoreStub(_arrive_multi_week([480, 481, 482, 483, 484])))  # type: ignore[arg-type]
-    spread = await analyzer.analyze(_StoreStub(_arrive_multi_week([360, 420, 480, 540, 600])))  # type: ignore[arg-type]
+    tight = await _analyze_proposals(
+        analyzer, _StoreStub(_arrive_multi_week([480, 481, 482, 483, 484]))
+    )  # type: ignore[arg-type]
+    spread = await _analyze_proposals(
+        analyzer, _StoreStub(_arrive_multi_week([360, 420, 480, 540, 600]))
+    )  # type: ignore[arg-type]
     assert tight and spread
     assert tight[0].confidence > spread[0].confidence
 
@@ -99,6 +108,6 @@ async def test_presence_analyzer_per_weekday():
     analyzer = PresencePatternAnalyzer(min_arrivals=5)
     monday = _arrive_multi_week([480, 482, 484, 486, 488], weekday=0)
     tuesday = [_arrive(500, weekday=1), _arrive(502, weekday=1)]
-    proposals = await analyzer.analyze(_StoreStub(monday + tuesday))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(monday + tuesday))  # type: ignore[arg-type]
     assert len(proposals) == 1
     assert proposals[0].suggested_reaction_config["weekday"] == 0

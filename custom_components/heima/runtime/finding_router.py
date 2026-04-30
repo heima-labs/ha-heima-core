@@ -32,7 +32,7 @@ class FindingRouter:
     async def async_route(self, findings: list[BehaviorFinding]) -> None:
         """Route findings by kind."""
         for finding in findings:
-            if finding.kind in {"pattern", "proposal", "activity"}:
+            if finding.kind in {"pattern", "activity"}:
                 await self._route_proposal(finding)
                 continue
             if finding.kind == "anomaly":

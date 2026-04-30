@@ -30,6 +30,11 @@ class _StoreStub:
         return events
 
 
+async def _analyze_proposals(analyzer, store):  # noqa: ANN001
+    findings = await analyzer.analyze(store)  # type: ignore[arg-type]
+    return [finding.payload for finding in findings]
+
+
 def _ctx(weekday: int = 0, minute: int = 1200) -> EventContext:
     return EventContext(
         weekday=weekday,
@@ -230,7 +235,7 @@ async def test_lighting_analyzer_requires_min_occurrences():
     """Fewer than 5 events per entity → no proposal."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(2, 2)  # 4 total
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -238,7 +243,7 @@ async def test_lighting_analyzer_requires_min_weeks():
     """5 events in a single ISO week → no proposal."""
     analyzer = LightingPatternAnalyzer()
     events = [_lighting(ts=_WEEK1_TS) for _ in range(5)]
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -246,7 +251,7 @@ async def test_lighting_analyzer_emits_no_proposal_without_context_signal():
     """5 events across 2 weeks but no context signal → no proposal (time-only is not learned)."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -287,7 +292,7 @@ async def test_lighting_analyzer_suppresses_schedule_when_darkness_assist_is_con
             ]
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -308,7 +313,7 @@ async def test_lighting_analyzer_proposal_config_fields():
         weekday=2,
         minute=1380,
     )
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -324,7 +329,7 @@ async def test_lighting_analyzer_entity_steps_contain_attributes():
         brightness=128,
         color_temp_kelvin=3000,
     )
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -332,7 +337,7 @@ async def test_lighting_analyzer_off_step_has_no_attributes():
     """Without context signal, no proposal emitted for off-action patterns."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, action="off")
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -340,7 +345,7 @@ async def test_lighting_analyzer_fingerprint_set():
     """Without context signal, no proposal and no fingerprint to check."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, room_id="living", weekday=0, minute=1200)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -354,7 +359,7 @@ async def test_lighting_analyzer_groups_same_room_into_one_proposal():
     analyzer = LightingPatternAnalyzer()
     main = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1200)
     spot = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1205)
-    proposals = await analyzer.analyze(_StoreStub(main + spot))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(main + spot))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -367,7 +372,7 @@ async def test_lighting_analyzer_collapses_duplicate_entity_candidates_in_same_s
     off_events = _multi_week_events(
         3, 2, entity_id="light.living_main", room_id="living", action="off", minute=1205
     )
-    proposals = await analyzer.analyze(_StoreStub(on_events + off_events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(on_events + off_events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -376,7 +381,7 @@ async def test_lighting_analyzer_orders_scene_entities_deterministically():
     analyzer = LightingPatternAnalyzer()
     main = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1205)
     spot = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1200)
-    proposals = await analyzer.analyze(_StoreStub(spot + main))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(spot + main))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -385,7 +390,7 @@ async def test_lighting_analyzer_splits_distant_times_into_separate_proposals():
     analyzer = LightingPatternAnalyzer()
     early = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", minute=1200)
     late = _multi_week_events(3, 2, entity_id="light.living_spot", room_id="living", minute=1230)
-    proposals = await analyzer.analyze(_StoreStub(early + late))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(early + late))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -394,7 +399,7 @@ async def test_lighting_analyzer_different_rooms_separate_proposals():
     analyzer = LightingPatternAnalyzer()
     living = _multi_week_events(3, 2, entity_id="light.living_main", room_id="living", weekday=0)
     kitchen = _multi_week_events(3, 2, entity_id="light.kitchen_main", room_id="kitchen", weekday=0)
-    proposals = await analyzer.analyze(_StoreStub(living + kitchen))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(living + kitchen))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -407,7 +412,7 @@ async def test_lighting_analyzer_confidence_tight_schedule():
     """Without context signal, no proposal regardless of schedule tightness."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, minute=1200)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -426,7 +431,7 @@ async def test_lighting_analyzer_confidence_floor():
         "2026-03-16T08:10:00+00:00",
     ]
     evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
-    proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -434,7 +439,7 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
     """Without context signal, both tight and spread patterns emit no proposal."""
     analyzer = LightingPatternAnalyzer()
     tight = _multi_week_events(3, 2, minute=1200)
-    tight_p = await analyzer.analyze(_StoreStub(tight))  # type: ignore[arg-type]
+    tight_p = await _analyze_proposals(analyzer, _StoreStub(tight))  # type: ignore[arg-type]
 
     spread_minutes = [1080, 1140, 1200, 1260, 1320, 1110, 1230, 1290]
     spread_timestamps = [
@@ -451,7 +456,7 @@ async def test_lighting_analyzer_confidence_tight_vs_spread():
         _lighting(minute=minute, ts=ts)
         for minute, ts in zip(spread_minutes, spread_timestamps, strict=True)
     ]
-    spread_p = await analyzer.analyze(_StoreStub(spread))  # type: ignore[arg-type]
+    spread_p = await _analyze_proposals(analyzer, _StoreStub(spread))  # type: ignore[arg-type]
 
     assert tight_p == []
     assert spread_p == []
@@ -465,8 +470,8 @@ async def test_lighting_analyzer_confidence_rewards_more_evidence():
         _lighting(minute=1200, ts="2026-03-16T08:00:00+00:00") for _ in range(3)
     ]
 
-    minimal_p = await analyzer.analyze(_StoreStub(minimal))  # type: ignore[arg-type]
-    richer_p = await analyzer.analyze(_StoreStub(richer))  # type: ignore[arg-type]
+    minimal_p = await _analyze_proposals(analyzer, _StoreStub(minimal))  # type: ignore[arg-type]
+    richer_p = await _analyze_proposals(analyzer, _StoreStub(richer))  # type: ignore[arg-type]
 
     assert minimal_p == []
     assert richer_p == []
@@ -519,7 +524,7 @@ async def test_lighting_analyzer_promotes_context_conditioned_scene_when_context
             )
         )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal.reaction_type == "context_conditioned_lighting_scene"
@@ -598,7 +603,7 @@ async def test_lighting_analyzer_emits_nothing_when_context_is_weak():
         ),
     ]
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -611,7 +616,7 @@ async def test_lighting_analyzer_skips_minimal_evidence_with_wide_iqr():
         ts = _WEEK1_TS if i < 3 else _WEEK2_TS
         events.append(_lighting(minute=minute, ts=ts))
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert proposals == []
 
@@ -634,7 +639,7 @@ async def test_lighting_analyzer_keeps_wide_iqr_when_evidence_is_richer():
         _lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)
     ]
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert proposals == []
 
@@ -643,7 +648,7 @@ async def test_lighting_analyzer_window_half_min_tight_cluster():
     """Without context signal, no proposal even for tight cluster."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, minute=1200)
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -662,7 +667,7 @@ async def test_lighting_analyzer_window_half_min_spread_cluster():
         "2026-03-16T08:10:00+00:00",
     ]
     evts = [_lighting(minute=minute, ts=ts) for minute, ts in zip(minutes, timestamps, strict=True)]
-    proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -675,7 +680,7 @@ async def test_lighting_analyzer_ignores_non_user_source():
     """Events with source != 'user' are excluded."""
     analyzer = LightingPatternAnalyzer()
     events = _multi_week_events(3, 2, source="heima")
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -694,7 +699,7 @@ async def test_lighting_analyzer_ignores_invalid_action():
                 data={"entity_id": "light.living_main", "room_id": "living", "action": "dim"},
             )
         )
-    proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -713,14 +718,14 @@ async def test_lighting_analyzer_ignores_missing_entity_id():
                 data={"room_id": "living", "action": "on"},  # no entity_id
             )
         )
-    proposals = await analyzer.analyze(_StoreStub(evts))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(evts))  # type: ignore[arg-type]
     assert proposals == []
 
 
 async def test_lighting_analyzer_empty_store():
     """Empty event store → no proposals."""
     analyzer = LightingPatternAnalyzer()
-    proposals = await analyzer.analyze(_StoreStub([]))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub([]))  # type: ignore[arg-type]
     assert proposals == []
 
 
@@ -739,5 +744,5 @@ async def test_lighting_analyzer_description_contains_room_and_weekday():
         room_id="bedroom",
         weekday=6,
     )
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
     assert proposals == []

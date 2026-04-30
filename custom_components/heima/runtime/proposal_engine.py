@@ -10,10 +10,10 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .analyzers.base import IPatternAnalyzer, ReactionProposal
+from .analyzers.base import ReactionProposal
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
-from .plugin_contracts import BehaviorFinding
+from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,18 +57,18 @@ class ProposalEngine:
             version=self.STORAGE_VERSION,
             key=self.STORAGE_KEY,
         )
-        self._analyzers: list[IPatternAnalyzer] = []
+        self._analyzers: list[IBehaviorAnalyzer] = []
         self._proposals: list[ReactionProposal] = []
         self._load_errors = 0
         self._last_load_proposal_count = 0
         self._last_analyzer_failures = 0
         self._last_analyzer_output_errors = 0
 
-    def register_analyzer(self, analyzer: IPatternAnalyzer) -> None:
+    def register_analyzer(self, analyzer: IBehaviorAnalyzer) -> None:
         self._analyzers.append(analyzer)
 
     def set_analyzers(
-        self, analyzers: list[IPatternAnalyzer] | tuple[IPatternAnalyzer, ...]
+        self, analyzers: list[IBehaviorAnalyzer] | tuple[IBehaviorAnalyzer, ...]
     ) -> None:
         self._analyzers = list(analyzers)
 
@@ -250,11 +250,9 @@ class ProposalEngine:
 
     @staticmethod
     def _proposal_from_analyzer_output(value: object) -> ReactionProposal | None:
-        if isinstance(value, ReactionProposal):
-            return value
         if not isinstance(value, BehaviorFinding):
             return None
-        if value.kind not in {"pattern", "proposal", "activity"}:
+        if value.kind != "pattern":
             return None
         if isinstance(value.payload, ReactionProposal):
             return value.payload

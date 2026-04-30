@@ -19,6 +19,11 @@ class _StoreStub:
         return [e for e in self._events if event_type is None or e.event_type == event_type]
 
 
+async def _analyze_proposals(analyzer, store):  # noqa: ANN001
+    findings = await analyzer.analyze(store)  # type: ignore[arg-type]
+    return [finding.payload for finding in findings]
+
+
 def _ctx(
     *,
     weekday: int,
@@ -106,7 +111,7 @@ async def test_security_presence_simulation_analyzer_emits_home_scoped_proposal(
         + _multi_week("kitchen", "light.kitchen_main", "on", 0, 1180)
     )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert len(proposals) == 1
     proposal = proposals[0]
@@ -146,7 +151,7 @@ async def test_security_presence_simulation_analyzer_excludes_vacation_events():
         ]
     )
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert len(proposals) == 1
     cfg = proposals[0].suggested_reaction_config
@@ -158,6 +163,6 @@ async def test_security_presence_simulation_analyzer_requires_sufficient_profile
     analyzer = SecurityPresenceSimulationAnalyzer()
     events = _multi_week("living", "light.living_main", "on", 0, 1135)
 
-    proposals = await analyzer.analyze(_StoreStub(events))  # type: ignore[arg-type]
+    proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
 
     assert proposals == []

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..event_store import EventStore, HeimaEvent
-from ..plugin_contracts import BehaviorFinding
+from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import PresenceLearningPolicy
@@ -42,8 +42,7 @@ class PresencePatternAnalyzer:
         del snapshot_store
         proposals = await self._analyze_proposals(event_store)
         return [
-            BehaviorFinding(
-                kind="pattern",
+            pattern_finding(
                 analyzer_id=self.analyzer_id,
                 description=proposal.description,
                 confidence=proposal.confidence,

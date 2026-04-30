@@ -10,7 +10,7 @@ from .event_store import EventStore
 from .state_store import CanonicalState
 
 DomainResult = Any
-BehaviorFindingKind = Literal["pattern", "proposal", "activity", "anomaly", "correlation"]
+BehaviorFindingKind = Literal["pattern", "activity", "anomaly", "correlation"]
 
 
 @dataclass(frozen=True)
@@ -34,9 +34,18 @@ class BehaviorFinding:
     confidence: float
     payload: Any
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate legacy read access to the payload during analyzer migration."""
-        return getattr(self.payload, name)
+
+def pattern_finding(
+    *, analyzer_id: str, description: str, confidence: float, payload: Any
+) -> BehaviorFinding:
+    """Build a pattern finding for a ReactionProposal payload."""
+    return BehaviorFinding(
+        kind="pattern",
+        analyzer_id=analyzer_id,
+        description=description,
+        confidence=confidence,
+        payload=payload,
+    )
 
 
 @runtime_checkable

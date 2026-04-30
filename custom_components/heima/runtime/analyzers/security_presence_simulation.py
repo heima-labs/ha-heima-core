@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..event_store import EventStore
+from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal
 from .learning_diagnostics import build_learning_diagnostics
 from .policy import SecurityPresenceSimulationLearningPolicy
@@ -60,7 +61,24 @@ class SecurityPresenceSimulationAnalyzer:
         self.min_weeks = int(self.policy.min_weeks)
         self.min_occurrences = int(self.policy.min_occurrences)
 
-    async def analyze(self, event_store: EventStore) -> list[ReactionProposal]:
+    async def analyze(
+        self,
+        event_store: EventStore,
+        snapshot_store: Any | None = None,
+    ) -> list[BehaviorFinding]:
+        del snapshot_store
+        proposals = await self._analyze_proposals(event_store)
+        return [
+            pattern_finding(
+                analyzer_id=self.analyzer_id,
+                description=proposal.description,
+                confidence=proposal.confidence,
+                payload=proposal,
+            )
+            for proposal in proposals
+        ]
+
+    async def _analyze_proposals(self, event_store: EventStore) -> list[ReactionProposal]:
         raw = await event_store.async_query(event_type="lighting")
         events = [event for event in raw if _is_security_presence_source_event(event)]
         if not events:
