@@ -88,7 +88,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
 | C | IInvariantCheck | `DONE` | A |
 | D | InferenceEngine v2 (base) | `DONE` | A |
-| E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
+| E | OutcomeTracker + Feedback Loop | `IN PROGRESS` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
 | G | ActivityDomain | `DONE` | A, D |
 | H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
@@ -99,17 +99,18 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phase:** Phase G — ActivityDomain.
-**Active phase:** None. Next phase must be agreed before implementation.
+**Active phase:** Phase E — OutcomeTracker + Feedback Loop. Next slice must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase G results and agree the next phase before implementation.
+Review Phase E1 results and agree the Phase E2 plan before implementation. Do not wire runtime
+reaction outcomes, learning feedback, or degradation proposals until the next slice plan is agreed.
 
 ### Current Working Notes
 
-- Current slice: Phase G4 — complete.
-- Status: ActivityDomain is wired into the runtime cycle, activity signals feed ActivityDomain,
-  and snapshots persist detected activities.
+- Current slice: Phase E1 — complete.
+- Status: OutcomeTracker foundation is implemented and tested in memory only. No engine wiring,
+  learning feedback, or degradation proposal submission has been added yet.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -498,13 +499,31 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 | `proposal_engine.py` | Add `submit()` entry point for tracker-triggered degradation proposals | §12.4 |
 | `coordinator.py` | Wire `OutcomeTracker` |
 
+### Slice plan
+
+- [x] E1 — OutcomeTracker foundation:
+  - Create `OutcomeTracker`, `OutcomeSpec`, `PendingVerification`, and `OutcomeRecord`.
+  - Support registering pending verifications, resolving positive outcomes, resolving timeout
+    negatives, tracking consecutive negative streaks, and diagnostics.
+  - Keep this slice synchronous, in-memory, and not wired into the engine.
+- [ ] E2 — Reaction contract:
+  - Add `outcome_spec: OutcomeSpec | None` to reactions that can be verified.
+  - Keep reaction behavior unchanged when no `outcome_spec` is present.
+- [ ] E3 — Runtime wiring:
+  - Register pending verifications when reaction-originated apply steps are fired.
+  - Call `OutcomeTracker.check_pending()` after apply using current cycle observations.
+- [ ] E4 — Feedback and degradation proposal:
+  - Feed outcome records to learning backend.
+  - Emit at most one degradation `ReactionProposal` after five consecutive negatives until
+    user resolution.
+
 ### Acceptance criteria
 
 - [ ] Positive outcome (entity state matches expected within timeout) → recorded
 - [ ] Negative outcome (timeout, no match) → degradation proposal emitted
 - [ ] `check_pending()` is synchronous and completes in O(pending count)
-- [ ] Tests: positive outcome, negative outcome, timeout policy
-- [ ] All 660 tests pass
+- [x] Tests: positive outcome, negative outcome, timeout policy
+- [x] All 1055 tests pass
 
 ---
 
