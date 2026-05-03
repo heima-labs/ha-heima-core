@@ -31,7 +31,6 @@ from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.finding_router import FindingRouter
 from .runtime.inference import (
-    ApprovalStore,
     HeatingPreferenceModule,
     SnapshotStore,
     WeekdayStateModule,
@@ -115,7 +114,6 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             anomaly_handler=self._async_handle_anomaly_finding,
         )
         self._house_snapshot_store = SnapshotStore(hass)
-        self._approval_store = ApprovalStore(hass)
         self._weekday_module = WeekdayStateModule()
         self._heating_module = HeatingPreferenceModule()
         self.engine.set_snapshot_store(self._house_snapshot_store)
@@ -168,7 +166,6 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         summary, changed = await self._async_reconcile_ha_backed_objects()
         await self._event_store.async_load()
         await self._house_snapshot_store.async_load()
-        await self._approval_store.async_load()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         if changed:

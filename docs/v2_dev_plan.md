@@ -72,7 +72,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | 6 | Core domains (People, Occupancy, **Activity**, HouseState) are NOT plugins. Fixed order. |
 | 7 | `IInvariantCheck` must not read EventStore or SnapshotStore. O(1) only. |
 | 8 | `InferenceSignal` objects are additive hints. They never override user overrides or safety guards. |
-| 9 | All persistent stores use HA `Store`. Keys: `heima_snapshots`, `heima_inference_approvals`. |
+| 9 | All persistent stores use HA `Store`. Current Phase D key: `heima_snapshots`. Approval persistence key `heima_inference_approvals` is reserved for Phase F. |
 | 10 | Phase A is behavior-preserving: zero observable behavior change, all 660 tests green. |
 | 11 | Time is context, not trigger. Evaluation is driven by state changes + 300s fallback. |
 | 12 | `Activity.context: dict[str, Any]` is the only forward-compatibility hook on Activity. Keys namespaced by contributor. |
@@ -117,7 +117,8 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - TTL expiry: `age_s = (now - emit_time).total_seconds() > signal.ttl_s` → dropped.
   - Conflict WARNING threshold: confidence >= 0.60 AND different predicted values.
   - `_importance()` maps: 0.40-0.60 → OBSERVE, 0.60-0.80 → SUGGEST, >0.80 → ASSERT.
-  - `ApprovalStore` is a stub (always returns unapproved); full implementation in Phase F.
+  - `ApprovalStore` is intentionally not implemented in Phase D; full implementation belongs to
+    Phase F where approvals have concrete proposal lifecycle behavior.
   - WeekdayStateModule/HeatingPreferenceModule precompute their model in `analyze()` so
     `infer()` is a pure dict lookup (< 1ms verified in tests).
 - Files read:
@@ -225,11 +226,10 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - [x] Add `SnapshotStore` persisted with HA Store key `heima_snapshots`.
   - [x] Enforce max 10,000 records, 90-day TTL, and semantic write-on-change deduplication.
   - [x] Add tests for load/save, pruning, TTL, and dedup.
-- D3 — Learning Modules + SignalRouter + ApprovalStore stub:
+- D3 — Learning Modules + SignalRouter:
   - [x] Add `runtime/inference/modules/weekday_state.py` — `WeekdayStateModule`.
   - [x] Add `runtime/inference/modules/heating_preference.py` — `HeatingPreferenceModule`.
   - [x] Add `runtime/inference/router.py` — `SignalRouter`.
-  - [x] Add `runtime/inference/approval_store.py` — `ApprovalStore` stub.
   - [x] Add tests: modules (importance ranges, min support, timing < 1ms), router (grouping,
     expiry, sorting, conflict warning).
 - D4 — Engine wiring:
@@ -238,8 +238,8 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
     `SnapshotStore.async_append_if_changed()`.
   - [x] Add `signals: list[Any] | None = None` stub param to `OccupancyDomain.compute()` (spec §10.8).
     LightingDomain and HeatingDomain already had the param from Phase A.
-  - [x] Wire `SignalRouter`, `SnapshotStore`, `WeekdayStateModule`, `HeatingPreferenceModule`,
-    `ApprovalStore` in `coordinator.py`.
+  - [x] Wire `SignalRouter`, `SnapshotStore`, `WeekdayStateModule`, and
+    `HeatingPreferenceModule` in `coordinator.py`.
   - [x] `_cancel_analyze_tick()` called in `async_shutdown()` — verified no lingering timers.
 
 #### Phase A slices 2/3 implementation decision
@@ -395,7 +395,6 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 | `runtime/inference/signals.py` | `Importance`, `InferenceSignal` hierarchy, `ActivitySignal` | §10.3 |
 | `runtime/inference/snapshot_store.py` | `HouseSnapshot` (with `detected_activities`), `SnapshotStore` | §10.1 |
 | `runtime/inference/router.py` | `SignalRouter` | §10.7 |
-| `runtime/inference/approval_store.py` | `ApprovalStore` (stub for Phase F) | §10.9 |
 | `runtime/inference/modules/weekday_state.py` | `WeekdayStateModule` | §10.6 |
 | `runtime/inference/modules/heating_preference.py` | `HeatingPreferenceModule` | §10.6 |
 
@@ -472,7 +471,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 | File | Change |
 |---|---|
-| `runtime/inference/approval_store.py` | Full implementation (was stub in Phase D) | §10.9 |
+| `runtime/inference/approval_store.py` | Full implementation | §10.9 |
 | `runtime/domains/house_state.py` | Consume `HouseStateSignal`; approval gate | §10.9 |
 | `config_flow/` | `house_state_learned_context` proposal type review screen |
 
