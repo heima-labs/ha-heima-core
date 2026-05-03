@@ -98,18 +98,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase G — ActivityDomain, slice G1.
+**Last completed phase:** Phase G — ActivityDomain, slice G2.
 **Active phase:** None. Next Phase G slice must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review G1 results and agree the next Phase G slice before implementation.
+Review G2 results and agree the next Phase G slice before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase G1 — complete.
-- Status: ActivityDomain foundation is implemented without engine wiring or built-in detector
-  bindings.
+- Current slice: Phase G2 — complete.
+- Status: primitive power/media activity detectors are implemented without engine wiring or config
+  flow bindings.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -130,6 +130,15 @@ Review G1 results and agree the next Phase G slice before implementation.
   - `custom_components/heima/runtime/snapshot.py`
   - `custom_components/heima/runtime/domains/activity_domain.py`
   - `tests/test_activity_domain.py`
+  - `custom_components/heima/runtime/activity_detectors/__init__.py`
+  - `custom_components/heima/runtime/activity_detectors/power_media.py`
+  - `custom_components/heima/runtime/activity_detectors/stove.py`
+  - `custom_components/heima/runtime/activity_detectors/oven.py`
+  - `custom_components/heima/runtime/activity_detectors/tv.py`
+  - `custom_components/heima/runtime/activity_detectors/pc.py`
+  - `custom_components/heima/runtime/activity_detectors/washing.py`
+  - `custom_components/heima/runtime/activity_detectors/dishwasher.py`
+  - `tests/test_activity_detectors.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -191,6 +200,10 @@ Review G1 results and agree the next Phase G slice before implementation.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1007 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_activity_domain.py tests/test_activity_detectors.py -q` — passed, 38 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1033 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
@@ -203,7 +216,7 @@ Review G1 results and agree the next Phase G slice before implementation.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss G2 detector scope before adding built-in detectors.
+- Next concrete step: discuss G3 shower detector and activity binding config scope.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -229,8 +242,8 @@ Review G1 results and agree the next Phase G slice before implementation.
   - [x] Add tests for all hysteresis transitions, candidate/active result filtering, canonical keys,
     duplicate detector rejection, reset, diagnostics, and composite signal merge.
 - G2 — Primitive power/media detectors:
-  - Add stove, oven, tv, pc, washing machine, and dishwasher detectors.
-  - Keep detector bindings explicit and inactive when unbound.
+  - [x] Add stove, oven, tv, pc, washing machine, and dishwasher detectors.
+  - [x] Keep detector bindings explicit and inactive when unbound.
 - G3 — Shower detector and activity bindings config:
   - Add humidity/rate-of-change shower detector.
   - Add `activity_bindings` options schema and defaults.
