@@ -90,7 +90,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | D | InferenceEngine v2 (base) | `DONE` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
-| G | ActivityDomain | `NOT STARTED` | A, D |
+| G | ActivityDomain | `IN PROGRESS` | A, D |
 | H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
 | I | Event-Driven Trigger | `NOT STARTED` | G |
 
@@ -98,19 +98,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase D — complete (D1/D2/D3/D4 all done).
-**Active phase:** None. Phase D fully complete. Next phase: E (OutcomeTracker + Feedback Loop).
+**Last completed phase:** Phase G — ActivityDomain, slice G1.
+**Active phase:** None. Next Phase G slice must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Review Phase E/G and confirm with developer before implementing.
+Review G1 results and agree the next Phase G slice before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase D4 — complete.
-- Status: Engine wiring complete. `_collect_signals()` + `_record_snapshot_if_changed()` wired into
-  `async_evaluate()`. `WeekdayStateModule` and `HeatingPreferenceModule` run `analyze()` every 6h.
-  No runtime behavior changes. All 995 tests green.
+- Current slice: Phase G1 — complete.
+- Status: ActivityDomain foundation is implemented without engine wiring or built-in detector
+  bindings.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -129,6 +128,8 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - `custom_components/heima/runtime/domains/security.py`
   - `custom_components/heima/runtime/contracts.py`
   - `custom_components/heima/runtime/snapshot.py`
+  - `custom_components/heima/runtime/domains/activity_domain.py`
+  - `tests/test_activity_domain.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -162,6 +163,8 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - `custom_components/heima/runtime/inference/signals.py`
   - `custom_components/heima/runtime/inference/snapshot_store.py`
   - `tests/test_inference_foundation.py`
+  - `custom_components/heima/runtime/domains/activity_domain.py`
+  - `tests/test_activity_domain.py`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
   - `kind="proposal"` is not supported.
@@ -184,6 +187,10 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - `.venv/bin/python -m pytest tests/ -q` — passed, 963 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_activity_domain.py -q` — passed, 12 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1007 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
@@ -196,7 +203,7 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss the next Phase D slice before runtime wiring.
+- Next concrete step: discuss G2 detector scope before adding built-in detectors.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -210,6 +217,27 @@ Start Phase E or proceed to Phase G (ActivityDomain) depending on priority. Revi
     `anomaly_sensor_stuck_threshold_s=86400`, `anomaly_heating_empty_threshold_s=1800`,
     `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600`.
 - Open decisions: none.
+
+#### Phase G slice plan
+
+- G1 — ActivityDomain foundation:
+  - [x] Add `Activity`, `ActivityResult`, `ActivityDetection`, `ActivityHysteresisState`, and
+    `ActivityDomain`.
+  - [x] Add `IActivityDetector` protocol.
+  - [x] Implement §7.5 hysteresis transitions and canonical keys:
+    `activity.active_names`, `activity.candidate_names`, `activity.last_started`.
+  - [x] Add tests for all hysteresis transitions, candidate/active result filtering, canonical keys,
+    duplicate detector rejection, reset, diagnostics, and composite signal merge.
+- G2 — Primitive power/media detectors:
+  - Add stove, oven, tv, pc, washing machine, and dishwasher detectors.
+  - Keep detector bindings explicit and inactive when unbound.
+- G3 — Shower detector and activity bindings config:
+  - Add humidity/rate-of-change shower detector.
+  - Add `activity_bindings` options schema and defaults.
+- G4 — Engine and snapshot wiring:
+  - Insert ActivityDomain between OccupancyDomain and HouseStateDomain.
+  - Populate `InferenceContext.previous_activity_names` from CanonicalState.
+  - Populate `HouseSnapshot.detected_activities` from ActivityResult.
 
 #### Phase D slice plan
 

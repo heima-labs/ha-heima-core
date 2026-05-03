@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from .domain_result_bag import DomainResultBag
 from .event_store import EventStore
 from .state_store import CanonicalState
+
+if TYPE_CHECKING:
+    from .domains.activity_domain import ActivityDetection
+    from .normalization import NormalizedObservation
 
 DomainResult = Any
 BehaviorFindingKind = Literal["pattern", "activity", "anomaly", "correlation"]
@@ -125,6 +129,39 @@ class IInvariantCheck(Protocol):
         domain_results: DomainResultBag,
     ) -> InvariantViolation | None:
         """Return a violation when the invariant condition is currently active."""
+        ...
+
+
+@runtime_checkable
+class IActivityDetector(Protocol):
+    """Primitive activity detector evaluated by ActivityDomain."""
+
+    @property
+    def activity_name(self) -> str:
+        """Unique activity name."""
+        ...
+
+    @property
+    def room_id(self) -> str | None:
+        """Room scope, or None for house-level."""
+        ...
+
+    @property
+    def candidate_period_s(self) -> float:
+        """Seconds the condition must hold before confirmation."""
+        ...
+
+    @property
+    def grace_period_s(self) -> float:
+        """Seconds activity remains active after condition disappears."""
+        ...
+
+    def detect(
+        self,
+        observation: "NormalizedObservation",
+        canonical_state: CanonicalState,
+    ) -> "ActivityDetection | None":
+        """Return a primitive activity detection when the condition is currently met."""
         ...
 
 
