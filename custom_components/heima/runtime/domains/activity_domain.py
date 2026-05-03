@@ -93,8 +93,9 @@ class ActivityDomain:
         active: list[Activity] = []
         candidates: list[Activity] = []
 
+        observations = observation if isinstance(observation, list | tuple) else [observation]
         for detector in self._detectors.values():
-            detection = detector.detect(observation, canonical_state)
+            detection = self._detect_first(detector, observations, canonical_state)
             state = self._states[detector.activity_name]
             self._advance_state(detector, state, detection, now)
             if state.phase == "active":
@@ -130,6 +131,27 @@ class ActivityDomain:
                 for name, state in self._states.items()
             },
         }
+
+    def detector_entity_ids(self) -> tuple[str, ...]:
+        """Return configured source entity IDs for primitive detectors."""
+        entity_ids: list[str] = []
+        for detector in self._detectors.values():
+            entity_id = getattr(detector, "entity_id", None)
+            if isinstance(entity_id, str) and entity_id.strip():
+                entity_ids.append(entity_id.strip())
+        return tuple(sorted(entity_ids))
+
+    @staticmethod
+    def _detect_first(
+        detector: IActivityDetector,
+        observations: list[Any] | tuple[Any, ...],
+        canonical_state: CanonicalState,
+    ) -> ActivityDetection | None:
+        for observation in observations:
+            detection = detector.detect(observation, canonical_state)
+            if detection is not None:
+                return detection
+        return None
 
     def _advance_state(
         self,

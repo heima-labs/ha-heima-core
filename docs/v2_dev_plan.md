@@ -90,7 +90,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | D | InferenceEngine v2 (base) | `DONE` | A |
 | E | OutcomeTracker + Feedback Loop | `NOT STARTED` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
-| G | ActivityDomain | `IN PROGRESS` | A, D |
+| G | ActivityDomain | `DONE` | A, D |
 | H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
 | I | Event-Driven Trigger | `NOT STARTED` | G |
 
@@ -98,18 +98,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase G — ActivityDomain, slice G3.
-**Active phase:** None. Next Phase G slice must be agreed before implementation.
+**Last completed phase:** Phase G — ActivityDomain.
+**Active phase:** None. Next phase must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review G3 results and agree the next Phase G slice before implementation.
+Review Phase G results and agree the next phase before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase G3 — complete.
-- Status: shower detector and runtime activity binding normalization are implemented without engine
-  wiring.
+- Current slice: Phase G4 — complete.
+- Status: ActivityDomain is wired into the runtime cycle, activity signals feed ActivityDomain,
+  and snapshots persist detected activities.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -142,6 +142,7 @@ Review G3 results and agree the next Phase G slice before implementation.
   - `custom_components/heima/runtime/activity_detectors/shower.py`
   - `custom_components/heima/runtime/activity_detectors/config.py`
   - `tests/test_activity_bindings_and_shower.py`
+  - `tests/test_activity_engine_wiring.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -211,6 +212,10 @@ Review G3 results and agree the next Phase G slice before implementation.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1042 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_activity_domain.py tests/test_activity_detectors.py tests/test_activity_bindings_and_shower.py tests/test_activity_engine_wiring.py -q` — passed, 52 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1047 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
@@ -223,7 +228,7 @@ Review G3 results and agree the next Phase G slice before implementation.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss G4 engine/snapshot wiring scope.
+- Next concrete step: discuss Phase E or Phase F/H sequencing before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -255,9 +260,9 @@ Review G3 results and agree the next Phase G slice before implementation.
   - [x] Add humidity/rate-of-change shower detector.
   - [x] Add `activity_bindings` runtime defaults, normalization, and detector builder.
 - G4 — Engine and snapshot wiring:
-  - Insert ActivityDomain between OccupancyDomain and HouseStateDomain.
-  - Populate `InferenceContext.previous_activity_names` from CanonicalState.
-  - Populate `HouseSnapshot.detected_activities` from ActivityResult.
+  - [x] Insert ActivityDomain between OccupancyDomain and HouseStateDomain.
+  - [x] Populate `InferenceContext.previous_activity_names` from CanonicalState.
+  - [x] Populate `HouseSnapshot.detected_activities` from ActivityResult.
 
 #### Phase D slice plan
 
@@ -560,7 +565,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 | `runtime/plugin_contracts.py` | Add `IActivityDetector` Protocol | §7.4 |
 | `runtime/engine.py` | Insert `ActivityDomain` between OccupancyDomain and HouseStateDomain in core evaluation order; populate `InferenceContext.previous_activity_names` from CanonicalState | §7.3 |
 | `runtime/inference/snapshot_store.py` | Populate `HouseSnapshot.detected_activities` from `ActivityResult` | §10.1 |
-| `config_flow/` | Add `activity_bindings` section (maps detector names to HA entity IDs) | §7.3 |
+| `runtime/activity_detectors/config.py`, `const.py` | Add `activity_bindings` defaults and normalization (maps detector names to HA entity IDs) | §7.3 |
 
 ### Hysteresis state machine (implement exactly as spec §7.5)
 
@@ -581,13 +586,13 @@ grace → absent      : grace_period_s elapsed without signal
 
 ### Acceptance criteria
 
-- [ ] All 5 hysteresis transitions tested
-- [ ] `ActivityResult.active` contains only phase=ACTIVE detectors
-- [ ] `ActivityResult.candidates` contains only phase=CANDIDATE detectors
-- [ ] `CanonicalState` keys written correctly each cycle
-- [ ] `InferenceContext.previous_activity_names` reads from CanonicalState (one-cycle lag)
-- [ ] `HouseSnapshot.detected_activities` populated
-- [ ] All 660 existing tests pass; new tests ≥ 20
+- [x] All 5 hysteresis transitions tested
+- [x] `ActivityResult.active` contains only phase=ACTIVE detectors
+- [x] `ActivityResult.candidates` contains only phase=CANDIDATE detectors
+- [x] `CanonicalState` keys written correctly each cycle
+- [x] `InferenceContext.previous_activity_names` reads from CanonicalState (one-cycle lag)
+- [x] `HouseSnapshot.detected_activities` populated
+- [x] All tests pass; new tests ≥ 20
 
 ---
 

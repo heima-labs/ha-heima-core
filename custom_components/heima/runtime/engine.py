@@ -19,6 +19,7 @@ from ..const import (
     DEFAULT_OCCUPANCY_MISMATCH_MIN_DERIVED_ROOMS,
     DEFAULT_OCCUPANCY_MISMATCH_PERSIST_S,
     DEFAULT_OCCUPANCY_MISMATCH_POLICY,
+    OPT_ACTIVITY_BINDINGS,
     OPT_CALENDAR,
     OPT_HEATING,
     OPT_HOUSE_SIGNALS,
@@ -37,11 +38,13 @@ from ..const import (
 from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
+from .activity_detectors import build_activity_detectors
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
+from .domains.activity_domain import ActivityDomain
 from .domains.calendar import CalendarDomain
 from .domains.events import EventsDomain
 from .domains.heating import HeatingDomain, HeatingDomainResult
@@ -56,6 +59,7 @@ from .domains.security_camera_evidence import (
 )
 from .external_context import ExternalContext, ExternalContextNormalizer
 from .inference import (
+    ActivitySignal,
     HeatingSignal,
     HouseSnapshot,
     ILearningModule,
@@ -72,6 +76,7 @@ from .invariants import (
     SecurityPresenceMismatch,
     SensorStuck,
 )
+from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .reactions import (
@@ -118,6 +123,18 @@ def _constraint_blocker(step: "ApplyStep", constraints: set[str]) -> str:
     return ""
 
 
+def _entity_domain(entity_id: str) -> str:
+    return str(entity_id or "").split(".", 1)[0] or "unknown"
+
+
+def _tuple_of_strings(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.split(",") if item.strip())
+    if isinstance(value, list | tuple | set):
+        return tuple(sorted(str(item).strip() for item in value if str(item).strip()))
+    return ()
+
+
 class HeimaEngine:
     """Core runtime engine with canonical compute pipeline."""
 
@@ -141,6 +158,7 @@ class HeimaEngine:
         )
         self._people_domain = PeopleDomain(hass, self._normalizer)
         self._occupancy_domain = OccupancyDomain(hass, self._normalizer)
+        self._activity_domain = ActivityDomain(event_callback=self._queue_event)
         self._calendar_domain = CalendarDomain(hass)
         self._house_state_domain = HouseStateDomain(hass, self._normalizer)
         self._lighting_domain = LightingDomain(hass, self._normalizer)
@@ -166,6 +184,7 @@ class HeimaEngine:
         self._signal_router = SignalRouter()
         self._learning_modules: list[ILearningModule] = []
         self._house_snapshot_store: SnapshotStore | None = None
+        self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
     @property
@@ -314,6 +333,7 @@ class HeimaEngine:
         self._migrate_legacy_reaction_types()
         self._options = HeimaOptions.from_entry(entry)
         self._ext_ctx_normalizer.update_config(dict(entry.options))
+        self._configure_activity_detectors(dict(entry.options))
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
@@ -355,6 +375,7 @@ class HeimaEngine:
             self._security_camera_evidence_provider.reset()
             self._people_domain.reset()
             self._occupancy_domain.reset()
+            self._activity_domain.reset()
             self._calendar_domain.reset()
             self._house_state_domain.reset()
             self._lighting_domain.reset()
@@ -366,6 +387,8 @@ class HeimaEngine:
         changed = set(changed_keys)
         if OPT_PEOPLE_ANON in changed:
             self._people_domain.reset()
+        if OPT_ACTIVITY_BINDINGS in changed:
+            self._configure_activity_detectors(dict(self._entry.options))
         if OPT_CALENDAR in changed:
             self._calendar_domain.reset()
         if changed & {OPT_HOUSE_SIGNALS, OPT_HOUSE_STATE_CONFIG, OPT_CALENDAR}:
@@ -413,6 +436,13 @@ class HeimaEngine:
         self._invariant_checks.append(check)
         self._invariant_states.setdefault(check.check_id, InvariantCheckState())
         _LOGGER.debug("Heima invariant check registered: %s", check.check_id)
+
+    def _configure_activity_detectors(self, options: dict[str, Any]) -> None:
+        """Rebuild primitive activity detectors from activity binding options."""
+        self._activity_domain.reset()
+        self._activity_domain = ActivityDomain(event_callback=self._queue_event)
+        for detector in build_activity_detectors(options.get(OPT_ACTIVITY_BINDINGS, {})):
+            self._activity_domain.register_detector(detector)
 
     def builtin_domain_plugins(self) -> list[IDomainPlugin]:
         """Return built-in domain plugins owned by this engine."""
@@ -845,6 +875,20 @@ class HeimaEngine:
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
 
+        now_utc = datetime.now(timezone.utc)
+        signal_buckets = self._collect_signals(
+            anyone_home=anyone_home,
+            named_present=tuple(sorted(people_result.people_home_list)),
+            occupied_rooms=occupied_rooms,
+            now_utc=now_utc,
+        )
+        activity_signals = signal_buckets.get(ActivitySignal, [])
+        activity_result = self._activity_domain.evaluate(
+            self._activity_observations(),
+            self._state,
+            activity_signals=activity_signals,
+        )
+
         self._house_state_domain._normalizer = self._normalizer  # keep in sync
         house_signal_entities = self._configured_house_signal_entities()
         hs_result = self._house_state_domain.compute(
@@ -863,15 +907,9 @@ class HeimaEngine:
             DomainResultBag.empty()
             .with_result("people", people_result)
             .with_result("occupancy", occ_result)
+            .with_result("activity", activity_result)
             .with_result("calendar", calendar_result)
             .with_result("house_state", hs_result)
-        )
-        now_utc = datetime.now(timezone.utc)
-        signal_buckets = self._collect_signals(
-            anyone_home=anyone_home,
-            named_present=tuple(sorted(people_result.people_home_list)),
-            occupied_rooms=occupied_rooms,
-            now_utc=now_utc,
         )
         domain_results = self._compute_domain_plugins(domain_results, signal_buckets=signal_buckets)
         self._last_domain_results = domain_results
@@ -984,6 +1022,37 @@ class HeimaEngine:
             results = results.with_result(plugin.domain_id, plugin_result)
         return results
 
+    def _activity_observations(self) -> list[NormalizedObservation]:
+        observations: list[NormalizedObservation] = []
+        for entity_id in self._activity_domain.detector_entity_ids():
+            state = self._hass.states.get(entity_id)
+            if state is None:
+                observations.append(
+                    NormalizedObservation(
+                        kind=_entity_domain(entity_id),
+                        state="unknown",
+                        confidence=0,
+                        raw_state=None,
+                        source_entity_id=entity_id,
+                        available=False,
+                        reason="entity_missing",
+                    )
+                )
+                continue
+            raw_state = str(getattr(state, "state", "") or "")
+            observations.append(
+                NormalizedObservation(
+                    kind=_entity_domain(entity_id),
+                    state=raw_state,
+                    confidence=100,
+                    raw_state=raw_state,
+                    source_entity_id=entity_id,
+                    available=raw_state not in {"unknown", "unavailable"},
+                    reason="activity_binding",
+                )
+            )
+        return observations
+
     def _collect_signals(
         self,
         *,
@@ -1005,7 +1074,9 @@ class HeimaEngine:
             previous_house_state=str(self._snapshot.house_state or "unknown"),
             previous_heating_setpoint=self._snapshot.heating_setpoint,
             previous_lighting_scenes=dict(self._snapshot.lighting_intents or {}),
-            previous_activity_names=(),
+            previous_activity_names=_tuple_of_strings(
+                self._state.get_sensor("activity.active_names")
+            ),
         )
         paired: list[tuple[InferenceSignal, datetime]] = []
         for module in self._learning_modules:
@@ -1029,7 +1100,7 @@ class HeimaEngine:
             anyone_home=snapshot.anyone_home,
             named_present=named_present,
             room_occupancy=room_occupancy,
-            detected_activities=(),
+            detected_activities=_tuple_of_strings(self._state.get_sensor("activity.active_names")),
             house_state=snapshot.house_state,
             heating_setpoint=snapshot.heating_setpoint,
             lighting_scenes=dict(snapshot.lighting_intents or {}),
