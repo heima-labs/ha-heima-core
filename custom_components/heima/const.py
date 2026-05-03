@@ -32,6 +32,7 @@ OPT_REACTIONS = "reactions"
 OPT_CALENDAR = "calendar"
 OPT_LEARNING = "learning"
 OPT_EXTERNAL_CONTEXT = "external_context"
+OPT_ACTIVITY_BINDINGS = "activity_bindings"
 
 DEFAULT_CALENDAR_LOOKAHEAD_DAYS = 7
 DEFAULT_CALENDAR_CACHE_TTL_HOURS = 2
@@ -62,6 +63,52 @@ DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
     "relax_exit_min": 10,
     "sleep_requires_media_off": True,
     "sleep_charging_min_count": None,
+}
+
+DEFAULT_ACTIVITY_BINDINGS: dict[str, dict[str, object]] = {
+    "stove_on": {
+        "entity_key": "stove_power_entity",
+        "threshold_w": 200.0,
+        "candidate_period_s": 5.0,
+        "grace_period_s": 30.0,
+    },
+    "oven_on": {
+        "entity_key": "oven_power_entity",
+        "threshold_w": 500.0,
+        "candidate_period_s": 10.0,
+        "grace_period_s": 120.0,
+    },
+    "tv_active": {
+        "entity_key": "tv_entity",
+        "threshold_w": 20.0,
+        "candidate_period_s": 10.0,
+        "grace_period_s": 120.0,
+    },
+    "pc_active": {
+        "entity_key": "pc_power_entity",
+        "threshold_w": 50.0,
+        "candidate_period_s": 30.0,
+        "grace_period_s": 60.0,
+    },
+    "shower_running": {
+        "entity_key": "bathroom_humidity_entity",
+        "humidity_threshold": 65.0,
+        "min_rate_per_min": 0.1,
+        "candidate_period_s": 60.0,
+        "grace_period_s": 300.0,
+    },
+    "washing_machine_running": {
+        "entity_key": "washing_machine_entity",
+        "threshold_w": 200.0,
+        "candidate_period_s": 60.0,
+        "grace_period_s": 300.0,
+    },
+    "dishwasher_running": {
+        "entity_key": "dishwasher_entity",
+        "threshold_w": 200.0,
+        "candidate_period_s": 60.0,
+        "grace_period_s": 300.0,
+    },
 }
 
 # Keys whose change requires a full HA entry reload (entity sets are rebuilt from them).
