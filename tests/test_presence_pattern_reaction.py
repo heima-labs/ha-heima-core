@@ -75,6 +75,13 @@ def test_records_arrival_on_false_to_true_transition():
     assert len(r.arrivals_for_weekday(expected_weekday)) == 1
 
 
+def test_presence_reaction_declares_arrival_outcome_spec():
+    spec = _reaction().outcome_spec
+
+    assert spec.expected_event_type == "presence"
+    assert spec.timeout_s == 1800.0
+
+
 def test_no_arrival_recorded_when_already_home():
     r = _reaction()
     ts = _now_ts()

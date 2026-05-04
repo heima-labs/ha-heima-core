@@ -20,6 +20,10 @@ def test_reaction_id_defaults_to_class_name():
     assert MyReaction().reaction_id == "MyReaction"
 
 
+def test_outcome_spec_defaults_to_none():
+    assert HeimaReaction().outcome_spec is None
+
+
 def test_evaluate_returns_empty_list():
     assert HeimaReaction().evaluate([]) == []
 

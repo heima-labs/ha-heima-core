@@ -103,14 +103,16 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase E1 results and agree the Phase E2 plan before implementation. Do not wire runtime
-reaction outcomes, learning feedback, or degradation proposals until the next slice plan is agreed.
+Review Phase E2 results and agree the Phase E3 runtime wiring plan before implementation. Do not
+wire runtime reaction outcomes, learning feedback, or degradation proposals until the next slice
+plan is agreed.
 
 ### Current Working Notes
 
-- Current slice: Phase E1 — complete.
-- Status: OutcomeTracker foundation is implemented and tested in memory only. No engine wiring,
-  learning feedback, or degradation proposal submission has been added yet.
+- Current slice: Phase E2 — complete.
+- Status: OutcomeTracker foundation and minimal reaction contract are complete. Only
+  `PresencePatternReaction` declares a static outcome spec; `ConsecutiveStateReaction` remains
+  unverified until runtime wiring can derive an observable event safely.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -506,8 +508,13 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
   - Support registering pending verifications, resolving positive outcomes, resolving timeout
     negatives, tracking consecutive negative streaks, and diagnostics.
   - Keep this slice synchronous, in-memory, and not wired into the engine.
-- [ ] E2 — Reaction contract:
-  - Add `outcome_spec: OutcomeSpec | None` to reactions that can be verified.
+- [x] E2 — Reaction contract:
+  - Add default `HeimaReaction.outcome_spec: OutcomeSpec | None` returning `None`.
+  - Add `PresencePatternReaction.outcome_spec` with `expected_event_type="presence"` and
+    `timeout_s=1800`, matching `EventRecorderBehavior` arrival events with
+    `data.transition == "arrive"` for the later E3 matcher.
+  - Keep `ConsecutiveStateReaction` out of E2 because its expected event depends on runtime
+    configuration and is not hardcodable in the class contract.
   - Keep reaction behavior unchanged when no `outcome_spec` is present.
 - [ ] E3 — Runtime wiring:
   - Register pending verifications when reaction-originated apply steps are fired.
@@ -523,7 +530,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 - [ ] Negative outcome (timeout, no match) → degradation proposal emitted
 - [ ] `check_pending()` is synchronous and completes in O(pending count)
 - [x] Tests: positive outcome, negative outcome, timeout policy
-- [x] All 1055 tests pass
+- [x] All 1058 tests pass
 
 ---
 

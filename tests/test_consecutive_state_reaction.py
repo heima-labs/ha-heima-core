@@ -98,6 +98,10 @@ def test_reaction_default_id():
     assert r.reaction_id == "ConsecutiveStateReaction"
 
 
+def test_reaction_has_no_static_outcome_spec():
+    assert _make_reaction().outcome_spec is None
+
+
 def test_reaction_custom_id():
     r = ConsecutiveStateReaction(
         predicate=lambda s: True,

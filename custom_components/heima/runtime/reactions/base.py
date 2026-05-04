@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..contracts import ApplyStep
+from ..outcome_tracker import OutcomeSpec
 from ..snapshot import DecisionSnapshot
 
 
@@ -26,6 +27,11 @@ class HeimaReaction:
     def reaction_id(self) -> str:
         """Stable identifier for this reaction. Defaults to the class name."""
         return self.__class__.__name__
+
+    @property
+    def outcome_spec(self) -> OutcomeSpec | None:
+        """Expected event contract used to verify reaction outcomes."""
+        return None
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         """Return ApplyStep instances to inject into the current plan.

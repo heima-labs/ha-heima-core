@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ApplyStep
+from ..outcome_tracker import OutcomeSpec
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
 
@@ -91,6 +92,10 @@ class PresencePatternReaction(HeimaReaction):
     @property
     def reaction_id(self) -> str:
         return self._reaction_id
+
+    @property
+    def outcome_spec(self) -> OutcomeSpec:
+        return OutcomeSpec(expected_event_type="presence", timeout_s=1800.0)
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         # --- Step 1: detect arrival and learn ---
