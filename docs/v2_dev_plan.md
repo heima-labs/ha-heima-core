@@ -234,7 +234,7 @@ Implement Phase G contracts: `approved_by: Literal["resident", "installer"]` fie
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss Phase E or Phase F/H sequencing before implementation.
+- Next concrete step: implement Phase G contracts (ApprovalStore `approved_by`, `heima.override_approval` service).
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
