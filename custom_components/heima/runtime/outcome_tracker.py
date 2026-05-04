@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from .inference.snapshot_store import HouseSnapshot
@@ -18,6 +18,7 @@ class OutcomeSpec:
 
     expected_event_type: str
     timeout_s: float = 900.0
+    match_data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class PendingVerification:
     expected_within_s: float
     fired_at_ts: float
     snapshot_at_fire: HouseSnapshot
+    match_data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ class OutcomeTracker:
             expected_within_s=timeout_s,
             fired_at_ts=self._now_provider() if fired_at_ts is None else float(fired_at_ts),
             snapshot_at_fire=snapshot_at_fire,
+            match_data=dict(outcome_spec.match_data) if outcome_spec is not None else {},
         )
         self.register_pending(pending)
         return pending
@@ -110,7 +113,10 @@ class OutcomeTracker:
         resolved: list[OutcomeRecord] = []
 
         for reaction_id, pending in list(self._pending.items()):
-            matched_event = events_by_type.get(pending.expected_event_type)
+            matched_event = _first_matching_event(
+                events_by_type.get(pending.expected_event_type, ()),
+                pending.match_data,
+            )
             if matched_event is not None:
                 record = self._resolve(pending, "positive", now, matched_event=matched_event)
             elif now - pending.fired_at_ts >= pending.expected_within_s:
@@ -180,19 +186,34 @@ class OutcomeTracker:
             context={
                 "expected_within_s": pending.expected_within_s,
                 "elapsed_s": max(resolved_at_ts - pending.fired_at_ts, 0.0),
+                "match_data": dict(pending.match_data),
                 "snapshot_at_fire": pending.snapshot_at_fire.as_dict(),
                 "matched_event": _event_payload(matched_event),
             },
         )
 
 
-def _events_by_type(observed_events: Iterable[Any]) -> dict[str, Any]:
-    events_by_type: dict[str, Any] = {}
+def _events_by_type(observed_events: Iterable[Any]) -> dict[str, list[Any]]:
+    events_by_type: dict[str, list[Any]] = {}
     for event in observed_events:
         event_type = _event_type(event)
-        if event_type and event_type not in events_by_type:
-            events_by_type[event_type] = event
+        if event_type:
+            events_by_type.setdefault(event_type, []).append(event)
     return events_by_type
+
+
+def _first_matching_event(events: Iterable[Any], match_data: Mapping[str, Any]) -> Any | None:
+    for event in events:
+        if _event_data_matches(event, match_data):
+            return event
+    return None
+
+
+def _event_data_matches(event: Any, match_data: Mapping[str, Any]) -> bool:
+    if not match_data:
+        return True
+    data = _event_data(event)
+    return all(data.get(key) == value for key, value in match_data.items())
 
 
 def _event_type(event: Any) -> str:
@@ -205,6 +226,14 @@ def _event_type(event: Any) -> str:
     if raw is None:
         raw = getattr(event, "type", "")
     return str(raw) if raw is not None else ""
+
+
+def _event_data(event: Any) -> Mapping[str, Any]:
+    if isinstance(event, Mapping):
+        raw = event.get("data", {})
+        return raw if isinstance(raw, Mapping) else {}
+    raw = getattr(event, "data", {})
+    return raw if isinstance(raw, Mapping) else {}
 
 
 def _event_payload(event: Any | None) -> dict[str, Any] | None:

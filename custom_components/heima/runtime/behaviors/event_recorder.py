@@ -20,12 +20,18 @@ class EventRecorderBehavior(HeimaBehavior):
         self._store = store
         self._context_builder = context_builder
         self._previous_snapshot: DecisionSnapshot | None = None
+        self._cycle_events: list[HeimaEvent] = []
 
     @property
     def behavior_id(self) -> str:
         return "event_recorder"
 
+    @property
+    def cycle_events(self) -> list[HeimaEvent]:
+        return list(self._cycle_events)
+
     def on_snapshot(self, snapshot: DecisionSnapshot) -> None:
+        self._cycle_events = []
         previous = self._previous_snapshot
         self._previous_snapshot = snapshot
         if previous is None:
@@ -45,6 +51,7 @@ class EventRecorderBehavior(HeimaBehavior):
                 data={"room_id": room_id, "transition": "occupied"},
             )
             self._hass.async_create_task(self._store.async_append(event))
+            self._cycle_events.append(event)
         for room_id in sorted(previous_rooms - current_rooms):
             event = HeimaEvent(
                 ts=snapshot.ts,
@@ -55,6 +62,7 @@ class EventRecorderBehavior(HeimaBehavior):
                 data={"room_id": room_id, "transition": "vacant"},
             )
             self._hass.async_create_task(self._store.async_append(event))
+            self._cycle_events.append(event)
 
         if previous.anyone_home != snapshot.anyone_home:
             transition = "arrive" if snapshot.anyone_home else "depart"
@@ -66,6 +74,7 @@ class EventRecorderBehavior(HeimaBehavior):
                 data={"transition": transition},
             )
             self._hass.async_create_task(self._store.async_append(event))
+            self._cycle_events.append(event)
 
         if previous.house_state != snapshot.house_state:
             event = HeimaEvent(
@@ -79,6 +88,7 @@ class EventRecorderBehavior(HeimaBehavior):
                 },
             )
             self._hass.async_create_task(self._store.async_append(event))
+            self._cycle_events.append(event)
 
     def reset_learning_state(self) -> None:
         self._previous_snapshot = None

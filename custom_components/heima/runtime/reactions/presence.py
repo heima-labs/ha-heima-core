@@ -95,7 +95,11 @@ class PresencePatternReaction(HeimaReaction):
 
     @property
     def outcome_spec(self) -> OutcomeSpec:
-        return OutcomeSpec(expected_event_type="presence", timeout_s=1800.0)
+        return OutcomeSpec(
+            expected_event_type="presence",
+            timeout_s=1800.0,
+            match_data={"transition": "arrive"},
+        )
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         # --- Step 1: detect arrival and learn ---

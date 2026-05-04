@@ -103,16 +103,15 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase E2 results and agree the Phase E3 runtime wiring plan before implementation. Do not
-wire runtime reaction outcomes, learning feedback, or degradation proposals until the next slice
-plan is agreed.
+Review Phase E3 results and agree the Phase E4 feedback/degradation proposal plan before
+implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase E2 — complete.
-- Status: OutcomeTracker foundation and minimal reaction contract are complete. Only
-  `PresencePatternReaction` declares a static outcome spec; `ConsecutiveStateReaction` remains
-  unverified until runtime wiring can derive an observable event safely.
+- Current slice: Phase E3 — complete.
+- Status: OutcomeTracker foundation, minimal reaction contract, event match data,
+  EventRecorderBehavior cycle events, engine registration/checking, and coordinator wiring are
+  complete. Learning feedback and degradation proposals are not implemented yet.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -516,7 +515,9 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
   - Keep `ConsecutiveStateReaction` out of E2 because its expected event depends on runtime
     configuration and is not hardcodable in the class contract.
   - Keep reaction behavior unchanged when no `outcome_spec` is present.
-- [ ] E3 — Runtime wiring:
+- [x] E3 — Runtime wiring:
+  - Add `OutcomeSpec.match_data` and subset matching against observed `HeimaEvent.data`.
+  - Buffer EventRecorderBehavior events for the current evaluation cycle only.
   - Register pending verifications when reaction-originated apply steps are fired.
   - Call `OutcomeTracker.check_pending()` after apply using current cycle observations.
 - [ ] E4 — Feedback and degradation proposal:
@@ -526,11 +527,11 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ### Acceptance criteria
 
-- [ ] Positive outcome (entity state matches expected within timeout) → recorded
+- [x] Positive outcome (entity state matches expected within timeout) → recorded
 - [ ] Negative outcome (timeout, no match) → degradation proposal emitted
 - [ ] `check_pending()` is synchronous and completes in O(pending count)
 - [x] Tests: positive outcome, negative outcome, timeout policy
-- [x] All 1058 tests pass
+- [x] All 1070 tests pass
 
 ---
 

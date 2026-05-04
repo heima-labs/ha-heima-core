@@ -35,6 +35,7 @@ from .runtime.inference import (
     SnapshotStore,
     WeekdayStateModule,
 )
+from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
@@ -64,9 +65,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._event_store = EventStore(hass)
         self._context_builder = ContextBuilder(hass, self._get_learning_config(entry))
         self.engine.set_context_builder(self._context_builder)
-        self.engine.register_behavior(
-            EventRecorderBehavior(hass, self._event_store, self._context_builder)
-        )
+        self._outcome_tracker = OutcomeTracker()
+        self.engine.set_outcome_tracker(self._outcome_tracker)
+        self._event_recorder = EventRecorderBehavior(hass, self._event_store, self._context_builder)
+        self.engine.register_behavior(self._event_recorder)
+        self.engine.set_event_recorder(self._event_recorder)
         self.engine.register_behavior(
             HeatingRecorderBehavior(hass, self._event_store, self._context_builder)
         )

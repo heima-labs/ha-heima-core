@@ -41,6 +41,7 @@ from ..room_sources import room_all_source_entity_ids
 from .activity_detectors import build_activity_detectors
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
+from .behaviors.event_recorder import EventRecorderBehavior
 from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
@@ -78,6 +79,7 @@ from .invariants import (
 )
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
+from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .reactions import (
     create_builtin_reaction_plugin_registry,
@@ -184,6 +186,8 @@ class HeimaEngine:
         self._signal_router = SignalRouter()
         self._learning_modules: list[ILearningModule] = []
         self._house_snapshot_store: SnapshotStore | None = None
+        self._outcome_tracker: OutcomeTracker | None = None
+        self._event_recorder: EventRecorderBehavior | None = None
         self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
@@ -230,6 +234,14 @@ class HeimaEngine:
     def set_snapshot_store(self, store: SnapshotStore) -> None:
         """Set the snapshot store for write-on-change persistence."""
         self._house_snapshot_store = store
+
+    def set_outcome_tracker(self, tracker: OutcomeTracker) -> None:
+        """Set the outcome tracker for reaction verification."""
+        self._outcome_tracker = tracker
+
+    def set_event_recorder(self, behavior: EventRecorderBehavior) -> None:
+        """Set the event recorder used for current-cycle outcome observations."""
+        self._event_recorder = behavior
 
     def _infer_step_room_id(self, step: ApplyStep) -> str | None:
         """Best-effort room scope for a reaction-generated step."""
@@ -686,6 +698,8 @@ class HeimaEngine:
 
         if self._options.engine_enabled and self._lighting_apply_mode() == "scene":
             await self._execute_apply_plan(plan)
+
+        self._check_reaction_outcomes()
 
         return snapshot
 
@@ -1357,6 +1371,7 @@ class HeimaEngine:
                 tagged = [dataclass_replace(step, source=f"reaction:{rid}") for step in steps]
                 result.extend(tagged)
                 if tagged:
+                    self._register_reaction_outcome(reaction, rid)
                     self._events_domain.queue_event(
                         HeimaEvent(
                             type="reaction.fired",
@@ -1376,6 +1391,32 @@ class HeimaEngine:
                     error="exception_raised",
                 )
         return result
+
+    def _register_reaction_outcome(self, reaction: HeimaReaction, reaction_id: str) -> None:
+        outcome_tracker = getattr(self, "_outcome_tracker", None)
+        if outcome_tracker is None:
+            return
+        outcome_spec = reaction.outcome_spec
+        house_snapshot_store = getattr(self, "_house_snapshot_store", None)
+        if outcome_spec is None or house_snapshot_store is None:
+            return
+        snapshots = house_snapshot_store.snapshots()
+        if not snapshots:
+            return
+        outcome_tracker.on_reaction_fired(
+            reaction_id=reaction_id,
+            expected_event_type=outcome_spec.expected_event_type,
+            snapshot_at_fire=snapshots[-1],
+            reaction_type=type(reaction).__name__,
+            outcome_spec=outcome_spec,
+        )
+
+    def _check_reaction_outcomes(self) -> None:
+        outcome_tracker = getattr(self, "_outcome_tracker", None)
+        event_recorder = getattr(self, "_event_recorder", None)
+        if outcome_tracker is None or event_recorder is None:
+            return
+        outcome_tracker.check_pending(event_recorder.cycle_events)
 
     def _dispatch_apply_filter(self, plan: ApplyPlan, snapshot: DecisionSnapshot) -> ApplyPlan:
         for behavior in self._behaviors:
