@@ -1179,19 +1179,7 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 | Engine: `check_pending()` after Apply | `runtime/engine.py` |
 | Tests: positive/negative outcome, degradation trigger | `tests/outcome_tracker/` |
 
-### Phase F — House State Learning
-
-**Unlocks:** `HouseStateInferenceModule`, `ApprovalStore`, user-approval gate.
-**Dependencies:** Phases D and E.
-
-| Deliverable | File(s) |
-|---|---|
-| `HouseStateInferenceModule` | `runtime/inference/modules/house_state_inference.py` |
-| `ApprovalStore` | `runtime/inference/approval_store.py` |
-| Approval gate in `HouseStateDomain.evaluate()` | `runtime/domains/house_state.py` |
-| Options Flow: `house_state_learned_context` proposal type | `config_flow/` |
-
-### Phase G — ActivityDomain
+### Phase F — ActivityDomain *(DONE)*
 
 **Unlocks:** primitive activity detection, hysteresis, `ActivityResult` in DAG.
 **Dependencies:** Phase A (uses `DomainResultBag`), Phase D (writes `detected_activities` to `HouseSnapshot`).
@@ -1209,10 +1197,33 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 | `HouseSnapshot.detected_activities` populated from `ActivityResult` | `runtime/inference/snapshot_store.py` |
 | Tests: hysteresis transitions, candidate/grace, event emission | `tests/activity/` |
 
-### Phase H — Activity Inference and Learning
+### Phase G — Role model + product constraints
+
+**Unlocks:** `approved_by` tracking in approval records, installer override service, notification routing policy.
+**Dependencies:** —
+
+| Deliverable | File(s) |
+|---|---|
+| §1.1 Product Model | `docs/specs/heima_v2_spec.md` *(done)* |
+| `approved_by: Literal["resident", "installer"]` on approval records | `runtime/inference/approval_store.py` |
+| `heima.override_approval(proposal_id, action, installer_override)` | `services.yaml` |
+
+### Phase H — House State Learning
+
+**Unlocks:** `HouseStateInferenceModule`, `ApprovalStore`, user-approval gate.
+**Dependencies:** Phases D and E.
+
+| Deliverable | File(s) |
+|---|---|
+| `HouseStateInferenceModule` | `runtime/inference/modules/house_state_inference.py` |
+| `ApprovalStore` | `runtime/inference/approval_store.py` |
+| Approval gate in `HouseStateDomain.evaluate()` | `runtime/domains/house_state.py` |
+| Options Flow: `house_state_learned_context` proposal type | `config_flow/` |
+
+### Phase I — Activity Inference and Learning
 
 **Unlocks:** composite activity discovery, `ActivityProposal`, `ActivityInferenceModule`.
-**Dependencies:** Phases D, F, and G.
+**Dependencies:** Phases D, F (ActivityDomain), and H (House State Learning).
 
 | Deliverable | File(s) |
 |---|---|
@@ -1225,10 +1236,10 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 | `ActivityDomain.evaluate()`: consume `ActivitySignal` (step 5) | `runtime/domains/activity_domain.py` |
 | Tests: ActivityAnalyzer min-support, ActivityInferenceModule infer, signal merge | `tests/activity/` |
 
-### Phase I — Event-Driven Trigger
+### Phase J — Event-Driven Trigger
 
 **Unlocks:** HA `state_changed`-driven evaluation, per-class debounce, reduced periodic interval.
-**Dependencies:** Phase G (power threshold detection depends on activity binding config).
+**Dependencies:** Phase F (power threshold detection depends on activity binding config).
 
 | Deliverable | File(s) |
 |---|---|
@@ -1240,6 +1251,46 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 | Power threshold crossing detection | `coordinator.py` |
 | `signal_entities` section in options flow (explicit entity → class mapping) | `config_flow/` |
 | Tests: debounce batching, concurrent trigger collapse, eval guard | `tests/coordinator/` |
+
+### Phase K — Installer alert channel + health entity
+
+**Unlocks:** anomaly/invariant routing to installer channel, `sensor.heima_health` for remote monitoring.
+**Dependencies:** Phase C.
+
+| Deliverable | File(s) |
+|---|---|
+| Route `anomaly.*` events to installer notification channel | `coordinator.py` |
+| `sensor.heima_health` with state (`ok` / `degraded` / `error`) and `last_anomaly` attribute | `entities/` |
+| `heima.run_diagnostics` service returning structured diagnostic payload | `services.yaml` |
+
+### Phase L — Auto-discovery config flow
+
+**Unlocks:** HA entity registry scan for binding suggestions; installer confirms in options flow.
+**Dependencies:** —
+
+| HA device class | Heima binding candidate |
+|---|---|
+| `motion` | motion sensor |
+| `door`, `window` | door/window security sensor |
+| `occupancy` | presence sensor |
+| `humidity` | shower detector |
+| `power` | activity detector (stove, oven, appliances) |
+| `media_player` | tv/pc detector |
+
+| Deliverable | File(s) |
+|---|---|
+| Auto-discovery step in options flow | `config_flow/` |
+| `async_discover_entities()` helper | `coordinator.py` |
+
+### Phase M — Installation validation
+
+**Unlocks:** post-config coverage report for the installer.
+**Dependencies:** Phase L.
+
+| Deliverable | File(s) |
+|---|---|
+| Validation summary step at end of options flow | `config_flow/` |
+| `async_validate_config() -> ValidationReport` | `coordinator.py` |
 
 ---
 

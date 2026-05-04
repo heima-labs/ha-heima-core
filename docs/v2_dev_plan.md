@@ -107,8 +107,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Write §1.x "Product Model" in `docs/specs/heima_v2_spec.md`, then implement Phase G contracts
-(`approved_by` field in ApprovalStore, installer override service, notification routing policy).
+Implement Phase G contracts: `approved_by: Literal["resident", "installer"]` field in
+`runtime/inference/approval_store.py`; `heima.override_approval` service in `services.yaml`.
 
 ### Current Working Notes
 
@@ -610,13 +610,13 @@ None — role model is spec + contract additions only.
 
 | File | Change |
 |---|---|
-| `docs/specs/heima_v2_spec.md` | Add §1.x Product Model: B2B commercial product, installer/resident roles, HA admin/user mapping, notification routing policy |
+| `docs/specs/heima_v2_spec.md` | §1.1 Product Model — **done** |
 | `runtime/inference/approval_store.py` | Add `approved_by: Literal["resident", "installer"]` to approval record contract |
 | `services.yaml` | Add `heima.override_approval(proposal_id, action, installer_override=True)` service definition |
 
 ### Acceptance criteria
 
-- [ ] §1.x Product Model in `heima_v2_spec.md`: B2B model, installer role, resident role, HA admin/user mapping, notification routing policy
+- [x] §1.1 Product Model in `heima_v2_spec.md`: B2B model, installer role, resident role, HA admin/user mapping, notification routing policy
 - [ ] `ApprovalStore` approval records include `approved_by: Literal["resident", "installer"]`
 - [ ] `heima.override_approval` with `installer_override: true` defined in `services.yaml`
 - [ ] Notification routing policy documented: behavioral proposals → resident; anomalies/invariant violations → installer (implementation in Phase K)
