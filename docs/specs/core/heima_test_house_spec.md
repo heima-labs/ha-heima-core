@@ -1,463 +1,193 @@
-# Heima Test House Subproject Spec
+# Heima Test House Specification
 
-**Status:** Draft — planned internal subproject
-**Last Updated:** 2026-04-07
+**Status:** Active
+**Last Updated:** 2026-05-04
+**Version:** 2.0
 
 ## Purpose
 
-Define a future internal Heima subproject that provides a deterministic fake
-home environment for:
+The Heima Test House is the official internal live-validation environment for the Heima
+integration. It provides a deterministic fake home for:
 
-- live validation
-- product debugging
-- end-to-end feature development
-- onboarding and reproducible demos
+- end-to-end feature validation before phases are closed
+- runtime and learning behavior reproduction
+- product debugging without a production HA instance
+- installer and resident UX testing
 
-This subproject is not a generic smart-home simulator. It is an **official
-Heima test house** whose goal is to give the main repository a stable, repeatable
-system-level environment.
-
----
-
-## 1. Problem Statement
-
-The repository already contains a strong but scattered live-test lab:
-
-- Docker stack under `docs/examples/ha_test_instance/`
-- HA config and fake house entities
-- fixture restore and scenario scripts under `scripts/live_tests/`
-- dashboard examples and test-specific surfaces
-
-This material is already useful, but today it is still framed as:
-
-- examples
-- ad hoc live-test support
-- loosely grouped operational tooling
-
-That framing is becoming too weak for the current level of usage.
-
-The lab is now important for:
-
-- validating families like `security_presence_simulation`
-- reproducing runtime and learning behavior
-- testing dashboards and admin flows
-- maintaining deterministic end-to-end development workflows
-
-So the repo should treat it as a real internal subproject rather than as a
-collection of examples.
+It is **not** a generic smart-home simulator. It is a bounded, purposeful environment that models
+exactly what Heima needs to be validated — nothing more.
 
 ---
 
-## 2. Target Outcome
+## 1. Repository layout
 
-Heima should eventually contain a dedicated subproject:
+```
+lab/heima_test_house/
+  infra/               ← Docker stack, HA base config, MQTT broker
+  house/               ← Fake entity definitions, scenes, calendars
+  validation/          ← Reset scripts, fixture restore, scenario runners
+  surfaces/            ← Dashboards and operator panels
+```
 
-- `lab/heima_test_house/`
-
-This subproject should provide:
-
-- a bootable Home Assistant lab stack
-- a canonical fake home model
-- deterministic fixture reset and scenario seeding
-- validation entrypoints for live smoke and feature tests
-- dashboard and operator surfaces for reading and controlling the fake house
-
-The subproject should be maintained as **product support infrastructure** for
-Heima, not as a public end-user deliverable.
+Current material lives under `docs/examples/ha_test_instance/` and `scripts/live_tests/`.
+Migration to `lab/heima_test_house/` is tracked separately.
 
 ---
 
-## 3. Scope
+## 2. Canonical commands
 
-### In Scope
-
-- deterministic fake entities for a representative home
-- Docker-based HA test stack
-- fake lighting, heating, security, presence, MQTT, and calendar surfaces
-- fixture generation and restore workflow
-- scenario scripts for repeatable learning/runtime setup
-- dashboards and panels used to read the lab as a product
-- live smoke tests and feature validation entrypoints
-- documentation for development and debugging use
-
-### Out of Scope
-
-- universal smart-home simulation
-- physical accuracy of a real house
-- replacing unit/integration tests
-- supporting many different fake homes in parallel
-- public distribution as a standalone independent product
+| Command | Action |
+|---|---|
+| `up` | Start the lab stack (Docker Compose + HA boot) |
+| `down` | Stop the lab stack |
+| `reset` | Restore entities and storage to known baseline |
+| `run_smoke` | Run the full smoke check suite |
+| `run_feature <name>` | Apply a named scenario and run its validation entrypoint |
 
 ---
 
-## 4. Why This Should Exist
+## 3. House model
 
-### Benefits
+One canonical fake home. Bounded complexity — enough variety for cross-domain testing, not
+physical realism.
 
-- reduces the cost of testing new runtime and learning features end-to-end
-- gives Heima a canonical fake house for debugging and demos
-- makes live tests more deterministic and explainable
-- lets new features be validated before reaching a real home
-- supports onboarding without requiring a production HA instance
-- provides a clean place for dashboards, scenarios, and fixtures to live
+### Rooms
 
-### Tradeoffs
+| Room | Key sensors | Actuators |
+|---|---|---|
+| Living room | motion, door, TV media player, TV power, PC power | lights, thermostat |
+| Kitchen | motion, stove power, oven power, dishwasher power | lights |
+| Bathroom | motion, humidity sensor | lights |
+| Bedroom | motion | lights, thermostat |
+| Laundry | washing machine power | — |
+| Entrance | door contact, motion | — |
 
-- introduces an internal subproject that must be maintained
-- increases coupling to Home Assistant version behavior
-- can create false confidence if the fake house is treated as “real enough”
-- requires discipline around fixture versioning and reset semantics
-- can grow into a second codebase if scope is not controlled
+### People
 
----
-
-## 5. Difficulty Assessment
-
-### Low / Medium Difficulty
-
-If the goal is only:
-
-- formalize the current lab
-- move it to a stable location
-- give it structure and ownership
-- provide canonical startup/reset commands
-
-### Medium Difficulty
-
-If the goal is:
-
-- make it a stable internal subproject
-- define official scenarios
-- keep fixtures deterministic across development
-- version dashboards and operational surfaces cleanly
-
-### Medium / High Difficulty
-
-If the goal is:
-
-- build a highly realistic fake house
-- model many seasonal and behavioral variations
-- maintain many home topologies or personas
-
-This specification targets the **medium-difficulty** version:
-
-- one official test house
-- deterministic and useful
-- not universal
+Two residents with independently controllable `device_tracker` and `person` entities.
 
 ---
 
-## 6. Recommended Location and Naming
+## 4. Entity requirements
 
-Recommended location:
+### 4.1 Presence and occupancy
 
-- `lab/heima_test_house/`
+| Entity | Type | Used by |
+|---|---|---|
+| `person.resident_1`, `person.resident_2` | `person` | PeopleDomain |
+| `device_tracker.resident_1_phone`, `device_tracker.resident_2_phone` | `device_tracker` | PeopleDomain |
+| `binary_sensor.living_room_motion`, `binary_sensor.kitchen_motion`, `binary_sensor.bedroom_motion`, `binary_sensor.entrance_motion` | `binary_sensor` (motion) | OccupancyDomain |
 
-Recommended framing:
+### 4.2 Activity detectors
 
-- official Heima test house
-- internal live-validation environment
+| Entity | Device class / type | Detector |
+|---|---|---|
+| `sensor.stove_power` | `power` (W) | `StoveOnDetector` (≥ 200 W) |
+| `sensor.oven_power` | `power` (W) | `OvenOnDetector` (≥ 500 W) |
+| `media_player.living_room_tv` | `media_player` | `TvActiveDetector` |
+| `sensor.tv_power` | `power` (W) | `TvActiveDetector` (corroboration) |
+| `sensor.pc_power` | `power` (W) | `PcActiveDetector` (≥ 50 W) |
+| `sensor.bathroom_humidity` | `humidity` (%) | `ShowerRunningDetector` |
+| `sensor.washing_machine_power` | `power` (W) | `WashingMachineDetector` (≥ 200 W) |
+| `sensor.dishwasher_power` | `power` (W) | `DishwasherDetector` (≥ 200 W) |
 
-Rejected framings:
+### 4.3 Climate and lighting
 
-- “just an example docker setup”
-- “full home simulator”
-- “multiple alternative fake homes”
+| Entity | Type | Used by |
+|---|---|---|
+| `climate.living_room`, `climate.bedroom` | `climate` | HeatingDomain |
+| `light.living_room`, `light.kitchen`, `light.bedroom`, `light.bathroom` | `light` | LightingDomain |
 
----
+### 4.4 Security
 
-## 7. Subproject Structure
+| Entity | Type | Used by |
+|---|---|---|
+| `binary_sensor.entrance_door`, `binary_sensor.living_room_window` | `binary_sensor` (door/window) | SecurityDomain |
+| `alarm_control_panel.home` | `alarm_control_panel` | SecurityDomain |
 
-The subproject should be split into four clear areas.
+### 4.5 Invariant check entities
 
-### 7.1 Infra
-
-Path:
-
-- `lab/heima_test_house/infra/`
-
-Responsibility:
-
-- container orchestration
-- HA base config
-- MQTT broker config
-- bootstrap entrypoints
-- version pinning and runtime compatibility
-
-Expected contents:
-
-- `docker-compose.yaml`
-- HA config bootstrap files
-- broker config
-- startup helpers
-
-### 7.2 House Model
-
-Path:
-
-- `lab/heima_test_house/house/`
-
-Responsibility:
-
-- canonical fake home definition
-
-Expected contents:
-
-- helper-backed fake entities
-- fake lights
-- fake climate
-- fake alarm
-- template and MQTT entities
-- utility scripts and scene generators
-- calendar fixtures
-- baseline storage or baseline generation inputs
-
-The house model should represent:
-
-- a single canonical home
-- enough variety for cross-domain testing
-- bounded complexity
-
-### 7.3 Validation
-
-Path:
-
-- `lab/heima_test_house/validation/`
-
-Responsibility:
-
-- deterministic reset
-- smoke checks
-- scenario application
-- feature validation runners
-
-Expected contents:
-
-- restore/reset scripts
-- fixture generators
-- live smoke scripts
-- per-feature scenario setup helpers
-
-### 7.4 Surfaces
-
-Path:
-
-- `lab/heima_test_house/surfaces/`
-
-Responsibility:
-
-- operator-facing views of the fake house and Heima state
-
-Expected contents:
-
-- production-like dashboard example
-- debug dashboard example
-- family-specific panels where useful
-- reading guides for diagnostics
+| Entity | Used to trigger |
+|---|---|
+| Any motion sensor held at `off` while `person.*` is `home` | `PresenceWithoutOccupancy` |
+| `alarm_control_panel.home` disarmed while all persons absent | `SecurityPresenceMismatch` |
+| `climate.*` active while home empty for > 30 min | `HeatingHomeEmpty` |
+| Any sensor held at a fixed value for > 24 h | `SensorStuck` |
 
 ---
 
-## 8. Current Material To Migrate
+## 5. Scenario coverage
 
-The current implementation base already exists in scattered form.
+Each scenario maps to one or more v2 phases. A scenario is a named fixture + state sequence
+that drives the fake house into a specific condition and asserts expected Heima behavior.
 
-Primary source material:
-
-- `docs/examples/ha_test_instance/`
-- `scripts/live_tests/006_restore_learning_fixtures.sh`
-- `scripts/live_tests/044_security_presence_simulation_vacation.py`
-- `scripts/live_tests/045_security_presence_simulation_learned_flow.py`
-- `docs/examples/heima_dashboard_debug.yaml`
-- `docs/examples/heima_dashboard_production.yaml`
-- `docs/examples/heima_security_presence_panel.yaml`
-
-Migration does not need to happen all at once.
-
-During migration, compatibility shims or wrapper scripts are acceptable.
-
----
-
-## 9. Migration Strategy
-
-### Phase 1 — Formalization
-
-Goal:
-
-- create the subproject skeleton without changing behavior
-
-Work:
-
-- create `lab/heima_test_house/`
-- move or copy the current HA test instance into the new structure
-- add a canonical README
-- define stable entrypoint commands
-
-Success criteria:
-
-- current lab can still boot
-- reset flow still works
-- no feature behavior changes required
-
-### Phase 2 — Stabilization
-
-Goal:
-
-- make the subproject reliable and easy to use
-
-Work:
-
-- separate infra from house model from validation
-- define canonical reset/start/stop commands
-- make fixture restore deterministic and documented
-- remove accidental repo coupling where possible
-
-Success criteria:
-
-- new contributors can boot the lab with one documented path
-- live tests rely on stable subproject entrypoints
-
-### Phase 3 — Productization
-
-Goal:
-
-- treat the test house as official internal product infrastructure
-
-Work:
-
-- define canonical scenarios
-- define dashboard ownership and reading guidance
-- define which new families/features require test-house coverage
-- clean up legacy paths and transitional wrappers
-
-Success criteria:
-
-- the lab is the default place to validate major new features before real-home testing
+| Scenario | Phase | What it validates |
+|---|---|---|
+| `activity_stove_on` | F | `StoveOnDetector`: power rises ≥ 200 W → CANDIDATE → ACTIVE |
+| `activity_stove_interrupted` | F | CANDIDATE → ABSENT when power drops before candidate window expires |
+| `activity_shower_running` | F | `ShowerRunningDetector`: humidity rises + rate-of-change threshold |
+| `activity_shower_grace` | F | ACTIVE → GRACE → ABSENT after humidity drops and grace period expires |
+| `activity_tv_on` | F | `TvActiveDetector`: media_player active + power corroboration |
+| `invariant_security_mismatch` | C | Alarm disarmed, all persons absent → `SecurityPresenceMismatch` event |
+| `invariant_sensor_stuck` | C | Sensor value unchanged > 24 h → `SensorStuck` event + `anomaly.resolved` after change |
+| `invariant_heating_empty` | C | Climate active, home empty > 30 min → `HeatingHomeEmpty` event |
+| `learning_weekday_snapshot` | D | Inject consistent weekday snapshots → `WeekdayStateModule` emits `HouseStateSignal` |
+| `outcome_positive` | E | Reaction fires → matching `HeimaEvent` arrives → positive outcome recorded |
+| `outcome_negative_streak` | E | Reaction fires 5× → no matching event → degradation `ReactionProposal` emitted |
+| `event_driven_presence` | J | `person.*` state change → evaluation triggered within 5 s debounce |
+| `event_driven_power_threshold` | J | `sensor.*_power` crosses threshold → evaluation triggered within 5 s debounce |
+| `installer_override_proposal` | G | `heima.override_approval` with `installer_override=True` → approval recorded with `approved_by="installer"` |
+| `resident_approve_proposal` | G/H | HA notification action → approval recorded with `approved_by="resident"` |
 
 ---
 
-## 10. Ownership and Governance
+## 6. Fixture reset contract
 
-The subproject should own:
+`reset` must:
 
-- deterministic live validation for Heima
-- canonical fake house model
-- lab surfaces and scenarios
-- reset/bootstrap workflows
-
-The subproject should not own:
-
-- all testing in the repository
-- full simulation of real-home complexity
-- generic HA examples unrelated to the test house
-
-Rules:
-
-- one official fake house, not many
-- changes to the house model should stay additive and purposeful
-- new complexity must justify test value
-- fixture reset must remain deterministic
-- dashboards must optimize for operability, not visual novelty
+1. Restore all helper-backed fake entities to their canonical baseline values.
+2. Clear `custom_components/heima/.storage/heima_*` keys that persist learned state.
+3. Re-seed the `EventStore` with a minimal baseline (at least 14 days of presence events).
+4. Re-seed `SnapshotStore` (`heima_snapshots`) with enough weekday snapshots for
+   `WeekdayStateModule` to have ≥ 10 samples per weekday (required for SUGGEST importance).
+5. Leave HA itself running — no restart required after reset.
 
 ---
 
-## 11. Commands and Developer UX
+## 7. v2 phase coverage matrix
 
-The final subproject should expose a small set of canonical commands.
-
-Recommended command surface:
-
-- `up`
-- `down`
-- `reset`
-- `run_smoke`
-- `run_feature <feature>`
-
-Exact implementation may be:
-
-- shell scripts
-- Make targets
-- task runner targets
-
-But the user-facing contract should stay small and stable.
+| v2 Phase | Covered by test house | Scenario(s) |
+|---|---|---|
+| A — Plugin Framework | Via existing runtime smoke | any |
+| B — IBehaviorAnalyzer | Via learning cycle smoke | `learning_weekday_snapshot` |
+| C — IInvariantCheck | Yes | `invariant_*` |
+| D — InferenceEngine | Yes | `learning_weekday_snapshot` |
+| E — OutcomeTracker | Yes | `outcome_positive`, `outcome_negative_streak` |
+| F — ActivityDomain | Yes | `activity_*` |
+| G — Role model | Yes | `installer_override_proposal`, `resident_approve_proposal` |
+| H — House State Learning | Partial (needs approval UX) | `learning_weekday_snapshot` + approval |
+| I — Activity Inference | Partial (needs composite scenarios) | TBD |
+| J — Event-Driven Trigger | Yes | `event_driven_*` |
+| K — Installer alert channel | TBD | TBD |
+| L — Auto-discovery | TBD — requires HA entity registry | TBD |
+| M — Installation validation | TBD | TBD |
 
 ---
 
-## 12. Interaction With The Main Heima Repo
+## 8. Surfaces
 
-The subproject should stay in the main repository because it depends on:
-
-- current `custom_components/heima`
-- internal live-test scripts
-- feature-specific diagnostics and dashboards
-
-This is a strong argument against splitting it into a separate repository too early.
-
-A separate repo would increase:
-
-- synchronization cost
-- fixture drift
-- integration friction
-
-So the default plan should be:
-
-- same repo
-- separate subproject boundary
+- **Resident dashboard** — Lovelace view using `heima_*_view` entities. Used to validate resident
+  UX: house state display, active activities, quick overrides.
+- **Debug dashboard** — Full diagnostic view: CanonicalState, EventStore tail, active proposals,
+  OutcomeTracker pending, InvariantCheck active.
+- **Installer view** — `sensor.heima_health` state, anomaly feed, proposal status.
 
 ---
 
-## 13. Risks
+## 9. Constraints
 
-### Risk: Scope Explosion
-
-Mitigation:
-
-- keep one canonical fake house
-- reject “nice to have” realism that does not improve testing value
-
-### Risk: Fixture Drift
-
-Mitigation:
-
-- version baseline fixtures
-- keep deterministic restore
-- document ownership of `.storage` and generated artifacts
-
-### Risk: False Confidence
-
-Mitigation:
-
-- explicitly treat the test house as a bounded validation environment
-- continue using unit/integration tests and real-home checks when needed
-
-### Risk: HA Version Fragility
-
-Mitigation:
-
-- keep bootstrap and restore scripts explicit
-- pin assumptions in infra docs
-- prefer deterministic fake integrations over brittle external dependencies
-
----
-
-## 14. Acceptance Criteria For The Subproject
-
-The subproject is successful when:
-
-- a developer can boot the test house from a single documented entrypoint
-- the fake house exposes the canonical Heima validation signals needed by current domains
-- deterministic restore reliably returns the house to a known baseline
-- live feature tests can target the test house without ad hoc setup
-- the dashboards and surfaces are useful for product debugging
-- the subproject remains bounded and does not try to model every real-home detail
-
----
-
-## 15. Recommended Next Step
-
-When development resumes, the first implementation step should be:
-
-- create the directory skeleton for `lab/heima_test_house`
-- migrate the current HA test instance material into it with minimal behavior change
-- keep temporary compatibility wrappers for current script paths
-
-That gives the project a real boundary first, before deeper cleanup or expansion.
+- One canonical house — no parallel topologies.
+- Fake entities must use HA `input_*` helpers or MQTT-backed templates (no real hardware).
+- Fixture reset must be deterministic and idempotent.
+- Scenarios must not depend on wall-clock time — use injectable `now` or explicit state sequences.
+- Test house coverage must grow to match each new v2 phase before that phase is marked `DONE`.

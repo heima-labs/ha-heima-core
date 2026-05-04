@@ -89,21 +89,26 @@ These constraints must never be violated. See spec §16 for rationale.
 | C | IInvariantCheck | `DONE` | A |
 | D | InferenceEngine v2 (base) | `DONE` | A |
 | E | OutcomeTracker + Feedback Loop | `DONE` | D |
-| F | House State Learning | `NOT STARTED` | D, E |
-| G | ActivityDomain | `DONE` | A, D |
-| H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
-| I | Event-Driven Trigger | `NOT STARTED` | G |
+| F | ActivityDomain | `DONE` | A, D |
+| G | Role model + product constraints | `NOT STARTED` | — |
+| H | House State Learning | `NOT STARTED` | D, E, G |
+| I | Activity Inference and Learning | `NOT STARTED` | D, H, F |
+| J | Event-Driven Trigger | `NOT STARTED` | F |
+| K | Installer alert channel + health entity | `NOT STARTED` | C |
+| L | Auto-discovery config flow | `NOT STARTED` | — |
+| M | Installation validation | `NOT STARTED` | L |
 
 ---
 
 ## Current State
 
-**Last completed phase:** Phase E — OutcomeTracker + Feedback Loop.
-**Active phase:** None. Next phase must be agreed before implementation.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain.
+**Active phase:** None. Phase G (Role model + product constraints) is next.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase E results and agree the next phase before implementation.
+Write §1.x "Product Model" in `docs/specs/heima_v2_spec.md`, then implement Phase G contracts
+(`approved_by` field in ApprovalStore, installer override service, notification routing policy).
 
 ### Current Working Notes
 
@@ -118,7 +123,7 @@ Review Phase E results and agree the next phase before implementation.
   - Conflict WARNING threshold: confidence >= 0.60 AND different predicted values.
   - `_importance()` maps: 0.40-0.60 → OBSERVE, 0.60-0.80 → SUGGEST, >0.80 → ASSERT.
   - `ApprovalStore` is intentionally not implemented in Phase D; full implementation belongs to
-    Phase F where approvals have concrete proposal lifecycle behavior.
+    Phase H where approvals have concrete proposal lifecycle behavior.
   - WeekdayStateModule/HeatingPreferenceModule precompute their model in `analyze()` so
     `infer()` is a pure dict lookup (< 1ms verified in tests).
 - Files read:
@@ -244,7 +249,7 @@ Review Phase E results and agree the next phase before implementation.
     `anomaly_notify_on_info=false`, `anomaly_re_emit_interval_s=3600`.
 - Open decisions: none.
 
-#### Phase G slice plan
+#### Phase F slice plan
 
 - G1 — ActivityDomain foundation:
   - [x] Add `Activity`, `ActivityResult`, `ActivityDetection`, `ActivityHysteresisState`, and
@@ -533,37 +538,7 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
 
 ---
 
-## Phase F — House State Learning
-
-**Spec section:** §13 (House State Learning), §10.9
-**Goal:** `HouseStateInferenceModule`, user-approval gate.
-**Depends on:** Phases D and E complete.
-
-### New files to create
-
-| File | What to implement | Spec ref |
-|---|---|---|
-| `runtime/inference/modules/house_state_inference.py` | `HouseStateInferenceModule` | §13, §10.6 |
-
-### Files to modify
-
-| File | Change |
-|---|---|
-| `runtime/inference/approval_store.py` | Full implementation | §10.9 |
-| `runtime/domains/house_state.py` | Consume `HouseStateSignal`; approval gate | §10.9 |
-| `config_flow/` | `house_state_learned_context` proposal type review screen |
-
-### Acceptance criteria
-
-- [ ] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
-- [ ] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
-- [ ] Unapproved signals are ignored by `HouseStateDomain`
-- [ ] User approval/rejection survives HA restart
-- [ ] All 660 tests pass
-
----
-
-## Phase G — ActivityDomain
+## Phase F — ActivityDomain
 
 **Spec section:** §7 (Activity Layer)
 **Goal:** primitive activity detection, hysteresis state machine, `ActivityResult` in DAG.
@@ -621,11 +596,76 @@ grace → absent      : grace_period_s elapsed without signal
 
 ---
 
-## Phase H — Activity Inference and Learning
+## Phase G — Role model + product constraints
+
+**Spec section:** New §1.x in `docs/specs/heima_v2_spec.md`
+**Goal:** Document the B2B product model and wire approval records with `approved_by` tracking. Prerequisite for Phase H.
+**Depends on:** —
+
+### New files to create
+
+None — role model is spec + contract additions only.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `docs/specs/heima_v2_spec.md` | Add §1.x Product Model: B2B commercial product, installer/resident roles, HA admin/user mapping, notification routing policy |
+| `runtime/inference/approval_store.py` | Add `approved_by: Literal["resident", "installer"]` to approval record contract |
+| `services.yaml` | Add `heima.override_approval(proposal_id, action, installer_override=True)` service definition |
+
+### Acceptance criteria
+
+- [ ] §1.x Product Model in `heima_v2_spec.md`: B2B model, installer role, resident role, HA admin/user mapping, notification routing policy
+- [ ] `ApprovalStore` approval records include `approved_by: Literal["resident", "installer"]`
+- [ ] `heima.override_approval` with `installer_override: true` defined in `services.yaml`
+- [ ] Notification routing policy documented: behavioral proposals → resident; anomalies/invariant violations → installer (implementation in Phase K)
+- [ ] All existing tests pass
+
+---
+
+## Phase H — House State Learning
+
+**Spec section:** §13 (House State Learning), §10.9
+**Goal:** `HouseStateInferenceModule`, user-approval gate.
+**Depends on:** Phases D, E, and G complete.
+
+### Product constraints (from Phase G)
+
+- `ApprovalStore` must store `approved_by: Literal["resident", "installer"]` on every record.
+- Proposal notifications route to resident channel only.
+- Installer override via `heima.override_approval` service (defined in Phase G).
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/inference/modules/house_state_inference.py` | `HouseStateInferenceModule` | §13, §10.6 |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/inference/approval_store.py` | Full implementation with `approved_by` field | §10.9 |
+| `runtime/domains/house_state.py` | Consume `HouseStateSignal`; approval gate | §10.9 |
+| `config_flow/` | `house_state_learned_context` proposal type review screen |
+
+### Acceptance criteria
+
+- [ ] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
+- [ ] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
+- [ ] `ApprovalStore` records include `approved_by` field
+- [ ] Unapproved signals are ignored by `HouseStateDomain`
+- [ ] User approval/rejection survives HA restart
+- [ ] All existing tests pass
+
+---
+
+## Phase I — Activity Inference and Learning
 
 **Spec section:** §7.7 (ActivityProposal), §10.5 (ActivityInferenceModule)
 **Goal:** composite activity discovery; `ActivityAnalyzer`; user-approved `ActivitySignal`.
-**Depends on:** Phases D, F, and G complete.
+**Depends on:** Phases D, H, and F complete.
 
 ### New files to create
 
@@ -644,21 +684,26 @@ grace → absent      : grace_period_s elapsed without signal
 | `runtime/domains/activity_domain.py` | Step 5: merge `ActivitySignal` from `ActivityInferenceModule` into `ActivityResult` | §7.3 |
 | `config_flow/` | `activity_discovered` proposal review surface |
 
+### Product constraints (from Phase G)
+
+- `ActivityProposal` approvals must include `approved_by` field, consistent with `ApprovalStore` contract from Phase G.
+- Proposal notifications route to resident channel; installer override via `heima.override_approval`.
+
 ### Acceptance criteria
 
 - [ ] `ActivityAnalyzer` does not emit `ActivityProposal` with < 10 co-occurrences or < 3 distinct days
 - [ ] `ActivityInferenceModule.infer()` returns `[]` until at least one `ActivityProposal` approved
 - [ ] Approved composite activity appears in `ActivityResult.active` when signal fired
-- [ ] Approval survives HA restart (via `ApprovalStore`)
-- [ ] All 660 tests pass; new tests ≥ 15
+- [ ] Approval survives HA restart (via `ApprovalStore`) with `approved_by` populated
+- [ ] All existing tests pass; new tests ≥ 15
 
 ---
 
-## Phase I — Event-Driven Trigger
+## Phase J — Event-Driven Trigger
 
 **Spec section:** §11 (Event-Driven Trigger)
 **Goal:** HA `state_changed`-driven evaluation, per-class debounce, 300s periodic fallback.
-**Depends on:** Phase G (power threshold binding config).
+**Depends on:** Phase F (power threshold binding config).
 
 ### Files to modify
 
@@ -691,6 +736,93 @@ grace → absent      : grace_period_s elapsed without signal
 - [ ] Periodic 300s fallback fires even with no state changes
 - [ ] Environmental sensors do not trigger evaluation
 - [ ] All 660 tests pass; new tests cover debounce timing and re-entrancy guard
+
+---
+
+## Phase K — Installer alert channel + health entity
+
+**Spec section:** TBD — add to `heima_v2_spec.md`
+**Goal:** Route anomaly/invariant violation alerts to installer HA user; expose `sensor.heima_health` for remote monitoring.
+**Depends on:** Phase C (IInvariantCheck).
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `coordinator.py` | Route `anomaly.*` events to installer notification channel (HA admin user) |
+| `entities/` | Add `sensor.heima_health` with state (`ok` / `degraded` / `error`) and diagnostic attributes |
+| `services.yaml` | Add `heima.run_diagnostics` service returning structured diagnostic payload |
+
+### Acceptance criteria
+
+- [ ] Anomaly/invariant violation events routed to installer channel, not resident channel
+- [ ] `sensor.heima_health` exposed with overall state and `last_anomaly` attribute
+- [ ] `heima.run_diagnostics` service call returns structured diagnostic payload
+- [ ] All existing tests pass
+
+---
+
+## Phase L — Auto-discovery config flow
+
+**Spec section:** TBD — add to `heima_v2_spec.md`
+**Goal:** Scan HA entity registry using device classes to suggest bindings; installer confirms in options flow.
+**Depends on:** —
+
+### Discovery strategy
+
+Uses HA device classes — no ML, no NLP:
+
+| HA device class | Heima binding candidate |
+|---|---|
+| `motion` | motion sensor |
+| `door`, `window` | door/window security sensor |
+| `occupancy` | presence sensor |
+| `humidity` | shower detector |
+| `power` | activity detector (stove, oven, appliances) |
+| `media_player` | tv/pc detector |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `config_flow/` | Add auto-discovery step: scan entities, group by device class, present suggestions |
+| `coordinator.py` | Add `async_discover_entities()` helper |
+
+### Acceptance criteria
+
+- [ ] Discovery step presented before manual binding in options flow
+- [ ] Suggestions grouped by functional category (presence, security, activity detectors)
+- [ ] Installer can accept all, reject all, or selectively confirm
+- [ ] Discovery result feeds into existing binding normalization
+- [ ] All existing tests pass
+
+---
+
+## Phase M — Installation validation
+
+**Spec section:** TBD — add to `heima_v2_spec.md`
+**Goal:** After config, report what Heima can and cannot do with the current binding set.
+**Depends on:** Phase L.
+
+### Validation report covers
+
+- Activities detectable with current bindings vs. activities missing required sensors
+- Invariant checks active vs. inactive (missing required entities)
+- Learning modules with sufficient data vs. insufficient data
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `config_flow/` | Add validation summary step at end of options flow |
+| `coordinator.py` | Add `async_validate_config() -> ValidationReport` |
+
+### Acceptance criteria
+
+- [ ] Validation report generated after config save
+- [ ] Missing bindings listed with human-readable description of what is unavailable
+- [ ] Report accessible via `sensor.heima_health` attributes and via `heima.run_diagnostics`
+- [ ] All existing tests pass
 
 ---
 

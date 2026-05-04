@@ -26,6 +26,67 @@ pattern recognition.
 
 ---
 
+## §1.1 Product Model
+
+Heima is a **commercial B2B product**. It is deployed as a Home Assistant custom integration by
+professional installers on behalf of their residential or commercial clients. The installer manages
+the installation remotely as a managed service; the resident interacts only with the operational
+layer.
+
+### Roles
+
+| Role | HA user type | Responsibilities |
+|---|---|---|
+| **Installer** | HA admin | Initial config, ongoing maintenance, remote diagnostics, proposal override |
+| **Resident** | HA non-admin user | Proposal approval, house state override, operational monitoring |
+
+**Installer** — a professional who configures and maintains the installation. The installer is not
+necessarily a resident of the home. Responsibilities include: entity binding, activity detector
+configuration, room and people definitions, installation validation, and anomaly monitoring. The
+installer retains access for remote maintenance and sensor/actuator additions over time.
+
+**Resident** — the person or persons who live in the home. Responsibilities are limited to the
+operational layer: approving or rejecting behavioral proposals, applying temporary house state
+overrides, and monitoring house state via the resident dashboard. The resident never accesses the
+HA configuration or options flow.
+
+### HA role mapping
+
+Heima maps directly onto HA's native user model. No additional role infrastructure is required.
+
+- **Installer = HA admin**: full access to config flow, options, services, and diagnostics.
+- **Resident = HA non-admin**: access scoped to Heima view entities, resident services
+  (`heima.override_house_state`), and notification approval actions.
+
+### Notification routing policy
+
+| Event type | Recipient |
+|---|---|
+| Behavioral proposals (learning patterns, activity discoveries) | Resident |
+| Anomalies, invariant violations, sensor degradation | Installer |
+| System errors, config inconsistencies | Installer |
+
+Installer approval override does not generate a resident notification.
+
+### Proposal approval model
+
+Every proposal approval record includes `approved_by: Literal["resident", "installer"]`.
+
+- **Resident approval**: triggered by a persistent HA notification with inline approve/reject
+  actions. Natural language description of the proposal is mandatory.
+- **Installer override**: performed via the `heima.override_approval(proposal_id, action,
+  installer_override=True)` service call. Takes precedence over any resident decision. Not subject
+  to resident confirmation.
+
+### Non-goals for the product model
+
+- Multi-installer management or installer portal (one HA instance = one installation = one
+  installer relationship).
+- Cloud-based management plane (all configuration is performed via the local HA instance).
+- Per-resident granular permissions beyond the HA admin/non-admin split.
+
+---
+
 ## §2 v1 Baseline Summary
 
 v1 delivers a complete deterministic control plane: a fixed DAG evaluation pipeline
