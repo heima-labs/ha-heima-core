@@ -15,6 +15,7 @@ from .const import (
     DOMAIN,
     HOUSE_STATES_CANONICAL,
     SERVICE_COMMAND,
+    SERVICE_OVERRIDE_APPROVAL,
     SERVICE_SET_MODE,
     SERVICE_SET_OVERRIDE,
 )
@@ -43,6 +44,14 @@ SET_OVERRIDE_SCHEMA = vol.Schema(
         vol.Required("scope"): cv.string,
         vol.Required("id"): cv.string,
         vol.Required("override"): vol.Any(cv.string, cv.boolean),
+    }
+)
+
+OVERRIDE_APPROVAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("proposal_id"): cv.string,
+        vol.Required("action"): vol.In(["approve", "reject"]),
+        vol.Required("installer_override"): cv.boolean,
     }
 )
 
@@ -437,7 +446,38 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         raise ServiceValidationError(f"Unsupported override scope '{scope}'")
 
+    async def _handle_override_approval(call: ServiceCall) -> None:
+        payload = dict(call.data)
+        proposal_id = str(payload.get("proposal_id") or "").strip()
+        action = str(payload.get("action") or "").strip()
+        installer_override = bool(payload.get("installer_override"))
+        if not proposal_id:
+            raise ServiceValidationError("Missing required proposal_id")
+        if not installer_override:
+            raise ServiceValidationError("override_approval requires installer_override=true")
+
+        coordinators = list(_iter_coordinators(hass))
+        if not coordinators:
+            raise ServiceValidationError("No active Heima config entries found")
+
+        matched = False
+        for coordinator in coordinators:
+            proposal_engine = coordinator.proposal_engine
+            if action == "approve":
+                matched = await proposal_engine.async_accept_proposal(proposal_id) or matched
+            elif action == "reject":
+                matched = await proposal_engine.async_reject_proposal(proposal_id) or matched
+
+        if not matched:
+            raise ServiceValidationError(f"Proposal '{proposal_id}' not found")
+
     hass.services.async_register(DOMAIN, SERVICE_COMMAND, _handle_command, schema=COMMAND_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_OVERRIDE_APPROVAL,
+        _handle_override_approval,
+        schema=OVERRIDE_APPROVAL_SCHEMA,
+    )
     hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _handle_set_mode, schema=SET_MODE_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_SET_OVERRIDE, _handle_set_override, schema=SET_OVERRIDE_SCHEMA

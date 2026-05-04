@@ -174,6 +174,7 @@ DEFAULT_SECURITY_MISMATCH_EVENT_MODE = "explicit_only"
 
 # Services
 SERVICE_COMMAND = "command"
+SERVICE_OVERRIDE_APPROVAL = "override_approval"
 SERVICE_SET_MODE = "set_mode"
 SERVICE_SET_OVERRIDE = "set_override"
 

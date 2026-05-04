@@ -1,5 +1,6 @@
 """Public API for v2 inference runtime."""
 
+from .approval_store import ApprovalActor, ApprovalDecision, ApprovalRecord, ApprovalStore
 from .base import HeimaLearningModule, ILearningModule, InferenceContext
 from .modules import HeatingPreferenceModule, WeekdayStateModule
 from .router import SignalRouter
@@ -15,6 +16,10 @@ from .signals import (
 from .snapshot_store import HouseSnapshot, SnapshotStore
 
 __all__ = [
+    "ApprovalActor",
+    "ApprovalDecision",
+    "ApprovalRecord",
+    "ApprovalStore",
     "ActivitySignal",
     "HeatingPreferenceModule",
     "HeatingSignal",

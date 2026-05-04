@@ -90,7 +90,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | D | InferenceEngine v2 (base) | `DONE` | A |
 | E | OutcomeTracker + Feedback Loop | `DONE` | D |
 | F | ActivityDomain | `DONE` | A, D |
-| G | Role model + product constraints | `NOT STARTED` | — |
+| G | Role model + product constraints | `DONE` | — |
 | H | House State Learning | `NOT STARTED` | D, E, G |
 | I | Activity Inference and Learning | `NOT STARTED` | D, H, F |
 | J | Event-Driven Trigger | `NOT STARTED` | F |
@@ -102,20 +102,18 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain.
-**Active phase:** None. Phase G (Role model + product constraints) is next.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
+**Active phase:** None. Next phase must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Implement Phase G contracts: `approved_by: Literal["resident", "installer"]` field in
-`runtime/inference/approval_store.py`; `heima.override_approval` service in `services.yaml`.
+Review Phase G results and agree the Phase H plan before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase E4 — complete.
-- Status: Phase E is complete. OutcomeTracker now records positive/negative outcomes, matches
-  event data, wires into runtime, and emits degradation proposals after the negative streak
-  threshold.
+- Current slice: Phase G — complete.
+- Status: Product Model is documented, approval records include `approved_by`, and installer
+  approval override service is defined and registered.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -234,7 +232,7 @@ Implement Phase G contracts: `approved_by: Literal["resident", "installer"]` fie
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: implement Phase G contracts (ApprovalStore `approved_by`, `heima.override_approval` service).
+- Next concrete step: discuss Phase H — House State Learning before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -617,10 +615,10 @@ None — role model is spec + contract additions only.
 ### Acceptance criteria
 
 - [x] §1.1 Product Model in `heima_v2_spec.md`: B2B model, installer role, resident role, HA admin/user mapping, notification routing policy
-- [ ] `ApprovalStore` approval records include `approved_by: Literal["resident", "installer"]`
-- [ ] `heima.override_approval` with `installer_override: true` defined in `services.yaml`
-- [ ] Notification routing policy documented: behavioral proposals → resident; anomalies/invariant violations → installer (implementation in Phase K)
-- [ ] All existing tests pass
+- [x] `ApprovalStore` approval records include `approved_by: Literal["resident", "installer"]`
+- [x] `heima.override_approval` with `installer_override: true` defined in `services.yaml`
+- [x] Notification routing policy documented: behavioral proposals → resident; anomalies/invariant violations → installer (implementation in Phase K)
+- [x] All existing tests pass — 1084 tests
 
 ---
 

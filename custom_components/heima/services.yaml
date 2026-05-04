@@ -26,6 +26,32 @@ command:
       selector:
         text:
 
+override_approval:
+  name: Heima Override Approval
+  description: Apply an installer approval override to a pending proposal.
+  fields:
+    proposal_id:
+      name: Proposal ID
+      description: Proposal identifier to approve or reject.
+      required: true
+      selector:
+        text:
+    action:
+      name: Action
+      description: Installer override action.
+      required: true
+      selector:
+        select:
+          options:
+            - approve
+            - reject
+    installer_override:
+      name: Installer Override
+      description: Must be true to confirm this decision is an installer override.
+      required: true
+      selector:
+        boolean:
+
 set_mode:
   name: Heima Set Mode
   description: Set or clear a final house-state override.

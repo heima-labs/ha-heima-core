@@ -9,6 +9,7 @@ from homeassistant.exceptions import ServiceValidationError
 from custom_components.heima.const import (
     DOMAIN,
     SERVICE_COMMAND,
+    SERVICE_OVERRIDE_APPROVAL,
     SERVICE_SET_MODE,
     SERVICE_SET_OVERRIDE,
 )
@@ -116,6 +117,27 @@ class _FakeCoordinator:
         )
         await self.engine.async_evaluate(reason=f"service:set_mode:{mode}:{enabled}")
         return action
+
+
+class _FakeProposalEngine:
+    def __init__(self, proposal_id: str = "proposal-1") -> None:
+        self.proposal_id = proposal_id
+        self.accepted: list[str] = []
+        self.rejected: list[str] = []
+
+    async def async_accept_proposal(self, proposal_id: str) -> bool:
+        self.accepted.append(proposal_id)
+        return proposal_id == self.proposal_id
+
+    async def async_reject_proposal(self, proposal_id: str) -> bool:
+        self.rejected.append(proposal_id)
+        return proposal_id == self.proposal_id
+
+
+class _FakeApprovalCoordinator:
+    def __init__(self, proposal_engine: _FakeProposalEngine, entry_id: str = "entry1") -> None:
+        self.proposal_engine = proposal_engine
+        self.entry = SimpleNamespace(entry_id=entry_id)
 
 
 def test_validate_command_rejects_unknown_command():
@@ -258,6 +280,110 @@ async def test_heima_set_mode_sets_and_clears_final_house_state_override(monkeyp
         if event_type == "heima_event" and payload["type"] == "system.house_state_override_changed"
     ]
     assert override_events[-1]["context"]["action"] == "clear"
+
+
+@pytest.mark.asyncio
+async def test_heima_override_approval_requires_installer_override(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator = _FakeApprovalCoordinator(_FakeProposalEngine())
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_OVERRIDE_APPROVAL)
+    with pytest.raises(ServiceValidationError):
+        await handler(
+            SimpleNamespace(
+                data={
+                    "proposal_id": "proposal-1",
+                    "action": "approve",
+                    "installer_override": False,
+                }
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_heima_override_approval_approves_via_proposal_engine(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    proposal_engine = _FakeProposalEngine()
+    coordinator = _FakeApprovalCoordinator(proposal_engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_OVERRIDE_APPROVAL)
+    await handler(
+        SimpleNamespace(
+            data={
+                "proposal_id": "proposal-1",
+                "action": "approve",
+                "installer_override": True,
+            }
+        )
+    )
+
+    assert proposal_engine.accepted == ["proposal-1"]
+
+
+@pytest.mark.asyncio
+async def test_heima_override_approval_rejects_via_proposal_engine(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    proposal_engine = _FakeProposalEngine()
+    coordinator = _FakeApprovalCoordinator(proposal_engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_OVERRIDE_APPROVAL)
+    await handler(
+        SimpleNamespace(
+            data={
+                "proposal_id": "proposal-1",
+                "action": "reject",
+                "installer_override": True,
+            }
+        )
+    )
+
+    assert proposal_engine.rejected == ["proposal-1"]
+
+
+def test_services_yaml_defines_override_approval_service() -> None:
+    from pathlib import Path
+
+    raw = Path("custom_components/heima/services.yaml").read_text(encoding="utf-8")
+
+    assert "override_approval:" in raw
+    assert "proposal_id:" in raw
+    assert "installer_override:" in raw
 
 
 @pytest.mark.asyncio
