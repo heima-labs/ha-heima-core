@@ -39,6 +39,7 @@ from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
 from .activity_detectors import build_activity_detectors
+from .analyzers.base import ReactionProposal
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .behaviors.event_recorder import EventRecorderBehavior
@@ -81,6 +82,7 @@ from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
+from .proposal_engine import ProposalEngine
 from .reactions import (
     create_builtin_reaction_plugin_registry,
     normalize_reaction_options_payload,
@@ -188,6 +190,7 @@ class HeimaEngine:
         self._house_snapshot_store: SnapshotStore | None = None
         self._outcome_tracker: OutcomeTracker | None = None
         self._event_recorder: EventRecorderBehavior | None = None
+        self._proposal_engine: ProposalEngine | None = None
         self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
@@ -242,6 +245,10 @@ class HeimaEngine:
     def set_event_recorder(self, behavior: EventRecorderBehavior) -> None:
         """Set the event recorder used for current-cycle outcome observations."""
         self._event_recorder = behavior
+
+    def set_proposal_engine(self, engine: ProposalEngine) -> None:
+        """Set the proposal engine used for degradation proposals."""
+        self._proposal_engine = engine
 
     def _infer_step_room_id(self, step: ApplyStep) -> str | None:
         """Best-effort room scope for a reaction-generated step."""
@@ -700,6 +707,7 @@ class HeimaEngine:
             await self._execute_apply_plan(plan)
 
         self._check_reaction_outcomes()
+        await self._maybe_submit_degradation_proposals()
 
         return snapshot
 
@@ -1417,6 +1425,46 @@ class HeimaEngine:
         if outcome_tracker is None or event_recorder is None:
             return
         outcome_tracker.check_pending(event_recorder.cycle_events)
+
+    async def _maybe_submit_degradation_proposals(self) -> None:
+        outcome_tracker = getattr(self, "_outcome_tracker", None)
+        proposal_engine = getattr(self, "_proposal_engine", None)
+        if outcome_tracker is None or proposal_engine is None:
+            return
+
+        for reaction in self._reactions:
+            reaction_id = reaction.reaction_id
+            if not outcome_tracker.ready_for_degradation(reaction_id):
+                continue
+
+            identity_key = f"degradation:{reaction_id}"
+            existing = proposal_engine.proposal_by_identity_key(identity_key)
+            if existing is not None and existing.status in ("accepted", "rejected"):
+                continue
+
+            streak = outcome_tracker.negative_streak(reaction_id)
+            reaction_type = type(reaction).__name__
+            await proposal_engine.async_submit_proposal(
+                ReactionProposal(
+                    analyzer_id="outcome_tracker",
+                    reaction_type=reaction_type,
+                    description=(
+                        f"Reaction '{reaction_id}' fired {streak} times without the expected "
+                        "outcome. Consider disabling it."
+                    ),
+                    confidence=min(1.0, streak / OutcomeTracker.DEGRADATION_THRESHOLD),
+                    origin="learned",
+                    followup_kind="tuning_suggestion",
+                    target_reaction_id=reaction_id,
+                    target_reaction_type=reaction_type,
+                    identity_key=identity_key,
+                    suggested_reaction_config={
+                        "enabled": False,
+                        "degradation_reason": "consecutive_negatives",
+                        "negative_count": streak,
+                    },
+                )
+            )
 
     def _dispatch_apply_filter(self, plan: ApplyPlan, snapshot: DecisionSnapshot) -> ApplyPlan:
         for behavior in self._behaviors:

@@ -88,7 +88,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | B | IBehaviorAnalyzer + FindingRouter | `DONE` | A |
 | C | IInvariantCheck | `DONE` | A |
 | D | InferenceEngine v2 (base) | `DONE` | A |
-| E | OutcomeTracker + Feedback Loop | `IN PROGRESS` | D |
+| E | OutcomeTracker + Feedback Loop | `DONE` | D |
 | F | House State Learning | `NOT STARTED` | D, E |
 | G | ActivityDomain | `DONE` | A, D |
 | H | Activity Inference and Learning | `NOT STARTED` | D, F, G |
@@ -98,20 +98,19 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phase:** Phase G — ActivityDomain.
-**Active phase:** Phase E — OutcomeTracker + Feedback Loop. Next slice must be agreed before implementation.
+**Last completed phase:** Phase E — OutcomeTracker + Feedback Loop.
+**Active phase:** None. Next phase must be agreed before implementation.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase E3 results and agree the Phase E4 feedback/degradation proposal plan before
-implementation.
+Review Phase E results and agree the next phase before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase E3 — complete.
-- Status: OutcomeTracker foundation, minimal reaction contract, event match data,
-  EventRecorderBehavior cycle events, engine registration/checking, and coordinator wiring are
-  complete. Learning feedback and degradation proposals are not implemented yet.
+- Current slice: Phase E4 — complete.
+- Status: Phase E is complete. OutcomeTracker now records positive/negative outcomes, matches
+  event data, wires into runtime, and emits degradation proposals after the negative streak
+  threshold.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -520,18 +519,17 @@ No new behavior — pure structural refactor. All 660 tests must be green at end
   - Buffer EventRecorderBehavior events for the current evaluation cycle only.
   - Register pending verifications when reaction-originated apply steps are fired.
   - Call `OutcomeTracker.check_pending()` after apply using current cycle observations.
-- [ ] E4 — Feedback and degradation proposal:
-  - Feed outcome records to learning backend.
+- [x] E4 — Feedback and degradation proposal:
   - Emit at most one degradation `ReactionProposal` after five consecutive negatives until
     user resolution.
 
 ### Acceptance criteria
 
 - [x] Positive outcome (entity state matches expected within timeout) → recorded
-- [ ] Negative outcome (timeout, no match) → degradation proposal emitted
-- [ ] `check_pending()` is synchronous and completes in O(pending count)
+- [x] Negative outcome (timeout, no match) → degradation proposal emitted
+- [x] `check_pending()` is synchronous and completes in O(pending count)
 - [x] Tests: positive outcome, negative outcome, timeout policy
-- [x] All 1070 tests pass
+- [x] All 1076 tests pass
 
 ---
 

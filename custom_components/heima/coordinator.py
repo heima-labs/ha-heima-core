@@ -110,6 +110,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             ),
             sensor_writer=self._write_proposals_sensor,
         )
+        self.engine.set_proposal_engine(self._proposal_engine)
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
         self._finding_router = FindingRouter(
