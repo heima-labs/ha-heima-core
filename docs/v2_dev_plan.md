@@ -91,7 +91,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | E | OutcomeTracker + Feedback Loop | `DONE` | D |
 | F | ActivityDomain | `DONE` | A, D |
 | G | Role model + product constraints | `DONE` | — |
-| H | House State Learning | `NOT STARTED` | D, E, G |
+| H | House State Learning | `IN PROGRESS` | D, E, G |
 | I | Activity Inference and Learning | `NOT STARTED` | D, H, F |
 | J | Event-Driven Trigger | `NOT STARTED` | F |
 | K | Installer alert channel + health entity | `NOT STARTED` | C |
@@ -103,17 +103,17 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** None. Next phase must be agreed before implementation.
+**Active phase:** Phase H — House State Learning, slice H1.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review Phase G results and agree the Phase H plan before implementation.
+Review H1 results and agree the H2 HouseStateInferenceModule plan before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase G — complete.
-- Status: Product Model is documented, approval records include `approved_by`, and installer
-  approval override service is defined and registered.
+- Current slice: Phase H1 — complete.
+- Status: ApprovalStore is persistent, approval records require `approved_by` and
+  `context_snapshot`, and house-state approval context keys are stable and tested.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -232,7 +232,7 @@ Review Phase G results and agree the Phase H plan before implementation.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss Phase H — House State Learning before implementation.
+- Next concrete step: discuss H2 — HouseStateInferenceModule before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -634,6 +634,27 @@ None — role model is spec + contract additions only.
 - Proposal notifications route to resident channel only.
 - Installer override via `heima.override_approval` service (defined in Phase G).
 
+### Slice plan
+
+- [x] H1 — ApprovalStore and context keys:
+  - Implement persistent `ApprovalStore` with HA Store key `heima_inference_approvals`.
+  - Require `approved_by` and `context_snapshot` on every `ApprovalRecord`.
+  - Add stable `house_state_context_key(...)` with sorted rooms, fixed H1 learning-context
+    vocabulary, deterministic context hash, and `state:{predicted_state}` in the key.
+  - Add tests for load/save, malformed record rejection, `decision_for()`, room sorting,
+    context hash stability, empty context, and mandatory context snapshot.
+- [ ] H2 — HouseStateInferenceModule:
+  - Learn house-state probabilities from snapshots and keep accumulating/analyzing even when
+    approval gates block signal emission.
+- [ ] H3 — Proposal and approval gate:
+  - Emit proposals for unapproved learned contexts and gate `HouseStateSignal` emission inside
+    the module.
+- [ ] H4 — Engine/coordinator wiring:
+  - Load ApprovalStore, register HouseStateInferenceModule, and route approvals through the
+    coordinator product-flow layer.
+- [ ] H5 — Config flow review surface:
+  - Add `house_state_learned_context` proposal review support.
+
 ### New files to create
 
 | File | What to implement | Spec ref |
@@ -651,11 +672,11 @@ None — role model is spec + contract additions only.
 ### Acceptance criteria
 
 - [ ] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
-- [ ] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
-- [ ] `ApprovalStore` records include `approved_by` field
+- [x] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
+- [x] `ApprovalStore` records include `approved_by` field
 - [ ] Unapproved signals are ignored by `HouseStateDomain`
 - [ ] User approval/rejection survives HA restart
-- [ ] All existing tests pass
+- [x] All existing tests pass — 1093 tests
 
 ---
 
