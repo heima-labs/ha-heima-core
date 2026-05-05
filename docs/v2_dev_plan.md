@@ -103,17 +103,17 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** Phase H — House State Learning, slice H1.
+**Active phase:** Phase H — House State Learning, slice H2 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review H1 results and agree the H2 HouseStateInferenceModule plan before implementation.
+Review H2 results and agree the H3 proposal/gate plan before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase H1 — complete.
-- Status: ApprovalStore is persistent, approval records require `approved_by` and
-  `context_snapshot`, and house-state approval context keys are stable and tested.
+- Current slice: Phase H2 — complete.
+- Status: HouseStateInferenceModule learns from SnapshotStore-compatible history, keeps approval
+  keys in memory for sync inference, and emits only statistically supported approved signals.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -232,7 +232,7 @@ Review H1 results and agree the H2 HouseStateInferenceModule plan before impleme
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss H2 — HouseStateInferenceModule before implementation.
+- Next concrete step: discuss H3 — proposal emission and approval gate before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -643,7 +643,7 @@ None — role model is spec + contract additions only.
     vocabulary, deterministic context hash, and `state:{predicted_state}` in the key.
   - Add tests for load/save, malformed record rejection, `decision_for()`, room sorting,
     context hash stability, empty context, and mandatory context snapshot.
-- [ ] H2 — HouseStateInferenceModule:
+- [x] H2 — HouseStateInferenceModule:
   - Learn house-state probabilities from snapshots and keep accumulating/analyzing even when
     approval gates block signal emission.
 - [ ] H3 — Proposal and approval gate:
@@ -671,12 +671,12 @@ None — role model is spec + contract additions only.
 
 ### Acceptance criteria
 
-- [ ] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
+- [x] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
 - [x] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
 - [x] `ApprovalStore` records include `approved_by` field
 - [ ] Unapproved signals are ignored by `HouseStateDomain`
 - [ ] User approval/rejection survives HA restart
-- [x] All existing tests pass — 1093 tests
+- [x] All existing tests pass — 1102 tests
 
 ---
 

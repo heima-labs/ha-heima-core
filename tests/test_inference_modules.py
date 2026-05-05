@@ -10,10 +10,12 @@ import pytest
 from custom_components.heima.runtime.inference import (
     HeatingPreferenceModule,
     HouseSnapshot,
+    HouseStateInferenceModule,
     Importance,
     InferenceContext,
     WeekdayStateModule,
 )
+from custom_components.heima.runtime.inference.approval_store import house_state_context_key
 
 
 def _context(
@@ -22,14 +24,16 @@ def _context(
     minute_of_day: int = 600,
     previous_house_state: str = "home",
     previous_heating_setpoint: float | None = 20.0,
+    anyone_home: bool = True,
+    room_occupancy: dict[str, bool] | None = None,
 ) -> InferenceContext:
     return InferenceContext(
         now_local=datetime(2026, 4, 30, 10, 0, tzinfo=UTC),
         weekday=weekday,
         minute_of_day=minute_of_day,
-        anyone_home=True,
+        anyone_home=anyone_home,
         named_present=("alice",),
-        room_occupancy={"kitchen": True},
+        room_occupancy=room_occupancy or {"kitchen": True},
         previous_house_state=previous_house_state,
         previous_heating_setpoint=previous_heating_setpoint,
         previous_lighting_scenes={},
@@ -42,14 +46,16 @@ def _snapshot(
     minute_of_day: int = 600,
     house_state: str = "home",
     heating_setpoint: float | None = 20.5,
+    anyone_home: bool = True,
+    room_occupancy: dict[str, bool] | None = None,
 ) -> HouseSnapshot:
     return HouseSnapshot(
         ts="2026-04-30T10:00:00+00:00",
         weekday=weekday,
         minute_of_day=minute_of_day,
-        anyone_home=True,
+        anyone_home=anyone_home,
         named_present=("alice",),
-        room_occupancy={},
+        room_occupancy=room_occupancy or {},
         detected_activities=(),
         house_state=house_state,
         heating_setpoint=heating_setpoint,
@@ -271,3 +277,204 @@ async def test_heating_preference_diagnostics() -> None:
     assert diag["module_id"] == "heating_preference"
     assert diag["ready"] is True
     assert diag["state_count"] >= 1
+
+
+# ─── HouseStateInferenceModule ────────────────────────────────────────────────
+
+
+def _house_state_key(
+    *,
+    weekday: int = 0,
+    minute_of_day: int = 600,
+    rooms: tuple[str, ...] = ("kitchen",),
+    anyone_home: bool = True,
+    predicted_state: str = "working",
+) -> str:
+    return house_state_context_key(
+        weekday=weekday,
+        hour_bucket=minute_of_day // 60,
+        rooms=rooms,
+        anyone_home=anyone_home,
+        predicted_state=predicted_state,
+        learning_context={},
+    )
+
+
+def test_house_state_inference_returns_empty_before_analyze() -> None:
+    module = HouseStateInferenceModule()
+
+    assert module.infer(_context()) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_analyzes_without_approval() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.diagnostics()["ready"] is True
+    assert module.diagnostics()["slot_count"] == 1
+    assert module.infer(_context(room_occupancy={"kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_emits_only_after_context_key_approval() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys(
+        {_house_state_key(rooms=("kitchen",), predicted_state="working")}
+    )
+
+    signals = module.infer(_context(room_occupancy={"kitchen": True}))
+
+    assert len(signals) == 1
+    assert signals[0].source_id == "house_state_inference"
+    assert signals[0].predicted_state == "working"
+    assert signals[0].importance == Importance.ASSERT
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_approval_for_different_state_does_not_emit() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys(
+        {_house_state_key(rooms=("kitchen",), predicted_state="relaxing")}
+    )
+
+    assert module.infer(_context(room_occupancy={"kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_no_signal_below_min_support_even_if_approved() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 2
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys(
+        {_house_state_key(rooms=("kitchen",), predicted_state="working")}
+    )
+
+    assert module.infer(_context(room_occupancy={"kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_no_signal_below_confidence_threshold() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(house_state="working", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="home", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="home", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="relax", room_occupancy={"kitchen": True}),
+    ]
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys({_house_state_key(rooms=("kitchen",), predicted_state="home")})
+
+    assert module.infer(_context(room_occupancy={"kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_uses_current_context_slot() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=600,
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3 + [
+        _snapshot(
+            weekday=1,
+            minute_of_day=600,
+            house_state="relax",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys(
+        {
+            _house_state_key(
+                weekday=1,
+                minute_of_day=600,
+                rooms=("kitchen",),
+                predicted_state="relax",
+            )
+        }
+    )
+
+    signals = module.infer(_context(weekday=1, minute_of_day=600))
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "relax"
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_infer_completes_under_1ms() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            weekday=wd,
+            minute_of_day=h * 60,
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+        for wd in range(7)
+        for h in range(24)
+        for _ in range(3)
+    ]
+    await module.analyze(_FakeStore(snapshots))
+    module.set_approved_context_keys(
+        {
+            _house_state_key(
+                weekday=3,
+                minute_of_day=660,
+                rooms=("kitchen",),
+                predicted_state="working",
+            )
+        }
+    )
+
+    start = time.perf_counter()
+    module.infer(_context(weekday=3, minute_of_day=660, room_occupancy={"kitchen": True}))
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    assert elapsed_ms < 1.0
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_diagnostics() -> None:
+    module = HouseStateInferenceModule()
+    await module.analyze(
+        _FakeStore([_snapshot(house_state="working", room_occupancy={"kitchen": True})] * 3)
+    )
+    module.set_approved_context_keys({"key-1", "key-2"})
+
+    diag = module.diagnostics()
+
+    assert diag["module_id"] == "house_state_inference"
+    assert diag["ready"] is True
+    assert diag["slot_count"] == 1
+    assert diag["approved_context_keys"] == 2
+    assert diag["analyzed_snapshots"] == 3
