@@ -72,11 +72,13 @@ Installer approval override does not generate a resident notification.
 
 Every proposal approval record includes `approved_by: Literal["resident", "installer"]`.
 
-- **Resident approval**: triggered by a persistent HA notification with inline approve/reject
-  actions. Natural language description of the proposal is mandatory.
+- **Resident approval**: a persistent HA notification (nudge) points the resident to the resident
+  dashboard. The dashboard shows pending proposals with natural-language descriptions derived from
+  `context_snapshot`. Approve/reject actions call `heima.approve_proposal(proposal_id, action)`.
+  Natural language description of the proposal is mandatory.
 - **Installer override**: performed via the `heima.override_approval(proposal_id, action,
   installer_override=True)` service call. Takes precedence over any resident decision. Not subject
-  to resident confirmation.
+  to resident confirmation. Installer can also act from the config flow options review step.
 
 ### Non-goals for the product model
 
@@ -1208,6 +1210,7 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 | §1.1 Product Model | `docs/specs/heima_v2_spec.md` *(done)* |
 | `approved_by: Literal["resident", "installer"]` on approval records | `runtime/inference/approval_store.py` |
 | `heima.override_approval(proposal_id, action, installer_override)` | `services.yaml` |
+| `heima.approve_proposal(proposal_id, action)` — resident-facing service | `services.yaml` *(delivered in Phase H5)* |
 
 ### Phase H — House State Learning
 

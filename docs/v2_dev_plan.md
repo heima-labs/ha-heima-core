@@ -107,7 +107,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review H4 results and agree the H5 config-flow review surface before implementation.
+Implement H5: resident notification nudge + `heima.approve_proposal` service + config flow installer review for `house_state_learned_context`.
 
 ### Current Working Notes
 
@@ -252,7 +252,7 @@ Review H4 results and agree the H5 config-flow review surface before implementat
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
   - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_learning_reset.py tests/test_services_notify_event.py tests/test_integration_normalization_e2e.py -q` — passed, 56 tests.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1114 tests.
-- Next concrete step: discuss H5 — config-flow review surface for `house_state_learned_context`.
+- Next concrete step: implement H5 — resident notification nudge + `heima.approve_proposal` service + config flow installer review (dashboard approach, no inline notification actions).
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -674,8 +674,16 @@ None — role model is spec + contract additions only.
 - [x] H4 — Engine/coordinator wiring:
   - Load ApprovalStore, register HouseStateInferenceModule, and route approvals through the
     coordinator product-flow layer.
-- [ ] H5 — Config flow review surface:
-  - Add `house_state_learned_context` proposal review support.
+- [ ] H5 — Resident approval surface + service:
+  - Send `persistent_notification` nudge pointing to resident dashboard when a new
+    `house_state_learned_context` proposal is pending (dedup guard: do not re-send for
+    already-notified pending proposals).
+  - Add `heima.approve_proposal(proposal_id, action)` service in `services.yaml`; handler
+    calls `coordinator.async_review_house_state_proposal(..., approved_by="resident")`.
+  - Add `house_state_learned_context` review step in config flow options (installer path,
+    `approved_by="installer"`).
+  - Dashboard card wires to `heima.approve_proposal`; description derived from
+    `context_snapshot` in the proposal record.
 
 ### New files to create
 
