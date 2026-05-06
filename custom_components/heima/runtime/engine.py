@@ -64,6 +64,7 @@ from .inference import (
     ActivitySignal,
     HeatingSignal,
     HouseSnapshot,
+    HouseStateSignal,
     ILearningModule,
     InferenceContext,
     InferenceSignal,
@@ -905,6 +906,7 @@ class HeimaEngine:
             now_utc=now_utc,
         )
         activity_signals = signal_buckets.get(ActivitySignal, [])
+        house_state_signals = signal_buckets.get(HouseStateSignal, [])
         activity_result = self._activity_domain.evaluate(
             self._activity_observations(),
             self._state,
@@ -921,6 +923,7 @@ class HeimaEngine:
             state=self._state,
             calendar_result=calendar_result,
             schedule_recheck=self._schedule_timed_recheck_deadline,
+            signals=house_state_signals,
         )
         house_state = hs_result.house_state
         house_reason = hs_result.house_reason

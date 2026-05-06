@@ -5,6 +5,7 @@ import pytest
 from custom_components.heima.runtime.domains.calendar import CalendarResult
 from custom_components.heima.runtime.domains.events import EventsDomain
 from custom_components.heima.runtime.domains.house_state import HouseStateDomain
+from custom_components.heima.runtime.inference.signals import HouseStateSignal, Importance
 from custom_components.heima.runtime.normalization.service import InputNormalizer
 
 
@@ -20,6 +21,22 @@ def _fake_state(current_house_state: str | None = None):
     return SimpleNamespace(
         get_sensor=lambda key: current_house_state if key == "heima_house_state" else None,
         get_binary=lambda _: None,
+    )
+
+
+def _house_state_signal(
+    predicted_state: str,
+    *,
+    confidence: float = 0.75,
+    source_id: str = "house_state_inference",
+) -> HouseStateSignal:
+    return HouseStateSignal(
+        source_id=source_id,
+        confidence=confidence,
+        importance=Importance.SUGGEST,
+        ttl_s=600,
+        label=f"learned:{predicted_state}",
+        predicted_state=predicted_state,
     )
 
 
@@ -103,6 +120,142 @@ def test_house_state_relax_mode_is_immediate(monkeypatch: pytest.MonkeyPatch):
     )
     assert result.house_state == "relax"
     assert result.house_reason == "relax_explicit_signal"
+
+
+def test_house_state_learned_signal_influences_when_no_hard_input(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2500.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        signals=[_house_state_signal("working")],
+    )
+
+    assert result.house_state == "working"
+    assert result.house_reason == "learned_house_state_signal"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["resolution_trace"]["decision"]["action"] == "signal"
+    assert diagnostics["resolution_trace"]["decision"]["source"] == "house_state_inference"
+
+
+def test_house_state_learned_signal_ignored_when_override_active(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    domain.set_override(mode="vacation", enabled=True, source="test")
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2550.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        signals=[_house_state_signal("working")],
+    )
+
+    assert result.house_state == "vacation"
+    assert result.house_reason == "manual_override:vacation"
+    assert domain.diagnostics()["resolution_trace"]["resolution_path"] == "override"
+
+
+def test_house_state_learned_signal_ignored_during_vacation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2600.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_vacation_active=True),
+        signals=[_house_state_signal("working")],
+    )
+
+    assert result.house_state == "vacation"
+    assert result.house_reason == "vacation_mode"
+    assert domain.diagnostics()["resolution_trace"]["resolution_path"] == "hard_state"
+
+
+def test_house_state_learned_signal_ignored_when_everyone_away(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2650.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=False,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        signals=[_house_state_signal("working")],
+    )
+
+    assert result.house_state == "away"
+    assert result.house_reason == "no_presence"
+    assert domain.diagnostics()["resolution_trace"]["resolution_path"] == "hard_state"
+
+
+def test_house_state_non_approved_or_low_confidence_signal_has_no_effect(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2700.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        signals=[
+            _house_state_signal("working", source_id="weekday_state"),
+            _house_state_signal("relax", confidence=0.59),
+        ],
+    )
+
+    assert result.house_state == "home"
+    assert result.house_reason == "default"
+    assert domain.diagnostics()["resolution_trace"]["decision"]["action"] == "fallback_home"
 
 
 def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pytest.MonkeyPatch):

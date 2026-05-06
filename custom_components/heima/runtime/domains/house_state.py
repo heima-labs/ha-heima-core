@@ -13,6 +13,7 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from ...const import DEFAULT_HOUSE_STATE_CONFIG, OPT_HOUSE_STATE_CONFIG
+from ..inference.signals import HouseStateSignal
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -24,6 +25,9 @@ from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)
 _MEDIA_ACTIVE_STATES = {"on", "playing", "paused", "buffering"}
+_APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID = "house_state_inference"
+_HOUSE_STATE_SIGNAL_MIN_CONFIDENCE = 0.60
+_HOME_SUBSTATES = {"sleeping", "relax", "working", "home"}
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,7 @@ class HouseStateDomain:
         state: Any,
         calendar_result: CalendarResult | None = None,
         schedule_recheck: Callable[..., None] | None = None,
+        signals: list[HouseStateSignal] | None = None,
     ) -> HouseStateResult:
         house_state_cfg = self._normalized_config(options)
         self._current_config = dict(house_state_cfg)
@@ -255,6 +260,7 @@ class HouseStateDomain:
                 now_monotonic=now_monotonic,
                 schedule_recheck=schedule_recheck,
                 house_state_cfg=house_state_cfg,
+                signals=signals,
             )
 
         self._candidate_summary = self._build_candidate_summary(
@@ -662,12 +668,9 @@ class HouseStateDomain:
         now_monotonic: float,
         schedule_recheck: Callable[..., None] | None,
         house_state_cfg: dict[str, Any],
+        signals: list[HouseStateSignal] | None,
     ) -> tuple[str, str, dict[str, Any]]:
-        current = (
-            current_state_before
-            if current_state_before in {"sleeping", "relax", "working", "home"}
-            else "home"
-        )
+        current = current_state_before if current_state_before in _HOME_SUBSTATES else "home"
         sleep_on = bool(self._candidate_state.get("sleep_candidate", False))
         wake_on = bool(self._candidate_state.get("wake_candidate", False))
         relax_on = bool(self._candidate_state.get("relax_candidate", False))
@@ -869,6 +872,21 @@ class HouseStateDomain:
                 },
             )
 
+        learned_signal = self._select_learned_house_state_signal(signals)
+        if learned_signal is not None:
+            return (
+                learned_signal.predicted_state,
+                "learned_house_state_signal",
+                {
+                    "action": "signal",
+                    "source": learned_signal.source_id,
+                    "predicted_state": learned_signal.predicted_state,
+                    "confidence": learned_signal.confidence,
+                    "importance": int(learned_signal.importance),
+                    "label": learned_signal.label,
+                },
+            )
+
         return (
             "home",
             "default",
@@ -876,6 +894,23 @@ class HouseStateDomain:
                 "action": "fallback_home",
             },
         )
+
+    @staticmethod
+    def _select_learned_house_state_signal(
+        signals: list[HouseStateSignal] | None,
+    ) -> HouseStateSignal | None:
+        if not signals:
+            return None
+        candidates = [
+            signal
+            for signal in signals
+            if signal.source_id == _APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID
+            and signal.confidence >= _HOUSE_STATE_SIGNAL_MIN_CONFIDENCE
+            and signal.predicted_state in _HOME_SUBSTATES
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda signal: (signal.confidence, int(signal.importance)))
 
     def _compute_house_signal(self, trace_key: str, entity_ids: list[str]) -> bool:
         observations = [self._normalizer.boolean_signal(entity_id) for entity_id in entity_ids]

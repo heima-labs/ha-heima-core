@@ -91,7 +91,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | E | OutcomeTracker + Feedback Loop | `DONE` | D |
 | F | ActivityDomain | `DONE` | A, D |
 | G | Role model + product constraints | `DONE` | — |
-| H | House State Learning | `IN PROGRESS` | D, E, G |
+| H | House State Learning | `DONE` | D, E, G |
 | I | Activity Inference and Learning | `NOT STARTED` | D, H, F |
 | J | Event-Driven Trigger | `NOT STARTED` | F |
 | K | Installer alert channel + health entity | `NOT STARTED` | C |
@@ -102,20 +102,19 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** Phase H — House State Learning, slice H5 complete.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning.
+**Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review H5 results and decide the remaining HouseStateDomain signal-consumption acceptance item.
+Discuss and plan Phase I — Activity Inference and Learning.
 
 ### Current Working Notes
 
-- Current slice: Phase H5 — complete.
-- Status: Resident dashboard approval support is exposed through `heima.approve_proposal`,
-  pending house-state proposals create deduplicated persistent-notification nudges, config flow
-  handles installer review for `house_state_learned_context`, and proposal sensor attributes expose
-  readable `context_snapshot` data for future dashboard cards.
+- Current slice: Phase H6 — complete.
+- Status: `HouseStateSignal` is passed from the engine to `HouseStateDomain`; the domain consumes
+  only approved `house_state_inference` signals with confidence >= 0.60, after manual override,
+  vacation, and everyone-away hard-state guards. Phase H is complete.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -134,6 +133,9 @@ Review H5 results and decide the remaining HouseStateDomain signal-consumption a
     ApprovalStore or ProposalEngine.
   - `ProposalEngine.async_submit_proposal()` is already idempotent by `identity_key`: existing
     matching proposals are refreshed instead of duplicated.
+  - H6 consumes only `HouseStateSignal(source_id="house_state_inference")`; the older
+    `WeekdayStateModule` is not approval-gated and is therefore intentionally not applied to
+    `HouseStateDomain` decisions in Phase H.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -157,6 +159,11 @@ Review H5 results and decide the remaining HouseStateDomain signal-consumption a
   - `custom_components/heima/runtime/activity_detectors/config.py`
   - `tests/test_activity_bindings_and_shower.py`
   - `tests/test_activity_engine_wiring.py`
+  - `custom_components/heima/runtime/domains/house_state.py`
+  - `custom_components/heima/runtime/inference/signals.py`
+  - `custom_components/heima/runtime/inference/modules/house_state_inference.py`
+  - `custom_components/heima/runtime/inference/modules/weekday_state.py`
+  - `tests/test_house_state_domain.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -258,9 +265,15 @@ Review H5 results and decide the remaining HouseStateDomain signal-consumption a
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1120 tests.
-- Next concrete step: discuss remaining Phase H acceptance item — whether to wire
-  `HouseStateSignal` consumption into `HouseStateDomain` now or split it into a new H6 closeout
-  slice.
+  - `.venv/bin/python -m pytest tests/test_house_state_domain.py -q` — passed, 16 tests.
+  - `.venv/bin/python -m pytest tests/test_inference_engine_wiring.py tests/test_inference_modules.py -q`
+    — passed, 38 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_house_state_domain.py tests/test_inference_engine_wiring.py tests/test_inference_modules.py -q`
+    — passed, 54 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1125 tests.
+- Next concrete step: discuss Phase I scope and slice plan before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -692,6 +705,10 @@ None — role model is spec + contract additions only.
     `approved_by="installer"`).
   - Do not implement a Lovelace card in H5; expose dashboard-ready data through
     `sensor.heima_reaction_proposals` and the `heima.approve_proposal` service.
+- [x] H6 — HouseStateDomain signal consumption:
+  - Pass routed `HouseStateSignal` buckets from the engine to `HouseStateDomain`.
+  - Consume only approved learned house-state signals after manual override, vacation, and
+    everyone-away hard guards.
 
 ### New files to create
 
@@ -712,9 +729,9 @@ None — role model is spec + contract additions only.
 - [x] `HouseStateInferenceModule` emits `HouseStateSignal` only for approved patterns
 - [x] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
 - [x] `ApprovalStore` records include `approved_by` field
-- [ ] Unapproved signals are ignored by `HouseStateDomain`
+- [x] Unapproved signals are ignored by `HouseStateDomain`
 - [x] User approval/rejection survives HA restart
-- [x] All existing tests pass — 1120 tests
+- [x] All existing tests pass — 1125 tests
 
 ---
 
