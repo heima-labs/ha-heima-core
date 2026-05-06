@@ -11,6 +11,7 @@ from .approval_store import (
 )
 from .base import HeimaLearningModule, ILearningModule, InferenceContext
 from .modules import (
+    ActivityInferenceModule,
     HeatingPreferenceModule,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
@@ -34,6 +35,7 @@ __all__ = [
     "ApprovalRecord",
     "ApprovalStore",
     "ACTIVITY_PROPOSAL_TYPE",
+    "ActivityInferenceModule",
     "ActivitySignal",
     "activity_context_key",
     "activity_context_snapshot",

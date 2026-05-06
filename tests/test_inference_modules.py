@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from custom_components.heima.runtime.inference import (
+    ActivityInferenceModule,
     HeatingPreferenceModule,
     HouseSnapshot,
     HouseStateInferenceModule,
@@ -19,6 +20,7 @@ from custom_components.heima.runtime.inference.approval_store import (
     HOUSE_STATE_PROPOSAL_TYPE,
     house_state_context_key,
 )
+from custom_components.heima.runtime.proposal_engine import ActivityProposal
 
 
 def _context(
@@ -29,6 +31,7 @@ def _context(
     previous_heating_setpoint: float | None = 20.0,
     anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
+    previous_activity_names: tuple[str, ...] = (),
 ) -> InferenceContext:
     return InferenceContext(
         now_local=datetime(2026, 4, 30, 10, 0, tzinfo=UTC),
@@ -40,6 +43,7 @@ def _context(
         previous_house_state=previous_house_state,
         previous_heating_setpoint=previous_heating_setpoint,
         previous_lighting_scenes={},
+        previous_activity_names=previous_activity_names,
     )
 
 
@@ -51,6 +55,7 @@ def _snapshot(
     heating_setpoint: float | None = 20.5,
     anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
+    detected_activities: tuple[str, ...] = (),
 ) -> HouseSnapshot:
     return HouseSnapshot(
         ts="2026-04-30T10:00:00+00:00",
@@ -59,7 +64,7 @@ def _snapshot(
         anyone_home=anyone_home,
         named_present=("alice",),
         room_occupancy=room_occupancy or {},
-        detected_activities=(),
+        detected_activities=detected_activities,
         house_state=house_state,
         heating_setpoint=heating_setpoint,
         lighting_scenes={},
@@ -73,6 +78,317 @@ class _FakeStore:
 
     def snapshots(self) -> list[HouseSnapshot]:
         return self._snapshots
+
+
+# ─── ActivityInferenceModule ──────────────────────────────────────────────────
+
+
+def _activity_proposal(
+    *,
+    activity_name: str = "Movie Night",
+    primitive_pattern: frozenset[str] = frozenset({"tv", "relax"}),
+    context_conditions: dict | None = None,
+    confidence: float = 0.9,
+) -> ActivityProposal:
+    return ActivityProposal(
+        activity_name=activity_name,
+        primitive_pattern=primitive_pattern,
+        context_conditions=context_conditions
+        if context_conditions is not None
+        else {"room_id": "living_room", "hour_range": [20, 24]},
+        occurrence_count=12,
+        confidence=confidence,
+        representative_ts=["2026-04-30T20:00:00+00:00"],
+    )
+
+
+def test_activity_inference_returns_empty_before_analyze() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_returns_empty_without_approved_proposals() -> None:
+    module = ActivityInferenceModule()
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_emits_for_approved_pattern() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(snapshots))
+    signals = module.infer(
+        _context(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            previous_activity_names=("tv", "relax"),
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].source_id == "activity_inference"
+    assert signals[0].activity_name == "movie_night"
+    assert signals[0].room_id == "living_room"
+    assert signals[0].confidence == 1.0
+    assert signals[0].importance == Importance.ASSERT
+    assert signals[0].context["primitive_pattern"] == ["relax", "tv"]
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_no_signal_below_min_support() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 9
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_no_signal_below_confidence_threshold() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    matching = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+    non_matching_context = [
+        _snapshot(
+            minute_of_day=18 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(matching + non_matching_context))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_no_signal_when_current_pattern_missing() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv",),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_no_signal_when_context_does_not_match_now() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=18 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_matches_weekday_filter() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals(
+        [_activity_proposal(context_conditions={"weekday_filter": {"days": ["thursday"]}})]
+    )
+    snapshots = [
+        _snapshot(
+            weekday=3,
+            minute_of_day=20 * 60,
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+
+    await module.analyze(_FakeStore(snapshots))
+
+    signals = module.infer(
+        _context(
+            weekday=3,
+            minute_of_day=20 * 60,
+            previous_activity_names=("tv", "relax"),
+        )
+    )
+    assert len(signals) == 1
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_sync_approved_proposals_replaces_previous_state() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal(activity_name="Movie Night")])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+    await module.analyze(_FakeStore(snapshots))
+    assert module.diagnostics()["approved_patterns"] == 1
+
+    module.sync_approved_proposals([])
+
+    assert module.diagnostics()["approved_patterns"] == 0
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_infer_completes_under_1ms() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 10
+    await module.analyze(_FakeStore(snapshots))
+
+    start = time.perf_counter()
+    module.infer(
+        _context(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            previous_activity_names=("tv", "relax"),
+        )
+    )
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    assert elapsed_ms < 1.0
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_diagnostics() -> None:
+    module = ActivityInferenceModule()
+    module.sync_approved_proposals([_activity_proposal()])
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    minute_of_day=20 * 60,
+                    room_occupancy={"living_room": True},
+                    detected_activities=("tv", "relax"),
+                )
+            ]
+            * 10
+        )
+    )
+
+    diag = module.diagnostics()
+
+    assert diag["module_id"] == "activity_inference"
+    assert diag["ready"] is True
+    assert diag["approved_patterns"] == 1
+    assert diag["model_entries"] == 1
+    assert diag["analyzed_snapshots"] == 10
 
 
 # ─── WeekdayStateModule ───────────────────────────────────────────────────────
