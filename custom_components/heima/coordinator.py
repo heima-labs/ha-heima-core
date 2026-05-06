@@ -18,6 +18,7 @@ from .reconciliation import reconcile_ha_backed_options
 from .runtime.analyzers import (
     create_builtin_learning_plugin_registry,
 )
+from .runtime.analyzers.base import ReactionProposal
 from .runtime.behaviors import (
     ActuationRecorderBehavior,
     EventCanonicalizer,
@@ -31,10 +32,17 @@ from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.finding_router import FindingRouter
 from .runtime.inference import (
+    ApprovalActor,
+    ApprovalDecision,
+    ApprovalRecord,
+    ApprovalStore,
     HeatingPreferenceModule,
+    HouseStateInferenceModule,
+    LearnedHouseStateCandidate,
     SnapshotStore,
     WeekdayStateModule,
 )
+from .runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ProposalEngine
@@ -118,11 +126,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             anomaly_handler=self._async_handle_anomaly_finding,
         )
         self._house_snapshot_store = SnapshotStore(hass)
+        self._approval_store = ApprovalStore(hass)
         self._weekday_module = WeekdayStateModule()
         self._heating_module = HeatingPreferenceModule()
+        self._house_state_module = HouseStateInferenceModule()
         self.engine.set_snapshot_store(self._house_snapshot_store)
         self.engine.register_learning_module(self._weekday_module)
         self.engine.register_learning_module(self._heating_module)
+        self.engine.register_learning_module(self._house_state_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
@@ -170,6 +181,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         summary, changed = await self._async_reconcile_ha_backed_objects()
         await self._event_store.async_load()
         await self._house_snapshot_store.async_load()
+        await self._approval_store.async_load()
+        self._sync_house_state_approval_state()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         if changed:
@@ -338,15 +351,56 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._event_store.async_clear()
         await self._event_store.async_flush()
         await self._proposal_engine.async_clear()
+        await self._approval_store.async_clear()
+        await self._approval_store.async_flush()
+        self._sync_house_state_approval_state()
         self.engine.reset_learning_state()
         self._write_event_store_sensor()
         await self.async_refresh()
 
     async def async_run_learning_now(self) -> None:
         """Run learning analyzers immediately and refresh exposed state."""
+        await self._async_analyze_inference_modules()
         await self._proposal_engine.async_run()
         self._write_event_store_sensor()
         await self.async_refresh()
+
+    async def async_review_house_state_proposal(
+        self,
+        proposal_id: str,
+        decision: ApprovalDecision,
+        approved_by: ApprovalActor,
+    ) -> bool:
+        """Review a proposal and persist house-state approval decisions when applicable."""
+        proposal = self._proposal_engine.proposal_by_id(proposal_id)
+        if proposal is None:
+            return False
+
+        record = None
+        if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+            record = _approval_record_from_house_state_proposal(
+                proposal,
+                decision=decision,
+                approved_by=approved_by,
+            )
+            if record is None:
+                return False
+
+        if decision == "approved":
+            updated = await self._proposal_engine.async_accept_proposal(proposal_id)
+        elif decision == "rejected":
+            updated = await self._proposal_engine.async_reject_proposal(proposal_id)
+        else:
+            return False
+        if not updated:
+            return False
+
+        if record is not None:
+            await self._approval_store.async_record(record)
+            await self._approval_store.async_flush()
+            self._sync_house_state_approval_state()
+
+        return True
 
     async def async_upsert_configured_reactions(
         self,
@@ -582,10 +636,34 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_run_analyze_tick(self) -> None:
         try:
-            for module in (self._weekday_module, self._heating_module):
-                await module.analyze(self._house_snapshot_store)
+            await self._async_analyze_inference_modules()
         finally:
             self._schedule_analyze_tick()
+
+    async def _async_analyze_inference_modules(self) -> None:
+        self._sync_house_state_approval_state()
+        for module in (self._weekday_module, self._heating_module, self._house_state_module):
+            await module.analyze(self._house_snapshot_store)
+        await self._async_submit_house_state_candidates()
+
+    async def _async_submit_house_state_candidates(self) -> None:
+        self._sync_house_state_approval_state()
+        for candidate in self._house_state_module.generate_candidates():
+            await self._proposal_engine.async_submit_proposal(
+                _proposal_from_house_state_candidate(candidate)
+            )
+
+    def _sync_house_state_approval_state(self) -> None:
+        approved: set[str] = set()
+        rejected: set[str] = set()
+        for record in self._approval_store.records():
+            if record.proposal_type != HOUSE_STATE_PROPOSAL_TYPE:
+                continue
+            if record.decision == "approved":
+                approved.add(record.context_key)
+            elif record.decision == "rejected":
+                rejected.add(record.context_key)
+        self._house_state_module.sync_approval_state(approved, rejected)
 
     async def _async_run_proposal_tick(self) -> None:
         try:
@@ -715,3 +793,58 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         diag = self._event_store.diagnostics()
         self.engine.state.set_sensor("heima_event_store", diag["total_events"])
         self.engine.state.set_sensor_attributes("heima_event_store", diag["by_type"])
+
+
+def _proposal_from_house_state_candidate(
+    candidate: LearnedHouseStateCandidate,
+) -> ReactionProposal:
+    """Build a resident-reviewable proposal for one learned house-state context."""
+    identity_key = f"{HOUSE_STATE_PROPOSAL_TYPE}:{candidate.context_key}"
+    return ReactionProposal(
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description=(
+            f"Learned house-state context predicts '{candidate.predicted_state}' "
+            f"with {candidate.support}/{candidate.total} matching observations."
+        ),
+        confidence=candidate.confidence,
+        origin="learned",
+        followup_kind="discovery",
+        identity_key=identity_key,
+        suggested_reaction_config={
+            "proposal_type": HOUSE_STATE_PROPOSAL_TYPE,
+            "context_key": candidate.context_key,
+            "context_snapshot": dict(candidate.context_snapshot),
+            "predicted_state": candidate.predicted_state,
+            "support": candidate.support,
+            "total": candidate.total,
+        },
+    )
+
+
+def _approval_record_from_house_state_proposal(
+    proposal: ReactionProposal,
+    *,
+    decision: ApprovalDecision,
+    approved_by: ApprovalActor,
+) -> ApprovalRecord | None:
+    """Convert a reviewed house-state proposal to a durable approval record."""
+    cfg = dict(proposal.suggested_reaction_config)
+    context_key = str(cfg.get("context_key") or "").strip()
+    context_snapshot = cfg.get("context_snapshot")
+    if not context_key or not isinstance(context_snapshot, dict) or not context_snapshot:
+        return None
+    return ApprovalRecord(
+        proposal_id=proposal.proposal_id,
+        proposal_type=HOUSE_STATE_PROPOSAL_TYPE,
+        decision=decision,
+        approved_by=approved_by,
+        context_key=context_key,
+        context_snapshot=dict(context_snapshot),
+        metadata={
+            "predicted_state": str(cfg.get("predicted_state") or ""),
+            "support": cfg.get("support"),
+            "total": cfg.get("total"),
+            "confidence": proposal.confidence,
+        },
+    )

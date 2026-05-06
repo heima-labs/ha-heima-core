@@ -138,6 +138,20 @@ class _FakeApprovalCoordinator:
     def __init__(self, proposal_engine: _FakeProposalEngine, entry_id: str = "entry1") -> None:
         self.proposal_engine = proposal_engine
         self.entry = SimpleNamespace(entry_id=entry_id)
+        self.reviewed: list[tuple[str, str, str]] = []
+
+    async def async_review_house_state_proposal(
+        self,
+        proposal_id: str,
+        decision: str,
+        approved_by: str,
+    ) -> bool:
+        self.reviewed.append((proposal_id, decision, approved_by))
+        if decision == "approved":
+            return await self.proposal_engine.async_accept_proposal(proposal_id)
+        if decision == "rejected":
+            return await self.proposal_engine.async_reject_proposal(proposal_id)
+        return False
 
 
 def test_validate_command_rejects_unknown_command():
@@ -342,6 +356,7 @@ async def test_heima_override_approval_approves_via_proposal_engine(monkeypatch)
     )
 
     assert proposal_engine.accepted == ["proposal-1"]
+    assert coordinator.reviewed == [("proposal-1", "approved", "installer")]
 
 
 @pytest.mark.asyncio
@@ -374,6 +389,7 @@ async def test_heima_override_approval_rejects_via_proposal_engine(monkeypatch):
     )
 
     assert proposal_engine.rejected == ["proposal-1"]
+    assert coordinator.reviewed == [("proposal-1", "rejected", "installer")]
 
 
 def test_services_yaml_defines_override_approval_service() -> None:

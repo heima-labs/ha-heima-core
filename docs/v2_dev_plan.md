@@ -103,18 +103,18 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** Phase H — House State Learning, slice H3 complete.
+**Active phase:** Phase H — House State Learning, slice H4 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review H3 results and agree the H4 engine/coordinator wiring plan before implementation.
+Review H4 results and agree the H5 config-flow review surface before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase H3 — complete.
-- Status: HouseStateInferenceModule exposes proposal-first learned candidates for unknown/pending
-  contexts, emits signals only for approved contexts, and suppresses rejected contexts. H3 has no
-  engine wiring, coordinator wiring, or ProposalEngine submission.
+- Current slice: Phase H4 — complete.
+- Status: ApprovalStore and HouseStateInferenceModule are wired in coordinator, learned candidates
+  submit idempotent proposals, and the shared review path records approvals/rejections for both
+  resident approval and installer override.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -131,6 +131,8 @@ Review H3 results and agree the H4 engine/coordinator wiring plan before impleme
   - HouseStateInferenceModule receives approval state through
     `sync_approval_state(approved, rejected)`. `infer()` remains sync and does not touch
     ApprovalStore or ProposalEngine.
+  - `ProposalEngine.async_submit_proposal()` is already idempotent by `identity_key`: existing
+    matching proposals are refreshed instead of duplicated.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -244,8 +246,13 @@ Review H3 results and agree the H4 engine/coordinator wiring plan before impleme
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1108 tests.
-- Next concrete step: discuss H4 — engine/coordinator wiring and approval/proposal flow before
-  implementation.
+- H4 tests run:
+  - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_inference_modules.py tests/test_learning_reset.py tests/test_services_notify_event.py tests/test_proposal_engine.py -q` — passed, 128 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_learning_reset.py tests/test_services_notify_event.py tests/test_integration_normalization_e2e.py -q` — passed, 56 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1114 tests.
+- Next concrete step: discuss H5 — config-flow review surface for `house_state_learned_context`.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -664,7 +671,7 @@ None — role model is spec + contract additions only.
   - Keep signal emission limited to approved contexts; rejected contexts produce no signal and no
     candidate.
   - Keep ProposalEngine submission out of H3; H4 owns runtime wiring.
-- [ ] H4 — Engine/coordinator wiring:
+- [x] H4 — Engine/coordinator wiring:
   - Load ApprovalStore, register HouseStateInferenceModule, and route approvals through the
     coordinator product-flow layer.
 - [ ] H5 — Config flow review surface:
@@ -690,8 +697,8 @@ None — role model is spec + contract additions only.
 - [x] `ApprovalStore` persists to HA Store key `heima_inference_approvals`
 - [x] `ApprovalStore` records include `approved_by` field
 - [ ] Unapproved signals are ignored by `HouseStateDomain`
-- [ ] User approval/rejection survives HA restart
-- [x] All existing tests pass — 1108 tests
+- [x] User approval/rejection survives HA restart
+- [x] All existing tests pass — 1114 tests
 
 ---
 

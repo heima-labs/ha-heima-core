@@ -462,11 +462,24 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         matched = False
         for coordinator in coordinators:
-            proposal_engine = coordinator.proposal_engine
             if action == "approve":
-                matched = await proposal_engine.async_accept_proposal(proposal_id) or matched
+                matched = (
+                    await coordinator.async_review_house_state_proposal(
+                        proposal_id,
+                        decision="approved",
+                        approved_by="installer",
+                    )
+                    or matched
+                )
             elif action == "reject":
-                matched = await proposal_engine.async_reject_proposal(proposal_id) or matched
+                matched = (
+                    await coordinator.async_review_house_state_proposal(
+                        proposal_id,
+                        decision="rejected",
+                        approved_by="installer",
+                    )
+                    or matched
+                )
 
         if not matched:
             raise ServiceValidationError(f"Proposal '{proposal_id}' not found")

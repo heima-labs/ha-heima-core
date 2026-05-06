@@ -532,6 +532,16 @@ class ProposalEngine:
                 return proposal
         return None
 
+    def proposal_by_id(self, proposal_id: str) -> ReactionProposal | None:
+        """Return one proposal by stable proposal id."""
+        target = str(proposal_id or "").strip()
+        if not target:
+            return None
+        for proposal in self._proposals:
+            if proposal.proposal_id == target:
+                return proposal
+        return None
+
     async def async_shutdown(self) -> None:
         await self._store.async_save(self._serialize())
 

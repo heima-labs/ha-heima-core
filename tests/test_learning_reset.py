@@ -68,6 +68,11 @@ async def test_coordinator_learning_reset_flushes_and_resets_runtime_state():
         async_flush=AsyncMock(),
     )
     coordinator._proposal_engine = SimpleNamespace(async_clear=AsyncMock())
+    coordinator._approval_store = SimpleNamespace(
+        async_clear=AsyncMock(),
+        async_flush=AsyncMock(),
+    )
+    coordinator._sync_house_state_approval_state = MagicMock()
     coordinator.engine = SimpleNamespace(reset_learning_state=MagicMock())
     coordinator._write_event_store_sensor = MagicMock()
     coordinator.async_refresh = AsyncMock()
@@ -77,6 +82,9 @@ async def test_coordinator_learning_reset_flushes_and_resets_runtime_state():
     coordinator._event_store.async_clear.assert_awaited_once()
     coordinator._event_store.async_flush.assert_awaited_once()
     coordinator._proposal_engine.async_clear.assert_awaited_once()
+    coordinator._approval_store.async_clear.assert_awaited_once()
+    coordinator._approval_store.async_flush.assert_awaited_once()
+    coordinator._sync_house_state_approval_state.assert_called_once()
     coordinator.engine.reset_learning_state.assert_called_once()
     coordinator._write_event_store_sensor.assert_called_once()
     coordinator.async_refresh.assert_awaited_once()
@@ -85,12 +93,14 @@ async def test_coordinator_learning_reset_flushes_and_resets_runtime_state():
 @pytest.mark.asyncio
 async def test_coordinator_learning_run_refreshes_runtime_state():
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._async_analyze_inference_modules = AsyncMock()
     coordinator._proposal_engine = SimpleNamespace(async_run=AsyncMock())
     coordinator._write_event_store_sensor = MagicMock()
     coordinator.async_refresh = AsyncMock()
 
     await coordinator.async_run_learning_now()
 
+    coordinator._async_analyze_inference_modules.assert_awaited_once()
     coordinator._proposal_engine.async_run.assert_awaited_once()
     coordinator._write_event_store_sensor.assert_called_once()
     coordinator.async_refresh.assert_awaited_once()
