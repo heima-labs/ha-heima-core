@@ -943,10 +943,10 @@ Signals never override: active user overrides, explicit config values, or safety
 ### §10.9 House State Learning and User Approval
 
 `HouseStateInferenceModule` learns `P(house_state | weekday, hour_bucket, occupied_rooms,
-anyone_home)`. First application triggers a `ReactionProposal`. While pending: applied
-transiently. After acceptance: applied silently. After rejection: computed but not consumed;
-no re-proposal for the same `(context_key_hash, predicted_state)` pair
-(`ApprovalStore`, persisted across restarts).
+anyone_home)`. In the B2B product model, learned house-state contexts are proposal-first:
+unknown or pending contexts generate a review candidate and are not applied transiently. After
+acceptance: applied silently. After rejection: computed but not consumed; no re-proposal for the
+same `(context_key_hash, predicted_state)` pair (`ApprovalStore`, persisted across restarts).
 
 Confidence model: `confidence = probability × min(1.0, support / MIN_SUPPORT)`.
 
@@ -1102,7 +1102,8 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 - Learns `P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)`.
 - Emits `HouseStateSignal(importance=SUGGEST)` when confidence ≥ 0.60.
 - `HouseStateDomain` consumes only when no definitive hard input is active.
-- First application triggers a `ReactionProposal`; silent after approval.
+- Unknown or pending learned contexts generate a proposal candidate and are not applied.
+- Approved learned contexts emit signals silently.
 - `ApprovalStore` persists decisions: `STORAGE_KEY = "heima_inference_approvals"`.
 - Rejection is permanent per `(context_key_hash, predicted_state)` until cleared.
 

@@ -2,7 +2,12 @@
 
 from .approval_store import ApprovalActor, ApprovalDecision, ApprovalRecord, ApprovalStore
 from .base import HeimaLearningModule, ILearningModule, InferenceContext
-from .modules import HeatingPreferenceModule, HouseStateInferenceModule, WeekdayStateModule
+from .modules import (
+    HeatingPreferenceModule,
+    HouseStateInferenceModule,
+    LearnedHouseStateCandidate,
+    WeekdayStateModule,
+)
 from .router import SignalRouter
 from .signals import (
     ActivitySignal,
@@ -30,6 +35,7 @@ __all__ = [
     "ILearningModule",
     "Importance",
     "InferenceContext",
+    "LearnedHouseStateCandidate",
     "InferenceSignal",
     "LightingSignal",
     "OccupancySignal",

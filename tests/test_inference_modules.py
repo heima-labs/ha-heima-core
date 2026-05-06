@@ -15,7 +15,10 @@ from custom_components.heima.runtime.inference import (
     InferenceContext,
     WeekdayStateModule,
 )
-from custom_components.heima.runtime.inference.approval_store import house_state_context_key
+from custom_components.heima.runtime.inference.approval_store import (
+    HOUSE_STATE_PROPOSAL_TYPE,
+    house_state_context_key,
+)
 
 
 def _context(
@@ -324,6 +327,129 @@ async def test_house_state_inference_analyzes_without_approval() -> None:
 
 
 @pytest.mark.asyncio
+async def test_house_state_inference_generates_candidate_for_unknown_context() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"bedroom": True, "kitchen": True},
+        )
+    ] * 3
+
+    await module.analyze(_FakeStore(snapshots))
+
+    candidates = module.generate_candidates()
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.proposal_type == HOUSE_STATE_PROPOSAL_TYPE
+    assert candidate.predicted_state == "working"
+    assert candidate.support == 3
+    assert candidate.total == 3
+    assert candidate.confidence == 1.0
+    assert candidate.context_key == _house_state_key(
+        rooms=("bedroom", "kitchen"),
+        predicted_state="working",
+    )
+    assert candidate.context_snapshot == {
+        "weekday": 0,
+        "hour_bucket": 10,
+        "rooms": ["bedroom", "kitchen"],
+        "anyone_home": True,
+        "predicted_state": "working",
+        "learning_context": {},
+    }
+    assert module.infer(_context(room_occupancy={"bedroom": True, "kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_does_not_generate_candidate_for_approved_context() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    approved_key = _house_state_key(rooms=("kitchen",), predicted_state="working")
+
+    await module.analyze(_FakeStore(snapshots))
+    module.sync_approval_state({approved_key}, set())
+
+    assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_rejected_context_has_no_candidate_or_signal() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    rejected_key = _house_state_key(rooms=("kitchen",), predicted_state="working")
+
+    await module.analyze(_FakeStore(snapshots))
+    module.sync_approval_state(set(), {rejected_key})
+
+    assert module.generate_candidates() == []
+    assert module.infer(_context(room_occupancy={"kitchen": True})) == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_no_candidate_below_min_support() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 2
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_no_candidate_below_confidence_threshold() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(house_state="working", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="home", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="home", room_occupancy={"kitchen": True}),
+        _snapshot(house_state="relax", room_occupancy={"kitchen": True}),
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_sync_approval_state_replaces_previous_state() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    context_key = _house_state_key(rooms=("kitchen",), predicted_state="working")
+
+    await module.analyze(_FakeStore(snapshots))
+    module.sync_approval_state({context_key}, set())
+    assert module.generate_candidates() == []
+
+    module.sync_approval_state(set(), set())
+
+    candidates = module.generate_candidates()
+    assert len(candidates) == 1
+    assert candidates[0].context_key == context_key
+
+
+@pytest.mark.asyncio
 async def test_house_state_inference_emits_only_after_context_key_approval() -> None:
     module = HouseStateInferenceModule()
     snapshots = [
@@ -333,8 +459,9 @@ async def test_house_state_inference_emits_only_after_context_key_approval() -> 
         )
     ] * 3
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys(
-        {_house_state_key(rooms=("kitchen",), predicted_state="working")}
+    module.sync_approval_state(
+        {_house_state_key(rooms=("kitchen",), predicted_state="working")},
+        set(),
     )
 
     signals = module.infer(_context(room_occupancy={"kitchen": True}))
@@ -355,8 +482,9 @@ async def test_house_state_inference_approval_for_different_state_does_not_emit(
         )
     ] * 3
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys(
-        {_house_state_key(rooms=("kitchen",), predicted_state="relaxing")}
+    module.sync_approval_state(
+        {_house_state_key(rooms=("kitchen",), predicted_state="relaxing")},
+        set(),
     )
 
     assert module.infer(_context(room_occupancy={"kitchen": True})) == []
@@ -372,8 +500,9 @@ async def test_house_state_inference_no_signal_below_min_support_even_if_approve
         )
     ] * 2
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys(
-        {_house_state_key(rooms=("kitchen",), predicted_state="working")}
+    module.sync_approval_state(
+        {_house_state_key(rooms=("kitchen",), predicted_state="working")},
+        set(),
     )
 
     assert module.infer(_context(room_occupancy={"kitchen": True})) == []
@@ -389,7 +518,10 @@ async def test_house_state_inference_no_signal_below_confidence_threshold() -> N
         _snapshot(house_state="relax", room_occupancy={"kitchen": True}),
     ]
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys({_house_state_key(rooms=("kitchen",), predicted_state="home")})
+    module.sync_approval_state(
+        {_house_state_key(rooms=("kitchen",), predicted_state="home")},
+        set(),
+    )
 
     assert module.infer(_context(room_occupancy={"kitchen": True})) == []
 
@@ -413,7 +545,7 @@ async def test_house_state_inference_uses_current_context_slot() -> None:
         )
     ] * 3
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys(
+    module.sync_approval_state(
         {
             _house_state_key(
                 weekday=1,
@@ -421,7 +553,8 @@ async def test_house_state_inference_uses_current_context_slot() -> None:
                 rooms=("kitchen",),
                 predicted_state="relax",
             )
-        }
+        },
+        set(),
     )
 
     signals = module.infer(_context(weekday=1, minute_of_day=600))
@@ -445,7 +578,7 @@ async def test_house_state_inference_infer_completes_under_1ms() -> None:
         for _ in range(3)
     ]
     await module.analyze(_FakeStore(snapshots))
-    module.set_approved_context_keys(
+    module.sync_approval_state(
         {
             _house_state_key(
                 weekday=3,
@@ -453,7 +586,8 @@ async def test_house_state_inference_infer_completes_under_1ms() -> None:
                 rooms=("kitchen",),
                 predicted_state="working",
             )
-        }
+        },
+        set(),
     )
 
     start = time.perf_counter()
@@ -469,7 +603,7 @@ async def test_house_state_inference_diagnostics() -> None:
     await module.analyze(
         _FakeStore([_snapshot(house_state="working", room_occupancy={"kitchen": True})] * 3)
     )
-    module.set_approved_context_keys({"key-1", "key-2"})
+    module.sync_approval_state({"key-1", "key-2"}, {"key-3"})
 
     diag = module.diagnostics()
 
@@ -477,4 +611,5 @@ async def test_house_state_inference_diagnostics() -> None:
     assert diag["ready"] is True
     assert diag["slot_count"] == 1
     assert diag["approved_context_keys"] == 2
+    assert diag["rejected_context_keys"] == 1
     assert diag["analyzed_snapshots"] == 3

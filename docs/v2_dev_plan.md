@@ -103,17 +103,18 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** Phase H — House State Learning, slice H2 complete.
+**Active phase:** Phase H — House State Learning, slice H3 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review H2 results and agree the H3 proposal/gate plan before implementation.
+Review H3 results and agree the H4 engine/coordinator wiring plan before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase H2 — complete.
-- Status: HouseStateInferenceModule learns from SnapshotStore-compatible history, keeps approval
-  keys in memory for sync inference, and emits only statistically supported approved signals.
+- Current slice: Phase H3 — complete.
+- Status: HouseStateInferenceModule exposes proposal-first learned candidates for unknown/pending
+  contexts, emits signals only for approved contexts, and suppresses rejected contexts. H3 has no
+  engine wiring, coordinator wiring, or ProposalEngine submission.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -124,6 +125,12 @@ Review H2 results and agree the H3 proposal/gate plan before implementation.
     Phase H where approvals have concrete proposal lifecycle behavior.
   - WeekdayStateModule/HeatingPreferenceModule precompute their model in `analyze()` so
     `infer()` is a pure dict lookup (< 1ms verified in tests).
+  - H3 B2B proposal-first rule supersedes the older pre-B2B transient-application wording in
+    spec §10.9/§13: unknown or pending learned house-state contexts generate candidates only;
+    approved contexts emit signals; rejected contexts generate no candidate and emit no signal.
+  - HouseStateInferenceModule receives approval state through
+    `sync_approval_state(approved, rejected)`. `infer()` remains sync and does not touch
+    ApprovalStore or ProposalEngine.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -232,7 +239,13 @@ Review H2 results and agree the H3 proposal/gate plan before implementation.
   - Tests unwrap `finding.payload` explicitly; `BehaviorFinding` has no payload attribute
     delegation.
   - `AnomalyAnalyzer` and `CorrelationAnalyzer` are Phase B placeholders returning no findings.
-- Next concrete step: discuss H3 — proposal emission and approval gate before implementation.
+- H3 tests run:
+  - `.venv/bin/python -m pytest tests/test_inference_modules.py tests/test_approval_store_contract.py -q` — passed, 45 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1108 tests.
+- Next concrete step: discuss H4 — engine/coordinator wiring and approval/proposal flow before
+  implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -646,9 +659,11 @@ None — role model is spec + contract additions only.
 - [x] H2 — HouseStateInferenceModule:
   - Learn house-state probabilities from snapshots and keep accumulating/analyzing even when
     approval gates block signal emission.
-- [ ] H3 — Proposal and approval gate:
-  - Emit proposals for unapproved learned contexts and gate `HouseStateSignal` emission inside
-    the module.
+- [x] H3 — Proposal and approval gate:
+  - Expose proposal-first learned candidates for unknown/pending contexts.
+  - Keep signal emission limited to approved contexts; rejected contexts produce no signal and no
+    candidate.
+  - Keep ProposalEngine submission out of H3; H4 owns runtime wiring.
 - [ ] H4 — Engine/coordinator wiring:
   - Load ApprovalStore, register HouseStateInferenceModule, and route approvals through the
     coordinator product-flow layer.
@@ -676,7 +691,7 @@ None — role model is spec + contract additions only.
 - [x] `ApprovalStore` records include `approved_by` field
 - [ ] Unapproved signals are ignored by `HouseStateDomain`
 - [ ] User approval/rejection survives HA restart
-- [x] All existing tests pass — 1102 tests
+- [x] All existing tests pass — 1108 tests
 
 ---
 

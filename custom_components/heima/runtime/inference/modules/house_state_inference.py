@@ -6,7 +6,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from ..approval_store import house_state_context_key
+from ..approval_store import (
+    HOUSE_STATE_PROPOSAL_TYPE,
+    house_state_context_key,
+    house_state_context_snapshot,
+)
 from ..base import HeimaLearningModule, InferenceContext
 from ..signals import HouseStateSignal, Importance
 
@@ -16,11 +20,29 @@ _CONFIDENCE_THRESHOLD = 0.60
 
 @dataclass(frozen=True)
 class _ModelEntry:
+    weekday: int
+    hour_bucket: int
+    rooms: tuple[str, ...]
+    anyone_home: bool
     predicted_state: str
     total: int
     count: int
     confidence: float
     context_key: str
+    context_snapshot: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LearnedHouseStateCandidate:
+    """Proposal-first learned house-state context candidate."""
+
+    proposal_type: str
+    context_key: str
+    context_snapshot: dict[str, Any]
+    predicted_state: str
+    support: int
+    total: int
+    confidence: float
 
 
 class HouseStateInferenceModule(HeimaLearningModule):
@@ -38,12 +60,14 @@ class HouseStateInferenceModule(HeimaLearningModule):
         self._confidence_threshold = max(0.0, min(float(confidence_threshold), 1.0))
         self._model: dict[tuple[int, int, tuple[str, ...], bool], _ModelEntry] = {}
         self._approved_context_keys: set[str] = set()
+        self._rejected_context_keys: set[str] = set()
         self._ready = False
         self._analyzed_snapshots = 0
 
-    def set_approved_context_keys(self, keys: set[str]) -> None:
-        """Replace the in-memory approved key snapshot used by sync inference."""
-        self._approved_context_keys = {str(key) for key in keys if str(key).strip()}
+    def sync_approval_state(self, approved: set[str], rejected: set[str]) -> None:
+        """Replace the in-memory approval snapshot used by sync inference."""
+        self._approved_context_keys = _normalized_keys(approved)
+        self._rejected_context_keys = _normalized_keys(rejected)
 
     async def analyze(self, store: object) -> None:
         """Compute P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)."""
@@ -71,12 +95,25 @@ class HouseStateInferenceModule(HeimaLearningModule):
             count = state_counts[predicted_state]
             confidence = count / total if total > 0 else 0.0
             weekday, hour_bucket, rooms, anyone_home = key
+            context_key = house_state_context_key(
+                weekday=weekday,
+                hour_bucket=hour_bucket,
+                rooms=rooms,
+                anyone_home=anyone_home,
+                predicted_state=predicted_state,
+                learning_context={},
+            )
             self._model[key] = _ModelEntry(
+                weekday=weekday,
+                hour_bucket=hour_bucket,
+                rooms=rooms,
+                anyone_home=anyone_home,
                 predicted_state=predicted_state,
                 total=total,
                 count=count,
                 confidence=confidence,
-                context_key=house_state_context_key(
+                context_key=context_key,
+                context_snapshot=house_state_context_snapshot(
                     weekday=weekday,
                     hour_bucket=hour_bucket,
                     rooms=rooms,
@@ -122,12 +159,40 @@ class HouseStateInferenceModule(HeimaLearningModule):
             )
         ]
 
+    def generate_candidates(self) -> list[LearnedHouseStateCandidate]:
+        if not self._ready:
+            return []
+
+        candidates: list[LearnedHouseStateCandidate] = []
+        for entry in self._model.values():
+            if entry.total < self._min_support:
+                continue
+            if entry.confidence < self._confidence_threshold:
+                continue
+            if entry.context_key in self._approved_context_keys:
+                continue
+            if entry.context_key in self._rejected_context_keys:
+                continue
+            candidates.append(
+                LearnedHouseStateCandidate(
+                    proposal_type=HOUSE_STATE_PROPOSAL_TYPE,
+                    context_key=entry.context_key,
+                    context_snapshot=dict(entry.context_snapshot),
+                    predicted_state=entry.predicted_state,
+                    support=entry.count,
+                    total=entry.total,
+                    confidence=entry.confidence,
+                )
+            )
+        return sorted(candidates, key=lambda candidate: candidate.context_key)
+
     def diagnostics(self) -> dict[str, Any]:
         return {
             "module_id": self.module_id,
             "ready": self._ready,
             "slot_count": len(self._model),
             "approved_context_keys": len(self._approved_context_keys),
+            "rejected_context_keys": len(self._rejected_context_keys),
             "analyzed_snapshots": self._analyzed_snapshots,
             "min_support": self._min_support,
             "confidence_threshold": self._confidence_threshold,
@@ -155,3 +220,7 @@ def _importance(confidence: float) -> Importance:
     if confidence >= 0.60:
         return Importance.SUGGEST
     return Importance.OBSERVE
+
+
+def _normalized_keys(keys: set[str]) -> set[str]:
+    return {str(key).strip() for key in keys if str(key).strip()}
