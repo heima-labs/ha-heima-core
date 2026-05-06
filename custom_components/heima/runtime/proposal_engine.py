@@ -15,11 +15,11 @@ from homeassistant.helpers.storage import Store
 from .analyzers.base import ReactionProposal
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
+from .inference.approval_store import ACTIVITY_PROPOSAL_TYPE
 from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
-ACTIVITY_PROPOSAL_TYPE = "activity_discovered"
 
 
 @dataclass

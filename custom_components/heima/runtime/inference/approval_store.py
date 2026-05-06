@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 ApprovalActor = Literal["resident", "installer"]
 ApprovalDecision = Literal["approved", "rejected"]
 HOUSE_STATE_PROPOSAL_TYPE = "house_state_learned_context"
+ACTIVITY_PROPOSAL_TYPE = "activity_discovered"
 
 
 @dataclass(frozen=True)
@@ -214,6 +215,51 @@ def house_state_context_snapshot(
     }
 
 
+def activity_context_key(
+    *,
+    activity_name: str,
+    primitive_pattern: list[str] | tuple[str, ...] | set[str] | frozenset[str],
+    context_conditions: dict[str, Any] | None = None,
+) -> str:
+    """Build the stable approval key for a discovered composite activity.
+
+    Activity names are tokenized before inclusion, so "Movie Night" and "movie_night"
+    produce the same key.
+    """
+    normalized_activity_name = _token(activity_name)
+    normalized_pattern = _canonical_tokens(primitive_pattern)
+    context = canonicalize_activity_context_conditions(context_conditions or {})
+    context_token = _generic_context_hash(context)
+    return (
+        f"activity:{normalized_activity_name or 'unknown'}:"
+        f"pattern:{','.join(normalized_pattern) if normalized_pattern else 'none'}:"
+        f"ctx:{context_token}"
+    )
+
+
+def activity_context_snapshot(
+    *,
+    activity_name: str,
+    primitive_pattern: list[str] | tuple[str, ...] | set[str] | frozenset[str],
+    context_conditions: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a human-readable snapshot matching an activity approval key."""
+    return {
+        "activity_name": _token(activity_name),
+        "primitive_pattern": list(_canonical_tokens(primitive_pattern)),
+        "context_conditions": canonicalize_activity_context_conditions(context_conditions or {}),
+    }
+
+
+def canonicalize_activity_context_conditions(raw: dict[str, Any]) -> dict[str, Any]:
+    """Canonicalize activity context conditions for stable hashing and snapshots."""
+    return {
+        str(key).strip(): _canonical_context_value(value)
+        for key, value in sorted(raw.items(), key=lambda item: str(item[0]).strip())
+        if str(key).strip() and value is not None
+    }
+
+
 def canonicalize_learning_context(raw: dict[str, Any]) -> dict[str, str]:
     """Canonicalize the fixed H1 learning-context vocabulary."""
     allowed_prefixes = ("activity.", "occupancy.", "presence.")
@@ -232,11 +278,42 @@ def _canonical_rooms(rooms: list[str] | tuple[str, ...] | set[str]) -> tuple[str
     return tuple(sorted({_token(room) for room in rooms if _token(room)}))
 
 
+def _canonical_tokens(
+    values: list[str] | tuple[str, ...] | set[str] | frozenset[str],
+) -> tuple[str, ...]:
+    return tuple(sorted({_token(value) for value in values if _token(value)}))
+
+
 def _context_hash(context: dict[str, str]) -> str:
     if not context:
         return "none"
     raw = json.dumps(context, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def _generic_context_hash(context: dict[str, Any]) -> str:
+    if not context:
+        return "none"
+    raw = json.dumps(context, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def _canonical_context_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _token(value)
+    if isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, list | tuple):
+        return [_canonical_context_value(item) for item in value if item is not None]
+    if isinstance(value, set | frozenset):
+        return sorted(_canonical_context_value(item) for item in value if item is not None)
+    if isinstance(value, dict):
+        return {
+            str(key).strip(): _canonical_context_value(item)
+            for key, item in sorted(value.items(), key=lambda entry: str(entry[0]).strip())
+            if str(key).strip() and item is not None
+        }
+    return _token(value)
 
 
 def _token(value: Any) -> str:
@@ -248,7 +325,11 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalRecord",
     "ApprovalStore",
+    "ACTIVITY_PROPOSAL_TYPE",
     "HOUSE_STATE_PROPOSAL_TYPE",
+    "activity_context_key",
+    "activity_context_snapshot",
+    "canonicalize_activity_context_conditions",
     "canonicalize_learning_context",
     "house_state_context_key",
     "house_state_context_snapshot",

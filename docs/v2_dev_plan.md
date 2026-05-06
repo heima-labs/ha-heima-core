@@ -103,17 +103,18 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning.
-**Active phase:** Phase I — Activity Inference and Learning, slice I1 complete.
+**Active phase:** Phase I — Activity Inference and Learning, slice I2 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review I1 results, then discuss/implement I2 — Activity approval contract.
+Review I2 results, then discuss/implement I3 — ActivityInferenceModule.
 
 ### Current Working Notes
 
-- Current slice: Phase I1 — complete.
+- Current slice: Phase I2 — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
-  plumbing only; no activity discovery, inference, approval surface, or config-flow review in I1.
+  plumbing complete. I2 adds stable approval keys and readable snapshots for
+  `activity_discovered`; no inference, analyzer, approval surface, or config-flow review in I2.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -139,6 +140,9 @@ Review I1 results, then discuss/implement I2 — Activity approval contract.
     Existing analyzers are already constructed with dependencies/policies in the registry, so this
     keeps `IBehaviorAnalyzer.analyze(event_store, snapshot_store=None)` unchanged and lets
     `ActivityAnalyzer.analyze(event_store)` ignore the event store.
+  - `activity_context_key()` explicitly tokenizes `activity_name`, so `"Movie Night"` and
+    `"movie_night"` map to the same approval key. Primitive patterns are sorted/deduped; activity
+    context conditions are canonicalized before JSON hashing.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -172,6 +176,9 @@ Review I1 results, then discuss/implement I2 — Activity approval contract.
   - `custom_components/heima/runtime/analyzers/base.py`
   - `custom_components/heima/runtime/analyzers/registry.py`
   - `custom_components/heima/runtime/plugin_contracts.py`
+  - `custom_components/heima/runtime/inference/approval_store.py`
+  - `custom_components/heima/runtime/inference/__init__.py`
+  - `tests/test_approval_store_contract.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -210,6 +217,9 @@ Review I1 results, then discuss/implement I2 — Activity approval contract.
   - `custom_components/heima/runtime/proposal_engine.py`
   - `custom_components/heima/runtime/finding_router.py`
   - `tests/test_proposal_engine.py`
+  - `custom_components/heima/runtime/inference/approval_store.py`
+  - `custom_components/heima/runtime/inference/__init__.py`
+  - `tests/test_approval_store_contract.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -293,7 +303,17 @@ Review I1 results, then discuss/implement I2 — Activity approval contract.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1129 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
-- Next concrete step: discuss I2 before implementation.
+  - `.venv/bin/python -m pytest tests/test_approval_store_contract.py -q` — passed, 21 tests.
+  - `.venv/bin/python -m pytest tests/test_approval_store_contract.py tests/test_proposal_engine.py -q`
+    — passed, 86 tests.
+  - `.venv/bin/ruff check custom_components/heima/runtime/inference/approval_store.py custom_components/heima/runtime/inference/__init__.py custom_components/heima/runtime/proposal_engine.py tests/test_approval_store_contract.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/inference/approval_store.py custom_components/heima/runtime/inference/__init__.py custom_components/heima/runtime/proposal_engine.py tests/test_approval_store_contract.py`
+    — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1137 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Next concrete step: discuss I3 before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -767,7 +787,7 @@ None — role model is spec + contract additions only.
   - Add `ActivityProposal` support to the shared proposal store.
   - Route `BehaviorFinding(kind="activity")` only when the payload is an `ActivityProposal`.
   - Preserve existing `ReactionProposal` behavior unchanged.
-- [ ] I2 — Activity approval contract:
+- [x] I2 — Activity approval contract:
   - Add stable activity approval key/snapshot helpers and `activity_discovered` approval records.
 - [ ] I3 — ActivityInferenceModule:
   - Emit `ActivitySignal` only for approved composite activity proposals with support/confidence.

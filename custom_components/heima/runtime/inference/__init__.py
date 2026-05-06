@@ -1,6 +1,14 @@
 """Public API for v2 inference runtime."""
 
-from .approval_store import ApprovalActor, ApprovalDecision, ApprovalRecord, ApprovalStore
+from .approval_store import (
+    ACTIVITY_PROPOSAL_TYPE,
+    ApprovalActor,
+    ApprovalDecision,
+    ApprovalRecord,
+    ApprovalStore,
+    activity_context_key,
+    activity_context_snapshot,
+)
 from .base import HeimaLearningModule, ILearningModule, InferenceContext
 from .modules import (
     HeatingPreferenceModule,
@@ -25,7 +33,10 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalRecord",
     "ApprovalStore",
+    "ACTIVITY_PROPOSAL_TYPE",
     "ActivitySignal",
+    "activity_context_key",
+    "activity_context_snapshot",
     "HeatingPreferenceModule",
     "HeatingSignal",
     "HouseStateInferenceModule",
