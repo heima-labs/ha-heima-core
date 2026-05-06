@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 
 from .analyzers.base import ReactionProposal
 from .plugin_contracts import AnomalySignal, BehaviorFinding
-from .proposal_engine import ProposalEngine
+from .proposal_engine import ActivityProposal, ProposalEngine
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,14 +45,30 @@ class FindingRouter:
 
     async def _route_proposal(self, finding: BehaviorFinding) -> None:
         payload = finding.payload
-        if not isinstance(payload, ReactionProposal):
+        if finding.kind == "pattern" and isinstance(payload, ReactionProposal):
+            await self._proposal_engine.async_submit_proposal(payload)
+            return
+        if finding.kind == "activity" and isinstance(payload, ActivityProposal):
+            await self._proposal_engine.async_submit_proposal(payload)
+            return
+        if finding.kind == "activity":
+            expected = "ActivityProposal"
+        else:
+            expected = "ReactionProposal"
+        if not isinstance(payload, ReactionProposal | ActivityProposal):
             _LOGGER.warning(
-                "Behavior finding %s has non-proposal payload for kind=%s",
+                "Behavior finding %s has invalid %s payload for kind=%s",
                 finding.analyzer_id,
+                expected,
                 finding.kind,
             )
             return
-        await self._proposal_engine.async_submit_proposal(payload)
+        _LOGGER.warning(
+            "Behavior finding %s has %s payload for kind=%s",
+            finding.analyzer_id,
+            type(payload).__name__,
+            finding.kind,
+        )
 
     async def _route_anomaly(self, finding: BehaviorFinding) -> None:
         payload = finding.payload

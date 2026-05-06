@@ -19,7 +19,7 @@ from custom_components.heima.runtime.plugin_contracts import (
     BehaviorFinding,
     IBehaviorAnalyzer,
 )
-from custom_components.heima.runtime.proposal_engine import ProposalEngine
+from custom_components.heima.runtime.proposal_engine import ActivityProposal, ProposalEngine
 
 
 class _FakeStore:
@@ -104,6 +104,24 @@ class _FindingAnalyzerStub:
         ]
 
 
+class _ActivityFindingAnalyzerStub:
+    @property
+    def analyzer_id(self) -> str:
+        return "activity_stub"
+
+    async def analyze(self, event_store, snapshot_store=None):  # noqa: ANN001, ARG002
+        proposal = _activity_proposal(conf=0.83)
+        return [
+            BehaviorFinding(
+                kind="activity",
+                analyzer_id=self.analyzer_id,
+                description="activity",
+                confidence=proposal.confidence,
+                payload=proposal,
+            )
+        ]
+
+
 class _EventStoreStub:
     pass
 
@@ -116,6 +134,23 @@ def _proposal(*, conf: float, weekday: int = 0, status: str = "pending") -> Reac
         status=status,  # type: ignore[arg-type]
         description="proposal",
         suggested_reaction_config={"weekday": weekday},
+    )
+
+
+def _activity_proposal(
+    *,
+    conf: float = 0.8,
+    activity_name: str = "movie_night",
+    status: str = "pending",
+) -> ActivityProposal:
+    return ActivityProposal(
+        activity_name=activity_name,
+        primitive_pattern=frozenset({"tv", "relax"}),
+        context_conditions={"room_id": "living_room", "hour_range": [20, 24]},
+        occurrence_count=12,
+        confidence=conf,
+        representative_ts=["2026-05-01T20:00:00+00:00"],
+        status=status,
     )
 
 
@@ -271,6 +306,19 @@ async def test_proposal_engine_accepts_behavior_findings(monkeypatch):
     assert pending[0].suggested_reaction_config["weekday"] == 4
 
 
+async def test_proposal_engine_accepts_activity_findings(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    engine.register_analyzer(_ActivityFindingAnalyzerStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    await engine.async_run()
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert isinstance(pending[0], ActivityProposal)
+    assert pending[0].activity_name == "movie_night"
+
+
 async def test_finding_router_routes_pattern_and_activity_to_proposal_engine(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
@@ -278,7 +326,7 @@ async def test_finding_router_routes_pattern_and_activity_to_proposal_engine(mon
     router = FindingRouter(proposal_engine=engine)
 
     pattern_proposal = _proposal(conf=0.8, weekday=5)
-    activity_proposal = _proposal(conf=0.7, weekday=6)
+    activity_proposal = _activity_proposal(conf=0.7)
     await router.async_route(
         [
             BehaviorFinding(
@@ -299,7 +347,66 @@ async def test_finding_router_routes_pattern_and_activity_to_proposal_engine(mon
     )
 
     pending = engine.pending_proposals()
-    assert [item.suggested_reaction_config["weekday"] for item in pending] == [5, 6]
+    assert len(pending) == 2
+    assert any(
+        isinstance(item, ReactionProposal) and item.suggested_reaction_config["weekday"] == 5
+        for item in pending
+    )
+    assert any(
+        isinstance(item, ActivityProposal) and item.activity_name == "movie_night"
+        for item in pending
+    )
+
+
+async def test_activity_finding_rejects_reaction_payload(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    router = FindingRouter(proposal_engine=engine)
+
+    await router.async_route(
+        [
+            BehaviorFinding(
+                kind="activity",
+                analyzer_id="activity",
+                description="activity",
+                confidence=0.7,
+                payload=_proposal(conf=0.7, weekday=6),
+            )
+        ]
+    )
+
+    assert engine.pending_proposals() == []
+
+
+async def test_activity_proposal_round_trips_storage(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    proposal = _activity_proposal(conf=0.82)
+
+    proposal_id = await engine.async_submit_proposal(proposal)
+
+    pending = engine.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0].proposal_id == proposal_id
+    assert isinstance(pending[0], ActivityProposal)
+    assert pending[0].primitive_pattern == frozenset({"tv", "relax"})
+    assert engine.diagnostics()["proposals"][0]["type"] == "activity_discovered"
+
+
+async def test_activity_proposal_refreshes_pending_by_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+
+    first_id = await engine.async_submit_proposal(_activity_proposal(conf=0.62))
+    second_id = await engine.async_submit_proposal(_activity_proposal(conf=0.91))
+
+    pending = engine.pending_proposals()
+    assert first_id == second_id
+    assert len(pending) == 1
+    assert pending[0].confidence == 0.91
 
 
 async def test_finding_router_routes_anomaly_to_handler(monkeypatch):

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
+from uuid import uuid4
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -17,6 +19,85 @@ from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
+ACTIVITY_PROPOSAL_TYPE = "activity_discovered"
+
+
+@dataclass
+class ActivityProposal:
+    """User-reviewable composite activity proposal."""
+
+    proposal_id: str = field(default_factory=lambda: str(uuid4()))
+    proposal_type: str = ACTIVITY_PROPOSAL_TYPE
+    activity_name: str = ""
+    primitive_pattern: frozenset[str] = field(default_factory=frozenset)
+    context_conditions: dict[str, Any] = field(default_factory=dict)
+    occurrence_count: int = 0
+    confidence: float = 0.0
+    representative_ts: list[str] = field(default_factory=list)
+    status: str = "pending"
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    last_observed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    identity_key: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "proposal_model": "activity",
+            "proposal_id": self.proposal_id,
+            "proposal_type": self.proposal_type,
+            "activity_name": self.activity_name,
+            "primitive_pattern": sorted(self.primitive_pattern),
+            "context_conditions": _safe_dict(self.context_conditions),
+            "occurrence_count": int(self.occurrence_count),
+            "confidence": self.confidence,
+            "representative_ts": [str(ts) for ts in self.representative_ts],
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_observed_at": self.last_observed_at,
+            "identity_key": self.identity_key,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "ActivityProposal | None":
+        proposal_type = str(raw.get("proposal_type") or "")
+        if proposal_type != ACTIVITY_PROPOSAL_TYPE:
+            return None
+        activity_name = _token(raw.get("activity_name"))
+        primitive_pattern = frozenset(
+            _token(item) for item in raw.get("primitive_pattern", []) if _token(item)
+        )
+        if not activity_name or not primitive_pattern:
+            return None
+        status = str(raw.get("status") or "pending")
+        if status not in {"pending", "accepted", "rejected"}:
+            status = "pending"
+        representative_ts = raw.get("representative_ts", [])
+        if not isinstance(representative_ts, list):
+            representative_ts = []
+        return cls(
+            proposal_id=str(raw.get("proposal_id") or str(uuid4())),
+            proposal_type=proposal_type,
+            activity_name=activity_name,
+            primitive_pattern=primitive_pattern,
+            context_conditions=_safe_dict(raw.get("context_conditions")),
+            occurrence_count=max(0, int(_safe_float(raw.get("occurrence_count"), default=0.0))),
+            confidence=_safe_float(raw.get("confidence"), default=0.0),
+            representative_ts=[str(ts) for ts in representative_ts],
+            status=status,
+            created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
+            updated_at=str(raw.get("updated_at") or datetime.now(UTC).isoformat()),
+            last_observed_at=str(
+                raw.get("last_observed_at")
+                or raw.get("updated_at")
+                or raw.get("created_at")
+                or datetime.now(UTC).isoformat()
+            ),
+            identity_key=str(raw.get("identity_key") or ""),
+        )
+
+
+ProposalItem = ReactionProposal | ActivityProposal
 
 
 class ProposalEngine:
@@ -58,7 +139,7 @@ class ProposalEngine:
             key=self.STORAGE_KEY,
         )
         self._analyzers: list[IBehaviorAnalyzer] = []
-        self._proposals: list[ReactionProposal] = []
+        self._proposals: list[ProposalItem] = []
         self._load_errors = 0
         self._last_load_proposal_count = 0
         self._last_analyzer_failures = 0
@@ -116,11 +197,17 @@ class ProposalEngine:
                     continue
             for raw_proposal in proposals:
                 proposal = self._proposal_from_analyzer_output(raw_proposal)
-                if not isinstance(proposal, ReactionProposal):
-                    self._last_analyzer_output_errors += 1
+                if isinstance(proposal, ActivityProposal):
+                    if proposal.confidence >= self._min_confidence:
+                        await self.async_submit_proposal(proposal)
                     continue
-                if proposal.confidence >= self._min_confidence:
+                if (
+                    isinstance(proposal, ReactionProposal)
+                    and proposal.confidence >= self._min_confidence
+                ):
                     generated.append(proposal)
+                    continue
+                self._last_analyzer_output_errors += 1
 
         merged = list(self._proposals)
         for candidate in generated:
@@ -249,12 +336,12 @@ class ProposalEngine:
         self._write_sensor()
 
     @staticmethod
-    def _proposal_from_analyzer_output(value: object) -> ReactionProposal | None:
+    def _proposal_from_analyzer_output(value: object) -> ProposalItem | None:
         if not isinstance(value, BehaviorFinding):
             return None
-        if value.kind != "pattern":
-            return None
-        if isinstance(value.payload, ReactionProposal):
+        if value.kind == "pattern" and isinstance(value.payload, ReactionProposal):
+            return value.payload
+        if value.kind == "activity" and isinstance(value.payload, ActivityProposal):
             return value.payload
         return None
 
@@ -445,8 +532,11 @@ class ProposalEngine:
     async def async_reject_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "rejected")
 
-    async def async_submit_proposal(self, proposal: ReactionProposal) -> str:
+    async def async_submit_proposal(self, proposal: ProposalItem) -> str:
         """Insert or refresh one externally-authored proposal into the shared store."""
+        if isinstance(proposal, ActivityProposal):
+            return await self._async_submit_activity_proposal(proposal)
+
         now = datetime.now(UTC).isoformat()
         identity_key = self._identity_key(proposal)
         existing_idx = next(
@@ -520,10 +610,56 @@ class ProposalEngine:
         self._write_sensor()
         return updated.proposal_id
 
-    def pending_proposals(self) -> list[ReactionProposal]:
+    async def _async_submit_activity_proposal(self, proposal: ActivityProposal) -> str:
+        now = datetime.now(UTC).isoformat()
+        identity_key = self._identity_key(proposal)
+        existing_idx = next(
+            (
+                idx
+                for idx, current in enumerate(self._proposals)
+                if self._identity_key(current) == identity_key
+            ),
+            None,
+        )
+        if existing_idx is None:
+            submitted = replace(
+                proposal,
+                context_conditions=_safe_dict(proposal.context_conditions),
+                identity_key=identity_key,
+                last_observed_at=proposal.last_observed_at or now,
+            )
+            self._proposals.append(submitted)
+            await self._store.async_save(self._serialize())
+            self._write_sensor()
+            return submitted.proposal_id
+
+        existing = self._proposals[existing_idx]
+        if not isinstance(existing, ActivityProposal):
+            return existing.proposal_id
+        if existing.status != "pending":
+            return existing.proposal_id
+
+        updated = replace(
+            existing,
+            activity_name=proposal.activity_name,
+            primitive_pattern=frozenset(proposal.primitive_pattern),
+            context_conditions=_safe_dict(proposal.context_conditions),
+            occurrence_count=proposal.occurrence_count,
+            confidence=proposal.confidence,
+            representative_ts=list(proposal.representative_ts),
+            updated_at=now,
+            last_observed_at=proposal.last_observed_at or now,
+            identity_key=identity_key,
+        )
+        self._proposals[existing_idx] = updated
+        await self._store.async_save(self._serialize())
+        self._write_sensor()
+        return updated.proposal_id
+
+    def pending_proposals(self) -> list[ProposalItem]:
         return self._sort_proposals([p for p in self._proposals if p.status == "pending"])
 
-    def proposal_by_identity_key(self, identity_key: str) -> ReactionProposal | None:
+    def proposal_by_identity_key(self, identity_key: str) -> ProposalItem | None:
         target = identity_key.strip()
         if not target:
             return None
@@ -532,7 +668,7 @@ class ProposalEngine:
                 return proposal
         return None
 
-    def proposal_by_id(self, proposal_id: str) -> ReactionProposal | None:
+    def proposal_by_id(self, proposal_id: str) -> ProposalItem | None:
         """Return one proposal by stable proposal id."""
         target = str(proposal_id or "").strip()
         if not target:
@@ -584,28 +720,32 @@ class ProposalEngine:
             "proposals": [
                 {
                     "id": p.proposal_id,
-                    "type": p.reaction_type,
-                    "analyzer": p.analyzer_id,
-                    "description": p.description,
+                    "type": _proposal_type(p),
+                    "analyzer": getattr(p, "analyzer_id", "ActivityAnalyzer"),
+                    "description": _proposal_description(p),
                     "confidence": round(p.confidence, 2),
-                    "origin": p.origin,
-                    "followup_kind": p.followup_kind,
+                    "origin": getattr(p, "origin", "learned"),
+                    "followup_kind": getattr(p, "followup_kind", "discovery"),
                     "status": p.status,
                     "created_at": p.created_at,
                     "updated_at": p.updated_at,
                     "last_observed_at": p.last_observed_at,
                     "identity_key": self._identity_key(p),
-                    "fingerprint": self._fingerprint(p),
-                    "target_reaction_id": p.target_reaction_id,
-                    "target_reaction_type": p.target_reaction_type,
-                    "target_reaction_origin": p.target_reaction_origin,
-                    "target_template_id": p.target_template_id,
-                    "improves_reaction_type": p.improves_reaction_type,
-                    "improvement_reason": p.improvement_reason,
+                    "fingerprint": self._fingerprint(p) if isinstance(p, ReactionProposal) else "",
+                    "target_reaction_id": getattr(p, "target_reaction_id", ""),
+                    "target_reaction_type": getattr(p, "target_reaction_type", ""),
+                    "target_reaction_origin": getattr(p, "target_reaction_origin", ""),
+                    "target_template_id": getattr(p, "target_template_id", ""),
+                    "improves_reaction_type": getattr(p, "improves_reaction_type", ""),
+                    "improvement_reason": getattr(p, "improvement_reason", ""),
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
-                    "config_summary": self._proposal_config_summary(p),
-                    "explainability": self._proposal_explainability(p),
+                    "config_summary": self._proposal_config_summary(p)
+                    if isinstance(p, ReactionProposal)
+                    else _activity_config_summary(p),
+                    "explainability": self._proposal_explainability(p)
+                    if isinstance(p, ReactionProposal)
+                    else {},
                 }
                 for p in ordered
             ],
@@ -627,32 +767,38 @@ class ProposalEngine:
             "pending_items_included": len(sensor_items),
             "pending_items_truncated": len(pending) > self.SENSOR_ITEMS_LIMIT,
             "by_origin": {
-                "learned": sum(1 for p in ordered if p.origin == "learned"),
-                "admin_authored": sum(1 for p in ordered if p.origin == "admin_authored"),
+                "learned": sum(1 for p in ordered if getattr(p, "origin", "learned") == "learned"),
+                "admin_authored": sum(
+                    1 for p in ordered if getattr(p, "origin", "learned") == "admin_authored"
+                ),
             },
             "by_followup_kind": {
-                "discovery": sum(1 for p in ordered if p.followup_kind == "discovery"),
-                "tuning_suggestion": sum(
-                    1 for p in ordered if p.followup_kind == "tuning_suggestion"
+                "discovery": sum(
+                    1 for p in ordered if getattr(p, "followup_kind", "discovery") == "discovery"
                 ),
-                "improvement": sum(1 for p in ordered if p.followup_kind == "improvement"),
+                "tuning_suggestion": sum(
+                    1
+                    for p in ordered
+                    if getattr(p, "followup_kind", "discovery") == "tuning_suggestion"
+                ),
+                "improvement": sum(
+                    1 for p in ordered if getattr(p, "followup_kind", "discovery") == "improvement"
+                ),
             },
             "by_type": _proposal_type_counts(ordered),
             "items": {
                 p.proposal_id: {
-                    "type": p.reaction_type,
+                    "type": _proposal_type(p),
                     "confidence": round(p.confidence, 2),
-                    "origin": p.origin,
-                    "followup_kind": p.followup_kind,
+                    "origin": getattr(p, "origin", "learned"),
+                    "followup_kind": getattr(p, "followup_kind", "discovery"),
                     "status": p.status,
                     "updated_at": p.updated_at,
-                    "target_reaction_id": p.target_reaction_id,
-                    "target_reaction_type": p.target_reaction_type,
-                    "improves_reaction_type": p.improves_reaction_type,
-                    "improvement_reason": p.improvement_reason,
-                    "context_snapshot": _safe_dict(
-                        _safe_dict(p.suggested_reaction_config).get("context_snapshot")
-                    ),
+                    "target_reaction_id": getattr(p, "target_reaction_id", ""),
+                    "target_reaction_type": getattr(p, "target_reaction_type", ""),
+                    "improves_reaction_type": getattr(p, "improves_reaction_type", ""),
+                    "improvement_reason": getattr(p, "improvement_reason", ""),
+                    "context_snapshot": _safe_dict(_proposal_context_snapshot(p)),
                     "is_stale": self._is_stale(p),
                 }
                 for p in sensor_items
@@ -669,9 +815,11 @@ class ProposalEngine:
         house_state = cfg.get("house_state")
         return f"{proposal.analyzer_id}|{proposal.reaction_type}|{weekday}|{house_state}"
 
-    def _identity_key(self, proposal: ReactionProposal) -> str:
+    def _identity_key(self, proposal: ProposalItem) -> str:
         if proposal.identity_key:
             return proposal.identity_key
+        if isinstance(proposal, ActivityProposal):
+            return _activity_identity_key(proposal)
 
         hooks = self._learning_plugin_registry.lifecycle_hooks_for(proposal.reaction_type)
         if hooks is not None:
@@ -709,7 +857,7 @@ class ProposalEngine:
         return hooks.should_suppress_followup(candidate, accepted)
 
     @staticmethod
-    def _sort_proposals(proposals: list[ReactionProposal]) -> list[ReactionProposal]:
+    def _sort_proposals(proposals: list[ProposalItem]) -> list[ProposalItem]:
         status_rank = {"pending": 0, "accepted": 1, "rejected": 2}
 
         def _ts(value: str) -> datetime:
@@ -725,13 +873,13 @@ class ProposalEngine:
                 -float(p.confidence),
                 -_ts(p.updated_at).timestamp(),
                 -_ts(p.created_at).timestamp(),
-                p.analyzer_id,
-                p.reaction_type,
+                getattr(p, "analyzer_id", "ActivityAnalyzer"),
+                _proposal_type(p),
                 p.proposal_id,
             ),
         )
 
-    def _is_stale(self, proposal: ReactionProposal) -> bool:
+    def _is_stale(self, proposal: ProposalItem) -> bool:
         if proposal.status != "pending":
             return False
         last_observed_at = self._parse_ts(proposal.last_observed_at)
@@ -739,7 +887,7 @@ class ProposalEngine:
             return True
         return (datetime.now(UTC) - last_observed_at) > self._stale_after
 
-    def _stale_reason(self, proposal: ReactionProposal) -> str | None:
+    def _stale_reason(self, proposal: ProposalItem) -> str | None:
         if proposal.status != "pending":
             return None
         last_observed_at = self._parse_ts(proposal.last_observed_at)
@@ -754,8 +902,8 @@ class ProposalEngine:
             )
         return None
 
-    def _prune_stale_pending(self, proposals: list[ReactionProposal]) -> list[ReactionProposal]:
-        retained: list[ReactionProposal] = []
+    def _prune_stale_pending(self, proposals: list[ProposalItem]) -> list[ProposalItem]:
+        retained: list[ProposalItem] = []
         now = datetime.now(UTC)
         for proposal in proposals:
             if proposal.status != "pending":
@@ -772,7 +920,10 @@ class ProposalEngine:
         return retained
 
     @staticmethod
-    def _proposal_from_storage(raw: dict[str, Any]) -> ReactionProposal | None:
+    def _proposal_from_storage(raw: dict[str, Any]) -> ProposalItem | None:
+        activity_proposal = ActivityProposal.from_dict(raw)
+        if activity_proposal is not None:
+            return activity_proposal
         proposal = ReactionProposal.from_dict(raw)
         if not proposal.reaction_type:
             return None
@@ -881,6 +1032,58 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _safe_float(value: Any, *, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _proposal_type(proposal: ProposalItem) -> str:
+    if isinstance(proposal, ActivityProposal):
+        return proposal.proposal_type
+    return proposal.reaction_type
+
+
+def _proposal_description(proposal: ProposalItem) -> str:
+    if isinstance(proposal, ActivityProposal):
+        return (
+            f"Composite activity '{proposal.activity_name}' observed "
+            f"{proposal.occurrence_count} times."
+        )
+    return proposal.description
+
+
+def _proposal_context_snapshot(proposal: ProposalItem) -> dict[str, Any]:
+    if isinstance(proposal, ActivityProposal):
+        return _activity_config_summary(proposal)
+    return _safe_dict(_safe_dict(proposal.suggested_reaction_config).get("context_snapshot"))
+
+
+def _activity_config_summary(proposal: ActivityProposal) -> dict[str, Any]:
+    return {
+        "activity_name": proposal.activity_name,
+        "primitive_pattern": sorted(proposal.primitive_pattern),
+        "context_conditions": _safe_dict(proposal.context_conditions),
+        "occurrence_count": proposal.occurrence_count,
+        "representative_ts": list(proposal.representative_ts),
+    }
+
+
+def _activity_identity_key(proposal: ActivityProposal) -> str:
+    context_raw = json.dumps(
+        _safe_dict(proposal.context_conditions),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    pattern = ",".join(sorted(proposal.primitive_pattern))
+    return f"{proposal.proposal_type}:{proposal.activity_name}:{pattern}:{context_raw}"
+
+
+def _token(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_")
+
+
 def _latest_proposal_match(
     matches: list[tuple[int, ReactionProposal]],
 ) -> tuple[int, ReactionProposal] | None:
@@ -919,10 +1122,11 @@ def _configured_contextual_lighting_covers_darkness_candidate(
     )
 
 
-def _proposal_type_counts(proposals: list[ReactionProposal]) -> dict[str, int]:
+def _proposal_type_counts(proposals: list[ProposalItem]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for proposal in proposals:
-        counts[proposal.reaction_type] = counts.get(proposal.reaction_type, 0) + 1
+        proposal_type = _proposal_type(proposal)
+        counts[proposal_type] = counts.get(proposal_type, 0) + 1
     return dict(sorted(counts.items()))
 
 

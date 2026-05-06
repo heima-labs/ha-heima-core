@@ -103,18 +103,17 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning.
-**Active phase:** none.
+**Active phase:** Phase I — Activity Inference and Learning, slice I1 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Discuss and plan Phase I — Activity Inference and Learning.
+Review I1 results, then discuss/implement I2 — Activity approval contract.
 
 ### Current Working Notes
 
-- Current slice: Phase H6 — complete.
-- Status: `HouseStateSignal` is passed from the engine to `HouseStateDomain`; the domain consumes
-  only approved `house_state_inference` signals with confidence >= 0.60, after manual override,
-  vacation, and everyone-away hard-state guards. Phase H is complete.
+- Current slice: Phase I1 — complete.
+- Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
+  plumbing only; no activity discovery, inference, approval surface, or config-flow review in I1.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -136,6 +135,10 @@ Discuss and plan Phase I — Activity Inference and Learning.
   - H6 consumes only `HouseStateSignal(source_id="house_state_inference")`; the older
     `WeekdayStateModule` is not approval-gated and is therefore intentionally not applied to
     `HouseStateDomain` decisions in Phase H.
+  - Phase I will use constructor injection for `ActivityAnalyzer(snapshot_store=...)`.
+    Existing analyzers are already constructed with dependencies/policies in the registry, so this
+    keeps `IBehaviorAnalyzer.analyze(event_store, snapshot_store=None)` unchanged and lets
+    `ActivityAnalyzer.analyze(event_store)` ignore the event store.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -164,6 +167,11 @@ Discuss and plan Phase I — Activity Inference and Learning.
   - `custom_components/heima/runtime/inference/modules/house_state_inference.py`
   - `custom_components/heima/runtime/inference/modules/weekday_state.py`
   - `tests/test_house_state_domain.py`
+  - `custom_components/heima/runtime/proposal_engine.py`
+  - `custom_components/heima/runtime/finding_router.py`
+  - `custom_components/heima/runtime/analyzers/base.py`
+  - `custom_components/heima/runtime/analyzers/registry.py`
+  - `custom_components/heima/runtime/plugin_contracts.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -199,6 +207,10 @@ Discuss and plan Phase I — Activity Inference and Learning.
   - `tests/test_inference_foundation.py`
   - `custom_components/heima/runtime/domains/activity_domain.py`
   - `tests/test_activity_domain.py`
+  - `custom_components/heima/runtime/proposal_engine.py`
+  - `custom_components/heima/runtime/finding_router.py`
+  - `tests/test_proposal_engine.py`
+  - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
   - `kind="proposal"` is not supported.
@@ -273,7 +285,15 @@ Discuss and plan Phase I — Activity Inference and Learning.
   - `.venv/bin/python -m pytest tests/test_house_state_domain.py tests/test_inference_engine_wiring.py tests/test_inference_modules.py -q`
     — passed, 54 tests.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1125 tests.
-- Next concrete step: discuss Phase I scope and slice plan before implementation.
+  - `.venv/bin/python -m pytest tests/test_proposal_engine.py -q` — passed, 65 tests.
+  - `.venv/bin/ruff check custom_components/heima/runtime/proposal_engine.py custom_components/heima/runtime/finding_router.py tests/test_proposal_engine.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/proposal_engine.py custom_components/heima/runtime/finding_router.py tests/test_proposal_engine.py`
+    — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1129 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Next concrete step: discuss I2 before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -740,6 +760,22 @@ None — role model is spec + contract additions only.
 **Spec section:** §7.7 (ActivityProposal), §10.5 (ActivityInferenceModule)
 **Goal:** composite activity discovery; `ActivityAnalyzer`; user-approved `ActivitySignal`.
 **Depends on:** Phases D, H, and F complete.
+
+### Slice plan
+
+- [x] I1 — ActivityProposal contract and proposal plumbing:
+  - Add `ActivityProposal` support to the shared proposal store.
+  - Route `BehaviorFinding(kind="activity")` only when the payload is an `ActivityProposal`.
+  - Preserve existing `ReactionProposal` behavior unchanged.
+- [ ] I2 — Activity approval contract:
+  - Add stable activity approval key/snapshot helpers and `activity_discovered` approval records.
+- [ ] I3 — ActivityInferenceModule:
+  - Emit `ActivitySignal` only for approved composite activity proposals with support/confidence.
+- [ ] I4 — ActivityAnalyzer:
+  - Discover composite activity candidates from `SnapshotStore`; use named constants for
+    min 10 co-occurrences and min 3 distinct days.
+- [ ] I5 — Resident/installer review surfaces:
+  - Add review and approval wiring for `activity_discovered` proposals.
 
 ### New files to create
 
