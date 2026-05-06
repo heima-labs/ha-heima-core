@@ -103,18 +103,19 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints.
-**Active phase:** Phase H — House State Learning, slice H4 complete.
+**Active phase:** Phase H — House State Learning, slice H5 complete.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Implement H5: resident notification nudge + `heima.approve_proposal` service + config flow installer review for `house_state_learned_context`.
+Review H5 results and decide the remaining HouseStateDomain signal-consumption acceptance item.
 
 ### Current Working Notes
 
-- Current slice: Phase H4 — complete.
-- Status: ApprovalStore and HouseStateInferenceModule are wired in coordinator, learned candidates
-  submit idempotent proposals, and the shared review path records approvals/rejections for both
-  resident approval and installer override.
+- Current slice: Phase H5 — complete.
+- Status: Resident dashboard approval support is exposed through `heima.approve_proposal`,
+  pending house-state proposals create deduplicated persistent-notification nudges, config flow
+  handles installer review for `house_state_learned_context`, and proposal sensor attributes expose
+  readable `context_snapshot` data for future dashboard cards.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -252,7 +253,14 @@ Implement H5: resident notification nudge + `heima.approve_proposal` service + c
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
   - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_learning_reset.py tests/test_services_notify_event.py tests/test_integration_normalization_e2e.py -q` — passed, 56 tests.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1114 tests.
-- Next concrete step: implement H5 — resident notification nudge + `heima.approve_proposal` service + config flow installer review (dashboard approach, no inline notification actions).
+- H5 tests run:
+  - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_services_notify_event.py tests/test_options_flow_e2e.py -q` — passed, 172 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1120 tests.
+- Next concrete step: discuss remaining Phase H acceptance item — whether to wire
+  `HouseStateSignal` consumption into `HouseStateDomain` now or split it into a new H6 closeout
+  slice.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -674,7 +682,7 @@ None — role model is spec + contract additions only.
 - [x] H4 — Engine/coordinator wiring:
   - Load ApprovalStore, register HouseStateInferenceModule, and route approvals through the
     coordinator product-flow layer.
-- [ ] H5 — Resident approval surface + service:
+- [x] H5 — Resident approval surface + service:
   - Send `persistent_notification` nudge pointing to resident dashboard when a new
     `house_state_learned_context` proposal is pending (dedup guard: do not re-send for
     already-notified pending proposals).
@@ -682,8 +690,8 @@ None — role model is spec + contract additions only.
     calls `coordinator.async_review_house_state_proposal(..., approved_by="resident")`.
   - Add `house_state_learned_context` review step in config flow options (installer path,
     `approved_by="installer"`).
-  - Dashboard card wires to `heima.approve_proposal`; description derived from
-    `context_snapshot` in the proposal record.
+  - Do not implement a Lovelace card in H5; expose dashboard-ready data through
+    `sensor.heima_reaction_proposals` and the `heima.approve_proposal` service.
 
 ### New files to create
 
@@ -706,7 +714,7 @@ None — role model is spec + contract additions only.
 - [x] `ApprovalStore` records include `approved_by` field
 - [ ] Unapproved signals are ignored by `HouseStateDomain`
 - [x] User approval/rejection survives HA restart
-- [x] All existing tests pass — 1114 tests
+- [x] All existing tests pass — 1120 tests
 
 ---
 

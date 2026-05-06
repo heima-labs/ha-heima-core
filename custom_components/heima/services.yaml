@@ -26,6 +26,26 @@ command:
       selector:
         text:
 
+approve_proposal:
+  name: Heima Approve Proposal
+  description: Approve or reject a resident-facing pending proposal.
+  fields:
+    proposal_id:
+      name: Proposal ID
+      description: Proposal identifier to approve or reject.
+      required: true
+      selector:
+        text:
+    action:
+      name: Action
+      description: Resident review decision.
+      required: true
+      selector:
+        select:
+          options:
+            - approved
+            - rejected
+
 override_approval:
   name: Heima Override Approval
   description: Apply an installer approval override to a pending proposal.

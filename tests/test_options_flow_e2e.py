@@ -14,6 +14,7 @@ from custom_components.heima.const import (
     DOMAIN,
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
+from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 
 
 class _FakeAreaRegistry:
@@ -1865,6 +1866,116 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     assert stored["author_kind"] == "heima"
     assert stored["source_request"] == "learned_pattern"
     assert stored["source_proposal_id"] == "proposal-darkness"
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_reviews_house_state_context_as_installer_without_reaction_config():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-house-state",
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description="Learned house-state context predicts working.",
+        confidence=0.8,
+        suggested_reaction_config={
+            "context_key": "ctx-working",
+            "context_snapshot": {
+                "weekday": 1,
+                "hour_bucket": 8,
+                "rooms": ["bedroom"],
+                "anyone_home": True,
+                "predicted_state": "working",
+                "learning_context": {},
+            },
+            "predicted_state": "working",
+            "support": 4,
+            "total": 5,
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal=review,
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_proposals()
+    placeholders = shown["description_placeholders"]
+    assert "Stato casa appreso: working" in placeholders["proposal_label"]
+    assert "Stato previsto: working" in placeholders["proposal_details"]
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-house-state",
+        decision="approved",
+        approved_by="installer",
+    )
+    proposal_engine.async_accept_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_rejects_house_state_context_as_installer():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-house-state",
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description="Learned house-state context predicts working.",
+        confidence=0.8,
+        suggested_reaction_config={
+            "context_key": "ctx-working",
+            "context_snapshot": {
+                "weekday": 1,
+                "hour_bucket": 8,
+                "rooms": ["bedroom"],
+                "anyone_home": True,
+                "predicted_state": "working",
+                "learning_context": {},
+            },
+            "predicted_state": "working",
+            "support": 4,
+            "total": 5,
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal=review,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "reject"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-house-state",
+        decision="rejected",
+        approved_by="installer",
+    )
+    proposal_engine.async_reject_proposal.assert_not_awaited()
 
 
 @pytest.mark.asyncio

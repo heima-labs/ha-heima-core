@@ -650,6 +650,9 @@ class ProposalEngine:
                     "target_reaction_type": p.target_reaction_type,
                     "improves_reaction_type": p.improves_reaction_type,
                     "improvement_reason": p.improvement_reason,
+                    "context_snapshot": _safe_dict(
+                        _safe_dict(p.suggested_reaction_config).get("context_snapshot")
+                    ),
                     "is_stale": self._is_stale(p),
                 }
                 for p in sensor_items

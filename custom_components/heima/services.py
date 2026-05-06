@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     DOMAIN,
     HOUSE_STATES_CANONICAL,
+    SERVICE_APPROVE_PROPOSAL,
     SERVICE_COMMAND,
     SERVICE_OVERRIDE_APPROVAL,
     SERVICE_SET_MODE,
@@ -52,6 +53,13 @@ OVERRIDE_APPROVAL_SCHEMA = vol.Schema(
         vol.Required("proposal_id"): cv.string,
         vol.Required("action"): vol.In(["approve", "reject"]),
         vol.Required("installer_override"): cv.boolean,
+    }
+)
+
+APPROVE_PROPOSAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("proposal_id"): cv.string,
+        vol.Required("action"): vol.In(["approved", "rejected"]),
     }
 )
 
@@ -484,7 +492,38 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if not matched:
             raise ServiceValidationError(f"Proposal '{proposal_id}' not found")
 
+    async def _handle_approve_proposal(call: ServiceCall) -> None:
+        payload = dict(call.data)
+        proposal_id = str(payload.get("proposal_id") or "").strip()
+        action = str(payload.get("action") or "").strip()
+        if not proposal_id:
+            raise ServiceValidationError("Missing required proposal_id")
+
+        coordinators = list(_iter_coordinators(hass))
+        if not coordinators:
+            raise ServiceValidationError("No active Heima config entries found")
+
+        matched = False
+        for coordinator in coordinators:
+            matched = (
+                await coordinator.async_review_house_state_proposal(
+                    proposal_id,
+                    decision=action,
+                    approved_by="resident",
+                )
+                or matched
+            )
+
+        if not matched:
+            raise ServiceValidationError(f"Proposal '{proposal_id}' not found")
+
     hass.services.async_register(DOMAIN, SERVICE_COMMAND, _handle_command, schema=COMMAND_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_APPROVE_PROPOSAL,
+        _handle_approve_proposal,
+        schema=APPROVE_PROPOSAL_SCHEMA,
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_OVERRIDE_APPROVAL,

@@ -19,6 +19,7 @@ from custom_components.heima.runtime.inference.approval_store import (
 from custom_components.heima.runtime.inference.modules.house_state_inference import (
     LearnedHouseStateCandidate,
 )
+from custom_components.heima.runtime.proposal_engine import ProposalEngine
 
 
 def _candidate(context_key: str = "ctx-1") -> LearnedHouseStateCandidate:
@@ -53,6 +54,20 @@ class _ApprovalStoreStub:
         self._records.append(record)
 
 
+class _ServicesStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict, bool]] = []
+
+    async def async_call(
+        self,
+        domain: str,
+        service: str,
+        data: dict,
+        blocking: bool = False,
+    ) -> None:
+        self.calls.append((domain, service, dict(data), blocking))
+
+
 def _record(
     *,
     context_key: str,
@@ -77,6 +92,23 @@ def test_house_state_candidate_builds_stable_identity_key() -> None:
     assert proposal.identity_key == f"{HOUSE_STATE_PROPOSAL_TYPE}:ctx-alpha"
     assert proposal.suggested_reaction_config["context_key"] == "ctx-alpha"
     assert proposal.suggested_reaction_config["context_snapshot"]["predicted_state"] == "working"
+
+
+def test_proposal_sensor_includes_house_state_context_snapshot() -> None:
+    written: list[tuple[int, dict]] = []
+
+    engine = ProposalEngine.__new__(ProposalEngine)
+    engine._sensor_writer = lambda count, attrs: written.append((count, attrs))
+    engine._stale_after = ProposalEngine.DEFAULT_STALE_AFTER
+    proposal = _proposal_from_house_state_candidate(_candidate("ctx-sensor"))
+    engine._proposals = [proposal]
+
+    engine._write_sensor()
+
+    assert written[0][0] == 1
+    item = written[0][1]["items"][proposal.proposal_id]
+    assert item["type"] == HOUSE_STATE_PROPOSAL_TYPE
+    assert item["context_snapshot"]["predicted_state"] == "working"
 
 
 def test_sync_house_state_approval_state_passes_approved_and_rejected_sets() -> None:
@@ -107,8 +139,13 @@ async def test_submit_house_state_candidates_submits_generated_proposals() -> No
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     candidate = _candidate("ctx-submit")
     coordinator._house_state_module = SimpleNamespace(generate_candidates=lambda: [candidate])
-    coordinator._proposal_engine = SimpleNamespace(async_submit_proposal=AsyncMock())
+    coordinator._proposal_engine = SimpleNamespace(
+        async_submit_proposal=AsyncMock(return_value="proposal-submit")
+    )
     coordinator._sync_house_state_approval_state = MagicMock()
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_house_state_proposal_keys = set()
 
     await coordinator._async_submit_house_state_candidates()
 
@@ -116,6 +153,29 @@ async def test_submit_house_state_candidates_submits_generated_proposals() -> No
     coordinator._proposal_engine.async_submit_proposal.assert_awaited_once()
     proposal = coordinator._proposal_engine.async_submit_proposal.await_args.args[0]
     assert proposal.identity_key == f"{HOUSE_STATE_PROPOSAL_TYPE}:ctx-submit"
+    assert len(services.calls) == 1
+    assert services.calls[0][0:2] == ("persistent_notification", "create")
+    assert "Open the Heima dashboard" in services.calls[0][2]["message"]
+
+
+@pytest.mark.asyncio
+async def test_house_state_candidate_notification_is_deduplicated() -> None:
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    candidate = _candidate("ctx-dedup")
+    coordinator._house_state_module = SimpleNamespace(generate_candidates=lambda: [candidate])
+    coordinator._proposal_engine = SimpleNamespace(
+        async_submit_proposal=AsyncMock(return_value="proposal-dedup")
+    )
+    coordinator._sync_house_state_approval_state = MagicMock()
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_house_state_proposal_keys = set()
+
+    await coordinator._async_submit_house_state_candidates()
+    await coordinator._async_submit_house_state_candidates()
+
+    assert coordinator._proposal_engine.async_submit_proposal.await_count == 2
+    assert len(services.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -131,6 +191,7 @@ async def test_review_house_state_proposal_records_approved_decision_and_syncs()
     )
     coordinator._approval_store = _ApprovalStoreStub()
     coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._notified_house_state_proposal_keys = {proposal.identity_key}
 
     result = await coordinator.async_review_house_state_proposal(
         "proposal-approved",
@@ -147,6 +208,7 @@ async def test_review_house_state_proposal_records_approved_decision_and_syncs()
     assert record.context_snapshot == candidate.context_snapshot
     coordinator._approval_store.async_flush.assert_awaited_once()
     coordinator._sync_house_state_approval_state.assert_called_once()
+    assert proposal.identity_key not in coordinator._notified_house_state_proposal_keys
 
 
 @pytest.mark.asyncio
@@ -161,6 +223,7 @@ async def test_review_house_state_proposal_records_rejected_installer_override()
     )
     coordinator._approval_store = _ApprovalStoreStub()
     coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._notified_house_state_proposal_keys = {proposal.identity_key}
 
     result = await coordinator.async_review_house_state_proposal(
         "proposal-rejected",
@@ -175,6 +238,7 @@ async def test_review_house_state_proposal_records_rejected_installer_override()
     assert record.approved_by == "installer"
     assert record.context_key == "ctx-rejected"
     coordinator._sync_house_state_approval_state.assert_called_once()
+    assert proposal.identity_key not in coordinator._notified_house_state_proposal_keys
 
 
 @pytest.mark.asyncio
@@ -192,6 +256,7 @@ async def test_review_non_house_state_proposal_preserves_existing_proposal_flow(
     )
     coordinator._approval_store = _ApprovalStoreStub()
     coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._notified_house_state_proposal_keys = set()
 
     result = await coordinator.async_review_house_state_proposal(
         "proposal-lighting",

@@ -137,6 +137,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
+        self._notified_house_state_proposal_keys: set[str] = set()
         self.last_options_snapshot: dict = dict(entry.options)
         self._scheduler = RuntimeScheduler(
             hass,
@@ -399,6 +400,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             await self._approval_store.async_record(record)
             await self._approval_store.async_flush()
             self._sync_house_state_approval_state()
+            if proposal.identity_key:
+                self._notified_house_state_proposal_keys.discard(proposal.identity_key)
 
         return True
 
@@ -649,9 +652,39 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     async def _async_submit_house_state_candidates(self) -> None:
         self._sync_house_state_approval_state()
         for candidate in self._house_state_module.generate_candidates():
-            await self._proposal_engine.async_submit_proposal(
-                _proposal_from_house_state_candidate(candidate)
+            proposal = _proposal_from_house_state_candidate(candidate)
+            proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
+            await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+
+    async def _async_notify_house_state_proposal(
+        self,
+        proposal: ReactionProposal,
+        *,
+        proposal_id: str,
+    ) -> None:
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key or identity_key in self._notified_house_state_proposal_keys:
+            return
+        cfg = dict(proposal.suggested_reaction_config)
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": _house_state_notification_id(identity_key),
+                    "title": "Heima has a new house-state proposal",
+                    "message": _house_state_proposal_notification_message(
+                        proposal_id=proposal_id,
+                        context_snapshot=dict(cfg.get("context_snapshot") or {}),
+                        confidence=proposal.confidence,
+                    ),
+                },
+                blocking=False,
             )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to create house-state proposal notification")
+        finally:
+            self._notified_house_state_proposal_keys.add(identity_key)
 
     def _sync_house_state_approval_state(self) -> None:
         approved: set[str] = set()
@@ -847,4 +880,34 @@ def _approval_record_from_house_state_proposal(
             "total": cfg.get("total"),
             "confidence": proposal.confidence,
         },
+    )
+
+
+def _house_state_notification_id(identity_key: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
+    return f"heima_house_state_proposal_{safe[:120]}"
+
+
+def _house_state_proposal_notification_message(
+    *,
+    proposal_id: str,
+    context_snapshot: dict[str, object],
+    confidence: float,
+) -> str:
+    predicted_state = str(context_snapshot.get("predicted_state") or "unknown")
+    weekday = context_snapshot.get("weekday")
+    hour_bucket = context_snapshot.get("hour_bucket")
+    rooms = context_snapshot.get("rooms")
+    if isinstance(rooms, list | tuple):
+        room_label = ", ".join(str(room) for room in rooms) or "no specific room"
+    else:
+        room_label = "no specific room"
+    anyone_home = "someone is home" if context_snapshot.get("anyone_home") else "no one is home"
+    return (
+        "Heima learned a recurring house-state context and needs a resident review.\n\n"
+        f"Suggested state: {predicted_state}\n"
+        f"Context: weekday {weekday}, hour {hour_bucket}, rooms: {room_label}, {anyone_home}\n"
+        f"Confidence: {confidence:.0%}\n\n"
+        "Open the Heima dashboard to approve or reject this proposal.\n"
+        f"Proposal ID: {proposal_id}"
     )

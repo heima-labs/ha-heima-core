@@ -23,6 +23,7 @@ from ..room_sources import (
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
+from ..runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 from ..runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     resolve_reaction_type,
@@ -1771,6 +1772,21 @@ class _ReactionsStepsMixin:
         self._proposal_review_queue = queue
 
         if not coordinator:
+            return await self.async_step_proposals() if queue else await self.async_step_init()
+
+        if current.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+            if action == "accept":
+                await coordinator.async_review_house_state_proposal(
+                    current_id,
+                    decision="approved",
+                    approved_by="installer",
+                )
+            elif action == "reject":
+                await coordinator.async_review_house_state_proposal(
+                    current_id,
+                    decision="rejected",
+                    approved_by="installer",
+                )
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
         reactions_cfg = dict(self.options.get(OPT_REACTIONS, {}))
@@ -3869,6 +3885,7 @@ class _ReactionsStepsMixin:
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         reaction_type = resolve_reaction_type(cfg) or str(proposal.reaction_type or "").strip()
         if reaction_type in {
+            HOUSE_STATE_PROPOSAL_TYPE,
             "room_darkness_lighting_assist",
             "room_contextual_lighting_assist",
             "vacation_presence_simulation",
@@ -3957,6 +3974,14 @@ class _ReactionsStepsMixin:
         followup = self._proposal_followup_target(proposal)
         presenter = self._reaction_presenter_for_cfg(cfg)
         language = self._flow_language()
+        if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+            snapshot = _safe_mapping(cfg.get("context_snapshot"))
+            predicted_state = str(
+                snapshot.get("predicted_state") or cfg.get("predicted_state") or ""
+            )
+            if language.startswith("it"):
+                return f"Stato casa appreso: {predicted_state or 'sconosciuto'}"
+            return f"Learned house state: {predicted_state or 'unknown'}"
         if presenter is not None and presenter.proposal_review_title is not None:
             title = presenter.proposal_review_title(
                 self,
@@ -3988,6 +4013,8 @@ class _ReactionsStepsMixin:
         learning = _safe_mapping(cfg.get("learning_diagnostics"))
         language = self._flow_language()
         is_it = language.startswith("it")
+        if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+            return _house_state_proposal_review_details(proposal, cfg, is_it=is_it)
 
         details: list[str] = []
         if proposal.origin == "admin_authored":
@@ -4501,6 +4528,58 @@ class _ReactionsStepsMixin:
                 pass
 
         return labels_map.get(reaction_id, reaction_id)
+
+
+def _house_state_proposal_review_details(
+    proposal: ReactionProposal,
+    cfg: dict[str, Any],
+    *,
+    is_it: bool,
+) -> str:
+    snapshot = _safe_mapping(cfg.get("context_snapshot"))
+    predicted_state = str(snapshot.get("predicted_state") or cfg.get("predicted_state") or "")
+    weekday = snapshot.get("weekday")
+    hour_bucket = snapshot.get("hour_bucket")
+    rooms_raw = snapshot.get("rooms")
+    rooms = ", ".join(str(room) for room in rooms_raw) if isinstance(rooms_raw, list) else ""
+    anyone_home = bool(snapshot.get("anyone_home"))
+    support = cfg.get("support")
+    total = cfg.get("total")
+
+    lines = [
+        (
+            "Tipo proposta: contesto appreso per stato casa"
+            if is_it
+            else "Proposal type: learned house-state context"
+        )
+    ]
+    if predicted_state:
+        lines.append(
+            f"Stato previsto: {predicted_state}" if is_it else f"Predicted state: {predicted_state}"
+        )
+    if weekday not in (None, ""):
+        lines.append(f"Giorno: {weekday}" if is_it else f"Weekday: {weekday}")
+    if hour_bucket not in (None, ""):
+        lines.append(f"Ora: {hour_bucket}" if is_it else f"Hour: {hour_bucket}")
+    if rooms:
+        lines.append(f"Stanze: {rooms}" if is_it else f"Rooms: {rooms}")
+    lines.append(
+        ("Presenza: qualcuno in casa" if anyone_home else "Presenza: nessuno in casa")
+        if is_it
+        else ("Presence: someone home" if anyone_home else "Presence: nobody home")
+    )
+    if support not in (None, "") and total not in (None, ""):
+        lines.append(
+            f"Evidenza: {support}/{total} osservazioni"
+            if is_it
+            else f"Evidence: {support}/{total} observations"
+        )
+    lines.append(
+        f"Affidabilità: {proposal.confidence:.0%}"
+        if is_it
+        else f"Confidence: {proposal.confidence:.0%}"
+    )
+    return "\n".join(lines)
 
 
 def _format_last_seen(value: str) -> str:
