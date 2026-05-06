@@ -1,5 +1,6 @@
 """Learning analyzers package."""
 
+from .activity import ActivityAnalyzer
 from .base import IPatternAnalyzer, ReactionProposal
 from .cross_domain import (
     CompositePatternCatalogAnalyzer,
@@ -31,6 +32,7 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
 
 __all__ = [
     "IPatternAnalyzer",
+    "ActivityAnalyzer",
     "ReactionProposal",
     "AdminAuthoredTemplateDescriptor",
     "LearningPatternPluginDescriptor",
