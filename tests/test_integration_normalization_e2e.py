@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.heima.const import DOMAIN, SERVICE_SET_MODE
 from custom_components.heima.runtime.domains.heating import HeatingDomain
@@ -42,6 +44,11 @@ def _anon_source_state(hass: HomeAssistant):
     return hass.states.get("sensor.heima_anonymous_presence_source") or hass.states.get(
         "sensor.heima_anonymous_source"
     )
+
+
+async def _advance_event_debounce(hass: HomeAssistant, seconds: float = 5.1) -> None:
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
+    await hass.async_block_till_done()
 
 
 class _ExplodingAnyOfPlugin:
@@ -89,6 +96,7 @@ async def test_e2e_room_occupancy_dwell_transitions_after_timer(
 
     assert _room_entity_state(hass, "studio").state == "off"
 
+    await _advance_event_debounce(hass)
     await asyncio.sleep(1.2)
     await hass.async_block_till_done()
 
@@ -144,6 +152,7 @@ async def test_e2e_room_weighted_quorum_uses_threshold_and_source_weights(
 
     hass.states.async_set("binary_sensor.presence_b", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
     assert _room_entity_state(hass, "studio").state == "on"
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -194,6 +203,7 @@ async def test_e2e_person_quorum_updates_home_sensor_and_group_trace(
 
     hass.states.async_set("binary_sensor.watch_ble", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_person_stefano_home").state == "on"
     assert hass.states.get("sensor.heima_person_stefano_confidence").state == "100"
@@ -239,6 +249,7 @@ async def test_e2e_people_debug_alias_person_tracks_target_person_entity(
 
     hass.states.async_set("person.alex", "home")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_person_demo_alex_home").state == "on"
     assert (
@@ -362,6 +373,7 @@ async def test_e2e_person_weighted_quorum_uses_weights_and_group_trace(
 
     hass.states.async_set("binary_sensor.watch_ble", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_person_stefano_home").state == "on"
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -408,6 +420,7 @@ async def test_e2e_anonymous_presence_updates_sensor_and_group_trace(
 
     hass.states.async_set("binary_sensor.motion_hall", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_anonymous_presence").state == "on"
     assert hass.states.get("sensor.heima_people_count").state == "2"
@@ -459,6 +472,7 @@ async def test_e2e_anonymous_weighted_quorum_uses_weights_and_group_trace(
 
     hass.states.async_set("binary_sensor.motion_living", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_anonymous_presence").state == "on"
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -511,6 +525,7 @@ async def test_e2e_camera_return_home_hint_sets_anonymous_presence_and_anyone_ho
 
     hass.states.async_set("binary_sensor.front_cam_person", "on")
     await hass.async_block_till_done()
+    await _advance_event_debounce(hass)
 
     assert hass.states.get("binary_sensor.heima_anonymous_presence").state == "on"
     assert _anon_source_state(hass).state == "camera_return_home_hint"

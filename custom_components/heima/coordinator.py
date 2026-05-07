@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
@@ -12,9 +14,19 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN
+from .const import (
+    DEFAULT_ACTIVITY_BINDINGS,
+    DOMAIN,
+    OPT_ACTIVITY_BINDINGS,
+    OPT_PEOPLE_ANON,
+    OPT_PEOPLE_DEBUG_ALIASES,
+    OPT_PEOPLE_NAMED,
+    OPT_ROOMS,
+    OPT_SECURITY,
+)
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
+from .room_sources import room_occupancy_source_entity_ids
 from .runtime.analyzers import (
     ActivityAnalyzer,
     create_builtin_learning_plugin_registry,
@@ -58,6 +70,26 @@ from .runtime.scheduler import RuntimeScheduler
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
 _ANALYZE_INTERVAL_S = 6 * 60 * 60
+_PERIODIC_FALLBACK_S = 300
+_DEBOUNCE_BY_CLASS: dict[str, float] = {
+    "presence": 5.0,
+    "motion": 3.0,
+    "door_window": 2.0,
+    "power_threshold": 5.0,
+    "calendar": 0.0,
+    "override": 0.0,
+    "weather": 10.0,
+}
+_ENVIRONMENTAL_ENTITY_TOKENS = (
+    "lux",
+    "illuminance",
+    "temperature",
+    "temp",
+    "humidity",
+    "co2",
+    "co_2",
+    "carbon_dioxide",
+)
 
 
 class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
@@ -147,7 +179,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.register_learning_module(self._activity_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
+        self._unsub_periodic_fallback = None
         self._unsub_state_changed = None
+        self._debounce_handles: dict[str, Callable[[], None]] = {}
+        self._pending_eval_reasons: dict[str, str] = {}
+        self._eval_pending = False
+        self._eval_running = False
+        self._power_threshold_last_values: dict[str, float] = {}
         self._notified_house_state_proposal_keys: set[str] = set()
         self._notified_activity_proposal_keys: set[str] = set()
         self.last_options_snapshot: dict = dict(entry.options)
@@ -209,6 +247,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._schedule_proposal_tick()
         self._schedule_analyze_tick()
         self._subscribe_state_changes()
+        self._schedule_periodic_fallback()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
             health_ok=self.engine.health.ok,
@@ -652,6 +691,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     async def async_shutdown(self) -> None:
         """Shutdown runtime."""
         self._unsubscribe_state_changes()
+        self._cancel_eval_debounce_handles()
+        self._cancel_periodic_fallback()
         self._cancel_proposal_tick()
         self._cancel_analyze_tick()
         await self._proposal_engine.async_shutdown()
@@ -662,6 +703,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     def _resubscribe_state_changes(self) -> None:
         self._unsubscribe_state_changes()
+        self._cancel_eval_debounce_handles()
+        self._power_threshold_last_values.clear()
         self._subscribe_state_changes()
 
     def _unsubscribe_state_changes(self) -> None:
@@ -676,18 +719,220 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self.async_request_evaluation(reason=f"scheduler:{job_id}")
 
     def _subscribe_state_changes(self) -> None:
-        tracked_entities = self.engine.tracked_entity_ids()
-
         @callback
         def _handle_state_changed(event: Event) -> None:
-            entity_id = event.data.get("entity_id")
-            if entity_id not in tracked_entities and not str(entity_id or "").startswith("person."):
+            if not self._state_changed_has_meaningful_state_delta(event):
                 return
-            self.hass.async_create_task(self._async_handle_state_changed(str(entity_id)))
+            self._on_state_changed(event)
 
         self._unsub_state_changed = self.hass.bus.async_listen(
             "state_changed", _handle_state_changed
         )
+
+    def _schedule_periodic_fallback(self) -> None:
+        self._cancel_periodic_fallback()
+
+        @callback
+        def _handle(_now) -> None:  # type: ignore[no-untyped-def]
+            self.hass.async_create_task(self._async_run_periodic_fallback())
+
+        self._unsub_periodic_fallback = async_call_later(
+            self.hass,
+            _PERIODIC_FALLBACK_S,
+            _handle,
+        )
+
+    def _cancel_periodic_fallback(self) -> None:
+        if self._unsub_periodic_fallback:
+            self._unsub_periodic_fallback()
+            self._unsub_periodic_fallback = None
+
+    async def _async_run_periodic_fallback(self) -> None:
+        try:
+            await self._trigger_eval("periodic_fallback", reason="periodic_fallback")
+        finally:
+            self._schedule_periodic_fallback()
+
+    def _cancel_eval_debounce_handles(self) -> None:
+        for handle in self._debounce_handles.values():
+            handle()
+        self._debounce_handles.clear()
+        self._pending_eval_reasons.clear()
+        self._eval_pending = False
+
+    def _on_state_changed(self, event: Event) -> None:
+        entity_id = str(event.data.get("entity_id") or "").strip()
+        if not entity_id:
+            return
+        entity_class = self._classify_entity(entity_id)
+        if entity_class is None:
+            return
+        if entity_class == "power_threshold" and not self._power_threshold_crossed(event):
+            return
+        self._schedule_eval(entity_class, reason=f"state_changed:{entity_id}")
+
+    def _classify_entity(self, entity_id: str) -> str | None:
+        entity_id = entity_id.strip().lower()
+        if not entity_id:
+            return None
+        explicit = self._explicit_entity_class(entity_id)
+        if explicit is not None:
+            return explicit
+        domain, _, object_id = entity_id.partition(".")
+        if domain in {"person", "device_tracker"}:
+            return "presence"
+        if domain == "calendar":
+            return "calendar"
+        if domain == "binary_sensor":
+            if any(token in object_id for token in ("motion", "occupancy")):
+                return "motion"
+            if any(token in object_id for token in ("door", "window", "contact")):
+                return "door_window"
+        if domain == "sensor":
+            if any(token in object_id for token in _ENVIRONMENTAL_ENTITY_TOKENS):
+                return None
+            if any(token in object_id for token in ("power", "energy")):
+                return (
+                    "power_threshold" if entity_id in self._power_thresholds_by_entity() else None
+                )
+        return None
+
+    def _explicit_entity_class(self, entity_id: str) -> str | None:
+        options = dict(self.entry.options)
+        if entity_id in self._configured_presence_entities(options):
+            return "presence"
+        if entity_id == self._configured_weather_entity(options):
+            return "weather"
+        if entity_id in self._power_thresholds_by_entity():
+            return "power_threshold"
+        return None
+
+    def _configured_presence_entities(self, options: dict[str, Any]) -> set[str]:
+        entities: set[str] = set()
+        for person in options.get(OPT_PEOPLE_NAMED, []) or []:
+            if not isinstance(person, dict):
+                continue
+            for value in (person.get("person_entity"), *(person.get("sources", []) or [])):
+                entity_id = str(value or "").strip().lower()
+                if entity_id:
+                    entities.add(entity_id)
+        debug_aliases_cfg = options.get(OPT_PEOPLE_DEBUG_ALIASES, {})
+        if isinstance(debug_aliases_cfg, dict) and debug_aliases_cfg.get("enabled"):
+            aliases = debug_aliases_cfg.get("aliases", {})
+            if isinstance(aliases, dict):
+                for raw in aliases.values():
+                    if not isinstance(raw, dict):
+                        continue
+                    entity_id = str(raw.get("person_entity") or "").strip().lower()
+                    if entity_id:
+                        entities.add(entity_id)
+        anon = options.get(OPT_PEOPLE_ANON, {})
+        if isinstance(anon, dict):
+            for value in anon.get("sources", []) or []:
+                entity_id = str(value or "").strip().lower()
+                if entity_id:
+                    entities.add(entity_id)
+        for room in options.get(OPT_ROOMS, []) or []:
+            if not isinstance(room, dict):
+                continue
+            for value in room_occupancy_source_entity_ids(room):
+                entity_id = str(value or "").strip().lower()
+                if entity_id:
+                    entities.add(entity_id)
+        security = options.get(OPT_SECURITY, {})
+        if isinstance(security, dict):
+            for source in security.get("camera_evidence_sources", []) or []:
+                if not isinstance(source, dict):
+                    continue
+                for key in ("motion_entity", "person_entity", "vehicle_entity", "contact_entity"):
+                    entity_id = str(source.get(key) or "").strip().lower()
+                    if entity_id:
+                        entities.add(entity_id)
+        return entities
+
+    def _configured_weather_entity(self, options: dict[str, Any]) -> str:
+        learning = options.get("learning", {})
+        if isinstance(learning, dict):
+            return str(learning.get("weather_entity") or "").strip().lower()
+        return ""
+
+    def _power_thresholds_by_entity(self) -> dict[str, list[float]]:
+        thresholds: dict[str, list[float]] = {}
+        raw_bindings = dict(self.entry.options).get(OPT_ACTIVITY_BINDINGS)
+        bindings = raw_bindings if isinstance(raw_bindings, dict) else {}
+        for activity_name, defaults in DEFAULT_ACTIVITY_BINDINGS.items():
+            if "threshold_w" not in defaults:
+                continue
+            configured = bindings.get(activity_name, {})
+            cfg = dict(configured) if isinstance(configured, dict) else {}
+            entity_key = str(defaults.get("entity_key") or "")
+            entity_id = str(cfg.get("entity_id") or cfg.get(entity_key) or "").strip().lower()
+            if not entity_id:
+                continue
+            threshold = _coerce_float(cfg.get("threshold_w", defaults.get("threshold_w")))
+            if threshold is None:
+                continue
+            thresholds.setdefault(entity_id, []).append(threshold)
+        return thresholds
+
+    def _power_threshold_crossed(self, event: Event) -> bool:
+        entity_id = str(event.data.get("entity_id") or "").strip().lower()
+        current = _state_event_numeric_state(event.data.get("new_state"))
+        if current is None:
+            self._power_threshold_last_values.pop(entity_id, None)
+            return False
+        previous = self._power_threshold_last_values.get(entity_id)
+        self._power_threshold_last_values[entity_id] = current
+        if previous is None:
+            return False
+        for threshold in self._power_thresholds_by_entity().get(entity_id, []):
+            if previous < threshold <= current or previous >= threshold > current:
+                return True
+        return False
+
+    def _schedule_eval(self, entity_class: str, *, reason: str) -> None:
+        debounce_s = _DEBOUNCE_BY_CLASS.get(entity_class, 0.0)
+        handle = self._debounce_handles.pop(entity_class, None)
+        if handle is not None:
+            handle()
+        self._eval_pending = True
+        self._pending_eval_reasons[entity_class] = reason
+
+        @callback
+        def _handle(_now) -> None:  # type: ignore[no-untyped-def]
+            self.hass.async_create_task(self._trigger_eval(entity_class))
+
+        self._debounce_handles[entity_class] = async_call_later(self.hass, debounce_s, _handle)
+
+    async def _trigger_eval(self, entity_class: str, *, reason: str | None = None) -> None:
+        self._debounce_handles.pop(entity_class, None)
+        eval_reason = reason or self._pending_eval_reasons.get(entity_class) or entity_class
+        if self._eval_running:
+            if entity_class != "periodic_fallback":
+                self._schedule_eval(entity_class, reason=eval_reason)
+            return
+        self._pending_eval_reasons.pop(entity_class, None)
+        self._eval_pending = bool(self._pending_eval_reasons)
+        self._eval_running = True
+        try:
+            await self._async_request_triggered_evaluation(reason=eval_reason)
+        finally:
+            self._eval_running = False
+
+    async def _async_request_triggered_evaluation(self, *, reason: str) -> None:
+        summary, changed = await self._async_reconcile_ha_backed_objects()
+        if changed:
+            await self._async_emit_reconciliation_events(summary)
+            return
+        await self.async_request_evaluation(reason=reason)
+
+    @staticmethod
+    def _state_changed_has_meaningful_state_delta(event: Event) -> bool:
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if old_state is None or new_state is None:
+            return True
+        return getattr(old_state, "state", None) != getattr(new_state, "state", None)
 
     def _schedule_proposal_tick(self) -> None:
         self._cancel_proposal_tick()
@@ -1104,6 +1349,17 @@ def _proposal_review_type(proposal: object | None) -> str:
     if proposal_type:
         return proposal_type
     return str(getattr(proposal, "reaction_type", "") or "").strip()
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _state_event_numeric_state(state: object) -> float | None:
+    return _coerce_float(getattr(state, "state", None))
 
 
 def _house_state_notification_id(identity_key: str) -> str:

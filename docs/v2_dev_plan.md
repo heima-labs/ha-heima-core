@@ -93,7 +93,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | G | Role model + product constraints | `DONE` | — |
 | H | House State Learning | `DONE` | D, E, G |
 | I | Activity Inference and Learning | `DONE` | D, H, F |
-| J | Event-Driven Trigger | `NOT STARTED` | F |
+| J | Event-Driven Trigger | `DONE` | F |
 | K | Installer alert channel + health entity | `NOT STARTED` | C |
 | L | Auto-discovery config flow | `NOT STARTED` | — |
 | M | Installation validation | `NOT STARTED` | L |
@@ -102,22 +102,24 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger.
 **Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Discuss and plan Phase J — Event-Driven Trigger.
+Discuss and plan Phase K — Installer alert channel + health entity.
 
 ### Current Working Notes
 
-- Current slice: Phase I5 — complete.
+- Current slice: Phase J — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
   `ActivityAnalyzer(snapshot_store=...)`. I5 wires analyzer/module/review surfaces for
   `activity_discovered`; no Lovelace card or inline notification actions in I5. Phase I is
-  complete.
+  complete. Phase J replaces immediate `state_changed` evaluation with classified event-driven
+  scheduling, per-class debounce, re-entry protection, bidirectional power-threshold crossing, and
+  a 300s periodic fallback.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -155,6 +157,9 @@ Discuss and plan Phase J — Event-Driven Trigger.
   - `heima.approve_proposal` and `heima.override_approval` dispatch through
     `coordinator.async_review_proposal()`, which resolves the proposal by ID and uses the
     proposal's own type as the source of truth.
+  - Phase J power threshold crossing triggers on both directions. Activity start and stop are
+    both semantically meaningful and must not wait for the 300s fallback.
+  - Phase J re-entry follow-up uses the normal class debounce, not a zero-delay immediate run.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -200,6 +205,8 @@ Discuss and plan Phase J — Event-Driven Trigger.
   - `custom_components/heima/config_flow/_steps_reactions.py`
   - `tests/test_services_notify_event.py`
   - `tests/test_options_flow_e2e.py`
+  - `docs/specs/heima_v2_spec.md`
+  - `tests/test_integration_normalization_e2e.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -250,6 +257,8 @@ Discuss and plan Phase J — Event-Driven Trigger.
   - `custom_components/heima/config_flow/_steps_reactions.py`
   - `tests/test_services_notify_event.py`
   - `tests/test_options_flow_e2e.py`
+  - `tests/test_event_driven_trigger.py`
+  - `tests/test_integration_normalization_e2e.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -377,7 +386,15 @@ Discuss and plan Phase J — Event-Driven Trigger.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1165 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
-- Next concrete step: discuss Phase J scope and slice plan before implementation.
+  - `.venv/bin/python -m pytest tests/test_event_driven_trigger.py -q` — passed, 8 tests.
+  - `.venv/bin/python -m pytest tests/test_event_driven_trigger.py tests/test_learning_reset.py tests/test_activity_engine_wiring.py tests/test_services_notify_event.py -q`
+    — passed, 43 tests.
+  - `.venv/bin/python -m pytest tests/test_integration_normalization_e2e.py -q`
+    — passed, 21 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1173 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Next concrete step: discuss Phase K scope and slice plan before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -925,11 +942,11 @@ None — role model is spec + contract additions only.
 
 ### Acceptance criteria
 
-- [ ] State change on a classified entity triggers evaluation within debounce window
-- [ ] Re-entrant evaluation is skipped (guard active)
-- [ ] Periodic 300s fallback fires even with no state changes
-- [ ] Environmental sensors do not trigger evaluation
-- [ ] All 660 tests pass; new tests cover debounce timing and re-entrancy guard
+- [x] State change on a classified entity triggers evaluation within debounce window
+- [x] Re-entrant evaluation is skipped (guard active)
+- [x] Periodic 300s fallback fires even with no state changes
+- [x] Environmental sensors do not trigger evaluation
+- [x] All existing tests pass; new tests cover debounce timing and re-entrancy guard — 1173 tests
 
 ---
 
