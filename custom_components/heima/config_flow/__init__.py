@@ -8,6 +8,9 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from ..const import (
     CONF_ENGINE_ENABLED,
@@ -16,7 +19,9 @@ from ..const import (
     DEFAULT_ENGINE_ENABLED,
     DEFAULT_LIGHTING_APPLY_MODE,
     DOMAIN,
+    OPT_ACTIVITY_BINDINGS,
     OPT_CALENDAR,
+    OPT_DISCOVERY,
     OPT_HEATING,
     OPT_LIGHTING_APPLY_MODE,
     OPT_LIGHTING_ROOMS,
@@ -28,6 +33,13 @@ from ..const import (
     OPT_REACTIONS,
     OPT_ROOMS,
     OPT_SECURITY,
+)
+from ..discovery import (
+    DiscoveredBindingCandidate,
+    DiscoveryReport,
+    candidate_by_id,
+    candidate_label,
+    discover_binding_candidates,
 )
 from ..reconciliation import reconcile_ha_backed_options
 from ..runtime.reactions import resolve_reaction_type
@@ -136,6 +148,7 @@ class HeimaOptionsFlowHandler(
             step_id="init",
             menu_options=[
                 "general",
+                "discovery",
                 "people_menu",
                 "rooms_menu",
                 "lighting_rooms_menu",
@@ -157,6 +170,60 @@ class HeimaOptionsFlowHandler(
     async def async_step_save(self, user_input: dict[str, Any] | None = None) -> Any:
         """Persist options and close the flow from the toplevel menu."""
         return self.async_create_entry(title="", data=self._finalize_options())
+
+    async def async_step_discovery(self, user_input: dict[str, Any] | None = None) -> Any:
+        report = self._discovery_report()
+        choices = {
+            candidate.candidate_id: candidate_label(candidate) for candidate in report.candidates
+        }
+        if user_input is None:
+            schema = vol.Schema(
+                {
+                    vol.Required("action", default="accept_non_ambiguous"): vol.In(
+                        {
+                            "accept_all": "Accept all",
+                            "accept_non_ambiguous": "Accept non-ambiguous",
+                            "accept_selected": "Accept selected",
+                            "reject_all": "Reject all",
+                        }
+                    ),
+                    vol.Optional("accepted_candidates", default=[]): cv.multi_select(choices),
+                }
+            )
+            return self.async_show_form(
+                step_id="discovery",
+                data_schema=schema,
+                description_placeholders=self._discovery_placeholders(report),
+            )
+
+        action = str(user_input.get("action") or "").strip()
+        accepted_ids: set[str] = set()
+        if action == "accept_all":
+            accepted_ids = {candidate.candidate_id for candidate in report.candidates}
+        elif action == "accept_non_ambiguous":
+            accepted_ids = {
+                candidate.candidate_id for candidate in report.candidates if not candidate.ambiguous
+            }
+        elif action == "accept_selected":
+            accepted_ids = set(self._normalize_multi_value(user_input.get("accepted_candidates")))
+        elif action == "reject_all":
+            accepted_ids = set()
+        else:
+            return self.async_show_form(
+                step_id="discovery",
+                data_schema=vol.Schema({vol.Required("action"): cv.string}),
+                errors={"action": "invalid_option"},
+                description_placeholders=self._discovery_placeholders(report),
+            )
+
+        accepted = [
+            candidate
+            for candidate_id in sorted(accepted_ids)
+            if (candidate := candidate_by_id(report, candidate_id)) is not None
+        ]
+        self._apply_discovery_candidates(accepted)
+        self._store_discovery_review(report, accepted)
+        return await self.async_step_init()
 
     def _entry_options_snapshot(self) -> dict[str, Any]:
         """Return the freshest available options snapshot for this flow.
@@ -289,6 +356,7 @@ class HeimaOptionsFlowHandler(
             "calendar_summary": self._calendar_menu_summary(),
             "proposal_review_summary": self._proposal_review_summary(),
             "tuning_pending_summary": self._tuning_pending_summary(),
+            "discovery_summary": self._discovery_summary(),
         }
 
     def _people_menu_summary(self) -> str:
@@ -515,6 +583,95 @@ class HeimaOptionsFlowHandler(
         if not tuning:
             return "0"
         return str(len(tuning))
+
+    def _discovery_summary(self) -> str:
+        report = self._discovery_report()
+        if not report.candidates:
+            return "0"
+        grouped = report.as_dict()["by_category"]
+        return ", ".join(f"{key} {value}" for key, value in sorted(grouped.items()))
+
+    def _discovery_report(self) -> DiscoveryReport:
+        try:
+            entity_registry = er.async_get(self.hass)
+            device_registry = dr.async_get(self.hass)
+            area_registry = ar.async_get(self.hass)
+        except Exception:
+            return DiscoveryReport(candidates=())
+        states = getattr(getattr(self, "hass", None), "states", None)
+        async_all = getattr(states, "async_all", None)
+        all_states = list(async_all()) if callable(async_all) else []
+        return discover_binding_candidates(
+            entity_entries=list(getattr(entity_registry, "entities", {}).values()),
+            device_entries=dict(getattr(device_registry, "devices", {}) or {}),
+            area_entries={
+                str(getattr(area, "id", "") or ""): area
+                for area in getattr(area_registry, "async_list_areas", lambda: [])()
+                if str(getattr(area, "id", "") or "")
+            },
+            state_by_entity={
+                str(getattr(state, "entity_id", "") or ""): state
+                for state in all_states
+                if str(getattr(state, "entity_id", "") or "")
+            },
+        )
+
+    def _discovery_placeholders(self, report: DiscoveryReport) -> dict[str, str]:
+        if not report.candidates:
+            return {"summary": "No discovery candidates found.", "suggestions": ""}
+        grouped = report.as_dict()["by_category"]
+        summary = ", ".join(f"{key}: {value}" for key, value in sorted(grouped.items()))
+        suggestions = "\n".join(candidate_label(candidate) for candidate in report.candidates)
+        return {"summary": summary, "suggestions": suggestions}
+
+    def _apply_discovery_candidates(self, candidates: list[DiscoveredBindingCandidate]) -> None:
+        if not candidates:
+            return
+        rooms = self._rooms()
+        room_updates = [dict(room) for room in rooms]
+        rooms_changed = False
+        activity_bindings = dict(self.options.get(OPT_ACTIVITY_BINDINGS, {}) or {})
+        activity_changed = False
+
+        for candidate in candidates:
+            if candidate.suggested_binding == "room_occupancy_source" and candidate.area_id:
+                for room in room_updates:
+                    if str(room.get("area_id") or "") != candidate.area_id:
+                        continue
+                    sources = list(room.get("occupancy_sources") or room.get("sources") or [])
+                    if candidate.entity_id not in sources:
+                        sources.append(candidate.entity_id)
+                        room["occupancy_sources"] = sources
+                        rooms_changed = True
+                    break
+            elif candidate.suggested_binding == "activity_shower_humidity":
+                shower = dict(activity_bindings.get("shower_running", {}) or {})
+                if not shower.get("entity_id") and not shower.get("bathroom_humidity_entity"):
+                    shower["bathroom_humidity_entity"] = candidate.entity_id
+                    activity_bindings["shower_running"] = shower
+                    activity_changed = True
+
+        if rooms_changed:
+            self._store_list(OPT_ROOMS, room_updates)
+        if activity_changed:
+            self._update_options({OPT_ACTIVITY_BINDINGS: activity_bindings})
+
+    def _store_discovery_review(
+        self,
+        report: DiscoveryReport,
+        accepted: list[DiscoveredBindingCandidate],
+    ) -> None:
+        accepted_ids = {candidate.candidate_id for candidate in accepted}
+        payload = {
+            "last_reviewed_candidates": [candidate.as_dict() for candidate in report.candidates],
+            "accepted_candidate_ids": sorted(accepted_ids),
+            "rejected_candidate_ids": sorted(
+                candidate.candidate_id
+                for candidate in report.candidates
+                if candidate.candidate_id not in accepted_ids
+            ),
+        }
+        self._update_options({OPT_DISCOVERY: payload})
 
     def _room_ids(self) -> list[str]:
         return [room["room_id"] for room in self._rooms()]

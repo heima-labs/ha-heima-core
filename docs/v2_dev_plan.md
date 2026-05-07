@@ -95,23 +95,23 @@ These constraints must never be violated. See spec §16 for rationale.
 | I | Activity Inference and Learning | `DONE` | D, H, F |
 | J | Event-Driven Trigger | `DONE` | F |
 | K | Installer alert channel + health entity | `DONE` | C |
-| L | Auto-discovery config flow | `NOT STARTED` | — |
+| L | Auto-discovery config flow | `DONE` | — |
 | M | Installation validation | `NOT STARTED` | L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity.
-**Active phase:** none.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow.
+**Active phase:** None.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Discuss and plan Phase L — Auto-discovery config flow.
+Discuss Phase M — Installation validation before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase K — complete.
+- Current slice: Phase L — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
@@ -120,7 +120,8 @@ Discuss and plan Phase L — Auto-discovery config flow.
   complete. Phase J replaces immediate `state_changed` evaluation with classified event-driven
   scheduling, per-class debounce, re-entry protection, bidirectional power-threshold crossing, and
   a 300s periodic fallback. Phase K adds installer-facing anomaly/invariant alerts, a
-  `sensor.heima_health` operational surface, and `heima.run_diagnostics` response data.
+  `sensor.heima_health` operational surface, and `heima.run_diagnostics` response data. Phase L
+  adds rule-based HA entity discovery with installer review in the options flow.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -165,6 +166,12 @@ Discuss and plan Phase L — Auto-discovery config flow.
     by default. Configurable `notify.*` installer push routing is deferred.
   - `heima.run_diagnostics` returns HA service response data and also updates
     `sensor.heima_health` attributes.
+  - Phase L power-sensor discovery remains generic (`activity_power_candidate`); no fragile name
+    heuristics are used to choose stove/oven/appliance bindings.
+  - Phase L options flow must show each `DiscoveredBindingCandidate.reason` so the installer can
+    understand why the suggestion exists before accepting it.
+  - Accepted non-ambiguous Phase L candidates may update concrete bindings. Ambiguous candidates
+    are recorded in the discovery review result but do not silently mutate concrete config.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -218,6 +225,10 @@ Discuss and plan Phase L — Auto-discovery config flow.
   - `custom_components/heima/services.yaml`
   - `custom_components/heima/const.py`
   - `tests/test_health_k.py`
+  - `custom_components/heima/config_flow/__init__.py`
+  - `custom_components/heima/room_inventory.py`
+  - `custom_components/heima/discovery.py`
+  - `tests/test_discovery_l.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -275,6 +286,10 @@ Discuss and plan Phase L — Auto-discovery config flow.
   - `custom_components/heima/entities/registry.py`
   - `custom_components/heima/services.yaml`
   - `tests/test_health_k.py`
+  - `custom_components/heima/config_flow/__init__.py`
+  - `custom_components/heima/coordinator.py`
+  - `custom_components/heima/discovery.py`
+  - `tests/test_discovery_l.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -418,7 +433,18 @@ Discuss and plan Phase L — Auto-discovery config flow.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1179 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
-- Next concrete step: discuss Phase L scope and slice plan before implementation.
+  - `.venv/bin/python -m pytest tests/test_discovery_l.py tests/test_options_flow_e2e.py::test_rooms_flow_persists_actuation_only_room_with_save_and_close -q`
+    — passed, 5 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1183 tests.
+  - `.venv/bin/ruff check custom_components/heima/discovery.py custom_components/heima/coordinator.py custom_components/heima/config_flow/__init__.py tests/test_discovery_l.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/discovery.py custom_components/heima/coordinator.py custom_components/heima/config_flow/__init__.py tests/test_discovery_l.py`
+    — passed.
+  - `.venv/bin/ruff check .` — failed on pre-existing unrelated `scripts/` import-order and
+    unused-variable issues.
+  - `.venv/bin/ruff format --check .` — failed on pre-existing unrelated `scripts/` formatting
+    issues.
+- Next concrete step: discuss Phase M scope and slice plan before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -999,13 +1025,14 @@ None — role model is spec + contract additions only.
 
 ## Phase L — Auto-discovery config flow
 
-**Spec section:** TBD — add to `heima_v2_spec.md`
+**Spec section:** `docs/specs/heima_v2_spec.md` — Phase L
 **Goal:** Scan HA entity registry using device classes to suggest bindings; installer confirms in options flow.
 **Depends on:** —
 
 ### Discovery strategy
 
-Uses HA device classes — no ML, no NLP:
+Uses HA domain, device classes, area metadata, and device registry metadata — no ML, no NLP, and
+no fragile entity-name heuristics for activity type selection:
 
 | HA device class | Heima binding candidate |
 |---|---|
@@ -1013,8 +1040,12 @@ Uses HA device classes — no ML, no NLP:
 | `door`, `window` | door/window security sensor |
 | `occupancy` | presence sensor |
 | `humidity` | shower detector |
-| `power` | activity detector (stove, oven, appliances) |
+| `power`, `energy` | generic activity power candidate |
 | `media_player` | tv/pc detector |
+
+Power and energy sensors remain generic `activity_power_candidate` suggestions. The installer
+chooses stove/oven/appliance-specific bindings later in manual activity configuration.
+Each `DiscoveredBindingCandidate.reason` must be shown in the options flow review step.
 
 ### Files to modify
 
@@ -1025,11 +1056,12 @@ Uses HA device classes — no ML, no NLP:
 
 ### Acceptance criteria
 
-- [ ] Discovery step presented before manual binding in options flow
-- [ ] Suggestions grouped by functional category (presence, security, activity detectors)
-- [ ] Installer can accept all, reject all, or selectively confirm
-- [ ] Discovery result feeds into existing binding normalization
-- [ ] All existing tests pass
+- [x] Discovery step presented before manual binding in options flow
+- [x] Suggestions grouped by functional category (presence, security, activity detectors)
+- [x] Installer can accept all, reject all, or selectively confirm
+- [x] Discovery result feeds into existing binding normalization
+- [x] Ambiguous suggestions are recorded but do not silently mutate concrete config
+- [x] All existing tests pass — 1183 tests
 
 ---
 

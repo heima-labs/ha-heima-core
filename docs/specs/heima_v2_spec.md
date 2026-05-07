@@ -1293,6 +1293,30 @@ diagnostics service output.
 **Unlocks:** HA entity registry scan for binding suggestions; installer confirms in options flow.
 **Dependencies:** —
 
+Auto-discovery is rule-based only. It uses HA domain, device class, area, and device registry
+metadata. Built-in discovery MUST NOT use ML or fragile entity-name heuristics for activity type
+selection.
+
+Discovery returns `DiscoveredBindingCandidate` records with at least:
+
+| Field | Meaning |
+|---|---|
+| `candidate_id` | Stable candidate key for review. |
+| `entity_id` | Suggested HA entity. |
+| `domain` | HA entity domain. |
+| `device_class` | HA device class, when available. |
+| `category` | `presence`, `security`, or `activity`. |
+| `suggested_binding` | Rule-based binding family. |
+| `reason` | Human-readable explanation shown in the options flow. |
+| `area_id` / `area_name` | Area context, when known. |
+| `ambiguous` | True when installer must choose a more specific binding before config mutation. |
+
+Power and energy sensors are discovered as generic `activity_power_candidate` suggestions. Heima
+does not infer whether a power sensor is a stove, oven, washing machine, or other appliance in
+Phase L. The installer must choose that specific binding in the manual activity configuration.
+Accepted non-ambiguous candidates may update concrete bindings. Ambiguous candidates are recorded
+in the discovery review result but MUST NOT silently mutate concrete configuration.
+
 | HA device class | Heima binding candidate |
 |---|---|
 | `motion` | motion sensor |

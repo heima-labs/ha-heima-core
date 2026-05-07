@@ -12,6 +12,8 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -25,6 +27,7 @@ from .const import (
     OPT_ROOMS,
     OPT_SECURITY,
 )
+from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids
@@ -324,6 +327,28 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     @property
     def ha_backed_reconciliation_summary(self) -> dict[str, object]:
         return dict(self._ha_backed_reconciliation_summary)
+
+    async def async_discover_entities(self) -> DiscoveryReport:
+        """Return installer-reviewable HA entity discovery suggestions."""
+        entity_registry = er.async_get(self.hass)
+        device_registry = dr.async_get(self.hass)
+        area_registry = ar.async_get(self.hass)
+        entity_entries = list(getattr(entity_registry, "entities", {}).values())
+        state_by_entity = {
+            str(getattr(state, "entity_id", "") or ""): state
+            for state in self._safe_all_states()
+            if str(getattr(state, "entity_id", "") or "")
+        }
+        return discover_binding_candidates(
+            entity_entries=entity_entries,
+            device_entries=dict(getattr(device_registry, "devices", {}) or {}),
+            area_entries={
+                str(getattr(area, "id", "") or ""): area
+                for area in getattr(area_registry, "async_list_areas", lambda: [])()
+                if str(getattr(area, "id", "") or "")
+            },
+            state_by_entity=state_by_entity,
+        )
 
     async def async_request_evaluation(self, reason: str) -> None:
         """Request an evaluation cycle."""
@@ -1281,14 +1306,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         return summary, changed
 
     def _ha_people_inventory(self) -> list[dict[str, str]]:
-        states = getattr(self.hass, "states", None)
-        async_all = getattr(states, "async_all", None)
-        if not callable(async_all):
-            return []
-        try:
-            all_states = list(async_all())
-        except TypeError:
-            all_states = list(async_all("person"))
+        all_states = self._safe_all_states("person")
         people: list[dict[str, str]] = []
         for state in all_states:
             entity_id = str(getattr(state, "entity_id", "")).strip()
@@ -1301,6 +1319,18 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             ).strip()
             people.append({"entity_id": entity_id, "display_name": name})
         return people
+
+    def _safe_all_states(self, domain: str | None = None) -> list[Any]:
+        states = getattr(self.hass, "states", None)
+        async_all = getattr(states, "async_all", None)
+        if not callable(async_all):
+            return []
+        try:
+            if domain is None:
+                return list(async_all())
+            return list(async_all(domain))
+        except TypeError:
+            return list(async_all())
 
     def _ha_area_inventory(self) -> list[dict[str, str]]:
         try:
