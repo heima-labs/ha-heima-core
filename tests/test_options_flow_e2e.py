@@ -15,6 +15,7 @@ from custom_components.heima.const import (
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
+from custom_components.heima.runtime.proposal_engine import ActivityProposal
 
 
 class _FakeAreaRegistry:
@@ -1972,6 +1973,90 @@ async def test_proposals_step_rejects_house_state_context_as_installer():
     assert result["type"] == "menu"
     review.assert_awaited_once_with(
         "proposal-house-state",
+        decision="rejected",
+        approved_by="installer",
+    )
+    proposal_engine.async_reject_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_reviews_activity_context_as_installer_without_reaction_config():
+    flow = _flow()
+    proposal = ActivityProposal(
+        proposal_id="proposal-activity",
+        activity_name="movie_night",
+        primitive_pattern=frozenset({"tv", "relax"}),
+        context_conditions={"room_id": "living_room", "hour_range": [20, 21]},
+        occurrence_count=12,
+        confidence=0.9,
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_activity_proposal=review,
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_proposals()
+    placeholders = shown["description_placeholders"]
+    assert "Attivita appresa: movie night" in placeholders["proposal_label"]
+    assert "Attivita: movie_night" in placeholders["proposal_details"]
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-activity",
+        decision="approved",
+        approved_by="installer",
+    )
+    proposal_engine.async_accept_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_rejects_activity_context_as_installer():
+    flow = _flow()
+    proposal = ActivityProposal(
+        proposal_id="proposal-activity",
+        activity_name="movie_night",
+        primitive_pattern=frozenset({"tv", "relax"}),
+        context_conditions={"room_id": "living_room"},
+        occurrence_count=12,
+        confidence=0.9,
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_activity_proposal=review,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "reject"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-activity",
         decision="rejected",
         approved_by="installer",
     )

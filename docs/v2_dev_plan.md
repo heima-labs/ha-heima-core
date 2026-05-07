@@ -92,7 +92,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | F | ActivityDomain | `DONE` | A, D |
 | G | Role model + product constraints | `DONE` | — |
 | H | House State Learning | `DONE` | D, E, G |
-| I | Activity Inference and Learning | `NOT STARTED` | D, H, F |
+| I | Activity Inference and Learning | `DONE` | D, H, F |
 | J | Event-Driven Trigger | `NOT STARTED` | F |
 | K | Installer alert channel + health entity | `NOT STARTED` | C |
 | L | Auto-discovery config flow | `NOT STARTED` | — |
@@ -102,21 +102,22 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning.
-**Active phase:** Phase I — Activity Inference and Learning, slice I4 complete.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning.
+**Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Review I4 results, then discuss/implement I5 — resident/installer review surfaces.
+Discuss and plan Phase J — Event-Driven Trigger.
 
 ### Current Working Notes
 
-- Current slice: Phase I4 — complete.
+- Current slice: Phase I5 — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
-  `ActivityAnalyzer(snapshot_store=...)`; no coordinator wiring, approval surface, or
-  config-flow review in I4.
+  `ActivityAnalyzer(snapshot_store=...)`. I5 wires analyzer/module/review surfaces for
+  `activity_discovered`; no Lovelace card or inline notification actions in I5. Phase I is
+  complete.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -149,6 +150,11 @@ Review I4 results, then discuss/implement I5 — resident/installer review surfa
     `sync_approved_proposals(proposals)`. `infer()` stays sync and I/O-free.
   - I4 uses `MAX_PATTERN_SIZE = 2` for pair-only composite discovery; the constant remains
     explicit for a future upgrade to larger patterns.
+  - I5 registers `ActivityAnalyzer` directly in the coordinator (Option A), because it depends on
+    runtime `SnapshotStore`; the static learning registry remains dependency-free.
+  - `heima.approve_proposal` and `heima.override_approval` dispatch through
+    `coordinator.async_review_proposal()`, which resolves the proposal by ID and uses the
+    proposal's own type as the source of truth.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -190,6 +196,10 @@ Review I4 results, then discuss/implement I5 — resident/installer review surfa
   - `tests/test_inference_modules.py`
   - `custom_components/heima/runtime/analyzers/activity.py`
   - `custom_components/heima/runtime/analyzers/__init__.py`
+  - `custom_components/heima/services.py`
+  - `custom_components/heima/config_flow/_steps_reactions.py`
+  - `tests/test_services_notify_event.py`
+  - `tests/test_options_flow_e2e.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -236,6 +246,10 @@ Review I4 results, then discuss/implement I5 — resident/installer review surfa
   - `tests/test_inference_modules.py`
   - `custom_components/heima/runtime/analyzers/activity.py`
   - `custom_components/heima/runtime/analyzers/__init__.py`
+  - `custom_components/heima/services.py`
+  - `custom_components/heima/config_flow/_steps_reactions.py`
+  - `tests/test_services_notify_event.py`
+  - `tests/test_options_flow_e2e.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -349,7 +363,21 @@ Review I4 results, then discuss/implement I5 — resident/installer review surfa
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1157 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
-- Next concrete step: discuss I5 before implementation.
+  - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_services_notify_event.py tests/test_options_flow_e2e.py -q`
+    — passed, 180 tests.
+  - `.venv/bin/python -m pytest tests/test_house_state_learning_h4.py tests/test_services_notify_event.py tests/test_options_flow_e2e.py tests/test_activity_analyzer.py tests/test_inference_modules.py -q`
+    — passed, 232 tests.
+  - `.venv/bin/ruff check custom_components/heima/coordinator.py custom_components/heima/services.py custom_components/heima/config_flow/_steps_reactions.py tests/test_house_state_learning_h4.py tests/test_services_notify_event.py tests/test_options_flow_e2e.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/coordinator.py custom_components/heima/services.py custom_components/heima/config_flow/_steps_reactions.py tests/test_house_state_learning_h4.py tests/test_services_notify_event.py tests/test_options_flow_e2e.py`
+    — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — failed, 2 learning-reset stub regressions.
+  - `.venv/bin/python -m pytest tests/test_learning_reset.py tests/test_house_state_learning_h4.py -q`
+    — passed, 21 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1165 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Next concrete step: discuss Phase J scope and slice plan before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -830,7 +858,7 @@ None — role model is spec + contract additions only.
 - [x] I4 — ActivityAnalyzer:
   - Discover composite activity candidates from `SnapshotStore`; use named constants for
     min 10 co-occurrences and min 3 distinct days.
-- [ ] I5 — Resident/installer review surfaces:
+- [x] I5 — Resident/installer review surfaces:
   - Add review and approval wiring for `activity_discovered` proposals.
 
 ### New files to create
@@ -857,11 +885,11 @@ None — role model is spec + contract additions only.
 
 ### Acceptance criteria
 
-- [ ] `ActivityAnalyzer` does not emit `ActivityProposal` with < 10 co-occurrences or < 3 distinct days
-- [ ] `ActivityInferenceModule.infer()` returns `[]` until at least one `ActivityProposal` approved
-- [ ] Approved composite activity appears in `ActivityResult.active` when signal fired
-- [ ] Approval survives HA restart (via `ApprovalStore`) with `approved_by` populated
-- [ ] All existing tests pass; new tests ≥ 15
+- [x] `ActivityAnalyzer` does not emit `ActivityProposal` with < 10 co-occurrences or < 3 distinct days
+- [x] `ActivityInferenceModule.infer()` returns `[]` until at least one `ActivityProposal` approved
+- [x] Approved composite activity appears in `ActivityResult.active` when signal fired
+- [x] Approval survives HA restart (via `ApprovalStore`) with `approved_by` populated
+- [x] All existing tests pass; new tests ≥ 15 — 1165 tests
 
 ---
 

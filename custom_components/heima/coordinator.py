@@ -16,6 +16,7 @@ from .const import DOMAIN
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .runtime.analyzers import (
+    ActivityAnalyzer,
     create_builtin_learning_plugin_registry,
 )
 from .runtime.analyzers.base import ReactionProposal
@@ -32,6 +33,8 @@ from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.finding_router import FindingRouter
 from .runtime.inference import (
+    ACTIVITY_PROPOSAL_TYPE,
+    ActivityInferenceModule,
     ApprovalActor,
     ApprovalDecision,
     ApprovalRecord,
@@ -42,10 +45,14 @@ from .runtime.inference import (
     SnapshotStore,
     WeekdayStateModule,
 )
-from .runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
+from .runtime.inference.approval_store import (
+    HOUSE_STATE_PROPOSAL_TYPE,
+    activity_context_key,
+    activity_context_snapshot,
+)
 from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
-from .runtime.proposal_engine import ProposalEngine
+from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,6 +115,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 entry,
             )
         )
+        self._house_snapshot_store = SnapshotStore(hass)
         self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
         self._proposal_engine = ProposalEngine(
             hass,
@@ -121,23 +129,27 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.set_proposal_engine(self._proposal_engine)
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
+        self._activity_analyzer = ActivityAnalyzer(self._house_snapshot_store)
+        self._proposal_engine.register_analyzer(self._activity_analyzer)
         self._finding_router = FindingRouter(
             proposal_engine=self._proposal_engine,
             anomaly_handler=self._async_handle_anomaly_finding,
         )
-        self._house_snapshot_store = SnapshotStore(hass)
         self._approval_store = ApprovalStore(hass)
         self._weekday_module = WeekdayStateModule()
         self._heating_module = HeatingPreferenceModule()
         self._house_state_module = HouseStateInferenceModule()
+        self._activity_module = ActivityInferenceModule()
         self.engine.set_snapshot_store(self._house_snapshot_store)
         self.engine.register_learning_module(self._weekday_module)
         self.engine.register_learning_module(self._heating_module)
         self.engine.register_learning_module(self._house_state_module)
+        self.engine.register_learning_module(self._activity_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_state_changed = None
         self._notified_house_state_proposal_keys: set[str] = set()
+        self._notified_activity_proposal_keys: set[str] = set()
         self.last_options_snapshot: dict = dict(entry.options)
         self._scheduler = RuntimeScheduler(
             hass,
@@ -184,6 +196,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._house_snapshot_store.async_load()
         await self._approval_store.async_load()
         self._sync_house_state_approval_state()
+        self._sync_activity_approval_state()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
         if changed:
@@ -191,6 +204,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 self.entry, changed_keys={"people_named", "rooms"}
             )
         await self._proposal_engine.async_run()
+        await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         self._schedule_proposal_tick()
         self._schedule_analyze_tick()
@@ -355,6 +369,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._approval_store.async_clear()
         await self._approval_store.async_flush()
         self._sync_house_state_approval_state()
+        self._sync_activity_approval_state()
+        if hasattr(self, "_notified_house_state_proposal_keys"):
+            self._notified_house_state_proposal_keys.clear()
+        if hasattr(self, "_notified_activity_proposal_keys"):
+            self._notified_activity_proposal_keys.clear()
         self.engine.reset_learning_state()
         self._write_event_store_sensor()
         await self.async_refresh()
@@ -363,8 +382,32 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Run learning analyzers immediately and refresh exposed state."""
         await self._async_analyze_inference_modules()
         await self._proposal_engine.async_run()
+        await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         await self.async_refresh()
+
+    async def async_review_proposal(
+        self,
+        proposal_id: str,
+        decision: ApprovalDecision,
+        approved_by: ApprovalActor,
+    ) -> bool:
+        """Review one proposal by dispatching on the proposal's own type."""
+        proposal = self._proposal_engine.proposal_by_id(proposal_id)
+        proposal_type = _proposal_review_type(proposal)
+        if proposal_type == HOUSE_STATE_PROPOSAL_TYPE:
+            return await self.async_review_house_state_proposal(
+                proposal_id,
+                decision=decision,
+                approved_by=approved_by,
+            )
+        if proposal_type == ACTIVITY_PROPOSAL_TYPE:
+            return await self.async_review_activity_proposal(
+                proposal_id,
+                decision=decision,
+                approved_by=approved_by,
+            )
+        return False
 
     async def async_review_house_state_proposal(
         self,
@@ -403,6 +446,43 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             if proposal.identity_key:
                 self._notified_house_state_proposal_keys.discard(proposal.identity_key)
 
+        return True
+
+    async def async_review_activity_proposal(
+        self,
+        proposal_id: str,
+        decision: ApprovalDecision,
+        approved_by: ApprovalActor,
+    ) -> bool:
+        """Review a composite activity proposal and persist its approval decision."""
+        proposal = self._proposal_engine.proposal_by_id(proposal_id)
+        if not isinstance(proposal, ActivityProposal):
+            return False
+        if proposal.proposal_type != ACTIVITY_PROPOSAL_TYPE:
+            return False
+
+        record = _approval_record_from_activity_proposal(
+            proposal,
+            decision=decision,
+            approved_by=approved_by,
+        )
+        if record is None:
+            return False
+
+        if decision == "approved":
+            updated = await self._proposal_engine.async_accept_proposal(proposal_id)
+        elif decision == "rejected":
+            updated = await self._proposal_engine.async_reject_proposal(proposal_id)
+        else:
+            return False
+        if not updated:
+            return False
+
+        await self._approval_store.async_record(record)
+        await self._approval_store.async_flush()
+        self._sync_activity_approval_state()
+        if proposal.identity_key:
+            self._notified_activity_proposal_keys.discard(proposal.identity_key)
         return True
 
     async def async_upsert_configured_reactions(
@@ -645,7 +725,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_analyze_inference_modules(self) -> None:
         self._sync_house_state_approval_state()
-        for module in (self._weekday_module, self._heating_module, self._house_state_module):
+        self._sync_activity_approval_state()
+        for module in (
+            self._weekday_module,
+            self._heating_module,
+            self._house_state_module,
+            self._activity_module,
+        ):
             await module.analyze(self._house_snapshot_store)
         await self._async_submit_house_state_candidates()
 
@@ -655,6 +741,59 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             proposal = _proposal_from_house_state_candidate(candidate)
             proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
             await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+
+    async def _async_notify_pending_activity_proposals(self) -> None:
+        if not hasattr(self._proposal_engine, "pending_proposals"):
+            return
+        for proposal in self._proposal_engine.pending_proposals():
+            if not isinstance(proposal, ActivityProposal):
+                continue
+            if proposal.proposal_type != ACTIVITY_PROPOSAL_TYPE:
+                continue
+            await self._async_notify_activity_proposal(
+                proposal,
+                proposal_id=proposal.proposal_id,
+            )
+
+    async def _async_notify_activity_proposal(
+        self,
+        proposal: ActivityProposal,
+        *,
+        proposal_id: str,
+    ) -> None:
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            identity_key = (
+                self._proposal_engine.proposal_by_id(proposal_id).identity_key
+                if self._proposal_engine.proposal_by_id(proposal_id) is not None
+                else ""
+            )
+        if not identity_key:
+            identity_key = activity_context_key(
+                activity_name=proposal.activity_name,
+                primitive_pattern=proposal.primitive_pattern,
+                context_conditions=proposal.context_conditions,
+            )
+        if identity_key in self._notified_activity_proposal_keys:
+            return
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": _activity_notification_id(identity_key),
+                    "title": "Heima has a new activity proposal",
+                    "message": _activity_proposal_notification_message(
+                        proposal_id=proposal_id,
+                        proposal=proposal,
+                    ),
+                },
+                blocking=False,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to create activity proposal notification")
+        finally:
+            self._notified_activity_proposal_keys.add(identity_key)
 
     async def _async_notify_house_state_proposal(
         self,
@@ -698,12 +837,31 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 rejected.add(record.context_key)
         self._house_state_module.sync_approval_state(approved, rejected)
 
+    def _sync_activity_approval_state(self) -> None:
+        if not hasattr(self._approval_store, "records") or not hasattr(self, "_activity_module"):
+            return
+        approved: list[ActivityProposal] = []
+        for record in self._approval_store.records():
+            if record.proposal_type != ACTIVITY_PROPOSAL_TYPE:
+                continue
+            if record.decision != "approved":
+                continue
+            proposal = self._proposal_engine.proposal_by_id(record.proposal_id)
+            if isinstance(proposal, ActivityProposal):
+                approved.append(proposal)
+                continue
+            fallback = _activity_proposal_from_approval_record(record)
+            if fallback is not None:
+                approved.append(fallback)
+        self._activity_module.sync_approved_proposals(approved)
+
     async def _async_run_proposal_tick(self) -> None:
         try:
             summary, changed = await self._async_reconcile_ha_backed_objects()
             if changed:
                 await self._async_emit_reconciliation_events(summary)
             await self._proposal_engine.async_run()
+            await self._async_notify_pending_activity_proposals()
             self._write_event_store_sensor()
             await self.async_refresh()
         finally:
@@ -883,9 +1041,79 @@ def _approval_record_from_house_state_proposal(
     )
 
 
+def _approval_record_from_activity_proposal(
+    proposal: ActivityProposal,
+    *,
+    decision: ApprovalDecision,
+    approved_by: ApprovalActor,
+) -> ApprovalRecord | None:
+    """Convert a reviewed activity proposal to a durable approval record."""
+    context_key = activity_context_key(
+        activity_name=proposal.activity_name,
+        primitive_pattern=proposal.primitive_pattern,
+        context_conditions=proposal.context_conditions,
+    )
+    context_snapshot = activity_context_snapshot(
+        activity_name=proposal.activity_name,
+        primitive_pattern=proposal.primitive_pattern,
+        context_conditions=proposal.context_conditions,
+    )
+    if not context_key or not context_snapshot:
+        return None
+    return ApprovalRecord(
+        proposal_id=proposal.proposal_id,
+        proposal_type=ACTIVITY_PROPOSAL_TYPE,
+        decision=decision,
+        approved_by=approved_by,
+        context_key=context_key,
+        context_snapshot=dict(context_snapshot),
+        metadata={
+            "activity_name": proposal.activity_name,
+            "primitive_pattern": sorted(proposal.primitive_pattern),
+            "context_conditions": dict(proposal.context_conditions),
+            "occurrence_count": proposal.occurrence_count,
+            "confidence": proposal.confidence,
+        },
+    )
+
+
+def _activity_proposal_from_approval_record(record: ApprovalRecord) -> ActivityProposal | None:
+    snapshot = dict(record.context_snapshot)
+    activity_name = str(snapshot.get("activity_name") or "").strip()
+    primitive_pattern = snapshot.get("primitive_pattern")
+    if not activity_name or not isinstance(primitive_pattern, list | tuple | set | frozenset):
+        return None
+    context_conditions = snapshot.get("context_conditions")
+    if not isinstance(context_conditions, dict):
+        context_conditions = {}
+    return ActivityProposal(
+        proposal_id=record.proposal_id,
+        activity_name=activity_name,
+        primitive_pattern=frozenset(str(item) for item in primitive_pattern if str(item).strip()),
+        context_conditions=dict(context_conditions),
+        occurrence_count=int(record.metadata.get("occurrence_count") or 0),
+        confidence=float(record.metadata.get("confidence") or 1.0),
+        status=record.decision,
+    )
+
+
+def _proposal_review_type(proposal: object | None) -> str:
+    if proposal is None:
+        return ""
+    proposal_type = str(getattr(proposal, "proposal_type", "") or "").strip()
+    if proposal_type:
+        return proposal_type
+    return str(getattr(proposal, "reaction_type", "") or "").strip()
+
+
 def _house_state_notification_id(identity_key: str) -> str:
     safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
     return f"heima_house_state_proposal_{safe[:120]}"
+
+
+def _activity_notification_id(identity_key: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
+    return f"heima_activity_proposal_{safe[:120]}"
 
 
 def _house_state_proposal_notification_message(
@@ -908,6 +1136,31 @@ def _house_state_proposal_notification_message(
         f"Suggested state: {predicted_state}\n"
         f"Context: weekday {weekday}, hour {hour_bucket}, rooms: {room_label}, {anyone_home}\n"
         f"Confidence: {confidence:.0%}\n\n"
+        "Open the Heima dashboard to approve or reject this proposal.\n"
+        f"Proposal ID: {proposal_id}"
+    )
+
+
+def _activity_proposal_notification_message(
+    *,
+    proposal_id: str,
+    proposal: ActivityProposal,
+) -> str:
+    pattern = ", ".join(sorted(proposal.primitive_pattern)) or "unknown activities"
+    room_id = str(proposal.context_conditions.get("room_id") or "").strip()
+    hour_range = proposal.context_conditions.get("hour_range")
+    context_parts: list[str] = []
+    if room_id:
+        context_parts.append(f"room {room_id}")
+    if isinstance(hour_range, list | tuple) and len(hour_range) == 2:
+        context_parts.append(f"hours {hour_range[0]}-{hour_range[1]}")
+    context = ", ".join(context_parts) if context_parts else "no specific context"
+    return (
+        "Heima found a recurring composite activity and needs a resident review.\n\n"
+        f"Suggested activity: {proposal.activity_name}\n"
+        f"Primitive pattern: {pattern}\n"
+        f"Context: {context}\n"
+        f"Confidence: {proposal.confidence:.0%}\n\n"
         "Open the Heima dashboard to approve or reject this proposal.\n"
         f"Proposal ID: {proposal_id}"
     )

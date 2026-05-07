@@ -154,6 +154,18 @@ class _FakeApprovalCoordinator:
             return await self.proposal_engine.async_reject_proposal(proposal_id)
         return False
 
+    async def async_review_proposal(
+        self,
+        proposal_id: str,
+        decision: str,
+        approved_by: str,
+    ) -> bool:
+        return await self.async_review_house_state_proposal(
+            proposal_id,
+            decision=decision,
+            approved_by=approved_by,
+        )
+
 
 def test_validate_command_rejects_unknown_command():
     with pytest.raises(ServiceValidationError):

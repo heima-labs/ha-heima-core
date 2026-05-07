@@ -472,7 +472,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         for coordinator in coordinators:
             if action == "approve":
                 matched = (
-                    await coordinator.async_review_house_state_proposal(
+                    await coordinator.async_review_proposal(
                         proposal_id,
                         decision="approved",
                         approved_by="installer",
@@ -481,7 +481,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 )
             elif action == "reject":
                 matched = (
-                    await coordinator.async_review_house_state_proposal(
+                    await coordinator.async_review_proposal(
                         proposal_id,
                         decision="rejected",
                         approved_by="installer",
@@ -506,7 +506,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         matched = False
         for coordinator in coordinators:
             matched = (
-                await coordinator.async_review_house_state_proposal(
+                await coordinator.async_review_proposal(
                     proposal_id,
                     decision=action,
                     approved_by="resident",

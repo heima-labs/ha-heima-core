@@ -13,13 +13,14 @@ from custom_components.heima.coordinator import (
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.inference.approval_store import (
+    ACTIVITY_PROPOSAL_TYPE,
     HOUSE_STATE_PROPOSAL_TYPE,
     ApprovalRecord,
 )
 from custom_components.heima.runtime.inference.modules.house_state_inference import (
     LearnedHouseStateCandidate,
 )
-from custom_components.heima.runtime.proposal_engine import ProposalEngine
+from custom_components.heima.runtime.proposal_engine import ActivityProposal, ProposalEngine
 
 
 def _candidate(context_key: str = "ctx-1") -> LearnedHouseStateCandidate:
@@ -38,6 +39,19 @@ def _candidate(context_key: str = "ctx-1") -> LearnedHouseStateCandidate:
         support=4,
         total=5,
         confidence=0.8,
+    )
+
+
+def _activity_proposal() -> ActivityProposal:
+    return ActivityProposal(
+        proposal_id="proposal-activity",
+        activity_name="movie_night",
+        primitive_pattern=frozenset({"tv", "relax"}),
+        context_conditions={"room_id": "living_room", "hour_range": [20, 21]},
+        occurrence_count=12,
+        confidence=0.9,
+        representative_ts=["2026-05-01T20:00:00+00:00"],
+        identity_key="activity-key",
     )
 
 
@@ -132,6 +146,160 @@ def test_sync_house_state_approval_state_passes_approved_and_rejected_sets() -> 
         {"approved-key"},
         {"rejected-key"},
     )
+
+
+def test_sync_activity_approval_state_passes_only_approved_activity_proposals() -> None:
+    activity = _activity_proposal()
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._approval_store = _ApprovalStoreStub(
+        [
+            ApprovalRecord(
+                proposal_id=activity.proposal_id,
+                proposal_type=ACTIVITY_PROPOSAL_TYPE,
+                decision="approved",
+                approved_by="resident",
+                context_key="activity-key",
+                context_snapshot={
+                    "activity_name": "movie_night",
+                    "primitive_pattern": ["relax", "tv"],
+                    "context_conditions": {"room_id": "living_room"},
+                },
+            ),
+            _record(context_key="house-key", decision="approved"),
+        ]
+    )
+    coordinator._proposal_engine = SimpleNamespace(proposal_by_id=MagicMock(return_value=activity))
+    coordinator._activity_module = SimpleNamespace(sync_approved_proposals=MagicMock())
+
+    coordinator._sync_activity_approval_state()
+
+    coordinator._activity_module.sync_approved_proposals.assert_called_once_with([activity])
+
+
+@pytest.mark.asyncio
+async def test_review_activity_proposal_records_approved_decision_and_syncs() -> None:
+    proposal = _activity_proposal()
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(return_value=proposal),
+        async_accept_proposal=AsyncMock(return_value=True),
+        async_reject_proposal=AsyncMock(return_value=False),
+    )
+    coordinator._approval_store = _ApprovalStoreStub()
+    coordinator._sync_activity_approval_state = MagicMock()
+    coordinator._notified_activity_proposal_keys = {proposal.identity_key}
+
+    result = await coordinator.async_review_activity_proposal(
+        proposal.proposal_id,
+        decision="approved",
+        approved_by="resident",
+    )
+
+    assert result is True
+    coordinator._proposal_engine.async_accept_proposal.assert_awaited_once_with(
+        proposal.proposal_id
+    )
+    record = coordinator._approval_store.records()[0]
+    assert record.proposal_type == ACTIVITY_PROPOSAL_TYPE
+    assert record.decision == "approved"
+    assert record.approved_by == "resident"
+    assert record.context_snapshot["activity_name"] == "movie_night"
+    assert record.context_snapshot["primitive_pattern"] == ["relax", "tv"]
+    coordinator._approval_store.async_flush.assert_awaited_once()
+    coordinator._sync_activity_approval_state.assert_called_once()
+    assert proposal.identity_key not in coordinator._notified_activity_proposal_keys
+
+
+@pytest.mark.asyncio
+async def test_review_activity_proposal_records_rejection() -> None:
+    proposal = _activity_proposal()
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(return_value=proposal),
+        async_accept_proposal=AsyncMock(return_value=False),
+        async_reject_proposal=AsyncMock(return_value=True),
+    )
+    coordinator._approval_store = _ApprovalStoreStub()
+    coordinator._sync_activity_approval_state = MagicMock()
+    coordinator._notified_activity_proposal_keys = {proposal.identity_key}
+
+    result = await coordinator.async_review_activity_proposal(
+        proposal.proposal_id,
+        decision="rejected",
+        approved_by="installer",
+    )
+
+    assert result is True
+    coordinator._proposal_engine.async_reject_proposal.assert_awaited_once_with(
+        proposal.proposal_id
+    )
+    record = coordinator._approval_store.records()[0]
+    assert record.decision == "rejected"
+    assert record.approved_by == "installer"
+    coordinator._sync_activity_approval_state.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_review_proposal_dispatches_by_proposal_type() -> None:
+    proposal = _activity_proposal()
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(proposal_by_id=MagicMock(return_value=proposal))
+    coordinator.async_review_house_state_proposal = AsyncMock(return_value=False)
+    coordinator.async_review_activity_proposal = AsyncMock(return_value=True)
+
+    result = await coordinator.async_review_proposal(
+        proposal.proposal_id,
+        decision="approved",
+        approved_by="resident",
+    )
+
+    assert result is True
+    coordinator.async_review_activity_proposal.assert_awaited_once_with(
+        proposal.proposal_id,
+        decision="approved",
+        approved_by="resident",
+    )
+    coordinator.async_review_house_state_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_activity_proposal_notification_is_deduplicated() -> None:
+    proposal = _activity_proposal()
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        proposal_by_id=MagicMock(return_value=proposal),
+    )
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_activity_proposal_keys = set()
+
+    await coordinator._async_notify_pending_activity_proposals()
+    await coordinator._async_notify_pending_activity_proposals()
+
+    assert len(services.calls) == 1
+    assert services.calls[0][0:2] == ("persistent_notification", "create")
+    assert "composite activity" in services.calls[0][2]["message"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_inference_modules_includes_activity_module() -> None:
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._sync_activity_approval_state = MagicMock()
+    coordinator._house_snapshot_store = object()
+    coordinator._weekday_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._heating_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._house_state_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._activity_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._async_submit_house_state_candidates = AsyncMock()
+
+    await coordinator._async_analyze_inference_modules()
+
+    coordinator._sync_house_state_approval_state.assert_called_once()
+    coordinator._sync_activity_approval_state.assert_called_once()
+    coordinator._activity_module.analyze.assert_awaited_once_with(coordinator._house_snapshot_store)
+    coordinator._async_submit_house_state_candidates.assert_awaited_once()
 
 
 @pytest.mark.asyncio

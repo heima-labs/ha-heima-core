@@ -23,7 +23,8 @@ from ..room_sources import (
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
-from ..runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
+from ..runtime.inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
+from ..runtime.proposal_engine import ActivityProposal
 from ..runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     resolve_reaction_type,
@@ -1774,7 +1775,8 @@ class _ReactionsStepsMixin:
         if not coordinator:
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
-        if current.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+        current_type = _proposal_review_type(current)
+        if current_type == HOUSE_STATE_PROPOSAL_TYPE:
             if action == "accept":
                 await coordinator.async_review_house_state_proposal(
                     current_id,
@@ -1783,6 +1785,21 @@ class _ReactionsStepsMixin:
                 )
             elif action == "reject":
                 await coordinator.async_review_house_state_proposal(
+                    current_id,
+                    decision="rejected",
+                    approved_by="installer",
+                )
+            return await self.async_step_proposals() if queue else await self.async_step_init()
+
+        if current_type == ACTIVITY_PROPOSAL_TYPE:
+            if action == "accept":
+                await coordinator.async_review_activity_proposal(
+                    current_id,
+                    decision="approved",
+                    approved_by="installer",
+                )
+            elif action == "reject":
+                await coordinator.async_review_activity_proposal(
                     current_id,
                     decision="rejected",
                     approved_by="installer",
@@ -3970,6 +3987,11 @@ class _ReactionsStepsMixin:
 
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
+        if isinstance(proposal, ActivityProposal):
+            activity_name = str(proposal.activity_name or "unknown").replace("_", " ")
+            if self._flow_language().startswith("it"):
+                return f"Attivita appresa: {activity_name}"
+            return f"Learned activity: {activity_name}"
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         followup = self._proposal_followup_target(proposal)
         presenter = self._reaction_presenter_for_cfg(cfg)
@@ -4009,6 +4031,11 @@ class _ReactionsStepsMixin:
 
     def _proposal_review_details(self, proposal: ReactionProposal) -> str:
         """Build a human-readable review body for one proposal."""
+        if isinstance(proposal, ActivityProposal):
+            return _activity_proposal_review_details(
+                proposal,
+                is_it=self._flow_language().startswith("it"),
+            )
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         learning = _safe_mapping(cfg.get("learning_diagnostics"))
         language = self._flow_language()
@@ -4580,6 +4607,55 @@ def _house_state_proposal_review_details(
         else f"Confidence: {proposal.confidence:.0%}"
     )
     return "\n".join(lines)
+
+
+def _activity_proposal_review_details(
+    proposal: ActivityProposal,
+    *,
+    is_it: bool,
+) -> str:
+    pattern = ", ".join(sorted(proposal.primitive_pattern))
+    context = _safe_mapping(proposal.context_conditions)
+    lines = [
+        (
+            "Tipo proposta: attivita composita appresa"
+            if is_it
+            else "Proposal type: learned composite activity"
+        )
+    ]
+    lines.append(
+        f"Attivita: {proposal.activity_name}" if is_it else f"Activity: {proposal.activity_name}"
+    )
+    if pattern:
+        lines.append(f"Pattern: {pattern}")
+    room_id = str(context.get("room_id") or "").strip()
+    if room_id:
+        lines.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
+    hour_range = context.get("hour_range")
+    if isinstance(hour_range, list | tuple) and len(hour_range) == 2:
+        lines.append(
+            f"Ora: {hour_range[0]}-{hour_range[1]}"
+            if is_it
+            else f"Hour: {hour_range[0]}-{hour_range[1]}"
+        )
+    lines.append(
+        f"Evidenza: {proposal.occurrence_count} osservazioni"
+        if is_it
+        else f"Evidence: {proposal.occurrence_count} observations"
+    )
+    lines.append(
+        f"Affidabilità: {proposal.confidence:.0%}"
+        if is_it
+        else f"Confidence: {proposal.confidence:.0%}"
+    )
+    return "\n".join(lines)
+
+
+def _proposal_review_type(proposal: object) -> str:
+    proposal_type = str(getattr(proposal, "proposal_type", "") or "").strip()
+    if proposal_type:
+        return proposal_type
+    return str(getattr(proposal, "reaction_type", "") or "").strip()
 
 
 def _format_last_seen(value: str) -> str:
