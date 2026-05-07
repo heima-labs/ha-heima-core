@@ -1261,9 +1261,30 @@ Implemented as `HouseStateInferenceModule` (§10.6). Summary:
 **Unlocks:** anomaly/invariant routing to installer channel, `sensor.heima_health` for remote monitoring.
 **Dependencies:** Phase C.
 
+Phase K uses Home Assistant `persistent_notification` as the installer channel. In the Heima
+product model, resident review happens through resident-facing proposal surfaces; installer alerts
+are operational notifications visible to HA admins. Phase K does not add a configurable `notify.*`
+target. A future iteration may add optional installer push routing.
+
+`sensor.heima_health` exposes the current operational health:
+
+| State | Meaning |
+|---|---|
+| `ok` | Engine health is OK and no active degraded/error condition is recorded. |
+| `degraded` | The engine is still running but an anomaly or invariant violation needs installer attention. |
+| `error` | Engine health is not OK or diagnostics collection failed. |
+
+The health sensor attributes MUST include at least `health_reason`, `last_anomaly`,
+`last_invariant_violation`, `last_diagnostics`, and `last_updated`. Diagnostics must be readable
+from the sensor attributes for dashboard surfaces.
+
+`heima.run_diagnostics` MUST return Home Assistant service response data. The same diagnostics
+payload is also written to `sensor.heima_health` attributes. No separate HA event is required for
+diagnostics service output.
+
 | Deliverable | File(s) |
 |---|---|
-| Route `anomaly.*` events to installer notification channel | `coordinator.py` |
+| Route `anomaly.*` and invariant violation events to installer `persistent_notification` channel | `coordinator.py` |
 | `sensor.heima_health` with state (`ok` / `degraded` / `error`) and `last_anomaly` attribute | `entities/` |
 | `heima.run_diagnostics` service returning structured diagnostic payload | `services.yaml` |
 

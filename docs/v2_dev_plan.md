@@ -94,7 +94,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | H | House State Learning | `DONE` | D, E, G |
 | I | Activity Inference and Learning | `DONE` | D, H, F |
 | J | Event-Driven Trigger | `DONE` | F |
-| K | Installer alert channel + health entity | `NOT STARTED` | C |
+| K | Installer alert channel + health entity | `DONE` | C |
 | L | Auto-discovery config flow | `NOT STARTED` | — |
 | M | Installation validation | `NOT STARTED` | L |
 
@@ -102,16 +102,16 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity.
 **Active phase:** none.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Discuss and plan Phase K — Installer alert channel + health entity.
+Discuss and plan Phase L — Auto-discovery config flow.
 
 ### Current Working Notes
 
-- Current slice: Phase J — complete.
+- Current slice: Phase K — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
@@ -119,7 +119,8 @@ Discuss and plan Phase K — Installer alert channel + health entity.
   `activity_discovered`; no Lovelace card or inline notification actions in I5. Phase I is
   complete. Phase J replaces immediate `state_changed` evaluation with classified event-driven
   scheduling, per-class debounce, re-entry protection, bidirectional power-threshold crossing, and
-  a 300s periodic fallback.
+  a 300s periodic fallback. Phase K adds installer-facing anomaly/invariant alerts, a
+  `sensor.heima_health` operational surface, and `heima.run_diagnostics` response data.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -160,6 +161,10 @@ Discuss and plan Phase K — Installer alert channel + health entity.
   - Phase J power threshold crossing triggers on both directions. Activity start and stop are
     both semantically meaningful and must not wait for the 300s fallback.
   - Phase J re-entry follow-up uses the normal class debounce, not a zero-delay immediate run.
+  - Phase K installer channel is Home Assistant `persistent_notification`, which is admin-facing
+    by default. Configurable `notify.*` installer push routing is deferred.
+  - `heima.run_diagnostics` returns HA service response data and also updates
+    `sensor.heima_health` attributes.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -207,6 +212,12 @@ Discuss and plan Phase K — Installer alert channel + health entity.
   - `tests/test_options_flow_e2e.py`
   - `docs/specs/heima_v2_spec.md`
   - `tests/test_integration_normalization_e2e.py`
+  - `custom_components/heima/entities/registry.py`
+  - `custom_components/heima/entities/sensor.py`
+  - `custom_components/heima/services.py`
+  - `custom_components/heima/services.yaml`
+  - `custom_components/heima/const.py`
+  - `tests/test_health_k.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -259,6 +270,11 @@ Discuss and plan Phase K — Installer alert channel + health entity.
   - `tests/test_options_flow_e2e.py`
   - `tests/test_event_driven_trigger.py`
   - `tests/test_integration_normalization_e2e.py`
+  - `docs/specs/heima_v2_spec.md`
+  - `custom_components/heima/const.py`
+  - `custom_components/heima/entities/registry.py`
+  - `custom_components/heima/services.yaml`
+  - `tests/test_health_k.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -394,7 +410,15 @@ Discuss and plan Phase K — Installer alert channel + health entity.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1173 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
-- Next concrete step: discuss Phase K scope and slice plan before implementation.
+  - `.venv/bin/python -m pytest tests/test_health_k.py tests/test_services_notify_event.py -q`
+    — passed, 30 tests.
+  - `.venv/bin/python -m pytest tests/test_learning_reset.py tests/test_health_k.py tests/test_services_notify_event.py -q`
+    — passed, 36 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1178 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1179 tests.
+  - `.venv/bin/ruff check custom_components/heima tests` — passed.
+  - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+- Next concrete step: discuss Phase L scope and slice plan before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -952,7 +976,7 @@ None — role model is spec + contract additions only.
 
 ## Phase K — Installer alert channel + health entity
 
-**Spec section:** TBD — add to `heima_v2_spec.md`
+**Spec section:** Phase K delivery section in `docs/specs/heima_v2_spec.md`
 **Goal:** Route anomaly/invariant violation alerts to installer HA user; expose `sensor.heima_health` for remote monitoring.
 **Depends on:** Phase C (IInvariantCheck).
 
@@ -966,10 +990,10 @@ None — role model is spec + contract additions only.
 
 ### Acceptance criteria
 
-- [ ] Anomaly/invariant violation events routed to installer channel, not resident channel
-- [ ] `sensor.heima_health` exposed with overall state and `last_anomaly` attribute
-- [ ] `heima.run_diagnostics` service call returns structured diagnostic payload
-- [ ] All existing tests pass
+- [x] Anomaly/invariant violation events routed to installer channel, not resident channel
+- [x] `sensor.heima_health` exposed with overall state and `last_anomaly` attribute
+- [x] `heima.run_diagnostics` service call returns structured diagnostic payload
+- [x] All existing tests pass — 1179 tests
 
 ---
 

@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
@@ -17,6 +17,7 @@ from .const import (
     SERVICE_APPROVE_PROPOSAL,
     SERVICE_COMMAND,
     SERVICE_OVERRIDE_APPROVAL,
+    SERVICE_RUN_DIAGNOSTICS,
     SERVICE_SET_MODE,
     SERVICE_SET_OVERRIDE,
 )
@@ -60,6 +61,12 @@ APPROVE_PROPOSAL_SCHEMA = vol.Schema(
     {
         vol.Required("proposal_id"): cv.string,
         vol.Required("action"): vol.In(["approved", "rejected"]),
+    }
+)
+
+RUN_DIAGNOSTICS_SCHEMA = vol.Schema(
+    {
+        vol.Optional("target", default={}): dict,
     }
 )
 
@@ -517,6 +524,17 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if not matched:
             raise ServiceValidationError(f"Proposal '{proposal_id}' not found")
 
+    async def _handle_run_diagnostics(call: ServiceCall) -> dict[str, Any]:
+        payload = dict(call.data)
+        coordinators = _coordinators_for_target(hass, dict(payload.get("target", {})))
+        if not coordinators:
+            raise ServiceValidationError("No active Heima config entries found for target")
+        diagnostics = [await coordinator.async_run_diagnostics() for coordinator in coordinators]
+        return {
+            "entries": diagnostics,
+            "count": len(diagnostics),
+        }
+
     hass.services.async_register(DOMAIN, SERVICE_COMMAND, _handle_command, schema=COMMAND_SCHEMA)
     hass.services.async_register(
         DOMAIN,
@@ -529,6 +547,13 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_OVERRIDE_APPROVAL,
         _handle_override_approval,
         schema=OVERRIDE_APPROVAL_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RUN_DIAGNOSTICS,
+        _handle_run_diagnostics,
+        schema=RUN_DIAGNOSTICS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _handle_set_mode, schema=SET_MODE_SCHEMA)
     hass.services.async_register(

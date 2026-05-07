@@ -185,6 +185,7 @@ def build_registry(entry: ConfigEntry) -> HeimaRegistry:
         sensors.append(_s(_k("heima_security_reason"), "Heima Security Reason"))
 
     # Notifications
+    sensors.append(_s(_k("heima_health"), "Heima Health"))
     sensors.append(_s(_k("heima_last_event"), "Heima Last Event"))
     sensors.append(_s(_k("heima_event_stats"), "Heima Event Stats"))
 

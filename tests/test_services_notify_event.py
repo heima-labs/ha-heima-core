@@ -11,6 +11,7 @@ from custom_components.heima.const import (
     SERVICE_APPROVE_PROPOSAL,
     SERVICE_COMMAND,
     SERVICE_OVERRIDE_APPROVAL,
+    SERVICE_RUN_DIAGNOSTICS,
     SERVICE_SET_MODE,
     SERVICE_SET_OVERRIDE,
 )
@@ -52,7 +53,7 @@ class _FakeServicesRegistry:
         self._handlers: dict[tuple[str, str], object] = {}
         self.calls: list[tuple[str, str, dict, bool]] = []
 
-    def async_register(self, domain, service, handler, schema=None):
+    def async_register(self, domain, service, handler, schema=None, **kwargs):
         self._handlers[(domain, service)] = handler
 
     async def async_call(self, domain, service, data, blocking=False):
@@ -118,6 +119,9 @@ class _FakeCoordinator:
         )
         await self.engine.async_evaluate(reason=f"service:set_mode:{mode}:{enabled}")
         return action
+
+    async def async_run_diagnostics(self):
+        return {"status": "ok", "entry_id": self.entry.entry_id}
 
 
 class _FakeProposalEngine:
@@ -928,3 +932,32 @@ async def test_heima_set_override_rejects_unknown_scope(monkeypatch):
     handler = services.handler(DOMAIN, SERVICE_SET_OVERRIDE)
     with pytest.raises(ServiceValidationError):
         await handler(SimpleNamespace(data={"scope": "unknown", "id": "x", "override": True}))
+
+
+@pytest.mark.asyncio
+async def test_run_diagnostics_service_returns_response_payload(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    entry = SimpleNamespace(options={})
+    engine = HeimaEngine(hass=hass, entry=entry)
+    engine._build_default_state()
+    coordinator = _FakeCoordinator(engine, entry_id="entry-a")
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_RUN_DIAGNOSTICS)
+    response = await handler(SimpleNamespace(data={"target": {"entry_id": "entry-a"}}))
+
+    assert response == {
+        "entries": [{"status": "ok", "entry_id": "entry-a"}],
+        "count": 1,
+    }

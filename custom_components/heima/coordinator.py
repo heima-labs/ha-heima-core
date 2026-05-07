@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -186,6 +187,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._eval_pending = False
         self._eval_running = False
         self._power_threshold_last_values: dict[str, float] = {}
+        self._last_anomaly: dict[str, Any] | None = None
+        self._last_invariant_violation: dict[str, Any] | None = None
+        self._last_diagnostics: dict[str, Any] = {}
+        self._notified_installer_alert_keys: set[str] = set()
         self._notified_house_state_proposal_keys: set[str] = set()
         self._notified_activity_proposal_keys: set[str] = set()
         self.last_options_snapshot: dict = dict(entry.options)
@@ -244,6 +249,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_run()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
+        self._sync_health_sensor()
         self._schedule_proposal_tick()
         self._schedule_analyze_tick()
         self._subscribe_state_changes()
@@ -293,6 +299,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 **dict(signal.context),
             },
         )
+        await self._async_handle_last_installer_alert()
+        self._sync_health_sensor()
 
     async def async_reload_options(self, *, changed_keys: set[str] | None = None) -> None:
         """Reload options and refresh state."""
@@ -329,6 +337,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_action="",
         )
         self._sync_scheduler()
+        await self._async_handle_last_installer_alert()
+        self._sync_health_sensor()
         await self.async_refresh()
 
     async def async_emit_event(
@@ -359,6 +369,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_decision=f"{reason}:{'emitted' if emitted else 'suppressed'}",
             last_action="event_emitted" if emitted else "event_suppressed",
         )
+        await self._async_handle_last_installer_alert()
+        self._sync_health_sensor()
         await self.async_refresh()
         return emitted
 
@@ -397,6 +409,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             last_action=f"house_state_override:{action}",
         )
         self._sync_scheduler()
+        await self._async_handle_last_installer_alert()
+        self._sync_health_sensor()
         await self.async_refresh()
         return action
 
@@ -415,6 +429,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._notified_activity_proposal_keys.clear()
         self.engine.reset_learning_state()
         self._write_event_store_sensor()
+        self._last_diagnostics = {}
+        self._sync_health_sensor()
         await self.async_refresh()
 
     async def async_run_learning_now(self) -> None:
@@ -423,6 +439,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_run()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
+        self._sync_health_sensor()
         await self.async_refresh()
 
     async def async_review_proposal(
@@ -1070,6 +1087,136 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         finally:
             self._notified_house_state_proposal_keys.add(identity_key)
 
+    async def _async_handle_last_installer_alert(self) -> None:
+        event = self.engine.state.get_sensor_attributes("heima_last_event") or {}
+        event_type = str(event.get("type") or "")
+        if not event_type.startswith("anomaly."):
+            return
+        if event_type == "anomaly.resolved":
+            self._clear_resolved_invariant_alert(event)
+            self._sync_health_sensor()
+            return
+        severity = str(event.get("severity") or "")
+        if severity == "info":
+            context = event.get("context") if isinstance(event.get("context"), dict) else {}
+            if not bool(context.get("notify")):
+                return
+        self._record_installer_alert(event)
+        await self._async_notify_installer_alert(event)
+        self._sync_health_sensor()
+
+    async def _async_notify_installer_alert(self, event: dict[str, Any]) -> None:
+        event_id = str(event.get("event_id") or "")
+        key = str(event.get("key") or event.get("type") or "")
+        dedup_key = event_id or key
+        if not dedup_key or dedup_key in self._notified_installer_alert_keys:
+            return
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": _installer_notification_id(key or dedup_key),
+                    "title": str(event.get("title") or "Heima installer alert"),
+                    "message": _installer_notification_message(event),
+                },
+                blocking=False,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to create installer alert notification")
+        finally:
+            self._notified_installer_alert_keys.add(dedup_key)
+
+    def _record_installer_alert(self, event: dict[str, Any]) -> None:
+        event_record = _health_event_record(event)
+        self._last_anomaly = event_record
+        context = event.get("context") if isinstance(event.get("context"), dict) else {}
+        if context.get("check_id"):
+            self._last_invariant_violation = event_record
+
+    def _clear_resolved_invariant_alert(self, event: dict[str, Any]) -> None:
+        context = event.get("context") if isinstance(event.get("context"), dict) else {}
+        check_id = str(context.get("check_id") or "")
+        current = self._last_invariant_violation or {}
+        current_context = current.get("context") if isinstance(current.get("context"), dict) else {}
+        if check_id and str(current_context.get("check_id") or "") == check_id:
+            self._last_invariant_violation = None
+        anomaly = self._last_anomaly or {}
+        anomaly_context = anomaly.get("context") if isinstance(anomaly.get("context"), dict) else {}
+        if check_id and str(anomaly_context.get("check_id") or "") == check_id:
+            self._last_anomaly = None
+
+    async def async_run_diagnostics(self) -> dict[str, Any]:
+        """Collect structured diagnostics and update the health sensor."""
+        try:
+            payload = self._diagnostics_payload()
+            self._last_diagnostics = payload
+            self._sync_health_sensor()
+            await self.async_refresh()
+            return payload
+        except Exception as err:  # noqa: BLE001
+            payload = {
+                "status": "error",
+                "health_reason": f"diagnostics_failed:{type(err).__name__}",
+                "entry_id": str(self.entry.entry_id),
+                "generated_at": datetime.now(UTC).isoformat(),
+                "error": str(err),
+            }
+            self._last_diagnostics = payload
+            self.engine.state.set_sensor("heima_health", "error")
+            self.engine.state.set_sensor_attributes("heima_health", self._health_attributes())
+            await self.async_refresh()
+            return payload
+
+    def _diagnostics_payload(self) -> dict[str, Any]:
+        return {
+            "status": self._health_status(),
+            "health_reason": self._health_reason(),
+            "entry_id": str(self.entry.entry_id),
+            "generated_at": datetime.now(UTC).isoformat(),
+            "engine": self.engine.diagnostics(),
+            "event_store": self._event_store.diagnostics(),
+            "proposal_engine": self._proposal_engine.diagnostics(),
+            "approval_store": self._approval_store.diagnostics(),
+            "snapshot_store": self._house_snapshot_store.diagnostics(),
+            "outcome_tracker": self._outcome_tracker.diagnostics(),
+            "ha_backed_reconciliation": dict(self._ha_backed_reconciliation_summary),
+        }
+
+    def _sync_health_sensor(self) -> None:
+        state = getattr(getattr(self, "engine", None), "state", None)
+        if state is None or not hasattr(state, "set_sensor"):
+            return
+        self.engine.state.set_sensor("heima_health", self._health_status())
+        self.engine.state.set_sensor_attributes("heima_health", self._health_attributes())
+
+    def _health_status(self) -> str:
+        if not self.engine.health.ok:
+            return "error"
+        if self._last_anomaly is not None or self._last_invariant_violation is not None:
+            return "degraded"
+        return "ok"
+
+    def _health_reason(self) -> str:
+        if not self.engine.health.ok:
+            return self.engine.health.reason
+        if self._last_invariant_violation is not None:
+            return "invariant_violation"
+        if self._last_anomaly is not None:
+            return "anomaly"
+        return self.engine.health.reason
+
+    def _health_attributes(self) -> dict[str, Any]:
+        return {
+            "health_reason": self._health_reason(),
+            "engine_ok": self.engine.health.ok,
+            "engine_reason": self.engine.health.reason,
+            "last_anomaly": dict(self._last_anomaly or {}),
+            "last_invariant_violation": dict(self._last_invariant_violation or {}),
+            "last_diagnostics": dict(self._last_diagnostics or {}),
+            "last_updated": datetime.now(UTC).isoformat(),
+        }
+
     def _sync_house_state_approval_state(self) -> None:
         approved: set[str] = set()
         rejected: set[str] = set()
@@ -1370,6 +1517,45 @@ def _house_state_notification_id(identity_key: str) -> str:
 def _activity_notification_id(identity_key: str) -> str:
     safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
     return f"heima_activity_proposal_{safe[:120]}"
+
+
+def _installer_notification_id(identity_key: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
+    return f"heima_installer_{safe[:120]}"
+
+
+def _health_event_record(event: dict[str, Any]) -> dict[str, Any]:
+    context = event.get("context") if isinstance(event.get("context"), dict) else {}
+    return {
+        "type": str(event.get("type") or ""),
+        "key": str(event.get("key") or ""),
+        "severity": str(event.get("severity") or ""),
+        "title": str(event.get("title") or ""),
+        "message": str(event.get("message") or ""),
+        "context": dict(context),
+        "event_id": str(event.get("event_id") or ""),
+        "ts": str(event.get("ts") or ""),
+    }
+
+
+def _installer_notification_message(event: dict[str, Any]) -> str:
+    context = event.get("context") if isinstance(event.get("context"), dict) else {}
+    check_id = str(context.get("check_id") or "")
+    anomaly_type = str(context.get("anomaly_type") or "")
+    details = []
+    if anomaly_type:
+        details.append(f"Anomaly type: {anomaly_type}")
+    if check_id:
+        details.append(f"Invariant check: {check_id}")
+    details.append(f"Severity: {str(event.get('severity') or 'unknown')}")
+    details.append(f"Event key: {str(event.get('key') or '')}")
+    return "\n".join(
+        [
+            str(event.get("message") or "Heima needs installer attention."),
+            "",
+            *details,
+        ]
+    )
 
 
 def _house_state_proposal_notification_message(

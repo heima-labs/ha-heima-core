@@ -72,6 +72,17 @@ override_approval:
       selector:
         boolean:
 
+run_diagnostics:
+  name: Heima Run Diagnostics
+  description: Return structured Heima diagnostics and update sensor.heima_health attributes.
+  fields:
+    target:
+      name: Target
+      description: Optional command target payload.
+      example: '{"entry_id": "abc123"}'
+      selector:
+        object:
+
 set_mode:
   name: Heima Set Mode
   description: Set or clear a final house-state override.
