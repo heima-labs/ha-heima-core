@@ -43,6 +43,7 @@ from ..discovery import (
 )
 from ..reconciliation import reconcile_ha_backed_options
 from ..runtime.reactions import resolve_reaction_type
+from ..validation import ValidationReport, build_validation_report, validation_summary_text
 from ._common import _default_language, _default_timezone
 from ._steps_calendar import _CalendarStepsMixin
 from ._steps_external_context import _ExternalContextStepsMixin
@@ -149,6 +150,7 @@ class HeimaOptionsFlowHandler(
             menu_options=[
                 "general",
                 "discovery",
+                "validation",
                 "people_menu",
                 "rooms_menu",
                 "lighting_rooms_menu",
@@ -223,6 +225,25 @@ class HeimaOptionsFlowHandler(
         ]
         self._apply_discovery_candidates(accepted)
         self._store_discovery_review(report, accepted)
+        return await self.async_step_init()
+
+    async def async_step_validation(self, user_input: dict[str, Any] | None = None) -> Any:
+        report = await self._validation_report()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="validation",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("action", default="back"): vol.In(
+                            {"back": "Back", "save": "Save"}
+                        )
+                    }
+                ),
+                description_placeholders=self._validation_placeholders(report),
+            )
+        action = str(user_input.get("action") or "back").strip()
+        if action == "save":
+            return await self.async_step_save()
         return await self.async_step_init()
 
     def _entry_options_snapshot(self) -> dict[str, Any]:
@@ -357,6 +378,7 @@ class HeimaOptionsFlowHandler(
             "proposal_review_summary": self._proposal_review_summary(),
             "tuning_pending_summary": self._tuning_pending_summary(),
             "discovery_summary": self._discovery_summary(),
+            "validation_summary": self._validation_summary_sync(),
         }
 
     def _people_menu_summary(self) -> str:
@@ -672,6 +694,40 @@ class HeimaOptionsFlowHandler(
             ),
         }
         self._update_options({OPT_DISCOVERY: payload})
+
+    async def _validation_report(self) -> ValidationReport:
+        coordinator = self._coordinator()
+        if coordinator is not None and hasattr(coordinator, "async_validate_config"):
+            return await coordinator.async_validate_config()
+        return self._local_validation_report()
+
+    def _validation_summary_sync(self) -> str:
+        return self._local_validation_report().summary
+
+    def _validation_placeholders(self, report: ValidationReport) -> dict[str, str]:
+        return {
+            "summary": report.summary,
+            "details": validation_summary_text(report),
+        }
+
+    def _local_validation_report(self) -> ValidationReport:
+        return build_validation_report(
+            options=self._entry_options_snapshot(),
+            snapshot_count=0,
+            approval_count=0,
+            pending_proposal_count=0,
+        )
+
+    def _coordinator(self) -> Any:
+        try:
+            domain_data = getattr(getattr(self, "hass", None), "data", {}).get(DOMAIN, {})
+            if isinstance(domain_data, dict):
+                entry_data = domain_data.get(getattr(self._config_entry, "entry_id", None), {})
+                if isinstance(entry_data, dict):
+                    return entry_data.get("coordinator")
+        except Exception:
+            return None
+        return None
 
     def _room_ids(self) -> list[str]:
         return [room["room_id"] for room in self._rooms()]

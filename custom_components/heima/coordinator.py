@@ -70,6 +70,7 @@ from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
+from .validation import ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
@@ -1206,7 +1207,23 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "snapshot_store": self._house_snapshot_store.diagnostics(),
             "outcome_tracker": self._outcome_tracker.diagnostics(),
             "ha_backed_reconciliation": dict(self._ha_backed_reconciliation_summary),
+            "installation_validation": self._validation_report().as_dict(),
         }
+
+    async def async_validate_config(self) -> ValidationReport:
+        """Return a cheap structural installation validation report."""
+        return self._validation_report()
+
+    def _validation_report(self) -> ValidationReport:
+        snapshot_diag = self._house_snapshot_store.diagnostics()
+        approval_diag = self._approval_store.diagnostics()
+        proposal_diag = self._proposal_engine.diagnostics()
+        return build_validation_report(
+            options=dict(getattr(self.entry, "options", {}) or {}),
+            snapshot_count=int(snapshot_diag.get("total_snapshots") or 0),
+            approval_count=int(approval_diag.get("total_records") or 0),
+            pending_proposal_count=int(proposal_diag.get("pending") or 0),
+        )
 
     def _sync_health_sensor(self) -> None:
         state = getattr(getattr(self, "engine", None), "state", None)
@@ -1239,6 +1256,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "last_anomaly": dict(self._last_anomaly or {}),
             "last_invariant_violation": dict(self._last_invariant_violation or {}),
             "last_diagnostics": dict(self._last_diagnostics or {}),
+            "installation_validation": self._validation_report().as_dict(),
             "last_updated": datetime.now(UTC).isoformat(),
         }
 

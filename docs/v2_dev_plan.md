@@ -96,22 +96,22 @@ These constraints must never be violated. See spec §16 for rationale.
 | J | Event-Driven Trigger | `DONE` | F |
 | K | Installer alert channel + health entity | `DONE` | C |
 | L | Auto-discovery config flow | `DONE` | — |
-| M | Installation validation | `NOT STARTED` | L |
+| M | Installation validation | `DONE` | L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation.
 **Active phase:** None.
 **Branch:** `feat/v2` — created from `main`.
 **Next action:**
 
-Discuss Phase M — Installation validation before implementation.
+Discuss the next v2 scope before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase L — complete.
+- Current slice: Phase M — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
@@ -121,7 +121,9 @@ Discuss Phase M — Installation validation before implementation.
   scheduling, per-class debounce, re-entry protection, bidirectional power-threshold crossing, and
   a 300s periodic fallback. Phase K adds installer-facing anomaly/invariant alerts, a
   `sensor.heima_health` operational surface, and `heima.run_diagnostics` response data. Phase L
-  adds rule-based HA entity discovery with installer review in the options flow.
+  adds rule-based HA entity discovery with installer review in the options flow. Phase M adds an
+  informational installation validation report exposed in options flow, diagnostics, and
+  `sensor.heima_health` attributes.
 - Key design decisions:
   - `SignalRouter.route()` accepts `list[tuple[InferenceSignal, datetime]]` — emission timestamp
     is separate from the signal dataclass (avoids mutating frozen D1 contracts).
@@ -172,6 +174,9 @@ Discuss Phase M — Installation validation before implementation.
     understand why the suggestion exists before accepting it.
   - Accepted non-ambiguous Phase L candidates may update concrete bindings. Ambiguous candidates
     are recorded in the discovery review result but do not silently mutate concrete config.
+  - Phase M validation is informational, not blocking. It validates structural config coverage and
+    snapshot counts only; it must not perform slow HA calls, network I/O, or live entity
+    availability checks.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -229,6 +234,8 @@ Discuss Phase M — Installation validation before implementation.
   - `custom_components/heima/room_inventory.py`
   - `custom_components/heima/discovery.py`
   - `tests/test_discovery_l.py`
+  - `custom_components/heima/validation.py`
+  - `tests/test_validation_m.py`
 - Files changed:
   - `custom_components/heima/runtime/plugin_contracts.py`
   - `custom_components/heima/runtime/domain_result_bag.py`
@@ -290,6 +297,8 @@ Discuss Phase M — Installation validation before implementation.
   - `custom_components/heima/coordinator.py`
   - `custom_components/heima/discovery.py`
   - `tests/test_discovery_l.py`
+  - `custom_components/heima/validation.py`
+  - `tests/test_validation_m.py`
   - `docs/v2_dev_plan.md`
 - Phase B implementation notes:
   - `kind="pattern"` (spec §8) is canonical for `ReactionProposal` routing.
@@ -444,7 +453,14 @@ Discuss Phase M — Installation validation before implementation.
     unused-variable issues.
   - `.venv/bin/ruff format --check .` — failed on pre-existing unrelated `scripts/` formatting
     issues.
-- Next concrete step: discuss Phase M scope and slice plan before implementation.
+  - `.venv/bin/python -m pytest tests/test_validation_m.py tests/test_health_k.py tests/test_discovery_l.py -q`
+    — passed, 14 tests.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1188 tests.
+  - `.venv/bin/ruff check custom_components/heima/validation.py custom_components/heima/coordinator.py custom_components/heima/config_flow/__init__.py tests/test_validation_m.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/validation.py custom_components/heima/coordinator.py custom_components/heima/config_flow/__init__.py tests/test_validation_m.py`
+    — passed.
+- Next concrete step: discuss the next v2 scope before implementation.
 - Phase C implementation notes:
   - `_run_invariant_checks()` runs after `_compute_snapshot()` and before `_build_apply_plan()`.
   - Checks only receive `DecisionSnapshot` and `DomainResultBag`; they must not read EventStore or
@@ -1067,7 +1083,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 ## Phase M — Installation validation
 
-**Spec section:** TBD — add to `heima_v2_spec.md`
+**Spec section:** `docs/specs/heima_v2_spec.md` — Phase M
 **Goal:** After config, report what Heima can and cannot do with the current binding set.
 **Depends on:** Phase L.
 
@@ -1076,6 +1092,9 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - Activities detectable with current bindings vs. activities missing required sensors
 - Invariant checks active vs. inactive (missing required entities)
 - Learning modules with sufficient data vs. insufficient data
+- Validation is informational and non-blocking
+- Validation is cheap and stateless: structural config coverage and snapshot counts only; no live
+  entity availability checks
 
 ### Files to modify
 
@@ -1083,13 +1102,15 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 |---|---|
 | `config_flow/` | Add validation summary step at end of options flow |
 | `coordinator.py` | Add `async_validate_config() -> ValidationReport` |
+| `validation.py` | Add `ValidationReport`, sections, issues, and structural validation builder |
 
 ### Acceptance criteria
 
-- [ ] Validation report generated after config save
-- [ ] Missing bindings listed with human-readable description of what is unavailable
-- [ ] Report accessible via `sensor.heima_health` attributes and via `heima.run_diagnostics`
-- [ ] All existing tests pass
+- [x] Validation report generated from current config
+- [x] Missing bindings listed with human-readable description of what is unavailable
+- [x] Report accessible via `sensor.heima_health` attributes and via `heima.run_diagnostics`
+- [x] Options flow exposes a non-blocking validation summary step
+- [x] All existing tests pass — 1188 tests
 
 ---
 

@@ -1336,6 +1336,25 @@ in the discovery review result but MUST NOT silently mutate concrete configurati
 **Unlocks:** post-config coverage report for the installer.
 **Dependencies:** Phase L.
 
+Installation validation is informational and MUST NOT block saving options. Installers may save
+partial/progressive installations with warnings.
+
+Validation MUST be cheap and stateless. It reads only current integration options, in-memory
+snapshot counts, approval/proposal diagnostics, and existing runtime diagnostics. It MUST NOT make
+network calls, slow HA calls, or live entity availability checks.
+
+Validation returns a serializable `ValidationReport` with:
+
+| Field | Meaning |
+|---|---|
+| `severity` | Overall `ok`, `warning`, or `error`. |
+| `summary` | Human-readable summary for config flow and diagnostics. |
+| `sections` | `activities`, `invariants`, and `learning` sections. |
+| `issue_count` / `warning_count` / `error_count` | Aggregate counts. |
+
+Each section lists available and unavailable capabilities plus human-readable issues describing
+missing structural bindings. Missing live entity availability is out of scope for Phase M.
+
 | Deliverable | File(s) |
 |---|---|
 | Validation summary step at end of options flow | `config_flow/` |
