@@ -11,9 +11,9 @@ commands.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -68,6 +68,30 @@ def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return event_store if isinstance(event_store, dict) else {}
 
 
+def _configured_reaction_exists(
+    client: HAClient,
+    entry_id: str,
+    *,
+    reaction_type: str,
+    room_id: str,
+) -> bool:
+    raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    entry = raw.get("data", {}).get("entry", {}) if isinstance(raw, dict) else {}
+    options = entry.get("options", {}) if isinstance(entry, dict) else {}
+    reactions = options.get("reactions", {}) if isinstance(options, dict) else {}
+    configured = reactions.get("configured", {}) if isinstance(reactions, dict) else {}
+    if not isinstance(configured, dict):
+        return False
+    for cfg in configured.values():
+        if not isinstance(cfg, dict):
+            continue
+        if str(cfg.get("reaction_type") or "") != reaction_type:
+            continue
+        if str(cfg.get("room_id") or "") == room_id:
+            return True
+    return False
+
+
 def _find_room_air_quality_assist(diag: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     proposals = diag.get("proposals")
     if not isinstance(proposals, list):
@@ -99,33 +123,34 @@ def _wait_for_fixture_baseline(
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
-        current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+        current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
         if current >= minimum:
             return current
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
-    current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+    current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
     raise RuntimeError(
         "Cross-domain air-quality fixture baseline not loaded: "
-        f"expected at least {minimum} historical state_change events, found {current}. "
+        f"expected at least {minimum} historical room_signal_threshold events, found {current}. "
         "Run the setup tier to restore learning fixtures first."
     )
 
 
-def _wait_for_state_change_growth(
+def _wait_for_signal_threshold_growth(
     client: HAClient, entry_id: str, previous: int, timeout_s: int, poll_s: float
 ) -> int:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
-        current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
-        if current >= previous + 2:
+        current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
+        if current >= previous + 1:
             return current
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
-    current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+    current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
     raise RuntimeError(
-        f"Timeout waiting state_change events to grow by 2 (before={previous}, after={current})"
+        "Timeout waiting room_signal_threshold events to grow by 1 "
+        f"(before={previous}, after={current})"
     )
 
 
@@ -144,7 +169,9 @@ def _wait_for_room_air_quality_proposal(
             proposal_id, proposal = found
             return proposal_id, proposal, "dedup_stable_count"
         time.sleep(poll_s)
-    raise RuntimeError("Timeout waiting for pending room_air_quality_assist proposal in diagnostics")
+    raise RuntimeError(
+        "Timeout waiting for pending room_air_quality_assist proposal in diagnostics"
+    )
 
 
 def _recompute(client: HAClient) -> None:
@@ -200,19 +227,29 @@ def main() -> int:
     baseline = _wait_for_fixture_baseline(
         client,
         entry_id,
-        minimum=32,
+        minimum=16,
         timeout_s=min(args.timeout_s, 60),
         poll_s=args.poll_s,
     )
     proposals_diag = _proposal_diagnostics(client, entry_id)
     proposals_before = _to_int(proposals_diag.get("total"))
 
-    print(f"Initial state_change events: {baseline}")
+    print(f"Initial room_signal_threshold events: {baseline}")
     print(f"Initial proposals count: {proposals_before}")
     existing = _find_room_air_quality_assist(proposals_diag)
     if existing is not None:
         proposal_id, _ = existing
-        print(f"PASS: room air quality assist proposal already pending [preexisting] id={proposal_id}")
+        print(
+            f"PASS: room air quality assist proposal already pending [preexisting] id={proposal_id}"
+        )
+        return 0
+    if _configured_reaction_exists(
+        client,
+        entry_id,
+        reaction_type="room_air_quality_assist",
+        room_id="studio",
+    ):
+        print("PASS: room air quality assist reaction already configured [preexisting]")
         return 0
 
     print("Reloading Heima config entry to refresh runtime wiring...")
@@ -221,7 +258,9 @@ def main() -> int:
 
     print("Preparing lab state without clearing learning history...")
     client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
-    client.wait_state("binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s
+    )
     client.wait_state("switch.test_heima_studio_fan", "off", args.timeout_s, args.poll_s)
     _wait_numeric_state(
         client,
@@ -237,11 +276,17 @@ def main() -> int:
         "turn_on",
         {"entity_id": "input_boolean.test_heima_room_studio_motion_raw"},
     )
-    client.wait_state("binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s
+    )
     _recompute(client)
     client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
 
-    before_events = _to_int((_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("state_change"))
+    before_events = _to_int(
+        (_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get(
+            "room_signal_threshold"
+        )
+    )
     print("Generating real studio CO2 + ventilation sequence...")
     client.call_service(
         "input_number",
@@ -259,10 +304,10 @@ def main() -> int:
     client.call_service("switch", "turn_on", {"entity_id": "switch.test_heima_studio_fan"})
     client.wait_state("switch.test_heima_studio_fan", "on", args.timeout_s, args.poll_s)
 
-    after_events = _wait_for_state_change_growth(
+    after_events = _wait_for_signal_threshold_growth(
         client, entry_id, before_events, args.timeout_s, args.poll_s
     )
-    print(f"State_change events after live sequence: {after_events}")
+    print(f"room_signal_threshold events after live sequence: {after_events}")
 
     print("Reloading Heima config entry to trigger proposal run...")
     client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})

@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -20,6 +20,21 @@ def _to_int(value: Any) -> int:
     return int(float(raw))
 
 
+def _proposal_items(attrs: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    items = attrs.get("items")
+    if isinstance(items, dict):
+        return {
+            str(pid): dict(proposal)
+            for pid, proposal in items.items()
+            if isinstance(proposal, dict)
+        }
+    return {
+        str(pid): dict(proposal)
+        for pid, proposal in attrs.items()
+        if isinstance(proposal, dict) and str(proposal.get("status", "")).strip()
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Heima learning proposals diagnostics")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
@@ -27,7 +42,9 @@ def main() -> int:
     parser.add_argument("--entity-id", default="sensor.heima_reaction_proposals")
     parser.add_argument("--min-count", type=int, default=1)
     parser.add_argument("--require-type", default="", help="e.g. presence_preheat")
-    parser.add_argument("--require-status", default="pending", help="e.g. pending/accepted/rejected")
+    parser.add_argument(
+        "--require-status", default="pending", help="e.g. pending/accepted/rejected"
+    )
     parser.add_argument("--require-identity", action="store_true")
     parser.add_argument("--require-last-observed", action="store_true")
     parser.add_argument("--require-not-stale", action="store_true")
@@ -37,7 +54,8 @@ def main() -> int:
     state = client.get_state(args.entity_id)
     sensor_count = _to_int(state.get("state"))
     attrs = dict(state.get("attributes") or {})
-    proposals = [p for p in attrs.values() if isinstance(p, dict)]
+    proposals_by_id = _proposal_items(attrs)
+    proposals = list(proposals_by_id.values())
 
     if args.require_status:
         matching = [p for p in proposals if str(p.get("status", "")) == args.require_status]
@@ -52,9 +70,7 @@ def main() -> int:
 
     if proposals:
         print("Proposals:")
-        for pid, proposal in attrs.items():
-            if not isinstance(proposal, dict):
-                continue
+        for pid, proposal in proposals_by_id.items():
             ptype = str(proposal.get("type", ""))
             status = str(proposal.get("status", ""))
             conf = proposal.get("confidence", "")
@@ -75,9 +91,7 @@ def main() -> int:
                 continue
             matched = True
             if args.require_identity and not str(proposal.get("identity_key", "")).strip():
-                raise RuntimeError(
-                    f"Proposal type='{args.require_type}' is missing identity_key"
-                )
+                raise RuntimeError(f"Proposal type='{args.require_type}' is missing identity_key")
             if args.require_last_observed and not str(proposal.get("last_observed_at", "")).strip():
                 raise RuntimeError(
                     f"Proposal type='{args.require_type}' is missing last_observed_at"
@@ -91,7 +105,9 @@ def main() -> int:
             raise RuntimeError(
                 f"No proposal found with type='{args.require_type}' status='{args.require_status}'"
             )
-    elif matching and (args.require_identity or args.require_last_observed or args.require_not_stale):
+    elif matching and (
+        args.require_identity or args.require_last_observed or args.require_not_stale
+    ):
         for proposal in matching:
             if args.require_identity and not str(proposal.get("identity_key", "")).strip():
                 raise RuntimeError("At least one matching proposal is missing identity_key")

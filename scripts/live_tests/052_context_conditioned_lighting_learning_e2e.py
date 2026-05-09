@@ -282,14 +282,18 @@ def _wait_for_context_conditioned_proposal(
 def _accept_proposal(
     client: HAFlowClient,
     entry_id: str,
-    proposals_entity: str,
-    proposal_id: str,
+    proposal: dict[str, Any],
 ) -> None:
-    current = (
-        client.get_state(proposals_entity).get("attributes", {}).get("items", {}).get(proposal_id)
+    proposal_id = str(proposal.get("id") or "")
+    _assert(proposal_id, f"proposal id missing: {proposal}")
+    sensor_item = (
+        client.get_state("sensor.heima_reaction_proposals")
+        .get("attributes", {})
+        .get("items", {})
+        .get(proposal_id)
     )
-    _assert(isinstance(current, dict), f"proposal {proposal_id} not found in sensor")
-    if current.get("status") == "accepted":
+    _assert(isinstance(sensor_item, dict), f"proposal {proposal_id} not found in sensor")
+    if sensor_item.get("status") == "accepted":
         return
 
     init = client.options_flow_init(entry_id)
@@ -300,7 +304,7 @@ def _accept_proposal(
         _expect_step(step, "proposals")
 
         safety = 0
-        while not _proposal_step_matches_target(step, current):
+        while not _proposal_step_matches_target(step, proposal):
             safety += 1
             _assert(safety <= 25, f"proposal {proposal_id} not reachable in review queue")
             step = client.options_flow_configure(flow_id, {"review_action": "skip"})
@@ -330,21 +334,22 @@ def _accept_proposal(
 
 def _wait_for_accepted(
     client: HAClient,
-    proposals_entity: str,
+    entry_id: str,
     proposal_id: str,
     timeout_s: int,
     poll_s: float,
 ) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        proposal = (
-            client.get_state(proposals_entity)
-            .get("attributes", {})
-            .get("items", {})
-            .get(proposal_id)
-        )
-        if isinstance(proposal, dict) and proposal.get("status") == "accepted":
-            return
+        proposals = _proposal_diagnostics(client, entry_id).get("proposals")
+        if isinstance(proposals, list):
+            for proposal in proposals:
+                if not isinstance(proposal, dict):
+                    continue
+                if str(proposal.get("id") or "") != proposal_id:
+                    continue
+                if proposal.get("status") == "accepted":
+                    return
         time.sleep(poll_s)
     raise AssertionError(f"proposal {proposal_id} did not become accepted")
 
@@ -507,10 +512,8 @@ def main() -> int:
     )
 
     print(f"Accepting proposal {proposal_id}...")
-    _accept_proposal(client, entry_id, "sensor.heima_reaction_proposals", proposal_id)
-    _wait_for_accepted(
-        client, "sensor.heima_reaction_proposals", proposal_id, args.timeout_s, args.poll_s
-    )
+    _accept_proposal(client, entry_id, proposal)
+    _wait_for_accepted(client, entry_id, proposal_id, args.timeout_s, args.poll_s)
 
     configured = _configured_context_lighting_reactions(client, entry_id, weekday=weekday)
     _assert(configured, "accepted context-conditioned reaction not found in configured reactions")

@@ -202,6 +202,7 @@ PEOPLE_BASELINE = [
         "slug": "test_user",
         "display_name": "Test User",
         "presence_method": "quorum",
+        "person_entity": "person.stefano",
         "sources": ["binary_sensor.test_heima_room_studio_motion"],
         "group_strategy": "quorum",
         "required": 1,
@@ -354,6 +355,29 @@ def _menu_next(client: HAFlowClient, flow_id: str, next_step_id: str) -> dict[st
     return client.options_flow_configure(flow_id, {"next_step_id": next_step_id})
 
 
+def _extract_select_values(step_result: dict[str, Any], field_name: str) -> list[str]:
+    data_schema = step_result.get("data_schema")
+    if not isinstance(data_schema, list):
+        return []
+    for field in data_schema:
+        if not isinstance(field, dict) or str(field.get("name")) != field_name:
+            continue
+        options = field.get("options")
+        values: list[str] = []
+        if isinstance(options, list):
+            for item in options:
+                if isinstance(item, str):
+                    values.append(item)
+                elif isinstance(item, dict) and item.get("value") not in (None, ""):
+                    values.append(str(item["value"]))
+                elif isinstance(item, (list, tuple)) and item:
+                    values.append(str(item[0]))
+        elif isinstance(options, dict):
+            values.extend(str(key) for key in options)
+        return [value for value in values if value]
+    return []
+
+
 def _flow_save(client: HAFlowClient, flow_id: str) -> None:
     result = _menu_next(client, flow_id, "save")
     if result.get("type") != "create_entry":
@@ -419,6 +443,46 @@ def _select_room_choice(
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"unable to select room choice: {room}")
+
+
+def _select_person_for_edit(
+    client: HAFlowClient,
+    flow_id: str,
+    step_result: dict[str, Any],
+    person: dict[str, Any],
+) -> dict[str, Any]:
+    choices = _extract_select_values(step_result, "person")
+    candidates = [str(person.get("slug") or "").strip()]
+    display_name = str(person.get("display_name") or person.get("slug") or "").strip()
+    if display_name:
+        candidates.extend(
+            [
+                f"{display_name} [configured]",
+                f"{display_name} [new]",
+                f"{display_name} [orphaned]",
+                display_name,
+            ]
+        )
+    tokens = [str(person.get("slug") or "").strip().lower(), display_name.lower()]
+    candidates.extend(
+        choice for choice in choices if any(token and token in choice.lower() for token in tokens)
+    )
+    candidates.extend(choices)
+
+    last_error: Exception | None = None
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return client.options_flow_configure(flow_id, {"person": candidate})
+        except HAApiError as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"unable to select person for edit: {person}")
 
 
 def _enter_room_edit_form(
@@ -644,24 +708,9 @@ def recover_people(client: HAFlowClient, entry_id: str) -> None:
     flow_id, _ = _open_people_menu(client, entry_id)
 
     for person in PEOPLE_BASELINE:
-        # Try add first; if duplicate, abort + reopen + edit existing.
-        step = _menu_next(client, flow_id, "people_add")
-        _expect_step(step, "people_add")
-        result = client.options_flow_configure(flow_id, person)
-
-        if result.get("step_id") == "people_menu":
-            continue  # added OK
-
-        errors = result.get("errors") or {}
-        if errors.get("slug") != "duplicate":
-            raise RuntimeError(f"people_add unexpected error: {errors}")
-
-        # Person already exists — abort flow, reopen, edit.
-        client.options_flow_abort(flow_id)
-        flow_id, _ = _open_people_menu(client, entry_id)
         step = _menu_next(client, flow_id, "people_edit")
         _expect_step(step, "people_edit")
-        step = client.options_flow_configure(flow_id, {"person": person["slug"]})
+        step = _select_person_for_edit(client, flow_id, step, person)
         _expect_step(step, "people_edit_form")
         result = client.options_flow_configure(flow_id, person)
         _expect_step(result, "people_menu")

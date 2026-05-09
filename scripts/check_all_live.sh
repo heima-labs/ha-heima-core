@@ -29,7 +29,6 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/012_house_state_general_config.py"
   "scripts/live_tests/014_house_state_workday_working.py"
   "scripts/live_tests/016_admin_only_options_flow.py"
-  "scripts/live_tests/025_lighting_learning_live.py"
   "scripts/live_tests/026_room_signal_assist_live.py"
   "scripts/live_tests/027_room_cooling_assist_live.py"
   "scripts/live_tests/028_room_air_quality_assist_live.py"
@@ -37,12 +36,12 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/029_presence_live.py"
   "scripts/live_tests/040_security_mismatch_runtime.py"
   "scripts/live_tests/050_calendar_domain.py"
+  "scripts/live_tests/052_context_conditioned_lighting_learning_e2e.py"
 )
 
 SEEDED_INTEGRATION_SCRIPTS=(
   "scripts/live_tests/015_learning_reset.sh"
-  "scripts/live_tests/060_lighting_schedule.py"
-  "scripts/live_tests/020_learning_pipeline.py"
+  "scripts/live_tests/052_context_conditioned_lighting_learning_e2e.py"
 )
 
 DIAGNOSTIC_SCRIPTS=(

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Live check: room learning_sources enter the runtime signal pool."""
+"""Live check: room learning_sources enter the runtime event canonicalizer."""
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -36,6 +36,52 @@ def _expect_step(result: dict[str, Any], step_id: str) -> None:
 
 def _menu_next(client: HAFlowClient, flow_id: str, next_step_id: str) -> dict[str, Any]:
     return client.options_flow_configure(flow_id, {"next_step_id": next_step_id})
+
+
+def _extract_select_values(step_result: dict[str, Any], field_name: str) -> list[str]:
+    data_schema = step_result.get("data_schema")
+    if not isinstance(data_schema, list):
+        return []
+    for field in data_schema:
+        if not isinstance(field, dict) or str(field.get("name")) != field_name:
+            continue
+        options = field.get("options")
+        values: list[str] = []
+        if isinstance(options, list):
+            for item in options:
+                if isinstance(item, str):
+                    values.append(item)
+                elif isinstance(item, dict) and item.get("value") not in (None, ""):
+                    values.append(str(item["value"]))
+                elif isinstance(item, (list, tuple)) and item:
+                    values.append(str(item[0]))
+        elif isinstance(options, dict):
+            values.extend(str(key) for key in options)
+        return [value for value in values if value]
+    return []
+
+
+def _select_room(
+    client: HAFlowClient, flow_id: str, step_result: dict[str, Any], room_id: str
+) -> dict[str, Any]:
+    choices = _extract_select_values(step_result, "room")
+    candidates = [room_id]
+    candidates.extend(choice for choice in choices if room_id.lower() in choice.lower())
+    candidates.extend(choices)
+    last_error: Exception | None = None
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return client.options_flow_configure(flow_id, {"room": candidate})
+        except HAApiError as err:
+            last_error = err
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"unable to select room {room_id!r}")
 
 
 def _flow_save(client: HAFlowClient, flow_id: str) -> None:
@@ -82,10 +128,12 @@ def _tracked_signal_entities(engine_diag: dict[str, Any]) -> list[str]:
     behaviors = engine_diag.get("behaviors", {})
     if not isinstance(behaviors, dict):
         return []
-    signal = behaviors.get("signal_recorder", {})
-    if not isinstance(signal, dict):
+    canonicalizer = behaviors.get("event_canonicalizer", {})
+    if not isinstance(canonicalizer, dict):
         return []
-    tracked = signal.get("tracked_entities", [])
+    tracked = canonicalizer.get("tracked_entities", {})
+    if isinstance(tracked, dict):
+        return [str(entity_id) for entity_id in tracked]
     if not isinstance(tracked, list):
         return []
     return [str(entity_id) for entity_id in tracked]
@@ -111,7 +159,9 @@ def _wait_for_tracking(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify room learning_sources reach signal recorder")
+    parser = argparse.ArgumentParser(
+        description="Verify room learning_sources reach event canonicalizer"
+    )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=30)
@@ -120,13 +170,7 @@ def main() -> int:
 
     client = HAFlowClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
     entry_id = client.find_heima_entry_id()
-    tracked_entity = "binary_sensor.test_heima_room_studio_motion"
-
-    before = _tracked_signal_entities(_engine_diagnostics(client, entry_id))
-    if tracked_entity in before:
-        raise RuntimeError(
-            f"precondition failed: {tracked_entity} already tracked before room learning update"
-        )
+    tracked_entity = "sensor.test_heima_studio_lux"
 
     init = client.options_flow_init(entry_id)
     flow_id = str(init["flow_id"])
@@ -136,7 +180,9 @@ def main() -> int:
     _expect_step(step, "rooms_menu")
     step = _menu_next(client, flow_id, "rooms_edit")
     _expect_step(step, "rooms_edit")
-    step = client.options_flow_configure(flow_id, {"room": "studio"})
+    step = _select_room(client, flow_id, step, "studio")
+    if step.get("step_id") == "rooms_edit_actions":
+        step = _menu_next(client, flow_id, "rooms_edit_form")
     _expect_step(step, "rooms_edit_form")
 
     payload = {
@@ -145,7 +191,7 @@ def main() -> int:
         "area_id": "test_heima_studio",
         "occupancy_mode": "derived",
         "occupancy_sources": ["binary_sensor.test_heima_room_studio_motion"],
-        "learning_sources": ["binary_sensor.test_heima_room_studio_motion"],
+        "learning_sources": [tracked_entity],
         "logic": "any_of",
         "on_dwell_s": 5,
         "off_dwell_s": 120,
@@ -163,7 +209,7 @@ def main() -> int:
     persisted_learning = room.get("learning_sources")
     if persisted_occupancy != ["binary_sensor.test_heima_room_studio_motion"]:
         raise RuntimeError(f"unexpected persisted occupancy_sources: {persisted_occupancy!r}")
-    if persisted_learning != ["binary_sensor.test_heima_room_studio_motion"]:
+    if persisted_learning != [tracked_entity]:
         raise RuntimeError(f"unexpected persisted learning_sources: {persisted_learning!r}")
 
     tracked = _wait_for_tracking(

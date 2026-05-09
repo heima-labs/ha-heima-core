@@ -9,9 +9,9 @@ crash with server-side errors.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -36,7 +36,9 @@ class HAFlowClient(HAClient):
         raise last or HAApiError(f"POST failed for {path}")
 
     def options_flow_init(self, entry_id: str) -> dict[str, Any]:
-        data = self._post_with_retry("/api/config/config_entries/options/flow", {"handler": entry_id})
+        data = self._post_with_retry(
+            "/api/config/config_entries/options/flow", {"handler": entry_id}
+        )
         if not isinstance(data, dict):
             raise HAApiError(f"invalid options flow init response: {type(data)}")
         return data
@@ -58,7 +60,9 @@ def _assert(cond: bool, msg: str) -> None:
 
 def _expect_step(result: dict[str, Any], step_id: str) -> None:
     _assert(isinstance(result, dict), f"invalid flow result type: {type(result)}")
-    _assert(result.get("step_id") == step_id, f"expected step_id={step_id}, got={result.get('step_id')}")
+    _assert(
+        result.get("step_id") == step_id, f"expected step_id={step_id}, got={result.get('step_id')}"
+    )
 
 
 def _menu_next(client: HAClient, flow_id: str, next_step_id: str) -> dict[str, Any]:
@@ -126,6 +130,37 @@ def _extract_form_default(step_result: dict[str, Any], field_name: str) -> Any:
     return None
 
 
+def _select_person_choice(
+    client: HAFlowClient,
+    flow_id: str,
+    step_result: dict[str, Any],
+    preferred: str,
+) -> dict[str, Any]:
+    choices = _extract_select_values(step_result, "person")
+    candidates: list[str] = []
+    if preferred:
+        candidates.append(preferred)
+    token = str(preferred or "").strip().lower()
+    if token:
+        candidates.extend(choice for choice in choices if token in choice.lower())
+    candidates.extend(choices)
+
+    last_error: Exception | None = None
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            return client.options_flow_configure(flow_id, {"person": candidate})
+        except HAApiError as err:
+            last_error = err
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No selectable person found")
+
+
 def scenario_notifications_no_crash(client: HAClient, entry_id: str) -> None:
     print("== Scenario A: notifications malformed payload does not crash ==")
     init = client.options_flow_init(entry_id)
@@ -178,7 +213,7 @@ def _read_heating_form_defaults(client: HAFlowClient, entry_id: str) -> dict[str
         heating_form = _menu_next(client, flow_id, "heating")
         payload: dict[str, Any] = {}
         if heating_form.get("step_id") == "heating":
-            for field in (heating_form.get("data_schema") or []):
+            for field in heating_form.get("data_schema") or []:
                 if not isinstance(field, dict):
                     continue
                 name = field.get("name")
@@ -195,7 +230,9 @@ def _read_heating_form_defaults(client: HAFlowClient, entry_id: str) -> dict[str
         client.options_flow_abort(flow_id)
 
 
-def _restore_heating_options(client: HAFlowClient, entry_id: str, original_payload: dict[str, Any]) -> None:
+def _restore_heating_options(
+    client: HAFlowClient, entry_id: str, original_payload: dict[str, Any]
+) -> None:
     """Restore heating options to their original state via a new flow."""
     if not original_payload:
         return
@@ -273,11 +310,8 @@ def scenario_heating_branch_validation_no_crash(client: HAFlowClient, entry_id: 
     print("PASS scenario B")
 
 
-def scenario_people_quorum_drops_person_entity(client: HAClient, entry_id: str) -> None:
-    print("== Scenario C: edit person ha_person -> quorum and check stale person_entity ==")
-    entry_before = client.get_entry(entry_id)
-    options_before = dict(entry_before.get("options") or {})
-
+def scenario_people_quorum_keeps_person_entity(client: HAClient, entry_id: str) -> None:
+    print("== Scenario C: edit person quorum and keep required person_entity ==")
     init = client.options_flow_init(entry_id)
     flow_id = str(init["flow_id"])
     _expect_step(init, "init")
@@ -291,18 +325,21 @@ def scenario_people_quorum_drops_person_entity(client: HAClient, entry_id: str) 
     if not slugs:
         print("SKIP scenario C (no selectable people in people_edit step)")
         return
-    slug = slugs[0]
+    selection = slugs[0]
 
-    step = client.options_flow_configure(flow_id, {"person": slug})
+    step = _select_person_choice(client, flow_id, step, selection)
     _expect_step(step, "people_edit_form")
+    slug = str(_extract_form_default(step, "slug") or selection).strip()
+    person_entity = str(_extract_form_default(step, "person_entity") or "person.stefano")
 
-    # Keep slug immutable, switch to quorum with explicit source.
+    # Keep slug immutable, use quorum with explicit source and required HA person binding.
     step = client.options_flow_configure(
         flow_id,
         {
             "slug": slug,
             "display_name": f"{slug}-live-test",
             "presence_method": "quorum",
+            "person_entity": person_entity,
             "sources": ["binary_sensor.test_heima_room_studio_motion"],
             "group_strategy": "quorum",
             "required": 1,
@@ -324,11 +361,13 @@ def scenario_people_quorum_drops_person_entity(client: HAClient, entry_id: str) 
         edited = next((p for p in people_after if str(p.get("slug")) == slug), None)
         _assert(edited is not None, f"edited person not found: {slug}")
         _assert(str(edited.get("presence_method")) == "quorum", f"unexpected method: {edited}")
-        if "person_entity" in edited and edited.get("person_entity"):
-            raise AssertionError(
-                "stale person_entity still present for quorum method "
+        _assert(
+            str(edited.get("person_entity") or "") == person_entity,
+            (
+                "person_entity should be preserved for quorum method "
                 f"(slug={slug}, person_entity={edited.get('person_entity')})"
-            )
+            ),
+        )
     else:
         # Fallback for HA builds where entry detail does not expose full options payload:
         # reopen person form and ensure we can roundtrip quorum payload without person_entity.
@@ -339,14 +378,16 @@ def scenario_people_quorum_drops_person_entity(client: HAClient, entry_id: str) 
         _expect_step(step2, "people_menu")
         step2 = _menu_next(client, flow_id2, "people_edit")
         _expect_step(step2, "people_edit")
-        step2 = client.options_flow_configure(flow_id2, {"person": slug})
+        step2 = _select_person_choice(client, flow_id2, step2, slug)
         _expect_step(step2, "people_edit_form")
+        person_entity2 = str(_extract_form_default(step2, "person_entity") or person_entity)
         step2 = client.options_flow_configure(
             flow_id2,
             {
                 "slug": slug,
                 "display_name": f"{slug}-live-test",
                 "presence_method": "quorum",
+                "person_entity": person_entity2,
                 "sources": ["binary_sensor.test_heima_room_studio_motion"],
                 "group_strategy": "quorum",
                 "required": 1,
@@ -437,7 +478,10 @@ def scenario_init_status_block(client: HAFlowClient, entry_id: str) -> None:
         "calendar_summary",
     }
     missing = expected_keys - set(placeholders.keys())
-    _assert(not missing, f"missing description_placeholders keys: {missing} (got: {set(placeholders.keys())})")
+    _assert(
+        not missing,
+        f"missing description_placeholders keys: {missing} (got: {set(placeholders.keys())})",
+    )
 
     # Abort flow — navigate to save to close it cleanly
     client.options_flow_configure(flow_id, {"next_step_id": "save"})
@@ -544,7 +588,7 @@ def main() -> int:
 
     scenario_notifications_no_crash(client, entry_id)
     scenario_heating_branch_validation_no_crash(client, entry_id)
-    scenario_people_quorum_drops_person_entity(client, entry_id)
+    scenario_people_quorum_keeps_person_entity(client, entry_id)
     scenario_security_mismatch_event_modes_roundtrip(client, entry_id)
     scenario_init_status_block(client, entry_id)
     scenario_second_level_menu_summaries(client, entry_id)

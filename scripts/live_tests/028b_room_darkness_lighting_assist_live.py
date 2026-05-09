@@ -11,9 +11,9 @@ commands.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -68,6 +68,30 @@ def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return event_store if isinstance(event_store, dict) else {}
 
 
+def _configured_reaction_exists(
+    client: HAClient,
+    entry_id: str,
+    *,
+    reaction_type: str,
+    room_id: str,
+) -> bool:
+    raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    entry = raw.get("data", {}).get("entry", {}) if isinstance(raw, dict) else {}
+    options = entry.get("options", {}) if isinstance(entry, dict) else {}
+    reactions = options.get("reactions", {}) if isinstance(options, dict) else {}
+    configured = reactions.get("configured", {}) if isinstance(reactions, dict) else {}
+    if not isinstance(configured, dict):
+        return False
+    for cfg in configured.values():
+        if not isinstance(cfg, dict):
+            continue
+        if str(cfg.get("reaction_type") or "") != reaction_type:
+            continue
+        if str(cfg.get("room_id") or "") == room_id:
+            return True
+    return False
+
+
 def _find_room_darkness_lighting_assist(
     diag: dict[str, Any],
 ) -> tuple[str, dict[str, Any]] | None:
@@ -94,7 +118,7 @@ def _wait_for_fixture_baseline(
     client: HAClient,
     entry_id: str,
     *,
-    minimum_state_changes: int,
+    minimum_signal_thresholds: int,
     timeout_s: int,
     poll_s: float,
 ) -> dict[str, int]:
@@ -102,17 +126,18 @@ def _wait_for_fixture_baseline(
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
         by_type = diag.get("by_type", {}) or {}
-        state_change = _to_int(by_type.get("state_change"))
+        signal_threshold = _to_int(by_type.get("room_signal_threshold"))
         lighting = _to_int(by_type.get("lighting"))
-        if state_change >= minimum_state_changes and lighting > 0:
-            return {"state_change": state_change, "lighting": lighting}
+        if signal_threshold >= minimum_signal_thresholds and lighting > 0:
+            return {"room_signal_threshold": signal_threshold, "lighting": lighting}
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
     by_type = diag.get("by_type", {}) or {}
     raise RuntimeError(
         "Cross-domain darkness fixture baseline not loaded: "
-        f"expected at least {minimum_state_changes} historical state_change events, "
-        f"found {_to_int(by_type.get('state_change'))} with lighting={_to_int(by_type.get('lighting'))}. "
+        f"expected at least {minimum_signal_thresholds} historical room_signal_threshold events, "
+        f"found {_to_int(by_type.get('room_signal_threshold'))} "
+        f"with lighting={_to_int(by_type.get('lighting'))}. "
         "Run the setup tier to restore learning fixtures first."
     )
 
@@ -120,7 +145,7 @@ def _wait_for_fixture_baseline(
 def _wait_for_event_growth(
     client: HAClient,
     entry_id: str,
-    previous_state_changes: int,
+    previous_signal_thresholds: int,
     previous_lighting: int,
     timeout_s: int,
     poll_s: float,
@@ -129,16 +154,17 @@ def _wait_for_event_growth(
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
         by_type = diag.get("by_type", {}) or {}
-        state_change = _to_int(by_type.get("state_change"))
+        signal_threshold = _to_int(by_type.get("room_signal_threshold"))
         lighting = _to_int(by_type.get("lighting"))
         if lighting >= previous_lighting + 1:
-            return {"state_change": state_change, "lighting": lighting}
+            return {"room_signal_threshold": signal_threshold, "lighting": lighting}
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
     by_type = diag.get("by_type", {}) or {}
     raise RuntimeError(
         "Timeout waiting for darkness live sequence to grow lighting event count "
-        f"(state_change {previous_state_changes}->{_to_int(by_type.get('state_change'))}, "
+        f"(room_signal_threshold {previous_signal_thresholds}->"
+        f"{_to_int(by_type.get('room_signal_threshold'))}, "
         f"lighting {previous_lighting}->{_to_int(by_type.get('lighting'))})"
     )
 
@@ -158,7 +184,9 @@ def _wait_for_room_darkness_proposal(
             proposal_id, proposal = found
             return proposal_id, proposal, "dedup_stable_count"
         time.sleep(poll_s)
-    raise RuntimeError("Timeout waiting for pending room_darkness_lighting_assist proposal in diagnostics")
+    raise RuntimeError(
+        "Timeout waiting for pending room_darkness_lighting_assist proposal in diagnostics"
+    )
 
 
 def _recompute(client: HAClient) -> None:
@@ -212,7 +240,9 @@ def _wait_light_brightness(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Heima true live room-darkness-lighting-assist test")
+    parser = argparse.ArgumentParser(
+        description="Heima true live room-darkness-lighting-assist test"
+    )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=90)
@@ -242,20 +272,38 @@ def main() -> int:
     baseline = _wait_for_fixture_baseline(
         client,
         entry_id,
-        minimum_state_changes=36,
+        minimum_signal_thresholds=16,
         timeout_s=min(args.timeout_s, 60),
         poll_s=args.poll_s,
     )
     proposals_diag = _proposal_diagnostics(client, entry_id)
     proposals_before = _to_int(proposals_diag.get("total"))
 
-    print(f"Initial state_change events: {baseline['state_change']}")
+    print(f"Initial room_signal_threshold events: {baseline['room_signal_threshold']}")
     print(f"Initial lighting events: {baseline['lighting']}")
     print(f"Initial proposals count: {proposals_before}")
     existing = _find_room_darkness_lighting_assist(proposals_diag)
     if existing is not None:
         proposal_id, _ = existing
-        print(f"PASS: room darkness lighting assist proposal already pending [preexisting] id={proposal_id}")
+        print(
+            f"PASS: room darkness lighting assist proposal already pending [preexisting] id={proposal_id}"
+        )
+        return 0
+    if _configured_reaction_exists(
+        client,
+        entry_id,
+        reaction_type="room_darkness_lighting_assist",
+        room_id="studio",
+    ):
+        print("PASS: room darkness lighting assist reaction already configured [preexisting]")
+        return 0
+    if _configured_reaction_exists(
+        client,
+        entry_id,
+        reaction_type="room_contextual_lighting_assist",
+        room_id="studio",
+    ):
+        print("PASS: room contextual lighting assist reaction already configured [preexisting]")
         return 0
 
     print("Reloading Heima config entry to refresh runtime wiring...")
@@ -264,7 +312,9 @@ def main() -> int:
 
     print("Preparing lab state without clearing learning history...")
     client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
-    client.wait_state("binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s
+    )
     client.wait_state("light.test_heima_studio_main", "off", args.timeout_s, args.poll_s)
     _wait_numeric_state(
         client,
@@ -280,14 +330,16 @@ def main() -> int:
         "turn_on",
         {"entity_id": "input_boolean.test_heima_room_studio_motion_raw"},
     )
-    client.wait_state("binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s
+    )
     _recompute(client)
     client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
 
     before = _wait_for_fixture_baseline(
         client,
         entry_id,
-        minimum_state_changes=36,
+        minimum_signal_thresholds=16,
         timeout_s=args.timeout_s,
         poll_s=args.poll_s,
     )
@@ -316,9 +368,9 @@ def main() -> int:
         {"entity_id": "input_number.test_heima_light_studio_main_color_temp", "value": 2900},
     )
     client.call_service(
-        "input_boolean",
+        "light",
         "turn_on",
-        {"entity_id": "input_boolean.test_heima_light_studio_main_raw"},
+        {"entity_id": "light.test_heima_studio_main"},
     )
     _wait_light_brightness(
         client,
@@ -332,12 +384,15 @@ def main() -> int:
     after = _wait_for_event_growth(
         client,
         entry_id,
-        before["state_change"],
+        before["room_signal_threshold"],
         before["lighting"],
         args.timeout_s,
         args.poll_s,
     )
-    print(f"Events after live sequence: state_change={after['state_change']} lighting={after['lighting']}")
+    print(
+        "Events after live sequence: "
+        f"room_signal_threshold={after['room_signal_threshold']} lighting={after['lighting']}"
+    )
 
     print("Reloading Heima config entry to trigger proposal run...")
     client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})

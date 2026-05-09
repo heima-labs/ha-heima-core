@@ -299,40 +299,38 @@ def build_cross_domain_events(today_local: date) -> list[dict[str, object]]:
         correlation_id = f"fixture-bathroom-shower-{day.isoformat()}"
         events.extend(
             [
-                _state_change_event(
+                _room_signal_threshold_event(
                     day=day,
                     at=time(7, 30),
                     entity_id="sensor.test_heima_bathroom_humidity",
                     room_id="bathroom",
-                    context_at=time(7, 30),
-                    old_state="55",
-                    new_state="66",
-                    unit_of_measurement="%",
+                    signal_name="room_humidity",
+                    from_bucket="ok",
+                    to_bucket="high",
+                    value=76.0,
                     device_class="humidity",
                     correlation_id=correlation_id,
+                    direction="up",
                 ),
-                _state_change_event(
+                _room_signal_threshold_event(
                     day=day,
                     at=time(7, 33),
                     entity_id="sensor.test_heima_bathroom_temperature",
                     room_id="bathroom",
-                    context_at=time(7, 30),
-                    old_state="21.0",
-                    new_state="22.1",
-                    unit_of_measurement="°C",
+                    signal_name="room_temperature",
+                    from_bucket="ok",
+                    to_bucket="warm",
+                    value=25.1,
                     device_class="temperature",
                     correlation_id=correlation_id,
+                    direction="up",
                 ),
-                _state_change_event(
+                _actuation_event(
                     day=day,
                     at=time(7, 35),
                     entity_id="switch.test_heima_bathroom_fan",
                     room_id="bathroom",
-                    context_at=time(7, 30),
-                    old_state="off",
-                    new_state="on",
-                    unit_of_measurement=None,
-                    device_class=None,
+                    action="on",
                     correlation_id=correlation_id,
                 ),
             ]

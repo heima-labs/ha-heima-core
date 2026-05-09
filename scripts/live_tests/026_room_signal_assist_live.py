@@ -11,9 +11,9 @@ proposal without using seeded runtime commands.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -110,33 +110,34 @@ def _wait_for_fixture_baseline(
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
-        current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+        current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
         if current >= minimum:
             return current
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
-    current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+    current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
     raise RuntimeError(
         "Cross-domain fixture baseline not loaded: "
-        f"expected at least {minimum} historical state_change events, found {current}. "
+        f"expected at least {minimum} historical room_signal_threshold events, found {current}. "
         "Run the setup tier to restore learning fixtures first."
     )
 
 
-def _wait_for_state_change_growth(
+def _wait_for_signal_threshold_growth(
     client: HAClient, entry_id: str, previous: int, timeout_s: int, poll_s: float
 ) -> int:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         diag = _event_store_diagnostics(client, entry_id)
-        current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
-        if current >= previous + 3:
+        current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
+        if current >= previous + 2:
             return current
         time.sleep(poll_s)
     diag = _event_store_diagnostics(client, entry_id)
-    current = _to_int((diag.get("by_type", {}) or {}).get("state_change"))
+    current = _to_int((diag.get("by_type", {}) or {}).get("room_signal_threshold"))
     raise RuntimeError(
-        f"Timeout waiting state_change events to grow by 3 (before={previous}, after={current})"
+        "Timeout waiting room_signal_threshold events to grow by 2 "
+        f"(before={previous}, after={current})"
     )
 
 
@@ -236,20 +237,20 @@ def main() -> int:
     entry_id = client.find_heima_entry_id()
     occupancy_entity = _resolve_entity_id(
         client,
-        exact="binary_sensor.heima_occupancy_bagno",
-        prefix="binary_sensor.heima_occupancy_bagno",
+        exact="binary_sensor.heima_occupancy_bathroom",
+        prefix="binary_sensor.heima_occupancy_bathroom",
     )
     baseline = _wait_for_fixture_baseline(
         client,
         entry_id,
-        minimum=12,
+        minimum=16,
         timeout_s=min(args.timeout_s, 60),
         poll_s=args.poll_s,
     )
     proposals_diag = _proposal_diagnostics(client, entry_id)
     proposals_before = _to_int(proposals_diag.get("total"))
 
-    print(f"Initial state_change events: {baseline}")
+    print(f"Initial room_signal_threshold events: {baseline}")
     print(f"Initial proposals count: {proposals_before}")
     existing = _find_room_signal_assist(proposals_diag)
     if existing is not None:
@@ -263,7 +264,9 @@ def main() -> int:
 
     print("Preparing lab state without clearing learning history...")
     client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
-    client.wait_state("binary_sensor.test_heima_room_bathroom_motion", "off", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_bathroom_motion", "off", args.timeout_s, args.poll_s
+    )
     client.wait_state("switch.test_heima_bathroom_fan", "off", args.timeout_s, args.poll_s)
     _wait_numeric_state(
         client,
@@ -286,7 +289,9 @@ def main() -> int:
         "turn_on",
         {"entity_id": "input_boolean.test_heima_room_bathroom_motion_raw"},
     )
-    client.wait_state("binary_sensor.test_heima_room_bathroom_motion", "on", args.timeout_s, args.poll_s)
+    client.wait_state(
+        "binary_sensor.test_heima_room_bathroom_motion", "on", args.timeout_s, args.poll_s
+    )
     _recompute(client)
     client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
     _wait_for_room_occupancy_context(
@@ -297,17 +302,21 @@ def main() -> int:
         poll_s=args.poll_s,
     )
 
-    before_events = _to_int((_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("state_change"))
+    before_events = _to_int(
+        (_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get(
+            "room_signal_threshold"
+        )
+    )
     print("Executing real bathroom humidity + temperature + fan sequence...")
     client.call_service(
         "input_number",
         "set_value",
-        {"entity_id": "input_number.test_heima_bathroom_humidity", "value": 66},
+        {"entity_id": "input_number.test_heima_bathroom_humidity", "value": 76},
     )
     _wait_numeric_state(
         client,
         "sensor.test_heima_bathroom_humidity",
-        66.0,
+        76.0,
         timeout_s=args.timeout_s,
         poll_s=args.poll_s,
     )
@@ -315,12 +324,12 @@ def main() -> int:
     client.call_service(
         "input_number",
         "set_value",
-        {"entity_id": "input_number.test_heima_bathroom_temperature", "value": 22.1},
+        {"entity_id": "input_number.test_heima_bathroom_temperature", "value": 25.1},
     )
     _wait_numeric_state(
         client,
         "sensor.test_heima_bathroom_temperature",
-        22.1,
+        25.1,
         timeout_s=args.timeout_s,
         poll_s=args.poll_s,
     )
@@ -328,8 +337,10 @@ def main() -> int:
     client.call_service("switch", "turn_on", {"entity_id": "switch.test_heima_bathroom_fan"})
     client.wait_state("switch.test_heima_bathroom_fan", "on", args.timeout_s, args.poll_s)
 
-    after = _wait_for_state_change_growth(client, entry_id, before_events, args.timeout_s, args.poll_s)
-    print(f"state_change events after live bathroom sequence: {after}")
+    after = _wait_for_signal_threshold_growth(
+        client, entry_id, before_events, args.timeout_s, args.poll_s
+    )
+    print(f"room_signal_threshold events after live bathroom sequence: {after}")
 
     print("Reloading Heima config entry to trigger proposal run...")
     client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})

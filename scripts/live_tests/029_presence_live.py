@@ -7,15 +7,14 @@ input_boolean.test_heima_room_studio_motion_raw
   -> binary_sensor.test_heima_room_studio_motion
   -> Heima person quorum presence
   -> EventRecorderBehavior presence events
-  -> ProposalEngine presence_preheat proposal
 """
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -33,44 +32,54 @@ def _state_int(client: HAClient, entity_id: str) -> int:
         raise RuntimeError(f"Expected numeric state for {entity_id}, got '{value}'") from exc
 
 
-def _has_presence_proposal(client: HAClient, entity_id: str) -> bool:
-    attrs = dict(client.get_state(entity_id).get("attributes") or {})
-    for proposal in attrs.values():
-        if not isinstance(proposal, dict):
-            continue
-        if proposal.get("type") == "presence_preheat" and proposal.get("status") == "pending":
-            return True
-    return False
+def _event_store_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
+    raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
+    if not isinstance(raw, dict):
+        return {}
+    runtime = raw.get("data", {}).get("runtime", {})
+    if not isinstance(runtime, dict):
+        return {}
+    event_store = runtime.get("event_store", {})
+    return event_store if isinstance(event_store, dict) else {}
 
 
-def _wait_for_learning_ready(
-    client: HAClient, entity_id: str, previous: int, timeout_s: int, poll_s: float
-) -> tuple[int, str]:
+def _wait_for_presence_event_growth(
+    client: HAClient,
+    entry_id: str,
+    previous: int,
+    expected_growth: int,
+    timeout_s: int,
+    poll_s: float,
+) -> int:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        current = _state_int(client, entity_id)
-        if current > previous:
-            return current, "count_increased"
-        if previous > 0 and _has_presence_proposal(client, entity_id):
-            return current, "dedup_stable_count"
+        diag = _event_store_diagnostics(client, entry_id)
+        current = _state_int_from_value((diag.get("by_type", {}) or {}).get("presence"))
+        if current >= previous + expected_growth:
+            return current
         time.sleep(poll_s)
+    diag = _event_store_diagnostics(client, entry_id)
+    current = _state_int_from_value((diag.get("by_type", {}) or {}).get("presence"))
     raise RuntimeError(
-        f"Timeout waiting learning evidence on {entity_id} "
-        f"(previous={previous}, current={_state_int(client, entity_id)})"
+        "Timeout waiting presence events to grow "
+        f"(previous={previous}, expected_growth={expected_growth}, current={current})"
     )
 
 
-def _ensure_presence_proposal(client: HAClient, entity_id: str) -> None:
-    if _has_presence_proposal(client, entity_id):
-        return
-    raise RuntimeError("No pending presence_preheat proposal found in proposal sensor attributes")
+def _state_int_from_value(value: Any) -> int:
+    raw = str(value or "").strip().lower()
+    if raw in {"unknown", "unavailable", "none", ""}:
+        return 0
+    return int(float(raw))
 
 
 def _recompute(client: HAClient) -> None:
     client.call_service("heima", "command", {"command": "recompute_now"})
 
 
-def _wait_state(client: HAClient, entity_id: str, expected: str, timeout_s: int, poll_s: float) -> None:
+def _wait_state(
+    client: HAClient, entity_id: str, expected: str, timeout_s: int, poll_s: float
+) -> None:
     client.wait_state(entity_id, expected, timeout_s, poll_s)
 
 
@@ -107,7 +116,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Heima true live presence learning test")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--person-slug", default="stefano")
+    parser.add_argument("--person-slug", default="test_user")
     parser.add_argument("--raw-entity", default="input_boolean.test_heima_room_studio_motion_raw")
     parser.add_argument("--derived-entity", default="binary_sensor.test_heima_room_studio_motion")
     parser.add_argument("--cycles", type=int, default=6)
@@ -119,7 +128,6 @@ def main() -> int:
     client = HAClient(base_url=args.ha_url, token=args.ha_token)
     person_home_entity = f"binary_sensor.heima_person_{args.person_slug}_home"
     person_source_entity = f"sensor.heima_person_{args.person_slug}_source"
-    proposals_entity = "sensor.heima_reaction_proposals"
 
     required = [
         "script.test_heima_reset",
@@ -127,16 +135,13 @@ def main() -> int:
         args.derived_entity,
         person_home_entity,
         person_source_entity,
-        proposals_entity,
     ]
     missing = [entity_id for entity_id in required if not client.entity_exists(entity_id)]
     if missing:
         raise RuntimeError("Missing required entities:\n- " + "\n- ".join(missing))
 
     entry_id = client.find_heima_entry_id()
-    initial = _state_int(client, proposals_entity)
     print(f"Using heima entry_id={entry_id}")
-    print(f"Initial proposals count: {initial}")
 
     print("Resetting lab and learning baseline...")
     client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
@@ -144,6 +149,10 @@ def main() -> int:
     _recompute(client)
     _wait_state(client, args.derived_entity, "off", args.timeout_s, args.poll_s)
     _wait_state(client, person_home_entity, "off", args.timeout_s, args.poll_s)
+    initial_presence_events = _state_int_from_value(
+        (_event_store_diagnostics(client, entry_id).get("by_type", {}) or {}).get("presence")
+    )
+    print(f"Initial presence events: {initial_presence_events}")
 
     print("Generating real presence transitions through test lab entities...")
     _toggle_presence_cycles(
@@ -158,15 +167,22 @@ def main() -> int:
         poll_s=args.poll_s,
     )
 
-    print("Reloading Heima config entry to trigger proposal run...")
+    print("Reloading Heima config entry after live presence transitions...")
     client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
 
-    print("Waiting for learning evidence...")
-    final_count, mode = _wait_for_learning_ready(
-        client, proposals_entity, initial, args.timeout_s, args.poll_s
+    print("Waiting for recorded presence events...")
+    final_presence_events = _wait_for_presence_event_growth(
+        client,
+        entry_id,
+        initial_presence_events,
+        args.cycles * 2,
+        args.timeout_s,
+        args.poll_s,
     )
-    _ensure_presence_proposal(client, proposals_entity)
-    print(f"PASS: live presence proposal ready [{mode}] (count {initial} -> {final_count})")
+    print(
+        "PASS: live presence events recorded "
+        f"({initial_presence_events} -> {final_presence_events})"
+    )
     return 0
 
 

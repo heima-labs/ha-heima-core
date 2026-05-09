@@ -111,7 +111,7 @@ Discuss the next v2 scope before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase M — complete.
+- Current slice: Live/runtime validation pass after Phase M — complete.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
@@ -177,6 +177,14 @@ Discuss the next v2 scope before implementation.
   - Phase M validation is informational, not blocking. It validates structural config coverage and
     snapshot counts only; it must not perform slow HA calls, network I/O, or live entity
     availability checks.
+  - Live HA tests against the local Docker lab must run outside the Codex sandbox; sandboxed
+    localhost access to `127.0.0.1:8823` can fail even when the lab is healthy.
+  - Canonical lighting learning is now `context_conditioned_lighting_scene`; obsolete
+    `lighting_scene_schedule` live/seeded checks are not part of the canonical manifests.
+  - Cross-domain live tests assert canonical runtime events (`room_signal_threshold`,
+    `room_signal_burst`, `actuation`) instead of legacy raw `state_change` growth.
+  - Presence live coverage verifies real `presence` event recording. `presence_preheat` proposal
+    generation still requires multi-week evidence and is not expected from same-day live cycles.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -338,6 +346,11 @@ Discuss the next v2 scope before implementation.
   - `.venv/bin/python -m pytest tests/ -q` — passed, 1047 tests.
   - `.venv/bin/ruff check custom_components/heima tests` — passed.
   - `.venv/bin/ruff format --check custom_components/heima tests` — passed.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier live_e2e` — passed.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic` — passed.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier seeded_integration` — passed.
+  - `.venv/bin/ruff check` on touched live/runtime scripts — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — passed, 1188 tests.
 - Notes:
   - `tests/test_calendar_domain.py` had a date-dependent month-end failure on 2026-04-30
     (`today.day + 1`); it was fixed with `timedelta(days=1)`.
