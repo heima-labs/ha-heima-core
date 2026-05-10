@@ -46,6 +46,19 @@ def _flow(options: dict | None = None) -> HeimaOptionsFlowHandler:
     return flow
 
 
+def test_options_flow_localizes_discovery_choice_labels() -> None:
+    flow = _flow({"language": "it"})
+
+    labels = flow._localized_labels(
+        {
+            "en": {"accept_non_ambiguous": "Accept non-ambiguous"},
+            "it": {"accept_non_ambiguous": "Accetta non ambigue"},
+        }
+    )
+
+    assert labels["accept_non_ambiguous"] == "Accetta non ambigue"
+
+
 def test_discovery_maps_device_classes_to_grouped_candidates() -> None:
     report = discover_binding_candidates(
         entity_entries=[

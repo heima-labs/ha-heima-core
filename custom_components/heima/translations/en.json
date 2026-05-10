@@ -23,6 +23,8 @@
         "description": "Engine: {engine_status}\nPeople: {people_summary}\nRooms: {rooms_summary}\nLighting: {lighting_summary}\nRoom assists: {composite_summary}\nHeating: {heating_summary}\nSecurity: {security_summary}\nCalendar: {calendar_summary}\nProposals in review: {proposal_review_summary}\nPending tuning: {tuning_pending_summary}",
         "menu_options": {
           "general": "General",
+          "discovery": "Discovery",
+          "validation": "Installation validation",
           "people_menu": "People",
           "rooms_menu": "Rooms",
           "lighting_rooms_menu": "Lighting",
@@ -108,7 +110,10 @@
           "presence_rule": "Presence rule",
           "person_entity": "Person entity",
           "sources": "Sources",
+          "group_strategy": "Group strategy",
           "required": "Required sources",
+          "weight_threshold": "Weight threshold",
+          "source_weights": "Source weights",
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)",
           "enable_override": "Enable override"
@@ -120,7 +125,10 @@
         "data": {
           "enabled": "Enable anonymous presence",
           "sources": "Sources",
+          "group_strategy": "Group strategy",
           "required": "Required sources",
+          "weight_threshold": "Weight threshold",
+          "source_weights": "Source weights",
           "anonymous_count_weight": "Count weight",
           "arrive_hold_s": "Arrive hold (s)",
           "leave_hold_s": "Leave hold (s)"
@@ -157,8 +165,11 @@
           "area_id": "HA area",
           "learning_sources": "Learning sources",
           "signals": "Room signals (JSON)",
+          "occupancy_mode": "Occupancy mode",
           "occupancy_sources": "Occupancy sources",
           "logic": "Occupancy logic",
+          "weight_threshold": "Weight threshold",
+          "source_weights": "Source weights",
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
@@ -189,8 +200,11 @@
           "area_id": "HA area",
           "learning_sources": "Learning sources",
           "signals": "Room signals (JSON)",
+          "occupancy_mode": "Occupancy mode",
           "occupancy_sources": "Occupancy sources",
           "logic": "Occupancy logic",
+          "weight_threshold": "Weight threshold",
+          "source_weights": "Source weights",
           "on_dwell_s": "On dwell (s)",
           "off_dwell_s": "Off dwell (s)",
           "max_on_s": "Max on (s)"
@@ -335,6 +349,23 @@
           "security_mismatch_policy": "Security mismatch policy",
           "security_mismatch_persist_s": "Security mismatch persistence (s)",
           "security_mismatch_event_mode": "Security mismatch event mode"
+        },
+        "submit": "OK"
+      },
+      "discovery": {
+        "title": "Discovery",
+        "description": "Summary: {summary}\n\nSuggestions:\n{suggestions}",
+        "data": {
+          "action": "Action",
+          "accepted_candidates": "Candidates to accept"
+        },
+        "submit": "OK"
+      },
+      "validation": {
+        "title": "Installation validation",
+        "description": "Summary: {summary}\n\nDetails:\n{details}",
+        "data": {
+          "action": "Action"
         },
         "submit": "OK"
       },
@@ -622,8 +653,17 @@
       "reserved_prefix": "Value cannot start with 'heima_'",
       "invalid_time_zone": "Invalid timezone",
       "invalid_slug": "Invalid slug",
+      "invalid": "Invalid value",
+      "invalid_selection": "Invalid selection",
+      "invalid_option": "Invalid option",
+      "invalid_format": "Invalid format",
+      "invalid_mapping": "Invalid mapping",
+      "immutable": "This value cannot be changed",
       "unknown_area": "Selected Home Assistant area was not found",
+      "unknown_room": "Selected room was not found",
       "area_sync_failed": "Heima could not create or link the Home Assistant area",
+      "unknown_recipient": "Selected recipient was not found",
+      "unknown_target": "Selected notification target was not found",
       "invalid_json": "Invalid JSON",
       "invalid_contextual_contract": "Invalid contextual lighting contract",
       "invalid_signal_config": "Invalid room signal configuration",
@@ -634,6 +674,7 @@
       "redacted_payload": "Invalid configuration: payload contains redacted values",
       "invalid_signal_name": "Signal name not found in room signal configuration",
       "invalid_bucket": "Bucket label not found in the configured signal buckets",
+      "invalid_target_domain": "One or more selected targets use an unsupported domain",
       "no_burst_config": "Signal has no burst_threshold configured in room signals"
     }
   }

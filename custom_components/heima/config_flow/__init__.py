@@ -59,6 +59,37 @@ from ._steps_security import _SecurityStepsMixin
 
 _LOGGER = logging.getLogger(__name__)
 
+_DISCOVERY_ACTION_LABELS = {
+    "en": {
+        "accept_all": "Accept all",
+        "accept_non_ambiguous": "Accept non-ambiguous",
+        "accept_selected": "Accept selected",
+        "reject_all": "Reject all",
+    },
+    "it": {
+        "accept_all": "Accetta tutto",
+        "accept_non_ambiguous": "Accetta non ambigue",
+        "accept_selected": "Accetta selezionate",
+        "reject_all": "Rifiuta tutto",
+    },
+}
+
+_VALIDATION_ACTION_LABELS = {
+    "en": {
+        "back": "Back",
+        "save": "Save",
+    },
+    "it": {
+        "back": "Indietro",
+        "save": "Salva",
+    },
+}
+
+_DISCOVERY_EMPTY_SUMMARY = {
+    "en": "No discovery candidates found.",
+    "it": "Nessun candidato di discovery trovato.",
+}
+
 
 class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
     """Handle a config flow for Heima."""
@@ -179,16 +210,10 @@ class HeimaOptionsFlowHandler(
             candidate.candidate_id: candidate_label(candidate) for candidate in report.candidates
         }
         if user_input is None:
+            action_labels = self._localized_labels(_DISCOVERY_ACTION_LABELS)
             schema = vol.Schema(
                 {
-                    vol.Required("action", default="accept_non_ambiguous"): vol.In(
-                        {
-                            "accept_all": "Accept all",
-                            "accept_non_ambiguous": "Accept non-ambiguous",
-                            "accept_selected": "Accept selected",
-                            "reject_all": "Reject all",
-                        }
-                    ),
+                    vol.Required("action", default="accept_non_ambiguous"): vol.In(action_labels),
                     vol.Optional("accepted_candidates", default=[]): cv.multi_select(choices),
                 }
             )
@@ -230,14 +255,11 @@ class HeimaOptionsFlowHandler(
     async def async_step_validation(self, user_input: dict[str, Any] | None = None) -> Any:
         report = await self._validation_report()
         if user_input is None:
+            action_labels = self._localized_labels(_VALIDATION_ACTION_LABELS)
             return self.async_show_form(
                 step_id="validation",
                 data_schema=vol.Schema(
-                    {
-                        vol.Required("action", default="back"): vol.In(
-                            {"back": "Back", "save": "Save"}
-                        )
-                    }
+                    {vol.Required("action", default="back"): vol.In(action_labels)}
                 ),
                 description_placeholders=self._validation_placeholders(report),
             )
@@ -380,6 +402,14 @@ class HeimaOptionsFlowHandler(
             "discovery_summary": self._discovery_summary(),
             "validation_summary": self._validation_summary_sync(),
         }
+
+    def _flow_language(self) -> str:
+        """Return the language key used for small dynamic choice labels."""
+        lang = str(self.options.get(CONF_LANGUAGE, "it") or "it")
+        return "it" if lang.startswith("it") else "en"
+
+    def _localized_labels(self, labels: dict[str, dict[str, str]]) -> dict[str, str]:
+        return labels.get(self._flow_language(), labels["en"])
 
     def _people_menu_summary(self) -> str:
         people = self._people_named()
@@ -640,7 +670,10 @@ class HeimaOptionsFlowHandler(
 
     def _discovery_placeholders(self, report: DiscoveryReport) -> dict[str, str]:
         if not report.candidates:
-            return {"summary": "No discovery candidates found.", "suggestions": ""}
+            return {
+                "summary": _DISCOVERY_EMPTY_SUMMARY[self._flow_language()],
+                "suggestions": "",
+            }
         grouped = report.as_dict()["by_category"]
         summary = ", ".join(f"{key}: {value}" for key, value in sorted(grouped.items()))
         suggestions = "\n".join(candidate_label(candidate) for candidate in report.candidates)

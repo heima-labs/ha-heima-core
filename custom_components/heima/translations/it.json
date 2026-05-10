@@ -23,6 +23,8 @@
         "description": "Motore: {engine_status}\nPersone: {people_summary}\nStanze: {rooms_summary}\nIlluminazione: {lighting_summary}\nAssist stanza: {composite_summary}\nRiscaldamento: {heating_summary}\nSicurezza: {security_summary}\nCalendario: {calendar_summary}\nProposte in revisione: {proposal_review_summary}\nTuning pendenti: {tuning_pending_summary}",
         "menu_options": {
           "general": "Generale",
+          "discovery": "Discovery",
+          "validation": "Validazione installazione",
           "people_menu": "Persone",
           "rooms_menu": "Stanze",
           "lighting_rooms_menu": "Illuminazione",
@@ -108,7 +110,10 @@
           "presence_rule": "Regola presenza",
           "person_entity": "Entità persona",
           "sources": "Sorgenti",
+          "group_strategy": "Strategia gruppo",
           "required": "Sorgenti obbligatorie",
+          "weight_threshold": "Soglia peso",
+          "source_weights": "Pesi sorgenti",
           "arrive_hold_s": "Ritardo conferma arrivo (s)",
           "leave_hold_s": "Ritardo conferma uscita (s)",
           "enable_override": "Abilita override manuale"
@@ -120,7 +125,10 @@
         "data": {
           "enabled": "Abilita presenza anonima",
           "sources": "Sorgenti",
+          "group_strategy": "Strategia gruppo",
           "required": "Sorgenti obbligatorie",
+          "weight_threshold": "Soglia peso",
+          "source_weights": "Pesi sorgenti",
           "anonymous_count_weight": "Peso nel conteggio occupanti",
           "arrive_hold_s": "Ritardo conferma arrivo (s)",
           "leave_hold_s": "Ritardo conferma uscita (s)"
@@ -157,8 +165,11 @@
           "area_id": "Area HA",
           "learning_sources": "Sorgenti apprendimento",
           "signals": "Segnali stanza (JSON)",
+          "occupancy_mode": "Modalità occupancy",
           "occupancy_sources": "Sorgenti occupancy",
           "logic": "Logica occupancy",
+          "weight_threshold": "Soglia peso",
+          "source_weights": "Pesi sorgenti",
           "on_dwell_s": "Tempo attivazione (s)",
           "off_dwell_s": "Tempo disattivazione (s)",
           "max_on_s": "Durata massima attiva (s)"
@@ -189,8 +200,11 @@
           "area_id": "Area HA",
           "learning_sources": "Sorgenti apprendimento",
           "signals": "Segnali stanza (JSON)",
+          "occupancy_mode": "Modalità occupancy",
           "occupancy_sources": "Sorgenti occupancy",
           "logic": "Logica occupancy",
+          "weight_threshold": "Soglia peso",
+          "source_weights": "Pesi sorgenti",
           "on_dwell_s": "Tempo attivazione (s)",
           "off_dwell_s": "Tempo disattivazione (s)",
           "max_on_s": "Durata massima attiva (s)"
@@ -335,6 +349,23 @@
           "security_mismatch_policy": "Policy mismatch sicurezza",
           "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
           "security_mismatch_event_mode": "Modalità evento mismatch sicurezza"
+        },
+        "submit": "OK"
+      },
+      "discovery": {
+        "title": "Discovery",
+        "description": "Riepilogo: {summary}\n\nSuggerimenti:\n{suggestions}",
+        "data": {
+          "action": "Azione",
+          "accepted_candidates": "Candidati da accettare"
+        },
+        "submit": "OK"
+      },
+      "validation": {
+        "title": "Validazione installazione",
+        "description": "Riepilogo: {summary}\n\nDettagli:\n{details}",
+        "data": {
+          "action": "Azione"
         },
         "submit": "OK"
       },
@@ -622,8 +653,17 @@
       "reserved_prefix": "Il valore non può iniziare con 'heima_'",
       "invalid_time_zone": "Fuso orario non valido",
       "invalid_slug": "Slug non valido",
+      "invalid": "Valore non valido",
+      "invalid_selection": "Selezione non valida",
+      "invalid_option": "Opzione non valida",
+      "invalid_format": "Formato non valido",
+      "invalid_mapping": "Mappatura non valida",
+      "immutable": "Questo valore non può essere modificato",
       "unknown_area": "L'area Home Assistant selezionata non esiste",
+      "unknown_room": "La stanza selezionata non esiste",
       "area_sync_failed": "Heima non è riuscito a creare o collegare l'area Home Assistant",
+      "unknown_recipient": "Il destinatario selezionato non esiste",
+      "unknown_target": "Il target notifica selezionato non esiste",
       "invalid_json": "JSON non valido",
       "invalid_contextual_contract": "Contratto luce contestuale non valido",
       "invalid_signal_config": "Configurazione segnali stanza non valida",
@@ -634,6 +674,7 @@
       "redacted_payload": "Configurazione non valida: il payload contiene valori redatti",
       "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
       "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale",
+      "invalid_target_domain": "Uno o più target selezionati usano un dominio non supportato",
       "no_burst_config": "Il segnale non ha burst_threshold configurato nei segnali della stanza"
     }
   }
