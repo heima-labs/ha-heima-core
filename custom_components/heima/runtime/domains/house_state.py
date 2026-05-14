@@ -174,6 +174,9 @@ class HouseStateDomain:
         charging_evidence = self._compute_boolean_count_evidence(
             list(house_state_cfg.get("sleep_charging_entities", []))
         )
+        work_activity_evidence = self._compute_boolean_count_evidence(
+            list(house_state_cfg.get("work_activity_entities", []))
+        )
         workday_evidence = self._compute_workday_evidence(
             workday_entity=str(house_state_cfg.get("workday_entity", "") or ""),
             calendar_result=calendar_result,
@@ -201,6 +204,7 @@ class HouseStateDomain:
             media_active=media_active,
             media_inputs=media_inputs,
             charging_evidence=charging_evidence,
+            work_activity_evidence=work_activity_evidence,
             workday_evidence=workday_evidence,
             calendar_result=calendar_result,
             house_state_cfg=house_state_cfg,
@@ -317,10 +321,17 @@ class HouseStateDomain:
             for entity_id in list(merged.get("sleep_charging_entities", []) or [])
             if str(entity_id).strip()
         ]
+        merged["work_activity_entities"] = [
+            str(entity_id).strip()
+            for entity_id in list(merged.get("work_activity_entities", []) or [])
+            if str(entity_id).strip()
+        ]
         merged["workday_entity"] = str(merged.get("workday_entity", "") or "").strip()
         merged["sleep_enter_min"] = int(merged.get("sleep_enter_min", 10))
         merged["sleep_exit_min"] = int(merged.get("sleep_exit_min", 2))
         merged["work_enter_min"] = int(merged.get("work_enter_min", 5))
+        merged["work_activity_required"] = bool(merged.get("work_activity_required", False))
+        merged["work_activity_grace_min"] = int(merged.get("work_activity_grace_min", 20))
         merged["relax_enter_min"] = int(merged.get("relax_enter_min", 2))
         merged["relax_exit_min"] = int(merged.get("relax_exit_min", 10))
         merged["sleep_requires_media_off"] = bool(merged.get("sleep_requires_media_off", True))
@@ -336,6 +347,7 @@ class HouseStateDomain:
             "sleep_enter_min": int(cfg["sleep_enter_min"]),
             "sleep_exit_min": int(cfg["sleep_exit_min"]),
             "work_enter_min": int(cfg["work_enter_min"]),
+            "work_activity_grace_min": int(cfg["work_activity_grace_min"]),
             "relax_enter_min": int(cfg["relax_enter_min"]),
             "relax_exit_min": int(cfg["relax_exit_min"]),
         }
@@ -350,6 +362,7 @@ class HouseStateDomain:
         media_active: bool,
         media_inputs: dict[str, Any],
         charging_evidence: dict[str, Any],
+        work_activity_evidence: dict[str, Any],
         workday_evidence: dict[str, Any],
         calendar_result: CalendarResult | None,
         house_state_cfg: dict[str, Any],
@@ -371,6 +384,12 @@ class HouseStateDomain:
         sleep_allowed_by_charging = sleep_charging_min_count is None or int(
             charging_evidence.get("active_count", 0)
         ) >= int(sleep_charging_min_count)
+        work_activity_required = bool(house_state_cfg.get("work_activity_required", False))
+        work_activity_active = int(work_activity_evidence.get("active_count", 0)) > 0
+        work_base_candidate = bool(
+            anyone_home and work_window and bool(workday_evidence.get("is_workday", True))
+        )
+        work_activity_requirement_met = (not work_activity_required) or work_activity_active
         relax_reason = (
             "anyone_home+relax_mode"
             if bool(anyone_home and relax_mode)
@@ -420,19 +439,29 @@ class HouseStateDomain:
                 },
             },
             "work_candidate": {
-                "state": bool(
-                    anyone_home and work_window and bool(workday_evidence.get("is_workday", True))
-                ),
+                "state": bool(work_base_candidate and work_activity_requirement_met),
                 "reason": (
-                    "anyone_home+work_window+workday"
-                    if bool(workday_evidence.get("is_workday", True))
+                    "anyone_home+work_window+workday+work_activity"
+                    if work_base_candidate and work_activity_required and work_activity_active
+                    else "anyone_home+work_window+workday"
+                    if work_base_candidate and work_activity_requirement_met
+                    else "anyone_home+work_window+workday+missing_work_activity"
+                    if work_base_candidate and work_activity_required
                     else "anyone_home+work_window+not_workday"
                 ),
                 "inputs": {
                     "anyone_home": anyone_home,
                     "work_window": work_window,
+                    "work_base_candidate": work_base_candidate,
                     "workday_entity": str(house_state_cfg.get("workday_entity", "") or ""),
                     "workday_evidence": dict(workday_evidence),
+                    "work_activity_required": work_activity_required,
+                    "work_activity_entities": list(
+                        house_state_cfg.get("work_activity_entities", [])
+                    ),
+                    "work_activity": work_activity_evidence,
+                    "work_activity_active": work_activity_active,
+                    "work_activity_requirement_met": work_activity_requirement_met,
                     **calendar_flags,
                 },
             },
@@ -680,6 +709,7 @@ class HouseStateDomain:
         sleep_enter_s = timers["sleep_enter_min"] * 60
         sleep_exit_s = timers["sleep_exit_min"] * 60
         work_enter_s = timers["work_enter_min"] * 60
+        work_activity_grace_s = timers["work_activity_grace_min"] * 60
         relax_enter_s = timers["relax_enter_min"] * 60
         relax_exit_s = timers["relax_exit_min"] * 60
 
@@ -842,6 +872,33 @@ class HouseStateDomain:
                     "retention_reason": "candidate_still_active",
                 },
             )
+        work_trace = self._candidate_trace.get("work_candidate", {})
+        work_inputs = dict(work_trace.get("inputs", {}))
+        if (
+            current == "working"
+            and bool(work_inputs.get("work_activity_required"))
+            and bool(work_inputs.get("work_base_candidate"))
+            and not bool(work_inputs.get("work_activity_active"))
+        ):
+            work_inactive_for = self._candidate_inactive_for("work_candidate", now_monotonic)
+            if work_inactive_for < work_activity_grace_s:
+                self._schedule_candidate_recheck(
+                    schedule_recheck=schedule_recheck,
+                    candidate="work_candidate",
+                    delay_s=work_activity_grace_s - work_inactive_for,
+                    label="work_activity_grace",
+                )
+                return (
+                    "working",
+                    "work_activity_grace",
+                    {
+                        "action": "retain",
+                        "source_candidate": "work_candidate",
+                        "retained_state": "working",
+                        "pending_kind": "activity_grace",
+                        "pending_remaining_s": work_activity_grace_s - work_inactive_for,
+                    },
+                )
 
         work_for = self._candidate_active_for("work_candidate", now_monotonic)
         if work_on and work_for >= work_enter_s:

@@ -132,6 +132,12 @@ class _GeneralStepsMixin:
             vol.Optional("workday_entity", default=house_state_cfg.get("workday_entity"))
         ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"])
         schema_map[
+            vol.Optional(
+                "work_activity_entities",
+                default=list(house_state_cfg.get("work_activity_entities", [])),
+            )
+        ] = _entity_selector(["input_boolean", "binary_sensor", "sensor"], multiple=True)
+        schema_map[
             vol.Optional("sleep_enter_min", default=house_state_cfg.get("sleep_enter_min", 10))
         ] = vol.All(vol.Coerce(int), vol.Range(min=0))
         schema_map[
@@ -139,6 +145,18 @@ class _GeneralStepsMixin:
         ] = vol.All(vol.Coerce(int), vol.Range(min=0))
         schema_map[
             vol.Optional("work_enter_min", default=house_state_cfg.get("work_enter_min", 5))
+        ] = vol.All(vol.Coerce(int), vol.Range(min=0))
+        schema_map[
+            vol.Optional(
+                "work_activity_required",
+                default=house_state_cfg.get("work_activity_required", False),
+            )
+        ] = bool
+        schema_map[
+            vol.Optional(
+                "work_activity_grace_min",
+                default=house_state_cfg.get("work_activity_grace_min", 20),
+            )
         ] = vol.All(vol.Coerce(int), vol.Range(min=0))
         schema_map[
             vol.Optional("relax_enter_min", default=house_state_cfg.get("relax_enter_min", 2))
@@ -192,10 +210,17 @@ class _GeneralStepsMixin:
                 for entity_id in list(user_input.get("sleep_charging_entities", []) or [])
                 if str(entity_id).strip()
             ],
+            "work_activity_entities": [
+                str(entity_id).strip()
+                for entity_id in list(user_input.get("work_activity_entities", []) or [])
+                if str(entity_id).strip()
+            ],
             "workday_entity": str(user_input.get("workday_entity", "") or "").strip(),
             "sleep_enter_min": int(user_input.get("sleep_enter_min", 10)),
             "sleep_exit_min": int(user_input.get("sleep_exit_min", 2)),
             "work_enter_min": int(user_input.get("work_enter_min", 5)),
+            "work_activity_required": bool(user_input.get("work_activity_required", False)),
+            "work_activity_grace_min": int(user_input.get("work_activity_grace_min", 20)),
             "relax_enter_min": int(user_input.get("relax_enter_min", 2)),
             "relax_exit_min": int(user_input.get("relax_exit_min", 10)),
             "sleep_requires_media_off": bool(user_input.get("sleep_requires_media_off", True)),

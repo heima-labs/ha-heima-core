@@ -92,6 +92,9 @@ Target evolution:
   - `media_active_entities`
   - `sleep_charging_entities`
   - `workday_entity`
+  - `work_activity_entities`
+  - `work_activity_required`
+  - `work_activity_grace_min`
   - house-state enter/exit timer settings
   - `sleep_requires_media_off`
   - `sleep_charging_min_count`

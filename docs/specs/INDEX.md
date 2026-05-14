@@ -19,9 +19,11 @@ Interpretation notes:
   paths listed below
 
 Related practical guides live outside this tree:
+- `docs/guides/heima_v2_admin_guide.md`
+- `docs/guides/house_state_behavior_guide.md`
 - `docs/guides/scene_and_script_usage.md`
 - `docs/guides/plugin_authoring.md`
-- `docs/guides/options_flow_configuration_guide.md`
+- `docs/guides/options_flow_configuration_guide.md` (compatibility redirect)
 
 ## Core
 

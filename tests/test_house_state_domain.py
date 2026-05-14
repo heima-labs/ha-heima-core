@@ -17,6 +17,23 @@ def _fake_hass():
     )
 
 
+def _fake_hass_with_states(entity_states: dict[str, str]):
+    def _get(entity_id: str):
+        if entity_id not in entity_states:
+            return None
+        return SimpleNamespace(
+            entity_id=entity_id,
+            state=entity_states[entity_id],
+            attributes={},
+        )
+
+    return SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+
+
 def _fake_state(current_house_state: str | None = None):
     return SimpleNamespace(
         get_sensor=lambda key: current_house_state if key == "heima_house_state" else None,
@@ -93,6 +110,155 @@ def test_house_state_diagnostics_expose_candidate_and_resolution_trace(
     assert diagnostics["candidate_summary"]["work_candidate"]["status"] == "confirmed"
     assert diagnostics["config"]["sleep_enter_min"] == 10
     assert diagnostics["config"]["media_active_entities"] == []
+
+
+def test_house_state_work_activity_required_blocks_work_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass_with_states({"binary_sensor.stefano_mac_active_recent": "off"})
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 3000.0,
+    )
+
+    result = domain.compute(
+        options={
+            "house_state_config": {
+                "work_activity_entities": ["binary_sensor.stefano_mac_active_recent"],
+                "work_activity_required": True,
+            }
+        },
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+
+    assert result.house_state == "home"
+    assert result.house_reason == "default"
+    diagnostics = domain.diagnostics()
+    work_trace = diagnostics["candidate_trace"]["work_candidate"]
+    assert work_trace["state"] is False
+    assert work_trace["inputs"]["work_base_candidate"] is True
+    assert work_trace["inputs"]["work_activity_required"] is True
+    assert work_trace["inputs"]["work_activity_active"] is False
+    assert work_trace["reason"] == "anyone_home+work_window+workday+missing_work_activity"
+
+
+def test_house_state_work_activity_required_enters_after_activity_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass_with_states({"binary_sensor.stefano_mac_active_recent": "on"})
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 4000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+
+    options = {
+        "house_state_config": {
+            "work_activity_entities": ["binary_sensor.stefano_mac_active_recent"],
+            "work_activity_required": True,
+        }
+    }
+    result = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    assert result.house_state == "home"
+
+    monotonic = 4000.0 + (5 * 60) + 1
+    result = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+
+    assert result.house_state == "working"
+    assert result.house_reason == "work_candidate_confirmed"
+    assert (
+        domain.diagnostics()["candidate_trace"]["work_candidate"]["inputs"]["work_activity_active"]
+        is True
+    )
+
+
+def test_house_state_work_activity_grace_retains_working_after_activity_stops(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    entity_states = {"binary_sensor.stefano_mac_active_recent": "on"}
+    hass = _fake_hass_with_states(entity_states)
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 5000.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+    options = {
+        "house_state_config": {
+            "work_activity_entities": ["binary_sensor.stefano_mac_active_recent"],
+            "work_activity_required": True,
+            "work_activity_grace_min": 20,
+        }
+    }
+    domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    monotonic = 5000.0 + (5 * 60) + 1
+    entered = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    assert entered.house_state == "working"
+
+    entity_states["binary_sensor.stefano_mac_active_recent"] = "off"
+    monotonic += 10 * 60
+    retained = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("working"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    assert retained.house_state == "working"
+    assert retained.house_reason == "work_activity_grace"
+    assert domain.diagnostics()["resolution_trace"]["decision"]["pending_kind"] == (
+        "activity_grace"
+    )
+
+    monotonic += 21 * 60
+    expired = domain.compute(
+        options=options,
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("working"),
+        calendar_result=CalendarResult(is_wfh_today=True),
+    )
+    assert expired.house_state == "home"
+    assert expired.house_reason == "default"
 
 
 def test_house_state_relax_mode_is_immediate(monkeypatch: pytest.MonkeyPatch):
@@ -295,6 +461,7 @@ def test_house_state_domain_reads_persisted_house_state_config(monkeypatch: pyte
         "sleep_enter_min": 12,
         "sleep_exit_min": 4,
         "work_enter_min": 7,
+        "work_activity_grace_min": 20,
         "relax_enter_min": 3,
         "relax_exit_min": 11,
     }

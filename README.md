@@ -67,7 +67,7 @@ See `docs/specs/heima_v2_spec.md` for the full specification.
 Initial configuration is performed by the installer through the Options Flow:
 Settings → Integrations → Heima → Configure.
 
-See `docs/guides/options_flow_configuration_guide.md`.
+See `docs/guides/heima_v2_admin_guide.md`.
 
 ## Project icon
 
@@ -95,6 +95,7 @@ Used to verify v2 behavior with real HA entities before each phase is closed.
 - `docs/specs/heima_v2_spec.md` — active specification (v2.1.0-draft)
 - `docs/specs/INDEX.md` — full spec index
 - `docs/v2_dev_plan.md` — development plan and current phase status
-- `docs/guides/options_flow_configuration_guide.md` — Options Flow configuration guide
+- `docs/guides/heima_v2_admin_guide.md` — complete administrator guide for config flow and options flow
+- `docs/guides/house_state_behavior_guide.md` — practical guide to house-state behavior and expectations
 - `docs/guides/plugin_authoring.md` — how to write learning and reaction plugins
 - `docs/guides/heima_operations_guide.md` — monitoring and operations guide

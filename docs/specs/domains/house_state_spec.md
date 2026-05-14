@@ -140,6 +140,16 @@ The following bindings are part of the current v1.x contract:
   - counted as corroboration inputs for `sleep_candidate`
 - `workday_entity`
   - optional explicit workday indicator when calendar is not sufficient
+- `work_activity_entities`
+  - zero or more boolean-like entities that indicate recent human work activity
+  - intended for workstation/session/input/call activity, not generic "computer is on"
+- `work_activity_required`
+  - bool, default `false`
+  - when true, `working` entry requires at least one active work activity entity
+- `work_activity_grace_min`
+  - integer minutes, default `20`
+  - when `working` is already active, absence of work activity is tolerated for this grace period
+    while the base work candidate remains true
 - `sleep_requires_media_off`
   - bool, default `true`
 - `sleep_charging_min_count`
@@ -186,6 +196,7 @@ Default built-in rule:
 - `anyone_home == on`
 - `work_window == on`
 - effective workday evidence is positive
+- if `work_activity_required == true`, at least one configured `work_activity_entities` input is active
 - no harder home substate is active
 
 Effective workday evidence is resolved as:
@@ -196,6 +207,28 @@ Effective workday evidence is resolved as:
 4. else -> `true`
 
 This preserves usefulness even without explicit workday configuration.
+
+Work activity evidence is intentionally separate from `media_active`.
+It should represent recent human work activity, for example:
+- unlocked workstation plus recent keyboard/mouse activity
+- active video call / meeting signal
+- desk presence combined with workstation activity
+
+It should not represent:
+- computer powered on
+- laptop charging
+- high CPU load
+- long-running render, backup, download, or batch job
+- device tracker online
+
+When `work_activity_required == false`, work activity is diagnostic/corroborating evidence only and
+does not change the legacy `work_window + workday` behavior.
+
+When `work_activity_required == true`:
+- entering `working` requires active work activity
+- retaining `working` after activity stops is allowed only for `work_activity_grace_min`
+- after the grace expires, if work activity is still absent, the resolver falls back to the next
+  applicable substate, normally `home`
 
 ### 6.4 `relax_candidate`
 
@@ -229,6 +262,7 @@ Default timers:
 - `work_enter_min = 5`
 - `relax_enter_min = 2`
 - `relax_exit_min = 10`
+- `work_activity_grace_min = 20`
 
 Notes:
 - `sleeping` is conservative on entry and fast on exit
@@ -275,6 +309,10 @@ Rules:
 - if neither `sleeping` nor `relax` is active
 - and `work_candidate` has persisted for `work_enter_min`
 - then effective state becomes `working`
+- if `current == working`, `work_activity_required == true`, the base work candidate remains true,
+  and work activity drops out, retain `working` until `work_activity_grace_min` expires
+- once the work activity grace expires, `working` is no longer retained unless the full
+  `work_candidate` is active again
 
 ### 8.4 Home fallback
 
@@ -321,6 +359,7 @@ Allowed reason families:
 - `relax_candidate_confirmed`
 - `relax_sticky_exit_guard`
 - `work_candidate_confirmed`
+- `work_activity_grace`
 - `default`
 
 The exact string set may evolve, but reasons must distinguish:
@@ -358,6 +397,7 @@ Suggested shape:
     "sleep_enter_min": 10,
     "sleep_exit_min": 2,
     "work_enter_min": 5,
+    "work_activity_grace_min": 20,
     "relax_enter_min": 2,
     "relax_exit_min": 10
   },

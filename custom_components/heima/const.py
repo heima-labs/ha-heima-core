@@ -56,10 +56,13 @@ HOUSE_SIGNAL_NAMES = [
 DEFAULT_HOUSE_STATE_CONFIG: dict[str, object] = {
     "media_active_entities": [],
     "sleep_charging_entities": [],
+    "work_activity_entities": [],
     "workday_entity": "",
     "sleep_enter_min": 10,
     "sleep_exit_min": 2,
     "work_enter_min": 5,
+    "work_activity_required": False,
+    "work_activity_grace_min": 20,
     "relax_enter_min": 2,
     "relax_exit_min": 10,
     "sleep_requires_media_off": True,
