@@ -937,6 +937,8 @@ Important fields:
 - action entities
 
 Use a corroboration signal only when it materially reduces false positives.
+Learned room-signal assists use "bucket or higher" matching for elevated corroboration buckets
+such as warm/hot temperature or elevated/high CO2.
 
 ### Darkness Lighting Assist
 
@@ -951,6 +953,9 @@ Important fields:
 - action
 - brightness
 - color temperature
+
+Learned darkness proposals use the `dim` bucket with "bucket or lower" matching, so they still
+apply when the room is darker than the learned threshold.
 
 Use only with reliable lux or darkness signals.
 

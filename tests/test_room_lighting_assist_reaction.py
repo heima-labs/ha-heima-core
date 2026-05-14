@@ -392,3 +392,55 @@ def test_build_room_lighting_assist_reaction_requires_primary_bucket():
     )
 
     assert reaction is None
+
+
+def test_build_room_lighting_assist_reaction_honors_learned_lte_bucket_match():
+    hass = MagicMock()
+    bucket_state = {"living:room_lux": "dark"}
+    hass.states.get.side_effect = lambda eid: (
+        SimpleNamespace(state="off") if eid == "light.living_main" else None
+    )
+    engine = SimpleNamespace(
+        _hass=hass,
+        signal_bucket=lambda room_id, signal_name: bucket_state.get(f"{room_id}:{signal_name}"),
+        _entry=SimpleNamespace(
+            options={
+                "rooms": [
+                    {
+                        "room_id": "living",
+                        "signals": [
+                            {
+                                "signal_name": "room_lux",
+                                "buckets": [
+                                    {"label": "dark", "upper_bound": 30.0},
+                                    {"label": "dim", "upper_bound": 100.0},
+                                    {"label": "ok", "upper_bound": 300.0},
+                                    {"label": "bright", "upper_bound": None},
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+
+    reaction = build_room_lighting_assist_reaction(
+        engine,
+        "darkness-test",
+        {
+            "room_id": "living",
+            "primary_signal_entities": ["sensor.living_room_lux"],
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "dim",
+            "primary_bucket_match_mode": "lte",
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+
+    assert reaction is not None
+    ts = datetime(2026, 3, 23, 18, 0, tzinfo=timezone.utc).isoformat()
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["living"], ts=ts)])
+
+    assert len(steps) == 1
+    assert steps[0].params["entity_id"] == "light.living_main"

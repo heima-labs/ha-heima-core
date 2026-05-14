@@ -291,10 +291,18 @@ def _room_signal_assist_should_suppress_followup(
         return False
     if candidate_primary_bucket != accepted_primary_bucket:
         return False
+    if _bucket_match_mode(candidate_cfg.get("primary_bucket_match_mode")) != _bucket_match_mode(
+        accepted_cfg.get("primary_bucket_match_mode")
+    ):
+        return False
 
     candidate_corroboration_bucket = _normalize_str(candidate_cfg.get("corroboration_bucket"))
     accepted_corroboration_bucket = _normalize_str(accepted_cfg.get("corroboration_bucket"))
     if candidate_corroboration_bucket != accepted_corroboration_bucket:
+        return False
+    if _bucket_match_mode(
+        candidate_cfg.get("corroboration_bucket_match_mode")
+    ) != _bucket_match_mode(accepted_cfg.get("corroboration_bucket_match_mode")):
         return False
 
     if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
@@ -350,6 +358,10 @@ def _room_darkness_lighting_assist_should_suppress_followup(
     if not candidate_primary_bucket or not accepted_primary_bucket:
         return False
     if candidate_primary_bucket != accepted_primary_bucket:
+        return False
+    if _bucket_match_mode(candidate_cfg.get("primary_bucket_match_mode")) != _bucket_match_mode(
+        accepted_cfg.get("primary_bucket_match_mode")
+    ):
         return False
     if _sorted_strings(candidate_cfg.get("primary_signal_entities")) != _sorted_strings(
         accepted_cfg.get("primary_signal_entities")
@@ -532,6 +544,13 @@ def _steps_count(value: Any) -> int:
 
 def _normalize_str(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _bucket_match_mode(value: Any) -> str:
+    normalized = str(value or "eq").strip().lower()
+    if normalized in {"eq", "lte", "gte"}:
+        return normalized
+    return "eq"
 
 
 def _delay_minute(value: Any) -> int | None:

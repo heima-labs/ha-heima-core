@@ -290,6 +290,7 @@ async def test_cross_domain_analyzer_emits_room_signal_assist_proposal():
     ]
     assert proposal.suggested_reaction_config["corroboration_signal_name"] == "room_temperature"
     assert proposal.suggested_reaction_config["corroboration_bucket"] == "warm"
+    assert proposal.suggested_reaction_config["corroboration_bucket_match_mode"] == "gte"
     assert proposal.suggested_reaction_config["observed_followup_entities"] == ["fan.bathroom_fan"]
     assert proposal.suggested_reaction_config["episodes_observed"] >= 5
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
@@ -407,6 +408,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert proposal.suggested_reaction_config["primary_signal_entities"] == ["sensor.office_co2"]
     assert proposal.suggested_reaction_config["primary_signal_name"] == "room_co2"
     assert proposal.suggested_reaction_config["primary_bucket"] == "elevated"
+    assert proposal.suggested_reaction_config["primary_bucket_match_mode"] == "gte"
     assert proposal.suggested_reaction_config["observed_followup_entities"] == [
         "fan.office_ventilation"
     ]
@@ -457,6 +459,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         "sensor.living_room_lux"
     ]
     assert proposal.suggested_reaction_config["primary_bucket"] == "dim"
+    assert proposal.suggested_reaction_config["primary_bucket_match_mode"] == "lte"
     assert proposal.suggested_reaction_config["entity_steps"] == [
         {
             "entity_id": "light.living_main",

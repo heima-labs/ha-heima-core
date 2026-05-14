@@ -141,6 +141,64 @@ def test_composite_lifecycle_does_not_suppress_room_signal_when_corroboration_bu
     assert hooks.should_suppress_followup(candidate, accepted) is False
 
 
+def test_composite_lifecycle_does_not_suppress_room_signal_when_match_mode_expands():
+    hooks = composite_room_assist_lifecycle_hooks()
+    accepted = _proposal(
+        "room_signal_assist",
+        {
+            "room_id": "bathroom",
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [{"domain": "script", "target": "script.fan_on", "action": "script.turn_on"}],
+        },
+    )
+    candidate = _proposal(
+        "room_signal_assist",
+        {
+            "room_id": "bathroom",
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
+            "corroboration_bucket_match_mode": "gte",
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "steps": [{"domain": "script", "target": "script.fan_on", "action": "script.turn_on"}],
+        },
+    )
+
+    assert hooks.should_suppress_followup(candidate, accepted) is False
+
+
+def test_composite_lifecycle_does_not_suppress_darkness_when_match_mode_expands():
+    hooks = composite_room_assist_lifecycle_hooks()
+    accepted = _proposal(
+        "room_darkness_lighting_assist",
+        {
+            "room_id": "living",
+            "primary_bucket": "dim",
+            "primary_signal_entities": ["sensor.living_lux"],
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+    candidate = _proposal(
+        "room_darkness_lighting_assist",
+        {
+            "room_id": "living",
+            "primary_bucket": "dim",
+            "primary_bucket_match_mode": "lte",
+            "primary_signal_entities": ["sensor.living_lux"],
+            "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
+        },
+    )
+
+    assert hooks.should_suppress_followup(candidate, accepted) is False
+
+
 def test_composite_lifecycle_suppresses_vacancy_lighting_when_delay_and_steps_match():
     hooks = composite_room_assist_lifecycle_hooks()
     accepted = _proposal(

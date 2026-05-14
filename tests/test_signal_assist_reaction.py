@@ -557,3 +557,122 @@ def test_build_room_cooling_assist_reaction_requires_primary_signal_entities():
     )
 
     assert reaction is None
+
+
+def test_build_room_signal_assist_reaction_honors_learned_air_quality_gte_bucket_match():
+    states = {
+        "office:room_co2": "high",
+    }
+    engine = SimpleNamespace(
+        _hass=MagicMock(),
+        signal_bucket=lambda room_id, signal_name: states.get(f"{room_id}:{signal_name}"),
+        signal_burst_recent=lambda room_id, signal_name, *, window_s: False,
+        _entry=SimpleNamespace(
+            options={
+                "rooms": [
+                    {
+                        "room_id": "office",
+                        "signals": [
+                            {
+                                "signal_name": "room_co2",
+                                "buckets": [
+                                    {"label": "ok", "upper_bound": 800.0},
+                                    {"label": "elevated", "upper_bound": 1200.0},
+                                    {"label": "high", "upper_bound": None},
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+
+    reaction = build_room_signal_assist_reaction(
+        engine,
+        "air-quality-1",
+        {
+            "reaction_type": "room_air_quality_assist",
+            "room_id": "office",
+            "primary_signal_entities": ["sensor.office_co2"],
+            "primary_signal_name": "room_co2",
+            "primary_bucket": "elevated",
+            "primary_bucket_match_mode": "gte",
+            "steps": [
+                {"domain": "fan", "target": "fan.office", "action": "fan.turn_on"}
+            ],
+        },
+    )
+
+    assert reaction is not None
+    ts = datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc).isoformat()
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["office"], ts=ts)])
+
+    assert len(steps) == 1
+    assert steps[0].action == "fan.turn_on"
+
+
+def test_build_room_signal_assist_reaction_honors_learned_corroboration_gte_bucket_match():
+    states = {
+        "bathroom:room_humidity": "high",
+        "bathroom:room_temperature": "hot",
+    }
+    engine = SimpleNamespace(
+        _hass=MagicMock(),
+        signal_bucket=lambda room_id, signal_name: states.get(f"{room_id}:{signal_name}"),
+        signal_burst_recent=lambda room_id, signal_name, *, window_s: False,
+        _entry=SimpleNamespace(
+            options={
+                "rooms": [
+                    {
+                        "room_id": "bathroom",
+                        "signals": [
+                            {
+                                "signal_name": "room_humidity",
+                                "buckets": [
+                                    {"label": "low", "upper_bound": 40.0},
+                                    {"label": "ok", "upper_bound": 70.0},
+                                    {"label": "high", "upper_bound": None},
+                                ],
+                            },
+                            {
+                                "signal_name": "room_temperature",
+                                "buckets": [
+                                    {"label": "cool", "upper_bound": 20.0},
+                                    {"label": "ok", "upper_bound": 24.0},
+                                    {"label": "warm", "upper_bound": 27.0},
+                                    {"label": "hot", "upper_bound": None},
+                                ],
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+
+    reaction = build_room_signal_assist_reaction(
+        engine,
+        "humidity-1",
+        {
+            "reaction_type": "room_signal_assist",
+            "room_id": "bathroom",
+            "primary_signal_entities": ["sensor.bathroom_humidity"],
+            "primary_signal_name": "room_humidity",
+            "primary_bucket": "high",
+            "corroboration_signal_entities": ["sensor.bathroom_temperature"],
+            "corroboration_signal_name": "room_temperature",
+            "corroboration_bucket": "warm",
+            "corroboration_bucket_match_mode": "gte",
+            "steps": [
+                {"domain": "fan", "target": "fan.bathroom", "action": "fan.turn_on"}
+            ],
+        },
+    )
+
+    assert reaction is not None
+    ts = datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc).isoformat()
+    steps = reaction.evaluate([_snapshot(occupied_rooms=["bathroom"], ts=ts)])
+
+    assert len(steps) == 1
+    assert steps[0].action == "fan.turn_on"
