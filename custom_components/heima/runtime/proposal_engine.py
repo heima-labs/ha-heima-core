@@ -211,7 +211,8 @@ class ProposalEngine:
 
         merged = list(self._proposals)
         for candidate in generated:
-            normalized_candidate = self._normalize_generated_candidate(candidate, merged)
+            reaction_proposals = [p for p in merged if isinstance(p, ReactionProposal)]
+            normalized_candidate = self._normalize_generated_candidate(candidate, reaction_proposals)
             if normalized_candidate is None:
                 continue
             now = datetime.now(UTC).isoformat()
@@ -220,7 +221,8 @@ class ProposalEngine:
             matching = [
                 (idx, current)
                 for idx, current in enumerate(merged)
-                if self._identity_key(current) == identity_key
+                if isinstance(current, ReactionProposal)
+                and self._identity_key(current) == identity_key
             ]
             accepted_matches = [
                 (idx, current) for idx, current in matching if current.status == "accepted"
@@ -282,7 +284,7 @@ class ProposalEngine:
             accepted_match = _latest_proposal_match(accepted_matches)
             if accepted_match is None and followup_slot_key:
                 accepted_match = self._fallback_followup_match(
-                    merged,
+                    [p for p in merged if isinstance(p, ReactionProposal)],
                     normalized_candidate,
                     followup_slot_key=followup_slot_key,
                 )
@@ -560,6 +562,8 @@ class ProposalEngine:
             return submitted.proposal_id
 
         existing = self._proposals[existing_idx]
+        if isinstance(existing, ActivityProposal):
+            return existing.proposal_id
         if existing.status != "pending":
             reopened = replace(
                 existing,

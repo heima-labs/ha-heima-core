@@ -307,7 +307,7 @@ def _section(
 def _max_severity(values: Any) -> ValidationSeverity:
     severity: ValidationSeverity = "ok"
     for value in values:
-        candidate = value if value in _SEVERITY_RANK else "ok"
+        candidate: ValidationSeverity = value if value in _SEVERITY_RANK else "ok"
         if _SEVERITY_RANK[candidate] > _SEVERITY_RANK[severity]:
             severity = candidate
     return severity

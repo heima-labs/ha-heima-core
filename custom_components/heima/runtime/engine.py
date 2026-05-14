@@ -905,8 +905,16 @@ class HeimaEngine:
             occupied_rooms=occupied_rooms,
             now_utc=now_utc,
         )
-        activity_signals = signal_buckets.get(ActivitySignal, [])
-        house_state_signals = signal_buckets.get(HouseStateSignal, [])
+        activity_signals = [
+            signal
+            for signal in signal_buckets.get(ActivitySignal, [])
+            if isinstance(signal, ActivitySignal)
+        ]
+        house_state_signals = [
+            signal
+            for signal in signal_buckets.get(HouseStateSignal, [])
+            if isinstance(signal, HouseStateSignal)
+        ]
         activity_result = self._activity_domain.evaluate(
             self._activity_observations(),
             self._state,

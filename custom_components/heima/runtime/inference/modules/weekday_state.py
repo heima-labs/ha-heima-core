@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from ..base import HeimaLearningModule, InferenceContext
+from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import HouseStateSignal, Importance
 
 _MIN_SUPPORT = 10
@@ -21,10 +21,10 @@ class WeekdayStateModule(HeimaLearningModule):
         self._slots: dict[tuple[int, int], tuple[str, int, float]] = {}
         self._ready = False
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Compute P(house_state | weekday, hour_bucket) from snapshot history."""
         counts: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: defaultdict(int))
-        for snapshot in store.snapshots():  # type: ignore[union-attr]
+        for snapshot in store.snapshots():
             if not snapshot.house_state:
                 continue
             key = (snapshot.weekday, snapshot.minute_of_day // 60)

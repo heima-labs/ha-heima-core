@@ -1,5 +1,6 @@
 """Learning analyzers package."""
 
+from ..plugin_contracts import IBehaviorAnalyzer
 from .activity import ActivityAnalyzer
 from .base import IPatternAnalyzer, ReactionProposal
 from .cross_domain import (
@@ -20,7 +21,7 @@ from .registry import (
 from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
 
 
-def builtin_learning_pattern_plugins() -> tuple[IPatternAnalyzer, ...]:
+def builtin_learning_pattern_plugins() -> tuple[IBehaviorAnalyzer, ...]:
     """Return the built-in Learning Pattern Plugins enabled by default."""
     return create_builtin_learning_plugin_registry().analyzers()
 

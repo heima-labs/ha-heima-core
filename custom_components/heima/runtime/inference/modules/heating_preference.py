@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from ..base import HeimaLearningModule, InferenceContext
+from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import HeatingSignal, Importance
 
 _MIN_SUPPORT = 10
@@ -21,10 +21,10 @@ class HeatingPreferenceModule(HeimaLearningModule):
         self._model: dict[str, tuple[float, int]] = {}
         self._ready = False
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Compute mean setpoint per house_state from snapshot history."""
         buckets: dict[str, list[float]] = defaultdict(list)
-        for snapshot in store.snapshots():  # type: ignore[union-attr]
+        for snapshot in store.snapshots():
             if snapshot.heating_setpoint is not None and snapshot.house_state:
                 buckets[snapshot.house_state].append(snapshot.heating_setpoint)
 

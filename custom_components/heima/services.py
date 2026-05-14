@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -505,6 +505,11 @@ async def async_register_services(hass: HomeAssistant) -> None:
         action = str(payload.get("action") or "").strip()
         if not proposal_id:
             raise ServiceValidationError("Missing required proposal_id")
+        if action not in {"approved", "rejected"}:
+            raise ServiceValidationError("Invalid proposal action")
+        decision: Literal["approved", "rejected"] = (
+            "approved" if action == "approved" else "rejected"
+        )
 
         coordinators = list(_iter_coordinators(hass))
         if not coordinators:
@@ -515,7 +520,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             matched = (
                 await coordinator.async_review_proposal(
                     proposal_id,
-                    decision=action,
+                    decision=decision,
                     approved_by="resident",
                 )
                 or matched

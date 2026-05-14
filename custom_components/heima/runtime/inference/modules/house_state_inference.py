@@ -11,7 +11,7 @@ from ..approval_store import (
     house_state_context_key,
     house_state_context_snapshot,
 )
-from ..base import HeimaLearningModule, InferenceContext
+from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import HouseStateSignal, Importance
 
 _MIN_SUPPORT = 3
@@ -69,14 +69,14 @@ class HouseStateInferenceModule(HeimaLearningModule):
         self._approved_context_keys = _normalized_keys(approved)
         self._rejected_context_keys = _normalized_keys(rejected)
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Compute P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)."""
         counts: dict[tuple[int, int, tuple[str, ...], bool], dict[str, int]] = defaultdict(
             lambda: defaultdict(int)
         )
         analyzed = 0
 
-        for snapshot in store.snapshots():  # type: ignore[union-attr]
+        for snapshot in store.snapshots():
             if not snapshot.house_state:
                 continue
             key = _slot_key(

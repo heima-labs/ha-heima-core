@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from ...proposal_engine import ActivityProposal
 from ..approval_store import activity_context_key
-from ..base import HeimaLearningModule, InferenceContext
+from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import ActivitySignal, Importance
 
 _MIN_SUPPORT = 10
@@ -70,13 +70,13 @@ class ActivityInferenceModule(HeimaLearningModule):
             key: entry for key, entry in self._model.items() if key in self._approved_patterns
         }
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Compute support/confidence for approved composite activity proposals."""
         support: dict[str, int] = {key: 0 for key in self._approved_patterns}
         totals: dict[str, int] = {key: 0 for key in self._approved_patterns}
         analyzed = 0
 
-        for snapshot in store.snapshots():  # type: ignore[union-attr]
+        for snapshot in store.snapshots():
             active_set = _normalized_pattern(getattr(snapshot, "detected_activities", ()))
             if not active_set:
                 continue

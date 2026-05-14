@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from .signals import InferenceSignal
 
@@ -33,11 +34,11 @@ class ILearningModule(Protocol):
         """Stable module identifier."""
         ...
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Read snapshot history and update the module model."""
         ...
 
-    def infer(self, context: InferenceContext) -> list[InferenceSignal]:
+    def infer(self, context: InferenceContext) -> Sequence[InferenceSignal]:
         """Return synchronous inference signals for the current cycle."""
         ...
 
@@ -51,11 +52,11 @@ class HeimaLearningModule:
 
     module_id = "heima_learning_module"
 
-    async def analyze(self, store: object) -> None:
+    async def analyze(self, store: SnapshotHistoryStore) -> None:
         """Default modules have no offline model."""
         del store
 
-    def infer(self, context: InferenceContext) -> list[InferenceSignal]:
+    def infer(self, context: InferenceContext) -> Sequence[InferenceSignal]:
         """Return no signals until a concrete module implements inference."""
         del context
         return []
@@ -63,3 +64,11 @@ class HeimaLearningModule:
     def diagnostics(self) -> dict[str, object]:
         """Return default diagnostics."""
         return {"module_id": self.module_id, "ready": False}
+
+
+class SnapshotHistoryStore(Protocol):
+    """Snapshot history source consumed by offline learning modules."""
+
+    def snapshots(self) -> Iterable[Any]:
+        """Return persisted house snapshots."""
+        ...
