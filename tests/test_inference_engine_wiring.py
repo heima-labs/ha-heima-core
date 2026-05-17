@@ -213,7 +213,7 @@ async def test_record_snapshot_builds_house_snapshot_from_decision_snapshot(
         house_state=snap.house_state,
         heating_setpoint=snap.heating_setpoint,
         lighting_scenes=dict(snap.lighting_intents or {}),
-        security_armed=snap.security_state not in ("disarmed", "unknown", "disabled", ""),
+        security_state=snap.security_state,
     )
 
     written = await store.async_append_if_changed(house_snap)
@@ -224,11 +224,11 @@ async def test_record_snapshot_builds_house_snapshot_from_decision_snapshot(
     assert s.heating_setpoint == 21.0
     assert s.lighting_scenes == {"kitchen": "bright", "living_room": "dim"}
     assert s.room_occupancy == {"kitchen": True, "living_room": True}
-    assert s.security_armed is False
+    assert s.security_state == "disarmed"
 
 
 @pytest.mark.asyncio
-async def test_record_snapshot_security_armed_flag(
+async def test_record_snapshot_security_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from custom_components.heima.runtime.inference import snapshot_store
@@ -246,9 +246,9 @@ async def test_record_snapshot_security_armed_flag(
             named_present=(),
             room_occupancy={},
             house_state="home",
-            security_armed=armed_state not in ("disarmed", "unknown", "disabled", ""),
+            security_state=armed_state,
         )
-        assert store_snap.security_armed is True
+        assert store_snap.security_state == armed_state
 
     disarmed_snap = HouseSnapshot(
         ts="2026-04-30T10:00:00+00:00",
@@ -258,9 +258,9 @@ async def test_record_snapshot_security_armed_flag(
         named_present=(),
         room_occupancy={},
         house_state="home",
-        security_armed="disarmed" not in ("disarmed", "unknown", "disabled", ""),
+        security_state="disarmed",
     )
-    assert disarmed_snap.security_armed is False
+    assert disarmed_snap.security_state == "disarmed"
 
 
 # ---------------------------------------------------------------------------

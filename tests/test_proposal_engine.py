@@ -1638,6 +1638,56 @@ async def test_proposal_engine_async_submit_proposal_sanitizes_non_dict_config(m
     assert pending[0].suggested_reaction_config == {}
 
 
+async def test_proposal_engine_async_withdraw_removes_pending_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    await engine.async_submit_proposal(proposal)
+
+    assert await engine.async_withdraw("semantic.rule") is True
+    assert engine.pending_proposals() == []
+
+
+async def test_proposal_engine_async_withdraw_preserves_accepted_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    proposal_id = await engine.async_submit_proposal(proposal)
+    assert await engine.async_accept_proposal(proposal_id)
+
+    assert await engine.async_withdraw("semantic.rule") is False
+    assert engine.proposal_by_identity_key("semantic.rule") is not None
+
+
+async def test_proposal_engine_async_withdraw_preserves_rejected_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    proposal_id = await engine.async_submit_proposal(proposal)
+    assert await engine.async_reject_proposal(proposal_id)
+
+    assert await engine.async_withdraw("semantic.rule") is False
+    assert engine.proposal_by_identity_key("semantic.rule") is not None
+
+
+async def test_proposal_engine_async_withdraw_returns_false_for_missing_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+
+    assert await engine.async_withdraw("missing.rule") is False
+
+
 async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

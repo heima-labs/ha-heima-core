@@ -1125,7 +1125,6 @@ class HeimaEngine:
         people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
         named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
         room_occupancy = {room: True for room in snapshot.occupied_rooms}
-        security_armed = snapshot.security_state not in ("disarmed", "unknown", "disabled", "")
         house_snap = HouseSnapshot(
             ts=snapshot.ts,
             weekday=ts_utc.weekday(),
@@ -1136,8 +1135,9 @@ class HeimaEngine:
             detected_activities=_tuple_of_strings(self._state.get_sensor("activity.active_names")),
             house_state=snapshot.house_state,
             heating_setpoint=snapshot.heating_setpoint,
+            heating_current_temperature=self._heating_domain.current_temperature(),
             lighting_scenes=dict(snapshot.lighting_intents or {}),
-            security_armed=security_armed,
+            security_state=str(snapshot.security_state or "unknown"),
         )
         await self._house_snapshot_store.async_append_if_changed(house_snap)
 

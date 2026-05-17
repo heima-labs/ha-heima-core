@@ -70,6 +70,7 @@ from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
+from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
 from .validation import ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
@@ -251,6 +252,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 self.entry, changed_keys={"people_named", "rooms"}
             )
         await self._proposal_engine.async_run()
+        await self._async_evaluate_semantic_policies()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         self._sync_health_sensor()
@@ -313,6 +315,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
+        await self._async_evaluate_semantic_policies()
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -1030,6 +1033,22 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
             await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
 
+    async def _async_evaluate_semantic_policies(self) -> None:
+        options = dict(self.entry.options or {})
+        for rule in BUILTIN_SEMANTIC_RULES:
+            proposal = rule.evaluate(options)
+            if proposal is None:
+                await self._proposal_engine.async_withdraw(rule.rule_id)
+                continue
+            existing = self._proposal_engine.proposal_by_identity_key(proposal.identity_key)
+            if existing is not None:
+                continue
+            proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
+            await self._async_notify_semantic_policy_proposal(
+                proposal,
+                proposal_id=proposal_id,
+            )
+
     async def _async_notify_pending_activity_proposals(self) -> None:
         if not hasattr(self._proposal_engine, "pending_proposals"):
             return
@@ -1112,6 +1131,32 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             _LOGGER.warning("Failed to create house-state proposal notification")
         finally:
             self._notified_house_state_proposal_keys.add(identity_key)
+
+    async def _async_notify_semantic_policy_proposal(
+        self,
+        proposal: ReactionProposal,
+        *,
+        proposal_id: str,
+    ) -> None:
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            return
+        event = {
+            "event_id": f"semantic_policy.{proposal_id}",
+            "key": f"semantic_policy.{identity_key}",
+            "type": "semantic_policy.proposal",
+            "severity": "info",
+            "title": "Heima semantic policy suggestion",
+            "message": proposal.description,
+            "context": {
+                "proposal_id": proposal_id,
+                "identity_key": identity_key,
+                "reaction_type": proposal.reaction_type,
+                "origin": proposal.origin,
+                "notify": True,
+            },
+        }
+        await self._async_notify_installer_alert(event)
 
     async def _async_handle_last_installer_alert(self) -> None:
         event = self.engine.state.get_sensor_attributes("heima_last_event") or {}

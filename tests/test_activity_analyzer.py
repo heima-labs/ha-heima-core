@@ -38,7 +38,7 @@ def _snapshot(
         house_state="relax",
         heating_setpoint=20.0,
         lighting_scenes={},
-        security_armed=False,
+        security_state="disarmed",
     )
 
 

@@ -691,6 +691,22 @@ class ProposalEngine:
         await self._store.async_save(self._serialize())
         self._write_sensor()
 
+    async def async_withdraw(self, identity_key: str) -> bool:
+        """Remove a pending proposal by identity key without touching decisions."""
+        target = str(identity_key or "").strip()
+        if not target:
+            return False
+        for idx, proposal in enumerate(self._proposals):
+            if self._identity_key(proposal) != target:
+                continue
+            if proposal.status != "pending":
+                return False
+            del self._proposals[idx]
+            await self._store.async_save(self._serialize())
+            self._write_sensor()
+            return True
+        return False
+
     async def _set_status(self, proposal_id: str, status: str) -> bool:
         for idx, proposal in enumerate(self._proposals):
             if proposal.proposal_id != proposal_id:

@@ -11,6 +11,7 @@ from custom_components.heima.runtime.reactions import (
     create_builtin_reaction_plugin_registry,
     normalize_reaction_options_payload,
 )
+from custom_components.heima.runtime.reactions.alarm_policy import AlarmStateActionReaction
 from custom_components.heima.runtime.reactions.context_conditioned_lighting import (
     ContextConditionedLightingReaction,
 )
@@ -114,6 +115,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
         "scheduled_routine",
+        "alarm_state_action",
         "vacation_presence_simulation",
     }
     assert registry.builder_for("room_signal_assist") is not None
@@ -135,24 +137,34 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "room_darkness_lighting_assist",
         "room_vacancy_lighting_off",
         "scheduled_routine",
+        "alarm_state_action",
         "vacation_presence_simulation",
     ]
-    assert descriptors[-1].supported_config_contracts == ("vacation_presence_simulation",)
-    assert descriptors[-1].supports_normalizer is False
-    assert descriptors[-2].supported_config_contracts == ("scheduled_routine",)
-    assert descriptors[-2].supports_normalizer is True
-    assert descriptors[-3].supported_config_contracts == ("room_vacancy_lighting_off",)
-    assert descriptors[-3].supports_normalizer is False
-    assert descriptors[-4].supported_config_contracts == ("room_darkness_lighting_assist",)
-    assert descriptors[-4].supports_normalizer is False
-    assert descriptors[-5].supported_config_contracts == ("room_contextual_lighting_assist",)
-    assert descriptors[-5].supports_normalizer is False
-    assert descriptors[-6].supported_config_contracts == ("room_air_quality_assist",)
-    assert descriptors[-6].supports_normalizer is True
-    assert descriptors[-7].supported_config_contracts == ("room_cooling_assist",)
-    assert descriptors[-7].supports_normalizer is True
-    assert descriptors[-8].supported_config_contracts == ("room_signal_assist",)
-    assert descriptors[-8].supports_normalizer is True
+    by_type = {descriptor.reaction_type: descriptor for descriptor in descriptors}
+    assert by_type["vacation_presence_simulation"].supported_config_contracts == (
+        "vacation_presence_simulation",
+    )
+    assert by_type["vacation_presence_simulation"].supports_normalizer is False
+    assert by_type["alarm_state_action"].supported_config_contracts == ("alarm_state_action",)
+    assert by_type["alarm_state_action"].supports_normalizer is True
+    assert by_type["scheduled_routine"].supported_config_contracts == ("scheduled_routine",)
+    assert by_type["scheduled_routine"].supports_normalizer is True
+    assert by_type["room_darkness_lighting_assist"].supported_config_contracts == (
+        "room_darkness_lighting_assist",
+    )
+    assert by_type["room_darkness_lighting_assist"].supports_normalizer is False
+    assert by_type["room_contextual_lighting_assist"].supported_config_contracts == (
+        "room_contextual_lighting_assist",
+    )
+    assert by_type["room_contextual_lighting_assist"].supports_normalizer is False
+    assert by_type["room_air_quality_assist"].supported_config_contracts == (
+        "room_air_quality_assist",
+    )
+    assert by_type["room_air_quality_assist"].supports_normalizer is True
+    assert by_type["room_cooling_assist"].supported_config_contracts == ("room_cooling_assist",)
+    assert by_type["room_cooling_assist"].supports_normalizer is True
+    assert by_type["room_signal_assist"].supported_config_contracts == ("room_signal_assist",)
+    assert by_type["room_signal_assist"].supports_normalizer is True
     assert descriptors[1].supported_config_contracts == ("context_conditioned_lighting_scene",)
     assert descriptors[1].supports_normalizer is False
 
@@ -286,6 +298,37 @@ def test_scheduled_routine_reaction_built_and_registered():
     assert "routine-1" in engine._configured_reaction_ids
 
 
+def test_alarm_state_action_reaction_built_and_registered():
+    engine = _make_engine(
+        options={
+            "reactions": {
+                "configured": {
+                    "alarm-away-lights-off": {
+                        "reaction_type": "alarm_state_action",
+                        "alarm_states": ["armed_away"],
+                        "steps": [
+                            {
+                                "domain": "light",
+                                "target": "light.living_room",
+                                "action": "light.turn_off",
+                                "params": {"entity_id": "light.living_room"},
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
+    assert len(engine._reactions) == 1
+    assert isinstance(engine._reactions[0], AlarmStateActionReaction)
+    assert engine._reactions[0].reaction_id == "alarm-away-lights-off"
+    assert engine._reactions[0].diagnostics()["alarm_states"] == ["armed_away"]
+    assert "alarm-away-lights-off" in engine._configured_reaction_ids
+
+
 def test_normalize_reaction_options_payload_normalizes_scheduled_routine_targets_into_steps():
     options = {
         "reactions": {
@@ -323,6 +366,47 @@ def test_normalize_reaction_options_payload_normalizes_scheduled_routine_targets
         present_scheduled_routine_label("routine-1", cfg, {})
         == "Routine Saturday ~22:00 · scene.movie_time"
     )
+
+
+def test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps():
+    options = {
+        "reactions": {
+            "configured": {
+                "alarm-1": {
+                    "reaction_type": "alarm_state_action",
+                    "alarm_states": ["armed_away", "invalid"],
+                    "steps": [
+                        {
+                            "target": "climate.living_room",
+                            "action": "climate.set_hvac_mode",
+                            "params": {"hvac_mode": "off"},
+                        },
+                        {
+                            "target": "climate.bad",
+                            "action": "climate.turn_off",
+                        },
+                    ],
+                }
+            }
+        }
+    }
+
+    normalized, changed = normalize_reaction_options_payload(options)
+
+    assert changed is True
+    cfg = normalized["reactions"]["configured"]["alarm-1"]
+    assert cfg == {
+        "reaction_type": "alarm_state_action",
+        "alarm_states": ["armed_away"],
+        "steps": [
+            {
+                "domain": "climate",
+                "target": "climate.living_room",
+                "action": "climate.set_hvac_mode",
+                "params": {"hvac_mode": "off", "entity_id": "climate.living_room"},
+            }
+        ],
+    }
 
 
 def test_reaction_pre_seeded_with_synthetic_arrivals():
