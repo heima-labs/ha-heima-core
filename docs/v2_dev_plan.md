@@ -108,15 +108,37 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation.
-**Active phase:** Phase O — HouseSnapshot Alignment + Proposal Revocation (`COMPLETE, pending full-suite verification`).
+**Active phase:** Phase P — Learning Modules D2: Lighting, Room Correlation, Occupancy (`IN PROGRESS`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Run broader regression verification, then discuss Phase P before implementation.
+Continue Phase P with P3 discussion before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase O complete.
+- Current slice: Phase P / P2 complete.
+  - P2 added module-only `RoomStateCorrelationModule`; it is exported from inference modules but
+    is not yet registered in the coordinator and is not consumed by `HouseStateDomain`.
+  - The module learns `P(house_state | occupied_room_pattern)` from
+    `HouseSnapshot.room_occupancy`, using `frozenset[str]` as the occupied-room pattern key.
+  - P2 implementation constraints: ignore empty patterns; fixed `Importance.SUGGEST`; raw
+    confidence ratio `best_count / total`; `min_support=15`; `confidence_threshold=0.60`.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py -q` passed with 20 tests;
+    `ruff check` on P1/P2 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase P / P1 complete.
+  - P1 added module-only `LightingPatternModule`; it is exported from inference modules but is
+    not yet registered in the coordinator and is not consumed by `LightingDomain`.
+  - The module learns `P(scene | room_id, house_state, hour_bucket)` from
+    `HouseSnapshot.lighting_scenes`.
+  - P1 implementation constraints: iterate over room IDs in the model, not
+    `context.room_occupancy`; fixed `Importance.SUGGEST`; raw confidence ratio
+    `best_count / total`; `min_support=8`; `confidence_threshold=0.65`.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py
+    tests/test_inference_foundation.py::test_inference_context_and_signals_are_typed -q` passed
+    with 11 tests; `ruff check` on P1 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase O complete.
   - O1 replaced `HouseSnapshot.security_armed` with `security_state`, added legacy
     `security_armed` deserialization fallback, updated `semantic_key()`, and updated engine/test
     references.
@@ -1327,8 +1349,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 ### Acceptance criteria
 
-- [ ] `LightingPatternModule` non emette segnali con support < 8 snapshot/slot
-- [ ] `RoomStateCorrelationModule` non emette segnali per pattern con support < 15
+- [x] `LightingPatternModule` non emette segnali con support < 8 snapshot/slot
+- [x] `RoomStateCorrelationModule` non emette segnali per pattern con support < 15
 - [ ] `OccupancyInferenceModule` emette `OccupancySignal` solo per stanze senza sensore
 - [ ] `OccupancyDomain` applica `OccupancySignal` con confidence ≥ 0.70 per stanze non sensorizzate
 - [ ] `OccupancyDomain` ignora `OccupancySignal` per stanze con almeno un sensore

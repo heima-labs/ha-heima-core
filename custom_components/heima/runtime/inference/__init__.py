@@ -15,6 +15,8 @@ from .modules import (
     HeatingPreferenceModule,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
+    LightingPatternModule,
+    RoomStateCorrelationModule,
     WeekdayStateModule,
 )
 from .router import SignalRouter
@@ -49,6 +51,8 @@ __all__ = [
     "Importance",
     "InferenceContext",
     "LearnedHouseStateCandidate",
+    "LightingPatternModule",
+    "RoomStateCorrelationModule",
     "InferenceSignal",
     "LightingSignal",
     "OccupancySignal",
