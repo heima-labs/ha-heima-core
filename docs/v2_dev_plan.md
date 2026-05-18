@@ -119,6 +119,15 @@ findings reach the existing installer alert channel.
 
 ### Current Working Notes
 
+- Current slice: Phase Q / Q1 complete.
+  - `AnomalyAnalyzer` now uses the existing `AnomalySignal` contract from
+    `runtime/plugin_contracts.py`; Q1 does not define a parallel signal type.
+  - Q1 defines an `AnomalyRule` catalog for all 17 planned rule IDs and loads rule options from
+    `entry.options["anomaly"]["rules"]` on every `analyze()` pass.
+  - The first real end-to-end rule is `heating_unresponsive`, using
+    `HouseSnapshot.heating_current_temperature` and `heating_setpoint`.
+  - `FindingRouter -> coordinator anomaly handler -> installer alert` is validated by tests.
+  - `heima.configure_anomaly_rule` remains out of Q1 and is still planned for Q6.
 - Current slice: Phase P / P4a complete.
   - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
     `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
@@ -1432,10 +1441,13 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 ### Working slices
 
-1. Q1 — `AnomalyRule` + catalogo + infrastruttura:
+1. Q1 — `AnomalyRule` + catalogo + infrastruttura: `DONE`
    - Definire `AnomalyRule` dataclass con `rule_id`, `enabled`, `severity`, `thresholds`.
    - Definire catalogo con default thresholds per tutte le 17 regole.
    - Implementare caricamento soglie dalle options a ogni `analyze()`.
+   - Implementare almeno una regola reale end-to-end per validare il percorso
+     `AnomalyAnalyzer -> FindingRouter -> installer alert`.
+   - Il servizio `heima.configure_anomaly_rule` è fuori da Q1; resta in Q6.
 2. Q2 — Regole presenza (4):
    - `arrival_time_outlier`, `departure_time_outlier`, `extended_absence`, `presence_pattern_drift`.
    - Tests: ogni regola triggera su sequenza snapshot costruita.
@@ -1467,9 +1479,10 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 ### Acceptance criteria
 
 - [ ] Ogni regola triggera su sequenza snapshot costruita ad hoc nel test
-- [ ] Regola disabilitata non produce findings
+- [x] Regola disabilitata non produce findings
 - [ ] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
-- [ ] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
+- [x] Q1 valida almeno una regola reale end-to-end fino all'installer alert
+- [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
 - [ ] `alarm_disarm_unusual_hour` usa `security_state` (Phase O prerequisito verificato)
 - [ ] `sensor_activity_drop` non si sovrappone a `SensorStuck` (check diverso: frequenza vs timeout assoluto)
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)

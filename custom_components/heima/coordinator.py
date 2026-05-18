@@ -33,6 +33,7 @@ from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids
 from .runtime.analyzers import (
     ActivityAnalyzer,
+    AnomalyAnalyzer,
     create_builtin_learning_plugin_registry,
 )
 from .runtime.analyzers.base import ReactionProposal
@@ -172,6 +173,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._proposal_engine.register_analyzer(plugin)
         self._activity_analyzer = ActivityAnalyzer(self._house_snapshot_store)
         self._proposal_engine.register_analyzer(self._activity_analyzer)
+        self._anomaly_analyzer = AnomalyAnalyzer(
+            options_provider=lambda: dict(self.entry.options or {})
+        )
         self._finding_router = FindingRouter(
             proposal_engine=self._proposal_engine,
             anomaly_handler=self._async_handle_anomaly_finding,
@@ -304,8 +308,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_handle_anomaly_finding(self, signal: AnomalySignal) -> None:
         await self.engine.async_emit_external_event(
-            event_type="learning.anomaly",
-            key=f"learning.anomaly.{signal.anomaly_type}",
+            event_type=f"anomaly.{signal.anomaly_type}",
+            key=f"anomaly.{signal.anomaly_type}",
             severity=signal.severity,
             title="Learning anomaly",
             message=signal.description,
@@ -1039,6 +1043,19 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         ):
             await module.analyze(self._house_snapshot_store)
         await self._async_submit_house_state_candidates()
+        await self._async_run_anomaly_analyzer()
+
+    async def _async_run_anomaly_analyzer(self) -> None:
+        """Run statistical anomaly analysis and route findings."""
+        analyzer = getattr(self, "_anomaly_analyzer", None)
+        router = getattr(self, "_finding_router", None)
+        if analyzer is None or router is None:
+            return
+        findings = await analyzer.analyze(
+            self._event_store,
+            self._house_snapshot_store,
+        )
+        await router.async_route(findings)
 
     def _sync_occupancy_inference_rooms(self) -> None:
         """Sync sensorless room ids after startup or options reload."""
