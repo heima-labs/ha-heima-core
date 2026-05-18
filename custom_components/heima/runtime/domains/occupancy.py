@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from ...const import OPT_ROOMS
 from ...room_sources import room_occupancy_source_entity_ids
 from ..contracts import HeimaEvent
+from ..inference.signals import Importance, OccupancySignal
 from ..normalization.config import (
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -22,6 +23,7 @@ from ..normalization.service import InputNormalizer
 from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)
+_OCCUPANCY_SIGNAL_MIN_CONFIDENCE = 0.70
 
 
 @dataclass(frozen=True)
@@ -81,9 +83,9 @@ class OccupancyDomain:
         schedule_recheck: Callable[..., None],
         state: Any,  # CanonicalState - avoided circular to keep simple
         now: str,
-        signals: list[Any] | None = None,  # OccupancySignal stub — not applied in v2
+        signals: list[Any] | None = None,
     ) -> OccupancyResult:
-        del signals
+        occupancy_signals = self._select_occupancy_signals(signals)
         occupied_rooms: list[str] = []
         sensorized_room_count = 0
 
@@ -95,7 +97,14 @@ class OccupancyDomain:
                 room
             ):
                 sensorized_room_count += 1
-            is_occupied, occ_trace = self._compute_room_occupancy(room, schedule_recheck, events)
+            inference_signal = self._sensorless_room_signal(room, occupancy_signals)
+            if inference_signal is not None:
+                is_occupied, occ_trace = self._compute_inferred_room_occupancy(
+                    room,
+                    inference_signal,
+                )
+            else:
+                is_occupied, occ_trace = self._compute_room_occupancy(room, schedule_recheck, events)
             prev_value = state.get_binary(f"heima_occupancy_{room_id}")
             state.set_binary(f"heima_occupancy_{room_id}", is_occupied)
             state.set_sensor(
@@ -389,6 +398,73 @@ class OccupancyDomain:
             "forced_off_by_max_on": forced_off_by_max_on,
         }
         return effective_state == "on", trace
+
+    def _compute_inferred_room_occupancy(
+        self,
+        room_cfg: dict[str, Any],
+        signal: OccupancySignal,
+    ) -> tuple[bool, dict[str, Any]]:
+        room_id = str(room_cfg.get("room_id", ""))
+        effective_state = "on" if signal.predicted_occupied else "off"
+        return signal.predicted_occupied, {
+            "room_id": room_id,
+            "occupancy_mode": self._room_occupancy_mode(room_cfg),
+            "source_observations": [],
+            "fused_observation": None,
+            "plugin_id": None,
+            "candidate_state": effective_state,
+            "candidate_since": None,
+            "effective_state": effective_state,
+            "effective_since": None,
+            "on_dwell_s": int(room_cfg.get("on_dwell_s", 0)),
+            "off_dwell_s": int(room_cfg.get("off_dwell_s", 120)),
+            "max_on_s": room_cfg.get("max_on_s"),
+            "forced_off_by_max_on": False,
+            "inference_signal": {
+                "source_id": signal.source_id,
+                "confidence": signal.confidence,
+                "importance": int(signal.importance),
+                "label": signal.label,
+                "predicted_occupied": signal.predicted_occupied,
+            },
+        }
+
+    @staticmethod
+    def _select_occupancy_signals(signals: list[Any] | None) -> dict[str, OccupancySignal]:
+        if not signals:
+            return {}
+        candidates: dict[str, OccupancySignal] = {}
+        for signal in signals:
+            if not isinstance(signal, OccupancySignal):
+                continue
+            if signal.confidence < _OCCUPANCY_SIGNAL_MIN_CONFIDENCE:
+                continue
+            if signal.importance < Importance.SUGGEST:
+                continue
+            room_id = str(signal.room_id or "").strip()
+            if not room_id:
+                continue
+            current = candidates.get(room_id)
+            if current is None or (signal.confidence, int(signal.importance)) > (
+                current.confidence,
+                int(current.importance),
+            ):
+                candidates[room_id] = signal
+        return candidates
+
+    def _sensorless_room_signal(
+        self,
+        room_cfg: dict[str, Any],
+        signals: dict[str, OccupancySignal],
+    ) -> OccupancySignal | None:
+        if self._room_occupancy_mode(room_cfg) != "derived":
+            return None
+        if room_occupancy_source_entity_ids(room_cfg):
+            return None
+        room_id = str(room_cfg.get("room_id") or "").strip()
+        if not room_id:
+            return None
+        return signals.get(room_id)
 
     def _room_occupancy_mode(self, room_cfg: dict[str, Any]) -> str:
         mode = str(room_cfg.get("occupancy_mode", "derived") or "derived")

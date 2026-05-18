@@ -9,6 +9,7 @@ from custom_components.heima.runtime.inference import (
     Importance,
     InferenceContext,
     LightingPatternModule,
+    OccupancyInferenceModule,
     RoomStateCorrelationModule,
 )
 
@@ -45,6 +46,7 @@ def _snapshot(
     *,
     minute_of_day: int = 20 * 60,
     house_state: str = "relax",
+    anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
     lighting_scenes: dict[str, str] | None = None,
 ) -> HouseSnapshot:
@@ -52,7 +54,7 @@ def _snapshot(
         ts="2026-05-17T20:00:00+00:00",
         weekday=6,
         minute_of_day=minute_of_day,
-        anyone_home=True,
+        anyone_home=anyone_home,
         named_present=("alice",),
         room_occupancy=room_occupancy if room_occupancy is not None else {"living": True},
         detected_activities=(),
@@ -336,4 +338,217 @@ async def test_room_state_correlation_diagnostics() -> None:
         "analyzed_snapshots": 15,
         "min_support": 15,
         "confidence_threshold": 0.6,
+    }
+
+
+async def test_occupancy_inference_returns_empty_before_analyze() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+
+    assert module.infer(_context(room_occupancy={})) == []
+
+
+async def test_occupancy_inference_requires_sensorless_room_sync() -> None:
+    module = OccupancyInferenceModule()
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(10)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(room_occupancy={})) == []
+
+
+async def test_occupancy_inference_respects_min_support_with_smoothed_confidence() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(9)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(room_occupancy={})) == []
+
+
+async def test_occupancy_inference_emits_suggest_signal_at_threshold() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(10)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    signals = module.infer(_context(room_occupancy={}))
+
+    assert len(signals) == 1
+    assert signals[0].source_id == "occupancy_inference"
+    assert signals[0].room_id == "studio"
+    assert signals[0].predicted_occupied is True
+    assert signals[0].confidence == 1.0
+    assert signals[0].importance == Importance.SUGGEST
+    assert signals[0].ttl_s == 300
+
+
+async def test_occupancy_inference_uses_smoothed_confidence() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(7)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+
+    # Raw probability is 1.0, but support smoothing keeps confidence below threshold.
+    assert module.infer(_context(room_occupancy={})) == []
+
+
+async def test_occupancy_inference_drops_below_confidence_threshold() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(6)
+    ]
+    snapshots.extend(
+        _snapshot(anyone_home=False, room_occupancy={})
+        for _ in range(4)
+    )
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(room_occupancy={})) == []
+
+
+async def test_occupancy_inference_learns_implicit_false_from_sparse_snapshots() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={})
+        for _ in range(10)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    signals = module.infer(_context(room_occupancy={}))
+
+    assert len(signals) == 1
+    assert signals[0].room_id == "studio"
+    assert signals[0].predicted_occupied is False
+    assert signals[0].confidence == 1.0
+
+
+async def test_occupancy_inference_iterates_synced_sensorless_rooms() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio", "guest"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={"studio": True})
+        for _ in range(10)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    signals = module.infer(_context(room_occupancy={}))
+
+    assert [(signal.room_id, signal.predicted_occupied) for signal in signals] == [
+        ("guest", False),
+        ("studio", True),
+    ]
+
+
+async def test_occupancy_inference_separates_weekday_hour_and_anyone_home() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            anyone_home=False,
+            room_occupancy={"studio": True},
+        )
+        for _ in range(10)
+    ]
+    snapshots.extend(
+        _snapshot(
+            minute_of_day=21 * 60,
+            anyone_home=False,
+            room_occupancy={},
+        )
+        for _ in range(10)
+    )
+    snapshots.extend(
+        HouseSnapshot(
+            ts="2026-05-17T20:00:00+00:00",
+            weekday=5,
+            minute_of_day=20 * 60,
+            anyone_home=False,
+            named_present=("alice",),
+            room_occupancy={},
+            detected_activities=(),
+            house_state="relax",
+            heating_setpoint=None,
+            lighting_scenes={},
+            security_state="disarmed",
+        )
+        for _ in range(10)
+    )
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(minute_of_day=20 * 60, room_occupancy={}))[0].predicted_occupied
+    assert (
+        module.infer(_context(minute_of_day=21 * 60, room_occupancy={}))[0].predicted_occupied
+        is False
+    )
+
+
+async def test_occupancy_inference_uses_context_room_occupancy_for_anyone_home() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+    snapshots = [
+        _snapshot(anyone_home=False, room_occupancy={})
+        for _ in range(10)
+    ]
+    snapshots.extend(
+        HouseSnapshot(
+            ts="2026-05-17T20:00:00+00:00",
+            weekday=6,
+            minute_of_day=20 * 60,
+            anyone_home=True,
+            named_present=("alice",),
+            room_occupancy={"studio": True},
+            detected_activities=(),
+            house_state="relax",
+            heating_setpoint=None,
+            lighting_scenes={},
+            security_state="disarmed",
+        )
+        for _ in range(10)
+    )
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(room_occupancy={}))[0].predicted_occupied is False
+    assert module.infer(_context(room_occupancy={"living": True}))[0].predicted_occupied is True
+
+
+async def test_occupancy_inference_diagnostics() -> None:
+    module = OccupancyInferenceModule()
+    module.sync_sensorless_rooms({"studio"})
+
+    await module.analyze(
+        _FakeStore(
+            [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(10)]
+        )
+    )
+
+    assert module.diagnostics() == {
+        "module_id": "occupancy_inference",
+        "ready": True,
+        "slot_count": 1,
+        "sensorless_rooms": ["studio"],
+        "analyzed_snapshots": 10,
+        "min_support": 10,
+        "confidence_threshold": 0.7,
     }

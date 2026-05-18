@@ -16,6 +16,7 @@ from .modules import (
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
     LightingPatternModule,
+    OccupancyInferenceModule,
     RoomStateCorrelationModule,
     WeekdayStateModule,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "InferenceContext",
     "LearnedHouseStateCandidate",
     "LightingPatternModule",
+    "OccupancyInferenceModule",
     "RoomStateCorrelationModule",
     "InferenceSignal",
     "LightingSignal",

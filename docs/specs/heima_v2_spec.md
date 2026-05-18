@@ -920,6 +920,8 @@ Before any `ActivityProposal` is approved, `ActivityInferenceModule.infer()` ret
 | `HouseStateInferenceModule` | `P(house_state \| weekday, hour, rooms, anyone_home)` | `HouseStateSignal` | 20 snapshots/context |
 | `ActivityInferenceModule` | `P(composite_activity \| primitive_pattern, context)` | `ActivitySignal` | 10 occurrences/pattern |
 
+**Threshold configurability.** `min_support` e `confidence_threshold` di ogni modulo sono costanti con valori di default nella tabella sopra. Quando necessario, diventano parametri del costruttore passati da `entry.options["learning"]` (già presente). La policy di auto-tuning basata su feedback (OutcomeTracker) è fuori scope v2. I valori effettivi compaiono in `diagnostics()` di ogni modulo — sono osservabili senza essere esposti come knob admin.
+
 ### §10.7 SignalRouter
 
 Groups signals by subclass type. Filters expired signals. Sorts each bucket by confidence desc.

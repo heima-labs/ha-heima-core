@@ -102,6 +102,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `NOT STARTED` | D, F |
 | Q | AnomalyAnalyzer: Statistical Detection Rules | `NOT STARTED` | O, P |
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `NOT STARTED` | E, P |
+| S | Learning Module Threshold Configurability | `NOT STARTED` | R |
 
 ---
 
@@ -112,11 +113,30 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase P with P3 discussion before implementation.
+Continue Phase P with P4/wiring discussion before implementation.
 
 ### Current Working Notes
 
-- Current slice: Phase P / P2 complete.
+- Current slice: Phase P / P3 complete.
+  - P3 added `OccupancyInferenceModule` and `OccupancyDomain` consumption of `OccupancySignal`
+    for sensorless rooms only.
+  - Sensorless room definition: `occupancy_mode == "derived"` and no `occupancy_sources`;
+    `learning_sources` and room `signals` do not make a room sensorized for occupancy.
+  - P3 implementation constraints: confidence is smoothed as
+    `probability * min(1.0, total / 10)`; inference context `anyone_home` is derived as
+    `any(context.room_occupancy.values())`; fixed `Importance.SUGGEST`; `ttl_s=300`;
+    `min_support=10`; `confidence_threshold=0.70`.
+  - `OccupancyDomain` applies accepted signals directly for sensorless rooms, without dwell/max-on
+    processing; sensorized rooms and `occupancy_mode=none` ignore all occupancy inference signals.
+  - Sparse snapshot contract: `HouseSnapshot.room_occupancy` stores occupied rooms as `True`;
+    absence means false. `OccupancyInferenceModule.analyze()` therefore iterates the synced
+    `sensorless_rooms` allow-list and reads each room with `room_occupancy.get(room_id, False)`.
+    The snapshot recorder must remain sparse.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py
+    tests/test_occupancy_inference_domain_p.py -q` passed with 37 tests; occupancy regression
+    run passed with 47 tests; `ruff check` on P3 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase P / P2 complete.
   - P2 added module-only `RoomStateCorrelationModule`; it is exported from inference modules but
     is not yet registered in the coordinator and is not consumed by `HouseStateDomain`.
   - The module learns `P(house_state | occupied_room_pattern)` from
@@ -1351,9 +1371,9 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 - [x] `LightingPatternModule` non emette segnali con support < 8 snapshot/slot
 - [x] `RoomStateCorrelationModule` non emette segnali per pattern con support < 15
-- [ ] `OccupancyInferenceModule` emette `OccupancySignal` solo per stanze senza sensore
-- [ ] `OccupancyDomain` applica `OccupancySignal` con confidence ≥ 0.70 per stanze non sensorizzate
-- [ ] `OccupancyDomain` ignora `OccupancySignal` per stanze con almeno un sensore
+- [x] `OccupancyInferenceModule` emette `OccupancySignal` solo per stanze senza sensore
+- [x] `OccupancyDomain` applica `OccupancySignal` con confidence ≥ 0.70 per stanze non sensorizzate
+- [x] `OccupancyDomain` ignora `OccupancySignal` per stanze con almeno un sensore
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 20
 
 ---
@@ -1459,6 +1479,44 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [ ] `WeekdayStateModule` emette `Importance.OBSERVE` (non `SUGGEST`)
 - [ ] `HouseStateDomain` non consuma segnali OBSERVE (test di regressione)
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 12
+
+---
+
+## Phase S — Learning Module Threshold Configurability
+
+**Spec section:** §10.6 (nota "Threshold configurability")
+**Goal:** rendere `min_support` e `confidence_threshold` di ogni modulo parametri del costruttore, passati da `entry.options["learning"]`. Nessun cambiamento ai valori di default. Nessuna UI admin per i threshold.
+**Depends on:** Phase R (feedback loop operativo — permette di osservare se i valori di default sono adeguati prima di rendere i threshold configurabili).
+
+### Motivation
+
+Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti) possono avere slot con supporto insufficiente anche dopo mesi di utilizzo. I threshold configurabili permettono di abbassare `min_support` per ambienti con pochi dati senza cambiare il codice. La policy di auto-tuning (OutcomeTracker-driven) resta fuori scope.
+
+### Working slices
+
+1. S1 — Refactor costruttori:
+   - `WeekdayStateModule(min_support=10)`
+   - `RoomStateCorrelationModule(min_support=15, confidence_threshold=0.60)`
+   - `LightingPatternModule(min_support=8, confidence_threshold=0.65)`
+   - `HouseStateInferenceModule(min_support=20, confidence_threshold=0.60)`
+   - `HeatingPreferenceModule(min_support=10)`
+   - `OccupancyInferenceModule(min_support=10, confidence_threshold=0.70)`
+   - Tutti i valori di default invariati rispetto ai valori hardcoded attuali.
+2. S2 — Lettura da `learning_config` nel coordinator:
+   - Leggere `entry.options.get("learning", {})` e passare i valori ai costruttori.
+   - Chiavi di options: `{module_id}_min_support`, `{module_id}_confidence_threshold`.
+   - Se la chiave non esiste in options, usare il default del costruttore.
+3. S3 — `diagnostics()` espone i valori effettivi:
+   - Ogni modulo aggiunge `min_support` e `confidence_threshold` al proprio `diagnostics()`.
+   - Permette di verificare i valori attivi senza accedere alle options.
+
+### Acceptance criteria
+
+- [ ] Tutti i moduli accettano `min_support` e `confidence_threshold` come parametri costruttore con default invariati
+- [ ] Il coordinator legge da `entry.options["learning"]` e passa i valori ai costruttori
+- [ ] `diagnostics()` di ogni modulo espone i valori effettivi di `min_support` e `confidence_threshold`
+- [ ] Nessun cambio di comportamento osservabile con options di default
+- [ ] Tutti i test esistenti verdi (nessun test deve cambiare i valori di default)
 
 ---
 
