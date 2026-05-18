@@ -68,7 +68,9 @@ class AnomalyAnalyzer:
         rules = _effective_rules(anomaly_cfg)
         findings: list[BehaviorFinding] = []
         if enabled and snapshot_store is not None:
+            findings.extend(self._evaluate_heating_setpoint_outlier(snapshot_store, rules))
             findings.extend(self._evaluate_heating_unresponsive(snapshot_store, rules))
+            findings.extend(self._evaluate_heating_vacation_mismatch(snapshot_store, rules))
         self._last_diagnostics = {
             "analyzer_id": self.analyzer_id,
             "enabled": enabled,
@@ -80,6 +82,53 @@ class AnomalyAnalyzer:
     def diagnostics(self) -> dict[str, Any]:
         """Return analyzer diagnostics."""
         return dict(self._last_diagnostics)
+
+    def _evaluate_heating_setpoint_outlier(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["heating_setpoint_outlier"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 8)
+        delta_c = _threshold_float(rule, "delta_c", 3.0)
+        window = max(min_observations + 1, _threshold_int(rule, "window", 24))
+        snapshots = [
+            snapshot
+            for snapshot in snapshot_store.snapshots(limit=window)
+            if getattr(snapshot, "heating_setpoint", None) is not None
+        ]
+        if len(snapshots) < min_observations + 1:
+            return []
+
+        previous = [float(snapshot.heating_setpoint) for snapshot in snapshots[:-1]]
+        current = float(snapshots[-1].heating_setpoint)
+        baseline = _median(previous)
+        deviation = abs(current - baseline)
+        if deviation < delta_c:
+            return []
+
+        confidence = min(1.0, deviation / max(delta_c * 2, 0.1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Heating setpoint is unusual: current setpoint "
+                f"{current:.1f}C differs from recent median {baseline:.1f}C."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "snapshot_count": len(snapshots),
+                "baseline_setpoint_c": round(baseline, 3),
+                "current_setpoint_c": round(current, 3),
+                "deviation_c": round(deviation, 3),
+                "delta_c": delta_c,
+                "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
 
     def _evaluate_heating_unresponsive(
         self,
@@ -135,14 +184,60 @@ class AnomalyAnalyzer:
             },
         )
         return [
-            BehaviorFinding(
-                kind="anomaly",
-                analyzer_id=self.analyzer_id,
-                description=signal.description,
-                confidence=signal.confidence,
-                payload=signal,
-            )
+            _finding(self.analyzer_id, signal)
         ]
+
+    def _evaluate_heating_vacation_mismatch(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["heating_vacation_mismatch"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 3)
+        max_away_setpoint_c = _threshold_float(rule, "max_away_setpoint_c", 18.0)
+        window = max(min_observations, _threshold_int(rule, "window", 6))
+        snapshots = [
+            snapshot
+            for snapshot in snapshot_store.snapshots(limit=window)
+            if getattr(snapshot, "heating_setpoint", None) is not None
+        ]
+        armed_away = [
+            snapshot
+            for snapshot in snapshots
+            if str(getattr(snapshot, "security_state", "") or "").strip() == "armed_away"
+        ]
+        if len(armed_away) < min_observations:
+            return []
+
+        setpoints = [float(snapshot.heating_setpoint) for snapshot in armed_away]
+        if not setpoints or any(setpoint <= max_away_setpoint_c for setpoint in setpoints):
+            return []
+
+        min_setpoint = min(setpoints)
+        avg_setpoint = sum(setpoints) / len(setpoints)
+        excess = min_setpoint - max_away_setpoint_c
+        confidence = min(1.0, excess / 2.0)
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Heating setpoint remains high while security is armed away: "
+                f"minimum observed away setpoint is {min_setpoint:.1f}C."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "snapshot_count": len(snapshots),
+                "armed_away_snapshot_count": len(armed_away),
+                "avg_away_setpoint_c": round(avg_setpoint, 3),
+                "min_away_setpoint_c": round(min_setpoint, 3),
+                "max_away_setpoint_c": max_away_setpoint_c,
+                "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
 
 
 def _effective_rules(anomaly_cfg: dict[str, Any]) -> dict[str, AnomalyRule]:
@@ -173,6 +268,18 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 4,
             "min_gap_c": 1.5,
             "min_delta_c": 0.2,
+        }
+    elif rule_id == "heating_setpoint_outlier":
+        thresholds = {
+            "window": 24,
+            "min_observations": 8,
+            "delta_c": 3.0,
+        }
+    elif rule_id == "heating_vacation_mismatch":
+        thresholds = {
+            "window": 6,
+            "min_observations": 3,
+            "max_away_setpoint_c": 18.0,
         }
     return AnomalyRule(rule_id=rule_id, enabled=True, severity="warning", thresholds=thresholds)
 
@@ -209,3 +316,21 @@ def _severity(value: str) -> Literal["info", "warning", "critical"]:
     if value == "critical":
         return "critical"
     return "warning"
+
+
+def _finding(analyzer_id: str, signal: AnomalySignal) -> BehaviorFinding:
+    return BehaviorFinding(
+        kind="anomaly",
+        analyzer_id=analyzer_id,
+        description=signal.description,
+        confidence=signal.confidence,
+        payload=signal,
+    )
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2

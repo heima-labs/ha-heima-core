@@ -84,6 +84,7 @@ def _snapshot(
     *,
     heating_setpoint: float = 21.0,
     heating_current_temperature: float | None = 18.0,
+    security_state: str = "disarmed",
 ) -> HouseSnapshot:
     return HouseSnapshot(
         ts="2026-05-17T20:00:00+00:00",
@@ -97,7 +98,7 @@ def _snapshot(
         heating_setpoint=heating_setpoint,
         heating_current_temperature=heating_current_temperature,
         lighting_scenes={},
-        security_state="disarmed",
+        security_state=security_state,
     )
 
 
@@ -163,6 +164,117 @@ async def test_anomaly_analyzer_applies_threshold_override() -> None:
         analyzer.diagnostics()["rules"]["heating_unresponsive"]["thresholds"]["min_gap_c"]
         == 4.0
     )
+
+
+async def test_anomaly_analyzer_heating_setpoint_outlier_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_snapshot(heating_setpoint=19.0) for _ in range(8)]
+    snapshots.append(_snapshot(heating_setpoint=23.0))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert [finding.payload.anomaly_type for finding in findings] == [
+        "heating_setpoint_outlier"
+    ]
+    assert findings[0].payload.context["baseline_setpoint_c"] == 19.0
+    assert findings[0].payload.context["current_setpoint_c"] == 23.0
+    assert findings[0].payload.context["window"] == 24
+
+
+async def test_anomaly_analyzer_heating_setpoint_outlier_respects_support() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_snapshot(heating_setpoint=19.0) for _ in range(7)]
+    snapshots.append(_snapshot(heating_setpoint=23.0))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_setpoint_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_heating_setpoint_outlier_applies_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "heating_setpoint_outlier": {
+                        "thresholds": {
+                            "delta_c": 5.0,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [_snapshot(heating_setpoint=19.0) for _ in range(8)]
+    snapshots.append(_snapshot(heating_setpoint=23.0))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_setpoint_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_heating_vacation_mismatch_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(heating_setpoint=21.0, security_state="disarmed"),
+        _snapshot(heating_setpoint=19.0, security_state="armed_away"),
+        _snapshot(heating_setpoint=19.5, security_state="armed_away"),
+        _snapshot(heating_setpoint=20.0, security_state="armed_away"),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    vacation_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_vacation_mismatch"
+    ]
+    assert len(vacation_findings) == 1
+    assert vacation_findings[0].payload.context["armed_away_snapshot_count"] == 3
+    assert vacation_findings[0].payload.context["max_away_setpoint_c"] == 18.0
+
+
+async def test_anomaly_analyzer_heating_vacation_mismatch_filters_fixed_window() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(heating_setpoint=19.0, security_state="armed_away"),
+        _snapshot(heating_setpoint=19.0, security_state="armed_away"),
+        _snapshot(heating_setpoint=19.0, security_state="armed_away"),
+    ]
+    snapshots.extend(_snapshot(heating_setpoint=21.0, security_state="disarmed") for _ in range(6))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_vacation_mismatch"
+    ]
+
+
+async def test_anomaly_analyzer_heating_vacation_mismatch_uses_strict_threshold() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(heating_setpoint=18.0, security_state="armed_away"),
+        _snapshot(heating_setpoint=18.5, security_state="armed_away"),
+        _snapshot(heating_setpoint=19.0, security_state="armed_away"),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_vacation_mismatch"
+    ]
 
 
 async def test_anomaly_finding_routes_to_installer_alert() -> None:

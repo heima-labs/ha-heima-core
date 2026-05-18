@@ -128,6 +128,14 @@ findings reach the existing installer alert channel.
     `HouseSnapshot.heating_current_temperature` and `heating_setpoint`.
   - `FindingRouter -> coordinator anomaly handler -> installer alert` is validated by tests.
   - `heima.configure_anomaly_rule` remains out of Q1 and is still planned for Q6.
+- Current slice: Phase Q / Q3 complete.
+  - Heating anomaly rules implemented: `heating_setpoint_outlier`, `heating_unresponsive`,
+    `heating_vacation_mismatch`.
+  - All rule windows are snapshot counts, not hours.
+  - `heating_vacation_mismatch` uses a fixed recent snapshot window, then filters
+    `security_state == "armed_away"` inside that window. It skips if fewer than
+    `min_observations` armed-away samples exist; it triggers only when all armed-away samples have
+    `heating_setpoint > max_away_setpoint_c`.
 - Current slice: Phase P / P4a complete.
   - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
     `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
@@ -1451,7 +1459,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 2. Q2 — Regole presenza (4):
    - `arrival_time_outlier`, `departure_time_outlier`, `extended_absence`, `presence_pattern_drift`.
    - Tests: ogni regola triggera su sequenza snapshot costruita.
-3. Q3 — Regole riscaldamento (3):
+3. Q3 — Regole riscaldamento (3): `DONE`
    - `heating_setpoint_outlier`, `heating_unresponsive`, `heating_vacation_mismatch`.
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
 4. Q4 — Regole attività + lighting (5):
@@ -1483,6 +1491,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [ ] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
 - [x] Q1 valida almeno una regola reale end-to-end fino all'installer alert
 - [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
+- [x] `heating_setpoint_outlier` usa `heating_setpoint` e finestra snapshot-count
+- [x] `heating_vacation_mismatch` usa `security_state`, `heating_setpoint`, e soglia stretta `>`
 - [ ] `alarm_disarm_unusual_hour` usa `security_state` (Phase O prerequisito verificato)
 - [ ] `sensor_activity_drop` non si sovrappone a `SensorStuck` (check diverso: frequenza vs timeout assoluto)
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
