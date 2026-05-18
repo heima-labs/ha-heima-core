@@ -113,11 +113,26 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase P with P4/wiring discussion before implementation.
+Discuss P4b with real signal diagnostics before enabling additional domain consumption.
 
 ### Current Working Notes
 
-- Current slice: Phase P / P3 complete.
+- Current slice: Phase P / P4a complete.
+  - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
+    `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
+  - `OccupancyInferenceModule.sync_sensorless_rooms()` runs only at startup and options reload,
+    not on every analyze cycle. The synced set is computed from rooms with
+    `occupancy_mode == "derived"` and no `occupancy_sources`.
+  - Engine diagnostics expose registered learning module diagnostics and the last routed
+    inference signal buckets.
+  - Runtime side effects remain limited to occupancy: `OccupancySignal` is applied by
+    `OccupancyDomain` after the engine gathers signals from the base occupancy result.
+  - `LightingSignal` is routed and observable but currently ignored by `LightingDomain`.
+    `RoomStateCorrelationModule` `HouseStateSignal` is routed and observable but filtered out
+    before `HouseStateDomain`; P4b will decide whether and how to consume it.
+  - Verification: full `pytest -q` passed with 1270 tests; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed; targeted `ruff check` passed.
+- Previous slice: Phase P / P3 complete.
   - P3 added `OccupancyInferenceModule` and `OccupancyDomain` consumption of `OccupancySignal`
     for sensorless rooms only.
   - Sensorless room definition: `occupancy_mode == "derived"` and no `occupancy_sources`;
@@ -1349,7 +1364,14 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Tests: stanze con sensore ignorano il segnale, stanze senza sensore lo applicano.
 4. P4 — Coordinator wiring:
    - Registrare i tre nuovi moduli nel coordinator.
-   - Tests: verifica che i moduli vengano chiamati nel ciclo di inference.
+   - P4a: i moduli girano nel ciclo reale e sono osservabili in diagnostics; solo
+     `OccupancySignal` influenza runtime. `LightingSignal` e `RoomStateCorrelationModule`
+     restano signal-only.
+   - P4b: decidere con dati reali se e come consumare `LightingSignal` e il segnale di
+     correlazione stanza/stato casa.
+   - Tests: verifica che i moduli vengano chiamati nel ciclo di inference, che la sync delle
+     stanze sensorless avvenga su startup/options reload, e che segnali senza consumer non
+     causino errori.
 
 ### New files to create
 
@@ -1374,7 +1396,11 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `OccupancyInferenceModule` emette `OccupancySignal` solo per stanze senza sensore
 - [x] `OccupancyDomain` applica `OccupancySignal` con confidence ≥ 0.70 per stanze non sensorizzate
 - [x] `OccupancyDomain` ignora `OccupancySignal` per stanze con almeno un sensore
-- [ ] Tutti i test esistenti verdi; nuovi test ≥ 20
+- [x] P4a registra i moduli P1-P3 nel coordinator lifecycle
+- [x] `sync_sensorless_rooms()` è chiamato su startup/options reload, non nel loop di analyze
+- [x] `LightingSignal` senza consumer operativo è routed/observable e non causa errori
+- [x] `RoomStateCorrelationModule` resta observable ma non altera `HouseStateDomain`
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 20
 
 ---
 

@@ -58,6 +58,9 @@ from .runtime.inference import (
     HeatingPreferenceModule,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
+    LightingPatternModule,
+    OccupancyInferenceModule,
+    RoomStateCorrelationModule,
     SnapshotStore,
     WeekdayStateModule,
 )
@@ -178,11 +181,18 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._heating_module = HeatingPreferenceModule()
         self._house_state_module = HouseStateInferenceModule()
         self._activity_module = ActivityInferenceModule()
+        self._lighting_pattern_module = LightingPatternModule()
+        self._room_state_correlation_module = RoomStateCorrelationModule()
+        self._occupancy_inference_module = OccupancyInferenceModule()
+        self._sync_occupancy_inference_rooms()
         self.engine.set_snapshot_store(self._house_snapshot_store)
         self.engine.register_learning_module(self._weekday_module)
         self.engine.register_learning_module(self._heating_module)
         self.engine.register_learning_module(self._house_state_module)
         self.engine.register_learning_module(self._activity_module)
+        self.engine.register_learning_module(self._lighting_pattern_module)
+        self.engine.register_learning_module(self._room_state_correlation_module)
+        self.engine.register_learning_module(self._occupancy_inference_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_periodic_fallback = None
@@ -312,6 +322,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Reload options and refresh state."""
         await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
+        self._sync_occupancy_inference_rooms()
         self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
@@ -1022,9 +1033,19 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._heating_module,
             self._house_state_module,
             self._activity_module,
+            self._lighting_pattern_module,
+            self._room_state_correlation_module,
+            self._occupancy_inference_module,
         ):
             await module.analyze(self._house_snapshot_store)
         await self._async_submit_house_state_candidates()
+
+    def _sync_occupancy_inference_rooms(self) -> None:
+        """Sync sensorless room ids after startup or options reload."""
+        module = getattr(self, "_occupancy_inference_module", None)
+        if module is None:
+            return
+        module.sync_sensorless_rooms(_sensorless_occupancy_room_ids(self.entry.options))
 
     async def _async_submit_house_state_candidates(self) -> None:
         self._sync_house_state_approval_state()
@@ -1629,6 +1650,24 @@ def _health_event_record(event: dict[str, Any]) -> dict[str, Any]:
         "event_id": str(event.get("event_id") or ""),
         "ts": str(event.get("ts") or ""),
     }
+
+
+def _sensorless_occupancy_room_ids(options: dict[str, Any]) -> set[str]:
+    """Return rooms eligible for occupancy inference."""
+    room_ids: set[str] = set()
+    for room in options.get(OPT_ROOMS, []):
+        if not isinstance(room, dict):
+            continue
+        room_id = str(room.get("room_id") or "").strip()
+        if not room_id:
+            continue
+        mode = str(room.get("occupancy_mode") or "derived").strip().lower()
+        if mode != "derived":
+            continue
+        if room_occupancy_source_entity_ids(room):
+            continue
+        room_ids.add(room_id)
+    return room_ids
 
 
 def _installer_notification_message(event: dict[str, Any]) -> str:

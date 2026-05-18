@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.heima.const import OPT_ROOMS
 from custom_components.heima.coordinator import (
     HeimaCoordinator,
     _proposal_from_house_state_candidate,
+    _sensorless_occupancy_room_ids,
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.inference.approval_store import (
@@ -292,6 +294,9 @@ async def test_analyze_inference_modules_includes_activity_module() -> None:
     coordinator._heating_module = SimpleNamespace(analyze=AsyncMock())
     coordinator._house_state_module = SimpleNamespace(analyze=AsyncMock())
     coordinator._activity_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._lighting_pattern_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._room_state_correlation_module = SimpleNamespace(analyze=AsyncMock())
+    coordinator._occupancy_inference_module = SimpleNamespace(analyze=AsyncMock())
     coordinator._async_submit_house_state_candidates = AsyncMock()
 
     await coordinator._async_analyze_inference_modules()
@@ -299,7 +304,55 @@ async def test_analyze_inference_modules_includes_activity_module() -> None:
     coordinator._sync_house_state_approval_state.assert_called_once()
     coordinator._sync_activity_approval_state.assert_called_once()
     coordinator._activity_module.analyze.assert_awaited_once_with(coordinator._house_snapshot_store)
+    coordinator._lighting_pattern_module.analyze.assert_awaited_once_with(
+        coordinator._house_snapshot_store
+    )
+    coordinator._room_state_correlation_module.analyze.assert_awaited_once_with(
+        coordinator._house_snapshot_store
+    )
+    coordinator._occupancy_inference_module.analyze.assert_awaited_once_with(
+        coordinator._house_snapshot_store
+    )
     coordinator._async_submit_house_state_candidates.assert_awaited_once()
+
+
+def test_sensorless_occupancy_room_ids_uses_derived_rooms_without_occupancy_sources() -> None:
+    assert _sensorless_occupancy_room_ids(
+        {
+            OPT_ROOMS: [
+                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []},
+                {
+                    "room_id": "living",
+                    "occupancy_mode": "derived",
+                    "occupancy_sources": ["binary_sensor.living_motion"],
+                },
+                {"room_id": "garage", "occupancy_mode": "none", "occupancy_sources": []},
+                {"room_id": "guest", "learning_sources": ["sensor.guest_lux"]},
+            ]
+        }
+    ) == {"guest", "studio"}
+
+
+def test_sync_occupancy_inference_rooms_uses_current_options() -> None:
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    module = SimpleNamespace(sync_sensorless_rooms=MagicMock())
+    coordinator._occupancy_inference_module = module
+    coordinator.entry = SimpleNamespace(
+        options={
+            OPT_ROOMS: [
+                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []},
+                {
+                    "room_id": "living",
+                    "occupancy_mode": "derived",
+                    "occupancy_sources": ["binary_sensor.living_motion"],
+                },
+            ]
+        }
+    )
+
+    coordinator._sync_occupancy_inference_rooms()
+
+    module.sync_sensorless_rooms.assert_called_once_with({"studio"})
 
 
 @pytest.mark.asyncio
