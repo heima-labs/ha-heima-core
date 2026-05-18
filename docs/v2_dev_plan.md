@@ -1,7 +1,7 @@
 # Heima v2.1 — Development Plan
 
 **Spec:** `docs/specs/heima_v2_spec.md` (v2.1.0-draft)
-**Branch:** `feat/v2` (to be created from `main`)
+**Branch:** `feat/semantic-policy-advisor`
 **Solo developer:** Stefano — no backward compatibility with v1 required during development.
 
 ---
@@ -97,23 +97,25 @@ These constraints must never be violated. See spec §16 for rationale.
 | K | Installer alert channel + health entity | `DONE` | C |
 | L | Auto-discovery config flow | `DONE` | — |
 | M | Installation validation | `DONE` | L |
-| N | Semantic Policy Suggestions | `NOT STARTED` | A |
-| O | HouseSnapshot Alignment + Proposal Revocation | `NOT STARTED` | N |
-| P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `NOT STARTED` | D, F |
-| Q | AnomalyAnalyzer: Statistical Detection Rules | `NOT STARTED` | O, P |
+| N | Semantic Policy Suggestions | `DONE` | A |
+| O | HouseSnapshot Alignment + Proposal Revocation | `DONE` | N |
+| P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `DONE` | D, F |
+| Q | AnomalyAnalyzer: Statistical Detection Rules | `IN PROGRESS` | O, P |
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `NOT STARTED` | E, P |
 | S | Learning Module Threshold Configurability | `NOT STARTED` | R |
+| T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation.
-**Active phase:** Phase P — Learning Modules D2: Lighting, Room Correlation, Occupancy (`IN PROGRESS`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2.
+**Active phase:** Phase Q — AnomalyAnalyzer: Statistical Detection Rules (`IN PROGRESS`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Discuss P4b with real signal diagnostics before enabling additional domain consumption.
+Discuss Q1 before implementation: `AnomalyRule`, catalog, persistence/config contract, and how
+findings reach the existing installer alert channel.
 
 ### Current Working Notes
 
@@ -132,6 +134,19 @@ Discuss P4b with real signal diagnostics before enabling additional domain consu
     before `HouseStateDomain`; P4b will decide whether and how to consume it.
   - Verification: full `pytest -q` passed with 1270 tests; `mypy custom_components/heima
     --ignore-missing-imports --no-error-summary` passed; targeted `ruff check` passed.
+- P4b policy decision:
+  - Statistical signals never feed operational domains directly. The only operational path is:
+    `LearningModule signal -> analyzer -> ProposalEngine -> admin review -> configured rule/reaction`.
+  - `RoomStateCorrelationModule` remains diagnostic-only at runtime. A future
+    `HouseStateCorrelationAnalyzer` may turn stable occupied-room patterns into reviewed
+    house-state proposals, but raw `room_state_correlation` signals must never enter
+    `HouseStateDomain`.
+  - `LightingPatternModule` remains diagnostic-only at runtime. A future analyzer may target the
+    existing `context_conditioned_lighting_scene` reaction type; this reaction plugin already
+    exists and has proposal/review presenters.
+  - The anti-feedback gate is human review, not signal strength alone. Correlations observed from
+    current house-state or lighting behavior cannot amplify themselves into runtime behavior
+    without explicit admin approval.
 - Previous slice: Phase P / P3 complete.
   - P3 added `OccupancyInferenceModule` and `OccupancyDomain` consumption of `OccupancySignal`
     for sensorless rooms only.
@@ -1367,11 +1382,14 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - P4a: i moduli girano nel ciclo reale e sono osservabili in diagnostics; solo
      `OccupancySignal` influenza runtime. `LightingSignal` e `RoomStateCorrelationModule`
      restano signal-only.
-   - P4b: decidere con dati reali se e come consumare `LightingSignal` e il segnale di
-     correlazione stanza/stato casa.
+   - P4b: formalizzare il consumo proposal-gated. `LightingSignal` e il segnale di correlazione
+     stanza/stato casa non entrano nei domini; futuri analyzer producono proposte reviewabili.
    - Tests: verifica che i moduli vengano chiamati nel ciclo di inference, che la sync delle
      stanze sensorless avvenga su startup/options reload, e che segnali senza consumer non
      causino errori.
+   - Verification: `context_conditioned_lighting_scene` esiste come reaction type per future
+     proposte lighting. Per house-state correlation il percorso resta il meccanismo
+     approval/candidate dedicato, non un reaction plugin runtime diretto.
 
 ### New files to create
 
@@ -1400,6 +1418,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `sync_sensorless_rooms()` è chiamato su startup/options reload, non nel loop di analyze
 - [x] `LightingSignal` senza consumer operativo è routed/observable e non causa errori
 - [x] `RoomStateCorrelationModule` resta observable ma non altera `HouseStateDomain`
+- [x] P4b policy: segnali statistici operativi solo via ProposalEngine + review admin
+- [x] Verificato target lighting: `context_conditioned_lighting_scene` esiste
 - [x] Tutti i test esistenti verdi; nuovi test ≥ 20
 
 ---
@@ -1543,6 +1563,39 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 - [ ] `diagnostics()` di ogni modulo espone i valori effettivi di `min_support` e `confidence_threshold`
 - [ ] Nessun cambio di comportamento osservabile con options di default
 - [ ] Tutti i test esistenti verdi (nessun test deve cambiare i valori di default)
+
+---
+
+## Phase T — Learning Signal Analyzers
+
+**Spec section:** §10 (inference engine — proposal-gated signal consumption)
+**Goal:** trasformare i segnali statistici maturi (`LightingSignal`, `HouseStateSignal`) in `ReactionProposal` tramite ProposalEngine + review admin. Nessun segnale acquisisce autorità operativa diretta sui domini.
+**Depends on:** Phase P (learning modules attivi e osservabili), Phase S (threshold configurabili — i segnali devono essere misurabili prima di promuoverli a proposal).
+
+### Motivation
+
+`LightingPatternModule` e `RoomStateCorrelationModule` producono segnali osservabili da P4a. Prima di dare loro potere runtime, i segnali passano dal gate umano: l'analyzer emette una `ReactionProposal`, l'admin approva o rifiuta, solo allora diventa regola operativa.
+
+### Working slices
+
+1. T1 — LightingPatternAnalyzer:
+   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
+   - Per ogni `LightingSignal` con confidence stabile, verifica se esiste già una regola configurata per quella stanza + contesto (`house_state`, `hour_bucket`).
+   - Se non esiste, emette `ReactionProposal` con `reaction_type = "context_conditioned_lighting_scene"`.
+   - `origin = "learning_derived"`. Nessun effetto runtime finché non approvata.
+
+2. T2 — HouseStateCorrelationAnalyzer:
+   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
+   - Il segnale da `RoomStateCorrelationModule` compete con calendar, work window, manual override: il proposal va emesso solo quando nessuna sorgente a priorità superiore è attiva al momento dell'osservazione.
+   - **Prerequisito bloccante:** non esiste un `reaction_type` per "house state rule". T2 richiede o un nuovo tipo o una soluzione alternativa — da decidere prima dell'implementazione.
+   - `origin = "learning_derived"`.
+
+### Acceptance criteria
+
+- [ ] `LightingPatternAnalyzer` emette `ReactionProposal` per pattern lighting stabili non già coperti da config admin
+- [ ] `HouseStateCorrelationAnalyzer` emette `ReactionProposal` solo in assenza di sorgenti prioritarie attive
+- [ ] Nessun segnale statistico influenza domini direttamente — tutto passa da ProposalEngine
+- [ ] Tutti i test esistenti verdi
 
 ---
 
