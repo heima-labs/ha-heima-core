@@ -69,6 +69,10 @@ class AnomalyAnalyzer:
         rules = _effective_rules(anomaly_cfg)
         findings: list[BehaviorFinding] = []
         if enabled and snapshot_store is not None:
+            findings.extend(self._evaluate_arrival_time_outlier(snapshot_store, rules))
+            findings.extend(self._evaluate_departure_time_outlier(snapshot_store, rules))
+            findings.extend(self._evaluate_extended_absence(snapshot_store, rules))
+            findings.extend(self._evaluate_presence_pattern_drift(snapshot_store, rules))
             findings.extend(self._evaluate_heating_setpoint_outlier(snapshot_store, rules))
             findings.extend(self._evaluate_heating_unresponsive(snapshot_store, rules))
             findings.extend(self._evaluate_heating_vacation_mismatch(snapshot_store, rules))
@@ -88,6 +92,208 @@ class AnomalyAnalyzer:
     def diagnostics(self) -> dict[str, Any]:
         """Return analyzer diagnostics."""
         return dict(self._last_diagnostics)
+
+    def _evaluate_arrival_time_outlier(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["arrival_time_outlier"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 5)
+        delta_hours = _threshold_float(rule, "delta_hours", 3.0)
+        window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
+        snapshots = snapshot_store.snapshots(limit=window)
+        transitions = _presence_transitions(snapshots, previous_home=False, current_home=True)
+        if len(transitions) < min_observations + 1:
+            return []
+
+        baseline = [transition.hour_bucket for transition in transitions[:-1]]
+        current = transitions[-1]
+        baseline_hour = _median([float(hour) for hour in baseline])
+        distance = abs(float(current.hour_bucket) - baseline_hour)
+        if distance < delta_hours:
+            return []
+
+        confidence = min(1.0, distance / max(delta_hours * 2, 0.1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Arrival happened at an unusual hour: "
+                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "transition_count": len(transitions),
+                "baseline_transition_count": len(baseline),
+                "current_hour_bucket": current.hour_bucket,
+                "baseline_hour_bucket": round(baseline_hour, 3),
+                "distance_hours": round(distance, 3),
+                "delta_hours": delta_hours,
+                "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_departure_time_outlier(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["departure_time_outlier"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 5)
+        delta_hours = _threshold_float(rule, "delta_hours", 3.0)
+        window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
+        snapshots = snapshot_store.snapshots(limit=window)
+        transitions = _presence_transitions(snapshots, previous_home=True, current_home=False)
+        if len(transitions) < min_observations + 1:
+            return []
+
+        baseline = [transition.hour_bucket for transition in transitions[:-1]]
+        current = transitions[-1]
+        baseline_hour = _median([float(hour) for hour in baseline])
+        distance = abs(float(current.hour_bucket) - baseline_hour)
+        if distance < delta_hours:
+            return []
+
+        confidence = min(1.0, distance / max(delta_hours * 2, 0.1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Departure happened at an unusual hour: "
+                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "transition_count": len(transitions),
+                "baseline_transition_count": len(baseline),
+                "current_hour_bucket": current.hour_bucket,
+                "baseline_hour_bucket": round(baseline_hour, 3),
+                "distance_hours": round(distance, 3),
+                "delta_hours": delta_hours,
+                "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_extended_absence(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["extended_absence"]
+        if not rule.enabled:
+            return []
+        history_window = _threshold_int(rule, "history_window", 1000)
+        min_observations = _threshold_int(rule, "min_observations", 5)
+        multiplier = _threshold_float(rule, "multiplier", 2.0)
+        snapshots = snapshot_store.snapshots(limit=max(history_window, min_observations + 1))
+        current_run = _current_absence_run_length(snapshots)
+        if current_run <= 0:
+            return []
+
+        baseline_snapshots = snapshots[: len(snapshots) - current_run]
+        run_lengths = _absence_run_lengths(baseline_snapshots)
+        if len(run_lengths) < min_observations:
+            return []
+
+        percentile_90 = _percentile_nearest_rank(run_lengths, 0.9)
+        threshold = percentile_90 * multiplier
+        if current_run <= threshold:
+            return []
+
+        confidence = min(1.0, current_run / max(threshold * 2, 1.0))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Current absence is unusually long: "
+                f"{current_run} snapshots away vs historical 90th percentile {percentile_90}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "history_window": history_window,
+                "min_observations": min_observations,
+                "multiplier": multiplier,
+                "current_run": current_run,
+                "baseline_run_count": len(run_lengths),
+                "percentile_90_run": percentile_90,
+                "threshold_run": round(threshold, 3),
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_presence_pattern_drift(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["presence_pattern_drift"]
+        if not rule.enabled:
+            return []
+        history_window = _threshold_int(rule, "history_window", 1000)
+        min_observations = _threshold_int(rule, "min_observations", 10)
+        recent_observations = _threshold_int(rule, "recent_observations", 4)
+        drift_delta = _threshold_float(rule, "drift_delta", 0.5)
+        snapshots = snapshot_store.snapshots(
+            limit=max(history_window, min_observations + recent_observations)
+        )
+        if not snapshots:
+            return []
+
+        current_slot = _snapshot_slot(snapshots[-1])
+        slot_snapshots = [
+            snapshot
+            for snapshot in snapshots
+            if _snapshot_slot(snapshot) == current_slot
+        ]
+        if len(slot_snapshots) < min_observations + recent_observations:
+            return []
+
+        recent = slot_snapshots[-recent_observations:]
+        baseline = slot_snapshots[:-recent_observations]
+        if len(baseline) < min_observations:
+            return []
+
+        baseline_ratio = _home_ratio(baseline)
+        recent_ratio = _home_ratio(recent)
+        drift = abs(recent_ratio - baseline_ratio)
+        if drift < drift_delta:
+            return []
+
+        confidence = min(1.0, drift)
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Presence pattern drifted for the current time slot: "
+                f"recent home ratio {recent_ratio:.2f} vs baseline {baseline_ratio:.2f}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "weekday": current_slot[0],
+                "hour_bucket": current_slot[1],
+                "history_window": history_window,
+                "min_observations": min_observations,
+                "recent_observations": recent_observations,
+                "drift_delta": drift_delta,
+                "baseline_snapshot_count": len(baseline),
+                "recent_snapshot_count": len(recent),
+                "baseline_home_ratio": round(baseline_ratio, 3),
+                "recent_home_ratio": round(recent_ratio, 3),
+                "observed_drift": round(drift, 3),
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
 
     def _evaluate_heating_setpoint_outlier(
         self,
@@ -542,7 +748,26 @@ def _effective_rule(rule_id: str, raw: dict[str, Any]) -> AnomalyRule:
 
 def _default_rule(rule_id: str) -> AnomalyRule:
     thresholds: dict[str, Any] = {}
-    if rule_id == "heating_unresponsive":
+    if rule_id in {"arrival_time_outlier", "departure_time_outlier"}:
+        thresholds = {
+            "window": 1000,
+            "min_observations": 5,
+            "delta_hours": 3.0,
+        }
+    elif rule_id == "extended_absence":
+        thresholds = {
+            "history_window": 1000,
+            "min_observations": 5,
+            "multiplier": 2.0,
+        }
+    elif rule_id == "presence_pattern_drift":
+        thresholds = {
+            "history_window": 1000,
+            "min_observations": 10,
+            "recent_observations": 4,
+            "drift_delta": 0.5,
+        }
+    elif rule_id == "heating_unresponsive":
         thresholds = {
             "window": 4,
             "min_observations": 4,
@@ -653,6 +878,33 @@ class _DisarmTransition:
     hour_bucket: int
 
 
+@dataclass(frozen=True)
+class _PresenceTransition:
+    weekday: int
+    hour_bucket: int
+
+
+def _presence_transitions(
+    snapshots: list[Any],
+    *,
+    previous_home: bool,
+    current_home: bool,
+) -> list[_PresenceTransition]:
+    transitions: list[_PresenceTransition] = []
+    for previous, current in zip(snapshots, snapshots[1:], strict=False):
+        if bool(getattr(previous, "anyone_home", False)) is not previous_home:
+            continue
+        if bool(getattr(current, "anyone_home", False)) is not current_home:
+            continue
+        transitions.append(
+            _PresenceTransition(
+                weekday=int(getattr(current, "weekday", 0) or 0),
+                hour_bucket=int(getattr(current, "minute_of_day", 0) or 0) // 60,
+            )
+        )
+    return transitions
+
+
 def _disarm_transitions(snapshots: list[Any]) -> list[_DisarmTransition]:
     transitions: list[_DisarmTransition] = []
     for previous, current in zip(snapshots, snapshots[1:], strict=False):
@@ -677,6 +929,13 @@ def _is_armed_state(security_state: str) -> bool:
     return security_state in {"armed_away", "armed_home", "armed_night"}
 
 
+def _snapshot_slot(snapshot: Any) -> tuple[int, int]:
+    return (
+        int(getattr(snapshot, "weekday", 0) or 0),
+        int(getattr(snapshot, "minute_of_day", 0) or 0) // 60,
+    )
+
+
 def _snapshot_time(snapshot: Any) -> datetime | None:
     raw = str(getattr(snapshot, "ts", "") or "")
     try:
@@ -696,6 +955,38 @@ def _same_room_occupancy(left: Any, right: Any) -> bool:
 
 def _occupied_home_pair(left: Any, right: Any) -> bool:
     return bool(getattr(left, "anyone_home", False)) and bool(getattr(right, "anyone_home", False))
+
+
+def _home_ratio(snapshots: list[Any]) -> float:
+    if not snapshots:
+        return 0.0
+    home_count = sum(1 for snapshot in snapshots if bool(getattr(snapshot, "anyone_home", False)))
+    return home_count / len(snapshots)
+
+
+def _absence_run_lengths(snapshots: list[Any]) -> list[int]:
+    lengths: list[int] = []
+    current = 0
+    for snapshot in snapshots:
+        if not bool(getattr(snapshot, "anyone_home", False)):
+            current += 1
+            continue
+        if current > 0:
+            lengths.append(current)
+            current = 0
+    if current > 0:
+        lengths.append(current)
+    return lengths
+
+
+def _current_absence_run_length(snapshots: list[Any]) -> int:
+    current = 0
+    for snapshot in reversed(snapshots):
+        if not bool(getattr(snapshot, "anyone_home", False)):
+            current += 1
+            continue
+        break
+    return current
 
 
 def _stillness_run_lengths(snapshots: list[Any]) -> list[int]:

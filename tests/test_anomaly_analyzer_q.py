@@ -126,6 +126,28 @@ def _timed_snapshot(
     )
 
 
+def _presence_snapshot(*, hour: int, anyone_home: bool, weekday: int = 1) -> HouseSnapshot:
+    return _snapshot(
+        weekday=weekday,
+        minute_of_day=hour * 60,
+        anyone_home=anyone_home,
+        room_occupancy={"living": True} if anyone_home else {},
+        heating_current_temperature=21.0,
+    )
+
+
+def _presence_transition_pair(*, hour: int, arrival: bool, weekday: int = 1) -> list[HouseSnapshot]:
+    if arrival:
+        return [
+            _presence_snapshot(hour=hour, anyone_home=False, weekday=weekday),
+            _presence_snapshot(hour=hour, anyone_home=True, weekday=weekday),
+        ]
+    return [
+        _presence_snapshot(hour=hour, anyone_home=True, weekday=weekday),
+        _presence_snapshot(hour=hour, anyone_home=False, weekday=weekday),
+    ]
+
+
 async def test_anomaly_analyzer_heating_unresponsive_emits_finding() -> None:
     analyzer = AnomalyAnalyzer()
     snapshots = [
@@ -188,6 +210,419 @@ async def test_anomaly_analyzer_applies_threshold_override() -> None:
         analyzer.diagnostics()["rules"]["heating_unresponsive"]["thresholds"]["min_gap_c"]
         == 4.0
     )
+
+
+async def test_anomaly_analyzer_arrival_time_outlier_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=18, arrival=True))
+    snapshots.extend(_presence_transition_pair(hour=23, arrival=True))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    arrival_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "arrival_time_outlier"
+    ]
+    assert len(arrival_findings) == 1
+    assert arrival_findings[0].payload.context["baseline_transition_count"] == 5
+    assert arrival_findings[0].payload.context["current_hour_bucket"] == 23
+
+
+async def test_anomaly_analyzer_arrival_time_outlier_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(4):
+        snapshots.extend(_presence_transition_pair(hour=18, arrival=True))
+    snapshots.extend(_presence_transition_pair(hour=23, arrival=True))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "arrival_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_arrival_time_outlier_ignores_normal_time() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(6):
+        snapshots.extend(_presence_transition_pair(hour=18, arrival=True))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "arrival_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_arrival_time_outlier_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "arrival_time_outlier": {
+                        "thresholds": {
+                            "delta_hours": 8.0,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=18, arrival=True))
+    snapshots.extend(_presence_transition_pair(hour=23, arrival=True))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "arrival_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_arrival_time_outlier_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "arrival_time_outlier": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=18, arrival=True))
+    snapshots.extend(_presence_transition_pair(hour=23, arrival=True))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "arrival_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_departure_time_outlier_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=8, arrival=False))
+    snapshots.extend(_presence_transition_pair(hour=14, arrival=False))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    departure_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "departure_time_outlier"
+    ]
+    assert len(departure_findings) == 1
+    assert departure_findings[0].payload.context["baseline_transition_count"] == 5
+    assert departure_findings[0].payload.context["current_hour_bucket"] == 14
+
+
+async def test_anomaly_analyzer_departure_time_outlier_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(4):
+        snapshots.extend(_presence_transition_pair(hour=8, arrival=False))
+    snapshots.extend(_presence_transition_pair(hour=14, arrival=False))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "departure_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_departure_time_outlier_ignores_normal_time() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(6):
+        snapshots.extend(_presence_transition_pair(hour=8, arrival=False))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "departure_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_departure_time_outlier_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "departure_time_outlier": {
+                        "thresholds": {
+                            "delta_hours": 8.0,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=8, arrival=False))
+    snapshots.extend(_presence_transition_pair(hour=14, arrival=False))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "departure_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_departure_time_outlier_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "departure_time_outlier": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_transition_pair(hour=8, arrival=False))
+    snapshots.extend(_presence_transition_pair(hour=14, arrival=False))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "departure_time_outlier"
+    ]
+
+
+async def test_anomaly_analyzer_extended_absence_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(2))
+        snapshots.append(_presence_snapshot(hour=10, anyone_home=True))
+    snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(6))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    absence_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "extended_absence"
+    ]
+    assert len(absence_findings) == 1
+    assert absence_findings[0].payload.context["current_run"] == 6
+    assert absence_findings[0].payload.context["percentile_90_run"] == 2
+
+
+async def test_anomaly_analyzer_extended_absence_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(4):
+        snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(2))
+        snapshots.append(_presence_snapshot(hour=10, anyone_home=True))
+    snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(6))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "extended_absence"
+    ]
+
+
+async def test_anomaly_analyzer_extended_absence_ignores_short_current_run() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(3))
+        snapshots.append(_presence_snapshot(hour=10, anyone_home=True))
+    snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(3))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "extended_absence"
+    ]
+
+
+async def test_anomaly_analyzer_extended_absence_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "extended_absence": {
+                        "thresholds": {
+                            "multiplier": 4.0,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(2))
+        snapshots.append(_presence_snapshot(hour=10, anyone_home=True))
+    snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(6))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "extended_absence"
+    ]
+
+
+async def test_anomaly_analyzer_extended_absence_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "extended_absence": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(2))
+        snapshots.append(_presence_snapshot(hour=10, anyone_home=True))
+    snapshots.extend(_presence_snapshot(hour=10, anyone_home=False) for _ in range(6))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "extended_absence"
+    ]
+
+
+async def test_anomaly_analyzer_presence_pattern_drift_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_presence_snapshot(hour=20, anyone_home=True) for _ in range(10)]
+    snapshots.extend(_presence_snapshot(hour=20, anyone_home=False) for _ in range(4))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    drift_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
+    assert len(drift_findings) == 1
+    assert drift_findings[0].payload.context["baseline_snapshot_count"] == 10
+    assert drift_findings[0].payload.context["recent_snapshot_count"] == 4
+    assert drift_findings[0].payload.context["observed_drift"] == 1.0
+
+
+async def test_anomaly_analyzer_presence_pattern_drift_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_presence_snapshot(hour=20, anyone_home=True) for _ in range(9)]
+    snapshots.extend(_presence_snapshot(hour=20, anyone_home=False) for _ in range(4))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
+
+
+async def test_anomaly_analyzer_presence_pattern_drift_ignores_stable_pattern() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_presence_snapshot(hour=20, anyone_home=True) for _ in range(14)]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
+
+
+async def test_anomaly_analyzer_presence_pattern_drift_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "presence_pattern_drift": {
+                        "thresholds": {
+                            "drift_delta": 1.1,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [_presence_snapshot(hour=20, anyone_home=True) for _ in range(10)]
+    snapshots.extend(_presence_snapshot(hour=20, anyone_home=False) for _ in range(4))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
+
+
+async def test_anomaly_analyzer_presence_pattern_drift_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "presence_pattern_drift": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [_presence_snapshot(hour=20, anyone_home=True) for _ in range(10)]
+    snapshots.extend(_presence_snapshot(hour=20, anyone_home=False) for _ in range(4))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
 
 
 async def test_anomaly_analyzer_heating_setpoint_outlier_emits_finding() -> None:

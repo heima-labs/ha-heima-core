@@ -1474,9 +1474,17 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Implementare almeno una regola reale end-to-end per validare il percorso
      `AnomalyAnalyzer -> FindingRouter -> installer alert`.
    - Il servizio `heima.configure_anomaly_rule` è fuori da Q1; resta in Q6.
-2. Q2 — Regole presenza (4):
+2. Q2 — Regole presenza (4): `DONE`
    - `arrival_time_outlier`, `departure_time_outlier`, `extended_absence`, `presence_pattern_drift`.
-   - Tests: ogni regola triggera su sequenza snapshot costruita.
+   - `arrival_time_outlier` e `departure_time_outlier` usano transizioni consecutive
+     `anyone_home=False -> True` e `anyone_home=True -> False`; la transizione più recente
+     viene confrontata con la mediana storica delle transizioni precedenti.
+   - `extended_absence` usa il run corrente di `anyone_home=False` e lo confronta con il
+     percentile 90 dei run storici di assenza.
+   - `presence_pattern_drift` confronta il rapporto `anyone_home=True` recente con il baseline
+     dello stesso `(weekday, hour_bucket)`.
+   - Tests: ogni regola copre trigger, supporto insufficiente, condizione normale, override soglia,
+     e regola disabilitata.
 3. Q3 — Regole riscaldamento (3): `DONE`
    - `heating_setpoint_outlier`, `heating_unresponsive`, `heating_vacation_mismatch`.
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
@@ -1513,6 +1521,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
 - [x] `heating_setpoint_outlier` usa `heating_setpoint` e finestra snapshot-count
 - [x] `heating_vacation_mismatch` usa `security_state`, `heating_setpoint`, e soglia stretta `>`
+- [x] Q2 presence rules usano solo `HouseSnapshot.anyone_home`, slot temporali, e transizioni
+      consecutive
 - [x] `alarm_disarm_unusual_hour` usa `security_state` e transizioni consecutive `armed_* -> disarmed`
 - [x] `alarm_expected_not_armed` usa solo pattern statistici da `security_state` nello stesso slot
 - [x] `sensor_activity_drop` non si sovrappone a `SensorStuck` (snapshot/hour frequency vs timeout assoluto)
