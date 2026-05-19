@@ -71,6 +71,8 @@ class AnomalyAnalyzer:
             findings.extend(self._evaluate_heating_setpoint_outlier(snapshot_store, rules))
             findings.extend(self._evaluate_heating_unresponsive(snapshot_store, rules))
             findings.extend(self._evaluate_heating_vacation_mismatch(snapshot_store, rules))
+            findings.extend(self._evaluate_alarm_disarm_unusual_hour(snapshot_store, rules))
+            findings.extend(self._evaluate_alarm_expected_not_armed(snapshot_store, rules))
         self._last_diagnostics = {
             "analyzer_id": self.analyzer_id,
             "enabled": enabled,
@@ -126,6 +128,119 @@ class AnomalyAnalyzer:
                 "deviation_c": round(deviation, 3),
                 "delta_c": delta_c,
                 "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_alarm_disarm_unusual_hour(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["alarm_disarm_unusual_hour"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 5)
+        delta_hours = _threshold_float(rule, "delta_hours", 3.0)
+        window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
+        snapshots = snapshot_store.snapshots(limit=window)
+        transitions = _disarm_transitions(snapshots)
+        if len(transitions) < min_observations + 1:
+            return []
+
+        baseline = [transition.hour_bucket for transition in transitions[:-1]]
+        current = transitions[-1]
+        baseline_hour = _median([float(hour) for hour in baseline])
+        distance = abs(float(current.hour_bucket) - baseline_hour)
+        if distance < delta_hours:
+            return []
+
+        confidence = min(1.0, distance / max(delta_hours * 2, 0.1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Alarm was disarmed at an unusual hour: "
+                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "transition_count": len(transitions),
+                "baseline_transition_count": len(baseline),
+                "current_hour_bucket": current.hour_bucket,
+                "baseline_hour_bucket": round(baseline_hour, 3),
+                "distance_hours": round(distance, 3),
+                "delta_hours": delta_hours,
+                "window": window,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_alarm_expected_not_armed(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["alarm_expected_not_armed"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 8)
+        expected_ratio = _threshold_float(rule, "expected_ratio", 0.8)
+        recent_disarmed_observations = _threshold_int(rule, "recent_disarmed_observations", 2)
+        history_window = max(
+            min_observations + recent_disarmed_observations,
+            _threshold_int(rule, "history_window", 1000),
+        )
+        snapshots = snapshot_store.snapshots(limit=history_window)
+        if not snapshots:
+            return []
+        current_slot = (
+            int(getattr(snapshots[-1], "weekday", 0) or 0),
+            int(getattr(snapshots[-1], "minute_of_day", 0) or 0) // 60,
+        )
+        slot_snapshots = [
+            snapshot
+            for snapshot in snapshots
+            if (
+                int(getattr(snapshot, "weekday", 0) or 0),
+                int(getattr(snapshot, "minute_of_day", 0) or 0) // 60,
+            )
+            == current_slot
+        ]
+        if len(slot_snapshots) < min_observations + recent_disarmed_observations:
+            return []
+
+        recent = slot_snapshots[-recent_disarmed_observations:]
+        baseline = slot_snapshots[:-recent_disarmed_observations]
+        if len(baseline) < min_observations:
+            return []
+        if any(_security_state(snapshot) != "disarmed" for snapshot in recent):
+            return []
+
+        armed_count = sum(1 for snapshot in baseline if _is_armed_state(_security_state(snapshot)))
+        armed_ratio = armed_count / len(baseline)
+        if armed_ratio < expected_ratio:
+            return []
+
+        confidence = min(1.0, armed_ratio)
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Alarm is disarmed in a time slot where it is usually armed: "
+                f"weekday {current_slot[0]}, hour {current_slot[1]}."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "weekday": current_slot[0],
+                "hour_bucket": current_slot[1],
+                "baseline_snapshot_count": len(baseline),
+                "recent_disarmed_observations": len(recent),
+                "armed_ratio": round(armed_ratio, 3),
+                "expected_ratio": expected_ratio,
+                "history_window": history_window,
             },
         )
         return [_finding(self.analyzer_id, signal)]
@@ -281,6 +396,19 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 3,
             "max_away_setpoint_c": 18.0,
         }
+    elif rule_id == "alarm_disarm_unusual_hour":
+        thresholds = {
+            "window": 1000,
+            "min_observations": 5,
+            "delta_hours": 3.0,
+        }
+    elif rule_id == "alarm_expected_not_armed":
+        thresholds = {
+            "history_window": 1000,
+            "min_observations": 8,
+            "expected_ratio": 0.8,
+            "recent_disarmed_observations": 2,
+        }
     return AnomalyRule(rule_id=rule_id, enabled=True, severity="warning", thresholds=thresholds)
 
 
@@ -334,3 +462,33 @@ def _median(values: list[float]) -> float:
     if len(ordered) % 2:
         return ordered[midpoint]
     return (ordered[midpoint - 1] + ordered[midpoint]) / 2
+
+
+@dataclass(frozen=True)
+class _DisarmTransition:
+    weekday: int
+    hour_bucket: int
+
+
+def _disarm_transitions(snapshots: list[Any]) -> list[_DisarmTransition]:
+    transitions: list[_DisarmTransition] = []
+    for previous, current in zip(snapshots, snapshots[1:], strict=False):
+        if not _is_armed_state(_security_state(previous)):
+            continue
+        if _security_state(current) != "disarmed":
+            continue
+        transitions.append(
+            _DisarmTransition(
+                weekday=int(getattr(current, "weekday", 0) or 0),
+                hour_bucket=int(getattr(current, "minute_of_day", 0) or 0) // 60,
+            )
+        )
+    return transitions
+
+
+def _security_state(snapshot: Any) -> str:
+    return str(getattr(snapshot, "security_state", "") or "").strip()
+
+
+def _is_armed_state(security_state: str) -> bool:
+    return security_state in {"armed_away", "armed_home", "armed_night"}

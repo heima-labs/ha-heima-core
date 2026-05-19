@@ -136,6 +136,15 @@ findings reach the existing installer alert channel.
     `security_state == "armed_away"` inside that window. It skips if fewer than
     `min_observations` armed-away samples exist; it triggers only when all armed-away samples have
     `heating_setpoint > max_away_setpoint_c`.
+- Current slice: Phase Q / Q5 security subset complete.
+  - Security anomaly rules implemented: `alarm_disarm_unusual_hour`,
+    `alarm_expected_not_armed`.
+  - `alarm_disarm_unusual_hour` scans consecutive snapshot pairs for transitions from
+    `armed_*` to `disarmed`; the latest transition is the candidate and is excluded from the
+    baseline.
+  - `alarm_expected_not_armed` is statistical only: no calendar/work-window context. It filters
+    history by the current `(weekday, hour_bucket)` slot, then checks the latest configured number
+    of snapshots within that slot are all `disarmed`.
 - Current slice: Phase P / P4a complete.
   - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
     `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
@@ -1466,6 +1475,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`, `lights_on_unattended`, `lighting_scene_drift`.
 5. Q5 — Regole security + sensor + cross-domain (5):
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+   - Security subset `DONE`: `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`.
 6. Q6 — Servizio `heima.configure_anomaly_rule`:
    - Handler nel coordinator: aggiorna options, prende effetto al prossimo `analyze()`.
    - Tests: override soglia applicato, regola disabilitata non triggera.
@@ -1493,7 +1503,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
 - [x] `heating_setpoint_outlier` usa `heating_setpoint` e finestra snapshot-count
 - [x] `heating_vacation_mismatch` usa `security_state`, `heating_setpoint`, e soglia stretta `>`
-- [ ] `alarm_disarm_unusual_hour` usa `security_state` (Phase O prerequisito verificato)
+- [x] `alarm_disarm_unusual_hour` usa `security_state` e transizioni consecutive `armed_* -> disarmed`
+- [x] `alarm_expected_not_armed` usa solo pattern statistici da `security_state` nello stesso slot
 - [ ] `sensor_activity_drop` non si sovrappone a `SensorStuck` (check diverso: frequenza vs timeout assoluto)
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
 

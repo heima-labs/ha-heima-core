@@ -82,14 +82,16 @@ class _FakeEngine:
 
 def _snapshot(
     *,
+    weekday: int = 6,
+    minute_of_day: int = 20 * 60,
     heating_setpoint: float = 21.0,
     heating_current_temperature: float | None = 18.0,
     security_state: str = "disarmed",
 ) -> HouseSnapshot:
     return HouseSnapshot(
         ts="2026-05-17T20:00:00+00:00",
-        weekday=6,
-        minute_of_day=20 * 60,
+        weekday=weekday,
+        minute_of_day=minute_of_day,
         anyone_home=True,
         named_present=("alice",),
         room_occupancy={"living": True},
@@ -274,6 +276,91 @@ async def test_anomaly_analyzer_heating_vacation_mismatch_uses_strict_threshold(
         finding
         for finding in findings
         if finding.payload.anomaly_type == "heating_vacation_mismatch"
+    ]
+
+
+async def test_anomaly_analyzer_alarm_disarm_unusual_hour_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.append(_snapshot(security_state="armed_away", minute_of_day=6 * 60))
+        snapshots.append(_snapshot(security_state="disarmed", minute_of_day=7 * 60))
+    snapshots.append(_snapshot(security_state="armed_away", minute_of_day=1 * 60))
+    snapshots.append(_snapshot(security_state="disarmed", minute_of_day=2 * 60))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    alarm_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "alarm_disarm_unusual_hour"
+    ]
+    assert len(alarm_findings) == 1
+    assert alarm_findings[0].payload.context["baseline_transition_count"] == 5
+    assert alarm_findings[0].payload.context["current_hour_bucket"] == 2
+
+
+async def test_anomaly_analyzer_alarm_disarm_unusual_hour_scans_transitions() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+        _snapshot(security_state="disarmed", minute_of_day=2 * 60),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "alarm_disarm_unusual_hour"
+    ]
+
+
+async def test_anomaly_analyzer_alarm_expected_not_armed_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(weekday=1, minute_of_day=23 * 60, security_state="armed_night")
+        for _ in range(8)
+    ]
+    snapshots.extend(
+        _snapshot(weekday=1, minute_of_day=23 * 60, security_state="disarmed")
+        for _ in range(2)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    expected_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "alarm_expected_not_armed"
+    ]
+    assert len(expected_findings) == 1
+    assert expected_findings[0].payload.context["baseline_snapshot_count"] == 8
+    assert expected_findings[0].payload.context["recent_disarmed_observations"] == 2
+    assert expected_findings[0].payload.context["hour_bucket"] == 23
+
+
+async def test_anomaly_analyzer_alarm_expected_not_armed_filters_current_slot() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(weekday=1, minute_of_day=22 * 60, security_state="armed_night")
+        for _ in range(8)
+    ]
+    snapshots.extend(
+        _snapshot(weekday=1, minute_of_day=23 * 60, security_state="disarmed")
+        for _ in range(2)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "alarm_expected_not_armed"
     ]
 
 
