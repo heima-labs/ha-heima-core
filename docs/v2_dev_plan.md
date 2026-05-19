@@ -145,6 +145,15 @@ findings reach the existing installer alert channel.
   - `alarm_expected_not_armed` is statistical only: no calendar/work-window context. It filters
     history by the current `(weekday, hour_bucket)` slot, then checks the latest configured number
     of snapshots within that slot are all `disarmed`.
+- Current slice: Phase Q / Q5 residual subset complete.
+  - Residual Q5 rules implemented: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+  - All three use only `HouseSnapshot` history; no `EventStore`, calendar, or external context.
+  - `sensor_activity_drop` measures snapshot-per-hour rate for tracked Heima domain changes, not
+    raw sensor event frequency, and compares recent time-based windows to same weekday/hour
+    baseline history.
+  - `ghost_activity` detects room occupancy while `anyone_home == False`.
+  - `unusual_stillness` compares the current unchanged room-occupancy run to the historical 90th
+    percentile of occupied stillness runs.
 - Current slice: Phase P / P4a complete.
   - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
     `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
@@ -1473,9 +1482,10 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
 4. Q4 — Regole attività + lighting (5):
    - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`, `lights_on_unattended`, `lighting_scene_drift`.
-5. Q5 — Regole security + sensor + cross-domain (5):
+5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
    - Security subset `DONE`: `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`.
+   - Residual subset `DONE`: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
 6. Q6 — Servizio `heima.configure_anomaly_rule`:
    - Handler nel coordinator: aggiorna options, prende effetto al prossimo `analyze()`.
    - Tests: override soglia applicato, regola disabilitata non triggera.
@@ -1505,7 +1515,9 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `heating_vacation_mismatch` usa `security_state`, `heating_setpoint`, e soglia stretta `>`
 - [x] `alarm_disarm_unusual_hour` usa `security_state` e transizioni consecutive `armed_* -> disarmed`
 - [x] `alarm_expected_not_armed` usa solo pattern statistici da `security_state` nello stesso slot
-- [ ] `sensor_activity_drop` non si sovrappone a `SensorStuck` (check diverso: frequenza vs timeout assoluto)
+- [x] `sensor_activity_drop` non si sovrappone a `SensorStuck` (snapshot/hour frequency vs timeout assoluto)
+- [x] `ghost_activity` usa `room_occupancy` + `anyone_home` da `HouseSnapshot`
+- [x] `unusual_stillness` usa run di `room_occupancy` invariata con `anyone_home == True`
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
 
 ---
