@@ -114,11 +114,30 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Discuss Q1 before implementation: `AnomalyRule`, catalog, persistence/config contract, and how
-findings reach the existing installer alert channel.
+Implement Q4: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
+See Current Working Notes for Q4 scope decisions.
 
 ### Current Working Notes
 
+- Current slice: Phase Q / Q4 next.
+  - Q4 scope: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour` (3 rules only).
+  - `lights_on_unattended` and `lighting_scene_drift` deferred to the `monitored_entities` phase:
+    `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical light states,
+    so these rules would only detect Heima's own behavior, not user-left-on lights.
+  - `appliance_unusual_hour` trigger semantics: option A — triggers only when the appliance activity
+    is present in the **current** (latest) snapshot's `detected_activities`. It does not scan for
+    "last time the activity was seen active". Consistent with how other rules compare current state
+    vs historical baseline.
+  - `stove_on_unattended` / `oven_on_unattended`: window-based, `stove_on`/`oven_on` in
+    `detected_activities` AND `anyone_home == False` across last `window` snapshots.
+    No room mapping (detected_activities has no room granularity). Severity: critical.
+    Defaults: window=6, min_observations=2.
+  - `appliance_unusual_hour`: appliance set = `washing_machine_running`, `dishwasher_running`,
+    `tv_active`, `pc_active` (excludes `stove_on`, `oven_on` — have dedicated rules).
+    For each appliance currently active in the latest snapshot, extract hour from current snapshot ts;
+    build historical distribution of hours when that activity appeared in `detected_activities`;
+    trigger if `|current_hour - median_hour| >= delta_hours`. Defaults: window=1000,
+    min_observations=8, delta_hours=4.0. Severity: warning.
 - Current slice: Phase Q / Q1 complete.
   - `AnomalyAnalyzer` now uses the existing `AnomalySignal` contract from
     `runtime/plugin_contracts.py`; Q1 does not define a parallel signal type.
@@ -1488,13 +1507,16 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 3. Q3 — Regole riscaldamento (3): `DONE`
    - `heating_setpoint_outlier`, `heating_unresponsive`, `heating_vacation_mismatch`.
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
-4. Q4 — Regole attività + lighting (5):
-   - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`, `lights_on_unattended`, `lighting_scene_drift`.
+4. Q4 — Regole attività (3): `DONE`
+   - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
+   - `lights_on_unattended` e `lighting_scene_drift` rimandate alla fase `monitored_entities`:
+     `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico delle luci.
+   - `appliance_unusual_hour` triggera solo se l'attività è attiva nell'ultimo snapshot (option A).
 5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
    - Security subset `DONE`: `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`.
    - Residual subset `DONE`: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
-6. Q6 — Servizio `heima.configure_anomaly_rule`:
+6. Q6 — Servizio `heima.configure_anomaly_rule`: `DONE`
    - Handler nel coordinator: aggiorna options, prende effetto al prossimo `analyze()`.
    - Tests: override soglia applicato, regola disabilitata non triggera.
 
@@ -1516,7 +1538,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 - [ ] Ogni regola triggera su sequenza snapshot costruita ad hoc nel test
 - [x] Regola disabilitata non produce findings
-- [ ] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
+- [x] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
 - [x] Q1 valida almeno una regola reale end-to-end fino all'installer alert
 - [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
 - [x] `heating_setpoint_outlier` usa `heating_setpoint` e finestra snapshot-count
@@ -1528,7 +1550,10 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `sensor_activity_drop` non si sovrappone a `SensorStuck` (snapshot/hour frequency vs timeout assoluto)
 - [x] `ghost_activity` usa `room_occupancy` + `anyone_home` da `HouseSnapshot`
 - [x] `unusual_stillness` usa run di `room_occupancy` invariata con `anyone_home == True`
-- [ ] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
+- [x] Q4 activity rules usano `HouseSnapshot.detected_activities`; lighting rules deferred a
+      `monitored_entities`
+- [x] `heima.configure_anomaly_rule` mergea `entry.options["anomaly"]["rules"][rule_id]` senza reload
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
 
 ---
 

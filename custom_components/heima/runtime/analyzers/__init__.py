@@ -2,7 +2,7 @@
 
 from ..plugin_contracts import IBehaviorAnalyzer
 from .activity import ActivityAnalyzer
-from .anomaly import AnomalyAnalyzer, AnomalyRule
+from .anomaly import ANOMALY_RULE_CATALOG, AnomalyAnalyzer, AnomalyRule
 from .base import IPatternAnalyzer, ReactionProposal
 from .cross_domain import (
     CompositePatternCatalogAnalyzer,
@@ -37,6 +37,7 @@ __all__ = [
     "ActivityAnalyzer",
     "AnomalyAnalyzer",
     "AnomalyRule",
+    "ANOMALY_RULE_CATALOG",
     "ReactionProposal",
     "AdminAuthoredTemplateDescriptor",
     "LearningPatternPluginDescriptor",

@@ -10,12 +10,16 @@ from custom_components.heima.const import (
     DOMAIN,
     SERVICE_APPROVE_PROPOSAL,
     SERVICE_COMMAND,
+    SERVICE_CONFIGURE_ANOMALY_RULE,
     SERVICE_OVERRIDE_APPROVAL,
     SERVICE_RUN_DIAGNOSTICS,
     SERVICE_SET_MODE,
     SERVICE_SET_OVERRIDE,
 )
+from custom_components.heima.coordinator import HeimaCoordinator
+from custom_components.heima.runtime.analyzers import AnomalyAnalyzer
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.inference import HouseSnapshot
 from custom_components.heima.services import (
     _coordinators_for_target,
     _validate_command,
@@ -72,6 +76,15 @@ class _FakeServicesRegistry:
         return self._handlers[(domain, service)]
 
 
+class _FakeConfigEntries:
+    def __init__(self):
+        self.updated: list[tuple[object, dict]] = []
+
+    def async_update_entry(self, entry, *, options):
+        entry.options = dict(options)
+        self.updated.append((entry, dict(options)))
+
+
 class _FakeCoordinator:
     def __init__(self, engine, entry_id="entry1"):
         self.engine = engine
@@ -122,6 +135,43 @@ class _FakeCoordinator:
 
     async def async_run_diagnostics(self):
         return {"status": "ok", "entry_id": self.entry.entry_id}
+
+
+class _FakeSnapshotStore:
+    def __init__(self, snapshots: list[HouseSnapshot]) -> None:
+        self._snapshots = snapshots
+
+    def snapshots(self, *, limit: int | None = None) -> list[HouseSnapshot]:
+        if limit is None:
+            return list(self._snapshots)
+        return list(self._snapshots[-limit:])
+
+
+def _heating_snapshot(temperature: float) -> HouseSnapshot:
+    return HouseSnapshot(
+        ts="2026-05-20T10:00:00+02:00",
+        weekday=2,
+        minute_of_day=10 * 60,
+        anyone_home=True,
+        named_present=("alice",),
+        room_occupancy={"living": True},
+        detected_activities=(),
+        house_state="home",
+        heating_setpoint=21.0,
+        heating_current_temperature=temperature,
+        lighting_scenes={},
+        security_state="disarmed",
+    )
+
+
+def _anomaly_service_coordinator():
+    config_entries = _FakeConfigEntries()
+    hass = SimpleNamespace(config_entries=config_entries)
+    entry = SimpleNamespace(entry_id="entry1", options={})
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.hass = hass
+    coordinator.entry = entry
+    return coordinator, config_entries
 
 
 class _FakeProposalEngine:
@@ -961,3 +1011,142 @@ async def test_run_diagnostics_service_returns_response_payload(monkeypatch):
         "entries": [{"status": "ok", "entry_id": "entry-a"}],
         "count": 1,
     }
+
+
+@pytest.mark.asyncio
+async def test_configure_anomaly_rule_threshold_override_applies_next_analyze(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator, config_entries = _anomaly_service_coordinator()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_CONFIGURE_ANOMALY_RULE)
+    await handler(
+        SimpleNamespace(
+            data={
+                "rule_id": "heating_unresponsive",
+                "thresholds": {"min_gap_c": 4.0},
+            }
+        )
+    )
+
+    analyzer = AnomalyAnalyzer(options_provider=lambda: coordinator.entry.options)
+    findings = await analyzer.analyze(
+        object(),  # type: ignore[arg-type]
+        _FakeSnapshotStore([_heating_snapshot(18.0) for _ in range(4)]),
+    )
+
+    assert config_entries.updated
+    assert (
+        coordinator.entry.options["anomaly"]["rules"]["heating_unresponsive"]["thresholds"][
+            "min_gap_c"
+        ]
+        == 4.0
+    )
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_unresponsive"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_configure_anomaly_rule_disabled_rule_applies_next_analyze(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator, _config_entries = _anomaly_service_coordinator()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_CONFIGURE_ANOMALY_RULE)
+    await handler(
+        SimpleNamespace(
+            data={
+                "rule_id": "heating_unresponsive",
+                "enabled": False,
+            }
+        )
+    )
+
+    analyzer = AnomalyAnalyzer(options_provider=lambda: coordinator.entry.options)
+    findings = await analyzer.analyze(
+        object(),  # type: ignore[arg-type]
+        _FakeSnapshotStore([_heating_snapshot(18.0) for _ in range(4)]),
+    )
+
+    assert coordinator.entry.options["anomaly"]["rules"]["heating_unresponsive"]["enabled"] is False
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "heating_unresponsive"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_configure_anomaly_rule_rejects_unknown_rule_id(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator, _config_entries = _anomaly_service_coordinator()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_CONFIGURE_ANOMALY_RULE)
+    with pytest.raises(ServiceValidationError):
+        await handler(SimpleNamespace(data={"rule_id": "unknown_rule"}))
+
+
+@pytest.mark.asyncio
+async def test_configure_anomaly_rule_rejects_invalid_severity(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    coordinator, _config_entries = _anomaly_service_coordinator()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._iter_coordinators",
+        lambda _hass: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_CONFIGURE_ANOMALY_RULE)
+    with pytest.raises(ServiceValidationError):
+        await handler(
+            SimpleNamespace(
+                data={
+                    "rule_id": "heating_unresponsive",
+                    "severity": "fatal",
+                }
+            )
+        )

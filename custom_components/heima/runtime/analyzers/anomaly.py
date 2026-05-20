@@ -976,6 +976,11 @@ def _default_rule(rule_id: str) -> AnomalyRule:
     return AnomalyRule(rule_id=rule_id, enabled=True, severity=severity, thresholds=thresholds)
 
 
+ANOMALY_RULE_CATALOG: dict[str, AnomalyRule] = {
+    rule_id: _default_rule(rule_id) for rule_id in _ANOMALY_RULE_IDS
+}
+
+
 def _rule_diag(rule: AnomalyRule) -> dict[str, Any]:
     return {
         "enabled": rule.enabled,

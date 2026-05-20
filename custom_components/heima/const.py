@@ -183,6 +183,7 @@ SERVICE_OVERRIDE_APPROVAL = "override_approval"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_SET_MODE = "set_mode"
 SERVICE_SET_OVERRIDE = "set_override"
+SERVICE_CONFIGURE_ANOMALY_RULE = "configure_anomaly_rule"
 
 # Events
 EVENT_HEIMA_EVENT = "heima_event"

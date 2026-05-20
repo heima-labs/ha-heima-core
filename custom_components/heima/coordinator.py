@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -32,6 +34,7 @@ from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids
 from .runtime.analyzers import (
+    ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
     AnomalyAnalyzer,
     create_builtin_learning_plugin_registry,
@@ -609,6 +612,45 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         reactions["configured"] = configured
         reactions["labels"] = labels
         options["reactions"] = reactions
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
+    async def async_configure_anomaly_rule(
+        self,
+        *,
+        rule_id: str,
+        enabled: bool | None = None,
+        severity: str | None = None,
+        thresholds: dict[str, Any] | None = None,
+    ) -> None:
+        """Merge anomaly rule configuration into entry options without reloading."""
+        normalized_rule_id = str(rule_id or "").strip()
+        if normalized_rule_id not in ANOMALY_RULE_CATALOG:
+            raise ServiceValidationError(f"Unknown anomaly rule_id '{normalized_rule_id}'")
+        if severity is not None and severity not in {"info", "warning", "critical"}:
+            raise ServiceValidationError(f"Unsupported anomaly severity '{severity}'")
+        if thresholds is not None and not isinstance(thresholds, dict):
+            raise ServiceValidationError("Anomaly rule thresholds must be a dict")
+
+        options = deepcopy(dict(self.entry.options))
+        anomaly = dict(options.get("anomaly", {})) if isinstance(options.get("anomaly"), dict) else {}
+        raw_rules = anomaly.get("rules", {})
+        rules = dict(raw_rules) if isinstance(raw_rules, dict) else {}
+        raw_rule = rules.get(normalized_rule_id, {})
+        rule_cfg = dict(raw_rule) if isinstance(raw_rule, dict) else {}
+
+        if enabled is not None:
+            rule_cfg["enabled"] = bool(enabled)
+        if severity is not None:
+            rule_cfg["severity"] = severity
+        if thresholds is not None:
+            current_thresholds = rule_cfg.get("thresholds", {})
+            merged_thresholds = dict(current_thresholds) if isinstance(current_thresholds, dict) else {}
+            merged_thresholds.update(dict(thresholds))
+            rule_cfg["thresholds"] = merged_thresholds
+
+        rules[normalized_rule_id] = rule_cfg
+        anomaly["rules"] = rules
+        options["anomaly"] = anomaly
         self.hass.config_entries.async_update_entry(self.entry, options=options)
 
     async def async_seed_lighting_events(
