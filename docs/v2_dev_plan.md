@@ -104,6 +104,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `NOT STARTED` | E, P |
 | S | Learning Module Threshold Configurability | `NOT STARTED` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
+| U | Physical Light State Awareness | `NOT STARTED` | A, Q |
 
 ---
 
@@ -121,9 +122,9 @@ See Current Working Notes for Q4 scope decisions.
 
 - Current slice: Phase Q / Q4 next.
   - Q4 scope: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour` (3 rules only).
-  - `lights_on_unattended` and `lighting_scene_drift` deferred to the `monitored_entities` phase:
-    `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical light states,
-    so these rules would only detect Heima's own behavior, not user-left-on lights.
+  - `lights_on_unattended` and `lighting_scene_drift` deferred to Phase U (Physical Light State
+    Awareness): `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical
+    light states. Phase U adds `lights_physically_on` to HouseSnapshot and implements both rules.
   - `appliance_unusual_hour` trigger semantics: option A — triggers only when the appliance activity
     is present in the **current** (latest) snapshot's `detected_activities`. It does not scan for
     "last time the activity was seen active". Consistent with how other rules compare current state
@@ -1509,8 +1510,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
 4. Q4 — Regole attività (3): `DONE`
    - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
-   - `lights_on_unattended` e `lighting_scene_drift` rimandate alla fase `monitored_entities`:
-     `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico delle luci.
+   - `lights_on_unattended` e `lighting_scene_drift` rimandate a Phase U (Physical Light State
+     Awareness): `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico.
    - `appliance_unusual_hour` triggera solo se l'attività è attiva nell'ultimo snapshot (option A).
 5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
@@ -1677,6 +1678,67 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 - [ ] `HouseStateCorrelationAnalyzer` emette `ReactionProposal` solo in assenza di sorgenti prioritarie attive
 - [ ] Nessun segnale statistico influenza domini direttamente — tutto passa da ProposalEngine
 - [ ] Tutti i test esistenti verdi
+
+---
+
+## Phase U — Physical Light State Awareness
+
+**Goal:** dare a Heima contezza runtime e storica delle light entity fisicamente accese in HA, indipendentemente dalle scene gestite da Heima. Sblocca la resident card (stato luci live) e le regole anomalia lighting deferred dalla Phase Q.
+**Depends on:** Phase A (plugin framework), Phase Q (catalogo anomaly già definito).
+
+### Motivation
+
+`HouseSnapshot.lighting_scenes` registra le decisioni di Heima (scene applicate), non lo stato fisico delle luci. Se un residente accende una luce manualmente e poi esce, Heima non ne ha traccia. Questa fase aggiunge un layer di osservazione "fisica" per tutte le light entity configurate, senza richiedere il meccanismo generale `monitored_entities` (deferred al Plugin API v3+).
+
+### Working slices
+
+1. U1 — `LightingResult.lights_on`:
+   - Aggiungere `lights_on: dict[str, bool]` (entity_id → is_on) a `LightingResult`.
+   - `LightingDomain.compute()` legge `hass.states.get(entity_id).state == "on"` per tutte
+     le light entity configurate (rooms + lighting_rooms). Entity assente in hass.states → False.
+   - Solo light entity con domain `light.*` (coerente con `_unique_entities` in semantic_policies).
+
+2. U2 — `CanonicalState` e `InferenceContext`:
+   - L'engine scrive `lighting.lights_on` (dict serializzato) in `CanonicalState` dopo la
+     valutazione del LightingDomain.
+   - `InferenceContext` espone `lights_on: dict[str, bool]` per i learning module.
+
+3. U3 — `HouseSnapshot.lights_physically_on`:
+   - Aggiungere `lights_physically_on: dict[str, bool]` a `HouseSnapshot`.
+   - `_record_snapshot_if_changed()` popola il campo da `LightingResult.lights_on`.
+   - Serializzazione/deserializzazione coerente con gli altri campi dict del snapshot.
+
+4. U4 — Lighting anomaly rules:
+   - Implementare `lights_on_unattended` e `lighting_scene_drift` in `AnomalyAnalyzer`,
+     ora che `HouseSnapshot.lights_physically_on` e `lighting_scenes` sono disponibili insieme.
+   - `lights_on_unattended`: trigger se negli ultimi `window` snapshot, almeno una entry in
+     `lights_physically_on` è True AND `anyone_home == False` per `min_observations` snapshot.
+     Defaults: window=6, min_observations=3. Severity: warning.
+   - `lighting_scene_drift`: confronta la scena recente per `(room_id, house_state, hour_bucket)`
+     con la baseline storica da `lighting_scenes`. Diagnostica pura, nessun proposal.
+     Defaults: history_window=1000, min_observations=10, recent_observations=3, baseline_ratio=0.65.
+   - Rimuovere le note "deferred" da Phase Q e dal dev plan.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/plugin_contracts.py` o `runtime/domains/lighting.py` | Aggiungere `lights_on` a `LightingResult` |
+| `runtime/domains/lighting.py` | Leggere stati fisici in `compute()` |
+| `runtime/engine.py` | Scrivere `lighting.lights_on` in `CanonicalState`; popolare `InferenceContext` |
+| `runtime/inference/snapshot_store.py` | Aggiungere `lights_physically_on` a `HouseSnapshot` |
+| `runtime/analyzers/anomaly.py` | Implementare `lights_on_unattended` e `lighting_scene_drift` |
+| `tests/test_anomaly_analyzer_q.py` | Test U4 lighting rules |
+
+### Acceptance criteria
+
+- [ ] `LightingResult.lights_on` riflette stato fisico HA, non le scene Heima
+- [ ] `CanonicalState["lighting.lights_on"]` disponibile dopo ogni ciclo di valutazione
+- [ ] `HouseSnapshot.lights_physically_on` persistito e leggibile dall'anomaly analyzer
+- [ ] `lights_on_unattended` triggera quando almeno una light entity configurata è fisicamente
+      accesa mentre `anyone_home == False`
+- [ ] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`
+- [ ] Tutti i test esistenti verdi; nuovi test ≥ 2 (una per regola lighting)
 
 ---
 
