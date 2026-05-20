@@ -30,6 +30,15 @@ _ANOMALY_RULE_IDS = (
     "unusual_stillness",
 )
 
+_APPLIANCE_UNUSUAL_HOUR_ACTIVITIES = frozenset(
+    {
+        "washing_machine_running",
+        "dishwasher_running",
+        "tv_active",
+        "pc_active",
+    }
+)
+
 
 @dataclass(frozen=True)
 class AnomalyRule:
@@ -76,6 +85,9 @@ class AnomalyAnalyzer:
             findings.extend(self._evaluate_heating_setpoint_outlier(snapshot_store, rules))
             findings.extend(self._evaluate_heating_unresponsive(snapshot_store, rules))
             findings.extend(self._evaluate_heating_vacation_mismatch(snapshot_store, rules))
+            findings.extend(self._evaluate_stove_on_unattended(snapshot_store, rules))
+            findings.extend(self._evaluate_oven_on_unattended(snapshot_store, rules))
+            findings.extend(self._evaluate_appliance_unusual_hour(snapshot_store, rules))
             findings.extend(self._evaluate_alarm_disarm_unusual_hour(snapshot_store, rules))
             findings.extend(self._evaluate_alarm_expected_not_armed(snapshot_store, rules))
             findings.extend(self._evaluate_sensor_activity_drop(snapshot_store, rules))
@@ -341,6 +353,137 @@ class AnomalyAnalyzer:
             },
         )
         return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_stove_on_unattended(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        return self._evaluate_activity_unattended(
+            snapshot_store,
+            rules,
+            rule_id="stove_on_unattended",
+            activity_name="stove_on",
+            label="Stove",
+        )
+
+    def _evaluate_oven_on_unattended(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        return self._evaluate_activity_unattended(
+            snapshot_store,
+            rules,
+            rule_id="oven_on_unattended",
+            activity_name="oven_on",
+            label="Oven",
+        )
+
+    def _evaluate_activity_unattended(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+        *,
+        rule_id: str,
+        activity_name: str,
+        label: str,
+    ) -> list[BehaviorFinding]:
+        rule = rules[rule_id]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 2)
+        window = max(min_observations, _threshold_int(rule, "window", 6))
+        snapshots = snapshot_store.snapshots(limit=window)
+        unattended = [
+            snapshot
+            for snapshot in snapshots
+            if activity_name in _activity_set(snapshot)
+            and not bool(getattr(snapshot, "anyone_home", False))
+        ]
+        if len(unattended) < min_observations:
+            return []
+
+        confidence = min(1.0, len(unattended) / max(min_observations * 2, 1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                f"{label} activity was detected while nobody was home "
+                f"in {len(unattended)} recent snapshots."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "activity_name": activity_name,
+                "window": window,
+                "min_observations": min_observations,
+                "unattended_observation_count": len(unattended),
+                "snapshot_count": len(snapshots),
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_appliance_unusual_hour(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["appliance_unusual_hour"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 8)
+        delta_hours = _threshold_float(rule, "delta_hours", 4.0)
+        window = max(min_observations, _threshold_int(rule, "window", 1000))
+        snapshots = snapshot_store.snapshots(limit=window)
+        if not snapshots:
+            return []
+
+        current_hour = _snapshot_encoded_hour(snapshots[-1])
+        if current_hour is None:
+            return []
+        active_appliances = sorted(
+            _activity_set(snapshots[-1]).intersection(_APPLIANCE_UNUSUAL_HOUR_ACTIVITIES)
+        )
+        findings: list[BehaviorFinding] = []
+        for activity_name in active_appliances:
+            observed_hours = [
+                hour
+                for snapshot in snapshots
+                if activity_name in _activity_set(snapshot)
+                and (hour := _snapshot_encoded_hour(snapshot)) is not None
+            ]
+            if len(observed_hours) < min_observations:
+                continue
+
+            baseline_hour = _median([float(hour) for hour in observed_hours])
+            distance = abs(float(current_hour) - baseline_hour)
+            if distance < delta_hours:
+                continue
+
+            confidence = min(1.0, distance / max(delta_hours * 2, 0.1))
+            signal = AnomalySignal(
+                anomaly_type=rule.rule_id,
+                severity=_severity(rule.severity),
+                description=(
+                    f"Appliance activity '{activity_name}' is active at an unusual hour: "
+                    f"hour {current_hour} differs from historical median {baseline_hour:.1f}."
+                ),
+                confidence=round(confidence, 3),
+                context={
+                    "rule_id": rule.rule_id,
+                    "activity_name": activity_name,
+                    "window": window,
+                    "min_observations": min_observations,
+                    "delta_hours": delta_hours,
+                    "observation_count": len(observed_hours),
+                    "current_hour": current_hour,
+                    "baseline_hour": round(baseline_hour, 3),
+                    "distance_hours": round(distance, 3),
+                },
+            )
+            findings.append(_finding(self.analyzer_id, signal))
+        return findings
 
     def _evaluate_sensor_activity_drop(
         self,
@@ -748,6 +891,7 @@ def _effective_rule(rule_id: str, raw: dict[str, Any]) -> AnomalyRule:
 
 def _default_rule(rule_id: str) -> AnomalyRule:
     thresholds: dict[str, Any] = {}
+    severity = "warning"
     if rule_id in {"arrival_time_outlier", "departure_time_outlier"}:
         thresholds = {
             "window": 1000,
@@ -786,6 +930,18 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 3,
             "max_away_setpoint_c": 18.0,
         }
+    elif rule_id in {"stove_on_unattended", "oven_on_unattended"}:
+        thresholds = {
+            "window": 6,
+            "min_observations": 2,
+        }
+        severity = "critical"
+    elif rule_id == "appliance_unusual_hour":
+        thresholds = {
+            "window": 1000,
+            "min_observations": 8,
+            "delta_hours": 4.0,
+        }
     elif rule_id == "alarm_disarm_unusual_hour":
         thresholds = {
             "window": 1000,
@@ -817,7 +973,7 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 10,
             "multiplier": 2.0,
         }
-    return AnomalyRule(rule_id=rule_id, enabled=True, severity="warning", thresholds=thresholds)
+    return AnomalyRule(rule_id=rule_id, enabled=True, severity=severity, thresholds=thresholds)
 
 
 def _rule_diag(rule: AnomalyRule) -> dict[str, Any]:
@@ -945,6 +1101,23 @@ def _snapshot_time(snapshot: Any) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _snapshot_encoded_hour(snapshot: Any) -> int | None:
+    raw = str(getattr(snapshot, "ts", "") or "")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return int(parsed.hour)
+
+
+def _activity_set(snapshot: Any) -> set[str]:
+    return {
+        str(activity or "").strip()
+        for activity in getattr(snapshot, "detected_activities", ()) or ()
+        if str(activity or "").strip()
+    }
 
 
 def _same_room_occupancy(left: Any, right: Any) -> bool:

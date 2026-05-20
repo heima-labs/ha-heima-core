@@ -88,6 +88,7 @@ def _snapshot(
     minute_of_day: int = 20 * 60,
     anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
+    detected_activities: tuple[str, ...] = (),
     heating_setpoint: float = 21.0,
     heating_current_temperature: float | None = 18.0,
     security_state: str = "disarmed",
@@ -99,7 +100,7 @@ def _snapshot(
         anyone_home=anyone_home,
         named_present=("alice",),
         room_occupancy=room_occupancy if room_occupancy is not None else {"living": True},
-        detected_activities=(),
+        detected_activities=detected_activities,
         house_state="home",
         heating_setpoint=heating_setpoint,
         heating_current_temperature=heating_current_temperature,
@@ -146,6 +147,23 @@ def _presence_transition_pair(*, hour: int, arrival: bool, weekday: int = 1) -> 
         _presence_snapshot(hour=hour, anyone_home=True, weekday=weekday),
         _presence_snapshot(hour=hour, anyone_home=False, weekday=weekday),
     ]
+
+
+def _activity_snapshot(
+    *,
+    hour: int,
+    activities: tuple[str, ...] = (),
+    anyone_home: bool = True,
+) -> HouseSnapshot:
+    return _snapshot(
+        ts=f"2026-05-18T{hour:02d}:00:00+02:00",
+        weekday=0,
+        minute_of_day=hour * 60,
+        anyone_home=anyone_home,
+        room_occupancy={"living": True} if anyone_home else {},
+        detected_activities=activities,
+        heating_current_temperature=21.0,
+    )
 
 
 async def test_anomaly_analyzer_heating_unresponsive_emits_finding() -> None:
@@ -622,6 +640,324 @@ async def test_anomaly_analyzer_presence_pattern_drift_disabled_rule() -> None:
         finding
         for finding in findings
         if finding.payload.anomaly_type == "presence_pattern_drift"
+    ]
+
+
+async def test_anomaly_analyzer_stove_on_unattended_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_activity_snapshot(hour=12, anyone_home=True) for _ in range(4)]
+    snapshots.extend(
+        _activity_snapshot(hour=12, activities=("stove_on",), anyone_home=False)
+        for _ in range(2)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    stove_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "stove_on_unattended"
+    ]
+    assert len(stove_findings) == 1
+    assert stove_findings[0].payload.severity == "critical"
+    assert stove_findings[0].payload.context["unattended_observation_count"] == 2
+
+
+async def test_anomaly_analyzer_stove_on_unattended_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=12, activities=("stove_on",), anyone_home=False),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "stove_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_stove_on_unattended_ignores_attended_activity() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=12, activities=("stove_on",), anyone_home=True)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "stove_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_stove_on_unattended_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "stove_on_unattended": {
+                        "thresholds": {
+                            "min_observations": 3,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _activity_snapshot(hour=12, activities=("stove_on",), anyone_home=False)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "stove_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_stove_on_unattended_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "stove_on_unattended": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _activity_snapshot(hour=12, activities=("stove_on",), anyone_home=False)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "stove_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_oven_on_unattended_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [_activity_snapshot(hour=18, anyone_home=True) for _ in range(4)]
+    snapshots.extend(
+        _activity_snapshot(hour=18, activities=("oven_on",), anyone_home=False)
+        for _ in range(2)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    oven_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "oven_on_unattended"
+    ]
+    assert len(oven_findings) == 1
+    assert oven_findings[0].payload.severity == "critical"
+    assert oven_findings[0].payload.context["unattended_observation_count"] == 2
+
+
+async def test_anomaly_analyzer_oven_on_unattended_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=18, activities=("oven_on",), anyone_home=False),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "oven_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_oven_on_unattended_ignores_attended_activity() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=18, activities=("oven_on",), anyone_home=True)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "oven_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_oven_on_unattended_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "oven_on_unattended": {
+                        "thresholds": {
+                            "min_observations": 3,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _activity_snapshot(hour=18, activities=("oven_on",), anyone_home=False)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "oven_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_oven_on_unattended_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "oven_on_unattended": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _activity_snapshot(hour=18, activities=("oven_on",), anyone_home=False)
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "oven_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_appliance_unusual_hour_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=8, activities=("dishwasher_running",))
+        for _ in range(7)
+    ]
+    snapshots.append(_activity_snapshot(hour=20, activities=("dishwasher_running",)))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    appliance_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "appliance_unusual_hour"
+    ]
+    assert len(appliance_findings) == 1
+    assert appliance_findings[0].payload.context["activity_name"] == "dishwasher_running"
+    assert appliance_findings[0].payload.context["current_hour"] == 20
+    assert appliance_findings[0].payload.context["observation_count"] == 8
+
+
+async def test_anomaly_analyzer_appliance_unusual_hour_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=8, activities=("washing_machine_running",))
+        for _ in range(6)
+    ]
+    snapshots.append(_activity_snapshot(hour=20, activities=("washing_machine_running",)))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "appliance_unusual_hour"
+    ]
+
+
+async def test_anomaly_analyzer_appliance_unusual_hour_ignores_normal_hour() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _activity_snapshot(hour=8, activities=("washing_machine_running",))
+        for _ in range(7)
+    ]
+    snapshots.append(_activity_snapshot(hour=10, activities=("washing_machine_running",)))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "appliance_unusual_hour"
+    ]
+
+
+async def test_anomaly_analyzer_appliance_unusual_hour_threshold_override() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "appliance_unusual_hour": {
+                        "thresholds": {
+                            "delta_hours": 20.0,
+                        }
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _activity_snapshot(hour=8, activities=("tv_active",))
+        for _ in range(7)
+    ]
+    snapshots.append(_activity_snapshot(hour=20, activities=("tv_active",)))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "appliance_unusual_hour"
+    ]
+
+
+async def test_anomaly_analyzer_appliance_unusual_hour_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "appliance_unusual_hour": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [_activity_snapshot(hour=8, activities=("pc_active",)) for _ in range(7)]
+    snapshots.append(_activity_snapshot(hour=20, activities=("pc_active",)))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "appliance_unusual_hour"
     ]
 
 
