@@ -780,6 +780,8 @@ class HouseSnapshot:
 Written on-change only. Typical household: 50–200 records/day.
 `SnapshotStore`: max 10,000 records, 90-day TTL, persisted via HA `Store`.
 
+**Plugin-extensible entity monitoring.** `HouseSnapshot` ha campi fissi derivati dai domini core e dai plugin built-in. Per permettere a plugin di terze parti di tracciare entità HA arbitrarie nella storia snapshot, è previsto un campo `monitored_entities: dict[str, str]` (entity_id → state string) come punto di aggancio generico. Il contratto: ogni plugin che vuole entità tracciate dichiara `monitored_entity_ids() -> list[str]` a startup; `finalize_dag()` merge le liste in un registry; il recorder campiona gli stati correnti in `_record_snapshot_if_changed`. Questo è il corrispettivo inference/learning di `CanonicalState` (già generic key/value per il runtime, namespaced per plugin). **Non è in scope v2**: viene implementato quando il Plugin API apre ai plugin di terze parti. Le regole anomalia per luci fisiche (`lights_on_unattended`, `lighting_scene_drift`) dipendono da questa estensione e sono deferred a quella fase.
+
 ### §10.2 InferenceContext
 
 Read-only view passed to `ILearningModule.infer()` each cycle.
