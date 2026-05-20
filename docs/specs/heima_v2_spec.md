@@ -780,7 +780,7 @@ class HouseSnapshot:
 Written on-change only. Typical household: 50–200 records/day.
 `SnapshotStore`: max 10,000 records, 90-day TTL, persisted via HA `Store`.
 
-**Plugin-extensible entity monitoring.** `HouseSnapshot` ha campi fissi derivati dai domini core e dai plugin built-in. Per permettere a plugin di terze parti di tracciare entità HA arbitrarie nella storia snapshot, è previsto un campo `monitored_entities: dict[str, str]` (entity_id → state string) come punto di aggancio generico. Il contratto: ogni plugin che vuole entità tracciate dichiara `monitored_entity_ids() -> list[str]` a startup; `finalize_dag()` merge le liste in un registry; il recorder campiona gli stati correnti in `_record_snapshot_if_changed`. Questo è il corrispettivo inference/learning di `CanonicalState` (già generic key/value per il runtime, namespaced per plugin). **Non è in scope v2**: viene implementato quando il Plugin API apre ai plugin di terze parti. Le regole anomalia per luci fisiche (`lights_on_unattended`, `lighting_scene_drift`) dipendono da questa estensione e sono deferred a quella fase.
+**Plugin-extensible entity monitoring.** `HouseSnapshot` ha campi fissi derivati dai domini core e dai plugin built-in. Per permettere a plugin di terze parti di tracciare entità HA arbitrarie nella storia snapshot, è previsto un campo `monitored_entities: dict[str, str]` (entity_id → state string) come punto di aggancio generico. Il contratto: ogni plugin che vuole entità tracciate dichiara `monitored_entity_ids() -> list[str]` a startup; `finalize_dag()` merge le liste in un registry; il recorder campiona gli stati correnti in `_record_snapshot_if_changed`. Questo è il corrispettivo inference/learning di `CanonicalState` (già generic key/value per il runtime, namespaced per plugin). **Non è in scope v2**: viene implementato quando il Plugin API apre ai plugin di terze parti. Per v2, le regole anomalia per luci fisiche (`lights_on_unattended`, `lighting_scene_drift`) sono deferred a Phase U, che aggiunge osservazione fisica built-in delle light entity senza richiedere il meccanismo generale `monitored_entities`.
 
 ### §10.2 InferenceContext
 
@@ -1549,7 +1549,7 @@ Min support: 10 snapshot/slot. Applicato **solo a stanze senza copertura sensore
 
 ### Phase Q — AnomalyAnalyzer: Statistical Detection Rules
 
-**Unlocks:** rilevamento statistico anomalie su 17 regole; soglie configurabili dall'installer a runtime; servizio `heima.configure_anomaly_rule`.
+**Unlocks:** rilevamento statistico anomalie su 15 regole operative nel current v2 scope; soglie configurabili dall'installer a runtime; servizio `heima.configure_anomaly_rule`. Le 2 regole lighting restano pianificate ma sono deferred alla fase Physical Light State Awareness.
 **Dependencies:** Phase O (security_state e heating_current_temperature in HouseSnapshot), Phase P (qualità dati snapshot completa).
 
 #### AnomalyRule
@@ -1565,7 +1565,7 @@ class AnomalyRule:
 
 Le regole vengono caricate dalle options a ogni `analyze()` — le modifiche via `heima.configure_anomaly_rule` hanno effetto al prossimo analyze pass, senza restart. Ogni regola ha soglie default nel catalogo; l'installer può sovrascrivere singole chiavi.
 
-#### Catalogo regole (17)
+#### Catalogo regole (17 pianificate; 15 operative in current v2 scope)
 
 **Presenza** (min support: 7 eventi/weekday)
 
@@ -1593,6 +1593,9 @@ Le regole vengono caricate dalle options a ogni `analyze()` — le modifiche via
 | `appliance_unusual_hour` | Detector attivo in hour_bucket > N·σ dalla distribuzione storica | `sigma_factor=2.5`, `min_support=10` | `info` |
 
 **Lighting**
+
+Deferred to Physical Light State Awareness. `HouseSnapshot.lighting_scenes`
+records Heima scene decisions, not reliable physical light state.
 
 | Rule ID | Trigger | Default thresholds | Severity |
 |---|---|---|---|
@@ -1633,10 +1636,10 @@ heima.configure_anomaly_rule:
 | Deliverable | File(s) |
 |---|---|
 | `AnomalyRule` dataclass + catalogo + validazione soglie | `runtime/analyzers/anomaly.py` |
-| `AnomalyAnalyzer.analyze()` — tutte le 17 regole | `runtime/analyzers/anomaly.py` |
+| `AnomalyAnalyzer.analyze()` — 15 regole operative; 2 lighting deferred a Physical Light State Awareness | `runtime/analyzers/anomaly.py` |
 | `heima.configure_anomaly_rule` service | `services.yaml` |
 | Handler nel coordinator | `coordinator.py` |
-| Tests: ogni regola triggera su sequenza snapshot costruita; override soglie applicato | `tests/test_anomaly_analyzer_q.py` (new) |
+| Tests: ogni regola operativa triggera su sequenza snapshot costruita; override soglie applicato | `tests/test_anomaly_analyzer_q.py` (new) |
 
 ---
 

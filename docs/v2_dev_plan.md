@@ -100,7 +100,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | N | Semantic Policy Suggestions | `DONE` | A |
 | O | HouseSnapshot Alignment + Proposal Revocation | `DONE` | N |
 | P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `DONE` | D, F |
-| Q | AnomalyAnalyzer: Statistical Detection Rules | `IN PROGRESS` | O, P |
+| Q | AnomalyAnalyzer: Statistical Detection Rules | `DONE` | O, P |
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `NOT STARTED` | E, P |
 | S | Learning Module Threshold Configurability | `NOT STARTED` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
@@ -110,21 +110,29 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2.
-**Active phase:** Phase Q — AnomalyAnalyzer: Statistical Detection Rules (`IN PROGRESS`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules.
+**Active phase:** Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation (`NOT STARTED`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Implement Q4: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
-See Current Working Notes for Q4 scope decisions.
+Discuss Phase R scope and implementation plan.
 
 ### Current Working Notes
 
-- Current slice: Phase Q / Q4 next.
+- Current slice: Phase Q complete for current v2 scope.
+  - Implemented operational rules: 15/17.
+  - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.
+  - Deferred reason: they require physical light state awareness; current
+    `HouseSnapshot.lighting_scenes` records Heima scene decisions, not reliable physical light
+    state.
+  - Live coverage: diagnostic tier includes `062_anomaly_rules_live.py`, validating
+    `heima.configure_anomaly_rule`, implemented rule IDs, threshold persistence, validation
+    errors, and the next `learning_run` path.
+- Phase Q / Q4 complete.
   - Q4 scope: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour` (3 rules only).
   - `lights_on_unattended` and `lighting_scene_drift` deferred to Phase U (Physical Light State
     Awareness): `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical
-    light states. Phase U adds `lights_physically_on` to HouseSnapshot and implements both rules.
+    light states. Phase U / physical light state awareness implements both rules.
   - `appliance_unusual_hour` trigger semantics: option A — triggers only when the appliance activity
     is present in the **current** (latest) snapshot's `detected_activities`. It does not scan for
     "last time the activity was seen active". Consistent with how other rules compare current state
@@ -1482,14 +1490,14 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 ## Phase Q — AnomalyAnalyzer: Statistical Detection Rules
 
 **Spec section:** Phase Q
-**Goal:** implementare `AnomalyAnalyzer` con 17 regole configurabili; servizio `heima.configure_anomaly_rule`.
+**Goal:** implementare `AnomalyAnalyzer` con 15 regole operative configurabili nel current v2 scope; mantenere nel catalogo le 2 regole lighting pianificate ma rinviarle a Phase U / physical light state awareness; servizio `heima.configure_anomaly_rule`.
 **Depends on:** Phase O (security_state, heating_current_temperature), Phase P (snapshot data quality).
 
 ### Working slices
 
 1. Q1 — `AnomalyRule` + catalogo + infrastruttura: `DONE`
    - Definire `AnomalyRule` dataclass con `rule_id`, `enabled`, `severity`, `thresholds`.
-   - Definire catalogo con default thresholds per tutte le 17 regole.
+   - Definire catalogo con default thresholds per tutte le 17 regole pianificate.
    - Implementare caricamento soglie dalle options a ogni `analyze()`.
    - Implementare almeno una regola reale end-to-end per validare il percorso
      `AnomalyAnalyzer -> FindingRouter -> installer alert`.
@@ -1510,8 +1518,8 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
 4. Q4 — Regole attività (3): `DONE`
    - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
-   - `lights_on_unattended` e `lighting_scene_drift` rimandate a Phase U (Physical Light State
-     Awareness): `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico.
+   - `lights_on_unattended` e `lighting_scene_drift` rimandate a Phase U / physical light state awareness:
+     `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico.
    - `appliance_unusual_hour` triggera solo se l'attività è attiva nell'ultimo snapshot (option A).
 5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
@@ -1537,7 +1545,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 
 ### Acceptance criteria
 
-- [ ] Ogni regola triggera su sequenza snapshot costruita ad hoc nel test
+- [x] Ogni regola in scope Q triggera su sequenza snapshot costruita ad hoc nel test
 - [x] Regola disabilitata non produce findings
 - [x] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
 - [x] Q1 valida almeno una regola reale end-to-end fino all'installer alert
@@ -1551,10 +1559,11 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `sensor_activity_drop` non si sovrappone a `SensorStuck` (snapshot/hour frequency vs timeout assoluto)
 - [x] `ghost_activity` usa `room_occupancy` + `anyone_home` da `HouseSnapshot`
 - [x] `unusual_stillness` usa run di `room_occupancy` invariata con `anyone_home == True`
-- [x] Q4 activity rules usano `HouseSnapshot.detected_activities`; lighting rules deferred a
-      `monitored_entities`
+- [x] Q4 activity rules usano `HouseSnapshot.detected_activities`; le 2 lighting rules sono
+      deferred a Phase U / physical light state awareness
 - [x] `heima.configure_anomaly_rule` mergea `entry.options["anomaly"]["rules"][rule_id]` senza reload
-- [x] Tutti i test esistenti verdi; nuovi test ≥ 17 (uno per regola)
+- [x] Tutti i test esistenti verdi; i test Q coprono ogni regola operativa, override soglie,
+      regola disabilitata, e percorso end-to-end verso installer alert
 
 ---
 
