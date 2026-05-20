@@ -47,6 +47,10 @@ SEEDED_INTEGRATION_SCRIPTS=(
 DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/030_learning_proposals_diag.py"
   "scripts/live_tests/031_learning_summary_diag.py"
+  "scripts/live_tests/062_anomaly_rules_live.py"
+  "scripts/live_tests/063_semantic_policy_live.py"
+  "scripts/live_tests/064_snapshot_alignment_live.py"
+  "scripts/live_tests/065_learning_modules_p_live.py"
 )
 
 usage() {
