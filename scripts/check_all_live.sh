@@ -37,6 +37,7 @@ LIVE_E2E_SCRIPTS=(
   "scripts/live_tests/040_security_mismatch_runtime.py"
   "scripts/live_tests/050_calendar_domain.py"
   "scripts/live_tests/052_context_conditioned_lighting_learning_e2e.py"
+  "scripts/live_tests/066_positive_outcome_boost_live.py"
 )
 
 SEEDED_INTEGRATION_SCRIPTS=(

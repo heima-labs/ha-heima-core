@@ -13,7 +13,7 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from ...const import DEFAULT_HOUSE_STATE_CONFIG, OPT_HOUSE_STATE_CONFIG
-from ..inference.signals import HouseStateSignal
+from ..inference.signals import HouseStateSignal, Importance
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
@@ -963,6 +963,7 @@ class HouseStateDomain:
             for signal in signals
             if signal.source_id == _APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID
             and signal.confidence >= _HOUSE_STATE_SIGNAL_MIN_CONFIDENCE
+            and signal.importance >= Importance.SUGGEST
             and signal.predicted_state in _HOME_SUBSTATES
         ]
         if not candidates:

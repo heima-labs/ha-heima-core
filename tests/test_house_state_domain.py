@@ -46,11 +46,12 @@ def _house_state_signal(
     *,
     confidence: float = 0.75,
     source_id: str = "house_state_inference",
+    importance: Importance = Importance.SUGGEST,
 ) -> HouseStateSignal:
     return HouseStateSignal(
         source_id=source_id,
         confidence=confidence,
-        importance=Importance.SUGGEST,
+        importance=importance,
         ttl_s=600,
         label=f"learned:{predicted_state}",
         predicted_state=predicted_state,
@@ -416,6 +417,39 @@ def test_house_state_non_approved_or_low_confidence_signal_has_no_effect(
         signals=[
             _house_state_signal("working", source_id="weekday_state"),
             _house_state_signal("relax", confidence=0.59),
+        ],
+    )
+
+    assert result.house_state == "home"
+    assert result.house_reason == "default"
+    assert domain.diagnostics()["resolution_trace"]["decision"]["action"] == "fallback_home"
+
+
+def test_house_state_observe_signal_has_no_effect(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass()
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 2750.0,
+    )
+
+    result = domain.compute(
+        options={},
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        signals=[
+            _house_state_signal(
+                "working",
+                confidence=0.95,
+                source_id="house_state_inference",
+                importance=Importance.OBSERVE,
+            )
         ],
     )
 

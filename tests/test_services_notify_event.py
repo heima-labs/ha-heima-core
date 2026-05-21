@@ -840,6 +840,38 @@ async def test_heima_command_seed_lighting_events_rejects_invalid_action(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_heima_command_seed_presence_events_calls_coordinator(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    coordinator = SimpleNamespace(async_seed_presence_events=AsyncMock(return_value=6))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "seed_presence_events",
+                "target": {},
+                "params": {"weekday": 3, "minute": 651, "count": 6},
+            }
+        )
+    )
+
+    coordinator.async_seed_presence_events.assert_awaited_once_with(
+        weekday=3,
+        minute=651,
+        count=6,
+    )
+
+
+@pytest.mark.asyncio
 async def test_heima_command_seed_lighting_scene_events_passes_signals(monkeypatch):
     services = _FakeServicesRegistry()
     hass = SimpleNamespace(

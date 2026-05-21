@@ -94,6 +94,7 @@ SUPPORTED_COMMANDS = {
     "unmute_reaction_type",
     "learning_reset",
     "seed_lighting_events",
+    "seed_presence_events",
     "seed_lighting_scene_events",
     "upsert_configured_reactions",
 }
@@ -344,6 +345,21 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     count=count,
                 )
             _LOGGER.info("seed_lighting_events: injected %d events for %s", total, entity_id)
+            return
+
+        if command == "seed_presence_events":
+            p = params
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1200))
+            count = int(p.get("count", 6))
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_presence_events(
+                    weekday=weekday,
+                    minute=minute,
+                    count=count,
+                )
+            _LOGGER.info("seed_presence_events: injected %d arrival events", total)
             return
 
         if command == "seed_lighting_scene_events":

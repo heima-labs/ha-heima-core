@@ -101,7 +101,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | O | HouseSnapshot Alignment + Proposal Revocation | `DONE` | N |
 | P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `DONE` | D, F |
 | Q | AnomalyAnalyzer: Statistical Detection Rules | `DONE` | O, P |
-| R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `NOT STARTED` | E, P |
+| R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
 | S | Learning Module Threshold Configurability | `NOT STARTED` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
@@ -110,12 +110,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules.
-**Active phase:** Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation (`NOT STARTED`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation.
+**Active phase:** Phase S — Learning Module Threshold Configurability (`NOT STARTED`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Discuss Phase R scope and implementation plan.
+Discuss Phase S scope and implementation plan.
 
 ### Current Working Notes
 
@@ -1576,17 +1576,20 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 ### Working slices
 
 1. R1 — OutcomeTracker `positive_streak` + boost:
+   - Status: `DONE`.
    - Aggiungere `positive_streak: int` per reaction al fianco del `negative_streak` esistente.
    - Dopo K=10 consecutivi positivi, chiamare `ProposalEngine.async_boost_confidence(reaction_id, delta=0.05)`.
    - Azzerare `positive_streak` dopo il boost (non dopo il prossimo negativo).
    - `positive_streak` si azzera a ogni esito negativo.
    - Tests: accumulo streak, boost a K=10, reset, no double-boost per stesso cycle.
 2. R2 — `ProposalEngine.async_boost_confidence`:
+   - Status: `DONE`.
    - Aggiungere `async_boost_confidence(reaction_id, delta) -> None`.
    - Incrementa la confidence del record proposal approvato per `reaction_id`, cappata a 1.0.
    - No-op se reaction_id non trovato o proposal non approvata.
    - Tests: boost applicato, cap a 1.0, no-op su unknown reaction.
 3. R3 — WeekdayStateModule downgrade:
+   - Status: `DONE`.
    - Modificare `WeekdayStateModule.infer()`: tutti i segnali emessi con `importance=Importance.OBSERVE`.
    - Verificare che `HouseStateDomain` ignori segnali OBSERVE (già definito in §10.3/§10.8).
    - Tests: WeekdayStateModule emette OBSERVE; HouseStateDomain non li consuma.
@@ -1605,17 +1608,19 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 | `runtime/outcome_tracker.py` | `positive_streak`, boost trigger a K=10 |
 | `runtime/proposal_engine.py` | `async_boost_confidence(reaction_id, delta)` |
 | `runtime/inference/modules/weekday_state.py` | `importance=Importance.OBSERVE` |
+| `scripts/live_tests/066_positive_outcome_boost_live.py` | Live E2E for accepted proposal confidence boost |
 
 ### Acceptance criteria
 
-- [ ] `OutcomeTracker` accumula `positive_streak` separato da `negative_streak`
-- [ ] Boost inviato a `ProposalEngine` dopo esattamente K=10 positivi consecutivi
-- [ ] `positive_streak` azzerato dopo il boost, non dopo il prossimo negativo
-- [ ] Nessun double-boost per lo stesso positive streak cycle
-- [ ] `async_boost_confidence` cappato a 1.0
-- [ ] `WeekdayStateModule` emette `Importance.OBSERVE` (non `SUGGEST`)
-- [ ] `HouseStateDomain` non consuma segnali OBSERVE (test di regressione)
-- [ ] Tutti i test esistenti verdi; nuovi test ≥ 12
+- [x] `OutcomeTracker` accumula `positive_streak` separato da `negative_streak`
+- [x] Boost inviato a `ProposalEngine` dopo esattamente K=10 positivi consecutivi
+- [x] `positive_streak` azzerato dopo il boost, non dopo il prossimo negativo
+- [x] Nessun double-boost per lo stesso positive streak cycle
+- [x] `async_boost_confidence` cappato a 1.0
+- [x] `WeekdayStateModule` emette `Importance.OBSERVE` (non `SUGGEST`)
+- [x] `HouseStateDomain` non consuma segnali OBSERVE (test di regressione)
+- [x] Live E2E: proposal accettata con `target_reaction_id`, 10 outcome positivi, boost confidence e reset streak
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 12
 
 ---
 

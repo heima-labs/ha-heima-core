@@ -54,7 +54,7 @@ class WeekdayStateModule(HeimaLearningModule):
             HouseStateSignal(
                 source_id=self.module_id,
                 confidence=confidence,
-                importance=_importance(confidence),
+                importance=Importance.OBSERVE,
                 ttl_s=600,
                 label=f"{best_state} wd={context.weekday} h={context.minute_of_day // 60}",
                 predicted_state=best_state,
@@ -67,11 +67,3 @@ class WeekdayStateModule(HeimaLearningModule):
             "ready": self._ready,
             "slot_count": len(self._slots),
         }
-
-
-def _importance(confidence: float) -> Importance:
-    if confidence > 0.80:
-        return Importance.ASSERT
-    if confidence >= 0.60:
-        return Importance.SUGGEST
-    return Importance.OBSERVE

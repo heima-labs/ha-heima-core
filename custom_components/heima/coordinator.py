@@ -713,6 +713,52 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._write_event_store_sensor()
         return count
 
+    async def async_seed_presence_events(
+        self,
+        *,
+        weekday: int,
+        minute: int,
+        count: int = 6,
+    ) -> int:
+        """Inject synthetic arrival events backfilled across 2 ISO weeks for live tests."""
+        from datetime import timedelta
+
+        from .runtime.event_store import EventContext, HeimaEvent
+
+        now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        n_week1 = count // 2
+        n_week2 = count - n_week1
+        offsets = [timedelta(weeks=-2)] * n_week1 + [timedelta(weeks=-1)] * n_week2
+
+        total = 0
+        for offset in offsets:
+            ts = (now_utc + offset).isoformat()
+            ctx = EventContext(
+                weekday=weekday,
+                minute_of_day=minute,
+                month=now_utc.month,
+                house_state="home",
+                occupants_count=1,
+                occupied_rooms=(),
+                outdoor_lux=None,
+                outdoor_temp=None,
+                weather_condition=None,
+                signals={},
+            )
+            event = HeimaEvent(
+                ts=ts,
+                event_type="presence",
+                context=ctx,
+                source=None,
+                data={"transition": "arrive"},
+            )
+            await self._event_store.async_append(event)
+            total += 1
+
+        await self._event_store.async_flush()
+        self._write_event_store_sensor()
+        return total
+
     async def async_seed_lighting_scene_events(
         self,
         *,

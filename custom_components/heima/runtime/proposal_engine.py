@@ -534,6 +534,28 @@ class ProposalEngine:
     async def async_reject_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "rejected")
 
+    async def async_boost_confidence(self, reaction_id: str, delta: float) -> None:
+        """Boost confidence of the accepted proposal targeting reaction_id."""
+        target = str(reaction_id or "").strip()
+        if not target:
+            return
+        now = datetime.now(UTC).isoformat()
+        boost = max(float(delta), 0.0)
+        for idx, proposal in enumerate(self._proposals):
+            if (
+                isinstance(proposal, ReactionProposal)
+                and proposal.target_reaction_id == target
+                and proposal.status == "accepted"
+            ):
+                self._proposals[idx] = replace(
+                    proposal,
+                    confidence=min(1.0, proposal.confidence + boost),
+                    updated_at=now,
+                )
+                await self._store.async_save(self._serialize())
+                self._write_sensor()
+                return
+
     async def async_submit_proposal(self, proposal: ProposalItem) -> str:
         """Insert or refresh one externally-authored proposal into the shared store."""
         if isinstance(proposal, ActivityProposal):
@@ -711,11 +733,18 @@ class ProposalEngine:
         for idx, proposal in enumerate(self._proposals):
             if proposal.proposal_id != proposal_id:
                 continue
-            self._proposals[idx] = replace(
-                proposal,
-                status=status,  # type: ignore[arg-type]
-                updated_at=datetime.now(UTC).isoformat(),
-            )
+            updates: dict[str, Any] = {
+                "status": status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+            if (
+                status == "accepted"
+                and isinstance(proposal, ReactionProposal)
+                and not proposal.target_reaction_id
+            ):
+                updates["target_reaction_id"] = proposal.proposal_id
+                updates["target_reaction_type"] = proposal.reaction_type
+            self._proposals[idx] = replace(proposal, **updates)
             await self._store.async_save(self._serialize())
             self._write_sensor()
             return True

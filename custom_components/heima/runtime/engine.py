@@ -715,6 +715,7 @@ class HeimaEngine:
 
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
+        await self._maybe_boost_reaction_confidence()
 
         return snapshot
 
@@ -1509,6 +1510,22 @@ class HeimaEngine:
                 )
             )
 
+    async def _maybe_boost_reaction_confidence(self) -> None:
+        outcome_tracker = getattr(self, "_outcome_tracker", None)
+        proposal_engine = getattr(self, "_proposal_engine", None)
+        if outcome_tracker is None or proposal_engine is None:
+            return
+
+        for reaction in self._reactions:
+            reaction_id = reaction.reaction_id
+            if not outcome_tracker.ready_for_boost(reaction_id):
+                continue
+            await proposal_engine.async_boost_confidence(
+                reaction_id,
+                OutcomeTracker.POSITIVE_CONFIDENCE_BOOST,
+            )
+            outcome_tracker.reset_positive_streak(reaction_id)
+
     def _dispatch_apply_filter(self, plan: ApplyPlan, snapshot: DecisionSnapshot) -> ApplyPlan:
         for behavior in self._behaviors:
             try:
@@ -2101,6 +2118,11 @@ class HeimaEngine:
                 for module in getattr(self, "_learning_modules", [])
             ],
             "inference_signals": self._signal_bucket_diagnostics(),
+            "outcome_tracker": (
+                self._outcome_tracker.diagnostics()
+                if self._outcome_tracker is not None
+                else {}
+            ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},
             "reactions": {r.reaction_id: r.diagnostics() for r in self._reactions},
             "muted_reactions": sorted(self._muted_reactions),

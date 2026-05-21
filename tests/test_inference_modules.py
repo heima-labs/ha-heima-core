@@ -451,9 +451,10 @@ async def test_weekday_state_importance_observe_range() -> None:
 
 
 @pytest.mark.asyncio
-async def test_weekday_state_importance_suggest_range() -> None:
+async def test_weekday_state_high_confidence_remains_observe() -> None:
     module = WeekdayStateModule()
-    # 10 snapshots: 7 home / 3 away → probability=0.7, confidence = 0.7 * 1.0 = 0.70 → SUGGEST
+    # WeekdayStateModule is legacy observational context; confidence no longer escalates
+    # its domain authority.
     snapshots = [_snapshot(weekday=0, minute_of_day=600, house_state="home")] * 7 + [
         _snapshot(weekday=0, minute_of_day=600, house_state="away")
     ] * 3
@@ -461,14 +462,14 @@ async def test_weekday_state_importance_suggest_range() -> None:
 
     signals = module.infer(_context(weekday=0, minute_of_day=600))
     assert len(signals) == 1
-    assert signals[0].importance == Importance.SUGGEST
+    assert signals[0].importance == Importance.OBSERVE
     assert signals[0].predicted_state == "home"
 
 
 @pytest.mark.asyncio
-async def test_weekday_state_importance_assert_range() -> None:
+async def test_weekday_state_very_high_confidence_remains_observe() -> None:
     module = WeekdayStateModule()
-    # 10 snapshots: 9 home / 1 away → probability=0.9, confidence = 0.9 → ASSERT
+    # Even very high-confidence weekday-only predictions remain observational.
     snapshots = [_snapshot(weekday=0, minute_of_day=600, house_state="home")] * 9 + [
         _snapshot(weekday=0, minute_of_day=600, house_state="away")
     ] * 1
@@ -476,7 +477,7 @@ async def test_weekday_state_importance_assert_range() -> None:
 
     signals = module.infer(_context(weekday=0, minute_of_day=600))
     assert len(signals) == 1
-    assert signals[0].importance == Importance.ASSERT
+    assert signals[0].importance == Importance.OBSERVE
 
 
 @pytest.mark.asyncio
