@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
+from ....const import HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE
 from ..approval_store import (
     HOUSE_STATE_PROPOSAL_TYPE,
     house_state_context_key,
@@ -16,6 +17,7 @@ from ..signals import HouseStateSignal, Importance
 
 _MIN_SUPPORT = 3
 _CONFIDENCE_THRESHOLD = 0.60
+_PROPOSABLE_HOUSE_STATES = frozenset(HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE)
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,8 @@ class HouseStateInferenceModule(HeimaLearningModule):
 
         candidates: list[LearnedHouseStateCandidate] = []
         for entry in self._model.values():
+            if entry.predicted_state not in _PROPOSABLE_HOUSE_STATES:
+                continue
             if entry.total < self._min_support:
                 continue
             if entry.confidence < self._confidence_threshold:

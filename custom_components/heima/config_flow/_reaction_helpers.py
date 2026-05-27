@@ -37,7 +37,8 @@ def house_state_proposal_review_details(
             f"Stato previsto: {predicted_state}" if is_it else f"Predicted state: {predicted_state}"
         )
     if weekday not in (None, ""):
-        lines.append(f"Giorno: {weekday}" if is_it else f"Weekday: {weekday}")
+        weekday_label = _weekday_label(weekday, is_it=is_it)
+        lines.append(f"Giorno: {weekday_label}" if is_it else f"Weekday: {weekday_label}")
     if hour_bucket not in (None, ""):
         lines.append(f"Ora: {hour_bucket}" if is_it else f"Hour: {hour_bucket}")
     if rooms:
@@ -121,6 +122,18 @@ def safe_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _weekday_label(weekday: Any, *, is_it: bool) -> str:
+    it_days = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+    en_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    try:
+        index = int(weekday)
+    except (TypeError, ValueError):
+        return str(weekday)
+    if 0 <= index <= 6:
+        return it_days[index] if is_it else en_days[index]
+    return str(weekday)
 
 
 def parse_hhmm_to_min(value: str) -> int | None:

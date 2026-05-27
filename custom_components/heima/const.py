@@ -139,6 +139,18 @@ HOUSE_STATES_CANONICAL = [
     "relax",
     "working",
 ]
+HOUSE_STATES_HARD = [
+    "vacation",
+    "guest",
+    "away",
+]
+HOUSE_STATES_HOME_SUBSTATES = [
+    "sleeping",
+    "relax",
+    "working",
+    "home",
+]
+HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE = HOUSE_STATES_HOME_SUBSTATES
 
 EVENT_CATEGORIES_ALL = [
     "people",

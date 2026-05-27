@@ -680,6 +680,21 @@ async def test_house_state_inference_generates_candidate_for_unknown_context() -
 
 
 @pytest.mark.asyncio
+async def test_house_state_inference_does_not_generate_candidate_for_hard_state() -> None:
+    module = HouseStateInferenceModule()
+    snapshots = [
+        _snapshot(
+            house_state="guest",
+            room_occupancy={"bathroom": True},
+        )
+    ] * 3
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
 async def test_house_state_inference_does_not_generate_candidate_for_approved_context() -> None:
     module = HouseStateInferenceModule()
     snapshots = [

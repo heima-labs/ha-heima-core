@@ -12,7 +12,11 @@ from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant
 
-from ...const import DEFAULT_HOUSE_STATE_CONFIG, OPT_HOUSE_STATE_CONFIG
+from ...const import (
+    DEFAULT_HOUSE_STATE_CONFIG,
+    HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE,
+    OPT_HOUSE_STATE_CONFIG,
+)
 from ..inference.signals import HouseStateSignal, Importance
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
@@ -27,7 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 _MEDIA_ACTIVE_STATES = {"on", "playing", "paused", "buffering"}
 _APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID = "house_state_inference"
 _HOUSE_STATE_SIGNAL_MIN_CONFIDENCE = 0.60
-_HOME_SUBSTATES = {"sleeping", "relax", "working", "home"}
+_HOME_SUBSTATES = frozenset(HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE)
 
 
 @dataclass(frozen=True)

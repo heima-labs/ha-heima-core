@@ -10,7 +10,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import selector
 from homeassistant.util import slugify  # noqa: F401 (re-exported for step modules)
 
-from ..const import HOUSE_SIGNAL_NAMES
+from ..const import HOUSE_SIGNAL_NAMES, HOUSE_STATES_CANONICAL
 
 # ---------------------------------------------------------------------------
 # UI option lists
@@ -22,7 +22,7 @@ ROOM_LOGIC = ["any_of", "all_of", "weighted_quorum"]
 ROOM_OCCUPANCY_MODES = ["derived", "none"]
 HEATING_APPLY_MODES = ["delegate_to_scheduler", "set_temperature"]
 LIGHTING_APPLY_MODES = ["scene", "delegate"]
-HEATING_HOUSE_STATES = ["away", "home", "guest", "vacation", "sleeping", "relax", "working"]
+HEATING_HOUSE_STATES = list(HOUSE_STATES_CANONICAL)
 HEATING_BRANCH_TYPES = ["disabled", "scheduler_delegate", "fixed_target", "vacation_curve"]
 
 # ---------------------------------------------------------------------------
