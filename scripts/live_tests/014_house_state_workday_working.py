@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -97,9 +97,16 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
             for entity_id in list(house_state_cfg.get("sleep_charging_entities", []) or [])
             if str(entity_id).strip()
         ],
+        "work_activity_entities": [
+            str(entity_id).strip()
+            for entity_id in list(house_state_cfg.get("work_activity_entities", []) or [])
+            if str(entity_id).strip()
+        ],
         "sleep_enter_min": int(house_state_cfg.get("sleep_enter_min", 10)),
         "sleep_exit_min": int(house_state_cfg.get("sleep_exit_min", 2)),
         "work_enter_min": int(house_state_cfg.get("work_enter_min", 5)),
+        "work_activity_required": bool(house_state_cfg.get("work_activity_required", False)),
+        "work_activity_grace_min": int(house_state_cfg.get("work_activity_grace_min", 20)),
         "relax_enter_min": int(house_state_cfg.get("relax_enter_min", 2)),
         "relax_exit_min": int(house_state_cfg.get("relax_exit_min", 10)),
         "sleep_requires_media_off": bool(house_state_cfg.get("sleep_requires_media_off", True)),

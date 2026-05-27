@@ -123,7 +123,10 @@ STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset(
         OPT_PEOPLE_ANON,
         OPT_PEOPLE_DEBUG_ALIASES,
         OPT_ROOMS,
+        OPT_LIGHTING_ROOMS,
         OPT_LIGHTING_ZONES,
+        OPT_HEATING,
+        OPT_SECURITY,
     }
 )
 
