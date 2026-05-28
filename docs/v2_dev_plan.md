@@ -1,7 +1,7 @@
 # Heima v2.1 — Development Plan
 
 **Spec:** `docs/specs/heima_v2_spec.md` (v2.1.0-draft)
-**Branch:** `feat/semantic-policy-advisor`
+**Branch:** `feat/phase-u-physical-light-state`
 **Solo developer:** Stefano — no backward compatibility with v1 required during development.
 
 ---
@@ -104,7 +104,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
 | S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
-| U | Physical Light State Awareness | `NOT STARTED` | A, Q |
+| U | Physical Light State Awareness | `IN PROGRESS` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
 
 ---
@@ -112,14 +112,23 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase V — Signal Discovery Pipeline.
-**Active phase:** Phase U — Physical Light State Awareness (`NOT STARTED`).
-**Branch:** `feat/semantic-policy-advisor`.
+**Active phase:** Phase U — Physical Light State Awareness (`IN PROGRESS`).
+**Branch:** `feat/phase-u-physical-light-state`.
 **Next action:**
 
-Discuss Phase U — Physical Light State Awareness scope and implementation plan.
+Implement Phase U / U4 lighting anomaly rules: `lights_on_unattended` and `lighting_scene_drift`.
 
 ### Current Working Notes
 
+- Current slice: Phase U / U1-U3 complete.
+  - `LightingDomainResult` now carries `lights_on`, populated from configured room light entities
+    by reading current HA physical state (`state == "on"`).
+  - Engine writes `lighting.lights_on` into `CanonicalState` during each snapshot computation.
+  - `InferenceContext.lights_on` exposes the previous decision snapshot's physical light state to
+    learning modules without reordering the engine hot path.
+  - `HouseSnapshot.lights_physically_on` is persisted, deserialized, and included in semantic
+    snapshot deduplication.
+  - Verification: `pytest tests/test_engine_lighting_runtime.py tests/test_inference_engine_wiring.py tests/test_snapshot_migration_o.py -q`.
 - Current slice: Phase V / V1 complete.
   - Added dedicated `runtime/signal_discovery.py` with `HAEntityDescriptor`,
     `SignalOptionsPatch`, `SignalSuggestion`, and `SignalDiscoveryAudit`.
@@ -1828,9 +1837,9 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 
 ### Acceptance criteria
 
-- [ ] `LightingResult.lights_on` riflette stato fisico HA, non le scene Heima
-- [ ] `CanonicalState["lighting.lights_on"]` disponibile dopo ogni ciclo di valutazione
-- [ ] `HouseSnapshot.lights_physically_on` persistito e leggibile dall'anomaly analyzer
+- [x] `LightingResult.lights_on` riflette stato fisico HA, non le scene Heima
+- [x] `CanonicalState["lighting.lights_on"]` disponibile dopo ogni ciclo di valutazione
+- [x] `HouseSnapshot.lights_physically_on` persistito e leggibile dall'anomaly analyzer
 - [ ] `lights_on_unattended` triggera quando almeno una light entity configurata è fisicamente
       accesa mentre `anyone_home == False`
 - [ ] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`

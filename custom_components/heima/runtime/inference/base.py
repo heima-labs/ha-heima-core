@@ -23,6 +23,7 @@ class InferenceContext:
     previous_house_state: str
     previous_heating_setpoint: float | None
     previous_lighting_scenes: dict[str, str]
+    lights_on: dict[str, bool] = field(default_factory=dict)
     previous_activity_names: tuple[str, ...] = field(default_factory=tuple)
 
 

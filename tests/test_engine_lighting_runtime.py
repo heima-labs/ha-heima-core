@@ -137,6 +137,52 @@ def test_zone_auto_with_only_non_sensorized_rooms_resolves_off():
     assert zone_trace["zone_occupied"] is False
 
 
+def test_compute_snapshot_tracks_physical_room_light_state(monkeypatch):
+    options = {
+        "rooms": [
+            {
+                "room_id": "living",
+                "display_name": "Living",
+                "area_id": "living_area",
+                "occupancy_mode": "none",
+                "sources": [],
+                "logic": "any_of",
+            }
+        ],
+        "lighting_zones": [{"zone_id": "living_zone", "rooms": ["living"]}],
+        "lighting_rooms": [{"room_id": "living"}],
+    }
+    engine = _build_engine(
+        options,
+        {
+            "light.living_main": "on",
+            "light.living_spot": "off",
+            "switch.living_fan": "on",
+        },
+    )
+
+    fake_registry = SimpleNamespace(
+        entities={
+            "a": _RegistryEntry("light.living_main", "living_area"),
+            "b": _RegistryEntry("light.living_spot", "living_area"),
+            "c": _RegistryEntry("switch.living_fan", "living_area"),
+            "d": _RegistryEntry("light.kitchen_main", "kitchen_area"),
+        }
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda hass: fake_registry,
+    )
+
+    snapshot = engine._compute_snapshot(reason="test")
+
+    assert snapshot.lights_on == {
+        "light.living_main": True,
+        "light.living_spot": False,
+    }
+    assert engine.state.get_sensor("lighting.lights_on") == snapshot.lights_on
+
+
 @pytest.mark.asyncio
 async def test_off_without_scene_uses_area_light_turn_off_fallback():
     options = {

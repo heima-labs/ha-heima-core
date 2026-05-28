@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -31,6 +31,7 @@ class LightingDomainResult:
     """Current-cycle Lighting plugin output."""
 
     lighting_intents: dict[str, str]
+    lights_on: dict[str, bool] = field(default_factory=dict)
 
 
 class LightingDomain:
@@ -89,15 +90,22 @@ class LightingDomain:
 
         house_state_result = domain_results.require("house_state")
         occupancy_result = domain_results.require("occupancy")
+        room_configs = dict(self._plugin_room_configs_provider())
+        self._room_area_ids = {
+            str(room_id): str(cfg.get("area_id") or "").strip()
+            for room_id, cfg in room_configs.items()
+            if str(room_id).strip()
+        }
         lighting_intents = self.compute_intents(
             options=dict(self._plugin_options_provider()),
             house_state=str(house_state_result.house_state),
             occupied_rooms=list(occupancy_result.occupied_rooms),
             state=canonical_state,
-            room_configs=dict(self._plugin_room_configs_provider()),
+            room_configs=room_configs,
             room_occupancy_mode_fn=self._plugin_room_occupancy_mode_fn,
         )
-        return LightingDomainResult(lighting_intents=lighting_intents)
+        lights_on = self.compute_lights_on(room_configs=room_configs)
+        return LightingDomainResult(lighting_intents=lighting_intents, lights_on=lights_on)
 
     def reset(self) -> None:
         """Called on options reload."""
@@ -222,6 +230,18 @@ class LightingDomain:
 
         self._lighting_zone_trace = zone_trace
         return lighting_intents
+
+    def compute_lights_on(self, *, room_configs: dict[str, dict[str, Any]]) -> dict[str, bool]:
+        """Return physical HA light state for configured rooms."""
+        entity_ids: set[str] = set()
+        for room_id in sorted(room_configs):
+            entity_ids.update(self.expected_room_light_entities(room_id))
+
+        lights_on: dict[str, bool] = {}
+        for entity_id in sorted(entity_ids):
+            state = self._hass.states.get(entity_id)
+            lights_on[entity_id] = str(getattr(state, "state", "") or "").lower() == "on"
+        return lights_on
 
     # ------------------------------------------------------------------
     # Build lighting apply steps

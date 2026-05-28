@@ -18,6 +18,7 @@ def _snapshot() -> HouseSnapshot:
         heating_setpoint=20.5,
         heating_current_temperature=19.5,
         lighting_scenes={"kitchen": "bright"},
+        lights_physically_on={"light.kitchen_main": True},
         security_state="disarmed",
     )
 
@@ -39,12 +40,14 @@ def test_house_snapshot_from_dict_migrates_legacy_security_armed() -> None:
 def test_house_snapshot_from_dict_defaults_legacy_disarmed_state() -> None:
     raw = _snapshot().as_dict()
     raw.pop("security_state")
+    raw.pop("lights_physically_on")
     raw["security_armed"] = False
 
     restored = HouseSnapshot.from_dict(raw)
 
     assert restored is not None
     assert restored.security_state == "disarmed"
+    assert restored.lights_physically_on == {}
 
 
 def test_house_snapshot_round_trips_new_phase_o_fields() -> None:
@@ -56,6 +59,7 @@ def test_house_snapshot_round_trips_new_phase_o_fields() -> None:
     assert restored == snapshot
     assert restored.as_dict()["security_state"] == "disarmed"
     assert restored.as_dict()["heating_current_temperature"] == 19.5
+    assert restored.as_dict()["lights_physically_on"] == {"light.kitchen_main": True}
     assert "security_armed" not in restored.as_dict()
 
 
@@ -65,8 +69,13 @@ def test_house_snapshot_semantic_key_tracks_security_state_and_current_temperatu
     temperature_changed = HouseSnapshot.from_dict(
         {**base.as_dict(), "heating_current_temperature": 18.0}
     )
+    light_state_changed = HouseSnapshot.from_dict(
+        {**base.as_dict(), "lights_physically_on": {"light.kitchen_main": False}}
+    )
 
     assert security_changed is not None
     assert temperature_changed is not None
+    assert light_state_changed is not None
     assert security_changed.semantic_key() != base.semantic_key()
     assert temperature_changed.semantic_key() != base.semantic_key()
+    assert light_state_changed.semantic_key() != base.semantic_key()
