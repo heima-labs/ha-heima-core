@@ -105,18 +105,18 @@ These constraints must never be violated. See spec §16 for rationale.
 | S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
-| V | Signal Discovery Pipeline | `IN PROGRESS` | N, L |
+| V | Signal Discovery Pipeline | `DONE` | N, L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability.
-**Active phase:** Phase V — Signal Discovery Pipeline (`IN PROGRESS`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase V — Signal Discovery Pipeline.
+**Active phase:** Phase U — Physical Light State Awareness (`NOT STARTED`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase V — Signal Discovery Pipeline with V5 triggering and final coverage.
+Discuss Phase U — Physical Light State Awareness scope and implementation plan.
 
 ### Current Working Notes
 
@@ -159,6 +159,14 @@ Continue Phase V — Signal Discovery Pipeline with V5 triggering and final cove
     per coordinator cycle through `async_update_entry`.
   - Existing options are the idempotency guard; already reflected patches are skipped after restart.
   - Verification: focused signal discovery and proposal-engine tests.
+- Current slice: Phase V / V5 complete.
+  - Startup and options reload run signal discovery audit and evaluate resulting suggestions.
+  - Coordinator builds `HAEntityDescriptor` values from HA entity registry, device registry, area
+    registry, and current states.
+  - Coordinator subscribes to `EVENT_ENTITY_REGISTRY_UPDATED` and schedules an off-cycle audit via
+    `async_call_later(0, ...)`.
+  - Added `async_run_signal_discovery()` for explicit/testable audit execution.
+  - Phase V is complete; next planned development phase is U (Physical Light State Awareness).
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.

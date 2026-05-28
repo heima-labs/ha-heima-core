@@ -550,3 +550,118 @@ async def test_coordinator_skips_already_applied_accepted_patch() -> None:
     await coordinator._async_apply_accepted_signal_patches()
 
     config_entries.async_update_entry.assert_not_called()
+
+
+def test_coordinator_builds_signal_discovery_descriptors(monkeypatch: pytest.MonkeyPatch) -> None:
+    entity_registry = SimpleNamespace(
+        entities={
+            "sensor.studio_lux": SimpleNamespace(
+                entity_id="sensor.studio_lux",
+                device_id="device-lux",
+            ),
+            "media_player.projector": SimpleNamespace(
+                entity_id="media_player.projector",
+                area_id="studio_area",
+            ),
+        }
+    )
+    device_registry = SimpleNamespace(devices={"device-lux": SimpleNamespace(area_id="studio_area")})
+    area_registry = SimpleNamespace(
+        async_list_areas=lambda: [SimpleNamespace(id="studio_area", name="Studio")]
+    )
+    monkeypatch.setattr(
+        "custom_components.heima.coordinator.er.async_get",
+        lambda _hass: entity_registry,
+    )
+    monkeypatch.setattr(
+        "custom_components.heima.coordinator.dr.async_get",
+        lambda _hass: device_registry,
+    )
+    monkeypatch.setattr(
+        "custom_components.heima.coordinator.ar.async_get",
+        lambda _hass: area_registry,
+    )
+    states = [
+        SimpleNamespace(
+            entity_id="sensor.studio_lux",
+            state="42",
+            attributes={"device_class": "illuminance", "unit_of_measurement": "lx"},
+        ),
+        SimpleNamespace(entity_id="media_player.projector", state="playing", attributes={}),
+    ]
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.hass = SimpleNamespace()
+    coordinator._safe_all_states = lambda: states
+
+    descriptors = coordinator._signal_discovery_entity_descriptors()
+
+    by_entity = {descriptor.entity_id: descriptor for descriptor in descriptors}
+    assert by_entity["sensor.studio_lux"] == HAEntityDescriptor(
+        entity_id="sensor.studio_lux",
+        domain="sensor",
+        device_class="illuminance",
+        unit_of_measurement="lx",
+        area_id="studio_area",
+        area_name="Studio",
+        current_state="42",
+    )
+    assert by_entity["media_player.projector"].domain == "media_player"
+    assert by_entity["media_player.projector"].area_name == "Studio"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_run_signal_discovery_audit_submits_suggestions() -> None:
+    suggestions = SignalDiscoveryAudit().run(
+        [_entity("sensor.studio_lux", unit="lx")],
+        [{"room_id": "studio"}],
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = SimpleNamespace(options={"rooms": [{"room_id": "studio"}]})
+    coordinator._signal_discovery_audit = SimpleNamespace(run=MagicMock(return_value=suggestions))
+    coordinator._signal_discovery_entity_descriptors = MagicMock(return_value=["descriptor"])
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_identity_key=MagicMock(return_value=None),
+        async_submit_proposal=AsyncMock(return_value="proposal-signal"),
+    )
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_installer_alert_keys = set()
+
+    result = await coordinator.async_run_signal_discovery()
+
+    assert result == suggestions
+    coordinator._signal_discovery_audit.run.assert_called_once_with(
+        ["descriptor"],
+        [{"room_id": "studio"}],
+    )
+    coordinator._proposal_engine.async_submit_proposal.assert_awaited_once()
+
+
+def test_coordinator_schedules_signal_discovery_on_registry_update() -> None:
+    listeners: dict[str, object] = {}
+    scheduled: list[tuple[int, object]] = []
+
+    class _Bus:
+        def async_listen(self, event_type: str, callback):
+            listeners[event_type] = callback
+
+            def _unsub() -> None:
+                listeners.pop(event_type, None)
+
+            return _unsub
+
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.hass = SimpleNamespace(bus=_Bus(), async_create_task=lambda coro: None)
+    coordinator._unsub_signal_discovery_registry = None
+    coordinator._unsub_signal_discovery_audit = None
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            "custom_components.heima.coordinator.async_call_later",
+            lambda _hass, delay, callback: scheduled.append((delay, callback)) or (lambda: None),
+        )
+        coordinator._subscribe_signal_discovery_registry_updates()
+        listeners["entity_registry_updated"](SimpleNamespace())
+
+    assert "entity_registry_updated" in listeners
+    assert scheduled and scheduled[0][0] == 0

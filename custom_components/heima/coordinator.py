@@ -81,6 +81,7 @@ from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
 from .runtime.signal_discovery import (
+    HAEntityDescriptor,
     SignalDiscoveryAudit,
     SignalOptionsPatch,
     SignalSuggestion,
@@ -288,6 +289,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._unsub_proposal_tick = None
         self._unsub_periodic_fallback = None
         self._unsub_state_changed = None
+        self._unsub_signal_discovery_registry = None
+        self._unsub_signal_discovery_audit = None
         self._debounce_handles: dict[str, Callable[[], None]] = {}
         self._pending_eval_reasons: dict[str, str] = {}
         self._eval_pending = False
@@ -353,6 +356,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 self.entry, changed_keys={"people_named", "rooms"}
             )
         await self._proposal_engine.async_run()
+        await self._async_run_signal_discovery_audit()
         await self._async_evaluate_semantic_policies()
         await self._async_evaluate_signal_discovery()
         await self._async_apply_accepted_signal_patches()
@@ -362,6 +366,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._schedule_proposal_tick()
         self._schedule_analyze_tick()
         self._subscribe_state_changes()
+        self._subscribe_signal_discovery_registry_updates()
         self._schedule_periodic_fallback()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -420,6 +425,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
         await self._async_evaluate_semantic_policies()
+        await self._async_run_signal_discovery_audit()
         await self._async_evaluate_signal_discovery()
         await self._async_apply_accepted_signal_patches()
         self._resubscribe_state_changes()
@@ -459,6 +465,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             },
             state_by_entity=state_by_entity,
         )
+
+    async def async_run_signal_discovery(self) -> list[SignalSuggestion]:
+        """Run signal discovery audit immediately and submit any new suggestions."""
+        await self._async_run_signal_discovery_audit()
+        await self._async_evaluate_signal_discovery()
+        return list(self._pending_signal_suggestions)
 
     async def async_request_evaluation(self, reason: str) -> None:
         """Request an evaluation cycle."""
@@ -958,6 +970,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     async def async_shutdown(self) -> None:
         """Shutdown runtime."""
         self._unsubscribe_state_changes()
+        self._unsubscribe_signal_discovery_registry_updates()
+        self._cancel_signal_discovery_audit()
         self._cancel_eval_debounce_handles()
         self._cancel_periodic_fallback()
         self._cancel_proposal_tick()
@@ -978,6 +992,42 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if self._unsub_state_changed:
             self._unsub_state_changed()
             self._unsub_state_changed = None
+
+    def _subscribe_signal_discovery_registry_updates(self) -> None:
+        self._unsubscribe_signal_discovery_registry_updates()
+
+        @callback
+        def _handle_entity_registry_updated(_event: Event) -> None:
+            self._schedule_signal_discovery_audit()
+
+        self._unsub_signal_discovery_registry = self.hass.bus.async_listen(
+            er.EVENT_ENTITY_REGISTRY_UPDATED,
+            _handle_entity_registry_updated,
+        )
+
+    def _unsubscribe_signal_discovery_registry_updates(self) -> None:
+        if self._unsub_signal_discovery_registry:
+            self._unsub_signal_discovery_registry()
+            self._unsub_signal_discovery_registry = None
+
+    def _schedule_signal_discovery_audit(self) -> None:
+        self._cancel_signal_discovery_audit()
+
+        @callback
+        def _handle(_now) -> None:  # type: ignore[no-untyped-def]
+            self.hass.async_create_task(self._async_run_signal_discovery_update())
+
+        self._unsub_signal_discovery_audit = async_call_later(self.hass, 0, _handle)
+
+    def _cancel_signal_discovery_audit(self) -> None:
+        if self._unsub_signal_discovery_audit:
+            self._unsub_signal_discovery_audit()
+            self._unsub_signal_discovery_audit = None
+
+    async def _async_run_signal_discovery_update(self) -> None:
+        self._unsub_signal_discovery_audit = None
+        await self._async_run_signal_discovery_audit()
+        await self._async_evaluate_signal_discovery()
 
     def _sync_scheduler(self) -> None:
         self._scheduler.sync_jobs(self.engine.scheduled_runtime_jobs())
@@ -1276,6 +1326,60 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             proposal = _proposal_from_house_state_candidate(candidate)
             proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
             await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+
+    async def _async_run_signal_discovery_audit(self) -> None:
+        audit = getattr(self, "_signal_discovery_audit", None)
+        if audit is None:
+            return
+        self._pending_signal_suggestions = audit.run(
+            self._signal_discovery_entity_descriptors(),
+            list((self.entry.options or {}).get(OPT_ROOMS, [])),
+        )
+
+    def _signal_discovery_entity_descriptors(self) -> list[HAEntityDescriptor]:
+        try:
+            entity_registry = er.async_get(self.hass)
+            device_registry = dr.async_get(self.hass)
+            area_registry = ar.async_get(self.hass)
+        except Exception:  # noqa: BLE001
+            return []
+
+        state_by_entity = {
+            str(getattr(state, "entity_id", "") or ""): state
+            for state in self._safe_all_states()
+            if str(getattr(state, "entity_id", "") or "")
+        }
+        device_entries = dict(getattr(device_registry, "devices", {}) or {})
+        area_entries = {
+            str(getattr(area, "id", "") or ""): area
+            for area in getattr(area_registry, "async_list_areas", lambda: [])()
+            if str(getattr(area, "id", "") or "")
+        }
+
+        descriptors: list[HAEntityDescriptor] = []
+        for entry in getattr(entity_registry, "entities", {}).values():
+            entity_id = str(getattr(entry, "entity_id", "") or "").strip()
+            if "." not in entity_id:
+                continue
+            domain = entity_id.split(".", 1)[0]
+            state = state_by_entity.get(entity_id)
+            area_id = _entity_entry_area_id(entry, device_entries)
+            descriptors.append(
+                HAEntityDescriptor(
+                    entity_id=entity_id,
+                    domain=domain,
+                    device_class=_entity_device_class(entry, state),
+                    unit_of_measurement=_entity_unit_of_measurement(entry, state),
+                    area_id=area_id,
+                    area_name=_area_name_from_id(area_id, area_entries),
+                    current_state=(
+                        str(getattr(state, "state", "") or "").strip()
+                        if state is not None
+                        else None
+                    ),
+                )
+            )
+        return descriptors
 
     async def _async_evaluate_semantic_policies(self) -> None:
         options = dict(self.entry.options or {})
@@ -1936,6 +2040,55 @@ def _coerce_float(value: Any) -> float | None:
 
 def _state_event_numeric_state(state: object) -> float | None:
     return _coerce_float(getattr(state, "state", None))
+
+
+def _entity_device_class(entry: Any, state: Any) -> str | None:
+    for source in (entry, state):
+        if source is None:
+            continue
+        attrs = getattr(source, "attributes", {})
+        for key in ("device_class", "original_device_class"):
+            value = getattr(source, key, None)
+            if not value and isinstance(attrs, dict):
+                value = attrs.get(key)
+            clean = str(value or "").strip().lower()
+            if clean:
+                return clean
+    return None
+
+
+def _entity_unit_of_measurement(entry: Any, state: Any) -> str | None:
+    for source in (state, entry):
+        if source is None:
+            continue
+        attrs = getattr(source, "attributes", {})
+        value = getattr(source, "unit_of_measurement", None)
+        if not value and isinstance(attrs, dict):
+            value = attrs.get("unit_of_measurement")
+        clean = str(value or "").strip()
+        if clean:
+            return clean
+    return None
+
+
+def _entity_entry_area_id(entry: Any, device_entries: dict[str, Any]) -> str | None:
+    area_id = str(getattr(entry, "area_id", "") or "").strip()
+    if area_id:
+        return area_id
+    device_id = str(getattr(entry, "device_id", "") or "").strip()
+    if not device_id:
+        return None
+    device = device_entries.get(device_id)
+    area_id = str(getattr(device, "area_id", "") or "").strip()
+    return area_id or None
+
+
+def _area_name_from_id(area_id: str | None, area_entries: dict[str, Any]) -> str | None:
+    if not area_id:
+        return None
+    area = area_entries.get(area_id)
+    name = str(getattr(area, "name", "") or "").strip()
+    return name or None
 
 
 def _house_state_notification_id(identity_key: str) -> str:
