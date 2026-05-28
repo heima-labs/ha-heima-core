@@ -91,6 +91,9 @@ def _snapshot(
     detected_activities: tuple[str, ...] = (),
     heating_setpoint: float = 21.0,
     heating_current_temperature: float | None = 18.0,
+    house_state: str = "home",
+    lighting_scenes: dict[str, str] | None = None,
+    lights_physically_on: dict[str, bool] | None = None,
     security_state: str = "disarmed",
 ) -> HouseSnapshot:
     return HouseSnapshot(
@@ -101,10 +104,11 @@ def _snapshot(
         named_present=("alice",),
         room_occupancy=room_occupancy if room_occupancy is not None else {"living": True},
         detected_activities=detected_activities,
-        house_state="home",
+        house_state=house_state,
         heating_setpoint=heating_setpoint,
         heating_current_temperature=heating_current_temperature,
-        lighting_scenes={},
+        lighting_scenes=dict(lighting_scenes or {}),
+        lights_physically_on=dict(lights_physically_on or {}),
         security_state=security_state,
     )
 
@@ -163,6 +167,27 @@ def _activity_snapshot(
         room_occupancy={"living": True} if anyone_home else {},
         detected_activities=activities,
         heating_current_temperature=21.0,
+    )
+
+
+def _lighting_snapshot(
+    *,
+    hour: int = 20,
+    anyone_home: bool = True,
+    house_state: str = "home",
+    lighting_scenes: dict[str, str] | None = None,
+    lights_physically_on: dict[str, bool] | None = None,
+) -> HouseSnapshot:
+    return _snapshot(
+        ts=f"2026-05-18T{hour:02d}:00:00+02:00",
+        weekday=0,
+        minute_of_day=hour * 60,
+        anyone_home=anyone_home,
+        room_occupancy={"living": True} if anyone_home else {},
+        heating_current_temperature=21.0,
+        house_state=house_state,
+        lighting_scenes=lighting_scenes,
+        lights_physically_on=lights_physically_on,
     )
 
 
@@ -958,6 +983,218 @@ async def test_anomaly_analyzer_appliance_unusual_hour_disabled_rule() -> None:
         finding
         for finding in findings
         if finding.payload.anomaly_type == "appliance_unusual_hour"
+    ]
+
+
+async def test_anomaly_analyzer_lights_on_unattended_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(anyone_home=True, lights_physically_on={"light.living_main": True})
+        for _ in range(3)
+    ]
+    snapshots.extend(
+        _lighting_snapshot(
+            anyone_home=False,
+            lights_physically_on={
+                "light.living_main": True,
+                "light.living_spot": False,
+                "switch.living_fan": True,
+            },
+        )
+        for _ in range(3)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    light_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lights_on_unattended"
+    ]
+    assert len(light_findings) == 1
+    assert light_findings[0].payload.context["unattended_observation_count"] == 3
+    assert light_findings[0].payload.context["entity_ids"] == ["light.living_main"]
+
+
+async def test_anomaly_analyzer_lights_on_unattended_respects_min_observations() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            anyone_home=False,
+            lights_physically_on={"light.living_main": True},
+        )
+        for _ in range(2)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lights_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_lights_on_unattended_ignores_attended_lights() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            anyone_home=True,
+            lights_physically_on={"light.living_main": True},
+        )
+        for _ in range(3)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lights_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_lights_on_unattended_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "lights_on_unattended": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _lighting_snapshot(
+            anyone_home=False,
+            lights_physically_on={"light.living_main": True},
+        )
+        for _ in range(3)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lights_on_unattended"
+    ]
+
+
+async def test_anomaly_analyzer_lighting_scene_drift_emits_finding() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            hour=20,
+            house_state="home",
+            lighting_scenes={"living": "bright"},
+        )
+        for _ in range(10)
+    ]
+    snapshots.extend(
+        _lighting_snapshot(
+            hour=20,
+            house_state="home",
+            lighting_scenes={"living": "dim"},
+        )
+        for _ in range(3)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    drift_findings = [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lighting_scene_drift"
+    ]
+    assert len(drift_findings) == 1
+    assert drift_findings[0].payload.context["scene_key"] == "living"
+    assert drift_findings[0].payload.context["current_scene"] == "dim"
+    assert drift_findings[0].payload.context["baseline_scene"] == "bright"
+    assert drift_findings[0].payload.context["baseline_snapshot_count"] == 10
+    assert drift_findings[0].payload.context["recent_snapshot_count"] == 3
+
+
+async def test_anomaly_analyzer_lighting_scene_drift_respects_slot() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            hour=19,
+            house_state="home",
+            lighting_scenes={"living": "bright"},
+        )
+        for _ in range(10)
+    ]
+    snapshots.extend(
+        _lighting_snapshot(
+            hour=20,
+            house_state="home",
+            lighting_scenes={"living": "dim"},
+        )
+        for _ in range(3)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lighting_scene_drift"
+    ]
+
+
+async def test_anomaly_analyzer_lighting_scene_drift_requires_strong_baseline() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            hour=20,
+            lighting_scenes={"living": "bright" if index < 6 else "dim"},
+        )
+        for index in range(10)
+    ]
+    snapshots.extend(
+        _lighting_snapshot(hour=20, lighting_scenes={"living": "relax"})
+        for _ in range(3)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lighting_scene_drift"
+    ]
+
+
+async def test_anomaly_analyzer_lighting_scene_drift_disabled_rule() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {
+            "anomaly": {
+                "rules": {
+                    "lighting_scene_drift": {
+                        "enabled": False,
+                    }
+                }
+            }
+        }
+    )
+    snapshots = [
+        _lighting_snapshot(hour=20, lighting_scenes={"living": "bright"})
+        for _ in range(10)
+    ]
+    snapshots.extend(
+        _lighting_snapshot(hour=20, lighting_scenes={"living": "dim"})
+        for _ in range(3)
+    )
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "lighting_scene_drift"
     ]
 
 

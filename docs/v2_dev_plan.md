@@ -104,19 +104,19 @@ These constraints must never be violated. See spec §16 for rationale.
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
 | S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
-| U | Physical Light State Awareness | `IN PROGRESS` | A, Q |
+| U | Physical Light State Awareness | `DONE` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase V — Signal Discovery Pipeline.
-**Active phase:** Phase U — Physical Light State Awareness (`IN PROGRESS`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline.
+**Active phase:** Phase T — Learning Signal Analyzers (`NOT STARTED`).
 **Branch:** `feat/phase-u-physical-light-state`.
 **Next action:**
 
-Implement Phase U / U4 lighting anomaly rules: `lights_on_unattended` and `lighting_scene_drift`.
+Merge Phase U into `feat/v2`, then start Phase T — Learning Signal Analyzers.
 
 ### Current Working Notes
 
@@ -129,6 +129,15 @@ Implement Phase U / U4 lighting anomaly rules: `lights_on_unattended` and `light
   - `HouseSnapshot.lights_physically_on` is persisted, deserialized, and included in semantic
     snapshot deduplication.
   - Verification: `pytest tests/test_engine_lighting_runtime.py tests/test_inference_engine_wiring.py tests/test_snapshot_migration_o.py -q`.
+- Current slice: Phase U / U4 complete.
+  - `lights_on_unattended` now triggers from `HouseSnapshot.lights_physically_on` when configured
+    `light.*` entities are physically on while nobody is home.
+  - `lighting_scene_drift` compares recent `lighting_scenes` with the historical baseline for the
+    same `(scene_key, house_state, hour_bucket)` slot.
+  - Both rules live in the existing `AnomalyAnalyzer` catalog and use the existing finding path;
+    no proposal or secondary analyzer path was added.
+  - Phase U is complete.
+  - Verification: `pytest tests/test_anomaly_analyzer_q.py -q`.
 - Current slice: Phase V / V1 complete.
   - Added dedicated `runtime/signal_discovery.py` with `HAEntityDescriptor`,
     `SignalOptionsPatch`, `SignalSuggestion`, and `SignalDiscoveryAudit`.
@@ -176,20 +185,17 @@ Implement Phase U / U4 lighting anomaly rules: `lights_on_unattended` and `light
     `async_call_later(0, ...)`.
   - Added `async_run_signal_discovery()` for explicit/testable audit execution.
   - Phase V is complete; next planned development phase is U (Physical Light State Awareness).
-- Current slice: Phase Q complete for current v2 scope.
-  - Implemented operational rules: 15/17.
-  - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.
-  - Deferred reason: they require physical light state awareness; current
-    `HouseSnapshot.lighting_scenes` records Heima scene decisions, not reliable physical light
-    state.
+- Current slice: Phase Q complete.
+  - Implemented operational rules in Phase Q: 15/17.
+  - The remaining lighting rules, `lights_on_unattended` and `lighting_scene_drift`, were completed
+    in Phase U after physical light state became available in `HouseSnapshot`.
   - Live coverage: diagnostic tier includes `062_anomaly_rules_live.py`, validating
     `heima.configure_anomaly_rule`, implemented rule IDs, threshold persistence, validation
     errors, and the next `learning_run` path.
 - Phase Q / Q4 complete.
   - Q4 scope: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour` (3 rules only).
-  - `lights_on_unattended` and `lighting_scene_drift` deferred to Phase U (Physical Light State
-    Awareness): `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical
-    light states. Phase U / physical light state awareness implements both rules.
+  - `lights_on_unattended` and `lighting_scene_drift` were implemented later in Phase U after
+    physical light state awareness was added.
   - `appliance_unusual_hour` trigger semantics: option A — triggers only when the appliance activity
     is present in the **current** (latest) snapshot's `detected_activities`. It does not scan for
     "last time the activity was seen active". Consistent with how other rules compare current state
@@ -1547,7 +1553,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 ## Phase Q — AnomalyAnalyzer: Statistical Detection Rules
 
 **Spec section:** Phase Q
-**Goal:** implementare `AnomalyAnalyzer` con 15 regole operative configurabili nel current v2 scope; mantenere nel catalogo le 2 regole lighting pianificate ma rinviarle a Phase U / physical light state awareness; servizio `heima.configure_anomaly_rule`.
+**Goal:** implementare `AnomalyAnalyzer` con 15 regole operative configurabili nel current v2 scope; mantenere nel catalogo le 2 regole lighting pianificate per completamento in Phase U / physical light state awareness; servizio `heima.configure_anomaly_rule`.
 **Depends on:** Phase O (security_state, heating_current_temperature), Phase P (snapshot data quality).
 
 ### Working slices
@@ -1575,8 +1581,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
    - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
 4. Q4 — Regole attività (3): `DONE`
    - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
-   - `lights_on_unattended` e `lighting_scene_drift` rimandate a Phase U / physical light state awareness:
-     `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico.
+   - `lights_on_unattended` e `lighting_scene_drift` completate in Phase U / physical light state awareness.
    - `appliance_unusual_hour` triggera solo se l'attività è attiva nell'ultimo snapshot (option A).
 5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
@@ -1617,7 +1622,7 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] `ghost_activity` usa `room_occupancy` + `anyone_home` da `HouseSnapshot`
 - [x] `unusual_stillness` usa run di `room_occupancy` invariata con `anyone_home == True`
 - [x] Q4 activity rules usano `HouseSnapshot.detected_activities`; le 2 lighting rules sono
-      deferred a Phase U / physical light state awareness
+      completate in Phase U / physical light state awareness
 - [x] `heima.configure_anomaly_rule` mergea `entry.options["anomaly"]["rules"][rule_id]` senza reload
 - [x] Tutti i test esistenti verdi; i test Q coprono ogni regola operativa, override soglie,
       regola disabilitata, e percorso end-to-end verso installer alert
@@ -1788,7 +1793,7 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 
 ## Phase U — Physical Light State Awareness
 
-**Goal:** dare a Heima contezza runtime e storica delle light entity fisicamente accese in HA, indipendentemente dalle scene gestite da Heima. Sblocca la resident card (stato luci live) e le regole anomalia lighting deferred dalla Phase Q.
+**Goal:** dare a Heima contezza runtime e storica delle light entity fisicamente accese in HA, indipendentemente dalle scene gestite da Heima. Sblocca la resident card (stato luci live) e completa le regole anomalia lighting pianificate dalla Phase Q.
 **Depends on:** Phase A (plugin framework), Phase Q (catalogo anomaly già definito).
 
 ### Motivation
@@ -1822,7 +1827,7 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
    - `lighting_scene_drift`: confronta la scena recente per `(room_id, house_state, hour_bucket)`
      con la baseline storica da `lighting_scenes`. Diagnostica pura, nessun proposal.
      Defaults: history_window=1000, min_observations=10, recent_observations=3, baseline_ratio=0.65.
-   - Rimuovere le note "deferred" da Phase Q e dal dev plan.
+   - Aggiornare le note Phase Q per indicare il completamento in Phase U.
 
 ### Files to modify
 
@@ -1840,10 +1845,10 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 - [x] `LightingResult.lights_on` riflette stato fisico HA, non le scene Heima
 - [x] `CanonicalState["lighting.lights_on"]` disponibile dopo ogni ciclo di valutazione
 - [x] `HouseSnapshot.lights_physically_on` persistito e leggibile dall'anomaly analyzer
-- [ ] `lights_on_unattended` triggera quando almeno una light entity configurata è fisicamente
+- [x] `lights_on_unattended` triggera quando almeno una light entity configurata è fisicamente
       accesa mentre `anyone_home == False`
-- [ ] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`
-- [ ] Tutti i test esistenti verdi; nuovi test ≥ 2 (una per regola lighting)
+- [x] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 2 (una per regola lighting)
 
 ---
 
