@@ -191,6 +191,10 @@ DEFAULT_SECURITY_MISMATCH_PERSIST_S = 300
 SECURITY_MISMATCH_EVENT_MODES = ["explicit_only", "generic_only", "dual_emit"]
 DEFAULT_SECURITY_MISMATCH_EVENT_MODE = "explicit_only"
 
+# Proposal types
+SIGNAL_DISCOVERY_ANALYZER_ID = "signal_discovery"
+SIGNAL_DISCOVERY_REACTION_TYPE = "signal_discovery"
+
 # Services
 SERVICE_COMMAND = "command"
 SERVICE_APPROVE_PROPOSAL = "approve_proposal"

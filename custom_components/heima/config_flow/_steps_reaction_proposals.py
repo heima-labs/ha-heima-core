@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from ..const import OPT_REACTIONS
+from ..const import OPT_REACTIONS, SIGNAL_DISCOVERY_REACTION_TYPE
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
@@ -115,6 +115,19 @@ class _ReactionProposalStepsMixin:
                     current_id,
                     decision="rejected",
                     approved_by="installer",
+                )
+            return await self.async_step_proposals() if queue else await self.async_step_init()
+
+        if current_type == SIGNAL_DISCOVERY_REACTION_TYPE:
+            if action == "accept":
+                await coordinator.async_review_signal_discovery_proposal(
+                    current_id,
+                    decision="approved",
+                )
+            elif action == "reject":
+                await coordinator.async_review_signal_discovery_proposal(
+                    current_id,
+                    decision="rejected",
                 )
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
@@ -250,6 +263,15 @@ class _ReactionProposalStepsMixin:
         if current_draft is not None:
             proposal = current_draft["proposal"]
             proposal_id = str(current_draft.get("proposal_id") or "")
+            if _proposal_review_type(proposal) == SIGNAL_DISCOVERY_REACTION_TYPE:
+                coordinator = self._get_coordinator()
+                if coordinator is not None:
+                    await coordinator.async_review_signal_discovery_proposal(
+                        proposal_id,
+                        decision="approved",
+                    )
+                self._pending_action_drafts = pending_drafts[1:]
+                return await self.async_step_proposal_configure_action()
             target_id = str(current_draft.get("target_id") or proposal_id)
             existing_cfg = _safe_mapping(current_draft.get("existing_config"))
             reactions_cfg = dict(self._reactions_options())

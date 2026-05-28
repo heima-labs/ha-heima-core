@@ -116,7 +116,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase V — Signal Discovery Pipeline with V3 accept routing.
+Continue Phase V — Signal Discovery Pipeline with V4 options patch application.
 
 ### Current Working Notes
 
@@ -140,6 +140,15 @@ Continue Phase V — Signal Discovery Pipeline with V3 accept routing.
   - New suggestions fire installer persistent notifications with stable
     `heima_installer_signal_discovery_*` notification IDs.
   - Verification: `pytest tests/test_signal_discovery.py -q`.
+- Current slice: Phase V / V3 complete.
+  - `heima.approve_proposal` now routes `signal_discovery` proposals through
+    `async_review_signal_discovery_proposal()`.
+  - Options flow proposal review accepts/rejects signal discovery proposals without writing to
+    `options["reactions"]["configured"]` or reaction labels.
+  - Follow-up action-configuration path has a defensive signal discovery guard before any reaction
+    config write.
+  - `SIGNAL_DISCOVERY_ANALYZER_ID` and `SIGNAL_DISCOVERY_REACTION_TYPE` live in `const.py`.
+  - Verification: focused signal discovery and options-flow tests.
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.

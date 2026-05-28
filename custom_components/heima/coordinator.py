@@ -28,6 +28,8 @@ from .const import (
     OPT_PEOPLE_NAMED,
     OPT_ROOMS,
     OPT_SECURITY,
+    SIGNAL_DISCOVERY_ANALYZER_ID,
+    SIGNAL_DISCOVERY_REACTION_TYPE,
 )
 from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
@@ -85,8 +87,6 @@ _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
 _ANALYZE_INTERVAL_S = 6 * 60 * 60
 _PERIODIC_FALLBACK_S = 300
-SIGNAL_DISCOVERY_ANALYZER_ID = "signal_discovery"
-SIGNAL_DISCOVERY_REACTION_TYPE = "signal_discovery"
 _DEBOUNCE_BY_CLASS: dict[str, float] = {
     "presence": 5.0,
     "motion": 3.0,
@@ -591,6 +591,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 decision=decision,
                 approved_by=approved_by,
             )
+        if proposal_type == SIGNAL_DISCOVERY_REACTION_TYPE:
+            return await self.async_review_signal_discovery_proposal(
+                proposal_id,
+                decision=decision,
+            )
         return False
 
     async def async_review_house_state_proposal(
@@ -667,6 +672,31 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._sync_activity_approval_state()
         if proposal.identity_key:
             self._notified_activity_proposal_keys.discard(proposal.identity_key)
+        return True
+
+    async def async_review_signal_discovery_proposal(
+        self,
+        proposal_id: str,
+        decision: ApprovalDecision,
+    ) -> bool:
+        """Review a signal discovery proposal without mutating reaction config."""
+        proposal = self._proposal_engine.proposal_by_id(proposal_id)
+        if not isinstance(proposal, ReactionProposal):
+            return False
+        if proposal.analyzer_id != SIGNAL_DISCOVERY_ANALYZER_ID:
+            return False
+
+        if decision == "approved":
+            updated = await self._proposal_engine.async_accept_proposal(proposal_id)
+        elif decision == "rejected":
+            updated = await self._proposal_engine.async_reject_proposal(proposal_id)
+        else:
+            return False
+        if not updated:
+            return False
+
+        if proposal.identity_key:
+            self._notified_installer_alert_keys.discard(proposal.identity_key)
         return True
 
     async def async_upsert_configured_reactions(

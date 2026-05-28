@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.heima.const import (
+    SIGNAL_DISCOVERY_ANALYZER_ID,
+    SIGNAL_DISCOVERY_REACTION_TYPE,
+)
 from custom_components.heima.coordinator import HeimaCoordinator
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.signal_discovery import (
@@ -270,3 +274,84 @@ def test_reaction_proposal_preserves_config_suggestion_followup_kind() -> None:
     )
 
     assert proposal.followup_kind == "config_suggestion"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reviews_signal_discovery_approval_without_approval_store() -> None:
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        identity_key="signal_discovery:sensor.studio_lux",
+        suggested_reaction_config={"room_id": "studio"},
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(return_value=proposal),
+        async_accept_proposal=AsyncMock(return_value=True),
+        async_reject_proposal=AsyncMock(return_value=False),
+    )
+    coordinator._notified_installer_alert_keys = {proposal.identity_key}
+
+    result = await coordinator.async_review_proposal(
+        "proposal-signal",
+        decision="approved",
+        approved_by="installer",
+    )
+
+    assert result is True
+    coordinator._proposal_engine.async_accept_proposal.assert_awaited_once_with(
+        "proposal-signal"
+    )
+    assert proposal.identity_key not in coordinator._notified_installer_alert_keys
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reviews_signal_discovery_rejection() -> None:
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        identity_key="signal_discovery:sensor.studio_lux",
+        suggested_reaction_config={"room_id": "studio"},
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(return_value=proposal),
+        async_accept_proposal=AsyncMock(return_value=False),
+        async_reject_proposal=AsyncMock(return_value=True),
+    )
+    coordinator._notified_installer_alert_keys = set()
+
+    result = await coordinator.async_review_signal_discovery_proposal(
+        "proposal-signal",
+        decision="rejected",
+    )
+
+    assert result is True
+    coordinator._proposal_engine.async_reject_proposal.assert_awaited_once_with(
+        "proposal-signal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_coordinator_rejects_non_signal_discovery_review() -> None:
+    proposal = ReactionProposal(
+        proposal_id="proposal-other",
+        analyzer_id="semantic_policy_suggestions",
+        reaction_type="signal_discovery",
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(return_value=proposal),
+        async_accept_proposal=AsyncMock(return_value=True),
+        async_reject_proposal=AsyncMock(return_value=True),
+    )
+
+    result = await coordinator.async_review_signal_discovery_proposal(
+        "proposal-other",
+        decision="approved",
+    )
+
+    assert result is False
+    coordinator._proposal_engine.async_accept_proposal.assert_not_awaited()
