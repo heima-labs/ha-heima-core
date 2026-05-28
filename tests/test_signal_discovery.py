@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from custom_components.heima.coordinator import HeimaCoordinator
+from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.signal_discovery import (
     HAEntityDescriptor,
     SignalDiscoveryAudit,
@@ -158,3 +165,108 @@ def test_signal_discovery_limits_to_first_50_matches_by_entity_id() -> None:
     assert len(suggestions) == 50
     assert suggestions[0].entity_id == "sensor.room_lux_00"
     assert suggestions[-1].entity_id == "sensor.room_lux_49"
+
+
+class _ServicesStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict, bool]] = []
+
+    async def async_call(
+        self,
+        domain: str,
+        service: str,
+        data: dict,
+        *,
+        blocking: bool,
+    ) -> None:
+        self.calls.append((domain, service, data, blocking))
+
+
+@pytest.mark.asyncio
+async def test_coordinator_submits_signal_discovery_suggestions_and_notifies() -> None:
+    suggestion = SignalDiscoveryAudit().run(
+        [_entity("sensor.studio_lux", unit="lx")],
+        [{"room_id": "studio"}],
+    )[0]
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._pending_signal_suggestions = [suggestion]
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_identity_key=MagicMock(return_value=None),
+        async_submit_proposal=AsyncMock(return_value="proposal-signal-1"),
+    )
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_installer_alert_keys = set()
+
+    await coordinator._async_evaluate_signal_discovery()
+
+    coordinator._proposal_engine.proposal_by_identity_key.assert_called_once_with(
+        "signal_discovery:sensor.studio_lux"
+    )
+    coordinator._proposal_engine.async_submit_proposal.assert_awaited_once()
+    proposal = coordinator._proposal_engine.async_submit_proposal.await_args.args[0]
+    assert proposal.analyzer_id == "signal_discovery"
+    assert proposal.reaction_type == "signal_discovery"
+    assert proposal.origin == "admin_authored"
+    assert proposal.followup_kind == "config_suggestion"
+    assert proposal.identity_key == "signal_discovery:sensor.studio_lux"
+    assert proposal.suggested_reaction_config == suggestion.options_patch.as_dict()
+    assert proposal.description == (
+        "Entity sensor.studio_lux can be added as room_lux for room 'studio'."
+    )
+    assert services.calls == [
+        (
+            "persistent_notification",
+            "create",
+            {
+                "notification_id": "heima_installer_signal_discovery_sensor_studio_lux",
+                "title": "Heima: new signal candidate",
+                "message": (
+                    "Entity sensor.studio_lux detected as room_lux for room 'studio'. "
+                    "Confidence: 95%.\n\nProposal ID: proposal-signal-1"
+                ),
+            },
+            False,
+        )
+    ]
+    assert coordinator._notified_installer_alert_keys == {
+        "signal_discovery:sensor.studio_lux"
+    }
+
+
+@pytest.mark.asyncio
+async def test_coordinator_skips_existing_signal_discovery_proposals() -> None:
+    suggestion = SignalDiscoveryAudit().run(
+        [_entity("media_player.projector", domain="media_player", device_class=None)],
+        [{"room_id": "studio"}],
+    )[0]
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._pending_signal_suggestions = [suggestion]
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_identity_key=MagicMock(return_value=object()),
+        async_submit_proposal=AsyncMock(return_value="proposal-signal-1"),
+    )
+    services = _ServicesStub()
+    coordinator.hass = SimpleNamespace(services=services)
+    coordinator._notified_installer_alert_keys = set()
+
+    await coordinator._async_evaluate_signal_discovery()
+
+    coordinator._proposal_engine.async_submit_proposal.assert_not_awaited()
+    assert services.calls == []
+
+
+def test_reaction_proposal_preserves_config_suggestion_followup_kind() -> None:
+    proposal = ReactionProposal.from_dict(
+        {
+            "analyzer_id": "signal_discovery",
+            "reaction_type": "signal_discovery",
+            "description": "Signal candidate",
+            "confidence": 0.9,
+            "origin": "admin_authored",
+            "followup_kind": "config_suggestion",
+            "suggested_reaction_config": {"room_id": "studio"},
+        }
+    )
+
+    assert proposal.followup_kind == "config_suggestion"

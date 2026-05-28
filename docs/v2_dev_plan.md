@@ -116,7 +116,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase V — Signal Discovery Pipeline with V2 proposal submission.
+Continue Phase V — Signal Discovery Pipeline with V3 accept routing.
 
 ### Current Working Notes
 
@@ -130,6 +130,16 @@ Continue Phase V — Signal Discovery Pipeline with V2 proposal submission.
   - V1 limits suggestions to 50 sorted entity IDs per audit run.
   - Verification: `pytest tests/test_signal_discovery.py -q` and
     `ruff check custom_components/heima/runtime/signal_discovery.py tests/test_signal_discovery.py`.
+- Current slice: Phase V / V2 complete.
+  - Coordinator now owns `SignalDiscoveryAudit` and `_pending_signal_suggestions`.
+  - `_async_evaluate_signal_discovery()` submits pending suggestions to `ProposalEngine` as
+    `ReactionProposal(analyzer_id="signal_discovery", reaction_type="signal_discovery")`.
+  - Signal discovery proposals use `followup_kind="config_suggestion"` and serialize
+    `SignalOptionsPatch` into `suggested_reaction_config`.
+  - Existing proposal identities are respected through `proposal_by_identity_key()`.
+  - New suggestions fire installer persistent notifications with stable
+    `heima_installer_signal_discovery_*` notification IDs.
+  - Verification: `pytest tests/test_signal_discovery.py -q`.
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.

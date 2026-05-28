@@ -78,12 +78,15 @@ from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
+from .runtime.signal_discovery import SignalDiscoveryAudit, SignalSuggestion
 from .validation import ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
 _ANALYZE_INTERVAL_S = 6 * 60 * 60
 _PERIODIC_FALLBACK_S = 300
+SIGNAL_DISCOVERY_ANALYZER_ID = "signal_discovery"
+SIGNAL_DISCOVERY_REACTION_TYPE = "signal_discovery"
 _DEBOUNCE_BY_CLASS: dict[str, float] = {
     "presence": 5.0,
     "motion": 3.0,
@@ -219,6 +222,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._proposal_engine.register_analyzer(plugin)
         self._activity_analyzer = ActivityAnalyzer(self._house_snapshot_store)
         self._proposal_engine.register_analyzer(self._activity_analyzer)
+        self._signal_discovery_audit = SignalDiscoveryAudit()
+        self._pending_signal_suggestions: list[SignalSuggestion] = []
         self._anomaly_analyzer = AnomalyAnalyzer(
             options_provider=lambda: dict(self.entry.options or {})
         )
@@ -344,6 +349,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             )
         await self._proposal_engine.async_run()
         await self._async_evaluate_semantic_policies()
+        await self._async_evaluate_signal_discovery()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         self._sync_health_sensor()
@@ -408,6 +414,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
         await self._async_evaluate_semantic_policies()
+        await self._async_evaluate_signal_discovery()
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -1249,6 +1256,21 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 proposal_id=proposal_id,
             )
 
+    async def _async_evaluate_signal_discovery(self) -> None:
+        for suggestion in list(getattr(self, "_pending_signal_suggestions", [])):
+            identity_key = str(suggestion.identity_key or "").strip()
+            if not identity_key:
+                continue
+            existing = self._proposal_engine.proposal_by_identity_key(identity_key)
+            if existing is not None:
+                continue
+            proposal = _proposal_from_signal_suggestion(suggestion)
+            proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
+            await self._async_notify_signal_discovery_proposal(
+                suggestion,
+                proposal_id=proposal_id,
+            )
+
     async def _async_notify_pending_activity_proposals(self) -> None:
         if not hasattr(self._proposal_engine, "pending_proposals"):
             return
@@ -1357,6 +1379,39 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             },
         }
         await self._async_notify_installer_alert(event)
+
+    async def _async_notify_signal_discovery_proposal(
+        self,
+        suggestion: SignalSuggestion,
+        *,
+        proposal_id: str,
+    ) -> None:
+        identity_key = str(suggestion.identity_key or "").strip()
+        if not identity_key or identity_key in self._notified_installer_alert_keys:
+            return
+        signal_label = suggestion.signal_name or "learning source"
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "notification_id": _signal_discovery_notification_id(
+                        suggestion.entity_id
+                    ),
+                    "title": "Heima: new signal candidate",
+                    "message": (
+                        f"Entity {suggestion.entity_id} detected as {signal_label} "
+                        f"for room '{suggestion.room_id}'. "
+                        f"Confidence: {suggestion.confidence:.0%}.\n\n"
+                        f"Proposal ID: {proposal_id}"
+                    ),
+                },
+                blocking=False,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to create signal discovery proposal notification")
+        finally:
+            self._notified_installer_alert_keys.add(identity_key)
 
     async def _async_handle_last_installer_alert(self) -> None:
         event = self.engine.state.get_sensor_attributes("heima_last_event") or {}
@@ -1698,6 +1753,24 @@ def _proposal_from_house_state_candidate(
     )
 
 
+def _proposal_from_signal_suggestion(suggestion: SignalSuggestion) -> ReactionProposal:
+    """Build an installer-reviewable proposal for one discovered signal."""
+    signal_label = suggestion.signal_name or "learning source"
+    return ReactionProposal(
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        description=(
+            f"Entity {suggestion.entity_id} can be added as {signal_label} "
+            f"for room '{suggestion.room_id}'."
+        ),
+        confidence=suggestion.confidence,
+        origin="admin_authored",
+        followup_kind="config_suggestion",
+        identity_key=suggestion.identity_key,
+        suggested_reaction_config=suggestion.options_patch.as_dict(),
+    )
+
+
 def _approval_record_from_house_state_proposal(
     proposal: ReactionProposal,
     *,
@@ -1810,6 +1883,11 @@ def _house_state_notification_id(identity_key: str) -> str:
 def _activity_notification_id(identity_key: str) -> str:
     safe = "".join(ch if ch.isalnum() else "_" for ch in identity_key.lower()).strip("_")
     return f"heima_activity_proposal_{safe[:120]}"
+
+
+def _signal_discovery_notification_id(entity_id: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in entity_id.lower()).strip("_")
+    return f"heima_installer_signal_discovery_{safe[:120]}"
 
 
 def _installer_notification_id(identity_key: str) -> str:
