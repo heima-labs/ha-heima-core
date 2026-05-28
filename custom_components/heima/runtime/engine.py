@@ -69,6 +69,7 @@ from .inference import (
     InferenceContext,
     InferenceSignal,
     LightingSignal,
+    OccupancySignal,
     SignalRouter,
     SnapshotStore,
 )
@@ -103,6 +104,10 @@ _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 _PLUGIN_SIGNAL_TYPE: dict[str, type] = {
     "lighting": LightingSignal,
     "heating": HeatingSignal,
+}
+_HOUSE_STATE_DOMAIN_SIGNAL_SOURCE_IDS = {
+    "weekday_state",
+    "house_state_inference",
 }
 
 
@@ -188,6 +193,7 @@ class HeimaEngine:
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
         self._signal_router = SignalRouter()
         self._learning_modules: list[ILearningModule] = []
+        self._last_signal_buckets: dict[type, list[InferenceSignal]] = {}
         self._house_snapshot_store: SnapshotStore | None = None
         self._outcome_tracker: OutcomeTracker | None = None
         self._event_recorder: EventRecorderBehavior | None = None
@@ -709,6 +715,7 @@ class HeimaEngine:
 
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
+        await self._maybe_boost_reaction_confidence()
 
         return snapshot
 
@@ -905,16 +912,28 @@ class HeimaEngine:
             occupied_rooms=occupied_rooms,
             now_utc=now_utc,
         )
+        occupancy_signals = [
+            signal
+            for signal in signal_buckets.get(OccupancySignal, [])
+            if isinstance(signal, OccupancySignal)
+        ]
+        if occupancy_signals:
+            occ_result = self._occupancy_domain.compute(
+                options=options,
+                events=self._events_domain,
+                mismatch_cfg=self._occupancy_mismatch_config(),
+                schedule_recheck=self._schedule_timed_recheck_deadline,
+                state=self._state,
+                now=now,
+                signals=occupancy_signals,
+            )
+            occupied_rooms = occ_result.occupied_rooms
         activity_signals = [
             signal
             for signal in signal_buckets.get(ActivitySignal, [])
             if isinstance(signal, ActivitySignal)
         ]
-        house_state_signals = [
-            signal
-            for signal in signal_buckets.get(HouseStateSignal, [])
-            if isinstance(signal, HouseStateSignal)
-        ]
+        house_state_signals = self._house_state_domain_signals(signal_buckets)
         activity_result = self._activity_domain.evaluate(
             self._activity_observations(),
             self._state,
@@ -1096,6 +1115,7 @@ class HeimaEngine:
     ) -> dict[type, list[InferenceSignal]]:
         """Call each learning module synchronously and route the resulting signals."""
         if not self._learning_modules:
+            self._last_signal_buckets = {}
             return {}
         context = InferenceContext(
             now_local=now_utc,
@@ -1115,7 +1135,20 @@ class HeimaEngine:
         for module in self._learning_modules:
             for signal in module.infer(context):
                 paired.append((signal, now_utc))
-        return self._signal_router.route(paired, now_utc)
+        self._last_signal_buckets = self._signal_router.route(paired, now_utc)
+        return self._last_signal_buckets
+
+    def _house_state_domain_signals(
+        self,
+        signal_buckets: dict[type, list[InferenceSignal]],
+    ) -> list[HouseStateSignal]:
+        """Return HouseStateSignal instances allowed to affect HouseStateDomain."""
+        return [
+            signal
+            for signal in signal_buckets.get(HouseStateSignal, [])
+            if isinstance(signal, HouseStateSignal)
+            and signal.source_id in _HOUSE_STATE_DOMAIN_SIGNAL_SOURCE_IDS
+        ]
 
     async def _record_snapshot_if_changed(self, snapshot: DecisionSnapshot) -> None:
         """Persist a HouseSnapshot for inference learning, only on state change."""
@@ -1125,7 +1158,6 @@ class HeimaEngine:
         people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
         named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
         room_occupancy = {room: True for room in snapshot.occupied_rooms}
-        security_armed = snapshot.security_state not in ("disarmed", "unknown", "disabled", "")
         house_snap = HouseSnapshot(
             ts=snapshot.ts,
             weekday=ts_utc.weekday(),
@@ -1136,8 +1168,9 @@ class HeimaEngine:
             detected_activities=_tuple_of_strings(self._state.get_sensor("activity.active_names")),
             house_state=snapshot.house_state,
             heating_setpoint=snapshot.heating_setpoint,
+            heating_current_temperature=self._heating_domain.current_temperature(),
             lighting_scenes=dict(snapshot.lighting_intents or {}),
-            security_armed=security_armed,
+            security_state=str(snapshot.security_state or "unknown"),
         )
         await self._house_snapshot_store.async_append_if_changed(house_snap)
 
@@ -1476,6 +1509,22 @@ class HeimaEngine:
                     },
                 )
             )
+
+    async def _maybe_boost_reaction_confidence(self) -> None:
+        outcome_tracker = getattr(self, "_outcome_tracker", None)
+        proposal_engine = getattr(self, "_proposal_engine", None)
+        if outcome_tracker is None or proposal_engine is None:
+            return
+
+        for reaction in self._reactions:
+            reaction_id = reaction.reaction_id
+            if not outcome_tracker.ready_for_boost(reaction_id):
+                continue
+            await proposal_engine.async_boost_confidence(
+                reaction_id,
+                OutcomeTracker.POSITIVE_CONFIDENCE_BOOST,
+            )
+            outcome_tracker.reset_positive_streak(reaction_id)
 
     def _dispatch_apply_filter(self, plan: ApplyPlan, snapshot: DecisionSnapshot) -> ApplyPlan:
         for behavior in self._behaviors:
@@ -2064,7 +2113,27 @@ class HeimaEngine:
             "occupancy": self._occupancy_domain.diagnostics(),
             "events": self._events_domain.diagnostics(),
             "normalization": self._normalizer.diagnostics(),
+            "learning_modules": [
+                module.diagnostics()
+                for module in getattr(self, "_learning_modules", [])
+            ],
+            "inference_signals": self._signal_bucket_diagnostics(),
+            "outcome_tracker": (
+                outcome_tracker.diagnostics()
+                if (outcome_tracker := getattr(self, "_outcome_tracker", None)) is not None
+                else {}
+            ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},
             "reactions": {r.reaction_id: r.diagnostics() for r in self._reactions},
             "muted_reactions": sorted(self._muted_reactions),
         }
+
+    def _signal_bucket_diagnostics(self) -> dict[str, Any]:
+        """Return last routed inference signal summary for diagnostics."""
+        diagnostics: dict[str, Any] = {}
+        for signal_type, signals in getattr(self, "_last_signal_buckets", {}).items():
+            diagnostics[signal_type.__name__] = {
+                "count": len(signals),
+                "sources": sorted({signal.source_id for signal in signals}),
+            }
+        return diagnostics

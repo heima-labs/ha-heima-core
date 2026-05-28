@@ -805,6 +805,102 @@ async def test_proposal_engine_reject(monkeypatch):
     assert engine.pending_proposals() == []
 
 
+async def test_proposal_engine_boosts_accepted_target_reaction_confidence(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    sensor_updates = []
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_updates.append((count, attrs)),
+    )
+    await engine.async_initialize()
+    proposal = ReactionProposal(
+        analyzer_id="test",
+        reaction_type="presence_preheat",
+        confidence=0.7,
+        status="accepted",
+        target_reaction_id="rx1",
+        suggested_reaction_config={"weekday": 1},
+    )
+    engine._proposals = [proposal]  # noqa: SLF001
+
+    await engine.async_boost_confidence("rx1", 0.05)
+
+    boosted = engine._proposals[0]  # noqa: SLF001
+    assert isinstance(boosted, ReactionProposal)
+    assert boosted.confidence == 0.75
+    assert boosted.updated_at != proposal.updated_at
+    assert sensor_updates[-1][0] == 0
+
+
+async def test_proposal_engine_accept_sets_self_target_for_reaction_proposal(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    proposal = ReactionProposal(
+        proposal_id="presence-1",
+        analyzer_id="presence_pattern",
+        reaction_type="presence_preheat",
+        confidence=0.7,
+    )
+    engine._proposals = [proposal]  # noqa: SLF001
+
+    assert await engine.async_accept_proposal("presence-1")
+
+    accepted = engine.proposal_by_id("presence-1")
+    assert isinstance(accepted, ReactionProposal)
+    assert accepted.status == "accepted"
+    assert accepted.target_reaction_id == "presence-1"
+    assert accepted.target_reaction_type == "presence_preheat"
+
+
+async def test_proposal_engine_boost_confidence_caps_at_one(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    engine._proposals = [  # noqa: SLF001
+        ReactionProposal(
+            analyzer_id="test",
+            reaction_type="presence_preheat",
+            confidence=0.98,
+            status="accepted",
+            target_reaction_id="rx1",
+        )
+    ]
+
+    await engine.async_boost_confidence("rx1", 0.05)
+
+    boosted = engine._proposals[0]  # noqa: SLF001
+    assert isinstance(boosted, ReactionProposal)
+    assert boosted.confidence == 1.0
+
+
+async def test_proposal_engine_boost_confidence_noops_without_accepted_target(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    pending = ReactionProposal(
+        analyzer_id="test",
+        reaction_type="presence_preheat",
+        confidence=0.7,
+        status="pending",
+        target_reaction_id="rx1",
+    )
+    other = ReactionProposal(
+        analyzer_id="test",
+        reaction_type="presence_preheat",
+        confidence=0.6,
+        status="accepted",
+        target_reaction_id="rx2",
+    )
+    engine._proposals = [pending, other]  # noqa: SLF001
+
+    await engine.async_boost_confidence("rx1", 0.05)
+    await engine.async_boost_confidence("missing", 0.05)
+
+    assert engine._proposals == [pending, other]  # noqa: SLF001
+
+
 async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine1 = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
@@ -1636,6 +1732,56 @@ async def test_proposal_engine_async_submit_proposal_sanitizes_non_dict_config(m
     assert len(pending) == 1
     assert pending[0].proposal_id == proposal_id
     assert pending[0].suggested_reaction_config == {}
+
+
+async def test_proposal_engine_async_withdraw_removes_pending_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    await engine.async_submit_proposal(proposal)
+
+    assert await engine.async_withdraw("semantic.rule") is True
+    assert engine.pending_proposals() == []
+
+
+async def test_proposal_engine_async_withdraw_preserves_accepted_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    proposal_id = await engine.async_submit_proposal(proposal)
+    assert await engine.async_accept_proposal(proposal_id)
+
+    assert await engine.async_withdraw("semantic.rule") is False
+    assert engine.proposal_by_identity_key("semantic.rule") is not None
+
+
+async def test_proposal_engine_async_withdraw_preserves_rejected_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.identity_key = "semantic.rule"
+    proposal_id = await engine.async_submit_proposal(proposal)
+    assert await engine.async_reject_proposal(proposal_id)
+
+    assert await engine.async_withdraw("semantic.rule") is False
+    assert engine.proposal_by_identity_key("semantic.rule") is not None
+
+
+async def test_proposal_engine_async_withdraw_returns_false_for_missing_identity(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    await engine.async_initialize()
+
+    assert await engine.async_withdraw("missing.rule") is False
 
 
 async def test_proposal_engine_shutdown_persists_latest_accepted_status(monkeypatch):

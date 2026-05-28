@@ -123,7 +123,10 @@ STRUCTURAL_OPTION_KEYS: frozenset[str] = frozenset(
         OPT_PEOPLE_ANON,
         OPT_PEOPLE_DEBUG_ALIASES,
         OPT_ROOMS,
+        OPT_LIGHTING_ROOMS,
         OPT_LIGHTING_ZONES,
+        OPT_HEATING,
+        OPT_SECURITY,
     }
 )
 
@@ -139,6 +142,18 @@ HOUSE_STATES_CANONICAL = [
     "relax",
     "working",
 ]
+HOUSE_STATES_HARD = [
+    "vacation",
+    "guest",
+    "away",
+]
+HOUSE_STATES_HOME_SUBSTATES = [
+    "sleeping",
+    "relax",
+    "working",
+    "home",
+]
+HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE = HOUSE_STATES_HOME_SUBSTATES
 
 EVENT_CATEGORIES_ALL = [
     "people",
@@ -183,6 +198,7 @@ SERVICE_OVERRIDE_APPROVAL = "override_approval"
 SERVICE_RUN_DIAGNOSTICS = "run_diagnostics"
 SERVICE_SET_MODE = "set_mode"
 SERVICE_SET_OVERRIDE = "set_override"
+SERVICE_CONFIGURE_ANOMALY_RULE = "configure_anomaly_rule"
 
 # Events
 EVENT_HEIMA_EVENT = "heima_event"

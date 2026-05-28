@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -32,7 +34,9 @@ from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids
 from .runtime.analyzers import (
+    ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
+    AnomalyAnalyzer,
     create_builtin_learning_plugin_registry,
 )
 from .runtime.analyzers.base import ReactionProposal
@@ -58,6 +62,9 @@ from .runtime.inference import (
     HeatingPreferenceModule,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
+    LightingPatternModule,
+    OccupancyInferenceModule,
+    RoomStateCorrelationModule,
     SnapshotStore,
     WeekdayStateModule,
 )
@@ -70,6 +77,7 @@ from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
+from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
 from .validation import ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,6 +103,49 @@ _ENVIRONMENTAL_ENTITY_TOKENS = (
     "co_2",
     "carbon_dioxide",
 )
+
+
+def _learning_module_threshold_kwargs(
+    learning_config: dict[str, Any],
+    module_id: str,
+    *,
+    confidence_threshold: bool = True,
+) -> dict[str, Any]:
+    """Return valid constructor threshold overrides for one learning module."""
+    kwargs: dict[str, Any] = {}
+    min_support = _positive_int_option(learning_config.get(f"{module_id}_min_support"))
+    if min_support is not None:
+        kwargs["min_support"] = min_support
+    if confidence_threshold:
+        threshold = _unit_float_option(
+            learning_config.get(f"{module_id}_confidence_threshold")
+        )
+        if threshold is not None:
+            kwargs["confidence_threshold"] = threshold
+    return kwargs
+
+
+def _positive_int_option(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed_float = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not parsed_float.is_integer():
+        return None
+    parsed = int(parsed_float)
+    return parsed if parsed >= 1 else None
+
+
+def _unit_float_option(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0.0 <= parsed <= 1.0 else None
 
 
 class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
@@ -168,20 +219,61 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._proposal_engine.register_analyzer(plugin)
         self._activity_analyzer = ActivityAnalyzer(self._house_snapshot_store)
         self._proposal_engine.register_analyzer(self._activity_analyzer)
+        self._anomaly_analyzer = AnomalyAnalyzer(
+            options_provider=lambda: dict(self.entry.options or {})
+        )
         self._finding_router = FindingRouter(
             proposal_engine=self._proposal_engine,
             anomaly_handler=self._async_handle_anomaly_finding,
         )
         self._approval_store = ApprovalStore(hass)
-        self._weekday_module = WeekdayStateModule()
-        self._heating_module = HeatingPreferenceModule()
-        self._house_state_module = HouseStateInferenceModule()
+        learning_config = dict(entry.options.get("learning", {}))
+        self._weekday_module = WeekdayStateModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                WeekdayStateModule.module_id,
+            )
+        )
+        self._heating_module = HeatingPreferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                HeatingPreferenceModule.module_id,
+            )
+        )
+        self._house_state_module = HouseStateInferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                HouseStateInferenceModule.module_id,
+            )
+        )
         self._activity_module = ActivityInferenceModule()
+        self._lighting_pattern_module = LightingPatternModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                LightingPatternModule.module_id,
+            )
+        )
+        self._room_state_correlation_module = RoomStateCorrelationModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                RoomStateCorrelationModule.module_id,
+            )
+        )
+        self._occupancy_inference_module = OccupancyInferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                OccupancyInferenceModule.module_id,
+            )
+        )
+        self._sync_occupancy_inference_rooms()
         self.engine.set_snapshot_store(self._house_snapshot_store)
         self.engine.register_learning_module(self._weekday_module)
         self.engine.register_learning_module(self._heating_module)
         self.engine.register_learning_module(self._house_state_module)
         self.engine.register_learning_module(self._activity_module)
+        self.engine.register_learning_module(self._lighting_pattern_module)
+        self.engine.register_learning_module(self._room_state_correlation_module)
+        self.engine.register_learning_module(self._occupancy_inference_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_periodic_fallback = None
@@ -251,6 +343,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 self.entry, changed_keys={"people_named", "rooms"}
             )
         await self._proposal_engine.async_run()
+        await self._async_evaluate_semantic_policies()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         self._sync_health_sensor()
@@ -292,8 +385,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_handle_anomaly_finding(self, signal: AnomalySignal) -> None:
         await self.engine.async_emit_external_event(
-            event_type="learning.anomaly",
-            key=f"learning.anomaly.{signal.anomaly_type}",
+            event_type=f"anomaly.{signal.anomaly_type}",
+            key=f"anomaly.{signal.anomaly_type}",
             severity=signal.severity,
             title="Learning anomaly",
             message=signal.description,
@@ -310,9 +403,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Reload options and refresh state."""
         await self.engine.async_reload_options(self.entry, changed_keys=changed_keys)
         self._context_builder.update_config(self._get_learning_config(self.entry))
+        self._sync_occupancy_inference_rooms()
         self._learning_plugin_registry = self._build_learning_plugin_registry(self.entry)
         self._proposal_engine.set_learning_plugin_registry(self._learning_plugin_registry)
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
+        await self._async_evaluate_semantic_policies()
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -593,6 +688,45 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         options["reactions"] = reactions
         self.hass.config_entries.async_update_entry(self.entry, options=options)
 
+    async def async_configure_anomaly_rule(
+        self,
+        *,
+        rule_id: str,
+        enabled: bool | None = None,
+        severity: str | None = None,
+        thresholds: dict[str, Any] | None = None,
+    ) -> None:
+        """Merge anomaly rule configuration into entry options without reloading."""
+        normalized_rule_id = str(rule_id or "").strip()
+        if normalized_rule_id not in ANOMALY_RULE_CATALOG:
+            raise ServiceValidationError(f"Unknown anomaly rule_id '{normalized_rule_id}'")
+        if severity is not None and severity not in {"info", "warning", "critical"}:
+            raise ServiceValidationError(f"Unsupported anomaly severity '{severity}'")
+        if thresholds is not None and not isinstance(thresholds, dict):
+            raise ServiceValidationError("Anomaly rule thresholds must be a dict")
+
+        options = deepcopy(dict(self.entry.options))
+        anomaly = dict(options.get("anomaly", {})) if isinstance(options.get("anomaly"), dict) else {}
+        raw_rules = anomaly.get("rules", {})
+        rules = dict(raw_rules) if isinstance(raw_rules, dict) else {}
+        raw_rule = rules.get(normalized_rule_id, {})
+        rule_cfg = dict(raw_rule) if isinstance(raw_rule, dict) else {}
+
+        if enabled is not None:
+            rule_cfg["enabled"] = bool(enabled)
+        if severity is not None:
+            rule_cfg["severity"] = severity
+        if thresholds is not None:
+            current_thresholds = rule_cfg.get("thresholds", {})
+            merged_thresholds = dict(current_thresholds) if isinstance(current_thresholds, dict) else {}
+            merged_thresholds.update(dict(thresholds))
+            rule_cfg["thresholds"] = merged_thresholds
+
+        rules[normalized_rule_id] = rule_cfg
+        anomaly["rules"] = rules
+        options["anomaly"] = anomaly
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
     async def async_seed_lighting_events(
         self,
         *,
@@ -652,6 +786,52 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._event_store.async_flush()
         self._write_event_store_sensor()
         return count
+
+    async def async_seed_presence_events(
+        self,
+        *,
+        weekday: int,
+        minute: int,
+        count: int = 6,
+    ) -> int:
+        """Inject synthetic arrival events backfilled across 2 ISO weeks for live tests."""
+        from datetime import timedelta
+
+        from .runtime.event_store import EventContext, HeimaEvent
+
+        now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        n_week1 = count // 2
+        n_week2 = count - n_week1
+        offsets = [timedelta(weeks=-2)] * n_week1 + [timedelta(weeks=-1)] * n_week2
+
+        total = 0
+        for offset in offsets:
+            ts = (now_utc + offset).isoformat()
+            ctx = EventContext(
+                weekday=weekday,
+                minute_of_day=minute,
+                month=now_utc.month,
+                house_state="home",
+                occupants_count=1,
+                occupied_rooms=(),
+                outdoor_lux=None,
+                outdoor_temp=None,
+                weather_condition=None,
+                signals={},
+            )
+            event = HeimaEvent(
+                ts=ts,
+                event_type="presence",
+                context=ctx,
+                source=None,
+                data={"transition": "arrive"},
+            )
+            await self._event_store.async_append(event)
+            total += 1
+
+        await self._event_store.async_flush()
+        self._write_event_store_sensor()
+        return total
 
     async def async_seed_lighting_scene_events(
         self,
@@ -1019,9 +1199,32 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._heating_module,
             self._house_state_module,
             self._activity_module,
+            self._lighting_pattern_module,
+            self._room_state_correlation_module,
+            self._occupancy_inference_module,
         ):
             await module.analyze(self._house_snapshot_store)
         await self._async_submit_house_state_candidates()
+        await self._async_run_anomaly_analyzer()
+
+    async def _async_run_anomaly_analyzer(self) -> None:
+        """Run statistical anomaly analysis and route findings."""
+        analyzer = getattr(self, "_anomaly_analyzer", None)
+        router = getattr(self, "_finding_router", None)
+        if analyzer is None or router is None:
+            return
+        findings = await analyzer.analyze(
+            self._event_store,
+            self._house_snapshot_store,
+        )
+        await router.async_route(findings)
+
+    def _sync_occupancy_inference_rooms(self) -> None:
+        """Sync sensorless room ids after startup or options reload."""
+        module = getattr(self, "_occupancy_inference_module", None)
+        if module is None:
+            return
+        module.sync_sensorless_rooms(_sensorless_occupancy_room_ids(self.entry.options))
 
     async def _async_submit_house_state_candidates(self) -> None:
         self._sync_house_state_approval_state()
@@ -1029,6 +1232,22 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             proposal = _proposal_from_house_state_candidate(candidate)
             proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
             await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+
+    async def _async_evaluate_semantic_policies(self) -> None:
+        options = dict(self.entry.options or {})
+        for rule in BUILTIN_SEMANTIC_RULES:
+            proposal = rule.evaluate(options)
+            if proposal is None:
+                await self._proposal_engine.async_withdraw(rule.rule_id)
+                continue
+            existing = self._proposal_engine.proposal_by_identity_key(proposal.identity_key)
+            if existing is not None:
+                continue
+            proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
+            await self._async_notify_semantic_policy_proposal(
+                proposal,
+                proposal_id=proposal_id,
+            )
 
     async def _async_notify_pending_activity_proposals(self) -> None:
         if not hasattr(self._proposal_engine, "pending_proposals"):
@@ -1112,6 +1331,32 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             _LOGGER.warning("Failed to create house-state proposal notification")
         finally:
             self._notified_house_state_proposal_keys.add(identity_key)
+
+    async def _async_notify_semantic_policy_proposal(
+        self,
+        proposal: ReactionProposal,
+        *,
+        proposal_id: str,
+    ) -> None:
+        identity_key = str(proposal.identity_key or "").strip()
+        if not identity_key:
+            return
+        event = {
+            "event_id": f"semantic_policy.{proposal_id}",
+            "key": f"semantic_policy.{identity_key}",
+            "type": "semantic_policy.proposal",
+            "severity": "info",
+            "title": "Heima semantic policy suggestion",
+            "message": proposal.description,
+            "context": {
+                "proposal_id": proposal_id,
+                "identity_key": identity_key,
+                "reaction_type": proposal.reaction_type,
+                "origin": proposal.origin,
+                "notify": True,
+            },
+        }
+        await self._async_notify_installer_alert(event)
 
     async def _async_handle_last_installer_alert(self) -> None:
         event = self.engine.state.get_sensor_attributes("heima_last_event") or {}
@@ -1584,6 +1829,24 @@ def _health_event_record(event: dict[str, Any]) -> dict[str, Any]:
         "event_id": str(event.get("event_id") or ""),
         "ts": str(event.get("ts") or ""),
     }
+
+
+def _sensorless_occupancy_room_ids(options: dict[str, Any]) -> set[str]:
+    """Return rooms eligible for occupancy inference."""
+    room_ids: set[str] = set()
+    for room in options.get(OPT_ROOMS, []):
+        if not isinstance(room, dict):
+            continue
+        room_id = str(room.get("room_id") or "").strip()
+        if not room_id:
+            continue
+        mode = str(room.get("occupancy_mode") or "derived").strip().lower()
+        if mode != "derived":
+            continue
+        if room_occupancy_source_entity_ids(room):
+            continue
+        room_ids.add(room_id)
+    return room_ids
 
 
 def _installer_notification_message(event: dict[str, Any]) -> str:

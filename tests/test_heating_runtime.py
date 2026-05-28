@@ -92,7 +92,10 @@ async def test_fixed_target_branch_builds_and_executes_heating_apply_step():
     engine = _build_engine(
         options,
         {
-            "climate.test_thermostat": ("heat", {"temperature": 18.0}),
+            "climate.test_thermostat": (
+                "heat",
+                {"temperature": 18.0, "current_temperature": 19.2},
+            ),
         },
     )
 
@@ -105,6 +108,7 @@ async def test_fixed_target_branch_builds_and_executes_heating_apply_step():
     assert engine.state.get_sensor("heima_heating_branch") == "fixed_target"
     assert engine.state.get_sensor("heima_heating_target_temp") == 20.0
     assert engine.state.get_sensor("heima_heating_current_setpoint") == 18.0
+    assert engine._heating_domain.current_temperature() == 19.2
     assert any(step.action == "climate.set_temperature" for step in plan.steps)
 
     await engine._execute_apply_plan(plan)

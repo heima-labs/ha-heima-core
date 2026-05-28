@@ -63,6 +63,12 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
             return self.async_abort(reason="admin_required")
         user_id = str(self.context.get("user_id") or "").strip()
         if not user_id:
+            if self.context.get("source") == config_entries.SOURCE_USER:
+                _LOGGER.debug(
+                    "Allowing Heima user-initiated config flow without context user_id"
+                )
+                self._admin_access_granted = True
+                return None
             self._admin_access_granted = False
             return self.async_abort(reason="admin_required")
         user = await self.hass.auth.async_get_user(user_id)

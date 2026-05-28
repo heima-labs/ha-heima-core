@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...const import OPT_REACTIONS
+from .alarm_policy import normalize_alarm_state_action_config
 from .scheduled_routine import normalize_scheduled_routine_config
 
 LEGACY_REACTION_CLASS_TO_TYPE: dict[str, str] = {
@@ -92,6 +93,11 @@ def _normalize_single_reaction_config(raw_cfg: dict[str, Any]) -> tuple[dict[str
 
     if reaction_type == "scheduled_routine":
         normalized = normalize_scheduled_routine_config(cfg)
+        if normalized != cfg:
+            cfg = normalized
+            changed = True
+    if reaction_type == "alarm_state_action":
+        normalized = normalize_alarm_state_action_config(cfg)
         if normalized != cfg:
             cfg = normalized
             changed = True

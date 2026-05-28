@@ -134,3 +134,36 @@ set_override:
       required: true
       selector:
         text:
+
+configure_anomaly_rule:
+  name: Heima Configure Anomaly Rule
+  description: Configure an AnomalyAnalyzer rule without reloading the integration.
+  fields:
+    rule_id:
+      name: Rule ID
+      description: Anomaly rule identifier.
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      description: Enable or disable this anomaly rule.
+      required: false
+      selector:
+        boolean:
+    severity:
+      name: Severity
+      description: Severity emitted by this anomaly rule.
+      required: false
+      selector:
+        select:
+          options:
+            - info
+            - warning
+            - critical
+    thresholds:
+      name: Thresholds
+      description: Rule threshold overrides.
+      required: false
+      selector:
+        object:

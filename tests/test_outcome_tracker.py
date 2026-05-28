@@ -85,6 +85,7 @@ def test_positive_outcome_resolves_pending_and_resets_negative_streak() -> None:
     assert tracker.pending() == ()
     assert tracker.records() == resolved
     assert tracker.negative_streak("reaction.work_lights") == 0
+    assert tracker.positive_streak("reaction.work_lights") == 1
 
 
 def test_unmatched_pending_remains_before_timeout() -> None:
@@ -121,6 +122,7 @@ def test_timeout_records_negative_and_increments_streak() -> None:
         assert resolved[0].outcome == "negative"
 
     assert tracker.negative_streak("reaction.arrival") == 2
+    assert tracker.positive_streak("reaction.arrival") == 0
     assert tracker.diagnostics()["negative_streaks"] == {"reaction.arrival": 2}
 
 
@@ -140,6 +142,53 @@ def test_ready_for_degradation_after_five_consecutive_negatives() -> None:
         tracker.check_pending([])
 
     assert tracker.ready_for_degradation("reaction.unreliable") is True
+
+
+def test_ready_for_boost_after_ten_consecutive_positives() -> None:
+    clock = Clock()
+    tracker = OutcomeTracker(now_provider=clock.now)
+
+    for _ in range(OutcomeTracker.POSITIVE_BOOST_THRESHOLD):
+        tracker.on_reaction_fired(
+            reaction_id="reaction.reliable",
+            expected_event_type="lighting",
+            expected_within_s=1.0,
+            fired_at_ts=clock.now(),
+            snapshot_at_fire=_snapshot(),
+        )
+        resolved = tracker.check_pending(["lighting"])
+        assert len(resolved) == 1
+
+    assert tracker.positive_streak("reaction.reliable") == 10
+    assert tracker.ready_for_boost("reaction.reliable") is True
+
+
+def test_negative_outcome_resets_positive_streak_before_boost_threshold() -> None:
+    clock = Clock()
+    tracker = OutcomeTracker(now_provider=clock.now)
+
+    for _ in range(OutcomeTracker.POSITIVE_BOOST_THRESHOLD - 1):
+        tracker.on_reaction_fired(
+            reaction_id="reaction.reliable",
+            expected_event_type="lighting",
+            expected_within_s=1.0,
+            fired_at_ts=clock.now(),
+            snapshot_at_fire=_snapshot(),
+        )
+        tracker.check_pending(["lighting"])
+
+    tracker.on_reaction_fired(
+        reaction_id="reaction.reliable",
+        expected_event_type="lighting",
+        expected_within_s=1.0,
+        fired_at_ts=clock.now(),
+        snapshot_at_fire=_snapshot(),
+    )
+    clock.advance(1.0)
+    tracker.check_pending([])
+
+    assert tracker.positive_streak("reaction.reliable") == 0
+    assert tracker.ready_for_boost("reaction.reliable") is False
 
 
 def test_event_type_matching_supports_runtime_events() -> None:
@@ -183,3 +232,20 @@ def test_reset_clears_tracker_state() -> None:
     assert tracker.pending() == ()
     assert tracker.records() == ()
     assert tracker.negative_streak("reaction.cleanup") == 0
+    assert tracker.positive_streak("reaction.cleanup") == 0
+
+
+def test_diagnostics_include_positive_streaks() -> None:
+    clock = Clock()
+    tracker = OutcomeTracker(now_provider=clock.now)
+    tracker.on_reaction_fired(
+        reaction_id="reaction.reliable",
+        expected_event_type="lighting",
+        snapshot_at_fire=_snapshot(),
+    )
+    tracker.check_pending(["lighting"])
+
+    diagnostics = tracker.diagnostics()
+
+    assert diagnostics["positive_streaks"] == {"reaction.reliable": 1}
+    assert diagnostics["positive_boost_threshold"] == OutcomeTracker.POSITIVE_BOOST_THRESHOLD

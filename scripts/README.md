@@ -35,6 +35,10 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
     - `diagnostic`
     - `030_learning_proposals_diag.py`
     - `031_learning_summary_diag.py`
+    - `062_anomaly_rules_live.py`
+    - `063_semantic_policy_live.py`
+    - `064_snapshot_alignment_live.py`
+    - `065_learning_modules_p_live.py`
     - targeted manual admin-authored checks
       - `032_admin_authored_lighting_flow.py`
       - `033_admin_authored_reaction_origin_diag.py`
@@ -158,6 +162,10 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 - `diagnostic`
   - `030_learning_proposals_diag.py`: read-only check for proposal sensor payloads, including lifecycle fields such as `identity_key`, `last_observed_at`, and `is_stale`
   - `031_learning_summary_diag.py`: read-only check for plugin-centric `learning_summary` diagnostics payloads
+  - `062_anomaly_rules_live.py`: live service/config check for `heima.configure_anomaly_rule` and implemented `AnomalyAnalyzer` rule ids
+  - `063_semantic_policy_live.py`: live reload check for Phase N semantic policy proposals and `admin_authored` provenance
+  - `064_snapshot_alignment_live.py`: live runtime/storage check for Phase O snapshot fields (`security_state`, `heating_current_temperature`) and legacy `security_armed` removal
+  - `065_learning_modules_p_live.py`: live diagnostics check for Phase P learning module registration/readiness and sensorless room sync
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

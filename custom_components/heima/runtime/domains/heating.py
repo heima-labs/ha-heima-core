@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from homeassistant.components.climate.const import ATTR_CURRENT_TEMPERATURE
 from homeassistant.core import HomeAssistant
 
 from ..contracts import HeimaEvent
@@ -110,6 +111,11 @@ class HeatingDomain:
 
     def diagnostics(self) -> dict[str, Any]:
         return dict(self._heating_trace)
+
+    def current_temperature(self) -> float | None:
+        """Return the current ambient temperature reported by the configured climate entity."""
+        climate_entity = str(self._heating_trace.get("climate_entity") or "").strip()
+        return self._coerce_float(self._state_attr(climate_entity, ATTR_CURRENT_TEMPERATURE))
 
     # ------------------------------------------------------------------
     # Core compute
@@ -833,6 +839,15 @@ class HeatingDomain:
             return None
         text = str(value).strip()
         return text or None
+
+    @staticmethod
+    def _coerce_float(value: Any) -> float | None:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _coerce_positive_float(value: Any, *, default: float | None) -> float | None:

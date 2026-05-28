@@ -3,7 +3,14 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.heima.__init__ import _async_cleanup_stale_entities
-from custom_components.heima.const import OPT_PEOPLE_ANON, OPT_ROOMS, STRUCTURAL_OPTION_KEYS
+from custom_components.heima.const import (
+    OPT_HEATING,
+    OPT_LIGHTING_ROOMS,
+    OPT_PEOPLE_ANON,
+    OPT_ROOMS,
+    OPT_SECURITY,
+    STRUCTURAL_OPTION_KEYS,
+)
 
 
 class _FakeEntityRegistry:
@@ -82,3 +89,9 @@ async def test_cleanup_stale_heima_entities(monkeypatch):
 
 def test_people_anonymous_is_structural():
     assert OPT_PEOPLE_ANON in STRUCTURAL_OPTION_KEYS
+
+
+def test_conditional_entity_options_are_structural():
+    assert OPT_LIGHTING_ROOMS in STRUCTURAL_OPTION_KEYS
+    assert OPT_HEATING in STRUCTURAL_OPTION_KEYS
+    assert OPT_SECURITY in STRUCTURAL_OPTION_KEYS

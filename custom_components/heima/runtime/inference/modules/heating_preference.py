@@ -9,6 +9,7 @@ from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import HeatingSignal, Importance
 
 _MIN_SUPPORT = 10
+_CONFIDENCE_THRESHOLD = 0.40
 
 
 class HeatingPreferenceModule(HeimaLearningModule):
@@ -16,7 +17,14 @@ class HeatingPreferenceModule(HeimaLearningModule):
 
     module_id = "heating_preference"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        min_support: int = _MIN_SUPPORT,
+        confidence_threshold: float = _CONFIDENCE_THRESHOLD,
+    ) -> None:
+        self._min_support = max(1, int(min_support))
+        self._confidence_threshold = max(0.0, min(float(confidence_threshold), 1.0))
         # house_state -> (mean_setpoint, count)
         self._model: dict[str, tuple[float, int]] = {}
         self._ready = False
@@ -38,10 +46,10 @@ class HeatingPreferenceModule(HeimaLearningModule):
         if entry is None:
             return []
         mean_setpoint, support = entry
-        if support < _MIN_SUPPORT:
+        if support < self._min_support:
             return []
-        confidence = min(1.0, support / _MIN_SUPPORT)
-        if confidence < 0.40:
+        confidence = min(1.0, support / self._min_support)
+        if confidence < self._confidence_threshold:
             return []
         return [
             HeatingSignal(
@@ -60,6 +68,8 @@ class HeatingPreferenceModule(HeimaLearningModule):
             "module_id": self.module_id,
             "ready": self._ready,
             "state_count": len(self._model),
+            "min_support": self._min_support,
+            "confidence_threshold": self._confidence_threshold,
         }
 
 

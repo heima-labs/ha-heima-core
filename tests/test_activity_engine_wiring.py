@@ -6,13 +6,16 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from custom_components.heima.const import OPT_ACTIVITY_BINDINGS
+from custom_components.heima.const import OPT_ACTIVITY_BINDINGS, OPT_ROOMS
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.inference import (
     ActivitySignal,
     HeimaLearningModule,
+    HouseStateSignal,
     Importance,
     InferenceContext,
+    LightingSignal,
+    OccupancySignal,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
@@ -55,6 +58,42 @@ class _RecordingModule(HeimaLearningModule):
     def infer(self, context: InferenceContext) -> list[ActivitySignal]:
         type(self).received.append(context)
         return list(type(self).emitted)
+
+
+class _LightingSignalModule(HeimaLearningModule):
+    module_id = "lighting_pattern"
+
+    def infer(self, context: InferenceContext) -> list[LightingSignal]:
+        del context
+        return [
+            LightingSignal(
+                source_id=self.module_id,
+                confidence=1.0,
+                importance=Importance.SUGGEST,
+                ttl_s=600,
+                label="living relax",
+                room_id="living",
+                predicted_scene="relax",
+            )
+        ]
+
+
+class _OccupancySignalModule(HeimaLearningModule):
+    module_id = "occupancy_inference"
+
+    def infer(self, context: InferenceContext) -> list[OccupancySignal]:
+        del context
+        return [
+            OccupancySignal(
+                source_id=self.module_id,
+                confidence=0.9,
+                importance=Importance.SUGGEST,
+                ttl_s=300,
+                label="studio occupied",
+                room_id="studio",
+                predicted_occupied=True,
+            )
+        ]
 
 
 class _RecordingSnapshotStore:
@@ -151,6 +190,69 @@ def test_activity_signal_is_merged_by_activity_domain_during_snapshot_compute() 
     engine._compute_snapshot(reason="activity_signal")  # noqa: SLF001
 
     assert engine.state.get_sensor("activity.active_names") == ("movie_night",)
+
+
+def test_lighting_signal_without_runtime_consumer_is_observable_and_non_fatal() -> None:
+    engine = _engine()
+    engine.register_learning_module(_LightingSignalModule())
+
+    engine._compute_snapshot(reason="lighting_signal_observed")  # noqa: SLF001
+
+    signal_diag = engine.diagnostics()["inference_signals"]
+    assert signal_diag["LightingSignal"] == {
+        "count": 1,
+        "sources": ["lighting_pattern"],
+    }
+
+
+def test_room_state_correlation_signal_is_not_passed_to_house_state_domain() -> None:
+    engine = _engine()
+    accepted = HouseStateSignal(
+        source_id="weekday_state",
+        confidence=0.7,
+        importance=Importance.SUGGEST,
+        ttl_s=600,
+        label="weekday",
+        predicted_state="home",
+    )
+    blocked = HouseStateSignal(
+        source_id="room_state_correlation",
+        confidence=1.0,
+        importance=Importance.SUGGEST,
+        ttl_s=600,
+        label="correlation",
+        predicted_state="working",
+    )
+
+    signals = engine._house_state_domain_signals(  # noqa: SLF001
+        {HouseStateSignal: [blocked, accepted]}
+    )
+
+    assert signals == [accepted]
+
+
+def test_occupancy_signal_is_applied_during_snapshot_compute_for_sensorless_room() -> None:
+    engine = _engine(
+        options={
+            OPT_ROOMS: [
+                {
+                    "room_id": "studio",
+                    "occupancy_mode": "derived",
+                    "occupancy_sources": [],
+                }
+            ]
+        }
+    )
+    engine.register_learning_module(_OccupancySignalModule())
+
+    snapshot = engine._compute_snapshot(reason="occupancy_signal")  # noqa: SLF001
+
+    assert snapshot.occupied_rooms == ["studio"]
+    assert engine.state.get_binary("heima_occupancy_studio") is True
+    assert (
+        engine._occupancy_domain.room_trace["studio"]["inference_signal"]["source_id"]  # noqa: SLF001
+        == "occupancy_inference"
+    )
 
 
 def test_record_snapshot_persists_detected_activities() -> None:

@@ -12,6 +12,12 @@ test names, and any persistent project artifact in English.
 ## Communication style
 - Risposte stringate. Dettagli solo se richiesti esplicitamente.
 - Per scelte architetturali: breve discussione prima di toccare il codice.
+- **Spec-first, sempre.** Prima di scrivere codice (o delegare a Codex), la spec della fase deve
+  essere completa e **approvata esplicitamente dal developer**. "Discussa" non equivale ad
+  "approvata". Il gate è la conferma esplicita: "ok, procedi".
+- Ogni nuovo contratto (tipo, campo, enum, interfaccia) introdotto nella spec deve essere
+  validato rispetto ai costrutti esistenti prima della conferma. Domanda obbligatoria:
+  "questo costrutto si sovrappone a qualcosa che già esiste?"
 
 ## Commit style
 - Messaggi brevi: titolo imperativo + 2-3 righe di contesto max.

@@ -16,6 +16,7 @@ from .const import (
     HOUSE_STATES_CANONICAL,
     SERVICE_APPROVE_PROPOSAL,
     SERVICE_COMMAND,
+    SERVICE_CONFIGURE_ANOMALY_RULE,
     SERVICE_OVERRIDE_APPROVAL,
     SERVICE_RUN_DIAGNOSTICS,
     SERVICE_SET_MODE,
@@ -70,6 +71,15 @@ RUN_DIAGNOSTICS_SCHEMA = vol.Schema(
     }
 )
 
+CONFIGURE_ANOMALY_RULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("rule_id"): cv.string,
+        vol.Optional("enabled"): cv.boolean,
+        vol.Optional("severity"): cv.string,
+        vol.Optional("thresholds"): dict,
+    }
+)
+
 SUPPORTED_COMMANDS = {
     "dev_reload",
     "recompute_now",
@@ -84,6 +94,7 @@ SUPPORTED_COMMANDS = {
     "unmute_reaction_type",
     "learning_reset",
     "seed_lighting_events",
+    "seed_presence_events",
     "seed_lighting_scene_events",
     "upsert_configured_reactions",
 }
@@ -336,6 +347,21 @@ async def async_register_services(hass: HomeAssistant) -> None:
             _LOGGER.info("seed_lighting_events: injected %d events for %s", total, entity_id)
             return
 
+        if command == "seed_presence_events":
+            p = params
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1200))
+            count = int(p.get("count", 6))
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_presence_events(
+                    weekday=weekday,
+                    minute=minute,
+                    count=count,
+                )
+            _LOGGER.info("seed_presence_events: injected %d arrival events", total)
+            return
+
         if command == "seed_lighting_scene_events":
             p = params
             room_id = str(p.get("room_id") or "")
@@ -540,6 +566,26 @@ async def async_register_services(hass: HomeAssistant) -> None:
             "count": len(diagnostics),
         }
 
+    async def _handle_configure_anomaly_rule(call: ServiceCall) -> None:
+        payload = dict(call.data)
+        coordinators = list(_iter_coordinators(hass))
+        if not coordinators:
+            raise ServiceValidationError("No active Heima config entries found")
+
+        kwargs: dict[str, Any] = {"rule_id": str(payload.get("rule_id") or "").strip()}
+        if "enabled" in payload:
+            kwargs["enabled"] = bool(payload["enabled"])
+        if "severity" in payload:
+            kwargs["severity"] = str(payload["severity"] or "").strip()
+        if "thresholds" in payload:
+            thresholds = payload["thresholds"]
+            if not isinstance(thresholds, dict):
+                raise ServiceValidationError("Anomaly rule thresholds must be a dict")
+            kwargs["thresholds"] = thresholds
+
+        for coordinator in coordinators:
+            await coordinator.async_configure_anomaly_rule(**kwargs)
+
     hass.services.async_register(DOMAIN, SERVICE_COMMAND, _handle_command, schema=COMMAND_SCHEMA)
     hass.services.async_register(
         DOMAIN,
@@ -563,4 +609,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _handle_set_mode, schema=SET_MODE_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_SET_OVERRIDE, _handle_set_override, schema=SET_OVERRIDE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONFIGURE_ANOMALY_RULE,
+        _handle_configure_anomaly_rule,
+        schema=CONFIGURE_ANOMALY_RULE_SCHEMA,
     )

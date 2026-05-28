@@ -149,6 +149,7 @@ async def test_coordinator_runtime_reload_does_not_reset_or_rerun_proposals():
     coordinator._proposal_engine = SimpleNamespace(
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
+        async_withdraw=AsyncMock(return_value=False),
         set_analyzers=MagicMock(),
         set_learning_plugin_registry=MagicMock(),
     )
@@ -176,6 +177,7 @@ async def test_coordinator_runtime_reload_preserves_existing_proposal_engine_ins
     proposal_engine = SimpleNamespace(
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
+        async_withdraw=AsyncMock(return_value=False),
         set_analyzers=MagicMock(),
         set_learning_plugin_registry=MagicMock(),
     )
@@ -208,6 +210,7 @@ async def test_coordinator_runtime_reload_updates_learning_plugin_registry_and_a
     proposal_engine = SimpleNamespace(
         async_run=AsyncMock(),
         async_clear=AsyncMock(),
+        async_withdraw=AsyncMock(return_value=False),
         set_analyzers=MagicMock(),
         set_learning_plugin_registry=MagicMock(),
     )

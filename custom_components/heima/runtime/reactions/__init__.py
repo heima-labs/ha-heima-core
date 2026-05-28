@@ -10,6 +10,13 @@ from ._compat import (
     normalize_reaction_options_payload,
     resolve_reaction_type,
 )
+from .alarm_policy import (
+    AlarmStateActionReaction,
+    build_alarm_state_action_reaction,
+    normalize_alarm_state_action_config,
+    present_admin_authored_alarm_state_action_details,
+    present_alarm_state_action_label,
+)
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
 from .context_conditioned_lighting import (
@@ -332,6 +339,19 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
         ),
         RegisteredReactionPlugin(
             descriptor=ReactionPluginDescriptor(
+                reaction_type="alarm_state_action",
+                reaction_id_strategy="proposal_id",
+                supported_config_contracts=("alarm_state_action",),
+                supports_normalizer=True,
+            ),
+            builder=build_alarm_state_action_reaction,
+            presenter_hooks=ReactionPresenterHooks(
+                reaction_label_from_config=present_alarm_state_action_label,
+                admin_authored_review_details=present_admin_authored_alarm_state_action_details,
+            ),
+        ),
+        RegisteredReactionPlugin(
+            descriptor=ReactionPluginDescriptor(
                 reaction_type="vacation_presence_simulation",
                 reaction_id_strategy="proposal_id",
                 supported_config_contracts=("vacation_presence_simulation",),
@@ -394,9 +414,11 @@ __all__ = [
     "NaiveLearningBackend",
     "PresencePatternReaction",
     "RoomSignalAssistReaction",
+    "AlarmStateActionReaction",
     "ScheduledRoutineReaction",
     "VacationPresenceSimulationReaction",
     "validate_contextual_lighting_contract",
     "normalize_room_signal_assist_config",
     "normalize_scheduled_routine_config",
+    "normalize_alarm_state_action_config",
 ]

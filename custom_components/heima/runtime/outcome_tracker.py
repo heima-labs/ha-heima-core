@@ -50,6 +50,8 @@ class OutcomeTracker:
 
     DEFAULT_TIMEOUT_S = 900.0
     DEGRADATION_THRESHOLD = 5
+    POSITIVE_BOOST_THRESHOLD: int = 10
+    POSITIVE_CONFIDENCE_BOOST: float = 0.05
     REACTION_TIMEOUTS: Mapping[str, float] = {
         "PresencePatternReaction": 1800.0,
         "ConsecutiveStateReaction": 600.0,
@@ -60,6 +62,7 @@ class OutcomeTracker:
         self._pending: dict[str, PendingVerification] = {}
         self._records: list[OutcomeRecord] = []
         self._negative_streaks: dict[str, int] = {}
+        self._positive_streaks: dict[str, int] = {}
 
     def timeout_for(
         self,
@@ -146,13 +149,27 @@ class OutcomeTracker:
         """Return whether the reaction reached the degradation threshold."""
         return self.negative_streak(reaction_id) >= self.DEGRADATION_THRESHOLD
 
+    def positive_streak(self, reaction_id: str) -> int:
+        """Return consecutive positive outcomes for one reaction."""
+        return self._positive_streaks.get(reaction_id, 0)
+
+    def ready_for_boost(self, reaction_id: str) -> bool:
+        """Return whether the reaction reached the positive confidence boost threshold."""
+        return self.positive_streak(reaction_id) >= self.POSITIVE_BOOST_THRESHOLD
+
+    def reset_positive_streak(self, reaction_id: str) -> None:
+        """Reset the positive streak after a boost has been applied."""
+        self._positive_streaks[reaction_id] = 0
+
     def diagnostics(self) -> dict[str, Any]:
         """Return tracker diagnostics."""
         return {
             "pending_count": len(self._pending),
             "records_count": len(self._records),
             "negative_streaks": dict(self._negative_streaks),
+            "positive_streaks": dict(self._positive_streaks),
             "degradation_threshold": self.DEGRADATION_THRESHOLD,
+            "positive_boost_threshold": self.POSITIVE_BOOST_THRESHOLD,
             "pending": [asdict(pending) for pending in self._pending.values()],
         }
 
@@ -161,6 +178,7 @@ class OutcomeTracker:
         self._pending.clear()
         self._records.clear()
         self._negative_streaks.clear()
+        self._positive_streaks.clear()
 
     def _resolve(
         self,
@@ -172,10 +190,14 @@ class OutcomeTracker:
     ) -> OutcomeRecord:
         if outcome == "positive":
             self._negative_streaks[pending.reaction_id] = 0
+            self._positive_streaks[pending.reaction_id] = (
+                self._positive_streaks.get(pending.reaction_id, 0) + 1
+            )
         else:
             self._negative_streaks[pending.reaction_id] = (
                 self._negative_streaks.get(pending.reaction_id, 0) + 1
             )
+            self._positive_streaks[pending.reaction_id] = 0
 
         return OutcomeRecord(
             reaction_id=pending.reaction_id,

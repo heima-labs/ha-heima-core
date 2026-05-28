@@ -24,8 +24,9 @@ class HouseSnapshot:
     detected_activities: tuple[str, ...] = field(default_factory=tuple)
     house_state: str = ""
     heating_setpoint: float | None = None
+    heating_current_temperature: float | None = None
     lighting_scenes: dict[str, str] = field(default_factory=dict)
-    security_armed: bool = False
+    security_state: str = "disarmed"
 
     def as_dict(self) -> dict[str, Any]:
         """Serialize the snapshot to HA storage."""
@@ -39,8 +40,9 @@ class HouseSnapshot:
             "detected_activities": list(self.detected_activities),
             "house_state": self.house_state,
             "heating_setpoint": self.heating_setpoint,
+            "heating_current_temperature": self.heating_current_temperature,
             "lighting_scenes": dict(self.lighting_scenes),
-            "security_armed": self.security_armed,
+            "security_state": self.security_state,
         }
 
     @classmethod
@@ -63,6 +65,17 @@ class HouseSnapshot:
             heating_setpoint = None if heating_raw is None else float(heating_raw)
         except (TypeError, ValueError):
             heating_setpoint = None
+        heating_current_raw = raw.get("heating_current_temperature")
+        try:
+            heating_current_temperature = (
+                None if heating_current_raw is None else float(heating_current_raw)
+            )
+        except (TypeError, ValueError):
+            heating_current_temperature = None
+
+        security_state = str(raw.get("security_state") or "").strip()
+        if not security_state:
+            security_state = "armed_away" if bool(raw.get("security_armed", False)) else "disarmed"
 
         return cls(
             ts=ts,
@@ -74,8 +87,9 @@ class HouseSnapshot:
             detected_activities=tuple(sorted(detected_activities)),
             house_state=str(raw.get("house_state") or ""),
             heating_setpoint=heating_setpoint,
+            heating_current_temperature=heating_current_temperature,
             lighting_scenes=lighting_scenes,
-            security_armed=bool(raw.get("security_armed", False)),
+            security_state=security_state,
         )
 
     def semantic_key(self) -> tuple[Any, ...]:
@@ -87,8 +101,9 @@ class HouseSnapshot:
             self.detected_activities,
             self.house_state,
             self.heating_setpoint,
+            self.heating_current_temperature,
             tuple(sorted(self.lighting_scenes.items())),
-            self.security_armed,
+            self.security_state,
         )
 
 

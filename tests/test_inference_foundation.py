@@ -63,8 +63,9 @@ def _snapshot(
         detected_activities=(),
         house_state=house_state,
         heating_setpoint=20.5,
+        heating_current_temperature=19.5,
         lighting_scenes={"kitchen": "bright"},
-        security_armed=False,
+        security_state="disarmed",
     )
 
 

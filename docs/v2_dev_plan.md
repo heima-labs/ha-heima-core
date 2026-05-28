@@ -1,7 +1,7 @@
 # Heima v2.1 — Development Plan
 
 **Spec:** `docs/specs/heima_v2_spec.md` (v2.1.0-draft)
-**Branch:** `feat/v2` (to be created from `main`)
+**Branch:** `feat/semantic-policy-advisor`
 **Solo developer:** Stefano — no backward compatibility with v1 required during development.
 
 ---
@@ -97,21 +97,196 @@ These constraints must never be violated. See spec §16 for rationale.
 | K | Installer alert channel + health entity | `DONE` | C |
 | L | Auto-discovery config flow | `DONE` | — |
 | M | Installation validation | `DONE` | L |
+| N | Semantic Policy Suggestions | `DONE` | A |
+| O | HouseSnapshot Alignment + Proposal Revocation | `DONE` | N |
+| P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `DONE` | D, F |
+| Q | AnomalyAnalyzer: Statistical Detection Rules | `DONE` | O, P |
+| R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
+| S | Learning Module Threshold Configurability | `DONE` | R |
+| T | Learning Signal Analyzers | `NOT STARTED` | P, S |
+| U | Physical Light State Awareness | `NOT STARTED` | A, Q |
+| V | Signal Discovery Pipeline | `NOT STARTED` | N, L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation.
-**Active phase:** None.
-**Branch:** `feat/v2` — created from `main`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability.
+**Active phase:** Phase V — Signal Discovery Pipeline (`NOT STARTED`).
+**Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Discuss the next v2 scope before implementation.
+Implement Phase V — Signal Discovery Pipeline, starting with V1 inventory and classification.
 
 ### Current Working Notes
 
-- Current slice: Live/runtime validation pass after Phase M — complete.
+- Current slice: Phase Q complete for current v2 scope.
+  - Implemented operational rules: 15/17.
+  - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.
+  - Deferred reason: they require physical light state awareness; current
+    `HouseSnapshot.lighting_scenes` records Heima scene decisions, not reliable physical light
+    state.
+  - Live coverage: diagnostic tier includes `062_anomaly_rules_live.py`, validating
+    `heima.configure_anomaly_rule`, implemented rule IDs, threshold persistence, validation
+    errors, and the next `learning_run` path.
+- Phase Q / Q4 complete.
+  - Q4 scope: `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour` (3 rules only).
+  - `lights_on_unattended` and `lighting_scene_drift` deferred to Phase U (Physical Light State
+    Awareness): `HouseSnapshot.lighting_scenes` records Heima's own scene decisions, not physical
+    light states. Phase U / physical light state awareness implements both rules.
+  - `appliance_unusual_hour` trigger semantics: option A — triggers only when the appliance activity
+    is present in the **current** (latest) snapshot's `detected_activities`. It does not scan for
+    "last time the activity was seen active". Consistent with how other rules compare current state
+    vs historical baseline.
+  - `stove_on_unattended` / `oven_on_unattended`: window-based, `stove_on`/`oven_on` in
+    `detected_activities` AND `anyone_home == False` across last `window` snapshots.
+    No room mapping (detected_activities has no room granularity). Severity: critical.
+    Defaults: window=6, min_observations=2.
+  - `appliance_unusual_hour`: appliance set = `washing_machine_running`, `dishwasher_running`,
+    `tv_active`, `pc_active` (excludes `stove_on`, `oven_on` — have dedicated rules).
+    For each appliance currently active in the latest snapshot, extract hour from current snapshot ts;
+    build historical distribution of hours when that activity appeared in `detected_activities`;
+    trigger if `|current_hour - median_hour| >= delta_hours`. Defaults: window=1000,
+    min_observations=8, delta_hours=4.0. Severity: warning.
+- Current slice: Phase Q / Q1 complete.
+  - `AnomalyAnalyzer` now uses the existing `AnomalySignal` contract from
+    `runtime/plugin_contracts.py`; Q1 does not define a parallel signal type.
+  - Q1 defines an `AnomalyRule` catalog for all 17 planned rule IDs and loads rule options from
+    `entry.options["anomaly"]["rules"]` on every `analyze()` pass.
+  - The first real end-to-end rule is `heating_unresponsive`, using
+    `HouseSnapshot.heating_current_temperature` and `heating_setpoint`.
+  - `FindingRouter -> coordinator anomaly handler -> installer alert` is validated by tests.
+  - `heima.configure_anomaly_rule` remains out of Q1 and is still planned for Q6.
+- Current slice: Phase Q / Q3 complete.
+  - Heating anomaly rules implemented: `heating_setpoint_outlier`, `heating_unresponsive`,
+    `heating_vacation_mismatch`.
+  - All rule windows are snapshot counts, not hours.
+  - `heating_vacation_mismatch` uses a fixed recent snapshot window, then filters
+    `security_state == "armed_away"` inside that window. It skips if fewer than
+    `min_observations` armed-away samples exist; it triggers only when all armed-away samples have
+    `heating_setpoint > max_away_setpoint_c`.
+- Current slice: Phase Q / Q5 security subset complete.
+  - Security anomaly rules implemented: `alarm_disarm_unusual_hour`,
+    `alarm_expected_not_armed`.
+  - `alarm_disarm_unusual_hour` scans consecutive snapshot pairs for transitions from
+    `armed_*` to `disarmed`; the latest transition is the candidate and is excluded from the
+    baseline.
+  - `alarm_expected_not_armed` is statistical only: no calendar/work-window context. It filters
+    history by the current `(weekday, hour_bucket)` slot, then checks the latest configured number
+    of snapshots within that slot are all `disarmed`.
+- Current slice: Phase Q / Q5 residual subset complete.
+  - Residual Q5 rules implemented: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+  - All three use only `HouseSnapshot` history; no `EventStore`, calendar, or external context.
+  - `sensor_activity_drop` measures snapshot-per-hour rate for tracked Heima domain changes, not
+    raw sensor event frequency, and compares recent time-based windows to same weekday/hour
+    baseline history.
+  - `ghost_activity` detects room occupancy while `anyone_home == False`.
+  - `unusual_stillness` compares the current unchanged room-occupancy run to the historical 90th
+    percentile of occupied stillness runs.
+- Current slice: Phase P / P4a complete.
+  - P4a registers `LightingPatternModule`, `RoomStateCorrelationModule`, and
+    `OccupancyInferenceModule` in the coordinator learning-module lifecycle.
+  - `OccupancyInferenceModule.sync_sensorless_rooms()` runs only at startup and options reload,
+    not on every analyze cycle. The synced set is computed from rooms with
+    `occupancy_mode == "derived"` and no `occupancy_sources`.
+  - Engine diagnostics expose registered learning module diagnostics and the last routed
+    inference signal buckets.
+  - Runtime side effects remain limited to occupancy: `OccupancySignal` is applied by
+    `OccupancyDomain` after the engine gathers signals from the base occupancy result.
+  - `LightingSignal` is routed and observable but currently ignored by `LightingDomain`.
+    `RoomStateCorrelationModule` `HouseStateSignal` is routed and observable but filtered out
+    before `HouseStateDomain`; P4b will decide whether and how to consume it.
+  - Verification: full `pytest -q` passed with 1270 tests; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed; targeted `ruff check` passed.
+- P4b policy decision:
+  - Statistical signals never feed operational domains directly. The only operational path is:
+    `LearningModule signal -> analyzer -> ProposalEngine -> admin review -> configured rule/reaction`.
+  - `RoomStateCorrelationModule` remains diagnostic-only at runtime. A future
+    `HouseStateCorrelationAnalyzer` may turn stable occupied-room patterns into reviewed
+    house-state proposals, but raw `room_state_correlation` signals must never enter
+    `HouseStateDomain`.
+  - `LightingPatternModule` remains diagnostic-only at runtime. A future analyzer may target the
+    existing `context_conditioned_lighting_scene` reaction type; this reaction plugin already
+    exists and has proposal/review presenters.
+  - The anti-feedback gate is human review, not signal strength alone. Correlations observed from
+    current house-state or lighting behavior cannot amplify themselves into runtime behavior
+    without explicit admin approval.
+- Previous slice: Phase P / P3 complete.
+  - P3 added `OccupancyInferenceModule` and `OccupancyDomain` consumption of `OccupancySignal`
+    for sensorless rooms only.
+  - Sensorless room definition: `occupancy_mode == "derived"` and no `occupancy_sources`;
+    `learning_sources` and room `signals` do not make a room sensorized for occupancy.
+  - P3 implementation constraints: confidence is smoothed as
+    `probability * min(1.0, total / 10)`; inference context `anyone_home` is derived as
+    `any(context.room_occupancy.values())`; fixed `Importance.SUGGEST`; `ttl_s=300`;
+    `min_support=10`; `confidence_threshold=0.70`.
+  - `OccupancyDomain` applies accepted signals directly for sensorless rooms, without dwell/max-on
+    processing; sensorized rooms and `occupancy_mode=none` ignore all occupancy inference signals.
+  - Sparse snapshot contract: `HouseSnapshot.room_occupancy` stores occupied rooms as `True`;
+    absence means false. `OccupancyInferenceModule.analyze()` therefore iterates the synced
+    `sensorless_rooms` allow-list and reads each room with `room_occupancy.get(room_id, False)`.
+    The snapshot recorder must remain sparse.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py
+    tests/test_occupancy_inference_domain_p.py -q` passed with 37 tests; occupancy regression
+    run passed with 47 tests; `ruff check` on P3 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase P / P2 complete.
+  - P2 added module-only `RoomStateCorrelationModule`; it is exported from inference modules but
+    is not yet registered in the coordinator and is not consumed by `HouseStateDomain`.
+  - The module learns `P(house_state | occupied_room_pattern)` from
+    `HouseSnapshot.room_occupancy`, using `frozenset[str]` as the occupied-room pattern key.
+  - P2 implementation constraints: ignore empty patterns; fixed `Importance.SUGGEST`; raw
+    confidence ratio `best_count / total`; `min_support=15`; `confidence_threshold=0.60`.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py -q` passed with 20 tests;
+    `ruff check` on P1/P2 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase P / P1 complete.
+  - P1 added module-only `LightingPatternModule`; it is exported from inference modules but is
+    not yet registered in the coordinator and is not consumed by `LightingDomain`.
+  - The module learns `P(scene | room_id, house_state, hour_bucket)` from
+    `HouseSnapshot.lighting_scenes`.
+  - P1 implementation constraints: iterate over room IDs in the model, not
+    `context.room_occupancy`; fixed `Importance.SUGGEST`; raw confidence ratio
+    `best_count / total`; `min_support=8`; `confidence_threshold=0.65`.
+  - Targeted verification run: `pytest tests/test_learning_modules_p.py
+    tests/test_inference_foundation.py::test_inference_context_and_signals_are_typed -q` passed
+    with 11 tests; `ruff check` on P1 files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
+- Previous slice: Phase O complete.
+  - O1 replaced `HouseSnapshot.security_armed` with `security_state`, added legacy
+    `security_armed` deserialization fallback, updated `semantic_key()`, and updated engine/test
+    references.
+  - O2 added `heating_current_temperature` to `HouseSnapshot`. The engine records it via
+    `HeatingDomain.current_temperature()` from `_record_snapshot_if_changed()`, using
+    `climate.ATTR_CURRENT_TEMPERATURE`.
+  - O3 added `ProposalEngine.async_withdraw(identity_key)` pending-only revocation. Coordinator
+    semantic policy withdrawal uses `rule.rule_id` when a rule is no longer applicable.
+  - Targeted verification run: `pytest tests/test_snapshot_migration_o.py
+    tests/test_inference_foundation.py tests/test_inference_engine_wiring.py
+    tests/test_inference_modules.py tests/test_activity_analyzer.py
+    tests/test_heating_runtime.py::test_fixed_target_branch_builds_and_executes_heating_apply_step
+    tests/test_proposal_engine.py::test_proposal_engine_async_withdraw_removes_pending_identity
+    tests/test_proposal_engine.py::test_proposal_engine_async_withdraw_preserves_accepted_identity
+    tests/test_proposal_engine.py::test_proposal_engine_async_withdraw_preserves_rejected_identity
+    tests/test_proposal_engine.py::test_proposal_engine_async_withdraw_returns_false_for_missing_identity
+    tests/test_semantic_policies_n.py` passed with 87 tests; `ruff check` on touched files
+    passed; `mypy custom_components/heima --ignore-missing-imports --no-error-summary` passed.
+  - Full regression: `pytest tests/ -q` passed with 1228 tests.
+- Previous slice: Phase N complete.
+  - N1 added `AlarmStateActionReaction`, normalization, registry support, and focused tests.
+  - N2 added `SemanticRule` and `BUILTIN_SEMANTIC_RULES`; rules produce `admin_authored`
+    `ReactionProposal`s with stable `identity_key` values and no new `origin` literal.
+  - N3 added coordinator evaluation on initialization and options reload. Existing semantic
+    proposal identities are skipped so pending/approved/rejected decisions are not reopened;
+    installer notifications are sent only for first-time semantic proposals.
+  - Important implementation note: current persisted options do not store HA area-expanded light
+    entities; light semantic rules only fire when light entities are explicitly present in room or
+    lighting room option payloads.
+  - Targeted verification run: `pytest tests/test_semantic_policies_n.py
+    tests/test_alarm_policy_reaction.py
+    tests/test_rebuild_configured_reactions.py::test_alarm_state_action_reaction_built_and_registered`
+    passed with 22 tests; `ruff check` on touched files passed; `mypy custom_components/heima
+    --ignore-missing-imports --no-error-summary` passed.
 - Status: Phase H is complete. Phase I starts with `ActivityProposal` contract and proposal
   plumbing complete. I2 added stable approval keys and readable snapshots for
   `activity_discovered`. I3 added the isolated `ActivityInferenceModule`. I4 adds
@@ -185,6 +360,12 @@ Discuss the next v2 scope before implementation.
     `room_signal_burst`, `actuation`) instead of legacy raw `state_change` growth.
   - Presence live coverage verifies real `presence` event recording. `presence_preheat` proposal
     generation still requires multi-week evidence and is not expected from same-day live cycles.
+  - N1 added `AlarmStateActionReaction`, `normalize_alarm_state_action_config()`, registry
+    registration for `alarm_state_action`, and focused reaction/rebuild tests.
+  - N1 tests run:
+    `pytest tests/test_alarm_policy_reaction.py tests/test_rebuild_configured_reactions.py::test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps tests/test_rebuild_configured_reactions.py::test_alarm_state_action_reaction_built_and_registered`;
+    `ruff check custom_components/heima/runtime/reactions/alarm_policy.py custom_components/heima/runtime/reactions/_compat.py custom_components/heima/runtime/reactions/__init__.py tests/test_alarm_policy_reaction.py tests/test_rebuild_configured_reactions.py`;
+    `mypy custom_components/heima --ignore-missing-imports --no-error-summary`.
 - Files read:
   - `custom_components/heima/runtime/engine.py`
   - `custom_components/heima/coordinator.py`
@@ -1124,6 +1305,562 @@ Each `DiscoveredBindingCandidate.reason` must be shown in the options flow revie
 - [x] Report accessible via `sensor.heima_health` attributes and via `heima.run_diagnostics`
 - [x] Options flow exposes a non-blocking validation summary step
 - [x] All existing tests pass — 1188 tests
+
+---
+
+## Phase N — Semantic Policy Suggestions
+
+**Spec section:** §N (Semantic Policy Suggestions)
+**Goal:** propose pre-configured `admin_authored` reactions from entity topology; installer reviews in existing config flow.
+**Depends on:** Phase A complete.
+
+### Working slices
+
+1. N1 — `AlarmStateActionReaction`:
+   - Create `runtime/reactions/alarm_policy.py`.
+   - Implement `AlarmStateActionReaction(HeimaReaction)` with `alarm_states`, `steps`, and `_last_fired_state` firing guard.
+   - Implement `normalize_alarm_state_action_config()`, `build_alarm_state_action_reaction()`, and `present_alarm_state_action_label()`.
+   - Register `RegisteredReactionPlugin` for `"alarm_state_action"` in `runtime/reactions/__init__.py`.
+   - Add focused tests: state entry fires once, stays-in-state no repeat, state exit resets, multiple alarm states.
+2. N2 — `SemanticRule` + `BUILTIN_SEMANTIC_RULES`:
+   - Create `runtime/semantic_policies.py`.
+   - Implement `SemanticRule` dataclass with `rule_id`, `description`, `evaluate(options) -> ReactionProposal | None`.
+   - Implement the four Phase N built-in rules (see §N.4).
+   - Add focused tests: rule returns None when alarm_entity missing, returns None when target entities missing, returns proposal with correct steps when topology complete.
+3. N3 — Coordinator wiring:
+   - Add `_async_evaluate_semantic_policies()` to `coordinator.py`.
+   - Call it from `async_config_entry_first_refresh()` and `async_reload()`.
+   - Call `_async_notify_installer_alert()` when a new semantic proposal is submitted for the first time.
+   - Add integration test: coordinator submits proposals on first refresh, does not duplicate on reload.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/reactions/alarm_policy.py` | `AlarmStateActionReaction`, builder, normalizer, presenter | §N.3 |
+| `runtime/semantic_policies.py` | `SemanticRule` + `BUILTIN_SEMANTIC_RULES` | §N.1, §N.4 |
+| `tests/test_semantic_policies_n.py` | Tests for slices N1–N3 | §N |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/reactions/__init__.py` | Register `alarm_state_action` plugin |
+| `coordinator.py` | Add `_async_evaluate_semantic_policies()`, call sites |
+
+### Built-in rules (Phase N)
+
+| Rule ID | Trigger | Action | Required topology |
+|---|---|---|---|
+| `alarm_away_lights_off` | `armed_away` | `light.turn_off` all light entities | `alarm_entity` + ≥1 light entity |
+| `alarm_triggered_lights_on` | `triggered` | `light.turn_on` all light entities | `alarm_entity` + ≥1 light entity |
+| `alarm_away_climate_off` | `armed_away` | `climate.set_hvac_mode hvac_mode=off` | `alarm_entity` + ≥1 thermostat entity |
+| `alarm_night_climate_sleep` | `armed_night` | `climate.set_preset_mode preset_mode=sleep` | `alarm_entity` + ≥1 thermostat entity |
+
+### Acceptance criteria
+
+- [x] `AlarmStateActionReaction` fires once per state entry, does not repeat while in the same state
+- [x] `AlarmStateActionReaction` resets `_last_fired_state` when `security_state` leaves `alarm_states`
+- [x] Each built-in rule returns `None` when any required entity is absent
+- [x] Each built-in rule returns a valid `ReactionProposal` with correct `suggested_reaction_config` when topology is complete
+- [x] Coordinator calls `_async_evaluate_semantic_policies()` on first refresh and reload
+- [x] ProposalEngine deduplication prevents re-submission of already-pending/approved proposals
+- [x] Installer is notified via `_async_notify_installer_alert()` on first new semantic proposal
+- [x] Targeted tests pass; new tests ≥ 15
+
+---
+
+## Phase O — HouseSnapshot Alignment + Proposal Revocation
+
+**Spec section:** Phase O
+**Goal:** allineare HouseSnapshot con i dati necessari alle fasi successive; aggiungere revoca proposal.
+**Depends on:** Phase N.
+
+### Working slices
+
+1. O1 — HouseSnapshot `security_state`:
+   - Sostituire `security_armed: bool` con `security_state: str` in `HouseSnapshot`.
+   - Aggiungere migrazione backward-compatible in `from_dict()`: se `security_state` assente, deriva da `security_armed` (True → `"armed_away"`, False → `"disarmed"`).
+   - Aggiornare `HeatingDomain` e qualsiasi altro riferimento a `security_armed`.
+   - Tests: deserializzazione legacy, round-trip nuovo formato.
+2. O2 — HouseSnapshot `heating_current_temperature`:
+   - Aggiungere campo `heating_current_temperature: float | None` a `HouseSnapshot`.
+   - `HeatingDomain` legge `climate.ATTR_CURRENT_TEMPERATURE` e lo passa allo snapshot.
+   - Tests: campo popolato quando disponibile, None quando assente.
+3. O3 — `ProposalEngine.async_withdraw`:
+   - Aggiungere `async_withdraw(identity_key) -> bool` a `ProposalEngine`.
+   - Rimuove solo proposal in stato `pending`; no-op su approved/rejected.
+   - Aggiornare `_async_evaluate_semantic_policies()` in coordinator per chiamare `async_withdraw()` sulle regole non più applicabili.
+   - Tests: withdraw pending → True, withdraw approved → False, withdraw assente → False.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `tests/test_snapshot_migration_o.py` | Migrazione legacy format, nuovi campi | Phase O |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/inference/snapshot_store.py` | `security_state`, `heating_current_temperature`, `from_dict()` migration |
+| `runtime/domains/heating.py` | Legge `current_temperature` attr, passa a snapshot |
+| `runtime/proposal_engine.py` | `async_withdraw(identity_key)` |
+| `coordinator.py` | `_async_evaluate_semantic_policies()`: chiama `async_withdraw()` |
+| `tests/test_proposal_engine.py` | Extend: test `async_withdraw` |
+
+### Acceptance criteria
+
+- [x] `HouseSnapshot.security_state` è `str` e non `bool`
+- [x] Snapshot serializzati con `security_armed: bool` vengono deserializzati correttamente
+- [x] `HouseSnapshot.heating_current_temperature` è popolato quando climate entity disponibile
+- [x] `ProposalEngine.async_withdraw()` rimuove solo proposal pending, no-op sulle altre
+- [x] `_async_evaluate_semantic_policies()` chiama `async_withdraw()` per regole non applicabili
+- [x] Full regression tests pass
+
+---
+
+## Phase P — Learning Modules D2: Lighting, Room Correlation, Occupancy
+
+**Spec section:** Phase P
+**Goal:** completare Phase D2; aggiungere OccupancyInferenceModule.
+**Depends on:** Phase D (ILearningModule, SnapshotStore), Phase F (room_occupancy in HouseSnapshot).
+
+### Working slices
+
+1. P1 — `LightingPatternModule`:
+   - Implementare `ILearningModule` che apprende `P(scene | room_id, house_state, hour_bucket)`.
+   - Min support 8 snapshot/slot. Emette `LightingSignal(importance=SUGGEST, confidence ≥ 0.65)`.
+   - Tests: model building da sequenza snapshot, signal emission, min support respected.
+2. P2 — `RoomStateCorrelationModule`:
+   - Implementare `ILearningModule` che apprende `P(house_state | frozenset(occupied_rooms))`.
+   - Min support 15 snapshot/pattern. Emette `HouseStateSignal`.
+   - Tests: pattern con support < 15 ignorati, signal con confidence corretta.
+3. P3 — `OccupancyInferenceModule` + `OccupancyDomain` consumption:
+   - Implementare `ILearningModule` che apprende `P(room_occupied | room_id, weekday, hour_bucket, anyone_home)`.
+   - Min support 10 snapshot/slot. Emette `OccupancySignal` solo per stanze senza sensore.
+   - `OccupancyDomain.compute()`: per stanze senza sensore, applica `OccupancySignal` se confidence ≥ 0.70.
+   - Tests: stanze con sensore ignorano il segnale, stanze senza sensore lo applicano.
+4. P4 — Coordinator wiring:
+   - Registrare i tre nuovi moduli nel coordinator.
+   - P4a: i moduli girano nel ciclo reale e sono osservabili in diagnostics; solo
+     `OccupancySignal` influenza runtime. `LightingSignal` e `RoomStateCorrelationModule`
+     restano signal-only.
+   - P4b: formalizzare il consumo proposal-gated. `LightingSignal` e il segnale di correlazione
+     stanza/stato casa non entrano nei domini; futuri analyzer producono proposte reviewabili.
+   - Tests: verifica che i moduli vengano chiamati nel ciclo di inference, che la sync delle
+     stanze sensorless avvenga su startup/options reload, e che segnali senza consumer non
+     causino errori.
+   - Verification: `context_conditioned_lighting_scene` esiste come reaction type per future
+     proposte lighting. Per house-state correlation il percorso resta il meccanismo
+     approval/candidate dedicato, non un reaction plugin runtime diretto.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `runtime/inference/modules/lighting_pattern.py` | `LightingPatternModule` | Phase P, §10.6 |
+| `runtime/inference/modules/occupancy_inference.py` | `OccupancyInferenceModule` | Phase P |
+| `tests/test_learning_modules_p.py` | Tests P1–P4 | Phase P |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/inference/modules/room_state.py` | Implementare `RoomStateCorrelationModule` (file esiste come stub) |
+| `runtime/domains/occupancy.py` | Consumare `OccupancySignal` per stanze senza sensore |
+| `coordinator.py` | Registrare tre nuovi moduli |
+
+### Acceptance criteria
+
+- [x] `LightingPatternModule` non emette segnali con support < 8 snapshot/slot
+- [x] `RoomStateCorrelationModule` non emette segnali per pattern con support < 15
+- [x] `OccupancyInferenceModule` emette `OccupancySignal` solo per stanze senza sensore
+- [x] `OccupancyDomain` applica `OccupancySignal` con confidence ≥ 0.70 per stanze non sensorizzate
+- [x] `OccupancyDomain` ignora `OccupancySignal` per stanze con almeno un sensore
+- [x] P4a registra i moduli P1-P3 nel coordinator lifecycle
+- [x] `sync_sensorless_rooms()` è chiamato su startup/options reload, non nel loop di analyze
+- [x] `LightingSignal` senza consumer operativo è routed/observable e non causa errori
+- [x] `RoomStateCorrelationModule` resta observable ma non altera `HouseStateDomain`
+- [x] P4b policy: segnali statistici operativi solo via ProposalEngine + review admin
+- [x] Verificato target lighting: `context_conditioned_lighting_scene` esiste
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 20
+
+---
+
+## Phase Q — AnomalyAnalyzer: Statistical Detection Rules
+
+**Spec section:** Phase Q
+**Goal:** implementare `AnomalyAnalyzer` con 15 regole operative configurabili nel current v2 scope; mantenere nel catalogo le 2 regole lighting pianificate ma rinviarle a Phase U / physical light state awareness; servizio `heima.configure_anomaly_rule`.
+**Depends on:** Phase O (security_state, heating_current_temperature), Phase P (snapshot data quality).
+
+### Working slices
+
+1. Q1 — `AnomalyRule` + catalogo + infrastruttura: `DONE`
+   - Definire `AnomalyRule` dataclass con `rule_id`, `enabled`, `severity`, `thresholds`.
+   - Definire catalogo con default thresholds per tutte le 17 regole pianificate.
+   - Implementare caricamento soglie dalle options a ogni `analyze()`.
+   - Implementare almeno una regola reale end-to-end per validare il percorso
+     `AnomalyAnalyzer -> FindingRouter -> installer alert`.
+   - Il servizio `heima.configure_anomaly_rule` è fuori da Q1; resta in Q6.
+2. Q2 — Regole presenza (4): `DONE`
+   - `arrival_time_outlier`, `departure_time_outlier`, `extended_absence`, `presence_pattern_drift`.
+   - `arrival_time_outlier` e `departure_time_outlier` usano transizioni consecutive
+     `anyone_home=False -> True` e `anyone_home=True -> False`; la transizione più recente
+     viene confrontata con la mediana storica delle transizioni precedenti.
+   - `extended_absence` usa il run corrente di `anyone_home=False` e lo confronta con il
+     percentile 90 dei run storici di assenza.
+   - `presence_pattern_drift` confronta il rapporto `anyone_home=True` recente con il baseline
+     dello stesso `(weekday, hour_bucket)`.
+   - Tests: ogni regola copre trigger, supporto insufficiente, condizione normale, override soglia,
+     e regola disabilitata.
+3. Q3 — Regole riscaldamento (3): `DONE`
+   - `heating_setpoint_outlier`, `heating_unresponsive`, `heating_vacation_mismatch`.
+   - Tests: `heating_unresponsive` usa `heating_current_temperature` da Phase O.
+4. Q4 — Regole attività (3): `DONE`
+   - `stove_on_unattended`, `oven_on_unattended`, `appliance_unusual_hour`.
+   - `lights_on_unattended` e `lighting_scene_drift` rimandate a Phase U / physical light state awareness:
+     `HouseSnapshot.lighting_scenes` registra le scene di Heima, non lo stato fisico.
+   - `appliance_unusual_hour` triggera solo se l'attività è attiva nell'ultimo snapshot (option A).
+5. Q5 — Regole security + sensor + cross-domain (5): `DONE`
+   - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+   - Security subset `DONE`: `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`.
+   - Residual subset `DONE`: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+6. Q6 — Servizio `heima.configure_anomaly_rule`: `DONE`
+   - Handler nel coordinator: aggiorna options, prende effetto al prossimo `analyze()`.
+   - Tests: override soglia applicato, regola disabilitata non triggera.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `tests/test_anomaly_analyzer_q.py` | Tests Q1–Q6 | Phase Q |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/analyzers/anomaly.py` | Implementazione completa (sostituisce placeholder) |
+| `services.yaml` | `heima.configure_anomaly_rule` |
+| `coordinator.py` | Handler servizio, passa options aggiornate ad AnomalyAnalyzer |
+
+### Acceptance criteria
+
+- [x] Ogni regola in scope Q triggera su sequenza snapshot costruita ad hoc nel test
+- [x] Regola disabilitata non produce findings
+- [x] Override soglia via `heima.configure_anomaly_rule` applicato al prossimo `analyze()` pass
+- [x] Q1 valida almeno una regola reale end-to-end fino all'installer alert
+- [x] `heating_unresponsive` usa `heating_current_temperature` (Phase O prerequisito verificato)
+- [x] `heating_setpoint_outlier` usa `heating_setpoint` e finestra snapshot-count
+- [x] `heating_vacation_mismatch` usa `security_state`, `heating_setpoint`, e soglia stretta `>`
+- [x] Q2 presence rules usano solo `HouseSnapshot.anyone_home`, slot temporali, e transizioni
+      consecutive
+- [x] `alarm_disarm_unusual_hour` usa `security_state` e transizioni consecutive `armed_* -> disarmed`
+- [x] `alarm_expected_not_armed` usa solo pattern statistici da `security_state` nello stesso slot
+- [x] `sensor_activity_drop` non si sovrappone a `SensorStuck` (snapshot/hour frequency vs timeout assoluto)
+- [x] `ghost_activity` usa `room_occupancy` + `anyone_home` da `HouseSnapshot`
+- [x] `unusual_stillness` usa run di `room_occupancy` invariata con `anyone_home == True`
+- [x] Q4 activity rules usano `HouseSnapshot.detected_activities`; le 2 lighting rules sono
+      deferred a Phase U / physical light state awareness
+- [x] `heima.configure_anomaly_rule` mergea `entry.options["anomaly"]["rules"][rule_id]` senza reload
+- [x] Tutti i test esistenti verdi; i test Q coprono ogni regola operativa, override soglie,
+      regola disabilitata, e percorso end-to-end verso installer alert
+
+---
+
+## Phase R — OutcomeTracker Feedback Positivo + Consolidamento WeekdayStateModule
+
+**Spec section:** Phase R
+**Goal:** feedback loop bidirezionale; downgrade WeekdayStateModule a OBSERVE.
+**Depends on:** Phase E (OutcomeTracker base), Phase P (HouseStateInferenceModule + room correlation wired).
+
+### Working slices
+
+1. R1 — OutcomeTracker `positive_streak` + boost:
+   - Status: `DONE`.
+   - Aggiungere `positive_streak: int` per reaction al fianco del `negative_streak` esistente.
+   - Dopo K=10 consecutivi positivi, chiamare `ProposalEngine.async_boost_confidence(reaction_id, delta=0.05)`.
+   - Azzerare `positive_streak` dopo il boost (non dopo il prossimo negativo).
+   - `positive_streak` si azzera a ogni esito negativo.
+   - Tests: accumulo streak, boost a K=10, reset, no double-boost per stesso cycle.
+2. R2 — `ProposalEngine.async_boost_confidence`:
+   - Status: `DONE`.
+   - Aggiungere `async_boost_confidence(reaction_id, delta) -> None`.
+   - Incrementa la confidence del record proposal approvato per `reaction_id`, cappata a 1.0.
+   - No-op se reaction_id non trovato o proposal non approvata.
+   - Tests: boost applicato, cap a 1.0, no-op su unknown reaction.
+3. R3 — WeekdayStateModule downgrade:
+   - Status: `DONE`.
+   - Modificare `WeekdayStateModule.infer()`: tutti i segnali emessi con `importance=Importance.OBSERVE`.
+   - Verificare che `HouseStateDomain` ignori segnali OBSERVE (già definito in §10.3/§10.8).
+   - Tests: WeekdayStateModule emette OBSERVE; HouseStateDomain non li consuma.
+
+### New files to create
+
+| File | What to implement | Spec ref |
+|---|---|---|
+| `tests/test_outcome_tracker_r.py` | Tests R1–R2 | Phase R |
+| `tests/test_weekday_consolidation_r.py` | Tests R3 | Phase R |
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/outcome_tracker.py` | `positive_streak`, boost trigger a K=10 |
+| `runtime/proposal_engine.py` | `async_boost_confidence(reaction_id, delta)` |
+| `runtime/inference/modules/weekday_state.py` | `importance=Importance.OBSERVE` |
+| `scripts/live_tests/066_positive_outcome_boost_live.py` | Live E2E for accepted proposal confidence boost |
+
+### Acceptance criteria
+
+- [x] `OutcomeTracker` accumula `positive_streak` separato da `negative_streak`
+- [x] Boost inviato a `ProposalEngine` dopo esattamente K=10 positivi consecutivi
+- [x] `positive_streak` azzerato dopo il boost, non dopo il prossimo negativo
+- [x] Nessun double-boost per lo stesso positive streak cycle
+- [x] `async_boost_confidence` cappato a 1.0
+- [x] `WeekdayStateModule` emette `Importance.OBSERVE` (non `SUGGEST`)
+- [x] `HouseStateDomain` non consuma segnali OBSERVE (test di regressione)
+- [x] Live E2E: proposal accettata con `target_reaction_id`, 10 outcome positivi, boost confidence e reset streak
+- [x] Tutti i test esistenti verdi; nuovi test ≥ 12
+
+---
+
+## Phase S — Learning Module Threshold Configurability
+
+**Spec section:** §10.6 (nota "Threshold configurability")
+**Goal:** rendere `min_support` e `confidence_threshold` di ogni modulo parametri del costruttore, passati da `entry.options["learning"]`. Nessun cambiamento ai valori di default. Nessuna UI admin per i threshold.
+**Depends on:** Phase R (feedback loop operativo — permette di osservare se i valori di default sono adeguati prima di rendere i threshold configurabili).
+
+### Motivation
+
+Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti) possono avere slot con supporto insufficiente anche dopo mesi di utilizzo. I threshold configurabili permettono di abbassare `min_support` per ambienti con pochi dati senza cambiare il codice. La policy di auto-tuning (OutcomeTracker-driven) resta fuori scope.
+
+### Working slices
+
+0. S0 — Baseline audit (documentation lock):
+   - Current hardcoded/default thresholds:
+     - `weekday_state`: `min_support=10`, `confidence_threshold=0.40`
+     - `heating_preference`: `min_support=10`, `confidence_threshold=0.40`
+     - `house_state_inference`: `min_support=3`, `confidence_threshold=0.60`
+     - `lighting_pattern`: `min_support=8`, `confidence_threshold=0.65`
+     - `room_state_correlation`: `min_support=15`, `confidence_threshold=0.60`
+     - `occupancy_inference`: `min_support=10`, `confidence_threshold=0.70`
+   - At S0, `house_state_inference`, `lighting_pattern`, `room_state_correlation`, and
+     `occupancy_inference` already have constructor parameters and diagnostics for both values.
+   - At S0, `weekday_state` and `heating_preference` used module-level `_MIN_SUPPORT` and hardcoded
+     `0.40` confidence gates; Phase S adds constructor parameters and diagnostics.
+
+1. S1 — Refactor costruttori:
+   - `WeekdayStateModule(min_support=10, confidence_threshold=0.40)`
+   - `HeatingPreferenceModule(min_support=10, confidence_threshold=0.40)`
+   - Keep existing constructor contracts for:
+     - `HouseStateInferenceModule(min_support=3, confidence_threshold=0.60)`
+     - `LightingPatternModule(min_support=8, confidence_threshold=0.65)`
+     - `RoomStateCorrelationModule(min_support=15, confidence_threshold=0.60)`
+     - `OccupancyInferenceModule(min_support=10, confidence_threshold=0.70)`
+   - Tutti i valori di default invariati rispetto ai valori hardcoded attuali.
+2. S2 — Lettura da `learning_config` nel coordinator:
+   - Leggere `entry.options.get("learning", {})` e passare i valori ai costruttori.
+   - Chiavi di options: `{module_id}_min_support`, `{module_id}_confidence_threshold`.
+   - Se la chiave non esiste in options, usare il default del costruttore.
+   - Parsing conservativo: valori mancanti, non numerici, `None`, o fuori range vengono ignorati
+     e lasciano attivo il default del modulo. Nessuna validazione UI in Phase S.
+3. S3 — `diagnostics()` espone i valori effettivi:
+   - Ogni modulo aggiunge `min_support` e `confidence_threshold` al proprio `diagnostics()`.
+   - Permette di verificare i valori attivi senza accedere alle options.
+   - I moduli che già espongono questi valori restano invariati salvo eventuale test di regressione.
+
+### Implementation order
+
+1. Update `WeekdayStateModule` and `HeatingPreferenceModule` first, because they are the only
+   modules without constructor-configurable thresholds today.
+2. Add a small coordinator helper that extracts per-module numeric thresholds from
+   `entry.options["learning"]`, clamps via each module constructor, and keeps defaults when keys are
+   missing or invalid.
+3. Wire all six module constructors through the helper in `HeimaCoordinator.__init__`.
+4. Add/adjust tests:
+   - module-level tests proving defaults are unchanged;
+   - module-level tests proving custom thresholds affect emission gates;
+   - coordinator wiring test proving options are passed to constructors;
+   - diagnostics tests proving effective values are visible.
+5. Run focused tests first:
+   - `pytest tests/test_inference_modules.py tests/test_learning_modules_p.py tests/test_inference_engine_wiring.py -q`
+   - then full suite or project standard check before closing Phase S.
+
+### Acceptance criteria
+
+- [x] Tutti i moduli accettano `min_support` e `confidence_threshold` come parametri costruttore con default invariati
+- [x] Il coordinator legge da `entry.options["learning"]` e passa i valori ai costruttori
+- [x] `diagnostics()` di ogni modulo espone i valori effettivi di `min_support` e `confidence_threshold`
+- [x] Nessun cambio di comportamento osservabile con options di default
+- [x] Tutti i test esistenti verdi (nessun test deve cambiare i valori di default) — 1362 passed
+
+---
+
+## Phase T — Learning Signal Analyzers
+
+**Spec section:** §10 (inference engine — proposal-gated signal consumption)
+**Goal:** trasformare i segnali statistici maturi (`LightingSignal`, `HouseStateSignal`) in `ReactionProposal` tramite ProposalEngine + review admin. Nessun segnale acquisisce autorità operativa diretta sui domini.
+**Depends on:** Phase P (learning modules attivi e osservabili), Phase S (threshold configurabili — i segnali devono essere misurabili prima di promuoverli a proposal).
+
+### Motivation
+
+`LightingPatternModule` e `RoomStateCorrelationModule` producono segnali osservabili da P4a. Prima di dare loro potere runtime, i segnali passano dal gate umano: l'analyzer emette una `ReactionProposal`, l'admin approva o rifiuta, solo allora diventa regola operativa.
+
+### Working slices
+
+1. T1 — LightingPatternAnalyzer:
+   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
+   - Per ogni `LightingSignal` con confidence stabile, verifica se esiste già una regola configurata per quella stanza + contesto (`house_state`, `hour_bucket`).
+   - Se non esiste, emette `ReactionProposal` con `reaction_type = "context_conditioned_lighting_scene"`.
+   - `origin = "learning_derived"`. Nessun effetto runtime finché non approvata.
+
+2. T2 — HouseStateCorrelationAnalyzer:
+   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
+   - Il segnale da `RoomStateCorrelationModule` compete con calendar, work window, manual override: il proposal va emesso solo quando nessuna sorgente a priorità superiore è attiva al momento dell'osservazione.
+   - **Prerequisito bloccante:** non esiste un `reaction_type` per "house state rule". T2 richiede o un nuovo tipo o una soluzione alternativa — da decidere prima dell'implementazione.
+   - `origin = "learning_derived"`.
+
+### Acceptance criteria
+
+- [ ] `LightingPatternAnalyzer` emette `ReactionProposal` per pattern lighting stabili non già coperti da config admin
+- [ ] `HouseStateCorrelationAnalyzer` emette `ReactionProposal` solo in assenza di sorgenti prioritarie attive
+- [ ] Nessun segnale statistico influenza domini direttamente — tutto passa da ProposalEngine
+- [ ] Tutti i test esistenti verdi
+
+---
+
+## Phase U — Physical Light State Awareness
+
+**Goal:** dare a Heima contezza runtime e storica delle light entity fisicamente accese in HA, indipendentemente dalle scene gestite da Heima. Sblocca la resident card (stato luci live) e le regole anomalia lighting deferred dalla Phase Q.
+**Depends on:** Phase A (plugin framework), Phase Q (catalogo anomaly già definito).
+
+### Motivation
+
+`HouseSnapshot.lighting_scenes` registra le decisioni di Heima (scene applicate), non lo stato fisico delle luci. Se un residente accende una luce manualmente e poi esce, Heima non ne ha traccia. Questa fase aggiunge un layer di osservazione "fisica" per tutte le light entity configurate, senza richiedere il meccanismo generale `monitored_entities` (deferred al Plugin API v3+).
+
+### Working slices
+
+1. U1 — `LightingResult.lights_on`:
+   - Aggiungere `lights_on: dict[str, bool]` (entity_id → is_on) a `LightingResult`.
+   - `LightingDomain.compute()` legge `hass.states.get(entity_id).state == "on"` per tutte
+     le light entity configurate (rooms + lighting_rooms). Entity assente in hass.states → False.
+   - Solo light entity con domain `light.*` (coerente con `_unique_entities` in semantic_policies).
+
+2. U2 — `CanonicalState` e `InferenceContext`:
+   - L'engine scrive `lighting.lights_on` (dict serializzato) in `CanonicalState` dopo la
+     valutazione del LightingDomain.
+   - `InferenceContext` espone `lights_on: dict[str, bool]` per i learning module.
+
+3. U3 — `HouseSnapshot.lights_physically_on`:
+   - Aggiungere `lights_physically_on: dict[str, bool]` a `HouseSnapshot`.
+   - `_record_snapshot_if_changed()` popola il campo da `LightingResult.lights_on`.
+   - Serializzazione/deserializzazione coerente con gli altri campi dict del snapshot.
+
+4. U4 — Lighting anomaly rules:
+   - Implementare `lights_on_unattended` e `lighting_scene_drift` in `AnomalyAnalyzer`,
+     ora che `HouseSnapshot.lights_physically_on` e `lighting_scenes` sono disponibili insieme.
+   - `lights_on_unattended`: trigger se negli ultimi `window` snapshot, almeno una entry in
+     `lights_physically_on` è True AND `anyone_home == False` per `min_observations` snapshot.
+     Defaults: window=6, min_observations=3. Severity: warning.
+   - `lighting_scene_drift`: confronta la scena recente per `(room_id, house_state, hour_bucket)`
+     con la baseline storica da `lighting_scenes`. Diagnostica pura, nessun proposal.
+     Defaults: history_window=1000, min_observations=10, recent_observations=3, baseline_ratio=0.65.
+   - Rimuovere le note "deferred" da Phase Q e dal dev plan.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/plugin_contracts.py` o `runtime/domains/lighting.py` | Aggiungere `lights_on` a `LightingResult` |
+| `runtime/domains/lighting.py` | Leggere stati fisici in `compute()` |
+| `runtime/engine.py` | Scrivere `lighting.lights_on` in `CanonicalState`; popolare `InferenceContext` |
+| `runtime/inference/snapshot_store.py` | Aggiungere `lights_physically_on` a `HouseSnapshot` |
+| `runtime/analyzers/anomaly.py` | Implementare `lights_on_unattended` e `lighting_scene_drift` |
+| `tests/test_anomaly_analyzer_q.py` | Test U4 lighting rules |
+
+### Acceptance criteria
+
+- [ ] `LightingResult.lights_on` riflette stato fisico HA, non le scene Heima
+- [ ] `CanonicalState["lighting.lights_on"]` disponibile dopo ogni ciclo di valutazione
+- [ ] `HouseSnapshot.lights_physically_on` persistito e leggibile dall'anomaly analyzer
+- [ ] `lights_on_unattended` triggera quando almeno una light entity configurata è fisicamente
+      accesa mentre `anyone_home == False`
+- [ ] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`
+- [ ] Tutti i test esistenti verdi; nuovi test ≥ 2 (una per regola lighting)
+
+---
+
+## Phase V — Signal Discovery Pipeline
+
+**Spec section:** `docs/specs/learning/signal_discovery_spec.md`
+**Goal:** discover useful HA entities already present in the installation, classify them with
+rule-based heuristics, and propose additive config patches to the installer. Accepted patches add
+room signals or learning sources to existing options; runtime canonicalization remains owned by
+`EventCanonicalizer`.
+**Depends on:** Phase N (ProposalEngine + installer proposal review), Phase L (auto-discovery
+config-flow patterns).
+
+### Scope guardrails
+
+- Signal discovery does not normalize runtime values. It only proposes options patches.
+- `EventCanonicalizer` remains the only runtime normalizer for `rooms[*].signals`.
+- Discovery runs outside the hot path: coordinator startup and `EVENT_ENTITY_REGISTRY_UPDATED`.
+- Accepted `signal_discovery` proposals must not be written to `options["reactions"]["configured"]`.
+- v2 supports only built-in rule-based classes: room lux, room CO2, room humidity, and media-player
+  learning sources. Plugin classifier APIs and solar/energy packs are deferred to v3.
+
+### Working slices
+
+1. V1 — Inventory and classification:
+   - Add `HAEntityDescriptor`, `SignalSuggestion`, and `SignalOptionsPatch`.
+   - Implement `SignalDiscoveryAudit.run()` over HA entity registry + current states.
+   - Classify supported entities by domain/device_class/unit/area only; no EventStore/history reads.
+   - Map HA area names to existing Heima `room_id` values using the spec heuristic.
+
+2. V2 — Proposal submission:
+   - Add coordinator storage for `_pending_signal_suggestions`.
+   - Submit suggestions to `ProposalEngine` with `analyzer_id = "signal_discovery"` and stable
+     `identity_key = "signal_discovery:{entity_id}"`.
+   - Reuse installer persistent notifications with deduplication.
+
+3. V3 — Accept routing:
+   - Add coordinator review branch for `signal_discovery` proposals.
+   - Guard every config-flow proposal acceptance path so signal discovery never writes configured
+     reactions or labels.
+   - Accept/reject only changes proposal status; options are patched lazily by the coordinator.
+
+4. V4 — Options patch application:
+   - Implement `_async_apply_accepted_signal_patches()`.
+   - Apply one accepted patch per cycle through `async_update_entry`.
+   - Use current options as the idempotency guard: existing `signal_name` or `learning_sources`
+     entity_id means skip.
+
+5. V5 — Triggering and tests:
+   - Run audit at coordinator startup and schedule audit on `EVENT_ENTITY_REGISTRY_UPDATED`.
+   - Add focused tests for classification, room mapping, proposal dedupe, accept routing, options
+     patch idempotency, and reload-safe re-application.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/signal_discovery.py` | Add descriptors, suggestions, patch model, and `SignalDiscoveryAudit` |
+| `coordinator.py` | Store pending suggestions, submit proposals, review signal discovery proposals, apply accepted patches, register triggers |
+| `config_flow/_steps_reaction_proposals.py` | Short-circuit all signal discovery accept paths before reaction config writes |
+| `tests/` | Add unit/integration coverage for V1-V5 behavior |
+
+### Acceptance criteria
+
+- [ ] Supported HA entities are classified only by allowed metadata and mapped to existing Heima rooms
+- [ ] Unmapped or unsupported entities are ignored without persistence
+- [ ] New signal discovery suggestions are submitted once per stable `identity_key`
+- [ ] Accepting a signal discovery proposal never mutates `options["reactions"]["configured"]`
+- [ ] Accepted room-signal patches add to `rooms[*].signals` only when that `signal_name` is absent
+- [ ] Accepted learning-source patches add to `rooms[*].learning_sources` only when that entity_id is absent
+- [ ] Re-running after coordinator restart does not re-apply an already reflected patch
+- [ ] Discovery audit is never called from `infer()` or domain evaluation methods
+- [ ] All existing tests pass; new tests cover classification, routing, and idempotency
 
 ---
 

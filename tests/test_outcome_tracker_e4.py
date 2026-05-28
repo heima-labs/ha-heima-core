@@ -22,6 +22,7 @@ class FakeProposalEngine:
     def __init__(self, existing: ReactionProposal | None = None) -> None:
         self.existing = existing
         self.submitted: list[ReactionProposal] = []
+        self.boosted: list[tuple[str, float]] = []
 
     def proposal_by_identity_key(self, identity_key: str) -> ReactionProposal | None:
         if self.existing is not None and self.existing.identity_key == identity_key:
@@ -31,6 +32,9 @@ class FakeProposalEngine:
     async def async_submit_proposal(self, proposal: ReactionProposal) -> str:
         self.submitted.append(proposal)
         return proposal.proposal_id
+
+    async def async_boost_confidence(self, reaction_id: str, delta: float) -> None:
+        self.boosted.append((reaction_id, delta))
 
 
 def _make_engine():
@@ -74,6 +78,14 @@ def _tracker_with_streak(streak: int) -> OutcomeTracker:
     for index in range(streak):
         tracker.register_pending(_pending("reaction.unreliable", fired_at_ts=float(index)))
         tracker.check_pending([])
+    return tracker
+
+
+def _tracker_with_positive_streak(streak: int) -> OutcomeTracker:
+    tracker = OutcomeTracker(now_provider=lambda: 10.0)
+    for index in range(streak):
+        tracker.register_pending(_pending("reaction.unreliable", fired_at_ts=float(index)))
+        tracker.check_pending([{"event_type": "presence", "data": {"transition": "arrive"}}])
     return tracker
 
 
@@ -161,3 +173,30 @@ async def test_no_proposal_below_threshold() -> None:
     )
 
     assert submitted == []
+
+
+async def test_positive_streak_boosts_confidence_and_resets_streak() -> None:
+    tracker = _tracker_with_positive_streak(OutcomeTracker.POSITIVE_BOOST_THRESHOLD)
+    proposal_engine = FakeProposalEngine()
+    engine = _make_engine()
+    engine.set_outcome_tracker(tracker)
+    engine.set_proposal_engine(proposal_engine)  # type: ignore[arg-type]
+
+    await engine._maybe_boost_reaction_confidence()
+
+    assert proposal_engine.boosted == [
+        ("reaction.unreliable", OutcomeTracker.POSITIVE_CONFIDENCE_BOOST)
+    ]
+    assert tracker.positive_streak("reaction.unreliable") == 0
+
+
+async def test_positive_streak_below_threshold_does_not_boost() -> None:
+    tracker = _tracker_with_positive_streak(OutcomeTracker.POSITIVE_BOOST_THRESHOLD - 1)
+    proposal_engine = FakeProposalEngine()
+    engine = _make_engine()
+    engine.set_outcome_tracker(tracker)
+    engine.set_proposal_engine(proposal_engine)  # type: ignore[arg-type]
+
+    await engine._maybe_boost_reaction_confidence()
+
+    assert proposal_engine.boosted == []

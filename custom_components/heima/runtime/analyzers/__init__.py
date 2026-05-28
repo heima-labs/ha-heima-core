@@ -2,6 +2,7 @@
 
 from ..plugin_contracts import IBehaviorAnalyzer
 from .activity import ActivityAnalyzer
+from .anomaly import ANOMALY_RULE_CATALOG, AnomalyAnalyzer, AnomalyRule
 from .base import IPatternAnalyzer, ReactionProposal
 from .cross_domain import (
     CompositePatternCatalogAnalyzer,
@@ -34,6 +35,9 @@ def builtin_learning_pattern_plugin_descriptors() -> tuple[LearningPatternPlugin
 __all__ = [
     "IPatternAnalyzer",
     "ActivityAnalyzer",
+    "AnomalyAnalyzer",
+    "AnomalyRule",
+    "ANOMALY_RULE_CATALOG",
     "ReactionProposal",
     "AdminAuthoredTemplateDescriptor",
     "LearningPatternPluginDescriptor",
