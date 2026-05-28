@@ -105,6 +105,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | S | Learning Module Threshold Configurability | `NOT STARTED` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
+| V | Signal Discovery Pipeline | `NOT STARTED` | N, L |
 
 ---
 
@@ -1753,6 +1754,79 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
       accesa mentre `anyone_home == False`
 - [ ] `lighting_scene_drift` confronta scene recenti vs baseline storica per slot `(room_id, house_state, hour_bucket)`
 - [ ] Tutti i test esistenti verdi; nuovi test ≥ 2 (una per regola lighting)
+
+---
+
+## Phase V — Signal Discovery Pipeline
+
+**Spec section:** `docs/specs/learning/signal_discovery_spec.md`
+**Goal:** discover useful HA entities already present in the installation, classify them with
+rule-based heuristics, and propose additive config patches to the installer. Accepted patches add
+room signals or learning sources to existing options; runtime canonicalization remains owned by
+`EventCanonicalizer`.
+**Depends on:** Phase N (ProposalEngine + installer proposal review), Phase L (auto-discovery
+config-flow patterns).
+
+### Scope guardrails
+
+- Signal discovery does not normalize runtime values. It only proposes options patches.
+- `EventCanonicalizer` remains the only runtime normalizer for `rooms[*].signals`.
+- Discovery runs outside the hot path: coordinator startup and `EVENT_ENTITY_REGISTRY_UPDATED`.
+- Accepted `signal_discovery` proposals must not be written to `options["reactions"]["configured"]`.
+- v2 supports only built-in rule-based classes: room lux, room CO2, room humidity, and media-player
+  learning sources. Plugin classifier APIs and solar/energy packs are deferred to v3.
+
+### Working slices
+
+1. V1 — Inventory and classification:
+   - Add `HAEntityDescriptor`, `SignalSuggestion`, and `SignalOptionsPatch`.
+   - Implement `SignalDiscoveryAudit.run()` over HA entity registry + current states.
+   - Classify supported entities by domain/device_class/unit/area only; no EventStore/history reads.
+   - Map HA area names to existing Heima `room_id` values using the spec heuristic.
+
+2. V2 — Proposal submission:
+   - Add coordinator storage for `_pending_signal_suggestions`.
+   - Submit suggestions to `ProposalEngine` with `analyzer_id = "signal_discovery"` and stable
+     `identity_key = "signal_discovery:{entity_id}"`.
+   - Reuse installer persistent notifications with deduplication.
+
+3. V3 — Accept routing:
+   - Add coordinator review branch for `signal_discovery` proposals.
+   - Guard every config-flow proposal acceptance path so signal discovery never writes configured
+     reactions or labels.
+   - Accept/reject only changes proposal status; options are patched lazily by the coordinator.
+
+4. V4 — Options patch application:
+   - Implement `_async_apply_accepted_signal_patches()`.
+   - Apply one accepted patch per cycle through `async_update_entry`.
+   - Use current options as the idempotency guard: existing `signal_name` or `learning_sources`
+     entity_id means skip.
+
+5. V5 — Triggering and tests:
+   - Run audit at coordinator startup and schedule audit on `EVENT_ENTITY_REGISTRY_UPDATED`.
+   - Add focused tests for classification, room mapping, proposal dedupe, accept routing, options
+     patch idempotency, and reload-safe re-application.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/signal_discovery.py` | Add descriptors, suggestions, patch model, and `SignalDiscoveryAudit` |
+| `coordinator.py` | Store pending suggestions, submit proposals, review signal discovery proposals, apply accepted patches, register triggers |
+| `config_flow/_steps_reaction_proposals.py` | Short-circuit all signal discovery accept paths before reaction config writes |
+| `tests/` | Add unit/integration coverage for V1-V5 behavior |
+
+### Acceptance criteria
+
+- [ ] Supported HA entities are classified only by allowed metadata and mapped to existing Heima rooms
+- [ ] Unmapped or unsupported entities are ignored without persistence
+- [ ] New signal discovery suggestions are submitted once per stable `identity_key`
+- [ ] Accepting a signal discovery proposal never mutates `options["reactions"]["configured"]`
+- [ ] Accepted room-signal patches add to `rooms[*].signals` only when that `signal_name` is absent
+- [ ] Accepted learning-source patches add to `rooms[*].learning_sources` only when that entity_id is absent
+- [ ] Re-running after coordinator restart does not re-apply an already reflected patch
+- [ ] Discovery audit is never called from `infer()` or domain evaluation methods
+- [ ] All existing tests pass; new tests cover classification, routing, and idempotency
 
 ---
 

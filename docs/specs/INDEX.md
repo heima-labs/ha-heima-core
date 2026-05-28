@@ -64,6 +64,7 @@ Related practical guides live outside this tree:
 - `learning/context_conditioned_lighting_learning_spec.md` — learned context-scoped lighting proposals and review contract
 - `learning/admin_authored_automation_spec.md` — admin-requested automations and follow-up tuning
 - `learning/inference_engine_spec.md` — inference v2 draft
+- `learning/signal_discovery_spec.md` — Phase V: rule-based HA entity classification and signal suggestion pipeline
 
 ## Adapters
 
