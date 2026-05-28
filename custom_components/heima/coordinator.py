@@ -105,6 +105,49 @@ _ENVIRONMENTAL_ENTITY_TOKENS = (
 )
 
 
+def _learning_module_threshold_kwargs(
+    learning_config: dict[str, Any],
+    module_id: str,
+    *,
+    confidence_threshold: bool = True,
+) -> dict[str, Any]:
+    """Return valid constructor threshold overrides for one learning module."""
+    kwargs: dict[str, Any] = {}
+    min_support = _positive_int_option(learning_config.get(f"{module_id}_min_support"))
+    if min_support is not None:
+        kwargs["min_support"] = min_support
+    if confidence_threshold:
+        threshold = _unit_float_option(
+            learning_config.get(f"{module_id}_confidence_threshold")
+        )
+        if threshold is not None:
+            kwargs["confidence_threshold"] = threshold
+    return kwargs
+
+
+def _positive_int_option(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed_float = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not parsed_float.is_integer():
+        return None
+    parsed = int(parsed_float)
+    return parsed if parsed >= 1 else None
+
+
+def _unit_float_option(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0.0 <= parsed <= 1.0 else None
+
+
 class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     """Owns the Heima runtime engine instance."""
 
@@ -184,13 +227,44 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             anomaly_handler=self._async_handle_anomaly_finding,
         )
         self._approval_store = ApprovalStore(hass)
-        self._weekday_module = WeekdayStateModule()
-        self._heating_module = HeatingPreferenceModule()
-        self._house_state_module = HouseStateInferenceModule()
+        learning_config = dict(entry.options.get("learning", {}))
+        self._weekday_module = WeekdayStateModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                WeekdayStateModule.module_id,
+            )
+        )
+        self._heating_module = HeatingPreferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                HeatingPreferenceModule.module_id,
+            )
+        )
+        self._house_state_module = HouseStateInferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                HouseStateInferenceModule.module_id,
+            )
+        )
         self._activity_module = ActivityInferenceModule()
-        self._lighting_pattern_module = LightingPatternModule()
-        self._room_state_correlation_module = RoomStateCorrelationModule()
-        self._occupancy_inference_module = OccupancyInferenceModule()
+        self._lighting_pattern_module = LightingPatternModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                LightingPatternModule.module_id,
+            )
+        )
+        self._room_state_correlation_module = RoomStateCorrelationModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                RoomStateCorrelationModule.module_id,
+            )
+        )
+        self._occupancy_inference_module = OccupancyInferenceModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                OccupancyInferenceModule.module_id,
+            )
+        )
         self._sync_occupancy_inference_rooms()
         self.engine.set_snapshot_store(self._house_snapshot_store)
         self.engine.register_learning_module(self._weekday_module)

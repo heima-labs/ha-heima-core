@@ -2119,8 +2119,8 @@ class HeimaEngine:
             ],
             "inference_signals": self._signal_bucket_diagnostics(),
             "outcome_tracker": (
-                self._outcome_tracker.diagnostics()
-                if self._outcome_tracker is not None
+                outcome_tracker.diagnostics()
+                if (outcome_tracker := getattr(self, "_outcome_tracker", None)) is not None
                 else {}
             ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},

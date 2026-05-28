@@ -424,6 +424,25 @@ async def test_weekday_state_no_signal_below_min_support() -> None:
 
 
 @pytest.mark.asyncio
+async def test_weekday_state_uses_constructor_thresholds() -> None:
+    module = WeekdayStateModule(min_support=5, confidence_threshold=0.80)
+    snapshots = [_snapshot(weekday=0, minute_of_day=600, house_state="home")] * 3
+    snapshots.extend(
+        _snapshot(weekday=0, minute_of_day=600, house_state="away")
+        for _ in range(2)
+    )
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(weekday=0, minute_of_day=600)) == []
+
+    permissive = WeekdayStateModule(min_support=5, confidence_threshold=0.60)
+    await permissive.analyze(_FakeStore(snapshots))
+    signals = permissive.infer(_context(weekday=0, minute_of_day=600))
+    assert len(signals) == 1
+    assert signals[0].confidence == 0.6
+
+
+@pytest.mark.asyncio
 async def test_weekday_state_no_signal_for_unknown_slot() -> None:
     module = WeekdayStateModule()
     snapshots = [_snapshot(weekday=0, minute_of_day=600, house_state="home")] * 10
@@ -505,6 +524,8 @@ async def test_weekday_state_diagnostics() -> None:
     assert diag["module_id"] == "weekday_state"
     assert diag["ready"] is True
     assert diag["slot_count"] >= 1
+    assert diag["min_support"] == 10
+    assert diag["confidence_threshold"] == 0.4
 
 
 # ─── HeatingPreferenceModule ──────────────────────────────────────────────────
@@ -536,6 +557,19 @@ async def test_heating_preference_no_signal_below_min_support() -> None:
 
     signals = module.infer(_context(previous_house_state="home"))
     assert signals == []
+
+
+@pytest.mark.asyncio
+async def test_heating_preference_uses_constructor_thresholds() -> None:
+    module = HeatingPreferenceModule(min_support=20, confidence_threshold=0.40)
+    snapshots = [_snapshot(house_state="home", heating_setpoint=20.5)] * 10
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.infer(_context(previous_house_state="home")) == []
+
+    permissive = HeatingPreferenceModule(min_support=10, confidence_threshold=0.40)
+    await permissive.analyze(_FakeStore(snapshots))
+    assert len(permissive.infer(_context(previous_house_state="home"))) == 1
 
 
 @pytest.mark.asyncio
@@ -597,6 +631,8 @@ async def test_heating_preference_diagnostics() -> None:
     assert diag["module_id"] == "heating_preference"
     assert diag["ready"] is True
     assert diag["state_count"] >= 1
+    assert diag["min_support"] == 10
+    assert diag["confidence_threshold"] == 0.4
 
 
 # ─── HouseStateInferenceModule ────────────────────────────────────────────────

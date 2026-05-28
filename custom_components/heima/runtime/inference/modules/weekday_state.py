@@ -9,6 +9,7 @@ from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import HouseStateSignal, Importance
 
 _MIN_SUPPORT = 10
+_CONFIDENCE_THRESHOLD = 0.40
 
 
 class WeekdayStateModule(HeimaLearningModule):
@@ -16,7 +17,14 @@ class WeekdayStateModule(HeimaLearningModule):
 
     module_id = "weekday_state"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        min_support: int = _MIN_SUPPORT,
+        confidence_threshold: float = _CONFIDENCE_THRESHOLD,
+    ) -> None:
+        self._min_support = max(1, int(min_support))
+        self._confidence_threshold = max(0.0, min(float(confidence_threshold), 1.0))
         # (weekday, hour_bucket) -> (best_state, total, probability)
         self._slots: dict[tuple[int, int], tuple[str, int, float]] = {}
         self._ready = False
@@ -45,10 +53,10 @@ class WeekdayStateModule(HeimaLearningModule):
         if slot is None:
             return []
         best_state, total, probability = slot
-        if total < _MIN_SUPPORT:
+        if total < self._min_support:
             return []
-        confidence = probability * min(1.0, total / _MIN_SUPPORT)
-        if confidence < 0.40:
+        confidence = probability * min(1.0, total / self._min_support)
+        if confidence < self._confidence_threshold:
             return []
         return [
             HouseStateSignal(
@@ -66,4 +74,6 @@ class WeekdayStateModule(HeimaLearningModule):
             "module_id": self.module_id,
             "ready": self._ready,
             "slot_count": len(self._slots),
+            "min_support": self._min_support,
+            "confidence_threshold": self._confidence_threshold,
         }

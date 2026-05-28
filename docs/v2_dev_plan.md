@@ -102,7 +102,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | P | Learning Modules D2: Lighting, Room Correlation, Occupancy | `DONE` | D, F |
 | Q | AnomalyAnalyzer: Statistical Detection Rules | `DONE` | O, P |
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
-| S | Learning Module Threshold Configurability | `NOT STARTED` | R |
+| S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
 | V | Signal Discovery Pipeline | `NOT STARTED` | N, L |
@@ -111,12 +111,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation.
-**Active phase:** Phase S — Learning Module Threshold Configurability (`NOT STARTED`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability.
+**Active phase:** Phase V — Signal Discovery Pipeline (`NOT STARTED`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Discuss Phase S scope and implementation plan.
+Implement Phase V — Signal Discovery Pipeline, starting with V1 inventory and classification.
 
 ### Current Working Notes
 
@@ -1645,10 +1645,10 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
      - `lighting_pattern`: `min_support=8`, `confidence_threshold=0.65`
      - `room_state_correlation`: `min_support=15`, `confidence_threshold=0.60`
      - `occupancy_inference`: `min_support=10`, `confidence_threshold=0.70`
-   - `house_state_inference`, `lighting_pattern`, `room_state_correlation`, and
+   - At S0, `house_state_inference`, `lighting_pattern`, `room_state_correlation`, and
      `occupancy_inference` already have constructor parameters and diagnostics for both values.
-   - `weekday_state` and `heating_preference` still use module-level `_MIN_SUPPORT` and hardcoded
-     `0.40` confidence gates; they need constructor parameters and diagnostics.
+   - At S0, `weekday_state` and `heating_preference` used module-level `_MIN_SUPPORT` and hardcoded
+     `0.40` confidence gates; Phase S adds constructor parameters and diagnostics.
 
 1. S1 — Refactor costruttori:
    - `WeekdayStateModule(min_support=10, confidence_threshold=0.40)`
@@ -1689,11 +1689,11 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 
 ### Acceptance criteria
 
-- [ ] Tutti i moduli accettano `min_support` e `confidence_threshold` come parametri costruttore con default invariati
-- [ ] Il coordinator legge da `entry.options["learning"]` e passa i valori ai costruttori
-- [ ] `diagnostics()` di ogni modulo espone i valori effettivi di `min_support` e `confidence_threshold`
-- [ ] Nessun cambio di comportamento osservabile con options di default
-- [ ] Tutti i test esistenti verdi (nessun test deve cambiare i valori di default)
+- [x] Tutti i moduli accettano `min_support` e `confidence_threshold` come parametri costruttore con default invariati
+- [x] Il coordinator legge da `entry.options["learning"]` e passa i valori ai costruttori
+- [x] `diagnostics()` di ogni modulo espone i valori effettivi di `min_support` e `confidence_threshold`
+- [x] Nessun cambio di comportamento osservabile con options di default
+- [x] Tutti i test esistenti verdi (nessun test deve cambiare i valori di default) — 1362 passed
 
 ---
 
