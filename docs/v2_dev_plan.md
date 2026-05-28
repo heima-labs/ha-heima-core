@@ -1637,21 +1637,55 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 
 ### Working slices
 
+0. S0 — Baseline audit (documentation lock):
+   - Current hardcoded/default thresholds:
+     - `weekday_state`: `min_support=10`, `confidence_threshold=0.40`
+     - `heating_preference`: `min_support=10`, `confidence_threshold=0.40`
+     - `house_state_inference`: `min_support=3`, `confidence_threshold=0.60`
+     - `lighting_pattern`: `min_support=8`, `confidence_threshold=0.65`
+     - `room_state_correlation`: `min_support=15`, `confidence_threshold=0.60`
+     - `occupancy_inference`: `min_support=10`, `confidence_threshold=0.70`
+   - `house_state_inference`, `lighting_pattern`, `room_state_correlation`, and
+     `occupancy_inference` already have constructor parameters and diagnostics for both values.
+   - `weekday_state` and `heating_preference` still use module-level `_MIN_SUPPORT` and hardcoded
+     `0.40` confidence gates; they need constructor parameters and diagnostics.
+
 1. S1 — Refactor costruttori:
-   - `WeekdayStateModule(min_support=10)`
-   - `RoomStateCorrelationModule(min_support=15, confidence_threshold=0.60)`
-   - `LightingPatternModule(min_support=8, confidence_threshold=0.65)`
-   - `HouseStateInferenceModule(min_support=20, confidence_threshold=0.60)`
-   - `HeatingPreferenceModule(min_support=10)`
-   - `OccupancyInferenceModule(min_support=10, confidence_threshold=0.70)`
+   - `WeekdayStateModule(min_support=10, confidence_threshold=0.40)`
+   - `HeatingPreferenceModule(min_support=10, confidence_threshold=0.40)`
+   - Keep existing constructor contracts for:
+     - `HouseStateInferenceModule(min_support=3, confidence_threshold=0.60)`
+     - `LightingPatternModule(min_support=8, confidence_threshold=0.65)`
+     - `RoomStateCorrelationModule(min_support=15, confidence_threshold=0.60)`
+     - `OccupancyInferenceModule(min_support=10, confidence_threshold=0.70)`
    - Tutti i valori di default invariati rispetto ai valori hardcoded attuali.
 2. S2 — Lettura da `learning_config` nel coordinator:
    - Leggere `entry.options.get("learning", {})` e passare i valori ai costruttori.
    - Chiavi di options: `{module_id}_min_support`, `{module_id}_confidence_threshold`.
    - Se la chiave non esiste in options, usare il default del costruttore.
+   - Parsing conservativo: valori mancanti, non numerici, `None`, o fuori range vengono ignorati
+     e lasciano attivo il default del modulo. Nessuna validazione UI in Phase S.
 3. S3 — `diagnostics()` espone i valori effettivi:
    - Ogni modulo aggiunge `min_support` e `confidence_threshold` al proprio `diagnostics()`.
    - Permette di verificare i valori attivi senza accedere alle options.
+   - I moduli che già espongono questi valori restano invariati salvo eventuale test di regressione.
+
+### Implementation order
+
+1. Update `WeekdayStateModule` and `HeatingPreferenceModule` first, because they are the only
+   modules without constructor-configurable thresholds today.
+2. Add a small coordinator helper that extracts per-module numeric thresholds from
+   `entry.options["learning"]`, clamps via each module constructor, and keeps defaults when keys are
+   missing or invalid.
+3. Wire all six module constructors through the helper in `HeimaCoordinator.__init__`.
+4. Add/adjust tests:
+   - module-level tests proving defaults are unchanged;
+   - module-level tests proving custom thresholds affect emission gates;
+   - coordinator wiring test proving options are passed to constructors;
+   - diagnostics tests proving effective values are visible.
+5. Run focused tests first:
+   - `pytest tests/test_inference_modules.py tests/test_learning_modules_p.py tests/test_inference_engine_wiring.py -q`
+   - then full suite or project standard check before closing Phase S.
 
 ### Acceptance criteria
 
