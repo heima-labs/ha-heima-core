@@ -105,21 +105,68 @@ These constraints must never be violated. See spec §16 for rationale.
 | S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
-| V | Signal Discovery Pipeline | `NOT STARTED` | N, L |
+| V | Signal Discovery Pipeline | `DONE` | N, L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability.
-**Active phase:** Phase V — Signal Discovery Pipeline (`NOT STARTED`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase V — Signal Discovery Pipeline.
+**Active phase:** Phase U — Physical Light State Awareness (`NOT STARTED`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Implement Phase V — Signal Discovery Pipeline, starting with V1 inventory and classification.
+Discuss Phase U — Physical Light State Awareness scope and implementation plan.
 
 ### Current Working Notes
 
+- Current slice: Phase V / V1 complete.
+  - Added dedicated `runtime/signal_discovery.py` with `HAEntityDescriptor`,
+    `SignalOptionsPatch`, `SignalSuggestion`, and `SignalDiscoveryAudit`.
+  - V1 classifies `sensor.illuminance`, `sensor.carbon_dioxide`, `sensor.humidity`, and
+    `media_player.*` into options patches only; it does not touch runtime normalization.
+  - V1 maps HA area names to existing Heima room IDs via the spec heuristic and skips unsupported,
+    unmapped, duplicate, or already-configured suggestions.
+  - V1 limits suggestions to 50 sorted entity IDs per audit run.
+  - Verification: `pytest tests/test_signal_discovery.py -q` and
+    `ruff check custom_components/heima/runtime/signal_discovery.py tests/test_signal_discovery.py`.
+- Current slice: Phase V / V2 complete.
+  - Coordinator now owns `SignalDiscoveryAudit` and `_pending_signal_suggestions`.
+  - `_async_evaluate_signal_discovery()` submits pending suggestions to `ProposalEngine` as
+    `ReactionProposal(analyzer_id="signal_discovery", reaction_type="signal_discovery")`.
+  - Signal discovery proposals use `followup_kind="config_suggestion"` and serialize
+    `SignalOptionsPatch` into `suggested_reaction_config`.
+  - Existing proposal identities are respected through `proposal_by_identity_key()`.
+  - New suggestions fire installer persistent notifications with stable
+    `heima_installer_signal_discovery_*` notification IDs.
+  - Verification: `pytest tests/test_signal_discovery.py -q`.
+- Current slice: Phase V / V3 complete.
+  - `heima.approve_proposal` now routes `signal_discovery` proposals through
+    `async_review_signal_discovery_proposal()`.
+  - Options flow proposal review accepts/rejects signal discovery proposals without writing to
+    `options["reactions"]["configured"]` or reaction labels.
+  - Follow-up action-configuration path has a defensive signal discovery guard before any reaction
+    config write.
+  - `SIGNAL_DISCOVERY_ANALYZER_ID` and `SIGNAL_DISCOVERY_REACTION_TYPE` live in `const.py`.
+  - Verification: focused signal discovery and options-flow tests.
+- Current slice: Phase V / V4 complete.
+  - `ProposalEngine.accepted_proposals()` exposes accepted proposals for coordinator-side patch
+    application.
+  - `SignalOptionsPatch.from_dict()` validates accepted proposal payloads.
+  - `apply_signal_options_patch()` performs additive, idempotent options merges for
+    `rooms[*].signals` and `rooms[*].learning_sources`.
+  - `_async_apply_accepted_signal_patches()` applies at most one accepted signal discovery patch
+    per coordinator cycle through `async_update_entry`.
+  - Existing options are the idempotency guard; already reflected patches are skipped after restart.
+  - Verification: focused signal discovery and proposal-engine tests.
+- Current slice: Phase V / V5 complete.
+  - Startup and options reload run signal discovery audit and evaluate resulting suggestions.
+  - Coordinator builds `HAEntityDescriptor` values from HA entity registry, device registry, area
+    registry, and current states.
+  - Coordinator subscribes to `EVENT_ENTITY_REGISTRY_UPDATED` and schedules an off-cycle audit via
+    `async_call_later(0, ...)`.
+  - Added `async_run_signal_discovery()` for explicit/testable audit execution.
+  - Phase V is complete; next planned development phase is U (Physical Light State Awareness).
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.

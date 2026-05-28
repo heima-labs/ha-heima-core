@@ -12,6 +12,8 @@ from custom_components.heima.const import (
     DEFAULT_CALENDAR_CACHE_TTL_HOURS,
     DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
     DOMAIN,
+    SIGNAL_DISCOVERY_ANALYZER_ID,
+    SIGNAL_DISCOVERY_REACTION_TYPE,
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
@@ -2067,6 +2069,94 @@ async def test_proposals_step_rejects_activity_context_as_installer():
         approved_by="installer",
     )
     proposal_engine.async_reject_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_reviews_signal_discovery_without_reaction_config():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        description="Entity sensor.studio_lux can be added as room_lux for room 'studio'.",
+        confidence=0.95,
+        origin="admin_authored",
+        followup_kind="config_suggestion",
+        identity_key="signal_discovery:sensor.studio_lux",
+        suggested_reaction_config={
+            "room_id": "studio",
+            "role": "room_signal",
+            "payload": {"signal_name": "room_lux", "entity_id": "sensor.studio_lux"},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_signal_discovery_proposal=review,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-signal",
+        decision="approved",
+    )
+    proposal_engine.async_accept_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_rejects_signal_discovery_without_reaction_config():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        description="Entity sensor.studio_lux can be added as room_lux for room 'studio'.",
+        confidence=0.95,
+        origin="admin_authored",
+        followup_kind="config_suggestion",
+        identity_key="signal_discovery:sensor.studio_lux",
+        suggested_reaction_config={"room_id": "studio"},
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_signal_discovery_proposal=review,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "reject"})
+
+    assert result["type"] == "menu"
+    review.assert_awaited_once_with(
+        "proposal-signal",
+        decision="rejected",
+    )
+    proposal_engine.async_reject_proposal.assert_not_awaited()
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 
 @pytest.mark.asyncio

@@ -50,7 +50,12 @@ class ReactionProposal:
     description: str = ""
     confidence: float = 0.0
     origin: Literal["learned", "admin_authored"] = "learned"
-    followup_kind: Literal["discovery", "tuning_suggestion", "improvement"] = "discovery"
+    followup_kind: Literal[
+        "discovery",
+        "tuning_suggestion",
+        "improvement",
+        "config_suggestion",
+    ] = "discovery"
     status: Literal["pending", "accepted", "rejected"] = "pending"
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -95,7 +100,12 @@ class ReactionProposal:
         if origin not in {"learned", "admin_authored"}:
             origin = "learned"
         followup_kind = str(raw.get("followup_kind") or "discovery")
-        if followup_kind not in {"discovery", "tuning_suggestion", "improvement"}:
+        if followup_kind not in {
+            "discovery",
+            "tuning_suggestion",
+            "improvement",
+            "config_suggestion",
+        }:
             followup_kind = "discovery"
         status = str(raw.get("status") or "pending")
         if status not in {"pending", "accepted", "rejected"}:
