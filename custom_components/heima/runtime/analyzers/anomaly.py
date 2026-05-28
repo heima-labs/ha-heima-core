@@ -88,6 +88,8 @@ class AnomalyAnalyzer:
             findings.extend(self._evaluate_stove_on_unattended(snapshot_store, rules))
             findings.extend(self._evaluate_oven_on_unattended(snapshot_store, rules))
             findings.extend(self._evaluate_appliance_unusual_hour(snapshot_store, rules))
+            findings.extend(self._evaluate_lights_on_unattended(snapshot_store, rules))
+            findings.extend(self._evaluate_lighting_scene_drift(snapshot_store, rules))
             findings.extend(self._evaluate_alarm_disarm_unusual_hour(snapshot_store, rules))
             findings.extend(self._evaluate_alarm_expected_not_armed(snapshot_store, rules))
             findings.extend(self._evaluate_sensor_activity_drop(snapshot_store, rules))
@@ -480,6 +482,138 @@ class AnomalyAnalyzer:
                     "current_hour": current_hour,
                     "baseline_hour": round(baseline_hour, 3),
                     "distance_hours": round(distance, 3),
+                },
+            )
+            findings.append(_finding(self.analyzer_id, signal))
+        return findings
+
+    def _evaluate_lights_on_unattended(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["lights_on_unattended"]
+        if not rule.enabled:
+            return []
+        min_observations = _threshold_int(rule, "min_observations", 3)
+        window = max(min_observations, _threshold_int(rule, "window", 6))
+        snapshots = snapshot_store.snapshots(limit=window)
+        unattended = [
+            snapshot
+            for snapshot in snapshots
+            if not bool(getattr(snapshot, "anyone_home", False)) and _lit_entities(snapshot)
+        ]
+        if len(unattended) < min_observations:
+            return []
+
+        entity_ids = sorted(
+            {
+                entity_id
+                for snapshot in unattended
+                for entity_id in _lit_entities(snapshot)
+            }
+        )
+        confidence = min(1.0, len(unattended) / max(min_observations * 2, 1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Lights were physically on while nobody was home "
+                f"in {len(unattended)} recent snapshots."
+            ),
+            confidence=round(confidence, 3),
+            context={
+                "rule_id": rule.rule_id,
+                "window": window,
+                "min_observations": min_observations,
+                "unattended_observation_count": len(unattended),
+                "snapshot_count": len(snapshots),
+                "entity_ids": entity_ids,
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
+    def _evaluate_lighting_scene_drift(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["lighting_scene_drift"]
+        if not rule.enabled:
+            return []
+        history_window = _threshold_int(rule, "history_window", 1000)
+        min_observations = _threshold_int(rule, "min_observations", 10)
+        recent_observations = _threshold_int(rule, "recent_observations", 3)
+        baseline_ratio_threshold = _threshold_float(rule, "baseline_ratio", 0.65)
+        snapshots = snapshot_store.snapshots(
+            limit=max(history_window, min_observations + recent_observations)
+        )
+        if not snapshots:
+            return []
+
+        current = snapshots[-1]
+        current_scenes = _safe_dict(getattr(current, "lighting_scenes", {}))
+        current_house_state = str(getattr(current, "house_state", "") or "")
+        current_hour = int(getattr(current, "minute_of_day", 0) or 0) // 60
+        findings: list[BehaviorFinding] = []
+        for scene_key, current_scene_raw in sorted(current_scenes.items()):
+            scene_name = str(current_scene_raw or "").strip()
+            if not scene_name:
+                continue
+
+            matching = [
+                snapshot
+                for snapshot in snapshots
+                if str(getattr(snapshot, "house_state", "") or "") == current_house_state
+                and int(getattr(snapshot, "minute_of_day", 0) or 0) // 60 == current_hour
+                and scene_key in _safe_dict(getattr(snapshot, "lighting_scenes", {}))
+            ]
+            if len(matching) < min_observations + recent_observations:
+                continue
+
+            recent = matching[-recent_observations:]
+            baseline = matching[:-recent_observations]
+            if len(baseline) < min_observations:
+                continue
+            recent_scene_names = [
+                str(_safe_dict(getattr(snapshot, "lighting_scenes", {})).get(scene_key) or "")
+                for snapshot in recent
+            ]
+            if not recent_scene_names or any(name != scene_name for name in recent_scene_names):
+                continue
+
+            baseline_scene_names = [
+                str(_safe_dict(getattr(snapshot, "lighting_scenes", {})).get(scene_key) or "")
+                for snapshot in baseline
+            ]
+            baseline_scene, baseline_ratio = _dominant_ratio(baseline_scene_names)
+            if not baseline_scene:
+                continue
+            if baseline_scene == scene_name:
+                continue
+            if baseline_ratio < baseline_ratio_threshold:
+                continue
+
+            signal = AnomalySignal(
+                anomaly_type=rule.rule_id,
+                severity=_severity(rule.severity),
+                description=(
+                    "Lighting scene drifted for a usual house-state/time slot: "
+                    f"{scene_key} is now '{scene_name}' instead of baseline '{baseline_scene}'."
+                ),
+                confidence=round(min(1.0, baseline_ratio), 3),
+                context={
+                    "rule_id": rule.rule_id,
+                    "scene_key": str(scene_key),
+                    "house_state": current_house_state,
+                    "hour_bucket": current_hour,
+                    "current_scene": scene_name,
+                    "baseline_scene": baseline_scene,
+                    "baseline_ratio": round(baseline_ratio, 3),
+                    "baseline_ratio_threshold": baseline_ratio_threshold,
+                    "baseline_snapshot_count": len(baseline),
+                    "recent_snapshot_count": len(recent),
+                    "history_window": history_window,
                 },
             )
             findings.append(_finding(self.analyzer_id, signal))
@@ -942,6 +1076,18 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 8,
             "delta_hours": 4.0,
         }
+    elif rule_id == "lights_on_unattended":
+        thresholds = {
+            "window": 6,
+            "min_observations": 3,
+        }
+    elif rule_id == "lighting_scene_drift":
+        thresholds = {
+            "history_window": 1000,
+            "min_observations": 10,
+            "recent_observations": 3,
+            "baseline_ratio": 0.65,
+        }
     elif rule_id == "alarm_disarm_unusual_hour":
         thresholds = {
             "window": 1000,
@@ -1123,6 +1269,27 @@ def _activity_set(snapshot: Any) -> set[str]:
         for activity in getattr(snapshot, "detected_activities", ()) or ()
         if str(activity or "").strip()
     }
+
+
+def _lit_entities(snapshot: Any) -> list[str]:
+    return sorted(
+        str(entity_id)
+        for entity_id, is_on in _safe_dict(getattr(snapshot, "lights_physically_on", {})).items()
+        if bool(is_on) and str(entity_id).startswith("light.")
+    )
+
+
+def _dominant_ratio(values: list[str]) -> tuple[str, float]:
+    counts: dict[str, int] = {}
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized:
+            continue
+        counts[normalized] = counts.get(normalized, 0) + 1
+    if not counts:
+        return "", 0.0
+    dominant, count = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
+    return dominant, count / sum(counts.values())
 
 
 def _same_room_occupancy(left: Any, right: Any) -> bool:

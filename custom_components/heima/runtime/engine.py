@@ -977,12 +977,14 @@ class HeimaEngine:
             raise RuntimeError("Security plugin returned an invalid result")
 
         lighting_intents = lighting_result.lighting_intents
+        lights_on = lighting_result.lights_on
         security_state = security_result.security_state
         security_reason = security_result.security_reason
 
         self._state.set_binary("heima_anyone_home", anyone_home)
         self._state.set_sensor("heima_people_count", people_count)
         self._state.set_sensor("heima_people_home_list", ",".join(people_home_list))
+        self._state.set_sensor("lighting.lights_on", dict(lights_on))
         prev_house_state = self._state.get_sensor("heima_house_state")
         house_state_diag = self._house_state_domain.diagnostics()
         resolution_trace = dict(house_state_diag.get("resolution_trace", {}))
@@ -1052,6 +1054,7 @@ class HeimaEngine:
             occupied_rooms=occupied_rooms,
             lighting_intents=lighting_intents,
             security_state=security_state,
+            lights_on=dict(lights_on),
             context_signals=self._current_context_signals(options),
             notes=f"reason={reason}",
             heating_setpoint=heating_result.current_setpoint,
@@ -1127,6 +1130,7 @@ class HeimaEngine:
             previous_house_state=str(self._snapshot.house_state or "unknown"),
             previous_heating_setpoint=self._snapshot.heating_setpoint,
             previous_lighting_scenes=dict(self._snapshot.lighting_intents or {}),
+            lights_on=dict(self._snapshot.lights_on or {}),
             previous_activity_names=_tuple_of_strings(
                 self._state.get_sensor("activity.active_names")
             ),
@@ -1170,6 +1174,7 @@ class HeimaEngine:
             heating_setpoint=snapshot.heating_setpoint,
             heating_current_temperature=self._heating_domain.current_temperature(),
             lighting_scenes=dict(snapshot.lighting_intents or {}),
+            lights_physically_on=dict(snapshot.lights_on or {}),
             security_state=str(snapshot.security_state or "unknown"),
         )
         await self._house_snapshot_store.async_append_if_changed(house_snap)

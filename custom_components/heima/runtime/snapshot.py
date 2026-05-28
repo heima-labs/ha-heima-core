@@ -19,6 +19,7 @@ class DecisionSnapshot:
     occupied_rooms: list[str]
     lighting_intents: dict[str, str]
     security_state: str
+    lights_on: dict[str, bool] | None = None
     context_signals: dict[str, str] | None = None
     notes: str | None = None
     heating_setpoint: float | None = None

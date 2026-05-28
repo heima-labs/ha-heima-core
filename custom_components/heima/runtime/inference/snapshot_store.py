@@ -26,6 +26,7 @@ class HouseSnapshot:
     heating_setpoint: float | None = None
     heating_current_temperature: float | None = None
     lighting_scenes: dict[str, str] = field(default_factory=dict)
+    lights_physically_on: dict[str, bool] = field(default_factory=dict)
     security_state: str = "disarmed"
 
     def as_dict(self) -> dict[str, Any]:
@@ -42,6 +43,7 @@ class HouseSnapshot:
             "heating_setpoint": self.heating_setpoint,
             "heating_current_temperature": self.heating_current_temperature,
             "lighting_scenes": dict(self.lighting_scenes),
+            "lights_physically_on": dict(self.lights_physically_on),
             "security_state": self.security_state,
         }
 
@@ -60,6 +62,7 @@ class HouseSnapshot:
         room_occupancy = _dict_of_bool(raw.get("room_occupancy", {}))
         detected_activities = _tuple_of_str(raw.get("detected_activities", ()))
         lighting_scenes = _dict_of_str(raw.get("lighting_scenes", {}))
+        lights_physically_on = _dict_of_bool(raw.get("lights_physically_on", {}))
         heating_raw = raw.get("heating_setpoint")
         try:
             heating_setpoint = None if heating_raw is None else float(heating_raw)
@@ -89,6 +92,7 @@ class HouseSnapshot:
             heating_setpoint=heating_setpoint,
             heating_current_temperature=heating_current_temperature,
             lighting_scenes=lighting_scenes,
+            lights_physically_on=lights_physically_on,
             security_state=security_state,
         )
 
@@ -103,6 +107,7 @@ class HouseSnapshot:
             self.heating_setpoint,
             self.heating_current_temperature,
             tuple(sorted(self.lighting_scenes.items())),
+            tuple(sorted(self.lights_physically_on.items())),
             self.security_state,
         )
 

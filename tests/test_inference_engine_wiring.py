@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -48,6 +49,7 @@ def _snapshot(
     anyone_home: bool = True,
     occupied_rooms: list[str] | None = None,
     lighting_intents: dict[str, str] | None = None,
+    lights_on: dict[str, bool] | None = None,
     heating_setpoint: float | None = 20.5,
     security_state: str = "disarmed",
 ) -> DecisionSnapshot:
@@ -60,6 +62,7 @@ def _snapshot(
         occupied_rooms=occupied_rooms or ["kitchen"],
         lighting_intents=lighting_intents or {"kitchen": "bright"},
         security_state=security_state,
+        lights_on=lights_on or {"light.kitchen_main": True},
         heating_setpoint=heating_setpoint,
     )
 
@@ -101,6 +104,7 @@ def test_collect_signals_builds_correct_inference_context() -> None:
         previous_house_state=prev_snapshot.house_state,
         previous_heating_setpoint=prev_snapshot.heating_setpoint,
         previous_lighting_scenes=dict(prev_snapshot.lighting_intents or {}),
+        lights_on=dict(prev_snapshot.lights_on or {}),
         previous_activity_names=(),
     )
     signals = module.infer(context)
@@ -111,6 +115,7 @@ def test_collect_signals_builds_correct_inference_context() -> None:
     assert ctx.named_present == ("alice",)
     assert ctx.previous_house_state == "away"
     assert ctx.previous_heating_setpoint == 16.0
+    assert ctx.lights_on == {"light.kitchen_main": True}
     assert ctx.minute_of_day == 630
 
 
@@ -175,6 +180,15 @@ class _FakeHAStore:
         type(self).delayed.append((serializer(), delay))
 
 
+class _CaptureSnapshotStore:
+    def __init__(self) -> None:
+        self.appended: list[HouseSnapshot] = []
+
+    async def async_append_if_changed(self, snapshot: HouseSnapshot) -> bool:
+        self.appended.append(snapshot)
+        return True
+
+
 @pytest.fixture(autouse=True)
 def reset_fake_ha_store() -> None:
     _FakeHAStore.payload = None
@@ -225,6 +239,37 @@ async def test_record_snapshot_builds_house_snapshot_from_decision_snapshot(
     assert s.lighting_scenes == {"kitchen": "bright", "living_room": "dim"}
     assert s.room_occupancy == {"kitchen": True, "living_room": True}
     assert s.security_state == "disarmed"
+
+
+@pytest.mark.asyncio
+async def test_engine_record_snapshot_persists_physical_light_state() -> None:
+    from custom_components.heima.runtime.engine import HeimaEngine
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda entity_id: None),
+        services=SimpleNamespace(async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda event_type, data: None),
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))  # type: ignore[arg-type]
+    store = _CaptureSnapshotStore()
+    engine._house_snapshot_store = store  # noqa: SLF001
+    engine.state.set_sensor("heima_people_home_list", "alice")
+
+    snap = _snapshot(
+        occupied_rooms=["kitchen"],
+        lighting_intents={"kitchen": "bright"},
+        lights_on={"light.kitchen_main": True, "light.kitchen_sink": False},
+    )
+
+    await engine._record_snapshot_if_changed(snap)  # noqa: SLF001
+
+    assert len(store.appended) == 1
+    persisted = store.appended[0]
+    assert persisted.lighting_scenes == {"kitchen": "bright"}
+    assert persisted.lights_physically_on == {
+        "light.kitchen_main": True,
+        "light.kitchen_sink": False,
+    }
 
 
 @pytest.mark.asyncio
