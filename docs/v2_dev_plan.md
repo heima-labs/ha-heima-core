@@ -105,21 +105,31 @@ These constraints must never be violated. See spec §16 for rationale.
 | S | Learning Module Threshold Configurability | `DONE` | R |
 | T | Learning Signal Analyzers | `NOT STARTED` | P, S |
 | U | Physical Light State Awareness | `NOT STARTED` | A, Q |
-| V | Signal Discovery Pipeline | `NOT STARTED` | N, L |
+| V | Signal Discovery Pipeline | `IN PROGRESS` | N, L |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability.
-**Active phase:** Phase V — Signal Discovery Pipeline (`NOT STARTED`).
+**Active phase:** Phase V — Signal Discovery Pipeline (`IN PROGRESS`).
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Implement Phase V — Signal Discovery Pipeline, starting with V1 inventory and classification.
+Continue Phase V — Signal Discovery Pipeline with V2 proposal submission.
 
 ### Current Working Notes
 
+- Current slice: Phase V / V1 complete.
+  - Added dedicated `runtime/signal_discovery.py` with `HAEntityDescriptor`,
+    `SignalOptionsPatch`, `SignalSuggestion`, and `SignalDiscoveryAudit`.
+  - V1 classifies `sensor.illuminance`, `sensor.carbon_dioxide`, `sensor.humidity`, and
+    `media_player.*` into options patches only; it does not touch runtime normalization.
+  - V1 maps HA area names to existing Heima room IDs via the spec heuristic and skips unsupported,
+    unmapped, duplicate, or already-configured suggestions.
+  - V1 limits suggestions to 50 sorted entity IDs per audit run.
+  - Verification: `pytest tests/test_signal_discovery.py -q` and
+    `ruff check custom_components/heima/runtime/signal_discovery.py tests/test_signal_discovery.py`.
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.
