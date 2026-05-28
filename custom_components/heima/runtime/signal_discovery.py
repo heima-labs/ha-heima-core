@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 from uuid import uuid4
@@ -74,6 +75,23 @@ class SignalOptionsPatch:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "SignalOptionsPatch | None":
+        if not isinstance(raw, dict):
+            return None
+        room_id = _clean(raw.get("room_id"))
+        role = _clean(raw.get("role"))
+        payload = raw.get("payload")
+        if not room_id or role not in {"room_signal", "learning_source"}:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return cls(
+            room_id=room_id,
+            role=role,  # type: ignore[arg-type]
+            payload=dict(payload),
+        )
 
 
 @dataclass(frozen=True)
@@ -150,6 +168,66 @@ class SignalDiscoveryAudit:
             confidence=confidence,
             buckets=buckets,
         )
+
+
+def apply_signal_options_patch(
+    options: dict[str, Any],
+    patch: SignalOptionsPatch,
+) -> tuple[dict[str, Any], bool]:
+    """Return options with one additive signal discovery patch applied if needed."""
+    patched = deepcopy(dict(options))
+    rooms = patched.get("rooms", [])
+    if not isinstance(rooms, list):
+        return patched, False
+
+    room = _room_by_id(rooms, patch.room_id)
+    if room is None:
+        return patched, False
+
+    if patch.role == "room_signal":
+        return _apply_room_signal_patch(patched, room, patch)
+    if patch.role == "learning_source":
+        return _apply_learning_source_patch(patched, room, patch)
+    return patched, False
+
+
+def _apply_room_signal_patch(
+    options: dict[str, Any],
+    room: dict[str, Any],
+    patch: SignalOptionsPatch,
+) -> tuple[dict[str, Any], bool]:
+    signal_name = _clean(patch.payload.get("signal_name"))
+    entity_id = _clean(patch.payload.get("entity_id"))
+    if not signal_name or not entity_id:
+        return options, False
+    signals = room.get("signals", [])
+    if not isinstance(signals, list):
+        signals = []
+    if any(
+        isinstance(signal, dict)
+        and _clean(signal.get("signal_name")) == signal_name
+        for signal in signals
+    ):
+        return options, False
+    room["signals"] = [*signals, dict(patch.payload)]
+    return options, True
+
+
+def _apply_learning_source_patch(
+    options: dict[str, Any],
+    room: dict[str, Any],
+    patch: SignalOptionsPatch,
+) -> tuple[dict[str, Any], bool]:
+    entity_id = _clean(patch.payload.get("entity_id"))
+    if not entity_id:
+        return options, False
+    sources = room.get("learning_sources", [])
+    if not isinstance(sources, list):
+        sources = []
+    if entity_id in {_clean(source) for source in sources}:
+        return options, False
+    room["learning_sources"] = [*sources, entity_id]
+    return options, True
 
 
 def _room_signal_suggestion(

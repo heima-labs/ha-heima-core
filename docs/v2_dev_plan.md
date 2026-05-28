@@ -116,7 +116,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Branch:** `feat/semantic-policy-advisor`.
 **Next action:**
 
-Continue Phase V — Signal Discovery Pipeline with V4 options patch application.
+Continue Phase V — Signal Discovery Pipeline with V5 triggering and final coverage.
 
 ### Current Working Notes
 
@@ -149,6 +149,16 @@ Continue Phase V — Signal Discovery Pipeline with V4 options patch application
     config write.
   - `SIGNAL_DISCOVERY_ANALYZER_ID` and `SIGNAL_DISCOVERY_REACTION_TYPE` live in `const.py`.
   - Verification: focused signal discovery and options-flow tests.
+- Current slice: Phase V / V4 complete.
+  - `ProposalEngine.accepted_proposals()` exposes accepted proposals for coordinator-side patch
+    application.
+  - `SignalOptionsPatch.from_dict()` validates accepted proposal payloads.
+  - `apply_signal_options_patch()` performs additive, idempotent options merges for
+    `rooms[*].signals` and `rooms[*].learning_sources`.
+  - `_async_apply_accepted_signal_patches()` applies at most one accepted signal discovery patch
+    per coordinator cycle through `async_update_entry`.
+  - Existing options are the idempotency guard; already reflected patches are skipped after restart.
+  - Verification: focused signal discovery and proposal-engine tests.
 - Current slice: Phase Q complete for current v2 scope.
   - Implemented operational rules: 15/17.
   - Deferred rules: `lights_on_unattended`, `lighting_scene_drift`.

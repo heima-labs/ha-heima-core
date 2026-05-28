@@ -16,6 +16,8 @@ from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.signal_discovery import (
     HAEntityDescriptor,
     SignalDiscoveryAudit,
+    SignalOptionsPatch,
+    apply_signal_options_patch,
 )
 
 
@@ -169,6 +171,80 @@ def test_signal_discovery_limits_to_first_50_matches_by_entity_id() -> None:
     assert len(suggestions) == 50
     assert suggestions[0].entity_id == "sensor.room_lux_00"
     assert suggestions[-1].entity_id == "sensor.room_lux_49"
+
+
+def test_apply_signal_options_patch_adds_room_signal_idempotently() -> None:
+    options = {"rooms": [{"room_id": "studio", "signals": []}]}
+    patch = SignalOptionsPatch(
+        room_id="studio",
+        role="room_signal",
+        payload={
+            "signal_name": "room_lux",
+            "entity_id": "sensor.studio_lux",
+            "device_class": "illuminance",
+            "buckets": [{"label": "dark", "upper_bound": 30}],
+        },
+    )
+
+    patched, changed = apply_signal_options_patch(options, patch)
+    repatched, rechanged = apply_signal_options_patch(patched, patch)
+
+    assert changed is True
+    assert patched["rooms"][0]["signals"] == [patch.payload]
+    assert options["rooms"][0]["signals"] == []
+    assert rechanged is False
+    assert repatched == patched
+
+
+def test_apply_signal_options_patch_adds_learning_source_idempotently() -> None:
+    options = {"rooms": [{"room_id": "studio", "learning_sources": []}]}
+    patch = SignalOptionsPatch(
+        room_id="studio",
+        role="learning_source",
+        payload={"entity_id": "media_player.projector"},
+    )
+
+    patched, changed = apply_signal_options_patch(options, patch)
+    repatched, rechanged = apply_signal_options_patch(patched, patch)
+
+    assert changed is True
+    assert patched["rooms"][0]["learning_sources"] == ["media_player.projector"]
+    assert rechanged is False
+    assert repatched == patched
+
+
+def test_apply_signal_options_patch_skips_missing_room_or_invalid_payload() -> None:
+    options = {"rooms": [{"room_id": "studio", "signals": []}]}
+    missing_room = SignalOptionsPatch(
+        room_id="kitchen",
+        role="room_signal",
+        payload={"signal_name": "room_lux", "entity_id": "sensor.kitchen_lux"},
+    )
+    invalid_payload = SignalOptionsPatch(
+        room_id="studio",
+        role="room_signal",
+        payload={"entity_id": "sensor.studio_lux"},
+    )
+
+    assert apply_signal_options_patch(options, missing_room) == (options, False)
+    assert apply_signal_options_patch(options, invalid_payload) == (options, False)
+
+
+def test_signal_options_patch_from_dict_validates_shape() -> None:
+    patch = SignalOptionsPatch.from_dict(
+        {
+            "room_id": "studio",
+            "role": "learning_source",
+            "payload": {"entity_id": "media_player.projector"},
+        }
+    )
+
+    assert patch == SignalOptionsPatch(
+        room_id="studio",
+        role="learning_source",
+        payload={"entity_id": "media_player.projector"},
+    )
+    assert SignalOptionsPatch.from_dict({"room_id": "studio", "role": "bad"}) is None
 
 
 class _ServicesStub:
@@ -355,3 +431,122 @@ async def test_coordinator_rejects_non_signal_discovery_review() -> None:
 
     assert result is False
     coordinator._proposal_engine.async_accept_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_applies_one_accepted_room_signal_patch() -> None:
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        status="accepted",
+        suggested_reaction_config={
+            "room_id": "studio",
+            "role": "room_signal",
+            "payload": {
+                "signal_name": "room_lux",
+                "entity_id": "sensor.studio_lux",
+                "device_class": "illuminance",
+                "buckets": [{"label": "dark", "upper_bound": 30}],
+            },
+        },
+    )
+    entry = SimpleNamespace(options={"rooms": [{"room_id": "studio", "signals": []}]})
+    config_entries = SimpleNamespace(async_update_entry=MagicMock())
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = entry
+    coordinator.hass = SimpleNamespace(config_entries=config_entries)
+    coordinator._proposal_engine = SimpleNamespace(accepted_proposals=lambda: [proposal])
+
+    await coordinator._async_apply_accepted_signal_patches()
+
+    config_entries.async_update_entry.assert_called_once()
+    assert config_entries.async_update_entry.call_args.kwargs["options"] == {
+        "rooms": [
+            {
+                "room_id": "studio",
+                "signals": [
+                    {
+                        "signal_name": "room_lux",
+                        "entity_id": "sensor.studio_lux",
+                        "device_class": "illuminance",
+                        "buckets": [{"label": "dark", "upper_bound": 30}],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_coordinator_applies_one_patch_per_cycle() -> None:
+    first = ReactionProposal(
+        proposal_id="proposal-lux",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        status="accepted",
+        suggested_reaction_config={
+            "room_id": "studio",
+            "role": "room_signal",
+            "payload": {"signal_name": "room_lux", "entity_id": "sensor.studio_lux"},
+        },
+    )
+    second = ReactionProposal(
+        proposal_id="proposal-projector",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        status="accepted",
+        suggested_reaction_config={
+            "room_id": "studio",
+            "role": "learning_source",
+            "payload": {"entity_id": "media_player.projector"},
+        },
+    )
+    entry = SimpleNamespace(
+        options={"rooms": [{"room_id": "studio", "signals": [], "learning_sources": []}]}
+    )
+    config_entries = SimpleNamespace(async_update_entry=MagicMock())
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = entry
+    coordinator.hass = SimpleNamespace(config_entries=config_entries)
+    coordinator._proposal_engine = SimpleNamespace(accepted_proposals=lambda: [first, second])
+
+    await coordinator._async_apply_accepted_signal_patches()
+
+    updated_options = config_entries.async_update_entry.call_args.kwargs["options"]
+    assert config_entries.async_update_entry.call_count == 1
+    assert updated_options["rooms"][0]["signals"] == [
+        {"signal_name": "room_lux", "entity_id": "sensor.studio_lux"}
+    ]
+    assert updated_options["rooms"][0]["learning_sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_skips_already_applied_accepted_patch() -> None:
+    proposal = ReactionProposal(
+        proposal_id="proposal-signal",
+        analyzer_id=SIGNAL_DISCOVERY_ANALYZER_ID,
+        reaction_type=SIGNAL_DISCOVERY_REACTION_TYPE,
+        status="accepted",
+        suggested_reaction_config={
+            "room_id": "studio",
+            "role": "learning_source",
+            "payload": {"entity_id": "media_player.projector"},
+        },
+    )
+    entry = SimpleNamespace(
+        options={
+            "rooms": [
+                {"room_id": "studio", "learning_sources": ["media_player.projector"]}
+            ]
+        }
+    )
+    config_entries = SimpleNamespace(async_update_entry=MagicMock())
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.entry = entry
+    coordinator.hass = SimpleNamespace(config_entries=config_entries)
+    coordinator._proposal_engine = SimpleNamespace(accepted_proposals=lambda: [proposal])
+
+    await coordinator._async_apply_accepted_signal_patches()
+
+    config_entries.async_update_entry.assert_not_called()

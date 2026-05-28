@@ -80,7 +80,12 @@ from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
-from .runtime.signal_discovery import SignalDiscoveryAudit, SignalSuggestion
+from .runtime.signal_discovery import (
+    SignalDiscoveryAudit,
+    SignalOptionsPatch,
+    SignalSuggestion,
+    apply_signal_options_patch,
+)
 from .validation import ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
@@ -350,6 +355,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_run()
         await self._async_evaluate_semantic_policies()
         await self._async_evaluate_signal_discovery()
+        await self._async_apply_accepted_signal_patches()
         await self._async_notify_pending_activity_proposals()
         self._write_event_store_sensor()
         self._sync_health_sensor()
@@ -415,6 +421,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._proposal_engine.set_analyzers(list(self._learning_plugin_registry.analyzers()))
         await self._async_evaluate_semantic_policies()
         await self._async_evaluate_signal_discovery()
+        await self._async_apply_accepted_signal_patches()
         self._resubscribe_state_changes()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -1301,6 +1308,30 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 proposal_id=proposal_id,
             )
 
+    async def _async_apply_accepted_signal_patches(self) -> None:
+        if not hasattr(self._proposal_engine, "accepted_proposals"):
+            return
+        for proposal in self._proposal_engine.accepted_proposals():
+            if not isinstance(proposal, ReactionProposal):
+                continue
+            if proposal.analyzer_id != SIGNAL_DISCOVERY_ANALYZER_ID:
+                continue
+            patch = SignalOptionsPatch.from_dict(proposal.suggested_reaction_config)
+            if patch is None:
+                continue
+            patched_options, changed = apply_signal_options_patch(
+                dict(self.entry.options or {}),
+                patch,
+            )
+            if not changed:
+                continue
+            self.hass.config_entries.async_update_entry(
+                self.entry,
+                options=patched_options,
+            )
+            self.last_options_snapshot = dict(patched_options)
+            break
+
     async def _async_notify_pending_activity_proposals(self) -> None:
         if not hasattr(self._proposal_engine, "pending_proposals"):
             return
@@ -1626,6 +1657,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             if changed:
                 await self._async_emit_reconciliation_events(summary)
             await self._proposal_engine.async_run()
+            await self._async_evaluate_signal_discovery()
+            await self._async_apply_accepted_signal_patches()
             await self._async_notify_pending_activity_proposals()
             self._write_event_store_sensor()
             await self.async_refresh()

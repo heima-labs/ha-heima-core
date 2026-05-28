@@ -685,6 +685,9 @@ class ProposalEngine:
     def pending_proposals(self) -> list[ProposalItem]:
         return self._sort_proposals([p for p in self._proposals if p.status == "pending"])
 
+    def accepted_proposals(self) -> list[ProposalItem]:
+        return self._sort_proposals([p for p in self._proposals if p.status == "accepted"])
+
     def proposal_by_identity_key(self, identity_key: str) -> ProposalItem | None:
         target = identity_key.strip()
         if not target:
@@ -832,6 +835,11 @@ class ProposalEngine:
                 ),
                 "improvement": sum(
                     1 for p in ordered if getattr(p, "followup_kind", "discovery") == "improvement"
+                ),
+                "config_suggestion": sum(
+                    1
+                    for p in ordered
+                    if getattr(p, "followup_kind", "discovery") == "config_suggestion"
                 ),
             },
             "by_type": _proposal_type_counts(ordered),

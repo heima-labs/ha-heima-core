@@ -1678,6 +1678,28 @@ async def test_proposal_engine_async_submit_proposal_creates_pending_admin_autho
     assert pending[0].origin == "admin_authored"
 
 
+async def test_proposal_engine_accepted_proposals_and_config_suggestion_counts(monkeypatch):
+    sensor_payloads: list[tuple[int, dict]] = []
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(
+        object(),
+        _EventStoreStub(),  # type: ignore[arg-type]
+        sensor_writer=lambda count, attrs: sensor_payloads.append((count, attrs)),
+    )
+
+    await engine.async_initialize()
+    proposal = _admin_authored_proposal()
+    proposal.followup_kind = "config_suggestion"
+    proposal_id = await engine.async_submit_proposal(proposal)
+    assert await engine.async_accept_proposal(proposal_id)
+
+    accepted = engine.accepted_proposals()
+    assert len(accepted) == 1
+    assert accepted[0].proposal_id == proposal_id
+    assert accepted[0].followup_kind == "config_suggestion"
+    assert sensor_payloads[-1][1]["by_followup_kind"]["config_suggestion"] == 1
+
+
 async def test_proposal_engine_async_submit_proposal_updates_existing_pending_identity(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
