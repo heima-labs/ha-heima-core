@@ -103,7 +103,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | Q | AnomalyAnalyzer: Statistical Detection Rules | `DONE` | O, P |
 | R | OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation | `DONE` | E, P |
 | S | Learning Module Threshold Configurability | `DONE` | R |
-| T | Learning Signal Analyzers | `NOT STARTED` | P, S |
+| T | Learning Signal Analyzers | `DEFERRED` | P, S |
 | U | Physical Light State Awareness | `DONE` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
 
@@ -112,11 +112,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline.
-**Active phase:** Phase T — Learning Signal Analyzers (`NOT STARTED`).
-**Branch:** `feat/phase-u-physical-light-state`.
+**Active phase:** None — all planned phases complete. Phase T deferred (see below).
+**Branch:** `feat/v2`.
 **Next action:**
 
-Merge Phase U into `feat/v2`, then start Phase T — Learning Signal Analyzers.
+All active v2 phases complete. Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
@@ -1761,33 +1761,21 @@ Famiglie con densità dati molto diversa (es. smart working vs. viaggi frequenti
 ## Phase T — Learning Signal Analyzers
 
 **Spec section:** §10 (inference engine — proposal-gated signal consumption)
+**Status:** `DEFERRED`
 **Goal:** trasformare i segnali statistici maturi (`LightingSignal`, `HouseStateSignal`) in `ReactionProposal` tramite ProposalEngine + review admin. Nessun segnale acquisisce autorità operativa diretta sui domini.
 **Depends on:** Phase P (learning modules attivi e osservabili), Phase S (threshold configurabili — i segnali devono essere misurabili prima di promuoverli a proposal).
 
-### Motivation
+### Defer rationale
 
-`LightingPatternModule` e `RoomStateCorrelationModule` producono segnali osservabili da P4a. Prima di dare loro potere runtime, i segnali passano dal gate umano: l'analyzer emette una `ReactionProposal`, l'admin approva o rifiuta, solo allora diventa regola operativa.
+T1 ha un gap fondamentale: `LightingPatternModule` apprende `P(scene_name | room_id, house_state, hour_bucket)` dai snapshot, ma il contratto `context_conditioned_lighting_scene` richiede `entity_steps` (attuazioni concrete per entità). T1 conosce il nome scena ma non la lista di entità da attuare — la proposta risultante sarebbe incompleta e richiederebbe all'admin di configurare manualmente gli `entity_steps`.
 
-### Working slices
+Il `LightingAnalyzer` esistente (`runtime/analyzers/lighting.py`) produce già proposte complete con `entity_steps` a partire dagli eventi HA. T1 aggiungerebbe poco valore differenziale.
 
-1. T1 — LightingPatternAnalyzer:
-   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
-   - Per ogni `LightingSignal` con confidence stabile, verifica se esiste già una regola configurata per quella stanza + contesto (`house_state`, `hour_bucket`).
-   - Se non esiste, emette `ReactionProposal` con `reaction_type = "context_conditioned_lighting_scene"`.
-   - `origin = "learning_derived"`. Nessun effetto runtime finché non approvata.
+T2 rimane bloccato: nessun `reaction_type` per "house state rule".
 
-2. T2 — HouseStateCorrelationAnalyzer:
-   - Nuovo `IBehaviorAnalyzer` in `runtime/analyzers/`.
-   - Il segnale da `RoomStateCorrelationModule` compete con calendar, work window, manual override: il proposal va emesso solo quando nessuna sorgente a priorità superiore è attiva al momento dell'osservazione.
-   - **Prerequisito bloccante:** non esiste un `reaction_type` per "house state rule". T2 richiede o un nuovo tipo o una soluzione alternativa — da decidere prima dell'implementazione.
-   - `origin = "learning_derived"`.
-
-### Acceptance criteria
-
-- [ ] `LightingPatternAnalyzer` emette `ReactionProposal` per pattern lighting stabili non già coperti da config admin
-- [ ] `HouseStateCorrelationAnalyzer` emette `ReactionProposal` solo in assenza di sorgenti prioritarie attive
-- [ ] Nessun segnale statistico influenza domini direttamente — tutto passa da ProposalEngine
-- [ ] Tutti i test esistenti verdi
+Phase T può essere riconsiderata se:
+- si introduce un reaction type che accetta scene HA per nome (es. `scene.*`) senza richiedere `entity_steps` espliciti; oppure
+- si ridisegna T1 come enrichment del `LightingAnalyzer` esistente piuttosto che come analyzer indipendente.
 
 ---
 
