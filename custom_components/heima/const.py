@@ -13,7 +13,6 @@ PLATFORMS: list[Platform] = [
 
 # Options keys (v1)
 CONF_ENGINE_ENABLED = "engine_enabled"
-CONF_TIMEZONE = "timezone"
 CONF_LANGUAGE = "language"
 
 OPT_PEOPLE_NAMED = "people_named"

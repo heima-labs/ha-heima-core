@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..event_store import EventStore, HeimaEvent
 from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal
@@ -331,7 +333,7 @@ def _weeks_observed(events: list[HeimaEvent]) -> int:
         ts = HeatingPatternAnalyzer._parse_ts(event.ts)
         if ts is None:
             continue
-        iso = ts.isocalendar()
+        iso = dt_util.as_local(ts).isocalendar()
         weeks.add((iso.year, iso.week))
     return len(weeks)
 

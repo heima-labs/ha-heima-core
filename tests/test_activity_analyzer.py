@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta, timezone
+
+from custom_components.heima.runtime.analyzers import activity
 from custom_components.heima.runtime.analyzers.activity import (
     MAX_PATTERN_SIZE,
     MIN_COOCCURRENCES,
@@ -163,3 +166,13 @@ def test_activity_analyzer_threshold_constants_are_nominal() -> None:
     assert MIN_COOCCURRENCES == 10
     assert MIN_DISTINCT_DAYS == 3
     assert MAX_PATTERN_SIZE == 2
+
+
+def test_activity_day_key_uses_home_assistant_local_date(monkeypatch) -> None:
+    monkeypatch.setattr(
+        activity.dt_util,
+        "as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+
+    assert activity._day_key("2026-05-01T22:30:00+00:00") == "2026-05-02"

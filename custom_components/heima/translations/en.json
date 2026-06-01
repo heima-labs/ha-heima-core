@@ -62,7 +62,6 @@
         "description": "{delegate_warning}",
         "data": {
           "engine_enabled": "Enable engine",
-          "timezone": "Timezone",
           "language": "Language",
           "lighting_apply_mode": "Lighting apply mode",
           "vacation_mode_entity": "Vacation mode entity",
@@ -654,7 +653,6 @@
       "unknown_person": "Selected Home Assistant person was not found",
       "duplicate_person_entity": "This Home Assistant person is already mapped",
       "reserved_prefix": "Value cannot start with 'heima_'",
-      "invalid_time_zone": "Invalid timezone",
       "invalid_slug": "Invalid slug",
       "invalid": "Invalid value",
       "invalid_selection": "Invalid selection",

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.reactions import presence
 from custom_components.heima.runtime.reactions.presence import (
     PresencePatternReaction,
     _ArrivalRecord,
@@ -46,7 +47,7 @@ def _reaction(
 
 
 def _local_now() -> datetime:
-    return datetime.now(timezone.utc).astimezone()
+    return presence.dt_util.as_local(datetime.now(timezone.utc))
 
 
 def _seed_arrivals(
@@ -56,10 +57,7 @@ def _seed_arrivals(
     minutes: list[int],
 ) -> None:
     for minute in minutes:
-        hour = minute // 60
-        minute_of_hour = minute % 60
-        ts = datetime(2026, 1, 5 + weekday, hour, minute_of_hour).astimezone().isoformat()
-        reaction.evaluate([_snap(False, ts), _snap(True, ts)])
+        reaction._arrivals.append(_ArrivalRecord(weekday=weekday, minute_of_day=minute))
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +69,7 @@ def test_records_arrival_on_false_to_true_transition():
     r = _reaction(min_arrivals=1)
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
-    expected_weekday = datetime.fromisoformat(ts).astimezone().weekday()
+    expected_weekday = presence.dt_util.as_local(datetime.fromisoformat(ts)).weekday()
     assert len(r.arrivals_for_weekday(expected_weekday)) == 1
 
 
@@ -106,7 +104,7 @@ def test_arrival_records_correct_weekday():
     r = _reaction()
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
-    expected_weekday = datetime.fromisoformat(ts).astimezone().weekday()
+    expected_weekday = presence.dt_util.as_local(datetime.fromisoformat(ts)).weekday()
     assert len(r.arrivals_for_weekday(expected_weekday)) == 1
 
 
@@ -114,9 +112,26 @@ def test_arrival_records_correct_minute_of_day():
     r = _reaction()
     ts = _now_ts()
     r.evaluate([_snap(False, ts), _snap(True, ts)])
-    expected_dt = datetime.fromisoformat(ts).astimezone()
+    expected_dt = presence.dt_util.as_local(datetime.fromisoformat(ts))
     weekday = expected_dt.weekday()
     assert r.arrivals_for_weekday(weekday) == [_minute_of_day(expected_dt)]
+
+
+def test_arrival_records_home_assistant_local_time(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.reactions.presence.dt_util.as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+    r = _reaction()
+
+    r.evaluate(
+        [
+            _snap(False, "2026-05-01T22:30:00+00:00"),
+            _snap(True, "2026-05-01T22:30:00+00:00"),
+        ]
+    )
+
+    assert r.arrivals_for_weekday(5) == [30]
 
 
 def test_max_arrivals_evicts_oldest():
@@ -319,7 +334,7 @@ def test_diagnostics_after_arrivals():
     r.evaluate([_snap(False, ts), _snap(True, ts)])
     d = r.diagnostics()
     assert d["arrivals_count"] == 1
-    expected_weekday = str(datetime.fromisoformat(ts).astimezone().weekday())
+    expected_weekday = str(presence.dt_util.as_local(datetime.fromisoformat(ts)).weekday())
     assert d["arrivals_by_weekday"] == {expected_weekday: 1}
 
 

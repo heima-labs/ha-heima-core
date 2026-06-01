@@ -60,6 +60,12 @@ _WEEK_TIMESTAMPS = [
 ]
 
 
+def test_heating_parse_ts_keeps_utc_for_elapsed_time_calculations():
+    parsed = HeatingPatternAnalyzer._parse_ts("2026-03-29T01:30:00+02:00")
+
+    assert parsed == datetime(2026, 3, 28, 23, 30, tzinfo=UTC)
+
+
 def _house_state_event(
     *,
     from_state: str,

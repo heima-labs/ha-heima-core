@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.proposal_engine import ActivityProposal
 
@@ -114,7 +116,7 @@ def proposal_review_type(proposal: object) -> str:
 
 def format_last_seen(value: str) -> str:
     try:
-        return datetime.fromisoformat(value).date().isoformat()
+        return dt_util.as_local(datetime.fromisoformat(value)).date().isoformat()
     except (TypeError, ValueError):
         return ""
 

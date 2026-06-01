@@ -207,7 +207,6 @@ async def test_general_flow_persists_house_signal_bindings():
     result = await flow.async_step_general(
         {
             "engine_enabled": True,
-            "timezone": "Europe/Rome",
             "language": "it",
             "lighting_apply_mode": "scene",
             "vacation_mode_entity": "input_boolean.vacation_mode",
@@ -237,6 +236,7 @@ async def test_general_flow_persists_house_signal_bindings():
         "relax_mode": "binary_sensor.relax_mode",
         "work_window": "binary_sensor.work_window",
     }
+    assert "timezone" not in flow.options
     assert flow.options["house_state_config"] == {
         "media_active_entities": ["media_player.cineforum"],
         "sleep_charging_entities": ["binary_sensor.phone_charging"],
@@ -252,6 +252,16 @@ async def test_general_flow_persists_house_signal_bindings():
         "sleep_requires_media_off": True,
         "sleep_charging_min_count": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_save_drops_legacy_timezone_override():
+    flow = _flow({"timezone": "America/New_York"})
+
+    result = await flow.async_step_save()
+
+    assert result["type"] == "create_entry"
+    assert "timezone" not in result["data"]
 
 
 @pytest.mark.asyncio

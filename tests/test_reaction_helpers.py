@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta, timezone
+
+from custom_components.heima.config_flow import _reaction_helpers
 from custom_components.heima.config_flow._reaction_helpers import (
+    format_last_seen,
     house_state_proposal_review_details,
 )
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
@@ -59,3 +63,13 @@ def test_house_state_proposal_review_details_renders_english_weekday_name() -> N
     assert "Weekday: Saturday" in details
     assert "Weekday: 5" not in details
     assert "Hour: 08:00" in details
+
+
+def test_format_last_seen_uses_home_assistant_local_date(monkeypatch) -> None:
+    monkeypatch.setattr(
+        _reaction_helpers.dt_util,
+        "as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+
+    assert format_last_seen("2026-05-01T22:30:00+00:00") == "2026-05-02"

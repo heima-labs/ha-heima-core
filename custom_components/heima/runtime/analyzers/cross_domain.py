@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..event_store import EventStore, HeimaEvent
 from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal, compute_house_state_filter
@@ -410,7 +412,7 @@ def _is_ventilation_followup_event(event: HeimaEvent) -> bool:
 def _spans_min_weeks(episodes: list, *, min_weeks: int) -> bool:
     weeks: set[tuple[int, int]] = set()
     for episode in episodes:
-        iso = episode.ts.isocalendar()
+        iso = dt_util.as_local(episode.ts).isocalendar()
         weeks.add((iso.year, iso.week))
     return len(weeks) >= min_weeks
 
@@ -1184,7 +1186,7 @@ def _coerce_positive_int(value: Any, default: int) -> int:
 def _episode_week_count(episodes: list) -> int:
     weeks: set[tuple[int, int]] = set()
     for episode in episodes:
-        iso = episode.ts.isocalendar()
+        iso = dt_util.as_local(episode.ts).isocalendar()
         weeks.add((iso.year, iso.week))
     return len(weeks)
 

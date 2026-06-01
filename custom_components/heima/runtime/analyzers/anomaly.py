@@ -120,11 +120,16 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _presence_transitions(snapshots, previous_home=False, current_home=True)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
         baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
         distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
@@ -143,7 +148,7 @@ class AnomalyAnalyzer:
             context={
                 "rule_id": rule.rule_id,
                 "weekday": current.weekday,
-                "transition_count": len(transitions),
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),
@@ -167,11 +172,16 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _presence_transitions(snapshots, previous_home=True, current_home=False)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
         baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
         distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
@@ -190,7 +200,7 @@ class AnomalyAnalyzer:
             context={
                 "rule_id": rule.rule_id,
                 "weekday": current.weekday,
-                "transition_count": len(transitions),
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),
@@ -798,11 +808,16 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _disarm_transitions(snapshots)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
         baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
         distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
@@ -821,7 +836,7 @@ class AnomalyAnalyzer:
             context={
                 "rule_id": rule.rule_id,
                 "weekday": current.weekday,
-                "transition_count": len(transitions),
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),

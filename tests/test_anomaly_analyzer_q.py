@@ -1400,6 +1400,29 @@ async def test_anomaly_analyzer_alarm_disarm_unusual_hour_uses_circular_clock_di
     ]
 
 
+async def test_anomaly_analyzer_alarm_disarm_unusual_hour_uses_same_weekday_baseline() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots: list[HouseSnapshot] = []
+    for _ in range(5):
+        snapshots.append(
+            _snapshot(weekday=0, security_state="armed_away", minute_of_day=6 * 60)
+        )
+        snapshots.append(_snapshot(weekday=0, security_state="disarmed", minute_of_day=7 * 60))
+    for _ in range(6):
+        snapshots.append(
+            _snapshot(weekday=1, security_state="armed_away", minute_of_day=1 * 60)
+        )
+        snapshots.append(_snapshot(weekday=1, security_state="disarmed", minute_of_day=2 * 60))
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding
+        for finding in findings
+        if finding.payload.anomaly_type == "alarm_disarm_unusual_hour"
+    ]
+
+
 async def test_anomaly_analyzer_alarm_expected_not_armed_emits_finding() -> None:
     analyzer = AnomalyAnalyzer()
     snapshots = [

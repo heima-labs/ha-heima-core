@@ -68,6 +68,18 @@ async def test_config_flow_user_step_allows_admin() -> None:
 
 
 @pytest.mark.asyncio
+async def test_config_flow_user_step_does_not_persist_timezone_override() -> None:
+    flow = HeimaConfigFlow()
+    flow.hass = _fake_hass(is_admin=True)
+    flow.context = {"user_id": "user-1"}
+
+    result = await flow.async_step_user({"engine_enabled": True})
+
+    assert result["type"] == "create_entry"
+    assert "timezone" not in result["options"]
+
+
+@pytest.mark.asyncio
 async def test_options_flow_init_allows_admin() -> None:
     flow = HeimaOptionsFlowHandler(SimpleNamespace(options={}, entry_id="entry-1"))
     flow.hass = _fake_hass(is_admin=True)

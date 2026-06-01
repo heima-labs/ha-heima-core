@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from homeassistant.core import HomeAssistant
@@ -197,7 +197,7 @@ class RoomSignalAssistReaction(HeimaReaction):
             self._pending_episode_ts = None
             self._fire_count += 1
             self._last_fired_ts = time.monotonic()
-            self._last_fired_iso = datetime.now().isoformat()
+            self._last_fired_iso = datetime.now(UTC).isoformat()
             if self._primary_bucket:
                 self._steady_condition_active = True
             return list(self._steps)

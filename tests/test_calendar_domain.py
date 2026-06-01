@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.heima.runtime.domains import calendar
 from custom_components.heima.runtime.domains.calendar import (
     CalendarDomain,
     CalendarResult,
@@ -296,6 +297,36 @@ def test_compute_allday_vacation_from_cache():
     ]
     domain._cache_ts = _now()
     result = domain.compute({"calendar_entities": ["calendar.personal"]})
+    assert result.is_vacation_active is True
+
+
+def test_compute_allday_vacation_uses_home_assistant_local_date(monkeypatch):
+    domain = CalendarDomain(_fake_hass())
+    utc_today = _now().date()
+    local_today = utc_today + timedelta(days=1)
+    local_tomorrow = local_today + timedelta(days=1)
+    from custom_components.heima.runtime.domains.calendar import CalendarEvent
+
+    monkeypatch.setattr(calendar.dt_util, "as_local", lambda value: value + timedelta(days=1))
+    domain._cached_events = [
+        CalendarEvent(
+            summary="Ferie",
+            start=datetime(local_today.year, local_today.month, local_today.day, tzinfo=timezone.utc),
+            end=datetime(
+                local_tomorrow.year,
+                local_tomorrow.month,
+                local_tomorrow.day,
+                tzinfo=timezone.utc,
+            ),
+            all_day=True,
+            category="vacation",
+            calendar_entity="calendar.personal",
+        )
+    ]
+    domain._cache_ts = _now()
+
+    result = domain.compute({"calendar_entities": ["calendar.personal"]})
+
     assert result.is_vacation_active is True
 
 
