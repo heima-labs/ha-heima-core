@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -153,6 +153,36 @@ def test_collect_signals_routes_emitted_signals() -> None:
 
     assert HouseStateSignal in result
     assert result[HouseStateSignal][0].predicted_state == "home"
+
+
+def test_engine_collect_signals_builds_local_time_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    from custom_components.heima.runtime import engine as engine_module
+    from custom_components.heima.runtime.engine import HeimaEngine
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda entity_id: None),
+        services=SimpleNamespace(async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda event_type, data: None),
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))  # type: ignore[arg-type]
+    engine.register_learning_module(_RecordingModule())
+    monkeypatch.setattr(
+        engine_module.dt_util,
+        "as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+
+    engine._collect_signals(  # noqa: SLF001
+        anyone_home=True,
+        named_present=("alice",),
+        occupied_rooms=["kitchen"],
+        now_utc=datetime(2026, 5, 1, 22, 30, tzinfo=UTC),
+    )
+
+    context = _RecordingModule.received[-1]
+    assert context.now_local.isoformat() == "2026-05-02T00:30:00+02:00"
+    assert context.weekday == 5
+    assert context.minute_of_day == 30
 
 
 # ---------------------------------------------------------------------------

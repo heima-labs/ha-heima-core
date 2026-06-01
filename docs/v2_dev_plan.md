@@ -120,6 +120,15 @@ All active v2 phases complete. Phase T deferred — see Phase T section for rati
 
 ### Current Working Notes
 
+- Cross-cutting fix: local time contract restored for inference snapshots and notifications.
+  - Engine inference contexts and newly persisted `HouseSnapshot` records now derive `weekday` and
+    `minute_of_day` from HA local time rather than UTC.
+  - `HouseSnapshot.from_dict()` re-derives local slots from `ts`, correcting legacy UTC-derived
+    snapshot slots when persisted history is loaded.
+  - Unusual-hour anomaly rules use circular clock distance, so times around midnight are compared
+    correctly (`23:00` vs `01:00` is a 2-hour difference).
+  - House-state proposal and installer anomaly notifications render weekday names and `HH:MM`
+    labels instead of raw weekday/hour numbers.
 - Current slice: Phase U / U1-U3 complete.
   - `LightingDomainResult` now carries `lights_on`, populated from configured room light entities
     by reading current HA physical state (`state == "on"`).

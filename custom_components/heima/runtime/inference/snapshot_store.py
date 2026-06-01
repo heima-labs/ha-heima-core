@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,10 @@ class HouseSnapshot:
             anyone_home = bool(raw["anyone_home"])
         except (KeyError, TypeError, ValueError):
             return None
+        local_ts = _local_snapshot_time(ts)
+        if local_ts is not None:
+            weekday = local_ts.weekday()
+            minute_of_day = local_ts.hour * 60 + local_ts.minute
 
         named_present = _tuple_of_str(raw.get("named_present", ()))
         room_occupancy = _dict_of_bool(raw.get("room_occupancy", {}))
@@ -223,6 +228,11 @@ def _parse_iso(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _local_snapshot_time(value: str) -> datetime | None:
+    parsed = _parse_iso(value)
+    return dt_util.as_local(parsed) if parsed is not None else None
 
 
 def _tuple_of_str(raw: Any) -> tuple[str, ...]:

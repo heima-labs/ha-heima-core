@@ -2152,6 +2152,15 @@ def _installer_notification_message(event: dict[str, Any]) -> str:
         details.append(f"Anomaly type: {anomaly_type}")
     if check_id:
         details.append(f"Invariant check: {check_id}")
+    weekday = context.get("weekday")
+    if weekday not in (None, ""):
+        details.append(f"Weekday: {_weekday_name(weekday)}")
+    hour_bucket = context.get("current_hour_bucket", context.get("hour_bucket"))
+    if hour_bucket not in (None, ""):
+        details.append(f"Observed hour: {_hour_bucket_label(hour_bucket)}")
+    baseline_hour = context.get("baseline_hour_bucket", context.get("baseline_hour"))
+    if baseline_hour not in (None, ""):
+        details.append(f"Historical median hour: {_hour_bucket_label(baseline_hour)}")
     details.append(f"Severity: {str(event.get('severity') or 'unknown')}")
     details.append(f"Event key: {str(event.get('key') or '')}")
     return "\n".join(
@@ -2181,11 +2190,34 @@ def _house_state_proposal_notification_message(
     return (
         "Heima learned a recurring house-state context and needs a resident review.\n\n"
         f"Suggested state: {predicted_state}\n"
-        f"Context: weekday {weekday}, hour {hour_bucket}, rooms: {room_label}, {anyone_home}\n"
+        f"Context: {_weekday_name(weekday)}, {_hour_bucket_label(hour_bucket)}, "
+        f"rooms: {room_label}, {anyone_home}\n"
         f"Confidence: {confidence:.0%}\n\n"
         "Open the Heima dashboard to approve or reject this proposal.\n"
         f"Proposal ID: {proposal_id}"
     )
+
+
+def _weekday_name(value: Any) -> str:
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    try:
+        weekday = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return days[weekday] if 0 <= weekday < len(days) else str(value)
+
+
+def _hour_bucket_label(value: Any) -> str:
+    try:
+        hour = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    whole_hour = int(hour)
+    minute = round((hour - whole_hour) * 60)
+    if minute == 60:
+        whole_hour += 1
+        minute = 0
+    return f"{whole_hour % 24:02d}:{minute:02d}"
 
 
 def _activity_proposal_notification_message(

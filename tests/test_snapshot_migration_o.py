@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from custom_components.heima.runtime.inference import HouseSnapshot
+from datetime import timedelta, timezone
+
+from custom_components.heima.runtime.inference import HouseSnapshot, snapshot_store
 
 
 def _snapshot() -> HouseSnapshot:
@@ -79,3 +81,23 @@ def test_house_snapshot_semantic_key_tracks_security_state_and_current_temperatu
     assert security_changed.semantic_key() != base.semantic_key()
     assert temperature_changed.semantic_key() != base.semantic_key()
     assert light_state_changed.semantic_key() != base.semantic_key()
+
+
+def test_house_snapshot_from_dict_normalizes_legacy_utc_slot_to_local_time(monkeypatch) -> None:
+    monkeypatch.setattr(
+        snapshot_store.dt_util,
+        "as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+    raw = {
+        **_snapshot().as_dict(),
+        "ts": "2026-05-01T22:30:00+00:00",
+        "weekday": 4,
+        "minute_of_day": 22 * 60 + 30,
+    }
+
+    restored = HouseSnapshot.from_dict(raw)
+
+    assert restored is not None
+    assert restored.weekday == 5
+    assert restored.minute_of_day == 30

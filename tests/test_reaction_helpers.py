@@ -36,6 +36,7 @@ def test_house_state_proposal_review_details_renders_italian_weekday_name() -> N
 
     assert "Giorno: sabato" in details
     assert "Giorno: 5" not in details
+    assert "Ora: 08:00" in details
 
 
 def test_house_state_proposal_review_details_renders_english_weekday_name() -> None:
@@ -57,3 +58,4 @@ def test_house_state_proposal_review_details_renders_english_weekday_name() -> N
 
     assert "Weekday: Saturday" in details
     assert "Weekday: 5" not in details
+    assert "Hour: 08:00" in details
