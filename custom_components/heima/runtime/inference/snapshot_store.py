@@ -28,6 +28,7 @@ class HouseSnapshot:
     heating_current_temperature: float | None = None
     lighting_scenes: dict[str, str] = field(default_factory=dict)
     lights_physically_on: dict[str, bool] = field(default_factory=dict)
+    room_device_context: dict[str, dict[str, Any]] = field(default_factory=dict)
     security_state: str = "disarmed"
 
     def as_dict(self) -> dict[str, Any]:
@@ -45,6 +46,11 @@ class HouseSnapshot:
             "heating_current_temperature": self.heating_current_temperature,
             "lighting_scenes": dict(self.lighting_scenes),
             "lights_physically_on": dict(self.lights_physically_on),
+            "room_device_context": {
+                str(room_id): dict(payload)
+                for room_id, payload in self.room_device_context.items()
+                if str(room_id).strip() and isinstance(payload, dict)
+            },
             "security_state": self.security_state,
         }
 
@@ -68,6 +74,7 @@ class HouseSnapshot:
         detected_activities = _tuple_of_str(raw.get("detected_activities", ()))
         lighting_scenes = _dict_of_str(raw.get("lighting_scenes", {}))
         lights_physically_on = _dict_of_bool(raw.get("lights_physically_on", {}))
+        room_device_context = _dict_of_dict(raw.get("room_device_context", {}))
         heating_raw = raw.get("heating_setpoint")
         try:
             heating_setpoint = None if heating_raw is None else float(heating_raw)
@@ -98,6 +105,7 @@ class HouseSnapshot:
             heating_current_temperature=heating_current_temperature,
             lighting_scenes=lighting_scenes,
             lights_physically_on=lights_physically_on,
+            room_device_context=room_device_context,
             security_state=security_state,
         )
 
@@ -113,6 +121,15 @@ class HouseSnapshot:
             self.heating_current_temperature,
             tuple(sorted(self.lighting_scenes.items())),
             tuple(sorted(self.lights_physically_on.items())),
+            tuple(
+                sorted(
+                    (
+                        room_id,
+                        tuple(sorted(payload.items())),
+                    )
+                    for room_id, payload in self.room_device_context.items()
+                )
+            ),
             self.security_state,
         )
 
@@ -255,3 +272,14 @@ def _dict_of_str(raw: Any) -> dict[str, str]:
         for key, value in raw.items()
         if str(key).strip() and str(value).strip()
     }
+
+
+def _dict_of_dict(raw: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for key, value in raw.items():
+        if not str(key).strip() or not isinstance(value, dict):
+            continue
+        result[str(key)] = dict(value)
+    return result

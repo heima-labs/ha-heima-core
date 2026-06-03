@@ -2025,6 +2025,8 @@ New reason strings: `calendar_day_off`, `calendar_holiday`.
 
 ## Phase X — Room Context Model
 
+Status: DONE on branch `feat/phase-x-room-context`.
+
 **Spec section:** New `docs/specs/learning/room_context_spec.md`
 **Goal:** Transform signal model from global boolean aggregates to room-scoped device context vectors,
 derived from already-configured entities' HA area assignments. No static room tagging by user.
@@ -2145,15 +2147,28 @@ preserved unchanged.
 
 ### Acceptance criteria
 
-- [ ] `RoomDeviceContext` computed correctly from HA area registry for configured entities
-- [ ] `InferenceContext.room_device_context` populated each cycle
-- [ ] `HouseSnapshot.room_device_context` persisted and deserialized correctly
-- [ ] `relax_candidate` uses room-scoped media logic when context available; falls back to global when not
-- [ ] `work_candidate` not suppressed by media when same occupied room has `work_activity=True`
-- [ ] `RoomContextModule` emits no signals with support < 20
-- [ ] Device reassignment or removal causes no runtime error; fallback to global aggregates
-- [ ] Household with no area mappings: behavior identical to pre-Phase-X
-- [ ] All existing tests pass; new tests ≥ 15
+- [x] `RoomDeviceContext` computed correctly from HA area registry for configured entities
+- [x] `InferenceContext.room_device_context` populated each cycle
+- [x] `HouseSnapshot.room_device_context` persisted and deserialized correctly
+- [x] `relax_candidate` uses room-scoped media logic when context available; falls back to global when not
+- [x] `work_candidate` not suppressed by media when same occupied room has `work_activity=True`
+- [x] `RoomContextModule` emits no signals with support < 20
+- [x] Device reassignment or removal causes no runtime error; fallback to global aggregates
+- [x] Household with no area mappings: behavior identical to pre-Phase-X
+- [x] All existing tests pass; new tests ≥ 15
+
+### Implementation notes
+
+- `runtime/media_activity.py` centralizes the existing media-active semantics so the global
+  `HouseStateDomain` path and the room-scoped context path do not diverge.
+- `RoomContextModule` reuses the `house_state_learned_context` approval lifecycle with a distinct
+  `learning_context.module = "room_context"` key segment.
+- The coordinator listens to entity and area registry updates and marks the room-context mapping
+  stale; rebuilding happens on the next engine cycle.
+- Extensibility decision: do not expose a public room-context plugin API yet. The next step should
+  be an internal `RoomContextSignalProvider` interface with entity-to-room mapping still owned only
+  by `RoomDeviceContextBuilder`. Keep the explicit dataclass fields as compatibility layer; add
+  future signals through an internal extension path before considering a generic public signal model.
 
 ---
 

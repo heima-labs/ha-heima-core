@@ -18,17 +18,18 @@ from ...const import (
     OPT_HOUSE_STATE_CONFIG,
 )
 from ..inference.signals import HouseStateSignal, Importance
+from ..media_activity import media_entity_is_active
 from ..normalization.config import (
     HOUSE_SIGNAL_STRATEGY_CONTRACT,
     build_signal_set_strategy_cfg_for_contract,
 )
 from ..normalization.service import InputNormalizer
 from ..policy import resolve_house_state
+from ..room_context import RoomDeviceContext
 from .calendar import CalendarResult
 from .events import EventsDomain
 
 _LOGGER = logging.getLogger(__name__)
-_MEDIA_ACTIVE_STATES = {"on", "playing", "paused", "buffering"}
 _APPROVED_HOUSE_STATE_SIGNAL_SOURCE_ID = "house_state_inference"
 _HOUSE_STATE_SIGNAL_MIN_CONFIDENCE = 0.60
 _HOME_SUBSTATES = frozenset(HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE)
@@ -143,6 +144,8 @@ class HouseStateDomain:
         calendar_result: CalendarResult | None = None,
         schedule_recheck: Callable[..., None] | None = None,
         signals: list[HouseStateSignal] | None = None,
+        occupied_rooms: list[str] | tuple[str, ...] | None = None,
+        room_device_context: dict[str, RoomDeviceContext] | None = None,
     ) -> HouseStateResult:
         house_state_cfg = self._normalized_config(options)
         self._current_config = dict(house_state_cfg)
@@ -212,6 +215,8 @@ class HouseStateDomain:
             workday_evidence=workday_evidence,
             calendar_result=calendar_result,
             house_state_cfg=house_state_cfg,
+            occupied_rooms=occupied_rooms or (),
+            room_device_context=room_device_context or {},
         )
         self._update_candidate_trace(
             candidate_inputs=candidate_inputs,
@@ -370,6 +375,8 @@ class HouseStateDomain:
         workday_evidence: dict[str, Any],
         calendar_result: CalendarResult | None,
         house_state_cfg: dict[str, Any],
+        occupied_rooms: list[str] | tuple[str, ...],
+        room_device_context: dict[str, RoomDeviceContext],
     ) -> dict[str, dict[str, Any]]:
         calendar_flags = {
             "is_vacation_active": bool(calendar_result.is_vacation_active)
@@ -395,7 +402,26 @@ class HouseStateDomain:
             charging_evidence.get("active_count", 0)
         ) >= int(sleep_charging_min_count)
         work_activity_required = bool(house_state_cfg.get("work_activity_required", False))
-        work_activity_active = int(work_activity_evidence.get("active_count", 0)) > 0
+        occupied_contexts = [
+            room_device_context[room_id]
+            for room_id in sorted(str(room_id) for room_id in occupied_rooms if str(room_id))
+            if room_id in room_device_context
+        ]
+        room_context_available = bool(room_device_context)
+        room_context_matched_occupancy = bool(occupied_contexts)
+        room_relax_media_active = any(
+            ctx.media_on and not ctx.work_activity and not ctx.pc_active
+            for ctx in occupied_contexts
+        )
+        room_work_activity_active = any(
+            ctx.work_activity or ctx.pc_active for ctx in occupied_contexts
+        )
+        effective_relax_media_active = (
+            room_relax_media_active if room_context_matched_occupancy else media_active
+        )
+        work_activity_active = (
+            int(work_activity_evidence.get("active_count", 0)) > 0 or room_work_activity_active
+        )
         work_base_candidate = bool(
             anyone_home and work_window and bool(workday_evidence.get("is_workday", True))
         )
@@ -403,10 +429,25 @@ class HouseStateDomain:
         relax_reason = (
             "anyone_home+relax_mode"
             if bool(anyone_home and relax_mode)
+            else "anyone_home+room_media_active"
+            if bool(anyone_home and room_context_matched_occupancy and room_relax_media_active)
             else "anyone_home+media_active"
-            if bool(anyone_home and media_active)
+            if bool(anyone_home and (not room_context_matched_occupancy) and media_active)
             else "anyone_home+relax_mode_or_media_active"
         )
+        room_context_inputs = {
+            "available": room_context_available,
+            "matched_occupied_rooms": room_context_matched_occupancy,
+            "occupied_rooms": list(occupied_rooms),
+            "contexts": {
+                room_id: ctx.as_dict()
+                for room_id, ctx in sorted(room_device_context.items())
+                if room_id in set(str(room) for room in occupied_rooms)
+            },
+            "room_relax_media_active": room_relax_media_active,
+            "room_work_activity_active": room_work_activity_active,
+            "effective_relax_media_active": effective_relax_media_active,
+        }
         return {
             "sleep_candidate": {
                 "state": bool(
@@ -471,19 +512,22 @@ class HouseStateDomain:
                     ),
                     "work_activity": work_activity_evidence,
                     "work_activity_active": work_activity_active,
+                    "room_context": room_context_inputs,
                     "work_activity_requirement_met": work_activity_requirement_met,
                     **calendar_flags,
                 },
             },
             "relax_candidate": {
-                "state": bool(anyone_home and (relax_mode or media_active)),
+                "state": bool(anyone_home and (relax_mode or effective_relax_media_active)),
                 "reason": relax_reason,
                 "inputs": {
                     "anyone_home": anyone_home,
                     "relax_mode": relax_mode,
                     "media_active": media_active,
+                    "effective_media_active": effective_relax_media_active,
                     "media": media_inputs,
                     "media_active_entities": list(house_state_cfg.get("media_active_entities", [])),
+                    "room_context": room_context_inputs,
                 },
             },
         }
@@ -496,7 +540,7 @@ class HouseStateDomain:
             raw_state = getattr(state_obj, "state", None) if state_obj is not None else None
             raw = str(raw_state).strip() if raw_state is not None else None
             states[entity_id] = raw
-            if self._is_media_entity_active(entity_id, raw):
+            if media_entity_is_active(entity_id, raw):
                 active_entities.append(entity_id)
         return bool(active_entities), {
             "configured_entities": list(entity_ids),
@@ -571,21 +615,6 @@ class HouseStateDomain:
             "source": "default_true",
             "entity_id": None,
             "raw_state": None,
-        }
-
-    @staticmethod
-    def _is_media_entity_active(entity_id: str, raw_state: str | None) -> bool:
-        lowered = str(raw_state or "").strip().lower()
-        if lowered in {"", "unknown", "unavailable", "none"}:
-            return False
-        if str(entity_id).startswith("media_player."):
-            return lowered in _MEDIA_ACTIVE_STATES
-        return lowered in _MEDIA_ACTIVE_STATES or lowered in {
-            "open",
-            "occupied",
-            "detected",
-            "true",
-            "1",
         }
 
     def _update_candidate_trace(

@@ -14,6 +14,7 @@ from custom_components.heima.runtime.inference import (
     HouseStateInferenceModule,
     Importance,
     InferenceContext,
+    RoomContextModule,
     WeekdayStateModule,
 )
 from custom_components.heima.runtime.inference.approval_store import (
@@ -21,6 +22,7 @@ from custom_components.heima.runtime.inference.approval_store import (
     house_state_context_key,
 )
 from custom_components.heima.runtime.proposal_engine import ActivityProposal
+from custom_components.heima.runtime.room_context import RoomDeviceContext
 
 
 def _context(
@@ -32,6 +34,7 @@ def _context(
     anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
     previous_activity_names: tuple[str, ...] = (),
+    room_device_context: dict[str, RoomDeviceContext] | None = None,
 ) -> InferenceContext:
     return InferenceContext(
         now_local=datetime(2026, 4, 30, 10, 0, tzinfo=UTC),
@@ -44,6 +47,7 @@ def _context(
         previous_heating_setpoint=previous_heating_setpoint,
         previous_lighting_scenes={},
         previous_activity_names=previous_activity_names,
+        room_device_context=room_device_context or {},
     )
 
 
@@ -56,6 +60,7 @@ def _snapshot(
     anyone_home: bool = True,
     room_occupancy: dict[str, bool] | None = None,
     detected_activities: tuple[str, ...] = (),
+    room_device_context: dict[str, dict] | None = None,
 ) -> HouseSnapshot:
     return HouseSnapshot(
         ts="2026-04-30T10:00:00+00:00",
@@ -68,6 +73,7 @@ def _snapshot(
         house_state=house_state,
         heating_setpoint=heating_setpoint,
         lighting_scenes={},
+        room_device_context=room_device_context or {},
         security_state="disarmed",
     )
 
@@ -171,6 +177,203 @@ async def test_activity_inference_emits_for_approved_pattern() -> None:
     assert signals[0].confidence == 1.0
     assert signals[0].importance == Importance.ASSERT
     assert signals[0].context["primitive_pattern"] == ["relax", "tv"]
+
+
+# ─── RoomContextModule ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_ignores_legacy_snapshots_without_context() -> None:
+    module = RoomContextModule(min_support=1, confidence_threshold=0.5)
+
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    weekday=3,
+                    minute_of_day=8 * 60,
+                    house_state="relax",
+                    room_occupancy={"living_room": True},
+                )
+            ]
+        )
+    )
+
+    assert module.generate_candidates() == []
+    assert module.diagnostics()["analyzed_snapshots"] == 0
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_generates_candidate_after_support() -> None:
+    module = RoomContextModule(min_support=2, confidence_threshold=0.65)
+    snapshots = [
+        _snapshot(
+            weekday=3,
+            minute_of_day=8 * 60,
+            house_state="relax",
+            room_occupancy={"living_room": True},
+            room_device_context={
+                "living_room": {
+                    "room_id": "living_room",
+                    "media_on": True,
+                    "work_activity": False,
+                }
+            },
+        )
+    ] * 2
+
+    await module.analyze(_FakeStore(snapshots))
+
+    candidates = module.generate_candidates()
+    assert len(candidates) == 1
+    assert candidates[0].proposal_type == HOUSE_STATE_PROPOSAL_TYPE
+    assert candidates[0].predicted_state == "relax"
+    assert candidates[0].support == 2
+    assert candidates[0].confidence == 1.0
+    assert candidates[0].context_snapshot["learning_context"]["module"] == "room_context"
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_does_not_emit_without_approval() -> None:
+    module = RoomContextModule(min_support=1, confidence_threshold=0.65)
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    weekday=3,
+                    minute_of_day=8 * 60,
+                    house_state="relax",
+                    room_occupancy={"living_room": True},
+                    room_device_context={
+                        "living_room": {
+                            "room_id": "living_room",
+                            "media_on": True,
+                            "work_activity": False,
+                        }
+                    },
+                )
+            ]
+        )
+    )
+
+    assert (
+        module.infer(
+            _context(
+                weekday=3,
+                minute_of_day=8 * 60,
+                room_occupancy={"living_room": True},
+                room_device_context={
+                    "living_room": RoomDeviceContext("living_room", media_on=True)
+                },
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_emits_after_approval() -> None:
+    module = RoomContextModule(min_support=1, confidence_threshold=0.65)
+    snapshot = _snapshot(
+        weekday=3,
+        minute_of_day=8 * 60,
+        house_state="relax",
+        room_occupancy={"living_room": True},
+        room_device_context={
+            "living_room": {
+                "room_id": "living_room",
+                "media_on": True,
+                "work_activity": False,
+            }
+        },
+    )
+    await module.analyze(_FakeStore([snapshot]))
+    candidate = module.generate_candidates()[0]
+    module.sync_approval_state({candidate.context_key}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=3,
+            minute_of_day=8 * 60,
+            room_occupancy={"living_room": True},
+            room_device_context={"living_room": RoomDeviceContext("living_room", media_on=True)},
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].source_id == "room_context"
+    assert signals[0].predicted_state == "relax"
+    assert signals[0].importance == Importance.SUGGEST
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_respects_min_support() -> None:
+    module = RoomContextModule(min_support=2, confidence_threshold=0.65)
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    weekday=3,
+                    minute_of_day=8 * 60,
+                    house_state="relax",
+                    room_occupancy={"living_room": True},
+                    room_device_context={
+                        "living_room": {"room_id": "living_room", "media_on": True}
+                    },
+                )
+            ]
+        )
+    )
+
+    assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
+async def test_room_context_module_pattern_excludes_lights_and_pc() -> None:
+    module = RoomContextModule(min_support=1, confidence_threshold=0.65)
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    weekday=3,
+                    minute_of_day=8 * 60,
+                    house_state="working",
+                    room_occupancy={"studio": True},
+                    room_device_context={
+                        "studio": {
+                            "room_id": "studio",
+                            "media_on": True,
+                            "work_activity": True,
+                            "lights_on": False,
+                            "pc_active": False,
+                        }
+                    },
+                )
+            ]
+        )
+    )
+    candidate = module.generate_candidates()[0]
+    module.sync_approval_state({candidate.context_key}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=3,
+            minute_of_day=8 * 60,
+            room_occupancy={"studio": True},
+            room_device_context={
+                "studio": RoomDeviceContext(
+                    "studio",
+                    media_on=True,
+                    work_activity=True,
+                    lights_on=True,
+                    pc_active=True,
+                )
+            },
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "working"
 
 
 @pytest.mark.asyncio
