@@ -62,7 +62,6 @@
         "description": "{delegate_warning}",
         "data": {
           "engine_enabled": "Abilita motore",
-          "timezone": "Fuso orario",
           "language": "Lingua",
           "lighting_apply_mode": "Modalità applicazione illuminazione",
           "vacation_mode_entity": "Entità modalità vacanza",
@@ -654,7 +653,6 @@
       "unknown_person": "La persona Home Assistant selezionata non esiste",
       "duplicate_person_entity": "Questa persona Home Assistant è già collegata",
       "reserved_prefix": "Il valore non può iniziare con 'heima_'",
-      "invalid_time_zone": "Fuso orario non valido",
       "invalid_slug": "Slug non valido",
       "invalid": "Valore non valido",
       "invalid_selection": "Selezione non valida",

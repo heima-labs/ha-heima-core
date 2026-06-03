@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from ..event_store import EventStore
 from ..plugin_contracts import BehaviorFinding, pattern_finding
@@ -355,7 +357,7 @@ def _weeks_observed(events: list[Any]) -> int:
     weeks: set[tuple[int, int]] = set()
     for event in events:
         try:
-            dt = datetime.fromisoformat(str(event.ts)).astimezone(UTC)
+            dt = dt_util.as_local(datetime.fromisoformat(str(event.ts)))
         except (TypeError, ValueError):
             continue
         iso = dt.isocalendar()

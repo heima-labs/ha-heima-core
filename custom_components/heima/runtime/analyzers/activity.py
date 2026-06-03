@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from itertools import combinations
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..inference import HouseSnapshot, SnapshotStore
 from ..plugin_contracts import BehaviorFinding
 from ..proposal_engine import ActivityProposal
@@ -138,7 +140,7 @@ def _day_key(value: str) -> str:
         return ""
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).date().isoformat()
+    return dt_util.as_local(parsed).date().isoformat()
 
 
 def _token(value: Any) -> str:

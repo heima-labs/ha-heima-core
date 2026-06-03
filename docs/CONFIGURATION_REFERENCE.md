@@ -32,11 +32,8 @@ Fields:
 - Meaning: globally enables or disables the Heima runtime engine.
 - When `false`: Heima still exists, but policy/apply logic is disabled.
 
-### `timezone`
-- Type: string
-- Required: yes
-- Meaning: timezone used by Heima for time-based logic.
-- Must be a valid Home Assistant timezone string.
+Time-based logic uses the global Home Assistant timezone. Heima does not expose a separate
+timezone override.
 
 ### `language`
 - Type: string

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.proposal_engine import ActivityProposal
 
@@ -40,7 +42,8 @@ def house_state_proposal_review_details(
         weekday_label = _weekday_label(weekday, is_it=is_it)
         lines.append(f"Giorno: {weekday_label}" if is_it else f"Weekday: {weekday_label}")
     if hour_bucket not in (None, ""):
-        lines.append(f"Ora: {hour_bucket}" if is_it else f"Hour: {hour_bucket}")
+        hour_label = _hour_bucket_label(hour_bucket)
+        lines.append(f"Ora: {hour_label}" if is_it else f"Hour: {hour_label}")
     if rooms:
         lines.append(f"Stanze: {rooms}" if is_it else f"Rooms: {rooms}")
     lines.append(
@@ -113,7 +116,7 @@ def proposal_review_type(proposal: object) -> str:
 
 def format_last_seen(value: str) -> str:
     try:
-        return datetime.fromisoformat(value).date().isoformat()
+        return dt_util.as_local(datetime.fromisoformat(value)).date().isoformat()
     except (TypeError, ValueError):
         return ""
 
@@ -149,6 +152,19 @@ def parse_hhmm_to_min(value: str) -> int | None:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return None
     return hour * 60 + minute
+
+
+def _hour_bucket_label(value: Any) -> str:
+    try:
+        hour = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    whole_hour = int(hour)
+    minute = round((hour - whole_hour) * 60)
+    if minute == 60:
+        whole_hour += 1
+        minute = 0
+    return f"{whole_hour % 24:02d}:{minute:02d}"
 
 
 def format_min_to_hhmm(value: int) -> str:

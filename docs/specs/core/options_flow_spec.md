@@ -118,7 +118,6 @@ Bounded time-based admin utility:
 
 ### Fields
 - `engine_enabled` (bool, default: true)
-- `timezone` (string, default: HA timezone)
 - `language` (string, default: HA language)
 - `lighting_apply_mode` (enum: `scene`, `delegate`)
 
@@ -142,11 +141,11 @@ Optional house-state tuning/config:
 - `sleep_charging_min_count` (int or null, min `0`)
 
 ### Validation
-- timezone must be valid IANA TZ
 - language must be supported by HA
 
 ### Runtime Effect
 - disabling engine blocks all apply phases but keeps canonical state updates
+- time-based logic uses the global Home Assistant timezone
 - stores the configurable house-signal bindings used by canonical house-state resolution
 
 ---

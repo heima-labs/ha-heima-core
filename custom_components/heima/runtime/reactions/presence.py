@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.util import dt as dt_util
+
 from ..contracts import ApplyStep
 from ..outcome_tracker import OutcomeSpec
 from ..snapshot import DecisionSnapshot
@@ -185,9 +187,10 @@ class PresencePatternReaction(HeimaReaction):
     @staticmethod
     def _parse_ts(ts: str) -> datetime | None:
         try:
-            return datetime.fromisoformat(ts).astimezone()
+            parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except (ValueError, OverflowError, OSError):
             return None
+        return dt_util.as_local(parsed)
 
     # ------------------------------------------------------------------
     # Inspection helpers (useful in tests and diagnostics)

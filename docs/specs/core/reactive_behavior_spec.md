@@ -603,6 +603,8 @@ data:
 Semantics:
 - clear persisted `EventStore`
 - flush event storage immediately
+- clear persisted inference `SnapshotStore`
+- flush snapshot storage immediately
 - clear persisted `ProposalEngine` state
 - clear runtime-local learning state in reactions/behaviors
 - clear `SnapshotBuffer`

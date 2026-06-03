@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class CalendarDomain:
 
         keywords, priority_order = _resolve_classification_config(calendar_cfg)
         now = datetime.now(timezone.utc)
-        today = now.date()
+        today = dt_util.as_local(now).date()
 
         # Current events: read live from entity state
         current_events: list[CalendarEvent] = []
@@ -209,7 +210,9 @@ class CalendarDomain:
 
         next_vacation: CalendarEvent | None = None
         future_vacations = [
-            e for e in upcoming_events if e.category == "vacation" and e.start.date() > today
+            e
+            for e in upcoming_events
+            if e.category == "vacation" and dt_util.as_local(e.start).date() > today
         ]
         if future_vacations:
             next_vacation = min(future_vacations, key=lambda e: e.start)

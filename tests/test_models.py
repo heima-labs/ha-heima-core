@@ -8,7 +8,6 @@ def test_options_defaults():
     entry = SimpleNamespace(options={})
     options = HeimaOptions.from_entry(entry)
     assert options.engine_enabled is True
-    assert options.timezone == "UTC"
     assert options.language == "en"
 
 

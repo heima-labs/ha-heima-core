@@ -36,10 +36,6 @@ _NON_NEGATIVE_INT = vol.All(vol.Coerce(int), vol.Range(min=0))
 # ---------------------------------------------------------------------------
 
 
-def _default_timezone(hass: HomeAssistant) -> str:
-    return str(getattr(hass.config, "time_zone", "UTC") or "UTC")
-
-
 def _default_language(hass: HomeAssistant) -> str:
     return str(getattr(hass.config, "language", "en") or "en")
 

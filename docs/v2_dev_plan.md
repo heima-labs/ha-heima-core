@@ -120,6 +120,25 @@ All active v2 phases complete. Phase T deferred — see Phase T section for rati
 
 ### Current Working Notes
 
+- Cross-cutting fix: local time contract restored for inference snapshots and notifications.
+  - Engine inference contexts and newly persisted `HouseSnapshot` records now derive `weekday` and
+    `minute_of_day` from HA local time rather than UTC.
+  - `HouseSnapshot.from_dict()` re-derives local slots from `ts`, correcting legacy UTC-derived
+    snapshot slots when persisted history is loaded.
+  - Unusual-hour anomaly rules use circular clock distance, so times around midnight are compared
+    correctly (`23:00` vs `01:00` is a 2-hour difference).
+  - Arrival, departure, and alarm-disarm unusual-hour baselines are scoped to the same weekday,
+    avoiding false positives caused by mixing workday and weekend distributions.
+  - Presence reaction learning and analyzer calendar boundaries now use HA local time. Activity
+    distinct-day counts and analyzer week-span checks use the same local calendar contract.
+    Elapsed-time comparisons remain UTC-based.
+  - House-state proposal and installer anomaly notifications render weekday names and `HH:MM`
+    labels instead of raw weekday/hour numbers.
+  - Proposal `last seen` dates in the options flow are rendered in HA local time.
+  - Runtime reaction diagnostics persist `last_fired_iso` as timezone-aware UTC timestamps.
+  - Calendar `today` classification for vacation, WFH, and office events uses the HA local date.
+  - HA is the single authoritative timezone source. The unused Heima `timezone` override was
+    removed from config flow, models, and docs; persisted legacy values are dropped on save.
 - Current slice: Phase U / U1-U3 complete.
   - `LightingDomainResult` now carries `lights_on`, populated from configured room light entities
     by reading current HA physical state (`state == "on"`).

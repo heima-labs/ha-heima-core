@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from custom_components.heima.runtime.analyzers.cross_domain import (
     DEFAULT_COMPOSITE_PATTERN_CATALOG,
@@ -11,6 +11,7 @@ from custom_components.heima.runtime.analyzers.cross_domain import (
     CompositeProposalQualityPolicy,
     CrossDomainPatternAnalyzer,
     RoomCoolingPatternAnalyzer,
+    _episode_week_count,
     rooms_with_confirmed_pattern_evidence,
 )
 from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
@@ -36,6 +37,23 @@ class _StoreStub:
 async def _analyze_proposals(analyzer, store):  # noqa: ANN001
     findings = await analyzer.analyze(store)  # type: ignore[arg-type]
     return [finding.payload for finding in findings]
+
+
+def test_episode_week_count_uses_home_assistant_local_calendar(monkeypatch):
+    from custom_components.heima.runtime.analyzers import cross_domain
+
+    monkeypatch.setattr(
+        cross_domain.dt_util,
+        "as_local",
+        lambda value: value.astimezone(timezone(timedelta(hours=2))),
+    )
+
+    episodes = [
+        type("Episode", (), {"ts": datetime(2026, 1, 4, 22, 30, tzinfo=UTC)})(),
+        type("Episode", (), {"ts": datetime(2026, 1, 5, 22, 30, tzinfo=UTC)})(),
+    ]
+
+    assert _episode_week_count(episodes) == 1
 
 
 def _ctx(*, room: str, minute: int = 480, house_state: str = "home") -> EventContext:

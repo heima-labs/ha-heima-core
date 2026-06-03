@@ -13,6 +13,7 @@ from uuid import uuid4
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     DEFAULT_LIGHTING_APPLY_MODE,
@@ -1120,10 +1121,11 @@ class HeimaEngine:
         if not self._learning_modules:
             self._last_signal_buckets = {}
             return {}
+        now_local = dt_util.as_local(now_utc)
         context = InferenceContext(
-            now_local=now_utc,
-            weekday=now_utc.weekday(),
-            minute_of_day=now_utc.hour * 60 + now_utc.minute,
+            now_local=now_local,
+            weekday=now_local.weekday(),
+            minute_of_day=now_local.hour * 60 + now_local.minute,
             anyone_home=anyone_home,
             named_present=named_present,
             room_occupancy={room: True for room in occupied_rooms},
@@ -1158,14 +1160,14 @@ class HeimaEngine:
         """Persist a HouseSnapshot for inference learning, only on state change."""
         if self._house_snapshot_store is None:
             return
-        ts_utc = datetime.now(timezone.utc)
+        snapshot_local = dt_util.as_local(datetime.fromisoformat(snapshot.ts))
         people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
         named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
         room_occupancy = {room: True for room in snapshot.occupied_rooms}
         house_snap = HouseSnapshot(
             ts=snapshot.ts,
-            weekday=ts_utc.weekday(),
-            minute_of_day=ts_utc.hour * 60 + ts_utc.minute,
+            weekday=snapshot_local.weekday(),
+            minute_of_day=snapshot_local.hour * 60 + snapshot_local.minute,
             anyone_home=snapshot.anyone_home,
             named_present=named_present,
             room_occupancy=room_occupancy,

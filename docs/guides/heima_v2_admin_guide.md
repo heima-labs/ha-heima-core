@@ -48,11 +48,10 @@ When you add the integration:
 The first entry stores only the minimum startup options:
 
 - `engine_enabled`
-- `timezone`
 - `language`
 - `lighting_apply_mode`
 
-The timezone and language are taken from Home Assistant defaults. After the entry is created, immediately open the options flow to complete the real setup.
+The language is taken from Home Assistant defaults. Time-based logic always uses the global Home Assistant timezone. After the entry is created, immediately open the options flow to complete the real setup.
 
 Recommended first-run posture:
 
@@ -137,7 +136,7 @@ The menu summaries are operational hints. Treat them as quick status, not as a f
 Purpose:
 
 - Enable or disable the runtime engine.
-- Set timezone and language.
+- Set language.
 - Choose lighting apply mode.
 - Bind house-state signals.
 - Tune house-state timing.
@@ -145,7 +144,6 @@ Purpose:
 Fields:
 
 - `engine_enabled`: global runtime toggle.
-- `timezone`: Home Assistant timezone string used for time-based logic.
 - `language`: language used for admin-facing flow text and summaries.
 - `lighting_apply_mode`: lighting execution mode.
 - `vacation_mode_entity`
@@ -169,7 +167,6 @@ Fields:
 
 Recommended first-run settings:
 
-- Confirm `timezone`.
 - Confirm `language`.
 - Keep `lighting_apply_mode = scene` unless you intentionally want delegated behavior.
 - Bind only house-state entities with clear semantics.

@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from .const import (
     CONF_ENGINE_ENABLED,
     CONF_LANGUAGE,
-    CONF_TIMEZONE,
     DEFAULT_ENGINE_ENABLED,
 )
 
@@ -20,7 +19,6 @@ class HeimaOptions:
     """Normalized options stored in the config entry."""
 
     engine_enabled: bool
-    timezone: str
     language: str
 
     @classmethod
@@ -28,7 +26,6 @@ class HeimaOptions:
         options: dict[str, Any] = dict(entry.options)
         return cls(
             engine_enabled=bool(options.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED)),
-            timezone=str(options.get(CONF_TIMEZONE, "UTC") or "UTC"),
             language=str(options.get(CONF_LANGUAGE, "en") or "en"),
         )
 

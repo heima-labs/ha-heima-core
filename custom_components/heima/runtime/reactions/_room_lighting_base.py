@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from homeassistant.core import HomeAssistant
@@ -108,7 +108,7 @@ class _BaseRoomLightingAssist(HeimaReaction):
 
     def _mark_fired(self) -> None:
         self._last_fired_ts = time.monotonic()
-        self._last_fired_iso = datetime.now().isoformat()
+        self._last_fired_iso = datetime.now(UTC).isoformat()
         self._fire_count += 1
 
     def _reset_runtime_counters(self) -> None:

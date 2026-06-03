@@ -120,13 +120,18 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _presence_transitions(snapshots, previous_home=False, current_home=True)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
-        baseline_hour = _median([float(hour) for hour in baseline])
-        distance = abs(float(current.hour_bucket) - baseline_hour)
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
+        baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
+        distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
             return []
 
@@ -136,12 +141,14 @@ class AnomalyAnalyzer:
             severity=_severity(rule.severity),
             description=(
                 "Arrival happened at an unusual hour: "
-                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+                f"{_hour_bucket_label(current.hour_bucket)} differs from historical median "
+                f"{_hour_bucket_label(baseline_hour)}."
             ),
             confidence=round(confidence, 3),
             context={
                 "rule_id": rule.rule_id,
-                "transition_count": len(transitions),
+                "weekday": current.weekday,
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),
@@ -165,13 +172,18 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _presence_transitions(snapshots, previous_home=True, current_home=False)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
-        baseline_hour = _median([float(hour) for hour in baseline])
-        distance = abs(float(current.hour_bucket) - baseline_hour)
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
+        baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
+        distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
             return []
 
@@ -181,12 +193,14 @@ class AnomalyAnalyzer:
             severity=_severity(rule.severity),
             description=(
                 "Departure happened at an unusual hour: "
-                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+                f"{_hour_bucket_label(current.hour_bucket)} differs from historical median "
+                f"{_hour_bucket_label(baseline_hour)}."
             ),
             confidence=round(confidence, 3),
             context={
                 "rule_id": rule.rule_id,
-                "transition_count": len(transitions),
+                "weekday": current.weekday,
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),
@@ -458,8 +472,8 @@ class AnomalyAnalyzer:
             if len(observed_hours) < min_observations:
                 continue
 
-            baseline_hour = _median([float(hour) for hour in observed_hours])
-            distance = abs(float(current_hour) - baseline_hour)
+            baseline_hour = _clock_median_hour([float(hour) for hour in observed_hours])
+            distance = _clock_distance_hours(float(current_hour), baseline_hour)
             if distance < delta_hours:
                 continue
 
@@ -469,7 +483,8 @@ class AnomalyAnalyzer:
                 severity=_severity(rule.severity),
                 description=(
                     f"Appliance activity '{activity_name}' is active at an unusual hour: "
-                    f"hour {current_hour} differs from historical median {baseline_hour:.1f}."
+                    f"{_hour_bucket_label(current_hour)} differs from historical median "
+                    f"{_hour_bucket_label(baseline_hour)}."
                 ),
                 confidence=round(confidence, 3),
                 context={
@@ -793,13 +808,18 @@ class AnomalyAnalyzer:
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _disarm_transitions(snapshots)
-        if len(transitions) < min_observations + 1:
+        if not transitions:
+            return []
+        current = transitions[-1]
+        same_weekday = [
+            transition for transition in transitions if transition.weekday == current.weekday
+        ]
+        if len(same_weekday) < min_observations + 1:
             return []
 
-        baseline = [transition.hour_bucket for transition in transitions[:-1]]
-        current = transitions[-1]
-        baseline_hour = _median([float(hour) for hour in baseline])
-        distance = abs(float(current.hour_bucket) - baseline_hour)
+        baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
+        baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
+        distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
         if distance < delta_hours:
             return []
 
@@ -809,12 +829,14 @@ class AnomalyAnalyzer:
             severity=_severity(rule.severity),
             description=(
                 "Alarm was disarmed at an unusual hour: "
-                f"hour {current.hour_bucket} differs from historical median {baseline_hour:.1f}."
+                f"{_hour_bucket_label(current.hour_bucket)} differs from historical median "
+                f"{_hour_bucket_label(baseline_hour)}."
             ),
             confidence=round(confidence, 3),
             context={
                 "rule_id": rule.rule_id,
-                "transition_count": len(transitions),
+                "weekday": current.weekday,
+                "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
                 "baseline_hour_bucket": round(baseline_hour, 3),
@@ -1179,6 +1201,21 @@ def _median(values: list[float]) -> float:
     return (ordered[midpoint - 1] + ordered[midpoint]) / 2
 
 
+def _clock_distance_hours(left: float, right: float) -> float:
+    distance = abs(left - right) % 24
+    return min(distance, 24 - distance)
+
+
+def _clock_median_hour(values: list[float]) -> float:
+    return min(
+        values,
+        key=lambda candidate: (
+            sum(_clock_distance_hours(candidate, value) for value in values),
+            candidate,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class _DisarmTransition:
     weekday: int
@@ -1255,12 +1292,28 @@ def _snapshot_time(snapshot: Any) -> datetime | None:
 
 
 def _snapshot_encoded_hour(snapshot: Any) -> int | None:
+    try:
+        minute_of_day = int(getattr(snapshot, "minute_of_day"))
+    except (TypeError, ValueError):
+        minute_of_day = -1
+    if 0 <= minute_of_day < 24 * 60:
+        return minute_of_day // 60
     raw = str(getattr(snapshot, "ts", "") or "")
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
     return int(parsed.hour)
+
+
+def _hour_bucket_label(value: float | int) -> str:
+    hour = float(value)
+    whole_hour = int(hour)
+    minute = round((hour - whole_hour) * 60)
+    if minute == 60:
+        whole_hour += 1
+        minute = 0
+    return f"{whole_hour % 24:02d}:{minute:02d}"
 
 
 def _activity_set(snapshot: Any) -> set[str]:

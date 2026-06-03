@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from ..event_store import EventStore, HeimaEvent
 from ..plugin_contracts import BehaviorFinding, pattern_finding
 from .base import ReactionProposal
@@ -118,6 +120,7 @@ def _weeks_observed(events: list[HeimaEvent]) -> int:
     for event in events:
         try:
             dt = __import__("datetime").datetime.fromisoformat(event.ts)
+            dt = dt_util.as_local(dt)
             iso = dt.isocalendar()
             weeks.add((iso.year, iso.week))
         except (ValueError, TypeError):

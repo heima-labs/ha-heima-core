@@ -12,7 +12,6 @@ from homeassistant.helpers import area_registry as ar
 from ..const import (
     CONF_ENGINE_ENABLED,
     CONF_LANGUAGE,
-    CONF_TIMEZONE,
     DEFAULT_ENGINE_ENABLED,
     DEFAULT_LIGHTING_APPLY_MODE,
     DOMAIN,
@@ -31,7 +30,7 @@ from ..const import (
 )
 from ..reconciliation import reconcile_ha_backed_options
 from ..runtime.reactions import resolve_reaction_type
-from ._common import _default_language, _default_timezone
+from ._common import _default_language
 from ._steps_calendar import _CalendarStepsMixin
 from ._steps_discovery_validation import _DiscoveryValidationStepsMixin
 from ._steps_external_context import _ExternalContextStepsMixin
@@ -91,7 +90,6 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
 
         options = {
             CONF_ENGINE_ENABLED: user_input.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED),
-            CONF_TIMEZONE: _default_timezone(self.hass),
             CONF_LANGUAGE: _default_language(self.hass),
             OPT_LIGHTING_APPLY_MODE: DEFAULT_LIGHTING_APPLY_MODE,
         }
@@ -195,6 +193,7 @@ class HeimaOptionsFlowHandler(
         """
         merged = self._entry_options_snapshot()
         merged.update(updates)
+        merged.pop("timezone", None)
         self.options = merged
         config_entry = getattr(self, "_config_entry", None)
         # Keep config_entry.options in sync so _entry_options_snapshot always
@@ -604,6 +603,7 @@ class HeimaOptionsFlowHandler(
     def _finalize_options(self) -> dict[str, Any]:
         """Return a coherent options snapshot before persisting."""
         options = dict(self.options)
+        options.pop("timezone", None)
 
         room_ids = {str(r.get("room_id")) for r in options.get(OPT_ROOMS, []) if r.get("room_id")}
         lighting_rooms = []

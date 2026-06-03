@@ -8,12 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
-from homeassistant.util import dt as dt_util
 
 from ..const import (
     CONF_ENGINE_ENABLED,
     CONF_LANGUAGE,
-    CONF_TIMEZONE,
     DEFAULT_ENGINE_ENABLED,
     DEFAULT_HOUSE_STATE_CONFIG,
     DEFAULT_LIGHTING_APPLY_MODE,
@@ -24,7 +22,6 @@ from ..const import (
 from ._common import (
     LIGHTING_APPLY_MODES,
     _default_language,
-    _default_timezone,
     _entity_selector,
     _normalize_house_signal_bindings,
 )
@@ -58,23 +55,9 @@ class _GeneralStepsMixin:
                 description_placeholders=self._general_description_placeholders(),
             )
 
-        errors: dict[str, str] = {}
-        timezone_value = user_input.get(CONF_TIMEZONE, _default_timezone(self.hass))
-        if not dt_util.get_time_zone(timezone_value):
-            errors[CONF_TIMEZONE] = "invalid_time_zone"
-
-        if errors:
-            return self.async_show_form(
-                step_id="general",
-                data_schema=schema,
-                errors=errors,
-                description_placeholders=self._general_description_placeholders(),
-            )
-
         self._update_options(
             {
                 CONF_ENGINE_ENABLED: user_input.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED),
-                CONF_TIMEZONE: timezone_value,
                 CONF_LANGUAGE: user_input.get(CONF_LANGUAGE, _default_language(self.hass)),
                 OPT_LIGHTING_APPLY_MODE: user_input.get(
                     OPT_LIGHTING_APPLY_MODE, DEFAULT_LIGHTING_APPLY_MODE
@@ -91,10 +74,6 @@ class _GeneralStepsMixin:
                 CONF_ENGINE_ENABLED,
                 default=self.options.get(CONF_ENGINE_ENABLED, DEFAULT_ENGINE_ENABLED),
             ): bool,
-            vol.Optional(
-                CONF_TIMEZONE,
-                default=self.options.get(CONF_TIMEZONE, _default_timezone(self.hass)),
-            ): cv.string,
             vol.Optional(
                 CONF_LANGUAGE,
                 default=self.options.get(CONF_LANGUAGE, _default_language(self.hass)),
