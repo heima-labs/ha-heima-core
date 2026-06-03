@@ -104,7 +104,9 @@ class OccupancyDomain:
                     inference_signal,
                 )
             else:
-                is_occupied, occ_trace = self._compute_room_occupancy(room, schedule_recheck, events)
+                is_occupied, occ_trace = self._compute_room_occupancy(
+                    room, schedule_recheck, events
+                )
             prev_value = state.get_binary(f"heima_occupancy_{room_id}")
             state.set_binary(f"heima_occupancy_{room_id}", is_occupied)
             state.set_sensor(

@@ -124,9 +124,9 @@ def test_alarm_triggered_lights_on_uses_triggered_state_and_turn_on():
     assert proposal is not None
     assert proposal.identity_key == "alarm_triggered_lights_on"
     assert proposal.suggested_reaction_config["alarm_states"] == ["triggered"]
-    assert {
-        step["action"] for step in proposal.suggested_reaction_config["steps"]
-    } == {"light.turn_on"}
+    assert {step["action"] for step in proposal.suggested_reaction_config["steps"]} == {
+        "light.turn_on"
+    }
 
 
 def test_alarm_away_climate_off_returns_none_without_alarm_entity():
@@ -225,9 +225,7 @@ async def test_coordinator_evaluates_semantic_policies_and_notifies_new_proposal
         "alarm_night_climate_sleep",
     }
     assert len(services.calls) == 4
-    assert {
-        call[2]["notification_id"] for call in services.calls
-    } == {
+    assert {call[2]["notification_id"] for call in services.calls} == {
         "heima_installer_semantic_policy_alarm_away_lights_off",
         "heima_installer_semantic_policy_alarm_triggered_lights_on",
         "heima_installer_semantic_policy_alarm_away_climate_off",
@@ -272,7 +270,9 @@ async def test_coordinator_skips_semantic_policies_when_topology_is_incomplete()
 
     coordinator._proposal_engine.async_submit_proposal.assert_not_awaited()
     assert coordinator._proposal_engine.async_withdraw.await_count == 4
-    assert {call.args[0] for call in coordinator._proposal_engine.async_withdraw.await_args_list} == {
+    assert {
+        call.args[0] for call in coordinator._proposal_engine.async_withdraw.await_args_list
+    } == {
         "alarm_away_lights_off",
         "alarm_triggered_lights_on",
         "alarm_away_climate_off",

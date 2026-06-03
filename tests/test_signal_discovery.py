@@ -309,9 +309,7 @@ async def test_coordinator_submits_signal_discovery_suggestions_and_notifies() -
             False,
         )
     ]
-    assert coordinator._notified_installer_alert_keys == {
-        "signal_discovery:sensor.studio_lux"
-    }
+    assert coordinator._notified_installer_alert_keys == {"signal_discovery:sensor.studio_lux"}
 
 
 @pytest.mark.asyncio
@@ -376,9 +374,7 @@ async def test_coordinator_reviews_signal_discovery_approval_without_approval_st
     )
 
     assert result is True
-    coordinator._proposal_engine.async_accept_proposal.assert_awaited_once_with(
-        "proposal-signal"
-    )
+    coordinator._proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-signal")
     assert proposal.identity_key not in coordinator._notified_installer_alert_keys
 
 
@@ -405,9 +401,7 @@ async def test_coordinator_reviews_signal_discovery_rejection() -> None:
     )
 
     assert result is True
-    coordinator._proposal_engine.async_reject_proposal.assert_awaited_once_with(
-        "proposal-signal"
-    )
+    coordinator._proposal_engine.async_reject_proposal.assert_awaited_once_with("proposal-signal")
 
 
 @pytest.mark.asyncio
@@ -535,11 +529,7 @@ async def test_coordinator_skips_already_applied_accepted_patch() -> None:
         },
     )
     entry = SimpleNamespace(
-        options={
-            "rooms": [
-                {"room_id": "studio", "learning_sources": ["media_player.projector"]}
-            ]
-        }
+        options={"rooms": [{"room_id": "studio", "learning_sources": ["media_player.projector"]}]}
     )
     config_entries = SimpleNamespace(async_update_entry=MagicMock())
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
@@ -565,7 +555,9 @@ def test_coordinator_builds_signal_discovery_descriptors(monkeypatch: pytest.Mon
             ),
         }
     )
-    device_registry = SimpleNamespace(devices={"device-lux": SimpleNamespace(area_id="studio_area")})
+    device_registry = SimpleNamespace(
+        devices={"device-lux": SimpleNamespace(area_id="studio_area")}
+    )
     area_registry = SimpleNamespace(
         async_list_areas=lambda: [SimpleNamespace(id="studio_area", name="Studio")]
     )

@@ -598,9 +598,7 @@ def test_build_room_signal_assist_reaction_honors_learned_air_quality_gte_bucket
             "primary_signal_name": "room_co2",
             "primary_bucket": "elevated",
             "primary_bucket_match_mode": "gte",
-            "steps": [
-                {"domain": "fan", "target": "fan.office", "action": "fan.turn_on"}
-            ],
+            "steps": [{"domain": "fan", "target": "fan.office", "action": "fan.turn_on"}],
         },
     )
 
@@ -664,9 +662,7 @@ def test_build_room_signal_assist_reaction_honors_learned_corroboration_gte_buck
             "corroboration_signal_name": "room_temperature",
             "corroboration_bucket": "warm",
             "corroboration_bucket_match_mode": "gte",
-            "steps": [
-                {"domain": "fan", "target": "fan.bathroom", "action": "fan.turn_on"}
-            ],
+            "steps": [{"domain": "fan", "target": "fan.bathroom", "action": "fan.turn_on"}],
         },
     )
 

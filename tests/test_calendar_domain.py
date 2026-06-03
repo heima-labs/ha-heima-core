@@ -364,7 +364,9 @@ def test_compute_allday_vacation_uses_home_assistant_local_date(monkeypatch):
     domain._cached_events = [
         CalendarEvent(
             summary="Ferie",
-            start=datetime(local_today.year, local_today.month, local_today.day, tzinfo=timezone.utc),
+            start=datetime(
+                local_today.year, local_today.month, local_today.day, tzinfo=timezone.utc
+            ),
             end=datetime(
                 local_tomorrow.year,
                 local_tomorrow.month,

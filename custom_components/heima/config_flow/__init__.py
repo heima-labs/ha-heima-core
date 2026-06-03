@@ -63,9 +63,7 @@ class HeimaConfigFlow(config_entries.ConfigFlow, domain="heima"):
         user_id = str(self.context.get("user_id") or "").strip()
         if not user_id:
             if self.context.get("source") == config_entries.SOURCE_USER:
-                _LOGGER.debug(
-                    "Allowing Heima user-initiated config flow without context user_id"
-                )
+                _LOGGER.debug("Allowing Heima user-initiated config flow without context user_id")
                 self._admin_access_granted = True
                 return None
             self._admin_access_granted = False

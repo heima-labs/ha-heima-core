@@ -1086,9 +1086,7 @@ async def test_configure_anomaly_rule_threshold_override_applies_next_analyze(mo
         == 4.0
     )
     assert not [
-        finding
-        for finding in findings
-        if finding.payload.anomaly_type == "heating_unresponsive"
+        finding for finding in findings if finding.payload.anomaly_type == "heating_unresponsive"
     ]
 
 
@@ -1127,9 +1125,7 @@ async def test_configure_anomaly_rule_disabled_rule_applies_next_analyze(monkeyp
 
     assert coordinator.entry.options["anomaly"]["rules"]["heating_unresponsive"]["enabled"] is False
     assert not [
-        finding
-        for finding in findings
-        if finding.payload.anomaly_type == "heating_unresponsive"
+        finding for finding in findings if finding.payload.anomaly_type == "heating_unresponsive"
     ]
 
 

@@ -32,7 +32,9 @@ async def test_config_flow_user_step_requires_admin() -> None:
 
 
 @pytest.mark.asyncio
-async def test_config_flow_user_step_requires_admin_when_user_id_missing_for_non_user_source() -> None:
+async def test_config_flow_user_step_requires_admin_when_user_id_missing_for_non_user_source() -> (
+    None
+):
     flow = HeimaConfigFlow()
     flow.hass = _fake_hass(is_admin=True)
     flow.context = {}
