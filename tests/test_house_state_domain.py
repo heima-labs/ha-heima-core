@@ -761,6 +761,55 @@ def test_house_state_work_candidate_blocked_by_calendar_office(monkeypatch: pyte
     )
 
 
+@pytest.mark.parametrize(
+    ("calendar_result", "expected_source"),
+    [
+        (CalendarResult(is_day_off_today=True), "calendar_day_off"),
+        (CalendarResult(is_holiday_today=True), "calendar_holiday"),
+    ],
+)
+def test_house_state_work_candidate_blocked_by_calendar_rest_day(
+    monkeypatch: pytest.MonkeyPatch,
+    calendar_result: CalendarResult,
+    expected_source: str,
+):
+    def _get(entity_id: str):
+        if entity_id in {"binary_sensor.work_window", "binary_sensor.workday"}:
+            return SimpleNamespace(state="on", attributes={})
+        return None
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=_get),
+        services=SimpleNamespace(async_call=None, async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda *a, **kw: None),
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monotonic = 6500.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: monotonic,
+    )
+    options = {"house_state_config": {"workday_entity": "binary_sensor.workday"}}
+
+    result = domain.compute(
+        options=options,
+        house_signal_entities={"work_window": "binary_sensor.work_window"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=calendar_result,
+    )
+    assert result.house_state == "home"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["work_candidate"]["state"] is False
+    assert (
+        diagnostics["candidate_trace"]["work_candidate"]["inputs"]["workday_evidence"]["source"]
+        == expected_source
+    )
+    assert diagnostics["resolution_trace"]["derived_state_direct"] == "working"
+
+
 def test_house_state_work_candidate_uses_workday_entity_when_calendar_neutral(
     monkeypatch: pytest.MonkeyPatch,
 ):

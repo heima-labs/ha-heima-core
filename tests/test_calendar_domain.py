@@ -71,7 +71,17 @@ def test_classify_vacation_it():
 
 def test_classify_vacation_en():
     kw, prio = _kw_and_prio()
-    assert _classify("Summer Holiday", kw, prio) == "vacation"
+    assert _classify("Vacation trip", kw, prio) == "vacation"
+
+
+def test_classify_holiday_not_vacation():
+    kw, prio = _kw_and_prio()
+    assert _classify("Summer Holiday", kw, prio) == "holiday"
+
+
+def test_classify_day_off():
+    kw, prio = _kw_and_prio()
+    assert _classify("Giorno libero", kw, prio) == "day_off"
 
 
 def test_classify_wfh():
@@ -109,7 +119,7 @@ def test_classify_user_keywords_extended():
     cfg = {"calendar_keywords": {"vacation": ["cruise"]}}
     kw, prio = _kw_and_prio(cfg)
     assert _classify("Mediterranean Cruise", kw, prio) == "vacation"
-    assert _classify("Holiday trip", kw, prio) == "vacation"
+    assert _classify("Holiday trip", kw, prio) == "holiday"
 
 
 def test_classify_custom_category():
@@ -231,6 +241,26 @@ def test_compute_wfh_active_from_entity_state():
     assert result.is_office_today is False
 
 
+def test_compute_holiday_active_from_entity_state_not_vacation():
+    states = {
+        "calendar.personal": (
+            "on",
+            {
+                "message": "Festa nazionale",
+                "start_time": _now().isoformat(),
+                "end_time": (_now() + timedelta(hours=8)).isoformat(),
+                "all_day": True,
+            },
+        )
+    }
+    domain = CalendarDomain(_fake_hass(states=states))
+    result = domain.compute({"calendar_entities": ["calendar.personal"]})
+    assert result.is_holiday_today is True
+    assert result.is_day_off_today is False
+    assert result.is_vacation_active is False
+    assert result.current_events[0].category == "holiday"
+
+
 def test_compute_office_beats_wfh():
     """If office is active today, wfh is suppressed even if also present."""
     states = {
@@ -298,6 +328,29 @@ def test_compute_allday_vacation_from_cache():
     domain._cache_ts = _now()
     result = domain.compute({"calendar_entities": ["calendar.personal"]})
     assert result.is_vacation_active is True
+
+
+def test_compute_allday_day_off_from_cache_not_vacation():
+    domain = CalendarDomain(_fake_hass())
+    today = _now().date()
+    tomorrow = today + timedelta(days=1)
+    from custom_components.heima.runtime.domains.calendar import CalendarEvent
+
+    domain._cached_events = [
+        CalendarEvent(
+            summary="Riposo",
+            start=datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+            end=datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc),
+            all_day=True,
+            category="day_off",
+            calendar_entity="calendar.personal",
+        )
+    ]
+    domain._cache_ts = _now()
+    result = domain.compute({"calendar_entities": ["calendar.personal"]})
+    assert result.is_day_off_today is True
+    assert result.is_holiday_today is False
+    assert result.is_vacation_active is False
 
 
 def test_compute_allday_vacation_uses_home_assistant_local_date(monkeypatch):
@@ -419,7 +472,7 @@ async def test_async_maybe_refresh_populates_cache():
     await domain.async_maybe_refresh(cfg)
     assert domain._cache_ts is not None
     assert len(domain._cached_events) == 1
-    assert domain._cached_events[0].category == "vacation"
+    assert domain._cached_events[0].category == "holiday"
 
 
 @pytest.mark.asyncio

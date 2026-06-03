@@ -24,7 +24,9 @@ calendar_entities: [calendar.personal, calendar.work]  # lista
 lookahead_days: 7          # default 7, configurabile
 cache_ttl_hours: 2         # default 2, configurabile
 calendar_keywords:
-  vacation: ["vacanza", "holiday", "ferie", "viaggio", "vacation"]
+  vacation: ["vacanza", "ferie", "viaggio", "vacation"]
+  holiday: ["festivo", "festa nazionale", "bank holiday", "national holiday", "public holiday", "giorno festivo", "holiday"]
+  day_off: ["giorno libero", "day off", "permesso", "recupero", "riposo"]
   wfh:      ["wfh", "smart working", "lavoro da casa", "remote"]
   office:   ["ufficio", "office", "in sede"]
   visitor:  ["ospiti", "visitor", "amici", "guests"]
@@ -42,7 +44,7 @@ class CalendarEvent:
     start: datetime
     end: datetime
     all_day: bool
-    category: Literal["vacation", "wfh", "office", "visitor", "unknown"]
+    category: Literal["vacation", "holiday", "day_off", "wfh", "office", "visitor", "unknown"]
     calendar_entity: str
 
 @dataclass
@@ -50,6 +52,8 @@ class CalendarResult:
     current_events: list[CalendarEvent]    # attivi ora
     upcoming_events: list[CalendarEvent]   # entro lookahead_days
     is_vacation_active: bool               # vacation attiva ora o tutto-giorno oggi
+    is_holiday_today: bool                 # holiday attivo ora o tutto-giorno oggi
+    is_day_off_today: bool                 # day_off attivo ora o tutto-giorno oggi
     is_wfh_today: bool                     # wfh oggi E nessun office oggi
     is_office_today: bool                  # office esplicito oggi
     next_vacation: CalendarEvent | None    # prima vacation futura
@@ -67,6 +71,9 @@ is_wfh_today    = almeno un evento categoria "wfh" oggi AND NOT is_office_today
 ```
 
 `office` prevale su `wfh` se entrambi presenti nello stesso giorno.
+
+`holiday` e `day_off` sono categorie di riposo a casa: disabilitano il candidato `working`, ma
+non attivano `vacation_mode`.
 
 ## Comportamento del fetch
 
@@ -86,11 +93,13 @@ is_wfh_today    = almeno un evento categoria "wfh" oggi AND NOT is_office_today
 | Segnale                        | Risultato         |
 |-------------------------------|-------------------|
 | `is_office_today=True`        | `work_window=False` (fuori casa) |
+| `is_day_off_today=True`       | `work_candidate=False` (giorno libero) |
+| `is_holiday_today=True`       | `work_candidate=False` (festivo) |
 | `is_wfh_today=True`           | `work_window=True` (lavoro da casa) |
 | nessun evento calendario WFH/office | fallback a `work_window_entity` (se configurato) |
 
-Calendario prevale su `work_window_entity`; il sensore esterno è usato solo
-se nessun evento calendario WFH/office è presente oggi.
+Calendario prevale su `work_window_entity`; il sensore esterno è usato solo se nessun evento
+calendario `office`, `day_off`, `holiday` o `wfh` è presente oggi.
 
 **HeatingDomain:**
 - `CalendarResult` è già disponibile nel runtime shared state
@@ -122,6 +131,8 @@ Il summary SHOULD includere almeno:
 - `current_events_count`
 - `upcoming_events_count`
 - `is_vacation_active`
+- `is_day_off_today`
+- `is_holiday_today`
 - `is_wfh_today`
 - `is_office_today`
 - `next_vacation`

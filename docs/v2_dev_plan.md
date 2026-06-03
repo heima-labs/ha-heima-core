@@ -106,17 +106,23 @@ These constraints must never be violated. See spec §16 for rationale.
 | T | Learning Signal Analyzers | `DEFERRED` | P, S |
 | U | Physical Light State Awareness | `DONE` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
+| W | Calendar: day_off and holiday categories | `DONE` | — |
+| X | Room Context Model | `NOT STARTED` | U, V |
+| Y | HouseStateInferenceModule: tiered feature enrichment | `NOT STARTED` | X |
+| Z | Activity cold start mitigation | `NOT STARTED` | S |
+| AA | Global drift detection | `NOT STARTED` | Y |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline.
-**Active phase:** None — all planned phases complete. Phase T deferred (see below).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories.
+**Active phase:** None — Phase W complete. Phases X–AA planned (see below). Phase T deferred.
 **Branch:** `feat/v2`.
 **Next action:**
 
-All active v2 phases complete. Phase T deferred — see Phase T section for rationale.
+Phase W complete. Phases X–AA are spec-approved and ready for implementation. Suggested order: X → Y → Z → AA.
+Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
@@ -167,6 +173,13 @@ All active v2 phases complete. Phase T deferred — see Phase T section for rati
   - V1 limits suggestions to 50 sorted entity IDs per audit run.
   - Verification: `pytest tests/test_signal_discovery.py -q` and
     `ruff check custom_components/heima/runtime/signal_discovery.py tests/test_signal_discovery.py`.
+- Current slice: Phase W complete.
+  - Calendar categories now distinguish `vacation`, `holiday`, and `day_off`; the keyword
+    `"holiday"` moved out of `vacation`.
+  - `holiday` and `day_off` suppress `work_candidate` through workday evidence without activating
+    `vacation_mode`.
+  - Calendar and house-state diagnostics expose `is_day_off_today` and `is_holiday_today`.
+  - Verification: `pytest tests/test_calendar_domain.py tests/test_house_state_domain.py tests/test_config_entry_diagnostics_plugins.py tests/test_options_flow_e2e.py -q`.
 - Current slice: Phase V / V2 complete.
   - Coordinator now owns `SignalDiscoveryAudit` and `_pending_signal_suggestions`.
   - `_async_evaluate_signal_discovery()` submits pending suggestions to `ProposalEngine` as
@@ -1929,6 +1942,384 @@ config-flow patterns).
 - [ ] Re-running after coordinator restart does not re-apply an already reflected patch
 - [ ] Discovery audit is never called from `infer()` or domain evaluation methods
 - [ ] All existing tests pass; new tests cover classification, routing, and idempotency
+
+---
+
+## Phase W — Calendar: `day_off` and `holiday` categories
+
+**Spec section:** `docs/specs/domains/calendar_domain_spec.md` (extension)
+**Goal:** Add `day_off` and `holiday` as first-class calendar categories to suppress `work_candidate` on
+non-vacation rest days, without activating away-from-home semantics.
+**Depends on:** —
+
+### Problem
+
+Without these categories, any day without a calendar event defaults to `is_workday=True`. National
+holidays and personal days off are treated as workdays. The keyword `"holiday"` currently maps to
+`vacation`, forcing `vacation_mode=True` — incorrect semantics for at-home rest days.
+
+### New categories
+
+| Category | Meaning | Effect on work_candidate | Effect on vacation_mode |
+|---|---|---|---|
+| `day_off` | Personal day off / at-home rest | `is_workday=False` | None (not activated) |
+| `holiday` | National / bank holiday | `is_workday=False` | None (not activated) |
+
+### Keyword changes
+
+- `"holiday"` moved from `vacation` → `holiday` category
+- `holiday` default keywords: `["festivo", "festa nazionale", "bank holiday", "national holiday", "public holiday", "giorno festivo", "holiday"]`
+- `day_off` default keywords: `["giorno libero", "day off", "permesso", "recupero", "riposo"]`
+- `"ferie"` remains in `vacation` (multi-day, away-from-home semantics)
+
+### Contract changes
+
+**`CalendarEvent.category`:** extend literal to include `"day_off"` and `"holiday"`.
+
+**`CalendarResult`:** add two fields:
+```python
+is_day_off_today: bool    # day_off event active or all-day today
+is_holiday_today: bool    # holiday event active or all-day today
+```
+
+**`DEFAULT_CALENDAR_CATEGORY_PRIORITY`:** `["vacation", "holiday", "day_off", "office", "wfh", "visitor"]`
+
+**Workday evidence chain in `HouseStateDomain`** — updated order:
+```
+1. is_office_today=True   → is_workday=False, source=calendar_office
+2. is_day_off_today=True  → is_workday=False, source=calendar_day_off    ← NEW
+3. is_holiday_today=True  → is_workday=False, source=calendar_holiday    ← NEW
+4. is_wfh_today=True      → is_workday=True,  source=calendar_wfh
+5. workday_entity         → normalized bool,  source=workday_entity
+6. default                → is_workday=True,  source=default_true
+```
+
+New reason strings: `calendar_day_off`, `calendar_holiday`.
+
+### Working slices
+
+1. W1 — `CalendarDomain`: add categories to literal/enum, add default keywords, add
+   `is_day_off_today` and `is_holiday_today` to `CalendarResult`, update classification logic.
+2. W2 — `HouseStateDomain`: update workday evidence chain, add new reason strings.
+3. W3 — Tests + spec update for `calendar_domain_spec.md`.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `const.py` | Add `day_off`, `holiday` keyword defaults; update category priority |
+| `runtime/domains/calendar.py` | Classification logic, `CalendarResult` fields |
+| `runtime/domains/house_state.py` | Workday evidence chain |
+| `docs/specs/domains/calendar_domain_spec.md` | Reflect new categories and contract |
+| `tests/` | New tests for W1–W3 |
+
+### Acceptance criteria
+
+- [x] `is_day_off_today=True` or `is_holiday_today=True` → `work_candidate=False` regardless of `work_window`
+- [x] `vacation_mode` not activated by `day_off` or `holiday` events
+- [x] `"holiday"` keyword no longer classifies as `vacation`
+- [x] Existing `vacation`, `wfh`, `office`, `visitor` behavior unchanged
+- [x] All existing tests pass; new tests cover classification and workday chain
+
+---
+
+## Phase X — Room Context Model
+
+**Spec section:** New `docs/specs/learning/room_context_spec.md`
+**Goal:** Transform signal model from global boolean aggregates to room-scoped device context vectors,
+derived from already-configured entities' HA area assignments. No static room tagging by user.
+Semantics emerge from signal composition at runtime.
+**Depends on:** Phase U (`lights_physically_on`), Phase V (area registry reading pattern)
+
+### Design rationale
+
+`media_active` is a global OR over all configured media players. Multiple rooms with media players
+lose spatial context. A media player used for work in a study produces the same global signal as one
+used for leisure in a living room. The fix is not static room labeling (rooms are multi-purpose) but
+contextual composition: `media_on=True AND work_activity=True` in the same room → work context, not
+relax. `media_on=True AND work_activity=False` → relax evidence.
+
+### Core contract: `RoomDeviceContext`
+
+New file: `custom_components/heima/runtime/room_context.py`
+
+```python
+@dataclass(frozen=True)
+class RoomDeviceContext:
+    room_id: str
+    media_on: bool        # any media_active_entity in room active (post-normalization)
+    lights_on: bool       # any light entity in room physically on (from lights_physically_on)
+    work_activity: bool   # any work_activity_entity in room active (post-normalization)
+    pc_active: bool       # pc/workstation entity in room active (best-effort; False if no area)
+```
+
+`occupied` is NOT included — already in `room_occupancy`. No duplication.
+
+### Room-entity mapping (X1)
+
+X1 does NOT scan all HA entities. It maps **already-configured** entities to rooms:
+
+```
+For each entity_id in options (media_active_entities, work_activity_entities, etc.):
+  1. Look up area_id via HA entity registry (entity.area_id) or device registry fallback
+     (entity.device_id → device.area_id) — same pattern as room_inventory.py
+  2. Find Heima room_id where options["rooms"][room]["area_id"] == area_id
+  3. entity_id → room_id
+```
+
+Entities without an HA area, or whose area doesn't match any configured Heima room, contribute
+only to the existing global aggregates — no change to current behavior.
+
+**Notes:**
+- `lights_by_room` uses `lights_physically_on` (already per-entity from Phase U) → aggregate by room
+- `pc_active_by_room` uses the same power entity configured for pc detection → area lookup
+- Rooms without `area_id` configured in Heima options do not participate in room context
+
+**Registry freshness:** X1 subscribes to `EVENT_ENTITY_REGISTRY_UPDATED` and
+`EVENT_AREA_REGISTRY_UPDATED` (same pattern as Phase V / signal_discovery). On event: mark mapping
+as stale; rebuild on next coordinator cycle.
+
+**Unavailability:** `unavailable` and `unknown` states for configured entities are already
+normalized to `False` by `InputNormalizer` upstream. No separate policy needed in X1.
+
+**Mapping drift:** When a device is reassigned to a different room in HA, old snapshots contain the
+entity in the previous room's context. This causes a training data transition window (typically
+2–4 weeks) during which RoomContextModule patterns for the old assignment lose support below
+`min_support` and new patterns accumulate. Self-correcting; no action required in the model.
+
+### Overlap note
+
+`RoomStateCorrelationModule` (Phase P2) learns `P(house_state | frozenset(occupied_rooms))` —
+conditions on occupancy only. `RoomContextModule` (X5) conditions on device state per room in
+addition to occupancy. Different feature space, no duplication. `RoomStateCorrelationModule` is
+preserved unchanged.
+
+### Working slices
+
+1. X1 — Room-entity mapping layer:
+   - `RoomDeviceContextBuilder` in `runtime/room_context.py`
+   - Builds `entity_to_room: dict[entity_id, room_id]` at coordinator init and on registry events
+   - Computes `media_by_room`, `lights_by_room`, `work_activity_by_room`, `pc_by_room`
+   - Writes `CanonicalState["rooms.device_context"]`
+
+2. X2 — `RoomDeviceContext` dataclass + `InferenceContext` extension:
+   - `RoomDeviceContext` dataclass in `runtime/room_context.py`
+   - `InferenceContext` new field: `room_device_context: dict[str, RoomDeviceContext] = field(default_factory=dict)`
+   - Backward compat: empty dict default; existing modules unaffected
+
+3. X3 — `HouseSnapshot` extension:
+   - New field: `room_device_context: dict[str, dict]`
+   - Serialization/deserialization consistent with existing dict fields
+   - Semantic dedup key updated to include room_device_context
+
+4. X4 — Candidate resolver enrichment:
+   - `relax_candidate`: if `room_device_context` populated, use room-scoped logic:
+     `relax_media = any(ctx.media_on and not ctx.work_activity for ctx in occupied_contexts)`
+     replaces global `media_active` for relax evidence.
+   - `work_candidate`: if occupied room has `work_activity=True` or `pc_active=True`,
+     media in the same room does NOT suppress work evidence.
+   - Fallback: if `room_device_context` empty → current behavior unchanged (backward compat).
+
+5. X5 — `RoomContextModule` (ILearningModule):
+   - `module_id = "room_context"`
+   - Learns: `P(house_state | room_context_pattern, weekday, hour_bucket)`
+   - `room_context_pattern = frozenset((room_id, media_on, work_activity) for occupied rooms)`
+     (`lights_on` and `pc_active` excluded from pattern key — too noisy / less reliable)
+   - `min_support=20` (default), `confidence_threshold=0.65` — configurable via Phase S mechanism
+   - Signal: `HouseStateSignal(source_id="room_context", importance=SUGGEST)`
+   - Approval-gated: same flow as `HouseStateInferenceModule`
+   - Wired in coordinator alongside existing learning modules
+
+### Files to modify / create
+
+| File | Change |
+|---|---|
+| `runtime/room_context.py` | New: `RoomDeviceContext`, `RoomDeviceContextBuilder` |
+| `runtime/inference/base.py` | Add `room_device_context` to `InferenceContext` |
+| `runtime/inference/snapshot_store.py` | Add `room_device_context` to `HouseSnapshot` |
+| `runtime/domains/house_state.py` | Candidate resolver enrichment (X4) |
+| `runtime/inference/modules/room_context.py` | New: `RoomContextModule` |
+| `coordinator.py` | Wire builder, subscribe to registry events, register module |
+| `docs/specs/learning/room_context_spec.md` | New spec file |
+| `tests/` | New tests: mapping, resolver, module (≥ 15) |
+
+### Acceptance criteria
+
+- [ ] `RoomDeviceContext` computed correctly from HA area registry for configured entities
+- [ ] `InferenceContext.room_device_context` populated each cycle
+- [ ] `HouseSnapshot.room_device_context` persisted and deserialized correctly
+- [ ] `relax_candidate` uses room-scoped media logic when context available; falls back to global when not
+- [ ] `work_candidate` not suppressed by media when same occupied room has `work_activity=True`
+- [ ] `RoomContextModule` emits no signals with support < 20
+- [ ] Device reassignment or removal causes no runtime error; fallback to global aggregates
+- [ ] Household with no area mappings: behavior identical to pre-Phase-X
+- [ ] All existing tests pass; new tests ≥ 15
+
+---
+
+## Phase Y — HouseStateInferenceModule: tiered feature enrichment
+
+**Spec section:** `docs/specs/heima_v2_spec.md` §13 (extension)
+**Goal:** Enrich `HouseStateInferenceModule` conditioning with room device context using a tiered
+fallback strategy to preserve min-support guarantees when feature space is sparse.
+**Depends on:** Phase X (`room_device_context` in `HouseSnapshot`)
+
+### Tiered key strategy
+
+Current key: `(weekday, hour_bucket, frozenset(room_occupancy.items()), anyone_home)`
+
+| Tier | Conditioning key | Min support | Active when |
+|---|---|---|---|
+| Rich | `(weekday, hour_bucket, room_context_signature)` | 15 (default) | `room_device_context` present in snapshot AND support ≥ threshold |
+| Coarse | `(weekday, hour_bucket, frozenset(occupied_rooms), anyone_home)` | 10 (current) | Rich tier insufficient |
+| Minimal | `(weekday, hour_bucket, anyone_home)` | 5 (default) | Coarse tier insufficient |
+
+`room_context_signature = frozenset((room_id, media_on, work_activity) for occupied rooms)` —
+same definition as `RoomContextModule.room_context_pattern` for consistency.
+
+Snapshots without `room_device_context` populate Coarse and Minimal tiers only.
+
+### Working slices
+
+1. Y1 — Model tiering: `analyze()` builds three independent model dicts from snapshot history.
+   Each tier tracks support and confidence independently.
+
+2. Y2 — Tiered inference: `infer()` tries Rich → Coarse → Minimal. Emits signal from the first
+   tier with sufficient support and confidence. Signal context dict includes `tier: "rich" | "coarse" | "minimal"`.
+
+3. Y3 — Configurable thresholds: `house_state_inference_rich_min_support` and
+   `house_state_inference_minimal_min_support` in `options["learning"]` (Phase S mechanism).
+
+4. Y4 — Diagnostics: `diagnostics()` exposes slot count and hit rate per tier.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/inference/modules/house_state_inference.py` | Tiered model, tiered inference, diagnostics |
+| `tests/` | New tests: tier selection, fallback, diagnostics |
+
+### Acceptance criteria
+
+- [ ] Rich tier used when `room_device_context` available and support ≥ threshold
+- [ ] Coarse fallback when Rich tier insufficient; Minimal fallback when Coarse insufficient
+- [ ] No signal emitted if all tiers below threshold
+- [ ] Active tier visible in signal context dict and diagnostics
+- [ ] Household without Phase X data: behavior identical to pre-Phase-Y (Coarse/Minimal only)
+- [ ] All existing tests pass
+
+---
+
+## Phase Z — Activity cold start mitigation
+
+**Spec section:** `docs/specs/heima_v2_spec.md` §7.7 (extension)
+**Goal:** Reduce the minimum evidence window for composite activity discovery to accelerate first
+proposals in data-sparse environments.
+**Depends on:** Phase S (threshold configurability)
+
+### Problem
+
+`MIN_COOCCURRENCES=10`, `MIN_DISTINCT_DAYS=3` in `ActivityAnalyzer` → earliest possible first
+proposal requires ≥ 3 distinct days with ≥ 10 co-occurrence observations. In practice: 2–4 weeks.
+No mitigation exists today.
+
+### Solution: `activity_bootstrap_mode`
+
+New option: `options["learning"]["activity_bootstrap_mode"]: bool` (default `false`, user opt-in).
+
+When enabled:
+- `ActivityAnalyzer`: `MIN_COOCCURRENCES=5`, `MIN_DISTINCT_DAYS=2`
+- `ActivityInferenceModule`: `min_support=5`
+- Proposals generated include `"bootstrap": true` in proposal metadata
+- Proposals labeled "(early discovery)" in UI notification surfaces
+
+Bootstrap mode does not auto-disable. The user removes it when they judge the model stable.
+
+### Working slices
+
+1. Z1 — `ActivityAnalyzer`: read `bootstrap_mode` from options; apply lower thresholds when enabled;
+   include `bootstrap=True` in proposal metadata.
+2. Z2 — `ActivityInferenceModule`: lower `min_support` when bootstrap proposals are approved;
+   expose `bootstrap_mode: bool` in diagnostics.
+3. Z3 — Options normalization, config flow label, tests.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/analyzers/activity.py` | Bootstrap threshold branching |
+| `runtime/inference/modules/activity_inference.py` | Bootstrap-aware min_support |
+| `const.py` | `OPTION_ACTIVITY_BOOTSTRAP_MODE` constant |
+| `tests/` | New tests: bootstrap enables lower thresholds; default unchanged |
+
+### Acceptance criteria
+
+- [ ] `activity_bootstrap_mode=true` → `MIN_COOCCURRENCES=5`, `MIN_DISTINCT_DAYS=2`
+- [ ] Default behavior (`mode=false`) unchanged
+- [ ] Bootstrap proposals include `"bootstrap": true` in metadata
+- [ ] Diagnostics expose `bootstrap_mode` state
+- [ ] All existing tests pass
+
+---
+
+## Phase AA — Global drift detection
+
+**Spec section:** Phase AA (new section in `docs/specs/heima_v2_spec.md`)
+**Goal:** Detect when learned house_state patterns are globally stale — household behavior has shifted
+but the model has not updated to reflect it.
+**Depends on:** Phase Y (tiered model with per-tier diagnostics and timestamp exposure)
+
+### New anomaly rule: `learned_model_stale`
+
+Algorithm (run during `AnomalyAnalyzer.analyze()`):
+
+1. Retrieve `HouseStateInferenceModule.diagnostics()` via coordinator-provided summary dict
+   (no direct coupling between `AnomalyAnalyzer` and the inference module).
+2. For each approved house_state context in the model:
+   - `expected_ratio = count_in_model / total_model_snapshots`
+   - `recent_ratio = count_in_last_N_snapshots / N` (default `N=500`)
+3. Contexts with `expected_ratio ≥ 0.15` are "dominant".
+4. Trigger if `≥ min_stale_contexts` dominant contexts have `recent_ratio < expected_ratio × drift_threshold`.
+5. Defaults: `N=500`, `drift_threshold=0.50`, `min_stale_contexts=2`.
+6. Severity: `warning`. Finding: `learned_model_stale`.
+
+Rule is **disabled by default**. Enable via `heima.configure_anomaly_rule`.
+
+### `HouseStateInferenceModule` diagnostics extension
+
+`diagnostics()` adds:
+```python
+"model_first_snapshot_ts": str | None   # ISO timestamp of oldest snapshot in model
+"model_last_snapshot_ts": str | None    # ISO timestamp of newest snapshot in model
+"model_total_snapshots": int            # total snapshots used to build current model
+```
+
+Exposed in `sensor.heima_health` attributes.
+
+### Working slices
+
+1. AA1 — `learned_model_stale` rule in `AnomalyAnalyzer`: implement algorithm, read diagnostics
+   summary from coordinator, emit `Finding` with severity `warning`.
+2. AA2 — `HouseStateInferenceModule.diagnostics()`: add timestamp and count fields; wire to health
+   entity attributes.
+3. AA3 — Tests: stale trigger (dominant context drops below threshold), no trigger (stable
+   distribution), rule disabled by default.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/analyzers/anomaly.py` | `learned_model_stale` rule |
+| `runtime/inference/modules/house_state_inference.py` | Diagnostics timestamp/count fields |
+| `coordinator.py` | Pass inference diagnostics summary to `AnomalyAnalyzer` |
+| `tests/` | New tests for AA1–AA3 |
+
+### Acceptance criteria
+
+- [ ] Rule triggers when ≥ 2 dominant contexts drop below 50% of expected frequency in recent window
+- [ ] Rule disabled by default; no `Finding` emitted until explicitly enabled
+- [ ] Model first/last timestamp and snapshot count visible in `sensor.heima_health` attributes
+- [ ] All existing tests pass
 
 ---
 

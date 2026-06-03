@@ -375,6 +375,12 @@ class HouseStateDomain:
             "is_vacation_active": bool(calendar_result.is_vacation_active)
             if calendar_result is not None
             else False,
+            "is_day_off_today": bool(calendar_result.is_day_off_today)
+            if calendar_result is not None
+            else False,
+            "is_holiday_today": bool(calendar_result.is_holiday_today)
+            if calendar_result is not None
+            else False,
             "is_office_today": bool(calendar_result.is_office_today)
             if calendar_result is not None
             else False,
@@ -526,6 +532,20 @@ class HouseStateDomain:
             return {
                 "is_workday": False,
                 "source": "calendar_office",
+                "entity_id": workday_entity or None,
+                "raw_state": None,
+            }
+        if calendar_result is not None and calendar_result.is_day_off_today:
+            return {
+                "is_workday": False,
+                "source": "calendar_day_off",
+                "entity_id": workday_entity or None,
+                "raw_state": None,
+            }
+        if calendar_result is not None and calendar_result.is_holiday_today:
+            return {
+                "is_workday": False,
+                "source": "calendar_holiday",
                 "entity_id": workday_entity or None,
                 "raw_state": None,
             }
