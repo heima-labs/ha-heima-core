@@ -92,6 +92,11 @@ from .reactions import (
     resolve_reaction_type,
 )
 from .reactions.base import HeimaReaction
+from .room_context import (
+    RoomDeviceContext,
+    RoomDeviceContextBuilder,
+    serialize_room_device_context,
+)
 from .scheduler import ScheduledRuntimeJob
 from .snapshot import DecisionSnapshot
 from .snapshot_buffer import SnapshotBuffer
@@ -109,6 +114,7 @@ _PLUGIN_SIGNAL_TYPE: dict[str, type] = {
 _HOUSE_STATE_DOMAIN_SIGNAL_SOURCE_IDS = {
     "weekday_state",
     "house_state_inference",
+    "room_context",
 }
 
 
@@ -199,6 +205,8 @@ class HeimaEngine:
         self._outcome_tracker: OutcomeTracker | None = None
         self._event_recorder: EventRecorderBehavior | None = None
         self._proposal_engine: ProposalEngine | None = None
+        self._room_context_builder: RoomDeviceContextBuilder | None = None
+        self._current_room_device_context: dict[str, RoomDeviceContext] = {}
         self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
@@ -218,6 +226,10 @@ class HeimaEngine:
     @property
     def state(self) -> CanonicalState:
         return self._state
+
+    def set_room_context_builder(self, builder: RoomDeviceContextBuilder) -> None:
+        """Bind the room context builder used by the runtime cycle."""
+        self._room_context_builder = builder
 
     @property
     def lighting_last_apply_ts_by_room(self) -> dict[str, float]:
@@ -361,6 +373,8 @@ class HeimaEngine:
         self._options = HeimaOptions.from_entry(entry)
         self._ext_ctx_normalizer.update_config(dict(entry.options))
         self._configure_activity_detectors(dict(entry.options))
+        if self._room_context_builder is not None:
+            self._room_context_builder.mark_stale()
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
@@ -905,6 +919,10 @@ class HeimaEngine:
         calendar_cfg = dict(options.get(OPT_CALENDAR, {}))
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
+        room_device_context = self._compute_room_device_context(
+            options=options,
+            lights_on=dict(self._snapshot.lights_on or {}),
+        )
 
         now_utc = datetime.now(timezone.utc)
         signal_buckets = self._collect_signals(
@@ -952,6 +970,8 @@ class HeimaEngine:
             calendar_result=calendar_result,
             schedule_recheck=self._schedule_timed_recheck_deadline,
             signals=house_state_signals,
+            occupied_rooms=occupied_rooms,
+            room_device_context=room_device_context,
         )
         house_state = hs_result.house_state
         house_reason = hs_result.house_reason
@@ -979,6 +999,10 @@ class HeimaEngine:
 
         lighting_intents = lighting_result.lighting_intents
         lights_on = lighting_result.lights_on
+        room_device_context = self._compute_room_device_context(
+            options=options,
+            lights_on=dict(lights_on),
+        )
         security_state = security_result.security_state
         security_reason = security_result.security_reason
 
@@ -1109,6 +1133,22 @@ class HeimaEngine:
             )
         return observations
 
+    def _compute_room_device_context(
+        self,
+        *,
+        options: dict[str, Any],
+        lights_on: dict[str, bool],
+    ) -> dict[str, RoomDeviceContext]:
+        builder = self._room_context_builder
+        if builder is None:
+            self._current_room_device_context = {}
+            self._state.set_sensor("rooms.device_context", {})
+            return {}
+        context = builder.compute(options=options, lights_on=lights_on)
+        self._current_room_device_context = dict(context)
+        self._state.set_sensor("rooms.device_context", serialize_room_device_context(context))
+        return context
+
     def _collect_signals(
         self,
         *,
@@ -1136,6 +1176,7 @@ class HeimaEngine:
             previous_activity_names=_tuple_of_strings(
                 self._state.get_sensor("activity.active_names")
             ),
+            room_device_context=dict(self._current_room_device_context),
         )
         paired: list[tuple[InferenceSignal, datetime]] = []
         for module in self._learning_modules:
@@ -1177,6 +1218,7 @@ class HeimaEngine:
             heating_current_temperature=self._heating_domain.current_temperature(),
             lighting_scenes=dict(snapshot.lighting_intents or {}),
             lights_physically_on=dict(snapshot.lights_on or {}),
+            room_device_context=serialize_room_device_context(self._current_room_device_context),
             security_state=str(snapshot.security_state or "unknown"),
         )
         await self._house_snapshot_store.async_append_if_changed(house_snap)

@@ -260,17 +260,21 @@ def canonicalize_activity_context_conditions(raw: dict[str, Any]) -> dict[str, A
     }
 
 
-def canonicalize_learning_context(raw: dict[str, Any]) -> dict[str, str]:
+def canonicalize_learning_context(raw: dict[str, Any]) -> dict[str, Any]:
     """Canonicalize the fixed H1 learning-context vocabulary."""
     allowed_prefixes = ("activity.", "occupancy.", "presence.")
-    result: dict[str, str] = {}
+    allowed_keys = {"module", "room_context_pattern"}
+    result: dict[str, Any] = {}
     for key, value in raw.items():
         normalized_key = str(key).strip()
-        if not normalized_key.startswith(allowed_prefixes):
+        if normalized_key not in allowed_keys and not normalized_key.startswith(allowed_prefixes):
             continue
         if value is None:
             continue
-        result[normalized_key] = _token(value)
+        if normalized_key.startswith(allowed_prefixes):
+            result[normalized_key] = _token(value)
+        else:
+            result[normalized_key] = _canonical_context_value(value)
     return dict(sorted(result.items()))
 
 
@@ -284,7 +288,7 @@ def _canonical_tokens(
     return tuple(sorted({_token(value) for value in values if _token(value)}))
 
 
-def _context_hash(context: dict[str, str]) -> str:
+def _context_hash(context: dict[str, Any]) -> str:
     if not context:
         return "none"
     raw = json.dumps(context, sort_keys=True, separators=(",", ":"))

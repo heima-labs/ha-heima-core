@@ -136,6 +136,46 @@ def test_house_snapshot_serialization_and_semantic_key() -> None:
     assert first.semantic_key() == second.semantic_key()
 
 
+def test_house_snapshot_room_device_context_round_trip_and_semantic_key() -> None:
+    base = _snapshot().as_dict()
+    base.pop("room_device_context", None)
+    first = HouseSnapshot.from_dict(
+        {
+            **base,
+            "room_device_context": {
+                "studio": {
+                    "room_id": "studio",
+                    "media_on": True,
+                    "work_activity": True,
+                }
+            },
+        }
+    )
+    assert first is not None
+    restored = HouseSnapshot.from_dict(first.as_dict())
+    changed = HouseSnapshot.from_dict(
+        {
+            **first.as_dict(),
+            "room_device_context": {
+                "studio": {
+                    "room_id": "studio",
+                    "media_on": True,
+                    "work_activity": False,
+                }
+            },
+        }
+    )
+    legacy = HouseSnapshot.from_dict(
+        {key: value for key, value in first.as_dict().items() if key != "room_device_context"}
+    )
+
+    assert restored == first
+    assert changed is not None
+    assert changed.semantic_key() != first.semantic_key()
+    assert legacy is not None
+    assert legacy.room_device_context == {}
+
+
 @pytest.mark.asyncio
 async def test_snapshot_store_loads_saves_and_uses_expected_key(
     monkeypatch: pytest.MonkeyPatch,

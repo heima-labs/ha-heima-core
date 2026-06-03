@@ -18,6 +18,7 @@ from custom_components.heima.runtime.inference import (
 )
 from custom_components.heima.runtime.inference.base import HeimaLearningModule
 from custom_components.heima.runtime.inference.router import SignalRouter
+from custom_components.heima.runtime.room_context import RoomDeviceContext
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 # ---------------------------------------------------------------------------
@@ -299,6 +300,35 @@ async def test_engine_record_snapshot_persists_physical_light_state() -> None:
     assert persisted.lights_physically_on == {
         "light.kitchen_main": True,
         "light.kitchen_sink": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_engine_record_snapshot_persists_room_device_context() -> None:
+    from custom_components.heima.runtime.engine import HeimaEngine
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda entity_id: None),
+        services=SimpleNamespace(async_services=lambda: {"notify": {}}),
+        bus=SimpleNamespace(async_fire=lambda event_type, data: None),
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))  # type: ignore[arg-type]
+    store = _CaptureSnapshotStore()
+    engine._house_snapshot_store = store  # noqa: SLF001
+    engine._current_room_device_context = {  # noqa: SLF001
+        "studio": RoomDeviceContext("studio", media_on=True, work_activity=True)
+    }
+
+    await engine._record_snapshot_if_changed(_snapshot(occupied_rooms=["studio"]))  # noqa: SLF001
+
+    assert store.appended[0].room_device_context == {
+        "studio": {
+            "room_id": "studio",
+            "media_on": True,
+            "lights_on": False,
+            "work_activity": True,
+            "pc_active": False,
+        }
     }
 
 

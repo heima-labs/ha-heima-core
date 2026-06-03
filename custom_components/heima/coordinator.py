@@ -64,8 +64,10 @@ from .runtime.inference import (
     HeatingPreferenceModule,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
+    LearnedRoomContextCandidate,
     LightingPatternModule,
     OccupancyInferenceModule,
+    RoomContextModule,
     RoomStateCorrelationModule,
     SnapshotStore,
     WeekdayStateModule,
@@ -78,6 +80,7 @@ from .runtime.inference.approval_store import (
 from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
+from .runtime.room_context import RoomDeviceContextBuilder
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
 from .runtime.signal_discovery import (
@@ -237,6 +240,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         self._approval_store = ApprovalStore(hass)
         learning_config = dict(entry.options.get("learning", {}))
+        self._room_context_builder = RoomDeviceContextBuilder(hass, self.engine._normalizer)
+        self.engine.set_room_context_builder(self._room_context_builder)
         self._weekday_module = WeekdayStateModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -268,6 +273,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 RoomStateCorrelationModule.module_id,
             )
         )
+        self._room_context_module = RoomContextModule(
+            **_learning_module_threshold_kwargs(
+                learning_config,
+                RoomContextModule.module_id,
+            )
+        )
         self._occupancy_inference_module = OccupancyInferenceModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -282,12 +293,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.register_learning_module(self._activity_module)
         self.engine.register_learning_module(self._lighting_pattern_module)
         self.engine.register_learning_module(self._room_state_correlation_module)
+        self.engine.register_learning_module(self._room_context_module)
         self.engine.register_learning_module(self._occupancy_inference_module)
         self._unsub_analyze_tick = None
         self._unsub_proposal_tick = None
         self._unsub_periodic_fallback = None
         self._unsub_state_changed = None
         self._unsub_signal_discovery_registry = None
+        self._unsub_room_context_registry = None
         self._unsub_signal_discovery_audit = None
         self._debounce_handles: dict[str, Callable[[], None]] = {}
         self._pending_eval_reasons: dict[str, str] = {}
@@ -365,6 +378,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._schedule_analyze_tick()
         self._subscribe_state_changes()
         self._subscribe_signal_discovery_registry_updates()
+        self._subscribe_room_context_registry_updates()
         self._schedule_periodic_fallback()
         self._sync_scheduler()
         self.data = HeimaRuntimeState(
@@ -975,6 +989,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Shutdown runtime."""
         self._unsubscribe_state_changes()
         self._unsubscribe_signal_discovery_registry_updates()
+        self._unsubscribe_room_context_registry_updates()
         self._cancel_signal_discovery_audit()
         self._cancel_eval_debounce_handles()
         self._cancel_periodic_fallback()
@@ -1013,6 +1028,33 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if self._unsub_signal_discovery_registry:
             self._unsub_signal_discovery_registry()
             self._unsub_signal_discovery_registry = None
+
+    def _subscribe_room_context_registry_updates(self) -> None:
+        self._unsubscribe_room_context_registry_updates()
+
+        @callback
+        def _handle_registry_updated(_event: Event) -> None:
+            self._room_context_builder.mark_stale()
+
+        unsub_entity = self.hass.bus.async_listen(
+            er.EVENT_ENTITY_REGISTRY_UPDATED,
+            _handle_registry_updated,
+        )
+        unsub_area = self.hass.bus.async_listen(
+            ar.EVENT_AREA_REGISTRY_UPDATED,
+            _handle_registry_updated,
+        )
+
+        def _unsub_all() -> None:
+            unsub_entity()
+            unsub_area()
+
+        self._unsub_room_context_registry = _unsub_all
+
+    def _unsubscribe_room_context_registry_updates(self) -> None:
+        if self._unsub_room_context_registry:
+            self._unsub_room_context_registry()
+            self._unsub_room_context_registry = None
 
     def _schedule_signal_discovery_audit(self) -> None:
         self._cancel_signal_discovery_audit()
@@ -1299,6 +1341,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._activity_module,
             self._lighting_pattern_module,
             self._room_state_correlation_module,
+            *([self._room_context_module] if hasattr(self, "_room_context_module") else []),
             self._occupancy_inference_module,
         ):
             await module.analyze(self._house_snapshot_store)
@@ -1326,10 +1369,15 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     async def _async_submit_house_state_candidates(self) -> None:
         self._sync_house_state_approval_state()
-        for candidate in self._house_state_module.generate_candidates():
-            proposal = _proposal_from_house_state_candidate(candidate)
-            proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
-            await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+        modules = [self._house_state_module]
+        room_context_module = getattr(self, "_room_context_module", None)
+        if room_context_module is not None:
+            modules.append(room_context_module)
+        for module in modules:
+            for candidate in module.generate_candidates():
+                proposal = _proposal_from_house_state_candidate(candidate)
+                proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
+                await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
 
     async def _async_run_signal_discovery_audit(self) -> None:
         audit = getattr(self, "_signal_discovery_audit", None)
@@ -1738,6 +1786,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             elif record.decision == "rejected":
                 rejected.add(record.context_key)
         self._house_state_module.sync_approval_state(approved, rejected)
+        room_context_module = getattr(self, "_room_context_module", None)
+        if room_context_module is not None:
+            room_context_module.sync_approval_state(approved, rejected)
 
     def _sync_activity_approval_state(self) -> None:
         if not hasattr(self._approval_store, "records") or not hasattr(self, "_activity_module"):
@@ -1896,7 +1947,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
 
 def _proposal_from_house_state_candidate(
-    candidate: LearnedHouseStateCandidate,
+    candidate: LearnedHouseStateCandidate | LearnedRoomContextCandidate,
 ) -> ReactionProposal:
     """Build a resident-reviewable proposal for one learned house-state context."""
     identity_key = f"{HOUSE_STATE_PROPOSAL_TYPE}:{candidate.context_key}"

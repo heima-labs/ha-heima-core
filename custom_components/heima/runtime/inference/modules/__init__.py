@@ -5,6 +5,7 @@ from .heating_preference import HeatingPreferenceModule
 from .house_state_inference import HouseStateInferenceModule, LearnedHouseStateCandidate
 from .lighting_pattern import LightingPatternModule
 from .occupancy_inference import OccupancyInferenceModule
+from .room_context import LearnedRoomContextCandidate, RoomContextModule
 from .room_state import RoomStateCorrelationModule
 from .weekday_state import WeekdayStateModule
 
@@ -15,6 +16,8 @@ __all__ = [
     "LearnedHouseStateCandidate",
     "LightingPatternModule",
     "OccupancyInferenceModule",
+    "LearnedRoomContextCandidate",
+    "RoomContextModule",
     "RoomStateCorrelationModule",
     "WeekdayStateModule",
 ]

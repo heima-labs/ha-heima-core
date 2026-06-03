@@ -7,6 +7,7 @@ from custom_components.heima.runtime.domains.events import EventsDomain
 from custom_components.heima.runtime.domains.house_state import HouseStateDomain
 from custom_components.heima.runtime.inference.signals import HouseStateSignal, Importance
 from custom_components.heima.runtime.normalization.service import InputNormalizer
+from custom_components.heima.runtime.room_context import RoomDeviceContext
 
 
 def _fake_hass():
@@ -682,6 +683,91 @@ def test_house_state_media_activity_enters_relax_after_timer(monkeypatch: pytest
     diagnostics = domain.diagnostics()
     assert diagnostics["resolution_trace"]["decision"]["action"] == "enter"
     assert diagnostics["candidate_summary"]["relax_candidate"]["status"] == "confirmed"
+
+
+def test_house_state_room_context_media_in_occupied_room_drives_relax(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass_with_states({"media_player.projector": "playing"})
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 4100.0,
+    )
+
+    result = domain.compute(
+        options={
+            "house_state_config": {
+                "media_active_entities": ["media_player.projector"],
+                "relax_enter_min": 0,
+            }
+        },
+        house_signal_entities={},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        occupied_rooms=["living_room"],
+        room_device_context={
+            "living_room": RoomDeviceContext(room_id="living_room", media_on=True)
+        },
+    )
+
+    assert result.house_state == "relax"
+    diagnostics = domain.diagnostics()
+    relax_trace = diagnostics["candidate_trace"]["relax_candidate"]
+    assert relax_trace["reason"] == "anyone_home+room_media_active"
+    assert relax_trace["inputs"]["room_context"]["room_relax_media_active"] is True
+
+
+def test_house_state_room_context_work_prevents_same_room_media_relax(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    hass = _fake_hass_with_states(
+        {
+            "media_player.monitor": "playing",
+            "binary_sensor.work": "on",
+        }
+    )
+    normalizer = InputNormalizer(hass)
+    domain = HouseStateDomain(hass, normalizer)
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.domains.house_state.time.monotonic",
+        lambda: 4200.0,
+    )
+
+    result = domain.compute(
+        options={
+            "house_state_config": {
+                "media_active_entities": ["media_player.monitor"],
+                "work_activity_entities": ["binary_sensor.work"],
+                "work_activity_required": True,
+                "work_enter_min": 0,
+                "relax_enter_min": 0,
+            }
+        },
+        house_signal_entities={"work_window": "binary_sensor.work"},
+        anyone_home=True,
+        events=EventsDomain(hass),
+        state=_fake_state("home"),
+        calendar_result=None,
+        occupied_rooms=["studio"],
+        room_device_context={
+            "studio": RoomDeviceContext(
+                room_id="studio",
+                media_on=True,
+                work_activity=True,
+            )
+        },
+    )
+
+    assert result.house_state == "working"
+    diagnostics = domain.diagnostics()
+    assert diagnostics["candidate_trace"]["relax_candidate"]["state"] is False
+    work_inputs = diagnostics["candidate_trace"]["work_candidate"]["inputs"]
+    assert work_inputs["work_activity_active"] is True
+    assert work_inputs["room_context"]["room_work_activity_active"] is True
 
 
 def test_house_state_sleep_candidate_blocked_when_media_active(monkeypatch: pytest.MonkeyPatch):

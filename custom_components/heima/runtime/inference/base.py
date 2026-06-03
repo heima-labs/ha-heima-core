@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from ..room_context import RoomDeviceContext
 from .signals import InferenceSignal
 
 
@@ -25,6 +26,7 @@ class InferenceContext:
     previous_lighting_scenes: dict[str, str]
     lights_on: dict[str, bool] = field(default_factory=dict)
     previous_activity_names: tuple[str, ...] = field(default_factory=tuple)
+    room_device_context: dict[str, RoomDeviceContext] = field(default_factory=dict)
 
 
 class ILearningModule(Protocol):
