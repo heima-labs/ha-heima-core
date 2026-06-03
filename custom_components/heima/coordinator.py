@@ -565,6 +565,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         """Reset learning event/proposal stores and refresh runtime sensors."""
         await self._event_store.async_clear()
         await self._event_store.async_flush()
+        await self._house_snapshot_store.async_clear()
+        await self._house_snapshot_store.async_flush()
         await self._proposal_engine.async_clear()
         await self._approval_store.async_clear()
         await self._approval_store.async_flush()
