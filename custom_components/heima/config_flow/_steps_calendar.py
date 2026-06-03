@@ -127,6 +127,10 @@ class _CalendarStepsMixin:
         if calendar_result is not None:
             if bool(getattr(calendar_result, "is_vacation_active", False)):
                 return "vacation attiva" if is_it else "vacation active"
+            if bool(getattr(calendar_result, "is_holiday_today", False)):
+                return "festivo oggi" if is_it else "holiday today"
+            if bool(getattr(calendar_result, "is_day_off_today", False)):
+                return "giorno libero oggi" if is_it else "day off today"
             if bool(getattr(calendar_result, "is_office_today", False)):
                 return "office oggi" if is_it else "office today"
             if bool(getattr(calendar_result, "is_wfh_today", False)):

@@ -551,6 +551,8 @@ def _calendar_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
     current_events_count = 0
     upcoming_events_count = cached_events_count
     is_vacation_active = False
+    is_day_off_today = False
+    is_holiday_today = False
     is_wfh_today = False
     is_office_today = False
     next_vacation: dict[str, Any] | None = None
@@ -561,6 +563,8 @@ def _calendar_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         current_events_count = len(current_events)
         upcoming_events_count = len(upcoming_events)
         is_vacation_active = bool(getattr(calendar_result, "is_vacation_active", False))
+        is_day_off_today = bool(getattr(calendar_result, "is_day_off_today", False))
+        is_holiday_today = bool(getattr(calendar_result, "is_holiday_today", False))
         is_wfh_today = bool(getattr(calendar_result, "is_wfh_today", False))
         is_office_today = bool(getattr(calendar_result, "is_office_today", False))
         next_raw = getattr(calendar_result, "next_vacation", None)
@@ -578,6 +582,8 @@ def _calendar_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
         "cache_ts": cache_ts,
         "cached_events_count": cached_events_count,
         "is_vacation_active": is_vacation_active,
+        "is_day_off_today": is_day_off_today,
+        "is_holiday_today": is_holiday_today,
         "is_wfh_today": is_wfh_today,
         "is_office_today": is_office_today,
         "next_vacation": next_vacation,
@@ -612,6 +618,12 @@ def _house_state_summary_diagnostics(coordinator: Any) -> dict[str, Any]:
 
     calendar_context = {
         "is_vacation_active": bool(getattr(calendar_result, "is_vacation_active", False))
+        if calendar_result is not None
+        else False,
+        "is_day_off_today": bool(getattr(calendar_result, "is_day_off_today", False))
+        if calendar_result is not None
+        else False,
+        "is_holiday_today": bool(getattr(calendar_result, "is_holiday_today", False))
         if calendar_result is not None
         else False,
         "is_wfh_today": bool(getattr(calendar_result, "is_wfh_today", False))

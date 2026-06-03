@@ -126,9 +126,7 @@ def _learning_module_threshold_kwargs(
     if min_support is not None:
         kwargs["min_support"] = min_support
     if confidence_threshold:
-        threshold = _unit_float_option(
-            learning_config.get(f"{module_id}_confidence_threshold")
-        )
+        threshold = _unit_float_option(learning_config.get(f"{module_id}_confidence_threshold"))
         if threshold is not None:
             kwargs["confidence_threshold"] = threshold
     return kwargs
@@ -764,7 +762,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             raise ServiceValidationError("Anomaly rule thresholds must be a dict")
 
         options = deepcopy(dict(self.entry.options))
-        anomaly = dict(options.get("anomaly", {})) if isinstance(options.get("anomaly"), dict) else {}
+        anomaly = (
+            dict(options.get("anomaly", {})) if isinstance(options.get("anomaly"), dict) else {}
+        )
         raw_rules = anomaly.get("rules", {})
         rules = dict(raw_rules) if isinstance(raw_rules, dict) else {}
         raw_rule = rules.get(normalized_rule_id, {})
@@ -776,7 +776,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             rule_cfg["severity"] = severity
         if thresholds is not None:
             current_thresholds = rule_cfg.get("thresholds", {})
-            merged_thresholds = dict(current_thresholds) if isinstance(current_thresholds, dict) else {}
+            merged_thresholds = (
+                dict(current_thresholds) if isinstance(current_thresholds, dict) else {}
+            )
             merged_thresholds.update(dict(thresholds))
             rule_cfg["thresholds"] = merged_thresholds
 
@@ -1562,9 +1564,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 "persistent_notification",
                 "create",
                 {
-                    "notification_id": _signal_discovery_notification_id(
-                        suggestion.entity_id
-                    ),
+                    "notification_id": _signal_discovery_notification_id(suggestion.entity_id),
                     "title": "Heima: new signal candidate",
                     "message": (
                         f"Entity {suggestion.entity_id} detected as {signal_label} "

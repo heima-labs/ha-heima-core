@@ -212,7 +212,9 @@ class ProposalEngine:
         merged = list(self._proposals)
         for candidate in generated:
             reaction_proposals = [p for p in merged if isinstance(p, ReactionProposal)]
-            normalized_candidate = self._normalize_generated_candidate(candidate, reaction_proposals)
+            normalized_candidate = self._normalize_generated_candidate(
+                candidate, reaction_proposals
+            )
             if normalized_candidate is None:
                 continue
             now = datetime.now(UTC).isoformat()

@@ -120,8 +120,7 @@ async def test_lighting_pattern_module_drops_below_confidence_threshold() -> Non
 async def test_lighting_pattern_module_uses_hour_bucket() -> None:
     module = LightingPatternModule()
     snapshots = [
-        _snapshot(minute_of_day=20 * 60 + 45, lighting_scenes={"living": "relax"})
-        for _ in range(8)
+        _snapshot(minute_of_day=20 * 60 + 45, lighting_scenes={"living": "relax"}) for _ in range(8)
     ]
 
     await module.analyze(_FakeStore(snapshots))
@@ -133,12 +132,10 @@ async def test_lighting_pattern_module_uses_hour_bucket() -> None:
 async def test_lighting_pattern_module_separates_house_state() -> None:
     module = LightingPatternModule()
     snapshots = [
-        _snapshot(house_state="relax", lighting_scenes={"living": "relax"})
-        for _ in range(8)
+        _snapshot(house_state="relax", lighting_scenes={"living": "relax"}) for _ in range(8)
     ]
     snapshots.extend(
-        _snapshot(house_state="working", lighting_scenes={"living": "focus"})
-        for _ in range(8)
+        _snapshot(house_state="working", lighting_scenes={"living": "focus"}) for _ in range(8)
     )
 
     await module.analyze(_FakeStore(snapshots))
@@ -150,8 +147,7 @@ async def test_lighting_pattern_module_separates_house_state() -> None:
 async def test_lighting_pattern_module_iterates_model_rooms_not_context_occupancy() -> None:
     module = LightingPatternModule()
     snapshots = [
-        _snapshot(lighting_scenes={"living": "relax", "studio": "focus"})
-        for _ in range(8)
+        _snapshot(lighting_scenes={"living": "relax", "studio": "focus"}) for _ in range(8)
     ]
 
     await module.analyze(_FakeStore(snapshots))
@@ -197,10 +193,7 @@ async def test_room_state_correlation_returns_empty_before_analyze() -> None:
 
 async def test_room_state_correlation_respects_min_support() -> None:
     module = RoomStateCorrelationModule()
-    snapshots = [
-        _snapshot(house_state="relax", room_occupancy={"living": True})
-        for _ in range(14)
-    ]
+    snapshots = [_snapshot(house_state="relax", room_occupancy={"living": True}) for _ in range(14)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -209,10 +202,7 @@ async def test_room_state_correlation_respects_min_support() -> None:
 
 async def test_room_state_correlation_emits_suggest_signal_at_threshold() -> None:
     module = RoomStateCorrelationModule()
-    snapshots = [
-        _snapshot(house_state="relax", room_occupancy={"living": True})
-        for _ in range(15)
-    ]
+    snapshots = [_snapshot(house_state="relax", room_occupancy={"living": True}) for _ in range(15)]
 
     await module.analyze(_FakeStore(snapshots))
     signals = module.infer(_context(room_occupancy={"living": True}))
@@ -227,12 +217,10 @@ async def test_room_state_correlation_emits_suggest_signal_at_threshold() -> Non
 async def test_room_state_correlation_uses_raw_confidence_ratio() -> None:
     module = RoomStateCorrelationModule()
     snapshots = [
-        _snapshot(house_state="working", room_occupancy={"studio": True})
-        for _ in range(9)
+        _snapshot(house_state="working", room_occupancy={"studio": True}) for _ in range(9)
     ]
     snapshots.extend(
-        _snapshot(house_state="home", room_occupancy={"studio": True})
-        for _ in range(6)
+        _snapshot(house_state="home", room_occupancy={"studio": True}) for _ in range(6)
     )
 
     await module.analyze(_FakeStore(snapshots))
@@ -246,12 +234,10 @@ async def test_room_state_correlation_uses_raw_confidence_ratio() -> None:
 async def test_room_state_correlation_drops_below_confidence_threshold() -> None:
     module = RoomStateCorrelationModule()
     snapshots = [
-        _snapshot(house_state="working", room_occupancy={"studio": True})
-        for _ in range(8)
+        _snapshot(house_state="working", room_occupancy={"studio": True}) for _ in range(8)
     ]
     snapshots.extend(
-        _snapshot(house_state="home", room_occupancy={"studio": True})
-        for _ in range(7)
+        _snapshot(house_state="home", room_occupancy={"studio": True}) for _ in range(7)
     )
 
     await module.analyze(_FakeStore(snapshots))
@@ -278,10 +264,7 @@ async def test_room_state_correlation_uses_frozenset_pattern_order_insensitive()
 
 async def test_room_state_correlation_ignores_empty_pattern() -> None:
     module = RoomStateCorrelationModule()
-    snapshots = [
-        _snapshot(house_state="away", room_occupancy={})
-        for _ in range(15)
-    ]
+    snapshots = [_snapshot(house_state="away", room_occupancy={}) for _ in range(15)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -292,12 +275,10 @@ async def test_room_state_correlation_ignores_empty_pattern() -> None:
 async def test_room_state_correlation_separates_room_patterns() -> None:
     module = RoomStateCorrelationModule()
     snapshots = [
-        _snapshot(house_state="working", room_occupancy={"studio": True})
-        for _ in range(15)
+        _snapshot(house_state="working", room_occupancy={"studio": True}) for _ in range(15)
     ]
     snapshots.extend(
-        _snapshot(house_state="relax", room_occupancy={"living": True})
-        for _ in range(15)
+        _snapshot(house_state="relax", room_occupancy={"living": True}) for _ in range(15)
     )
 
     await module.analyze(_FakeStore(snapshots))
@@ -308,10 +289,7 @@ async def test_room_state_correlation_separates_room_patterns() -> None:
 
 async def test_room_state_correlation_ignores_empty_house_state() -> None:
     module = RoomStateCorrelationModule()
-    snapshots = [
-        _snapshot(house_state="", room_occupancy={"studio": True})
-        for _ in range(15)
-    ]
+    snapshots = [_snapshot(house_state="", room_occupancy={"studio": True}) for _ in range(15)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -324,10 +302,7 @@ async def test_room_state_correlation_diagnostics() -> None:
 
     await module.analyze(
         _FakeStore(
-            [
-                _snapshot(house_state="working", room_occupancy={"studio": True})
-                for _ in range(15)
-            ]
+            [_snapshot(house_state="working", room_occupancy={"studio": True}) for _ in range(15)]
         )
     )
 
@@ -350,10 +325,7 @@ async def test_occupancy_inference_returns_empty_before_analyze() -> None:
 
 async def test_occupancy_inference_requires_sensorless_room_sync() -> None:
     module = OccupancyInferenceModule()
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(10)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(10)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -363,10 +335,7 @@ async def test_occupancy_inference_requires_sensorless_room_sync() -> None:
 async def test_occupancy_inference_respects_min_support_with_smoothed_confidence() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(9)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(9)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -376,10 +345,7 @@ async def test_occupancy_inference_respects_min_support_with_smoothed_confidence
 async def test_occupancy_inference_emits_suggest_signal_at_threshold() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(10)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(10)]
 
     await module.analyze(_FakeStore(snapshots))
     signals = module.infer(_context(room_occupancy={}))
@@ -396,10 +362,7 @@ async def test_occupancy_inference_emits_suggest_signal_at_threshold() -> None:
 async def test_occupancy_inference_uses_smoothed_confidence() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(7)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(7)]
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -410,14 +373,8 @@ async def test_occupancy_inference_uses_smoothed_confidence() -> None:
 async def test_occupancy_inference_drops_below_confidence_threshold() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(6)
-    ]
-    snapshots.extend(
-        _snapshot(anyone_home=False, room_occupancy={})
-        for _ in range(4)
-    )
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(6)]
+    snapshots.extend(_snapshot(anyone_home=False, room_occupancy={}) for _ in range(4))
 
     await module.analyze(_FakeStore(snapshots))
 
@@ -427,10 +384,7 @@ async def test_occupancy_inference_drops_below_confidence_threshold() -> None:
 async def test_occupancy_inference_learns_implicit_false_from_sparse_snapshots() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={})
-        for _ in range(10)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={}) for _ in range(10)]
 
     await module.analyze(_FakeStore(snapshots))
     signals = module.infer(_context(room_occupancy={}))
@@ -444,10 +398,7 @@ async def test_occupancy_inference_learns_implicit_false_from_sparse_snapshots()
 async def test_occupancy_inference_iterates_synced_sensorless_rooms() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio", "guest"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={"studio": True})
-        for _ in range(10)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={"studio": True}) for _ in range(10)]
 
     await module.analyze(_FakeStore(snapshots))
     signals = module.infer(_context(room_occupancy={}))
@@ -506,10 +457,7 @@ async def test_occupancy_inference_separates_weekday_hour_and_anyone_home() -> N
 async def test_occupancy_inference_uses_context_room_occupancy_for_anyone_home() -> None:
     module = OccupancyInferenceModule()
     module.sync_sensorless_rooms({"studio"})
-    snapshots = [
-        _snapshot(anyone_home=False, room_occupancy={})
-        for _ in range(10)
-    ]
+    snapshots = [_snapshot(anyone_home=False, room_occupancy={}) for _ in range(10)]
     snapshots.extend(
         HouseSnapshot(
             ts="2026-05-17T20:00:00+00:00",

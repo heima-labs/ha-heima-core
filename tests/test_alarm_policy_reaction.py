@@ -113,7 +113,9 @@ def test_alarm_state_action_normalizes_climate_steps() -> None:
 
 
 def test_alarm_state_action_builder_rejects_incomplete_config() -> None:
-    assert build_alarm_state_action_reaction(None, "alarm-1", {"alarm_states": ["armed_away"]}) is None
+    assert (
+        build_alarm_state_action_reaction(None, "alarm-1", {"alarm_states": ["armed_away"]}) is None
+    )
     assert build_alarm_state_action_reaction(None, "alarm-1", {"steps": [_step()]}) is None
 
 

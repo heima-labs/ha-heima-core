@@ -204,8 +204,7 @@ def _apply_room_signal_patch(
     if not isinstance(signals, list):
         signals = []
     if any(
-        isinstance(signal, dict)
-        and _clean(signal.get("signal_name")) == signal_name
+        isinstance(signal, dict) and _clean(signal.get("signal_name")) == signal_name
         for signal in signals
     ):
         return options, False
@@ -357,8 +356,7 @@ def _room_signal_exists(
     if not isinstance(signals, list):
         return False
     return any(
-        isinstance(signal, dict)
-        and _clean(signal.get("signal_name")) == signal_name
+        isinstance(signal, dict) and _clean(signal.get("signal_name")) == signal_name
         for signal in signals
     )
 

@@ -427,10 +427,7 @@ async def test_weekday_state_no_signal_below_min_support() -> None:
 async def test_weekday_state_uses_constructor_thresholds() -> None:
     module = WeekdayStateModule(min_support=5, confidence_threshold=0.80)
     snapshots = [_snapshot(weekday=0, minute_of_day=600, house_state="home")] * 3
-    snapshots.extend(
-        _snapshot(weekday=0, minute_of_day=600, house_state="away")
-        for _ in range(2)
-    )
+    snapshots.extend(_snapshot(weekday=0, minute_of_day=600, house_state="away") for _ in range(2))
     await module.analyze(_FakeStore(snapshots))
 
     assert module.infer(_context(weekday=0, minute_of_day=600)) == []

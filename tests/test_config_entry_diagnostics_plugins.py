@@ -492,6 +492,8 @@ async def test_config_entry_diagnostics_exposes_calendar_summary() -> None:
                 current_events=[object()],
                 upcoming_events=[object(), object(), object(), object()],
                 is_vacation_active=False,
+                is_day_off_today=False,
+                is_holiday_today=False,
                 is_wfh_today=True,
                 is_office_today=False,
                 next_vacation=next_vacation,
@@ -517,6 +519,8 @@ async def test_config_entry_diagnostics_exposes_calendar_summary() -> None:
         "cache_ts": "2026-04-03T10:00:00+00:00",
         "cached_events_count": 4,
         "is_vacation_active": False,
+        "is_day_off_today": False,
+        "is_holiday_today": False,
         "is_wfh_today": True,
         "is_office_today": False,
         "next_vacation": {
@@ -555,6 +559,8 @@ async def test_config_entry_diagnostics_exposes_house_state_summary() -> None:
             ),
             calendar_result=CalendarResult(
                 is_vacation_active=False,
+                is_day_off_today=False,
+                is_holiday_today=False,
                 is_wfh_today=True,
                 is_office_today=False,
             ),
@@ -583,6 +589,8 @@ async def test_config_entry_diagnostics_exposes_house_state_summary() -> None:
         "pending_remaining_s": 42.0,
         "calendar_context": {
             "is_vacation_active": False,
+            "is_day_off_today": False,
+            "is_holiday_today": False,
             "is_wfh_today": True,
             "is_office_today": False,
         },

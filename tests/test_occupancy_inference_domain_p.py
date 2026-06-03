@@ -70,7 +70,9 @@ def _signal(
     )
 
 
-def _compute(options: dict, signals: list[OccupancySignal]) -> tuple[object, _State, OccupancyDomain]:
+def _compute(
+    options: dict, signals: list[OccupancySignal]
+) -> tuple[object, _State, OccupancyDomain]:
     domain = OccupancyDomain(SimpleNamespace(), _Normalizer())  # type: ignore[arg-type]
     state = _State()
     result = domain.compute(
@@ -87,11 +89,7 @@ def _compute(options: dict, signals: list[OccupancySignal]) -> tuple[object, _St
 
 def test_occupancy_domain_applies_high_confidence_signal_to_sensorless_room() -> None:
     result, state, domain = _compute(
-        {
-            "rooms": [
-                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}
-            ]
-        },
+        {"rooms": [{"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}]},
         [_signal()],
     )
 
@@ -102,11 +100,7 @@ def test_occupancy_domain_applies_high_confidence_signal_to_sensorless_room() ->
 
 def test_occupancy_domain_applies_false_signal_to_sensorless_room() -> None:
     result, state, domain = _compute(
-        {
-            "rooms": [
-                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}
-            ]
-        },
+        {"rooms": [{"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}]},
         [_signal(predicted_occupied=False)],
     )
 
@@ -148,11 +142,7 @@ def test_occupancy_domain_ignores_signal_for_none_mode_room() -> None:
 
 def test_occupancy_domain_ignores_low_confidence_signal() -> None:
     result, state, domain = _compute(
-        {
-            "rooms": [
-                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}
-            ]
-        },
+        {"rooms": [{"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}]},
         [_signal(confidence=0.69)],
     )
 
@@ -163,11 +153,7 @@ def test_occupancy_domain_ignores_low_confidence_signal() -> None:
 
 def test_occupancy_domain_ignores_observe_signal() -> None:
     result, state, domain = _compute(
-        {
-            "rooms": [
-                {"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}
-            ]
-        },
+        {"rooms": [{"room_id": "studio", "occupancy_mode": "derived", "occupancy_sources": []}]},
         [_signal(importance=Importance.OBSERVE)],
     )
 

@@ -46,9 +46,7 @@ class OccupancyInferenceModule(HeimaLearningModule):
     def sync_sensorless_rooms(self, room_ids: set[str]) -> None:
         """Replace the sensorless room allow-list used during inference."""
         self._sensorless_rooms = {
-            str(room_id).strip()
-            for room_id in room_ids
-            if str(room_id).strip()
+            str(room_id).strip() for room_id in room_ids if str(room_id).strip()
         }
 
     async def analyze(self, store: SnapshotHistoryStore) -> None:

@@ -279,9 +279,7 @@ class AnomalyAnalyzer:
 
         current_slot = _snapshot_slot(snapshots[-1])
         slot_snapshots = [
-            snapshot
-            for snapshot in snapshots
-            if _snapshot_slot(snapshot) == current_slot
+            snapshot for snapshot in snapshots if _snapshot_slot(snapshot) == current_slot
         ]
         if len(slot_snapshots) < min_observations + recent_observations:
             return []
@@ -522,11 +520,7 @@ class AnomalyAnalyzer:
             return []
 
         entity_ids = sorted(
-            {
-                entity_id
-                for snapshot in unattended
-                for entity_id in _lit_entities(snapshot)
-            }
+            {entity_id for snapshot in unattended for entity_id in _lit_entities(snapshot)}
         )
         confidence = min(1.0, len(unattended) / max(min_observations * 2, 1))
         signal = AnomalySignal(
@@ -726,7 +720,10 @@ class AnomalyAnalyzer:
             snapshot
             for snapshot in snapshots
             if not bool(getattr(snapshot, "anyone_home", False))
-            and any(bool(value) for value in _safe_dict(getattr(snapshot, "room_occupancy", {})).values())
+            and any(
+                bool(value)
+                for value in _safe_dict(getattr(snapshot, "room_occupancy", {})).values()
+            )
         ]
         if len(ghost_snapshots) < min_ghost_observations:
             return []
@@ -968,9 +965,7 @@ class AnomalyAnalyzer:
                 "min_delta_c": min_delta_c,
             },
         )
-        return [
-            _finding(self.analyzer_id, signal)
-        ]
+        return [_finding(self.analyzer_id, signal)]
 
     def _evaluate_heating_vacation_mismatch(
         self,

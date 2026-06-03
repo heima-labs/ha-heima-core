@@ -2121,8 +2121,7 @@ class HeimaEngine:
             "events": self._events_domain.diagnostics(),
             "normalization": self._normalizer.diagnostics(),
             "learning_modules": [
-                module.diagnostics()
-                for module in getattr(self, "_learning_modules", [])
+                module.diagnostics() for module in getattr(self, "_learning_modules", [])
             ],
             "inference_signals": self._signal_bucket_diagnostics(),
             "outcome_tracker": (

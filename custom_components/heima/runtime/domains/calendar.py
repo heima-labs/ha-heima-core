@@ -35,6 +35,8 @@ class CalendarResult:
     current_events: list[CalendarEvent] = field(default_factory=list)
     upcoming_events: list[CalendarEvent] = field(default_factory=list)
     is_vacation_active: bool = False
+    is_day_off_today: bool = False
+    is_holiday_today: bool = False
     is_wfh_today: bool = False
     is_office_today: bool = False
     next_vacation: CalendarEvent | None = None
@@ -205,6 +207,8 @@ class CalendarDomain:
         today_events = current_events + all_day_today
 
         is_vacation_active = any(e.category == "vacation" for e in today_events)
+        is_day_off_today = any(e.category == "day_off" for e in today_events)
+        is_holiday_today = any(e.category == "holiday" for e in today_events)
         is_office_today = any(e.category == "office" for e in today_events)
         is_wfh_today = any(e.category == "wfh" for e in today_events) and not is_office_today
 
@@ -221,6 +225,8 @@ class CalendarDomain:
             current_events=current_events,
             upcoming_events=upcoming_events,
             is_vacation_active=is_vacation_active,
+            is_day_off_today=is_day_off_today,
+            is_holiday_today=is_holiday_today,
             is_wfh_today=is_wfh_today,
             is_office_today=is_office_today,
             next_vacation=next_vacation,
