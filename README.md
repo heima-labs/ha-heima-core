@@ -99,18 +99,18 @@ Heima's inference and learning design draws on the following body of research:
 
 **Contextual activity recognition and temporal reasoning**
 
-- Shi et al. 2026. *TRACE: Temporal Reasoning over Context and Evidence for Activity Recognition in Smart Homes.* Georgia Tech / Northeastern. arXiv:2605.02841.
+- Shi et al. 2026. [*TRACE: Temporal Reasoning over Context and Evidence for Activity Recognition in Smart Homes.*](https://arxiv.org/abs/2605.02841) Georgia Tech / Northeastern. arXiv:2605.02841.
   → basis for Heima's tiered inference, day-type contextual priors, and multi-scale temporal conditioning.
 
 **System lifecycle — bootstrap, lifespan, and maintenance**
 
-- Hiremath, Nishimura, Chernova & Plötz. 2022. *Bootstrapping Human Activity Recognition Systems for Smart Homes from Scratch.* IMWUT 6(3).
+- Hiremath, Nishimura, Chernova & Plötz. 2022. [*Bootstrapping Human Activity Recognition Systems for Smart Homes from Scratch.*](https://dl.acm.org/doi/10.1145/3550294) IMWUT 6(3).
   → basis for Phase Z cold-start mode (relaxed thresholds when training data is sparse).
 
-- Hiremath & Plötz. 2023. *The Lifespan of Human Activity Recognition Systems for Smart Homes.* Sensors 23(18).
+- Hiremath & Plötz. 2023. [*The Lifespan of Human Activity Recognition Systems for Smart Homes.*](https://www.mdpi.com/1424-8220/23/18/7729) Sensors 23(18).
   → basis for Phase AA global drift detection (behavioral model staleness over time).
 
-- Hiremath & Plötz. 2024. *Maintenance Required: Updating and Extending Bootstrapped Human Activity Recognition Systems for Smart Homes.* ABC 2024.
+- Hiremath & Plötz. 2024. [*Maintenance Required: Updating and Extending Bootstrapped Human Activity Recognition Systems for Smart Homes.*](https://arxiv.org/abs/2406.14446) ABC 2024 / IEEE.
   → basis for Phase X/Y model evolution strategy (tiered snapshot conditioning, configured-entity mapping).
 
 **Behavioral routine theory**
