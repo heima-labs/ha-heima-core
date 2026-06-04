@@ -1659,3 +1659,119 @@ async def test_anomaly_finding_routes_to_installer_alert() -> None:
     services = coordinator.hass.services
     assert services.calls
     assert services.calls[0][0:2] == ("persistent_notification", "create")
+
+
+def _learned_model_diagnostics() -> dict[str, Any]:
+    return {
+        "model_total_snapshots": 100,
+        "approved_model_entries": [
+            {
+                "tier": "coarse",
+                "context_key": "working-key",
+                "predicted_state": "working",
+                "count": 30,
+                "total": 30,
+                "context_snapshot": {
+                    "weekday": 0,
+                    "hour_bucket": 10,
+                    "rooms": ["kitchen"],
+                    "anyone_home": True,
+                    "predicted_state": "working",
+                    "learning_context": {},
+                },
+            },
+            {
+                "tier": "coarse",
+                "context_key": "relax-key",
+                "predicted_state": "relax",
+                "count": 30,
+                "total": 30,
+                "context_snapshot": {
+                    "weekday": 0,
+                    "hour_bucket": 20,
+                    "rooms": ["living_room"],
+                    "anyone_home": True,
+                    "predicted_state": "relax",
+                    "learning_context": {},
+                },
+            },
+        ],
+    }
+
+
+async def test_anomaly_analyzer_learned_model_stale_disabled_by_default() -> None:
+    analyzer = AnomalyAnalyzer(inference_diagnostics_provider=_learned_model_diagnostics)
+    snapshots = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=10 * 60,
+            house_state="home",
+            room_occupancy={"kitchen": True},
+        )
+        for _ in range(20)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding for finding in findings if finding.payload.anomaly_type == "learned_model_stale"
+    ]
+    assert analyzer.diagnostics()["rules"]["learned_model_stale"]["enabled"] is False
+
+
+async def test_anomaly_analyzer_learned_model_stale_emits_for_approved_context_drift() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {"anomaly": {"rules": {"learned_model_stale": {"enabled": True}}}},
+        inference_diagnostics_provider=_learned_model_diagnostics,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=10 * 60,
+            house_state="home",
+            room_occupancy={"kitchen": True},
+        )
+        for _ in range(20)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    stale_findings = [
+        finding for finding in findings if finding.payload.anomaly_type == "learned_model_stale"
+    ]
+    assert len(stale_findings) == 1
+    context = stale_findings[0].payload.context
+    assert context["stale_context_count"] == 2
+    assert context["model_total_snapshots"] == 100
+    assert context["stale_contexts"][0]["recent_ratio"] == 0.0
+
+
+async def test_anomaly_analyzer_learned_model_stale_ignores_stable_distribution() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {"anomaly": {"rules": {"learned_model_stale": {"enabled": True}}}},
+        inference_diagnostics_provider=_learned_model_diagnostics,
+    )
+    working = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=10 * 60,
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+        for _ in range(10)
+    ]
+    relax = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=20 * 60,
+            house_state="relax",
+            room_occupancy={"living_room": True},
+        )
+        for _ in range(10)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(working + relax))  # type: ignore[arg-type]
+
+    assert not [
+        finding for finding in findings if finding.payload.anomaly_type == "learned_model_stale"
+    ]

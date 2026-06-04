@@ -110,22 +110,28 @@ These constraints must never be violated. See spec §16 for rationale.
 | X | Room Context Model | `DONE` | U, V |
 | Y | HouseStateInferenceModule: tiered feature enrichment | `DONE` | X |
 | Z | Activity cold start mitigation | `DONE` | S |
-| AA | Global drift detection | `NOT STARTED` | Y |
+| AA | Global drift detection | `DONE` | Y |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation.
-**Active phase:** None — Phase Z complete. Phase AA planned (see below). Phase T deferred.
-**Branch:** `feat/phase-z-activity-cold-start`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection.
+**Active phase:** None — Phase AA complete. Phase T deferred.
+**Branch:** `feat/phase-aa-global-drift-detection`.
 **Next action:**
 
-Phase Z complete. Next planned development phase is AA — Global drift detection.
+Phase AA complete. Next scope should be discussed before implementation.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
+- Current slice: Phase AA complete.
+  - `HouseStateInferenceModule.diagnostics()` exposes model first/last snapshot timestamps, model total snapshot count, and approved model entries only.
+  - `AnomalyAnalyzer` adds disabled-by-default `learned_model_stale`, evaluating only approved house-state contexts provided by coordinator diagnostics.
+  - `sensor.heima_health` attributes expose the house-state model timestamp/count summary.
+  - Verification: `pytest tests/test_inference_modules.py::test_house_state_inference_diagnostics_expose_only_approved_model_entries tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_disabled_by_default tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_emits_for_approved_context_drift tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_ignores_stable_distribution tests/test_health_k.py::test_health_sensor_exposes_house_state_model_summary -q`.
+  - Full CI: `PATH="/Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component/.venv/bin:$PATH" bash scripts/ci_local.sh` — 1452 passed; ruff check, ruff format, and informative mypy completed.
 - Current slice: Phase Z complete.
   - `options["learning"]["activity_bootstrap_mode"]` enables early composite activity discovery.
   - `ActivityAnalyzer` uses bootstrap thresholds 5 co-occurrences / 2 distinct days only when enabled; default behavior remains 10 / 3.
@@ -2309,6 +2315,7 @@ Bootstrap mode does not auto-disable. The user removes it when they judge the mo
 
 ## Phase AA — Global drift detection
 
+**Status:** DONE on branch `feat/phase-aa-global-drift-detection`
 **Spec section:** Phase AA (new section in `docs/specs/heima_v2_spec.md`)
 **Goal:** Detect when learned house_state patterns are globally stale — household behavior has shifted
 but the model has not updated to reflect it.
@@ -2361,10 +2368,10 @@ Exposed in `sensor.heima_health` attributes.
 
 ### Acceptance criteria
 
-- [ ] Rule triggers when ≥ 2 dominant contexts drop below 50% of expected frequency in recent window
-- [ ] Rule disabled by default; no `Finding` emitted until explicitly enabled
-- [ ] Model first/last timestamp and snapshot count visible in `sensor.heima_health` attributes
-- [ ] All existing tests pass
+- [x] Rule triggers when ≥ 2 dominant contexts drop below 50% of expected frequency in recent window
+- [x] Rule disabled by default; no `Finding` emitted until explicitly enabled
+- [x] Model first/last timestamp and snapshot count visible in `sensor.heima_health` attributes
+- [x] All existing tests pass
 
 ---
 

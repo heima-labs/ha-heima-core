@@ -80,6 +80,8 @@ class HouseStateInferenceModule(HeimaLearningModule):
         self._rejected_context_keys: set[str] = set()
         self._ready = False
         self._analyzed_snapshots = 0
+        self._model_first_snapshot_ts: str | None = None
+        self._model_last_snapshot_ts: str | None = None
         self._infer_attempts_by_tier: dict[str, int] = {tier: 0 for tier in _TIERS}
         self._infer_hits_by_tier: dict[str, int] = {tier: 0 for tier in _TIERS}
 
@@ -94,10 +96,16 @@ class HouseStateInferenceModule(HeimaLearningModule):
             tier: defaultdict(lambda: defaultdict(int)) for tier in _TIERS
         }
         analyzed = 0
+        first_ts: str | None = None
+        last_ts: str | None = None
 
         for snapshot in store.snapshots():
             if not snapshot.house_state:
                 continue
+            snapshot_ts = str(getattr(snapshot, "ts", "") or "")
+            if snapshot_ts:
+                first_ts = snapshot_ts if first_ts is None else min(first_ts, snapshot_ts)
+                last_ts = snapshot_ts if last_ts is None else max(last_ts, snapshot_ts)
             coarse_key = _coarse_slot_key(
                 weekday=snapshot.weekday,
                 minute_of_day=snapshot.minute_of_day,
@@ -134,6 +142,8 @@ class HouseStateInferenceModule(HeimaLearningModule):
         self._model = self._models["coarse"]
 
         self._analyzed_snapshots = analyzed
+        self._model_first_snapshot_ts = first_ts
+        self._model_last_snapshot_ts = last_ts
         self._ready = True
 
     def infer(self, context: InferenceContext) -> list[HouseStateSignal]:
@@ -213,11 +223,34 @@ class HouseStateInferenceModule(HeimaLearningModule):
             "approved_context_keys": len(self._approved_context_keys),
             "rejected_context_keys": len(self._rejected_context_keys),
             "analyzed_snapshots": self._analyzed_snapshots,
+            "model_first_snapshot_ts": self._model_first_snapshot_ts,
+            "model_last_snapshot_ts": self._model_last_snapshot_ts,
+            "model_total_snapshots": self._analyzed_snapshots,
+            "approved_model_entries": self._approved_model_entries_diagnostics(),
             "min_support": self._min_support,
             "rich_min_support": self._rich_min_support,
             "minimal_min_support": self._minimal_min_support,
             "confidence_threshold": self._confidence_threshold,
         }
+
+    def _approved_model_entries_diagnostics(self) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for tier in _TIERS:
+            for entry in self._models[tier].values():
+                if entry.context_key not in self._approved_context_keys:
+                    continue
+                entries.append(
+                    {
+                        "tier": entry.tier,
+                        "context_key": entry.context_key,
+                        "context_snapshot": dict(entry.context_snapshot),
+                        "predicted_state": entry.predicted_state,
+                        "count": entry.count,
+                        "total": entry.total,
+                        "confidence": entry.confidence,
+                    }
+                )
+        return sorted(entries, key=lambda item: str(item.get("context_key") or ""))
 
     def _select_entry(self, context: InferenceContext) -> _ModelEntry | None:
         keys = _context_keys(context)

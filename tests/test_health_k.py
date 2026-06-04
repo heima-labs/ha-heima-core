@@ -69,6 +69,28 @@ def test_health_sensor_is_ok_without_alerts() -> None:
     assert attrs["last_anomaly"] == {}
 
 
+def test_health_sensor_exposes_house_state_model_summary() -> None:
+    coordinator = _coordinator()
+    coordinator._house_state_module = _FakeDiagnosticsSource(
+        {
+            "model_first_snapshot_ts": "2026-05-01T10:00:00+00:00",
+            "model_last_snapshot_ts": "2026-05-02T10:00:00+00:00",
+            "model_total_snapshots": 42,
+            "approved_model_entries": [{"context_key": "ctx-1"}, {"context_key": "ctx-2"}],
+        }
+    )
+
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert attrs["house_state_model"] == {
+        "model_first_snapshot_ts": "2026-05-01T10:00:00+00:00",
+        "model_last_snapshot_ts": "2026-05-02T10:00:00+00:00",
+        "model_total_snapshots": 42,
+        "approved_model_entries": 2,
+    }
+
+
 def test_resolved_invariant_clears_degraded_health() -> None:
     coordinator = _coordinator()
     event = {

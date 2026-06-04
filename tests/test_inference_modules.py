@@ -53,6 +53,7 @@ def _context(
 
 def _snapshot(
     *,
+    ts: str = "2026-04-30T10:00:00+00:00",
     weekday: int = 0,
     minute_of_day: int = 600,
     house_state: str = "home",
@@ -63,7 +64,7 @@ def _snapshot(
     room_device_context: dict[str, dict] | None = None,
 ) -> HouseSnapshot:
     return HouseSnapshot(
-        ts="2026-04-30T10:00:00+00:00",
+        ts=ts,
         weekday=weekday,
         minute_of_day=minute_of_day,
         anyone_home=anyone_home,
@@ -1020,6 +1021,46 @@ async def test_house_state_inference_does_not_generate_candidate_for_approved_co
     module.sync_approval_state({approved_key}, set())
 
     assert module.generate_candidates() == []
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_diagnostics_expose_only_approved_model_entries() -> None:
+    module = HouseStateInferenceModule(min_support=1)
+    snapshots = [
+        _snapshot(
+            ts="2026-04-29T10:00:00+00:00",
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        ),
+        _snapshot(
+            ts="2026-04-30T10:00:00+00:00",
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        ),
+        _snapshot(
+            ts="2026-05-01T21:00:00+00:00",
+            weekday=1,
+            minute_of_day=21 * 60,
+            house_state="relax",
+            room_occupancy={"living_room": True},
+        ),
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    candidates = module.generate_candidates()
+    approved = {
+        candidate.context_key for candidate in candidates if candidate.predicted_state == "working"
+    }
+    module.sync_approval_state(approved, set())
+
+    diag = module.diagnostics()
+
+    assert diag["model_first_snapshot_ts"] == "2026-04-29T10:00:00+00:00"
+    assert diag["model_last_snapshot_ts"] == "2026-05-01T21:00:00+00:00"
+    assert diag["model_total_snapshots"] == 3
+    assert len(diag["approved_model_entries"]) == 1
+    assert diag["approved_model_entries"][0]["predicted_state"] == "working"
+    assert diag["approved_model_entries"][0]["count"] == 2
 
 
 @pytest.mark.asyncio

@@ -265,7 +265,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._signal_discovery_audit = SignalDiscoveryAudit()
         self._pending_signal_suggestions: list[SignalSuggestion] = []
         self._anomaly_analyzer = AnomalyAnalyzer(
-            options_provider=lambda: dict(self.entry.options or {})
+            options_provider=lambda: dict(self.entry.options or {}),
+            inference_diagnostics_provider=self._house_state_inference_diagnostics,
         )
         self._finding_router = FindingRouter(
             proposal_engine=self._proposal_engine,
@@ -1811,8 +1812,25 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "last_anomaly": dict(self._last_anomaly or {}),
             "last_invariant_violation": dict(self._last_invariant_violation or {}),
             "last_diagnostics": dict(self._last_diagnostics or {}),
+            "house_state_model": self._house_state_model_health_attributes(),
             "installation_validation": self._validation_report().as_dict(),
             "last_updated": datetime.now(UTC).isoformat(),
+        }
+
+    def _house_state_inference_diagnostics(self) -> dict[str, Any]:
+        module = getattr(self, "_house_state_module", None)
+        if module is None or not hasattr(module, "diagnostics"):
+            return {}
+        diagnostics = module.diagnostics()
+        return dict(diagnostics) if isinstance(diagnostics, dict) else {}
+
+    def _house_state_model_health_attributes(self) -> dict[str, Any]:
+        diagnostics = self._house_state_inference_diagnostics()
+        return {
+            "model_first_snapshot_ts": diagnostics.get("model_first_snapshot_ts"),
+            "model_last_snapshot_ts": diagnostics.get("model_last_snapshot_ts"),
+            "model_total_snapshots": int(diagnostics.get("model_total_snapshots") or 0),
+            "approved_model_entries": len(diagnostics.get("approved_model_entries") or []),
         }
 
     def _sync_house_state_approval_state(self) -> None:

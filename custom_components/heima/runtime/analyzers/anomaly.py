@@ -28,6 +28,7 @@ _ANOMALY_RULE_IDS = (
     "sensor_activity_drop",
     "ghost_activity",
     "unusual_stillness",
+    "learned_model_stale",
 )
 
 _APPLIANCE_UNUSUAL_HOUR_ACTIVITIES = frozenset(
@@ -53,8 +54,14 @@ class AnomalyRule:
 class AnomalyAnalyzer:
     """Analyze persisted snapshots for statistical anomalies."""
 
-    def __init__(self, *, options_provider: Callable[[], dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        options_provider: Callable[[], dict[str, Any]] | None = None,
+        inference_diagnostics_provider: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
         self._options_provider = options_provider or (lambda: {})
+        self._inference_diagnostics_provider = inference_diagnostics_provider or (lambda: {})
         self._last_diagnostics: dict[str, Any] = {
             "analyzer_id": self.analyzer_id,
             "enabled": True,
@@ -95,6 +102,7 @@ class AnomalyAnalyzer:
             findings.extend(self._evaluate_sensor_activity_drop(snapshot_store, rules))
             findings.extend(self._evaluate_ghost_activity(snapshot_store, rules))
             findings.extend(self._evaluate_unusual_stillness(snapshot_store, rules))
+            findings.extend(self._evaluate_learned_model_stale(snapshot_store, rules))
         self._last_diagnostics = {
             "analyzer_id": self.analyzer_id,
             "enabled": enabled,
@@ -1019,6 +1027,83 @@ class AnomalyAnalyzer:
         )
         return [_finding(self.analyzer_id, signal)]
 
+    def _evaluate_learned_model_stale(
+        self,
+        snapshot_store: Any,
+        rules: dict[str, AnomalyRule],
+    ) -> list[BehaviorFinding]:
+        rule = rules["learned_model_stale"]
+        if not rule.enabled:
+            return []
+        recent_window = _threshold_int(rule, "recent_window", 500)
+        drift_threshold = _threshold_float(rule, "drift_threshold", 0.5)
+        dominant_ratio = _threshold_float(rule, "dominant_ratio", 0.15)
+        min_stale_contexts = _threshold_int(rule, "min_stale_contexts", 2)
+
+        diagnostics = _safe_dict(self._inference_diagnostics_provider())
+        model_total_snapshots = _positive_int(diagnostics.get("model_total_snapshots"))
+        if model_total_snapshots <= 0:
+            return []
+        approved_entries = diagnostics.get("approved_model_entries")
+        if not isinstance(approved_entries, list):
+            return []
+        recent_snapshots = snapshot_store.snapshots(limit=recent_window)
+        if not recent_snapshots:
+            return []
+
+        stale_contexts: list[dict[str, Any]] = []
+        for raw_entry in approved_entries:
+            entry = _safe_dict(raw_entry)
+            count = _positive_int(entry.get("count"))
+            expected_ratio = count / model_total_snapshots
+            if expected_ratio < dominant_ratio:
+                continue
+            recent_count = sum(
+                1 for snapshot in recent_snapshots if _snapshot_matches_model_entry(snapshot, entry)
+            )
+            recent_ratio = recent_count / len(recent_snapshots)
+            stale_threshold = expected_ratio * drift_threshold
+            if recent_ratio >= stale_threshold:
+                continue
+            stale_contexts.append(
+                {
+                    "context_key": str(entry.get("context_key") or ""),
+                    "tier": str(entry.get("tier") or ""),
+                    "predicted_state": str(entry.get("predicted_state") or ""),
+                    "expected_ratio": round(expected_ratio, 3),
+                    "recent_ratio": round(recent_ratio, 3),
+                    "stale_threshold": round(stale_threshold, 3),
+                    "model_count": count,
+                    "recent_count": recent_count,
+                }
+            )
+
+        if len(stale_contexts) < min_stale_contexts:
+            return []
+
+        confidence = min(1.0, len(stale_contexts) / max(min_stale_contexts * 2, 1))
+        signal = AnomalySignal(
+            anomaly_type=rule.rule_id,
+            severity=_severity(rule.severity),
+            description=(
+                "Approved learned house-state contexts appear stale: "
+                f"{len(stale_contexts)} dominant contexts dropped below expected frequency."
+            ),
+            confidence=confidence,
+            context={
+                "rule_id": rule.rule_id,
+                "stale_context_count": len(stale_contexts),
+                "min_stale_contexts": min_stale_contexts,
+                "recent_window": recent_window,
+                "recent_snapshot_count": len(recent_snapshots),
+                "model_total_snapshots": model_total_snapshots,
+                "drift_threshold": drift_threshold,
+                "dominant_ratio": dominant_ratio,
+                "stale_contexts": stale_contexts[:10],
+            },
+        )
+        return [_finding(self.analyzer_id, signal)]
+
 
 def _effective_rules(anomaly_cfg: dict[str, Any]) -> dict[str, AnomalyRule]:
     raw_rules = _safe_dict(anomaly_cfg.get("rules"))
@@ -1136,6 +1221,19 @@ def _default_rule(rule_id: str) -> AnomalyRule:
             "min_observations": 10,
             "multiplier": 2.0,
         }
+    elif rule_id == "learned_model_stale":
+        thresholds = {
+            "recent_window": 500,
+            "drift_threshold": 0.5,
+            "dominant_ratio": 0.15,
+            "min_stale_contexts": 2,
+        }
+        return AnomalyRule(
+            rule_id=rule_id,
+            enabled=False,
+            severity="warning",
+            thresholds=thresholds,
+        )
     return AnomalyRule(rule_id=rule_id, enabled=True, severity=severity, thresholds=thresholds)
 
 
@@ -1168,6 +1266,14 @@ def _threshold_float(rule: AnomalyRule, key: str, default: float) -> float:
         return float(rule.thresholds.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
 
 
 def _severity(value: str) -> Literal["info", "warning", "critical"]:
@@ -1317,6 +1423,88 @@ def _activity_set(snapshot: Any) -> set[str]:
         for activity in getattr(snapshot, "detected_activities", ()) or ()
         if str(activity or "").strip()
     }
+
+
+def _snapshot_matches_model_entry(snapshot: Any, entry: dict[str, Any]) -> bool:
+    context = _safe_dict(entry.get("context_snapshot"))
+    if not context:
+        return False
+    if (
+        str(getattr(snapshot, "house_state", "") or "").strip()
+        != str(entry.get("predicted_state") or context.get("predicted_state") or "").strip()
+    ):
+        return False
+    try:
+        if int(getattr(snapshot, "weekday", -1)) != int(context.get("weekday", -2)):
+            return False
+        if int(getattr(snapshot, "minute_of_day", 0)) // 60 != int(context.get("hour_bucket", -1)):
+            return False
+    except (TypeError, ValueError):
+        return False
+    if bool(getattr(snapshot, "anyone_home", False)) is not bool(context.get("anyone_home")):
+        return False
+
+    learning_context = _safe_dict(context.get("learning_context"))
+    module = str(learning_context.get("module") or "").strip()
+    if module == "house_state_inference_minimal":
+        return True
+    if module == "house_state_inference_rich":
+        return _snapshot_room_context_pattern(snapshot) == _context_room_context_pattern(
+            learning_context.get("room_context_pattern")
+        )
+    return _occupied_rooms(snapshot) == _context_rooms(context.get("rooms"))
+
+
+def _occupied_rooms(snapshot: Any) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            str(room_id)
+            for room_id, occupied in _safe_dict(getattr(snapshot, "room_occupancy", {})).items()
+            if bool(occupied) and str(room_id).strip()
+        )
+    )
+
+
+def _context_rooms(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list | tuple | set | frozenset):
+        return ()
+    return tuple(sorted(str(room) for room in raw if str(room).strip()))
+
+
+def _snapshot_room_context_pattern(snapshot: Any) -> tuple[tuple[str, bool, bool], ...]:
+    room_context = _safe_dict(getattr(snapshot, "room_device_context", {}))
+    items: list[tuple[str, bool, bool]] = []
+    for room_id in _occupied_rooms(snapshot):
+        raw_ctx = _safe_dict(room_context.get(room_id))
+        if not raw_ctx:
+            continue
+        items.append(
+            (
+                room_id,
+                bool(raw_ctx.get("media_on", False)),
+                bool(raw_ctx.get("work_activity", False)),
+            )
+        )
+    return tuple(sorted(items))
+
+
+def _context_room_context_pattern(raw: Any) -> tuple[tuple[str, bool, bool], ...]:
+    if not isinstance(raw, list | tuple):
+        return ()
+    items: list[tuple[str, bool, bool]] = []
+    for item in raw:
+        payload = _safe_dict(item)
+        room_id = str(payload.get("room_id") or "").strip()
+        if not room_id:
+            continue
+        items.append(
+            (
+                room_id,
+                bool(payload.get("media_on", False)),
+                bool(payload.get("work_activity", False)),
+            )
+        )
+    return tuple(sorted(items))
 
 
 def _lit_entities(snapshot: Any) -> list[str]:
