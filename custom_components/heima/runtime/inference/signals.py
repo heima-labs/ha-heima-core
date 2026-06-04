@@ -31,6 +31,7 @@ class HouseStateSignal(InferenceSignal):
     """Predicted house state signal."""
 
     predicted_state: str
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -2174,6 +2174,8 @@ preserved unchanged.
 
 ## Phase Y — HouseStateInferenceModule: tiered feature enrichment
 
+Status: DONE on branch `feat/phase-y-tiered-house-state-inference`.
+
 **Spec section:** `docs/specs/heima_v2_spec.md` §13 (extension)
 **Goal:** Enrich `HouseStateInferenceModule` conditioning with room device context using a tiered
 fallback strategy to preserve min-support guarantees when feature space is sparse.
@@ -2186,7 +2188,7 @@ Current key: `(weekday, hour_bucket, frozenset(room_occupancy.items()), anyone_h
 | Tier | Conditioning key | Min support | Active when |
 |---|---|---|---|
 | Rich | `(weekday, hour_bucket, room_context_signature)` | 15 (default) | `room_device_context` present in snapshot AND support ≥ threshold |
-| Coarse | `(weekday, hour_bucket, frozenset(occupied_rooms), anyone_home)` | 10 (current) | Rich tier insufficient |
+| Coarse | `(weekday, hour_bucket, frozenset(occupied_rooms), anyone_home)` | existing module default (`3`) unless configured | Rich tier insufficient |
 | Minimal | `(weekday, hour_bucket, anyone_home)` | 5 (default) | Coarse tier insufficient |
 
 `room_context_signature = frozenset((room_id, media_on, work_activity) for occupied rooms)` —
@@ -2216,12 +2218,21 @@ Snapshots without `room_device_context` populate Coarse and Minimal tiers only.
 
 ### Acceptance criteria
 
-- [ ] Rich tier used when `room_device_context` available and support ≥ threshold
-- [ ] Coarse fallback when Rich tier insufficient; Minimal fallback when Coarse insufficient
-- [ ] No signal emitted if all tiers below threshold
-- [ ] Active tier visible in signal context dict and diagnostics
-- [ ] Household without Phase X data: behavior identical to pre-Phase-Y (Coarse/Minimal only)
-- [ ] All existing tests pass
+- [x] Rich tier used when `room_device_context` available and support ≥ threshold
+- [x] Coarse fallback when Rich tier insufficient; Minimal fallback when Coarse insufficient
+- [x] No signal emitted if all tiers below threshold
+- [x] Active tier visible in signal context dict and diagnostics
+- [x] Household without Phase X data: behavior identical to pre-Phase-Y (Coarse/Minimal only)
+- [x] All existing tests pass
+
+### Implementation notes
+
+- Coarse keeps the pre-Phase-Y approval key shape (`learning_context={}`), preserving existing
+  approvals.
+- Rich and Minimal use distinct `learning_context.module` values so approval keys cannot collide
+  with Coarse or `RoomContextModule`.
+- `HouseStateSignal.context["tier"]` exposes the active tier; existing signal construction remains
+  backward compatible because the context field defaults to `{}`.
 
 ---
 

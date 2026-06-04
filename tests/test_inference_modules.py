@@ -856,6 +856,19 @@ def _house_state_key(
     )
 
 
+def _house_state_candidate_by_tier(candidates, tier: str):
+    for candidate in candidates:
+        learning_context = candidate.context_snapshot.get("learning_context", {})
+        module = learning_context.get("module")
+        if tier == "coarse" and learning_context == {}:
+            return candidate
+        if tier == "rich" and module == "house_state_inference_rich":
+            return candidate
+        if tier == "minimal" and module == "house_state_inference_minimal":
+            return candidate
+    raise AssertionError(f"Missing {tier} candidate")
+
+
 def test_house_state_inference_returns_empty_before_analyze() -> None:
     module = HouseStateInferenceModule()
 
@@ -1181,3 +1194,236 @@ async def test_house_state_inference_diagnostics() -> None:
     assert diag["approved_context_keys"] == 2
     assert diag["rejected_context_keys"] == 1
     assert diag["analyzed_snapshots"] == 3
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_uses_rich_tier_before_coarse() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    rich_relax = [
+        _snapshot(
+            weekday=2,
+            minute_of_day=8 * 60,
+            house_state="relax",
+            room_occupancy={"living_room": True},
+            room_device_context={
+                "living_room": {
+                    "room_id": "living_room",
+                    "media_on": True,
+                    "work_activity": False,
+                }
+            },
+        )
+    ] * 2
+    coarse_work = [
+        _snapshot(
+            weekday=2,
+            minute_of_day=8 * 60,
+            house_state="working",
+            room_occupancy={"living_room": True},
+        )
+    ] * 3
+
+    await module.analyze(_FakeStore([*rich_relax, *coarse_work]))
+    candidates = module.generate_candidates()
+    rich = _house_state_candidate_by_tier(candidates, "rich")
+    coarse = _house_state_candidate_by_tier(candidates, "coarse")
+    module.sync_approval_state({rich.context_key, coarse.context_key}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=2,
+            minute_of_day=8 * 60,
+            room_occupancy={"living_room": True},
+            room_device_context={"living_room": RoomDeviceContext("living_room", media_on=True)},
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "relax"
+    assert signals[0].context["tier"] == "rich"
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_falls_back_to_coarse_when_rich_support_insufficient() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=2,
+            minute_of_day=8 * 60,
+            house_state="working",
+            room_occupancy={"studio": True},
+            room_device_context={
+                "studio": {
+                    "room_id": "studio",
+                    "media_on": True,
+                    "work_activity": True,
+                }
+            },
+        ),
+        *[
+            _snapshot(
+                weekday=2,
+                minute_of_day=8 * 60,
+                house_state="working",
+                room_occupancy={"studio": True},
+            )
+            for _ in range(2)
+        ],
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    coarse = _house_state_candidate_by_tier(module.generate_candidates(), "coarse")
+    module.sync_approval_state({coarse.context_key}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=2,
+            minute_of_day=8 * 60,
+            room_occupancy={"studio": True},
+            room_device_context={
+                "studio": RoomDeviceContext(
+                    "studio",
+                    media_on=True,
+                    work_activity=True,
+                )
+            },
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "working"
+    assert signals[0].context["tier"] == "coarse"
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_falls_back_to_minimal_when_coarse_insufficient() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=4,
+            minute_of_day=21 * 60,
+            house_state="relax",
+            room_occupancy={f"room_{idx}": True},
+        )
+        for idx in range(5)
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    minimal = _house_state_candidate_by_tier(module.generate_candidates(), "minimal")
+    module.sync_approval_state({minimal.context_key}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=4,
+            minute_of_day=21 * 60,
+            room_occupancy={"new_room": True},
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "relax"
+    assert signals[0].context["tier"] == "minimal"
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_no_signal_when_all_tiers_below_support() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=4,
+            minute_of_day=21 * 60,
+            house_state="relax",
+            room_occupancy={"living_room": True},
+            room_device_context={
+                "living_room": {
+                    "room_id": "living_room",
+                    "media_on": True,
+                    "work_activity": False,
+                }
+            },
+        )
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert module.generate_candidates() == []
+    assert (
+        module.infer(
+            _context(
+                weekday=4,
+                minute_of_day=21 * 60,
+                room_occupancy={"living_room": True},
+                room_device_context={
+                    "living_room": RoomDeviceContext("living_room", media_on=True)
+                },
+            )
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_legacy_snapshots_populate_coarse_and_minimal_only() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=3,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=1,
+            minute_of_day=9 * 60,
+            house_state="working",
+            room_occupancy={"office": True},
+        )
+    ] * 3
+
+    await module.analyze(_FakeStore(snapshots))
+    diag = module.diagnostics()
+
+    assert diag["tiers"]["rich"]["slot_count"] == 0
+    assert diag["tiers"]["coarse"]["slot_count"] == 1
+    assert diag["tiers"]["minimal"]["slot_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_diagnostics_tracks_tier_hits() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=10 * 60,
+            house_state="working",
+            room_occupancy={"kitchen": True},
+        )
+    ] * 3
+    await module.analyze(_FakeStore(snapshots))
+    coarse = _house_state_candidate_by_tier(module.generate_candidates(), "coarse")
+    module.sync_approval_state({coarse.context_key}, set())
+
+    module.infer(_context(weekday=0, minute_of_day=10 * 60, room_occupancy={"kitchen": True}))
+    diag = module.diagnostics()
+
+    assert diag["tiers"]["coarse"]["infer_attempts"] == 1
+    assert diag["tiers"]["coarse"]["infer_hits"] == 1
+    assert diag["tiers"]["coarse"]["hit_rate"] == 1.0

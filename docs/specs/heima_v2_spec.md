@@ -948,8 +948,21 @@ Signals never override: active user overrides, explicit config values, or safety
 
 ### §10.9 House State Learning and User Approval
 
-`HouseStateInferenceModule` learns `P(house_state | weekday, hour_bucket, occupied_rooms,
-anyone_home)`. In the B2B product model, learned house-state contexts are proposal-first:
+`HouseStateInferenceModule` learns approved house-state context signals with a tiered fallback
+strategy:
+
+| Tier | Conditioning |
+|---|---|
+| Rich | `P(house_state | weekday, hour_bucket, room_context_signature)` |
+| Coarse | `P(house_state | weekday, hour_bucket, occupied_rooms, anyone_home)` |
+| Minimal | `P(house_state | weekday, hour_bucket, anyone_home)` |
+
+`room_context_signature = frozenset((room_id, media_on, work_activity) for occupied rooms)`.
+Snapshots without `room_device_context` feed only Coarse and Minimal. Inference tries Rich, then
+Coarse, then Minimal, using the first approved tier with sufficient support and confidence. Emitted
+`HouseStateSignal.context["tier"]` identifies the active tier.
+
+In the B2B product model, learned house-state contexts are proposal-first:
 unknown or pending contexts generate a review candidate and are not applied transiently. After
 acceptance: applied silently. After rejection: computed but not consumed; no re-proposal for the
 same `(context_key_hash, predicted_state)` pair (`ApprovalStore`, persisted across restarts).
