@@ -107,8 +107,8 @@ These constraints must never be violated. See spec §16 for rationale.
 | U | Physical Light State Awareness | `DONE` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
 | W | Calendar: day_off and holiday categories | `DONE` | — |
-| X | Room Context Model | `NOT STARTED` | U, V |
-| Y | HouseStateInferenceModule: tiered feature enrichment | `NOT STARTED` | X |
+| X | Room Context Model | `DONE` | U, V |
+| Y | HouseStateInferenceModule: tiered feature enrichment | `DONE` | X |
 | Z | Activity cold start mitigation | `NOT STARTED` | S |
 | AA | Global drift detection | `NOT STARTED` | Y |
 
@@ -116,16 +116,25 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories.
-**Active phase:** None — Phase W complete. Phases X–AA planned (see below). Phase T deferred.
-**Branch:** `feat/v2`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment.
+**Active phase:** None — Phase Y complete. Phases Z and AA planned (see below). Phase T deferred.
+**Branch:** `feat/phase-y-tiered-house-state-inference` pending merge to `feat/v2`.
 **Next action:**
 
-Phase W complete. Phases X–AA are spec-approved and ready for implementation. Suggested order: X → Y → Z → AA.
+Phase Y complete. Next planned development phase is Z — Activity cold start mitigation. Phase AA follows after Z.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
+- Current slice: Phase Y complete.
+  - `HouseStateInferenceModule` now builds Rich, Coarse, and Minimal model tiers.
+  - Inference selects Rich → Coarse → Minimal with independent support thresholds and diagnostic hit rates.
+  - Rich and Minimal tiers use distinct approval-key learning contexts; Coarse preserves existing approval keys.
+  - Branch `feat/phase-y-tiered-house-state-inference` is ready to merge into `feat/v2`.
+- Previous slice: Phase X complete.
+  - `RoomDeviceContextBuilder` maps configured HA entities to Heima rooms via HA area/device registry.
+  - Engine, `InferenceContext`, `HouseSnapshot`, and `HouseStateDomain` consume room-scoped device context.
+  - `RoomContextModule` is wired as an approval-gated learning module.
 - Cross-cutting fix: local time contract restored for inference snapshots and notifications.
   - Engine inference contexts and newly persisted `HouseSnapshot` records now derive `weekday` and
     `minute_of_day` from HA local time rather than UTC.
