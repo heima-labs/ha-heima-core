@@ -128,6 +128,17 @@ def _learning_module_threshold_kwargs(
     min_support = _positive_int_option(learning_config.get(f"{module_id}_min_support"))
     if min_support is not None:
         kwargs["min_support"] = min_support
+    if module_id == "house_state_inference":
+        rich_min_support = _positive_int_option(
+            learning_config.get("house_state_inference_rich_min_support")
+        )
+        if rich_min_support is not None:
+            kwargs["rich_min_support"] = rich_min_support
+        minimal_min_support = _positive_int_option(
+            learning_config.get("house_state_inference_minimal_min_support")
+        )
+        if minimal_min_support is not None:
+            kwargs["minimal_min_support"] = minimal_min_support
     if confidence_threshold:
         threshold = _unit_float_option(learning_config.get(f"{module_id}_confidence_threshold"))
         if threshold is not None:

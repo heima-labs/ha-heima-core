@@ -107,8 +107,8 @@ These constraints must never be violated. See spec §16 for rationale.
 | U | Physical Light State Awareness | `DONE` | A, Q |
 | V | Signal Discovery Pipeline | `DONE` | N, L |
 | W | Calendar: day_off and holiday categories | `DONE` | — |
-| X | Room Context Model | `NOT STARTED` | U, V |
-| Y | HouseStateInferenceModule: tiered feature enrichment | `NOT STARTED` | X |
+| X | Room Context Model | `DONE` | U, V |
+| Y | HouseStateInferenceModule: tiered feature enrichment | `DONE` | X |
 | Z | Activity cold start mitigation | `NOT STARTED` | S |
 | AA | Global drift detection | `NOT STARTED` | Y |
 
@@ -116,16 +116,25 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories.
-**Active phase:** None — Phase W complete. Phases X–AA planned (see below). Phase T deferred.
-**Branch:** `feat/v2`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment.
+**Active phase:** None — Phase Y complete. Phases Z and AA planned (see below). Phase T deferred.
+**Branch:** `feat/phase-y-tiered-house-state-inference` pending merge to `feat/v2`.
 **Next action:**
 
-Phase W complete. Phases X–AA are spec-approved and ready for implementation. Suggested order: X → Y → Z → AA.
+Phase Y complete. Next planned development phase is Z — Activity cold start mitigation. Phase AA follows after Z.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
+- Current slice: Phase Y complete.
+  - `HouseStateInferenceModule` now builds Rich, Coarse, and Minimal model tiers.
+  - Inference selects Rich → Coarse → Minimal with independent support thresholds and diagnostic hit rates.
+  - Rich and Minimal tiers use distinct approval-key learning contexts; Coarse preserves existing approval keys.
+  - Branch `feat/phase-y-tiered-house-state-inference` is ready to merge into `feat/v2`.
+- Previous slice: Phase X complete.
+  - `RoomDeviceContextBuilder` maps configured HA entities to Heima rooms via HA area/device registry.
+  - Engine, `InferenceContext`, `HouseSnapshot`, and `HouseStateDomain` consume room-scoped device context.
+  - `RoomContextModule` is wired as an approval-gated learning module.
 - Cross-cutting fix: local time contract restored for inference snapshots and notifications.
   - Engine inference contexts and newly persisted `HouseSnapshot` records now derive `weekday` and
     `minute_of_day` from HA local time rather than UTC.
@@ -2174,6 +2183,8 @@ preserved unchanged.
 
 ## Phase Y — HouseStateInferenceModule: tiered feature enrichment
 
+Status: DONE on branch `feat/phase-y-tiered-house-state-inference`.
+
 **Spec section:** `docs/specs/heima_v2_spec.md` §13 (extension)
 **Goal:** Enrich `HouseStateInferenceModule` conditioning with room device context using a tiered
 fallback strategy to preserve min-support guarantees when feature space is sparse.
@@ -2186,7 +2197,7 @@ Current key: `(weekday, hour_bucket, frozenset(room_occupancy.items()), anyone_h
 | Tier | Conditioning key | Min support | Active when |
 |---|---|---|---|
 | Rich | `(weekday, hour_bucket, room_context_signature)` | 15 (default) | `room_device_context` present in snapshot AND support ≥ threshold |
-| Coarse | `(weekday, hour_bucket, frozenset(occupied_rooms), anyone_home)` | 10 (current) | Rich tier insufficient |
+| Coarse | `(weekday, hour_bucket, frozenset(occupied_rooms), anyone_home)` | existing module default (`3`) unless configured | Rich tier insufficient |
 | Minimal | `(weekday, hour_bucket, anyone_home)` | 5 (default) | Coarse tier insufficient |
 
 `room_context_signature = frozenset((room_id, media_on, work_activity) for occupied rooms)` —
@@ -2216,12 +2227,21 @@ Snapshots without `room_device_context` populate Coarse and Minimal tiers only.
 
 ### Acceptance criteria
 
-- [ ] Rich tier used when `room_device_context` available and support ≥ threshold
-- [ ] Coarse fallback when Rich tier insufficient; Minimal fallback when Coarse insufficient
-- [ ] No signal emitted if all tiers below threshold
-- [ ] Active tier visible in signal context dict and diagnostics
-- [ ] Household without Phase X data: behavior identical to pre-Phase-Y (Coarse/Minimal only)
-- [ ] All existing tests pass
+- [x] Rich tier used when `room_device_context` available and support ≥ threshold
+- [x] Coarse fallback when Rich tier insufficient; Minimal fallback when Coarse insufficient
+- [x] No signal emitted if all tiers below threshold
+- [x] Active tier visible in signal context dict and diagnostics
+- [x] Household without Phase X data: behavior identical to pre-Phase-Y (Coarse/Minimal only)
+- [x] All existing tests pass
+
+### Implementation notes
+
+- Coarse keeps the pre-Phase-Y approval key shape (`learning_context={}`), preserving existing
+  approvals.
+- Rich and Minimal use distinct `learning_context.module` values so approval keys cannot collide
+  with Coarse or `RoomContextModule`.
+- `HouseStateSignal.context["tier"]` exposes the active tier; existing signal construction remains
+  backward compatible because the context field defaults to `{}`.
 
 ---
 
