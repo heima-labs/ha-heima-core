@@ -49,8 +49,11 @@ Key subsystems:
 | ActivityDomain | Primitive activity detection (stove, shower, TV, …) with hysteresis state machine |
 | InferenceEngine | Per-cycle `ILearningModule` execution; `SnapshotStore` for pattern history |
 | IBehaviorAnalyzer | Offline pattern analysis producing `BehaviorFinding` proposals |
+| AnomalyAnalyzer | Statistical behavioral drift detection; emits remediation proposals on model staleness |
 | IInvariantCheck | Per-cycle structural constraint checks with debounce and resolution events |
 | OutcomeTracker | Act→verify loop; degradation proposals after consecutive negative outcomes |
+| ProposalEngine | Approval-gated routing of SUGGEST-level learning signals to the resident |
+| SignalDiscoveryAudit | Runtime classification of HA entities into room-level signal candidates |
 | Event-driven trigger | `state_changed`-driven evaluation with per-class debounce; 300 s fallback |
 
 See `docs/specs/heima_v2_spec.md` for the full specification.
@@ -89,6 +92,31 @@ Used to verify v2 behavior with real HA entities before each phase is closed.
 
 - `docs/examples/ha_test_instance/README.md` — setup and usage
 - `docs/specs/core/heima_test_house_spec.md` — test house specification
+
+## Research foundations
+
+Heima's inference and learning design draws on the following body of research:
+
+**Contextual activity recognition and temporal reasoning**
+
+- Shi et al. 2026. *TRACE: Temporal Reasoning over Context and Evidence for Activity Recognition in Smart Homes.* Georgia Tech / Northeastern. arXiv:2605.02841.
+  → basis for Heima's tiered inference, day-type contextual priors, and multi-scale temporal conditioning.
+
+**System lifecycle — bootstrap, lifespan, and maintenance**
+
+- Hiremath, Nishimura, Chernova & Plötz. 2022. *Bootstrapping Human Activity Recognition Systems for Smart Homes from Scratch.* IMWUT 6(3).
+  → basis for Phase Z cold-start mode (relaxed thresholds when training data is sparse).
+
+- Hiremath & Plötz. 2023. *The Lifespan of Human Activity Recognition Systems for Smart Homes.* Sensors 23(18).
+  → basis for Phase AA global drift detection (behavioral model staleness over time).
+
+- Hiremath & Plötz. 2024. *Maintenance Required: Updating and Extending Bootstrapped Human Activity Recognition Systems for Smart Homes.* ABC 2024.
+  → basis for Phase X/Y model evolution strategy (tiered snapshot conditioning, configured-entity mapping).
+
+**Behavioral routine theory**
+
+- Schank & Abelson. 1977/2013. *Scripts, Plans, Goals, and Understanding.* Psychology Press.
+  → basis for day-type prior design: calendar categories (office, wfh, holiday, day_off, vacation) as script selectors; hour buckets as scene headers within each script.
 
 ## Specs and docs
 
