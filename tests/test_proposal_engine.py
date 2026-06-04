@@ -142,6 +142,7 @@ def _activity_proposal(
     conf: float = 0.8,
     activity_name: str = "movie_night",
     status: str = "pending",
+    bootstrap: bool = False,
 ) -> ActivityProposal:
     return ActivityProposal(
         activity_name=activity_name,
@@ -150,6 +151,7 @@ def _activity_proposal(
         occurrence_count=12,
         confidence=conf,
         representative_ts=["2026-05-01T20:00:00+00:00"],
+        bootstrap=bootstrap,
         status=status,
     )
 
@@ -383,7 +385,7 @@ async def test_activity_proposal_round_trips_storage(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     await engine.async_initialize()
-    proposal = _activity_proposal(conf=0.82)
+    proposal = _activity_proposal(conf=0.82, bootstrap=True)
 
     proposal_id = await engine.async_submit_proposal(proposal)
 
@@ -392,6 +394,7 @@ async def test_activity_proposal_round_trips_storage(monkeypatch):
     assert pending[0].proposal_id == proposal_id
     assert isinstance(pending[0], ActivityProposal)
     assert pending[0].primitive_pattern == frozenset({"tv", "relax"})
+    assert pending[0].bootstrap is True
     assert engine.diagnostics()["proposals"][0]["type"] == "activity_discovered"
 
 

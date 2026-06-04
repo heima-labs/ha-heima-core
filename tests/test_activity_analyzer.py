@@ -6,6 +6,8 @@ from datetime import timedelta, timezone
 
 from custom_components.heima.runtime.analyzers import activity
 from custom_components.heima.runtime.analyzers.activity import (
+    BOOTSTRAP_MIN_COOCCURRENCES,
+    BOOTSTRAP_MIN_DISTINCT_DAYS,
     MAX_PATTERN_SIZE,
     MIN_COOCCURRENCES,
     MIN_DISTINCT_DAYS,
@@ -77,7 +79,30 @@ async def test_activity_analyzer_emits_activity_proposal_above_thresholds() -> N
     assert finding.payload.activity_name == "relax_tv"
     assert finding.payload.primitive_pattern == frozenset({"relax", "tv"})
     assert finding.payload.occurrence_count == 10
+    assert finding.payload.bootstrap is False
     assert finding.payload.representative_ts == [snapshot.ts for snapshot in snapshots[:5]]
+
+
+async def test_activity_analyzer_bootstrap_mode_uses_lower_thresholds() -> None:
+    snapshots = [_snapshot(day=day) for day in (1, 2, 1, 2, 1)]
+    analyzer = ActivityAnalyzer(_SnapshotStoreStub(snapshots), bootstrap_mode=True)
+
+    findings = await analyzer.analyze(event_store=object())
+
+    assert len(findings) == 1
+    proposal = findings[0].payload
+    assert isinstance(proposal, ActivityProposal)
+    assert proposal.occurrence_count == BOOTSTRAP_MIN_COOCCURRENCES
+    assert proposal.bootstrap is True
+
+
+async def test_activity_analyzer_default_mode_ignores_bootstrap_sized_sample() -> None:
+    snapshots = [_snapshot(day=day) for day in (1, 2, 1, 2, 1)]
+    analyzer = ActivityAnalyzer(_SnapshotStoreStub(snapshots))
+
+    findings = await analyzer.analyze(event_store=object())
+
+    assert findings == []
 
 
 async def test_activity_analyzer_sorts_and_dedupes_primitive_pattern() -> None:
@@ -165,6 +190,8 @@ async def test_activity_analyzer_only_generates_pairs_for_i4() -> None:
 def test_activity_analyzer_threshold_constants_are_nominal() -> None:
     assert MIN_COOCCURRENCES == 10
     assert MIN_DISTINCT_DAYS == 3
+    assert BOOTSTRAP_MIN_COOCCURRENCES == 5
+    assert BOOTSTRAP_MIN_DISTINCT_DAYS == 2
     assert MAX_PATTERN_SIZE == 2
 
 

@@ -82,6 +82,8 @@ def activity_proposal_review_details(
     lines.append(
         f"Attivita: {proposal.activity_name}" if is_it else f"Activity: {proposal.activity_name}"
     )
+    if proposal.bootstrap:
+        lines.append("Modalita: scoperta anticipata" if is_it else "Mode: early discovery")
     if pattern:
         lines.append(f"Pattern: {pattern}")
     room_id = str(context.get("room_id") or "").strip()

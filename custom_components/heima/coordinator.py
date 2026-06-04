@@ -28,6 +28,7 @@ from .const import (
     OPT_PEOPLE_NAMED,
     OPT_ROOMS,
     OPT_SECURITY,
+    OPTION_ACTIVITY_BOOTSTRAP_MODE,
     SIGNAL_DISCOVERY_ANALYZER_ID,
     SIGNAL_DISCOVERY_REACTION_TYPE,
 )
@@ -159,6 +160,20 @@ def _positive_int_option(value: Any) -> int | None:
     return parsed if parsed >= 1 else None
 
 
+def _bool_option(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"1", "true", "yes", "on", "enable", "enabled"}:
+            return True
+        if token in {"0", "false", "no", "off", "disable", "disabled", ""}:
+            return False
+    if isinstance(value, int | float):
+        return value != 0
+    return False
+
+
 def _unit_float_option(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
@@ -238,7 +253,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.set_proposal_engine(self._proposal_engine)
         for plugin in self._learning_plugin_registry.analyzers():
             self._proposal_engine.register_analyzer(plugin)
-        self._activity_analyzer = ActivityAnalyzer(self._house_snapshot_store)
+        learning_config = dict(entry.options.get("learning", {}))
+        activity_bootstrap_mode = _bool_option(
+            learning_config.get(OPTION_ACTIVITY_BOOTSTRAP_MODE, False)
+        )
+        self._activity_analyzer = ActivityAnalyzer(
+            self._house_snapshot_store,
+            bootstrap_mode=activity_bootstrap_mode,
+        )
         self._proposal_engine.register_analyzer(self._activity_analyzer)
         self._signal_discovery_audit = SignalDiscoveryAudit()
         self._pending_signal_suggestions: list[SignalSuggestion] = []
@@ -250,7 +272,6 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             anomaly_handler=self._async_handle_anomaly_finding,
         )
         self._approval_store = ApprovalStore(hass)
-        learning_config = dict(entry.options.get("learning", {}))
         self._room_context_builder = RoomDeviceContextBuilder(hass, self.engine._normalizer)
         self.engine.set_room_context_builder(self._room_context_builder)
         self._weekday_module = WeekdayStateModule(
@@ -271,7 +292,15 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 HouseStateInferenceModule.module_id,
             )
         )
-        self._activity_module = ActivityInferenceModule()
+        activity_module_kwargs = _learning_module_threshold_kwargs(
+            learning_config,
+            ActivityInferenceModule.module_id,
+        )
+        self._activity_module = ActivityInferenceModule(
+            **activity_module_kwargs,
+            explicit_min_support="min_support" in activity_module_kwargs,
+            bootstrap_mode=activity_bootstrap_mode,
+        )
         self._lighting_pattern_module = LightingPatternModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -2062,6 +2091,7 @@ def _approval_record_from_activity_proposal(
             "context_conditions": dict(proposal.context_conditions),
             "occurrence_count": proposal.occurrence_count,
             "confidence": proposal.confidence,
+            "bootstrap": proposal.bootstrap,
         },
     )
 
@@ -2082,6 +2112,7 @@ def _activity_proposal_from_approval_record(record: ApprovalRecord) -> ActivityP
         context_conditions=dict(context_conditions),
         occurrence_count=int(record.metadata.get("occurrence_count") or 0),
         confidence=float(record.metadata.get("confidence") or 1.0),
+        bootstrap=bool(record.metadata.get("bootstrap", False)),
         status=record.decision,
     )
 

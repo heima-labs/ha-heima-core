@@ -44,7 +44,7 @@ def _candidate(context_key: str = "ctx-1") -> LearnedHouseStateCandidate:
     )
 
 
-def _activity_proposal() -> ActivityProposal:
+def _activity_proposal(*, bootstrap: bool = False) -> ActivityProposal:
     return ActivityProposal(
         proposal_id="proposal-activity",
         activity_name="movie_night",
@@ -53,6 +53,7 @@ def _activity_proposal() -> ActivityProposal:
         occurrence_count=12,
         confidence=0.9,
         representative_ts=["2026-05-01T20:00:00+00:00"],
+        bootstrap=bootstrap,
         identity_key="activity-key",
     )
 
@@ -180,7 +181,7 @@ def test_sync_activity_approval_state_passes_only_approved_activity_proposals() 
 
 @pytest.mark.asyncio
 async def test_review_activity_proposal_records_approved_decision_and_syncs() -> None:
-    proposal = _activity_proposal()
+    proposal = _activity_proposal(bootstrap=True)
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator._proposal_engine = SimpleNamespace(
         proposal_by_id=MagicMock(return_value=proposal),
@@ -207,6 +208,7 @@ async def test_review_activity_proposal_records_approved_decision_and_syncs() ->
     assert record.approved_by == "resident"
     assert record.context_snapshot["activity_name"] == "movie_night"
     assert record.context_snapshot["primitive_pattern"] == ["relax", "tv"]
+    assert record.metadata["bootstrap"] is True
     coordinator._approval_store.async_flush.assert_awaited_once()
     coordinator._sync_activity_approval_state.assert_called_once()
     assert proposal.identity_key not in coordinator._notified_activity_proposal_keys

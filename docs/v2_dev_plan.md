@@ -109,23 +109,31 @@ These constraints must never be violated. See spec §16 for rationale.
 | W | Calendar: day_off and holiday categories | `DONE` | — |
 | X | Room Context Model | `DONE` | U, V |
 | Y | HouseStateInferenceModule: tiered feature enrichment | `DONE` | X |
-| Z | Activity cold start mitigation | `NOT STARTED` | S |
+| Z | Activity cold start mitigation | `DONE` | S |
 | AA | Global drift detection | `NOT STARTED` | Y |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment.
-**Active phase:** None — Phase Y complete. Phases Z and AA planned (see below). Phase T deferred.
-**Branch:** `feat/v2`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation.
+**Active phase:** None — Phase Z complete. Phase AA planned (see below). Phase T deferred.
+**Branch:** `feat/phase-z-activity-cold-start`.
 **Next action:**
 
-Phase Y complete. Next planned development phase is Z — Activity cold start mitigation. Phase AA follows after Z.
+Phase Z complete. Next planned development phase is AA — Global drift detection.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
+- Current slice: Phase Z complete.
+  - `options["learning"]["activity_bootstrap_mode"]` enables early composite activity discovery.
+  - `ActivityAnalyzer` uses bootstrap thresholds 5 co-occurrences / 2 distinct days only when enabled; default behavior remains 10 / 3.
+  - `ActivityProposal.bootstrap` is persisted, shown in review details, copied into approval metadata, and restored from approval records.
+  - `ActivityInferenceModule` applies `bootstrap_min_support=5` per bootstrap-approved pattern unless `activity_inference_min_support` is explicitly configured, in which case the explicit user value wins.
+  - Verification: `pytest tests/test_activity_analyzer.py tests/test_inference_modules.py tests/test_proposal_engine.py::test_activity_proposal_round_trips_storage tests/test_proposal_engine.py::test_activity_proposal_refreshes_pending_by_identity tests/test_house_state_learning_h4.py::test_review_activity_proposal_records_approved_decision_and_syncs tests/test_options_flow_e2e.py::test_learning_flow_persists_enabled_plugin_families tests/test_options_flow_e2e.py::test_learning_flow_persists_activity_bootstrap_mode tests/test_coordinator_learning_thresholds.py -q`.
+  - Verification: `ruff check` on touched runtime/config/test files.
+  - Full verification: `PATH=".venv/bin:$PATH" bash scripts/ci_local.sh` passed with 1447 tests.
 - Current slice: Phase Y complete.
   - `HouseStateInferenceModule` now builds Rich, Coarse, and Minimal model tiers.
   - Inference selects Rich → Coarse → Minimal with independent support thresholds and diagnostic hit rates.
@@ -2247,6 +2255,8 @@ Snapshots without `room_device_context` populate Coarse and Minimal tiers only.
 
 ## Phase Z — Activity cold start mitigation
 
+Status: DONE on branch `feat/phase-z-activity-cold-start`.
+
 **Spec section:** `docs/specs/heima_v2_spec.md` §7.7 (extension)
 **Goal:** Reduce the minimum evidence window for composite activity discovery to accelerate first
 proposals in data-sparse environments.
@@ -2289,11 +2299,11 @@ Bootstrap mode does not auto-disable. The user removes it when they judge the mo
 
 ### Acceptance criteria
 
-- [ ] `activity_bootstrap_mode=true` → `MIN_COOCCURRENCES=5`, `MIN_DISTINCT_DAYS=2`
-- [ ] Default behavior (`mode=false`) unchanged
-- [ ] Bootstrap proposals include `"bootstrap": true` in metadata
-- [ ] Diagnostics expose `bootstrap_mode` state
-- [ ] All existing tests pass
+- [x] `activity_bootstrap_mode=true` → `MIN_COOCCURRENCES=5`, `MIN_DISTINCT_DAYS=2`
+- [x] Default behavior (`mode=false`) unchanged
+- [x] Bootstrap proposals include `"bootstrap": true` in metadata
+- [x] Diagnostics expose `bootstrap_mode` state
+- [x] All existing tests pass
 
 ---
 

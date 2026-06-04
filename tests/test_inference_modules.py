@@ -95,6 +95,7 @@ def _activity_proposal(
     primitive_pattern: frozenset[str] = frozenset({"tv", "relax"}),
     context_conditions: dict | None = None,
     confidence: float = 0.9,
+    bootstrap: bool = False,
 ) -> ActivityProposal:
     return ActivityProposal(
         activity_name=activity_name,
@@ -105,6 +106,7 @@ def _activity_proposal(
         occurrence_count=12,
         confidence=confidence,
         representative_ts=["2026-04-30T20:00:00+00:00"],
+        bootstrap=bootstrap,
     )
 
 
@@ -400,6 +402,66 @@ async def test_activity_inference_no_signal_below_min_support() -> None:
         )
         == []
     )
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_uses_bootstrap_min_support_for_bootstrap_pattern() -> None:
+    module = ActivityInferenceModule(bootstrap_mode=True)
+    module.sync_approved_proposals([_activity_proposal(bootstrap=True)])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 5
+
+    await module.analyze(_FakeStore(snapshots))
+
+    signals = module.infer(
+        _context(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            previous_activity_names=("tv", "relax"),
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].context["bootstrap"] is True
+    assert signals[0].context["required_support"] == 5
+    assert module.diagnostics()["bootstrap_patterns"] == 1
+    assert module.diagnostics()["bootstrap_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_activity_inference_explicit_min_support_overrides_bootstrap_support() -> None:
+    module = ActivityInferenceModule(
+        min_support=8,
+        explicit_min_support=True,
+        bootstrap_mode=True,
+    )
+    module.sync_approved_proposals([_activity_proposal(bootstrap=True)])
+    snapshots = [
+        _snapshot(
+            minute_of_day=20 * 60,
+            room_occupancy={"living_room": True},
+            detected_activities=("tv", "relax"),
+        )
+    ] * 5
+
+    await module.analyze(_FakeStore(snapshots))
+
+    assert (
+        module.infer(
+            _context(
+                minute_of_day=20 * 60,
+                room_occupancy={"living_room": True},
+                previous_activity_names=("tv", "relax"),
+            )
+        )
+        == []
+    )
+    assert module.diagnostics()["explicit_min_support"] is True
 
 
 @pytest.mark.asyncio

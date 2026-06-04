@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from custom_components.heima.coordinator import _learning_module_threshold_kwargs
+from custom_components.heima.coordinator import _bool_option, _learning_module_threshold_kwargs
 
 
 def test_learning_module_threshold_kwargs_reads_valid_values() -> None:
@@ -64,3 +64,11 @@ def test_learning_module_threshold_kwargs_reads_house_state_tier_supports() -> N
         "minimal_min_support": 5,
         "confidence_threshold": 0.65,
     }
+
+
+def test_bool_option_parses_common_learning_option_values() -> None:
+    assert _bool_option(True) is True
+    assert _bool_option("true") is True
+    assert _bool_option("false") is False
+    assert _bool_option(0) is False
+    assert _bool_option(1) is True

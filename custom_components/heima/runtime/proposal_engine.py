@@ -34,6 +34,7 @@ class ActivityProposal:
     occurrence_count: int = 0
     confidence: float = 0.0
     representative_ts: list[str] = field(default_factory=list)
+    bootstrap: bool = False
     status: str = "pending"
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -51,6 +52,7 @@ class ActivityProposal:
             "occurrence_count": int(self.occurrence_count),
             "confidence": self.confidence,
             "representative_ts": [str(ts) for ts in self.representative_ts],
+            "bootstrap": bool(self.bootstrap),
             "status": self.status,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -84,6 +86,7 @@ class ActivityProposal:
             occurrence_count=max(0, int(_safe_float(raw.get("occurrence_count"), default=0.0))),
             confidence=_safe_float(raw.get("confidence"), default=0.0),
             representative_ts=[str(ts) for ts in representative_ts],
+            bootstrap=bool(raw.get("bootstrap", False)),
             status=status,
             created_at=str(raw.get("created_at") or datetime.now(UTC).isoformat()),
             updated_at=str(raw.get("updated_at") or datetime.now(UTC).isoformat()),
@@ -675,6 +678,7 @@ class ProposalEngine:
             occurrence_count=proposal.occurrence_count,
             confidence=proposal.confidence,
             representative_ts=list(proposal.representative_ts),
+            bootstrap=proposal.bootstrap,
             updated_at=now,
             last_observed_at=proposal.last_observed_at or now,
             identity_key=identity_key,
@@ -1126,6 +1130,7 @@ def _activity_config_summary(proposal: ActivityProposal) -> dict[str, Any]:
         "context_conditions": _safe_dict(proposal.context_conditions),
         "occurrence_count": proposal.occurrence_count,
         "representative_ts": list(proposal.representative_ts),
+        "bootstrap": bool(proposal.bootstrap),
     }
 
 

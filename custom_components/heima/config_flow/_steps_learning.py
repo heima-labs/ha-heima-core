@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
-from ..const import OPT_LEARNING
+from ..const import OPT_LEARNING, OPTION_ACTIVITY_BOOTSTRAP_MODE
 from ._common import _entity_selector
 
 if TYPE_CHECKING:
@@ -56,6 +56,7 @@ class _LearningStepsMixin:
                 vol.Optional("enabled_plugin_families"): cv.multi_select(
                     _LEARNING_PLUGIN_FAMILY_OPTIONS
                 ),
+                vol.Optional(OPTION_ACTIVITY_BOOTSTRAP_MODE, default=False): cv.boolean,
             }
         )
         return self._with_suggested(schema, defaults)
@@ -86,5 +87,15 @@ class _LearningStepsMixin:
             for item in selected
             if str(item).strip() in _LEARNING_PLUGIN_FAMILY_OPTIONS
         ]
+        data[OPTION_ACTIVITY_BOOTSTRAP_MODE] = _bool_option(
+            payload.get(OPTION_ACTIVITY_BOOTSTRAP_MODE, False)
+        )
 
         return data
+
+
+def _bool_option(value: Any) -> bool:
+    try:
+        return bool(cv.boolean(value))
+    except vol.Invalid:
+        return False

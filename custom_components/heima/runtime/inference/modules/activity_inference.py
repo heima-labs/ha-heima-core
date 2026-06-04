@@ -11,6 +11,7 @@ from ..base import HeimaLearningModule, InferenceContext, SnapshotHistoryStore
 from ..signals import ActivitySignal, Importance
 
 _MIN_SUPPORT = 10
+_BOOTSTRAP_MIN_SUPPORT = 5
 _CONFIDENCE_THRESHOLD = 0.60
 
 
@@ -20,6 +21,7 @@ class _ApprovedActivityPattern:
     primitive_pattern: frozenset[str]
     context_conditions: dict[str, Any]
     context_key: str
+    bootstrap: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,9 +40,15 @@ class ActivityInferenceModule(HeimaLearningModule):
         self,
         *,
         min_support: int = _MIN_SUPPORT,
+        bootstrap_min_support: int = _BOOTSTRAP_MIN_SUPPORT,
+        explicit_min_support: bool = False,
+        bootstrap_mode: bool = False,
         confidence_threshold: float = _CONFIDENCE_THRESHOLD,
     ) -> None:
         self._min_support = max(1, int(min_support))
+        self._bootstrap_min_support = max(1, int(bootstrap_min_support))
+        self._explicit_min_support = bool(explicit_min_support)
+        self._bootstrap_mode = bool(bootstrap_mode)
         self._confidence_threshold = max(0.0, min(float(confidence_threshold), 1.0))
         self._approved_patterns: dict[str, _ApprovedActivityPattern] = {}
         self._model: dict[str, _ModelEntry] = {}
@@ -64,6 +72,7 @@ class ActivityInferenceModule(HeimaLearningModule):
                 primitive_pattern=pattern,
                 context_conditions=dict(proposal.context_conditions),
                 context_key=context_key,
+                bootstrap=bool(proposal.bootstrap),
             )
         self._approved_patterns = approved
         self._model = {
@@ -118,7 +127,8 @@ class ActivityInferenceModule(HeimaLearningModule):
             entry = self._model.get(key)
             if entry is None:
                 continue
-            if entry.support < self._min_support:
+            required_support = self._required_support(pattern)
+            if entry.support < required_support:
                 continue
             if entry.confidence < self._confidence_threshold:
                 continue
@@ -135,7 +145,9 @@ class ActivityInferenceModule(HeimaLearningModule):
                         "approval_context_key": pattern.context_key,
                         "primitive_pattern": sorted(pattern.primitive_pattern),
                         "support": entry.support,
+                        "required_support": required_support,
                         "total": entry.total,
+                        "bootstrap": pattern.bootstrap,
                     },
                 )
             )
@@ -150,8 +162,19 @@ class ActivityInferenceModule(HeimaLearningModule):
             "model_entries": len(self._model),
             "analyzed_snapshots": self._analyzed_snapshots,
             "min_support": self._min_support,
+            "bootstrap_min_support": self._bootstrap_min_support,
+            "explicit_min_support": self._explicit_min_support,
+            "bootstrap_mode": self._bootstrap_mode,
+            "bootstrap_patterns": sum(
+                1 for pattern in self._approved_patterns.values() if pattern.bootstrap
+            ),
             "confidence_threshold": self._confidence_threshold,
         }
+
+    def _required_support(self, pattern: _ApprovedActivityPattern) -> int:
+        if self._explicit_min_support or not pattern.bootstrap:
+            return self._min_support
+        return self._bootstrap_min_support
 
 
 def _context_matches_snapshot(snapshot: Any, conditions: dict[str, Any]) -> bool:

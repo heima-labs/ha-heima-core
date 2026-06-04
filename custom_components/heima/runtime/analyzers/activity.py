@@ -16,6 +16,8 @@ from ..proposal_engine import ActivityProposal
 
 MIN_COOCCURRENCES = 10
 MIN_DISTINCT_DAYS = 3
+BOOTSTRAP_MIN_COOCCURRENCES = 5
+BOOTSTRAP_MIN_DISTINCT_DAYS = 2
 MIN_PATTERN_SIZE = 2
 MAX_PATTERN_SIZE = 2
 DOMINANCE_THRESHOLD = 0.60
@@ -43,10 +45,18 @@ class ActivityAnalyzer:
         min_cooccurrences: int = MIN_COOCCURRENCES,
         min_distinct_days: int = MIN_DISTINCT_DAYS,
         max_pattern_size: int = MAX_PATTERN_SIZE,
+        bootstrap_mode: bool = False,
     ) -> None:
         self._snapshot_store = snapshot_store
-        self._min_cooccurrences = max(1, int(min_cooccurrences))
-        self._min_distinct_days = max(1, int(min_distinct_days))
+        self._bootstrap_mode = bool(bootstrap_mode)
+        effective_min_cooccurrences = (
+            BOOTSTRAP_MIN_COOCCURRENCES if self._bootstrap_mode else min_cooccurrences
+        )
+        effective_min_distinct_days = (
+            BOOTSTRAP_MIN_DISTINCT_DAYS if self._bootstrap_mode else min_distinct_days
+        )
+        self._min_cooccurrences = max(1, int(effective_min_cooccurrences))
+        self._min_distinct_days = max(1, int(effective_min_distinct_days))
         self._max_pattern_size = max(MIN_PATTERN_SIZE, int(max_pattern_size))
 
     async def analyze(
@@ -69,6 +79,7 @@ class ActivityAnalyzer:
                 occurrence_count=pattern_stats.occurrence_count,
                 confidence=1.0,
                 representative_ts=list(pattern_stats.representative_ts),
+                bootstrap=self._bootstrap_mode,
             )
             findings.append(
                 BehaviorFinding(

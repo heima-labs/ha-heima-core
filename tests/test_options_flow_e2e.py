@@ -275,6 +275,7 @@ async def test_learning_flow_persists_enabled_plugin_families():
             "weather_entity": "",
             "context_signal_entities": ["media_player.projector"],
             "enabled_plugin_families": ["presence", "lighting"],
+            "activity_bootstrap_mode": False,
         }
     )
 
@@ -285,7 +286,27 @@ async def test_learning_flow_persists_enabled_plugin_families():
         "weather_entity": None,
         "context_signal_entities": ["media_player.projector"],
         "enabled_plugin_families": ["presence", "lighting"],
+        "activity_bootstrap_mode": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_learning_flow_persists_activity_bootstrap_mode():
+    flow = _flow()
+
+    result = await flow.async_step_learning(
+        {
+            "outdoor_lux_entity": "",
+            "outdoor_temp_entity": "",
+            "weather_entity": "",
+            "context_signal_entities": [],
+            "enabled_plugin_families": ["presence"],
+            "activity_bootstrap_mode": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["learning"]["activity_bootstrap_mode"] is True
 
 
 @pytest.mark.asyncio
