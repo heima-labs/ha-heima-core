@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from ....const import HOUSE_STATES_LEARNED_CONTEXT_ELIGIBLE
@@ -96,16 +97,20 @@ class HouseStateInferenceModule(HeimaLearningModule):
             tier: defaultdict(lambda: defaultdict(int)) for tier in _TIERS
         }
         analyzed = 0
-        first_ts: str | None = None
-        last_ts: str | None = None
+        first_ts: tuple[tuple[int, Any], str] | None = None
+        last_ts: tuple[tuple[int, Any], str] | None = None
 
         for snapshot in store.snapshots():
             if not snapshot.house_state:
                 continue
             snapshot_ts = str(getattr(snapshot, "ts", "") or "")
             if snapshot_ts:
-                first_ts = snapshot_ts if first_ts is None else min(first_ts, snapshot_ts)
-                last_ts = snapshot_ts if last_ts is None else max(last_ts, snapshot_ts)
+                sort_key = _timestamp_sort_key(snapshot_ts)
+                snapshot_ts_entry = (sort_key, snapshot_ts)
+                first_ts = (
+                    snapshot_ts_entry if first_ts is None or sort_key < first_ts[0] else first_ts
+                )
+                last_ts = snapshot_ts_entry if last_ts is None or sort_key > last_ts[0] else last_ts
             coarse_key = _coarse_slot_key(
                 weekday=snapshot.weekday,
                 minute_of_day=snapshot.minute_of_day,
@@ -131,6 +136,7 @@ class HouseStateInferenceModule(HeimaLearningModule):
                 rich_key = _rich_slot_key(
                     weekday=snapshot.weekday,
                     minute_of_day=snapshot.minute_of_day,
+                    anyone_home=snapshot.anyone_home,
                     room_context_signature=rich_signature,
                 )
                 counts_by_tier["rich"][rich_key][str(snapshot.house_state)] += 1
@@ -142,8 +148,8 @@ class HouseStateInferenceModule(HeimaLearningModule):
         self._model = self._models["coarse"]
 
         self._analyzed_snapshots = analyzed
-        self._model_first_snapshot_ts = first_ts
-        self._model_last_snapshot_ts = last_ts
+        self._model_first_snapshot_ts = first_ts[1] if first_ts is not None else None
+        self._model_last_snapshot_ts = last_ts[1] if last_ts is not None else None
         self._ready = True
 
     def infer(self, context: InferenceContext) -> list[HouseStateSignal]:
@@ -279,6 +285,67 @@ class HouseStateInferenceModule(HeimaLearningModule):
         return self._min_support
 
 
+def house_state_model_entry_identity(entry: dict[str, Any]) -> tuple[Any, ...] | None:
+    """Return a tier-independent identity for approved house-state model diagnostics."""
+    context = _safe_dict(entry.get("context_snapshot"))
+    if not context:
+        return None
+    weekday_raw = context.get("weekday")
+    hour_bucket_raw = context.get("hour_bucket")
+    if weekday_raw is None or hour_bucket_raw is None:
+        return None
+    try:
+        weekday = int(weekday_raw)
+        hour_bucket = int(hour_bucket_raw)
+    except (TypeError, ValueError):
+        return None
+    predicted_state = str(entry.get("predicted_state") or context.get("predicted_state") or "")
+    if not predicted_state.strip():
+        return None
+    learning_context = _safe_dict(context.get("learning_context"))
+    rooms = _rooms_from_context_pattern(
+        learning_context.get("room_context_pattern")
+    ) or _context_rooms(context.get("rooms"))
+    return (
+        predicted_state.strip(),
+        weekday,
+        hour_bucket,
+        bool(context.get("anyone_home")),
+        rooms,
+    )
+
+
+def house_state_model_entry_matches_snapshot(snapshot: Any, entry: dict[str, Any]) -> bool:
+    """Return whether a snapshot matches an approved house-state model diagnostic entry."""
+    context = _safe_dict(entry.get("context_snapshot"))
+    if not context:
+        return False
+    if (
+        str(getattr(snapshot, "house_state", "") or "").strip()
+        != str(entry.get("predicted_state") or context.get("predicted_state") or "").strip()
+    ):
+        return False
+    try:
+        if int(getattr(snapshot, "weekday", -1)) != int(context.get("weekday", -2)):
+            return False
+        if int(getattr(snapshot, "minute_of_day", 0)) // 60 != int(context.get("hour_bucket", -1)):
+            return False
+    except (TypeError, ValueError):
+        return False
+    if bool(getattr(snapshot, "anyone_home", False)) is not bool(context.get("anyone_home")):
+        return False
+
+    learning_context = _safe_dict(context.get("learning_context"))
+    module = str(learning_context.get("module") or "").strip()
+    if module == "house_state_inference_minimal":
+        return True
+    if module == "house_state_inference_rich":
+        return _snapshot_room_context_pattern(snapshot) == _context_room_context_pattern(
+            learning_context.get("room_context_pattern")
+        )
+    return _occupied_rooms(snapshot) == _context_rooms(context.get("rooms"))
+
+
 def _coarse_slot_key(
     *,
     weekday: int,
@@ -311,11 +378,13 @@ def _rich_slot_key(
     *,
     weekday: int,
     minute_of_day: int,
+    anyone_home: bool,
     room_context_signature: RoomContextSignature,
-) -> tuple[int, int, RoomContextSignature]:
+) -> tuple[int, int, bool, RoomContextSignature]:
     return (
         int(weekday),
         int(minute_of_day) // 60,
+        bool(anyone_home),
         room_context_signature,
     )
 
@@ -342,6 +411,7 @@ def _context_keys(context: InferenceContext) -> dict[str, Any]:
         keys["rich"] = _rich_slot_key(
             weekday=context.weekday,
             minute_of_day=context.minute_of_day,
+            anyone_home=context.anyone_home,
             room_context_signature=rich_signature,
         )
     return keys
@@ -395,8 +465,14 @@ def _entry_context_parts(
     key: Any,
 ) -> tuple[int, int, tuple[str, ...], bool, RoomContextSignature | None]:
     if tier == "rich":
-        weekday, hour_bucket, signature = key
-        return int(weekday), int(hour_bucket), _rooms_from_signature(signature), True, signature
+        weekday, hour_bucket, anyone_home, signature = key
+        return (
+            int(weekday),
+            int(hour_bucket),
+            _rooms_from_signature(signature),
+            bool(anyone_home),
+            signature,
+        )
     if tier == "minimal":
         weekday, hour_bucket, anyone_home = key
         return int(weekday), int(hour_bucket), (), bool(anyone_home), None
@@ -443,6 +519,78 @@ def _room_context_signature(
 
 def _rooms_from_signature(signature: RoomContextSignature) -> tuple[str, ...]:
     return tuple(sorted(room_id for room_id, _media_on, _work_activity in signature))
+
+
+def _rooms_from_context_pattern(raw: Any) -> tuple[str, ...]:
+    return tuple(
+        room_id for room_id, _media_on, _work_activity in _context_room_context_pattern(raw)
+    )
+
+
+def _occupied_rooms(snapshot: Any) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            str(room_id)
+            for room_id, occupied in _safe_dict(getattr(snapshot, "room_occupancy", {})).items()
+            if bool(occupied) and str(room_id).strip()
+        )
+    )
+
+
+def _context_rooms(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list | tuple | set | frozenset):
+        return ()
+    return tuple(sorted(str(room) for room in raw if str(room).strip()))
+
+
+def _snapshot_room_context_pattern(snapshot: Any) -> tuple[tuple[str, bool, bool], ...]:
+    room_context = deserialize_room_device_context(
+        getattr(snapshot, "room_device_context", {}) or {}
+    )
+    return tuple(
+        sorted(
+            (
+                room_id,
+                bool(room_context[room_id].media_on),
+                bool(room_context[room_id].work_activity),
+            )
+            for room_id in _occupied_rooms(snapshot)
+            if room_id in room_context
+        )
+    )
+
+
+def _context_room_context_pattern(raw: Any) -> tuple[tuple[str, bool, bool], ...]:
+    if not isinstance(raw, list | tuple):
+        return ()
+    items: list[tuple[str, bool, bool]] = []
+    for item in raw:
+        payload = _safe_dict(item)
+        room_id = str(payload.get("room_id") or "").strip()
+        if not room_id:
+            continue
+        items.append(
+            (
+                room_id,
+                bool(payload.get("media_on", False)),
+                bool(payload.get("work_activity", False)),
+            )
+        )
+    return tuple(sorted(items))
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _timestamp_sort_key(value: str) -> tuple[int, Any]:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return (1, value)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return (0, parsed)
 
 
 def _importance(confidence: float) -> Importance:

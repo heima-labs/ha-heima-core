@@ -48,7 +48,7 @@ class ActivityInferenceModule(HeimaLearningModule):
         self._min_support = max(1, int(min_support))
         self._bootstrap_min_support = max(1, int(bootstrap_min_support))
         self._explicit_min_support = bool(explicit_min_support)
-        self._bootstrap_mode = bool(bootstrap_mode)
+        self._configured_bootstrap_mode = bool(bootstrap_mode)
         self._confidence_threshold = max(0.0, min(float(confidence_threshold), 1.0))
         self._approved_patterns: dict[str, _ApprovedActivityPattern] = {}
         self._model: dict[str, _ModelEntry] = {}
@@ -164,7 +164,8 @@ class ActivityInferenceModule(HeimaLearningModule):
             "min_support": self._min_support,
             "bootstrap_min_support": self._bootstrap_min_support,
             "explicit_min_support": self._explicit_min_support,
-            "bootstrap_mode": self._bootstrap_mode,
+            "bootstrap_mode": self._configured_bootstrap_mode,
+            "configured_bootstrap_mode": self._configured_bootstrap_mode,
             "bootstrap_patterns": sum(
                 1 for pattern in self._approved_patterns.values() if pattern.bootstrap
             ),

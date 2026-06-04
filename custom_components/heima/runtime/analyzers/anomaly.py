@@ -8,6 +8,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from ..event_store import EventStore
+from ..inference.modules.house_state_inference import (
+    house_state_model_entry_identity,
+    house_state_model_entry_matches_snapshot,
+)
 from ..plugin_contracts import AnomalySignal, BehaviorFinding
 
 _ANOMALY_RULE_IDS = (
@@ -1051,32 +1055,46 @@ class AnomalyAnalyzer:
         if not recent_snapshots:
             return []
 
-        stale_contexts: list[dict[str, Any]] = []
+        stale_contexts_by_identity: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+        stable_identities: set[tuple[Any, ...]] = set()
         for raw_entry in approved_entries:
             entry = _safe_dict(raw_entry)
+            identity = house_state_model_entry_identity(entry)
+            if identity is None:
+                continue
             count = _positive_int(entry.get("count"))
             expected_ratio = count / model_total_snapshots
             if expected_ratio < dominant_ratio:
                 continue
             recent_count = sum(
-                1 for snapshot in recent_snapshots if _snapshot_matches_model_entry(snapshot, entry)
+                1
+                for snapshot in recent_snapshots
+                if house_state_model_entry_matches_snapshot(snapshot, entry)
             )
             recent_ratio = recent_count / len(recent_snapshots)
             stale_threshold = expected_ratio * drift_threshold
             if recent_ratio >= stale_threshold:
+                stable_identities.add(identity)
                 continue
-            stale_contexts.append(
-                {
-                    "context_key": str(entry.get("context_key") or ""),
-                    "tier": str(entry.get("tier") or ""),
-                    "predicted_state": str(entry.get("predicted_state") or ""),
-                    "expected_ratio": round(expected_ratio, 3),
-                    "recent_ratio": round(recent_ratio, 3),
-                    "stale_threshold": round(stale_threshold, 3),
-                    "model_count": count,
-                    "recent_count": recent_count,
-                }
-            )
+            stale_context = {
+                "context_key": str(entry.get("context_key") or ""),
+                "tier": str(entry.get("tier") or ""),
+                "predicted_state": str(entry.get("predicted_state") or ""),
+                "expected_ratio": round(expected_ratio, 3),
+                "recent_ratio": round(recent_ratio, 3),
+                "stale_threshold": round(stale_threshold, 3),
+                "model_count": count,
+                "recent_count": recent_count,
+            }
+            existing = stale_contexts_by_identity.get(identity)
+            if existing is None or expected_ratio > existing[0]:
+                stale_contexts_by_identity[identity] = (expected_ratio, stale_context)
+
+        stale_contexts = [
+            context
+            for identity, (_expected_ratio, context) in stale_contexts_by_identity.items()
+            if identity not in stable_identities
+        ]
 
         if len(stale_contexts) < min_stale_contexts:
             return []
@@ -1423,88 +1441,6 @@ def _activity_set(snapshot: Any) -> set[str]:
         for activity in getattr(snapshot, "detected_activities", ()) or ()
         if str(activity or "").strip()
     }
-
-
-def _snapshot_matches_model_entry(snapshot: Any, entry: dict[str, Any]) -> bool:
-    context = _safe_dict(entry.get("context_snapshot"))
-    if not context:
-        return False
-    if (
-        str(getattr(snapshot, "house_state", "") or "").strip()
-        != str(entry.get("predicted_state") or context.get("predicted_state") or "").strip()
-    ):
-        return False
-    try:
-        if int(getattr(snapshot, "weekday", -1)) != int(context.get("weekday", -2)):
-            return False
-        if int(getattr(snapshot, "minute_of_day", 0)) // 60 != int(context.get("hour_bucket", -1)):
-            return False
-    except (TypeError, ValueError):
-        return False
-    if bool(getattr(snapshot, "anyone_home", False)) is not bool(context.get("anyone_home")):
-        return False
-
-    learning_context = _safe_dict(context.get("learning_context"))
-    module = str(learning_context.get("module") or "").strip()
-    if module == "house_state_inference_minimal":
-        return True
-    if module == "house_state_inference_rich":
-        return _snapshot_room_context_pattern(snapshot) == _context_room_context_pattern(
-            learning_context.get("room_context_pattern")
-        )
-    return _occupied_rooms(snapshot) == _context_rooms(context.get("rooms"))
-
-
-def _occupied_rooms(snapshot: Any) -> tuple[str, ...]:
-    return tuple(
-        sorted(
-            str(room_id)
-            for room_id, occupied in _safe_dict(getattr(snapshot, "room_occupancy", {})).items()
-            if bool(occupied) and str(room_id).strip()
-        )
-    )
-
-
-def _context_rooms(raw: Any) -> tuple[str, ...]:
-    if not isinstance(raw, list | tuple | set | frozenset):
-        return ()
-    return tuple(sorted(str(room) for room in raw if str(room).strip()))
-
-
-def _snapshot_room_context_pattern(snapshot: Any) -> tuple[tuple[str, bool, bool], ...]:
-    room_context = _safe_dict(getattr(snapshot, "room_device_context", {}))
-    items: list[tuple[str, bool, bool]] = []
-    for room_id in _occupied_rooms(snapshot):
-        raw_ctx = _safe_dict(room_context.get(room_id))
-        if not raw_ctx:
-            continue
-        items.append(
-            (
-                room_id,
-                bool(raw_ctx.get("media_on", False)),
-                bool(raw_ctx.get("work_activity", False)),
-            )
-        )
-    return tuple(sorted(items))
-
-
-def _context_room_context_pattern(raw: Any) -> tuple[tuple[str, bool, bool], ...]:
-    if not isinstance(raw, list | tuple):
-        return ()
-    items: list[tuple[str, bool, bool]] = []
-    for item in raw:
-        payload = _safe_dict(item)
-        room_id = str(payload.get("room_id") or "").strip()
-        if not room_id:
-            continue
-        items.append(
-            (
-                room_id,
-                bool(payload.get("media_on", False)),
-                bool(payload.get("work_activity", False)),
-            )
-        )
-    return tuple(sorted(items))
 
 
 def _lit_entities(snapshot: Any) -> list[str]:

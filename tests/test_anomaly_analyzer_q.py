@@ -1699,6 +1699,53 @@ def _learned_model_diagnostics() -> dict[str, Any]:
     }
 
 
+def _duplicated_learned_model_diagnostics() -> dict[str, Any]:
+    return {
+        "model_total_snapshots": 100,
+        "approved_model_entries": [
+            {
+                "tier": "rich",
+                "context_key": "working-rich-key",
+                "predicted_state": "working",
+                "count": 30,
+                "total": 30,
+                "context_snapshot": {
+                    "weekday": 0,
+                    "hour_bucket": 10,
+                    "rooms": ["kitchen"],
+                    "anyone_home": True,
+                    "predicted_state": "working",
+                    "learning_context": {
+                        "module": "house_state_inference_rich",
+                        "room_context_pattern": [
+                            {
+                                "room_id": "kitchen",
+                                "media_on": False,
+                                "work_activity": True,
+                            }
+                        ],
+                    },
+                },
+            },
+            {
+                "tier": "coarse",
+                "context_key": "working-coarse-key",
+                "predicted_state": "working",
+                "count": 30,
+                "total": 30,
+                "context_snapshot": {
+                    "weekday": 0,
+                    "hour_bucket": 10,
+                    "rooms": ["kitchen"],
+                    "anyone_home": True,
+                    "predicted_state": "working",
+                    "learning_context": {},
+                },
+            },
+        ],
+    }
+
+
 async def test_anomaly_analyzer_learned_model_stale_disabled_by_default() -> None:
     analyzer = AnomalyAnalyzer(inference_diagnostics_provider=_learned_model_diagnostics)
     snapshots = [
@@ -1717,6 +1764,28 @@ async def test_anomaly_analyzer_learned_model_stale_disabled_by_default() -> Non
         finding for finding in findings if finding.payload.anomaly_type == "learned_model_stale"
     ]
     assert analyzer.diagnostics()["rules"]["learned_model_stale"]["enabled"] is False
+
+
+async def test_anomaly_analyzer_learned_model_stale_deduplicates_tier_variants() -> None:
+    analyzer = AnomalyAnalyzer(
+        options_provider=lambda: {"anomaly": {"rules": {"learned_model_stale": {"enabled": True}}}},
+        inference_diagnostics_provider=_duplicated_learned_model_diagnostics,
+    )
+    snapshots = [
+        _snapshot(
+            weekday=0,
+            minute_of_day=10 * 60,
+            house_state="home",
+            room_occupancy={"kitchen": True},
+        )
+        for _ in range(20)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding for finding in findings if finding.payload.anomaly_type == "learned_model_stale"
+    ]
 
 
 async def test_anomaly_analyzer_learned_model_stale_emits_for_approved_context_drift() -> None:

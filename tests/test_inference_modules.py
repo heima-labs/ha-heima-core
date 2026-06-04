@@ -432,6 +432,7 @@ async def test_activity_inference_uses_bootstrap_min_support_for_bootstrap_patte
     assert signals[0].context["required_support"] == 5
     assert module.diagnostics()["bootstrap_patterns"] == 1
     assert module.diagnostics()["bootstrap_mode"] is True
+    assert module.diagnostics()["configured_bootstrap_mode"] is True
 
 
 @pytest.mark.asyncio
@@ -1064,6 +1065,33 @@ async def test_house_state_inference_diagnostics_expose_only_approved_model_entr
 
 
 @pytest.mark.asyncio
+async def test_house_state_inference_diagnostics_order_timestamps_by_instant() -> None:
+    module = HouseStateInferenceModule(min_support=1)
+
+    await module.analyze(
+        _FakeStore(
+            [
+                _snapshot(
+                    ts="2026-04-30T23:30:00+00:00",
+                    house_state="working",
+                    room_occupancy={"kitchen": True},
+                ),
+                _snapshot(
+                    ts="2026-05-01T01:00:00+02:00",
+                    house_state="working",
+                    room_occupancy={"kitchen": True},
+                ),
+            ]
+        )
+    )
+
+    diag = module.diagnostics()
+
+    assert diag["model_first_snapshot_ts"] == "2026-05-01T01:00:00+02:00"
+    assert diag["model_last_snapshot_ts"] == "2026-04-30T23:30:00+00:00"
+
+
+@pytest.mark.asyncio
 async def test_house_state_inference_rejected_context_has_no_candidate_or_signal() -> None:
     module = HouseStateInferenceModule()
     snapshots = [
@@ -1347,6 +1375,75 @@ async def test_house_state_inference_uses_rich_tier_before_coarse() -> None:
 
     assert len(signals) == 1
     assert signals[0].predicted_state == "relax"
+    assert signals[0].context["tier"] == "rich"
+
+
+@pytest.mark.asyncio
+async def test_house_state_inference_rich_tier_distinguishes_anyone_home() -> None:
+    module = HouseStateInferenceModule(
+        min_support=3,
+        rich_min_support=2,
+        minimal_min_support=5,
+    )
+    room_context = {
+        "studio": {
+            "room_id": "studio",
+            "media_on": False,
+            "work_activity": True,
+        }
+    }
+    snapshots = [
+        *[
+            _snapshot(
+                weekday=2,
+                minute_of_day=9 * 60,
+                anyone_home=False,
+                house_state="working",
+                room_occupancy={"studio": True},
+                room_device_context=room_context,
+            )
+            for _ in range(2)
+        ],
+        *[
+            _snapshot(
+                weekday=2,
+                minute_of_day=9 * 60,
+                anyone_home=True,
+                house_state="relax",
+                room_occupancy={"studio": True},
+                room_device_context=room_context,
+            )
+            for _ in range(2)
+        ],
+    ]
+
+    await module.analyze(_FakeStore(snapshots))
+    rich_candidates = [
+        candidate
+        for candidate in module.generate_candidates()
+        if candidate.context_snapshot.get("learning_context", {}).get("module")
+        == "house_state_inference_rich"
+    ]
+    module.sync_approval_state({candidate.context_key for candidate in rich_candidates}, set())
+
+    signals = module.infer(
+        _context(
+            weekday=2,
+            minute_of_day=9 * 60,
+            anyone_home=False,
+            room_occupancy={"studio": True},
+            room_device_context={
+                "studio": RoomDeviceContext(
+                    "studio",
+                    media_on=False,
+                    work_activity=True,
+                )
+            },
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].predicted_state == "working"
     assert signals[0].context["tier"] == "rich"
 
 
