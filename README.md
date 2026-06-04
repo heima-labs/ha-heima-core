@@ -115,7 +115,7 @@ Heima's inference and learning design draws on the following body of research:
 
 **Behavioral routine theory**
 
-- Schank & Abelson. 1977/2013. *Scripts, Plans, Goals, and Understanding.* Psychology Press.
+- Schank & Abelson. 1977/2013. [*Scripts, Plans, Goals, and Understanding.*](https://www.routledge.com/Scripts-Plans-Goals-and-Understanding-An-Inquiry-Into-Human-Knowledge-Structures/Schank-Abelson/p/book/9780898591385) Psychology Press.
   → basis for day-type prior design: calendar categories (office, wfh, holiday, day_off, vacation) as script selectors; hour buckets as scene headers within each script.
 
 ## Specs and docs
