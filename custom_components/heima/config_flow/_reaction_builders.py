@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.analyzers.reaction_identity import admin_room_signal_assist_identity_key
 from ._reaction_helpers import format_min_to_hhmm as _format_min_to_hhmm
 
 
@@ -29,9 +30,10 @@ class _ReactionBuildersMixin:
         action_entities: list[str],
     ) -> ReactionProposal:
         template_id = "room.signal_assist.basic"
-        identity_key = (
-            f"room_signal_assist|room={room_id}|primary={primary_signal_name.strip().lower()}"
-            f"|mode={primary_trigger_mode}"
+        identity_key = admin_room_signal_assist_identity_key(
+            room_id=room_id,
+            primary_signal_name=primary_signal_name,
+            primary_trigger_mode=primary_trigger_mode,
         )
         steps = self._action_entities_to_steps(action_entities)
         if primary_trigger_mode == "burst":

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from ..const import DOMAIN, OPT_REACTIONS
 from ..runtime.analyzers import create_builtin_learning_plugin_registry
 from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.analyzers.reaction_identity import composite_configured_reaction_slot_key
 from ..runtime.reactions import (
     resolve_reaction_type,
 )
@@ -71,36 +72,7 @@ class _ReactionsStepsMixin(
     def _configured_reaction_slot_key(cfg: dict[str, Any]) -> str:
         """Return a coarse slot key used to avoid duplicate configured reactions."""
         reaction_type = resolve_reaction_type(cfg)
-        room_id = str(cfg.get("room_id") or "").strip()
-        house_state_filter = str(cfg.get("house_state_filter") or "").strip()
-        house_state_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
-
-        if reaction_type in {
-            "room_signal_assist",
-            "room_cooling_assist",
-            "room_air_quality_assist",
-        }:
-            primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
-            primary_trigger_mode = str(cfg.get("primary_trigger_mode") or "").strip().lower()
-            trigger_mode_suffix = (
-                f"|mode={primary_trigger_mode}" if reaction_type == "room_signal_assist" else ""
-            )
-            return (
-                f"{reaction_type}|room={room_id}|primary={primary_signal}"
-                f"{trigger_mode_suffix}{house_state_suffix}"
-            )
-
-        if reaction_type in {
-            "room_darkness_lighting_assist",
-            "room_contextual_lighting_assist",
-        }:
-            primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
-            return f"{reaction_type}|room={room_id}|primary={primary_signal}{house_state_suffix}"
-
-        if reaction_type == "room_vacancy_lighting_off":
-            return f"{reaction_type}|room={room_id}"
-
-        return ""
+        return composite_configured_reaction_slot_key(reaction_type=reaction_type, cfg=cfg)
 
     def _configured_slot_matches_for_proposal(
         self,

@@ -6,12 +6,49 @@ from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.analyzers.lifecycle import (
     composite_room_assist_lifecycle_hooks,
 )
+from custom_components.heima.runtime.analyzers.reaction_identity import (
+    admin_room_signal_assist_identity_key,
+    composite_configured_reaction_slot_key,
+)
 
 
 def _proposal(reaction_type: str, cfg: dict) -> ReactionProposal:
     return ReactionProposal(
         reaction_type=reaction_type,
         suggested_reaction_config=cfg,
+    )
+
+
+def test_composite_identity_contract_keeps_learned_and_admin_room_signal_slots_distinct():
+    hooks = composite_room_assist_lifecycle_hooks()
+    learned = _proposal(
+        "room_signal_assist",
+        {
+            "room_id": "bathroom",
+            "primary_signal_name": "Room_Humidity",
+            "primary_trigger_mode": "bucket",
+        },
+    )
+
+    assert hooks.identity_key(learned) == "room_signal_assist|room=bathroom|primary=room_humidity"
+    assert (
+        admin_room_signal_assist_identity_key(
+            room_id="bathroom",
+            primary_signal_name="Room_Humidity",
+            primary_trigger_mode="Bucket",
+        )
+        == "room_signal_assist|room=bathroom|primary=room_humidity|mode=bucket"
+    )
+    assert (
+        composite_configured_reaction_slot_key(
+            reaction_type="room_signal_assist",
+            cfg={
+                "room_id": "bathroom",
+                "primary_signal_name": "Room_Humidity",
+                "primary_trigger_mode": "burst",
+            },
+        )
+        == "room_signal_assist|room=bathroom|primary=room_humidity|mode=burst"
     )
 
 

@@ -31,6 +31,13 @@ class _ModelEntry:
     confidence: float
 
 
+@dataclass(frozen=True)
+class _ContextMatchView:
+    room_occupancy: dict[str, Any]
+    minute_of_day: int
+    weekday: int
+
+
 class ActivityInferenceModule(HeimaLearningModule):
     """Emits ActivitySignal for approved composite activity patterns only."""
 
@@ -94,7 +101,9 @@ class ActivityInferenceModule(HeimaLearningModule):
                 if not pattern.primitive_pattern.issubset(active_set):
                     continue
                 totals[key] += 1
-                if _context_matches_snapshot(snapshot, pattern.context_conditions):
+                if _context_matches(
+                    _context_view_from_snapshot(snapshot), pattern.context_conditions
+                ):
                     support[key] += 1
 
         self._model = {}
@@ -122,7 +131,9 @@ class ActivityInferenceModule(HeimaLearningModule):
         for key, pattern in self._approved_patterns.items():
             if not pattern.primitive_pattern.issubset(current_set):
                 continue
-            if not _context_matches_now(context, pattern.context_conditions):
+            if not _context_matches(
+                _context_view_from_inference_context(context), pattern.context_conditions
+            ):
                 continue
             entry = self._model.get(key)
             if entry is None:
@@ -178,44 +189,39 @@ class ActivityInferenceModule(HeimaLearningModule):
         return self._bootstrap_min_support
 
 
-def _context_matches_snapshot(snapshot: Any, conditions: dict[str, Any]) -> bool:
-    if not conditions:
-        return True
-    room_id = conditions.get("room_id")
-    if room_id is not None:
-        rooms = getattr(snapshot, "room_occupancy", {})
-        if _token(room_id) not in {_token(room) for room, occupied in rooms.items() if occupied}:
-            return False
-    hour_range = conditions.get("hour_range")
-    if hour_range is not None and not _hour_in_range(
-        getattr(snapshot, "minute_of_day", 0), hour_range
-    ):
-        return False
-    weekday_filter = conditions.get("weekday_filter")
-    if weekday_filter is not None and not _weekday_matches(
-        getattr(snapshot, "weekday", -1), weekday_filter
-    ):
-        return False
-    return True
-
-
-def _context_matches_now(context: InferenceContext, conditions: dict[str, Any]) -> bool:
+def _context_matches(view: _ContextMatchView, conditions: dict[str, Any]) -> bool:
     if not conditions:
         return True
     room_id = conditions.get("room_id")
     if room_id is not None:
         occupied_rooms = {
-            _token(room) for room, occupied in context.room_occupancy.items() if occupied
+            _token(room) for room, occupied in view.room_occupancy.items() if occupied
         }
         if _token(room_id) not in occupied_rooms:
             return False
     hour_range = conditions.get("hour_range")
-    if hour_range is not None and not _hour_in_range(context.minute_of_day, hour_range):
+    if hour_range is not None and not _hour_in_range(view.minute_of_day, hour_range):
         return False
     weekday_filter = conditions.get("weekday_filter")
-    if weekday_filter is not None and not _weekday_matches(context.weekday, weekday_filter):
+    if weekday_filter is not None and not _weekday_matches(view.weekday, weekday_filter):
         return False
     return True
+
+
+def _context_view_from_snapshot(snapshot: Any) -> _ContextMatchView:
+    return _ContextMatchView(
+        room_occupancy=_safe_mapping(getattr(snapshot, "room_occupancy", {})),
+        minute_of_day=int(getattr(snapshot, "minute_of_day", 0)),
+        weekday=int(getattr(snapshot, "weekday", -1)),
+    )
+
+
+def _context_view_from_inference_context(context: InferenceContext) -> _ContextMatchView:
+    return _ContextMatchView(
+        room_occupancy=dict(context.room_occupancy),
+        minute_of_day=context.minute_of_day,
+        weekday=context.weekday,
+    )
 
 
 def _hour_in_range(minute_of_day: int, raw: Any) -> bool:
@@ -266,6 +272,12 @@ def _room_id(conditions: dict[str, Any]) -> str | None:
         return None
     token = _token(room_id)
     return token or None
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
 
 
 def _importance(confidence: float) -> Importance:

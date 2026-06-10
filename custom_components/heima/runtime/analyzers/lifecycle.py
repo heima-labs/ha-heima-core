@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .base import ReactionProposal
+from .reaction_identity import composite_room_proposal_identity_key
 
 LifecycleIdentityKey = Callable[[ReactionProposal], str]
 LifecycleFollowupSlotKey = Callable[[ReactionProposal], str]
@@ -212,11 +213,7 @@ def _composite_room_identity_key(proposal: ReactionProposal) -> str:
     if proposal.followup_kind == "improvement":
         return _improvement_identity_key(proposal)
     cfg = _safe_dict(proposal.suggested_reaction_config)
-    primary_signal = str(cfg.get("primary_signal_name") or "").strip().lower()
-    suffix = f"|primary={primary_signal}" if primary_signal else ""
-    house_state_filter = cfg.get("house_state_filter") or None
-    hs_suffix = f"|house_state={house_state_filter}" if house_state_filter else ""
-    return f"{proposal.reaction_type}|room={cfg.get('room_id')}{suffix}{hs_suffix}"
+    return composite_room_proposal_identity_key(reaction_type=proposal.reaction_type, cfg=cfg)
 
 
 def _improvement_identity_key(proposal: ReactionProposal) -> str:
