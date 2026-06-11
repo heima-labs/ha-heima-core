@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.util import dt as dt_util
 
@@ -104,6 +104,11 @@ from .state_store import CanonicalState
 
 _LOGGER = logging.getLogger(__name__)
 
+_REMOVED_REACTION_TYPES = {
+    "room_darkness_lighting_assist",
+    "room_contextual_lighting_assist",
+}
+
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 
 # Maps plugin domain_id to the InferenceSignal subclass it can consume (spec §10.8).
@@ -138,6 +143,23 @@ def _constraint_blocker(step: "ApplyStep", constraints: set[str]) -> str:
         if step.domain == "lighting" and step.action != "light.turn_off":
             return "security.armed_away"
     return ""
+
+
+def _state_change_parent_context_id(event: Event, new_state: Any) -> str | None:
+    """Extract HA parent context id from a state_changed event."""
+    for candidate in (
+        getattr(getattr(new_state, "context", None), "parent_id", None),
+        getattr(getattr(event, "context", None), "parent_id", None),
+        getattr(event.data.get("context"), "parent_id", None),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    context_payload = event.data.get("context")
+    if isinstance(context_payload, dict):
+        parent_id = context_payload.get("parent_id")
+        if isinstance(parent_id, str) and parent_id.strip():
+            return parent_id.strip()
+    return None
 
 
 def _entity_domain(entity_id: str) -> str:
@@ -313,6 +335,27 @@ class HeimaEngine:
                 if isinstance(bucket, str) and bucket.strip():
                     return bucket.strip()
         return None
+
+    def handle_smart_lighting_state_changed(self, event: Event) -> None:
+        """Route light state changes to smart lighting reactions for override handling."""
+        entity_id = str(event.data.get("entity_id") or "").strip()
+        if not entity_id.startswith("light."):
+            return
+        new_state = event.data.get("new_state")
+        state_value = str(getattr(new_state, "state", "") or "").strip().lower()
+        if state_value not in {"on", "off"}:
+            return
+        parent_context_id = _state_change_parent_context_id(event, new_state)
+        for reaction in self._reactions:
+            tracks = getattr(reaction, "tracks_light_entity", None)
+            if not callable(tracks) or not bool(tracks(entity_id)):
+                continue
+            owns_context = getattr(reaction, "owns_context_id", None)
+            if callable(owns_context) and bool(owns_context(parent_context_id)):
+                continue
+            handle_external = getattr(reaction, "handle_external_light_change", None)
+            if callable(handle_external):
+                handle_external(entity_id, state_value)
 
     def signal_burst_recent(self, room_id: str, signal_name: str, *, window_s: int) -> bool:
         """Return whether a canonical burst was observed recently for a room signal."""
@@ -644,6 +687,27 @@ class HeimaEngine:
             if not bool(dict(cfg or {}).get("enabled", True)):
                 continue
             reaction_type = self._reaction_type_from_config(cfg)
+            if reaction_type in _REMOVED_REACTION_TYPES:
+                message = (
+                    f"Configured reaction '{proposal_id}' uses removed reaction type "
+                    f"'{reaction_type}'. Use 'room_smart_lighting_assist' instead."
+                )
+                _LOGGER.error(message)
+                self._events_domain.queue_event(
+                    HeimaEvent(
+                        type="system.config_error",
+                        key=f"system.config_error.removed_reaction_type.{proposal_id}",
+                        severity="error",
+                        title="Removed reaction type",
+                        message=message,
+                        context={
+                            "proposal_id": proposal_id,
+                            "reaction_type": reaction_type,
+                            "replacement_reaction_type": "room_smart_lighting_assist",
+                        },
+                    )
+                )
+                continue
             builder = self._reaction_plugin_registry.builder_for(reaction_type)
             if builder is None:
                 _LOGGER.debug(

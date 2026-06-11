@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 
 from ..contracts import ApplyStep, HeimaEvent
@@ -472,7 +472,7 @@ class LightingDomain:
                         "scene",
                         "turn_on",
                         {"entity_id": scene_entity},
-                        blocking=False,
+                        **self._service_call_kwargs(step),
                     )
                     expected_subject_ids = self._expected_scene_entities(
                         step.target,
@@ -509,7 +509,7 @@ class LightingDomain:
                             "light",
                             "turn_off",
                             {"entity_id": entity_id},
-                            blocking=False,
+                            **self._service_call_kwargs(step),
                         )
                         self._mark_entity_applied(
                             room_id=step.target,
@@ -530,7 +530,7 @@ class LightingDomain:
                             "light",
                             "turn_off",
                             {"area_id": area_id},
-                            blocking=False,
+                            **self._service_call_kwargs(step),
                         )
                         self._mark_room_applied(step.target, f"light.turn_off:area:{area_id}")
                     except ServiceNotFound:
@@ -557,7 +557,7 @@ class LightingDomain:
                         "light",
                         "turn_on",
                         call_params,
-                        blocking=False,
+                        **self._service_call_kwargs(step),
                     )
                     self._mark_entity_applied(
                         room_id=step.target,
@@ -571,6 +571,13 @@ class LightingDomain:
                     )
                 except Exception:
                     _LOGGER.exception("Lighting apply failed for entity '%s'", entity_id)
+
+    @staticmethod
+    def _service_call_kwargs(step: ApplyStep) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"blocking": False}
+        if step.context_id:
+            kwargs["context"] = Context(id=step.context_id)
+        return kwargs
 
     # ------------------------------------------------------------------
     # Hold events

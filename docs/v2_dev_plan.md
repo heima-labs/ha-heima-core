@@ -2454,12 +2454,19 @@ needs_apply
 AND NOT manual_on_hold
 ```
 
-**Manual override:**
+**Manual override — context-based detection:**
 
-- **Manual OFF** (context.parent_id not from this reaction): set `manual_override_active = True`.
-  Clears on: `manual_override_window_min` expiry (default 30 min) OR presence lost → re-detected.
-- **Manual ON**: set `manual_on_hold = True`.
-  Clears **only** on presence lost → re-detected (no timer — user's choice respected for the whole session).
+Each reaction instance issues `async_call` with a tracked `Context(id=<uuid>)` (ring buffer TTL
+~30 s). A `STATE_CHANGED` is heima-owned if `event.context.parent_id in issued_context_ids`.
+Everything else (physical switch, other automation, script, scene, other Heima reaction) is
+**external**.
+
+- **External OFF**: set `manual_override_active = True`. Clears on `manual_override_window_min`
+  expiry (default 30 min) OR presence lost → re-detected.
+- **External ON**: set `manual_on_hold = True`. Clears **only** on presence lost → re-detected.
+- `LightingRecorderBehavior` TTL provenance is NOT used for override detection (diagnostic only).
+- Coordinator-level dispatcher routes `STATE_CHANGED` to `handle_external_light_change()` on
+  the reaction; reactions do not subscribe to HA events directly.
 
 `NIGHT_SUPPRESS_ROOM_TYPES` (sleeping → suppress):
 `camera_da_letto`, `cameretta_bambini`, `studio`, `soggiorno`, `sala_da_pranzo`, `tinello`,
@@ -2604,10 +2611,14 @@ If `room_type` is not specified in the rule config, `generic` defaults apply.
 - [ ] `timeout_mode = learned`: ring buffer per room; p25 used as fast-exit threshold after 20
   visits; fallback to fixed before that
 - [ ] All room_type keys in catalog resolve to correct default timeouts and night-mode behavior
-- [ ] Manual OFF (non-automation context): `manual_override_active` set; turn-on suppressed until
-  window expires or presence cycle clears it
-- [ ] Manual ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected
+- [ ] Reaction issues `async_call` with tracked `Context(id=<uuid>)`; context IDs held in ring
+  buffer with ~30 s TTL
+- [ ] `STATE_CHANGED` with `context.parent_id in issued_context_ids` → heima-owned, no override
+- [ ] External OFF (switch, other automation, script, scene): `manual_override_active` set; turn-on
+  suppressed until window expires or presence cycle clears it
+- [ ] External ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected
 - [ ] Manual override window configurable via `manual_override_window_min`; 0 disables timer
+- [ ] `LightingRecorderBehavior` TTL path not involved in override detection
 - [ ] All existing tests pass
 
 ---

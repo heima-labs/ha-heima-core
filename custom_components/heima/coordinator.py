@@ -26,6 +26,7 @@ from .const import (
     OPT_PEOPLE_ANON,
     OPT_PEOPLE_DEBUG_ALIASES,
     OPT_PEOPLE_NAMED,
+    OPT_REACTIONS,
     OPT_ROOMS,
     OPT_SECURITY,
     OPTION_ACTIVITY_BOOTSTRAP_MODE,
@@ -35,7 +36,7 @@ from .const import (
 from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
-from .room_sources import room_occupancy_source_entity_ids
+from .room_sources import room_occupancy_source_entity_ids, room_signal_entity_id
 from .runtime.analyzers import (
     ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
@@ -105,6 +106,7 @@ _DEBOUNCE_BY_CLASS: dict[str, float] = {
     "calendar": 0.0,
     "override": 0.0,
     "weather": 10.0,
+    "outdoor_lux": 60.0,
 }
 _ENVIRONMENTAL_ENTITY_TOKENS = (
     "lux",
@@ -1168,6 +1170,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         entity_id = str(event.data.get("entity_id") or "").strip()
         if not entity_id:
             return
+        if entity_id.startswith("light."):
+            self.engine.handle_smart_lighting_state_changed(event)
         entity_class = self._classify_entity(entity_id)
         if entity_class is None:
             return
@@ -1209,7 +1213,30 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             return "weather"
         if entity_id in self._power_thresholds_by_entity():
             return "power_threshold"
+        if entity_id in self._configured_smart_lighting_outdoor_lux_entities(options):
+            return "outdoor_lux"
         return None
+
+    def _configured_smart_lighting_outdoor_lux_entities(self, options: dict[str, Any]) -> set[str]:
+        rooms = list(options.get(OPT_ROOMS) or [])
+        configured = dict(options.get(OPT_REACTIONS, {}).get("configured", {}))
+        entities: set[str] = set()
+        for cfg in configured.values():
+            if not isinstance(cfg, dict):
+                continue
+            reaction_type = str(
+                cfg.get("reaction_type") or cfg.get("type") or cfg.get("reaction_class") or ""
+            ).strip()
+            if reaction_type != "room_smart_lighting_assist":
+                continue
+            room_id = str(cfg.get("room_id") or "").strip()
+            signal_name = str(cfg.get("outdoor_lux_signal") or "").strip()
+            if not room_id or not signal_name:
+                continue
+            entity_id = room_signal_entity_id(rooms, room_id, signal_name)
+            if entity_id:
+                entities.add(entity_id.strip().lower())
+        return entities
 
     def _configured_presence_entities(self, options: dict[str, Any]) -> set[str]:
         entities: set[str] = set()
@@ -1296,6 +1323,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
     def _schedule_eval(self, entity_class: str, *, reason: str) -> None:
         debounce_s = _DEBOUNCE_BY_CLASS.get(entity_class, 0.0)
+        if entity_class == "outdoor_lux":
+            learning = dict(self.entry.options.get("learning", {}))
+            debounce_s = _coerce_float(learning.get("outdoor_lux_trigger_debounce_s")) or debounce_s
         handle = self._debounce_handles.pop(entity_class, None)
         if handle is not None:
             handle()

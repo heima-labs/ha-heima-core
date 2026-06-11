@@ -103,30 +103,64 @@ AND NOT manual_on_hold
 
 ## Manual override
 
-### Detection
+### Detection — context-based (primary)
 
-HA state changes on entities tracked by this reaction are inspected at runtime. A change is
-classified as **manual** if its `context.parent_id` does not match a call issued by this
-reaction instance.
+Each `RoomSmartLightingAssistReaction` instance issues HA service calls with an explicit
+`Context(id=<uuid>)` and tracks the issued context IDs in a short-lived ring buffer (TTL ~30 s).
 
-### On manual OFF
+A `STATE_CHANGED` event on a tracked entity is classified as **heima-owned** if:
 
-When a manual `off` is received on any entity in the active profile's `entity_steps`:
+```
+event.context.parent_id in issued_context_ids
+```
+
+Any other change — physical switch, another automation, a scene, a script, an external
+integration — is classified as **external** and treated as a manual override. This includes
+changes from other Heima reactions: the criterion is "not emitted by this reaction instance."
+
+The TTL-based `LightingRecorderBehavior` provenance mechanism is not used for override
+detection; it may remain as a diagnostic/legacy tool only.
+
+### On external OFF
+
+When an external `off` is received on any entity in the active profile's `entity_steps`:
 - cancel any active two-step turn-off sequence
 - set `manual_override_active = True`
 - turn-on condition fails until the override clears
 
 `manual_override_active` clears on whichever comes first:
-- `manual_override_window_min` expires (default 30 min; set to 0 to disable timer)
+- `manual_override_window_min` expires (default 30 min; set to 0 to rely on presence cycle only)
 - presence is lost **and** subsequently re-detected (room fully vacated and re-entered)
 
-### On manual ON
+### On external ON
 
-When a manual `on` is received on any entity while the reaction is active or would be active:
+When an external `on` is received on any entity while the reaction is active or would be active:
 - set `manual_on_hold = True`
-- profile re-application is suppressed while `manual_on_hold` is true (user's choice respected for the entire session)
+- profile re-application is suppressed while `manual_on_hold` is true
 
 `manual_on_hold` clears **only** on presence lost → re-detected. No timer fallback.
+
+### Implementation contract
+
+- `RoomSmartLightingAssistReaction` owns a method `handle_external_light_change(entity_id, new_state)`
+  called by a coordinator-level `STATE_CHANGED` dispatcher (not by `LightingRecorderBehavior`)
+- The dispatcher filters events to entities listed in active smart-lighting reaction profiles
+  before routing them; reactions are not subscribed directly to HA events
+- `RoomSmartLightingAssistReaction` pre-registers a freshly generated `context_id` in
+  `issued_context_ids` before returning `ApplyStep` objects; this avoids a race where HA emits
+  `STATE_CHANGED` immediately after `async_call`
+- The `context_id` is scoped to the reaction evaluation batch: all `ApplyStep` objects produced
+  by one `evaluate()` call share the same `context_id`
+- `ApplyStep` produced by this reaction carries that pre-registered `context_id` so the
+  coordinator can pass it to `async_call`
+
+Required ordering:
+
+```
+reaction.issued_context_ids.add(context_id, ttl=30s)
+ApplyStep(context_id=context_id, ...)  # repeated for every step in the batch
+LightingDomain.execute() -> async_call(context=Context(id=context_id))
+```
 
 ### Config field
 
@@ -177,12 +211,16 @@ Profiles should be authored following this guidance:
 | house_state | Color temp | Intensity |
 |---|---|---|
 | `working` | cold (4000–5500 K) | high (70–100 %) |
-| `relax` + media active | warm (2700–3000 K) | very low (5–20 %) |
-| `relax` no media | warm (2700–3000 K) | medium-low (30–60 %) |
+| `relax` | warm (2700–3000 K) | very low (5–20 %) |
 | `sleeping` (night profile) | very warm (2200–2700 K) | very low (5–15 %) |
 | `home` morning | neutral-cool (3500–4500 K) | medium (50–80 %) |
 | `home` evening | warm (2700–3000 K) | medium (50–70 %) |
 | `guest` | neutral (3000–3500 K) | medium-high (60–80 %) |
+
+Note: `house_state = relax` implies by definition that a media player is active somewhere in the
+house. Distinguishing "media active in this specific room" vs. "media active in another room"
+(`room_relax_media_active`) is not yet exposed as a profile selector and is deferred to a future
+enhancement.
 
 Brightness: if `outdoor_lux_signal` configured, modulate the profile brightness using the
 outdoor lux bucket scale; otherwise apply static brightness from the active profile or

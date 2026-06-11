@@ -98,6 +98,37 @@ def test_environmental_sensors_do_not_trigger() -> None:
     assert coordinator._classify_entity("sensor.living_room_co2") is None  # noqa: SLF001
 
 
+def test_smart_lighting_outdoor_lux_triggers_but_indoor_lux_does_not() -> None:
+    coordinator = _coordinator(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "signals": [
+                        {"entity_id": "sensor.studio_lux", "signal_name": "room_lux"},
+                        {"entity_id": "sensor.outdoor_lux", "signal_name": "outdoor_lux"},
+                    ],
+                }
+            ],
+            "reactions": {
+                "configured": {
+                    "smart-studio": {
+                        "reaction_type": "room_smart_lighting_assist",
+                        "room_id": "studio",
+                        "indoor_lux_signal": "room_lux",
+                        "outdoor_lux_signal": "outdoor_lux",
+                        "lux_on_buckets": ["dark"],
+                        "entity_steps": [{"entity_id": "light.studio", "action": "on"}],
+                    }
+                }
+            },
+        }
+    )
+
+    assert coordinator._classify_entity("sensor.studio_lux") is None  # noqa: SLF001
+    assert coordinator._classify_entity("sensor.outdoor_lux") == "outdoor_lux"  # noqa: SLF001
+
+
 def test_power_threshold_crossing_triggers_both_directions() -> None:
     coordinator = _coordinator(
         {
