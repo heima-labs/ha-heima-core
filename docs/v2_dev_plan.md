@@ -111,17 +111,18 @@ These constraints must never be violated. See spec §16 for rationale.
 | Y | HouseStateInferenceModule: tiered feature enrichment | `DONE` | X |
 | Z | Activity cold start mitigation | `DONE` | S |
 | AA | Global drift detection | `DONE` | Y |
+| AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection.
-**Active phase:** None — Phase AA complete. Phase T deferred.
-**Branch:** `feat/phase-aa-global-drift-detection`.
+**Active phase:** None — Phase AB spec complete, pending implementation start.
+**Branch:** `feat/phase-aa-global-drift-detection` (last active). Next: `feat/phase-ab-smart-lighting`.
 **Next action:**
 
-Phase AA complete. Next scope should be discussed before implementation.
+Phase AB spec approved. Open `feat/phase-ab-smart-lighting` from `feat/v2` and begin AB1.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
@@ -2372,6 +2373,242 @@ Exposed in `sensor.heima_health` attributes.
 - [x] Rule disabled by default; no `Finding` emitted until explicitly enabled
 - [x] Model first/last timestamp and snapshot count visible in `sensor.heima_health` attributes
 - [x] All existing tests pass
+
+---
+
+## Phase AB — Smart Lighting Automation (Unified)
+
+**Purpose:** Unify `room_darkness_lighting_assist` and `room_contextual_lighting_assist` into a
+single `room_smart_lighting_assist` automation type with correct indoor/outdoor lux separation,
+adaptive smart turn-off with two-step dim→off, and admin choice of fixed vs. learned timeout.
+
+The two existing types are removed with no migration path (hard cut).
+
+**Dependencies:** U (physical light state awareness), X (room context model)
+
+**Slices:**
+
+1. AB1 — `room_smart_lighting_assist` automation type: config schema, turn-on logic, indoor/outdoor
+   lux policy
+2. AB2 — Two-step turn-off engine: dim→off with configurable ratio
+3. AB3 — Smart timeout engine: fixed and learned modes, fast-exit detection
+4. AB4 — Outdoor lux as debounced evaluation trigger
+5. AB5 — Room type catalog with default timeouts
+
+---
+
+### AB1 — `room_smart_lighting_assist` automation type
+
+New unified automation type. Replaces both `room_darkness_lighting_assist` and
+`room_contextual_lighting_assist` (hard cut — old types removed).
+
+Config schema:
+
+```yaml
+type: room_smart_lighting_assist
+room_id: studio
+indoor_lux_signal: room_lux         # on/off trigger only; never used for modulation
+outdoor_lux_signal: outdoor_lux     # optional; if absent, no ambient modulation
+lux_on_buckets: [dark, dim]         # indoor lux buckets that allow turn-on
+room_type: studio                   # key into default timeout table (AB5) and night-mode defaults
+suppress_on_states: [vacation, away] # states that fully suppress lighting
+night_mode_states: [sleeping]        # states that use night profile instead of suppressing;
+                                     # room_type determines whether sleeping → suppress or night profile
+manual_override_window_min: 30      # override window after manual OFF; 0 = rely on presence cycle only
+timeout_mode: learned               # "fixed" | "learned"; default "learned"
+base_timeout_min: 6                 # installer override; if absent, use room_type default
+fast_exit_timeout_s: 60             # timeout when visit classified as fast-exit
+dim_brightness_pct: 15              # brightness during dim phase; default 15
+dim_ratio: 0.3                      # fraction of effective_timeout spent in dim; default 0.3
+profiles: [...]                     # optional; same schema as contextual profiles
+entity_steps: [...]                 # used if no profiles configured
+```
+
+**Turn-on condition:**
+
+At config load, `effective_suppress_states` is computed once:
+
+```
+effective_suppress_states =
+    suppress_on_states
+    ∪ { s for s in night_mode_states
+        if room_type in NIGHT_SUPPRESS_ROOM_TYPES }
+```
+
+Turn-on fires when:
+
+```
+auto_lighting_enabled
+AND NOT manual_override_active
+AND presence_detected
+AND indoor_lux_bucket in lux_on_buckets
+AND house_state NOT IN effective_suppress_states
+```
+
+`NOT sleep_mode` is removed. House-state gating replaces it with room-type-aware logic.
+
+Profile re-application (lights already on, context changed):
+
+```
+needs_apply
+AND NOT manual_on_hold
+```
+
+**Manual override:**
+
+- **Manual OFF** (context.parent_id not from this reaction): set `manual_override_active = True`.
+  Clears on: `manual_override_window_min` expiry (default 30 min) OR presence lost → re-detected.
+- **Manual ON**: set `manual_on_hold = True`.
+  Clears **only** on presence lost → re-detected (no timer — user's choice respected for the whole session).
+
+`NIGHT_SUPPRESS_ROOM_TYPES` (sleeping → suppress):
+`camera_da_letto`, `cameretta_bambini`, `studio`, `soggiorno`, `sala_da_pranzo`, `tinello`,
+`garage`, `ripostiglio`.
+
+Night-profile rooms (sleeping → night profile, not suppress):
+`bagno`, `corridoio`, `ingresso`, `cucina`, `lavanderia`, `generic`.
+
+**Profile selection:**
+
+```
+if house_state in night_mode_states:
+    use profile where house_states contains sleeping  (night profile)
+    fallback: color_temp=2200K, brightness=10%
+else:
+    use profile matching (house_state, hour_bucket)
+    fallback: entity_steps or first profile
+```
+
+Brightness: if `outdoor_lux_signal` configured, modulate the active profile brightness by
+outdoor lux bucket scale; otherwise use static brightness from profile or entity_steps.
+
+Indoor lux is used only to decide whether to turn on. It is never used for brightness
+modulation — doing so would create a feedback loop (light on → indoor lux rises → brightness
+reduced → indoor lux falls → brightness raised → oscillation).
+
+**Lux signal roles (invariant):**
+
+| Signal | Role | Trigger evaluation? |
+|---|---|---|
+| `indoor_lux_signal` | on/off gate | No |
+| `outdoor_lux_signal` | brightness modulation scale | Yes (debounced, AB4) |
+
+---
+
+### AB2 — Two-step turn-off engine
+
+Once presence is lost and `effective_timeout` computed (AB3):
+
+- At `t_absence + effective_timeout × (1 − dim_ratio)`: `light.turn_on` at `dim_brightness_pct`
+- At `t_absence + effective_timeout`: `light.turn_off`
+- If presence re-detected at any point before turn-off: cancel sequence, return to full brightness
+
+`dim_ratio` and `dim_brightness_pct` are per-rule config with defaults (0.3 and 15).
+
+---
+
+### AB3 — Smart timeout engine
+
+**`timeout_mode = fixed`:**
+
+```
+effective_timeout = base_timeout_min (configured or room_type default)
+fast_exit_threshold = fast_exit_timeout_s × 3
+if current_visit_duration < fast_exit_threshold:
+    effective_timeout = fast_exit_timeout_s
+```
+
+**`timeout_mode = learned`** (default):
+
+Per-room ring buffer of the last 50 visit durations (presence_confirmed → presence_lost).
+- p25 of buffer = `fast_exit_threshold`
+- Before 20 visits observed: fall back to fixed defaults
+
+```
+if current_visit_duration < fast_exit_threshold (p25):
+    effective_timeout = fast_exit_timeout_s
+else:
+    effective_timeout = base_timeout_min
+```
+
+Ring buffer size (50) and minimum visits for learning (20) are internal constants, not
+user-configurable.
+
+Visit duration tracking: the automation records the timestamp when presence is first confirmed
+for a visit and computes duration when presence is lost. Data is held in memory; not persisted
+across HA restarts (ring buffer rebuilds over time).
+
+---
+
+### AB4 — Outdoor lux as debounced evaluation trigger
+
+When an `outdoor_lux_signal` state change is received:
+- If the corresponding room is currently occupied
+- And there is an active `room_smart_lighting_assist` rule with that `outdoor_lux_signal`
+- → schedule a lighting evaluation after a 60 s debounce (configurable via
+  `outdoor_lux_trigger_debounce_s` in learning options, default 60)
+
+Indoor lux state changes do not trigger lighting evaluation.
+
+This gives `room_smart_lighting_assist` responsive brightness adjustment at dawn/dusk without
+relying solely on the 300 s fallback cycle.
+
+---
+
+### AB5 — Room type catalog
+
+Default timeout table:
+
+| room_type | base_timeout_min | fast_exit_timeout_s |
+|---|---|---|
+| bagno | 2 | 30 |
+| cucina | 4 | 45 |
+| corridoio | 1 | 15 |
+| ingresso | 1 | 15 |
+| studio | 6 | 60 |
+| soggiorno | 8 | 90 |
+| sala_da_pranzo | 6 | 60 |
+| tinello | 4 | 45 |
+| camera_da_letto | 5 | 60 |
+| cameretta_bambini | 5 | 90 |
+| lavanderia | 3 | 20 |
+| ripostiglio | 1 | 15 |
+| garage | 3 | 30 |
+| generic | 5 | 45 |
+
+If `room_type` is not specified in the rule config, `generic` defaults apply.
+
+---
+
+### Acceptance criteria
+
+- [ ] `room_smart_lighting_assist` type is accepted by the options flow and reaction engine
+- [ ] `room_darkness_lighting_assist` and `room_contextual_lighting_assist` types removed; engine
+  raises a clear config error if encountered
+- [ ] Turn-on fires when presence + indoor lux bucket match + house_state NOT IN
+  effective_suppress_states
+- [ ] `effective_suppress_states` = `suppress_on_states` ∪ night_suppress rooms for
+  `night_mode_states`; computed at config load
+- [ ] NIGHT_SUPPRESS_ROOM_TYPES suppress sleeping correctly; night-profile rooms use night
+  profile instead
+- [ ] Night profile fallback (color_temp=2200K, brightness=10%) applies when no matching profile
+  is defined for the sleeping state
+- [ ] Profile selection: night_mode_states → night profile; otherwise (house_state, hour_bucket)
+- [ ] Brightness uses outdoor lux scale when `outdoor_lux_signal` configured; static otherwise
+- [ ] Indoor lux state changes do not trigger a lighting evaluation cycle
+- [ ] Outdoor lux state changes trigger evaluation (debounced 60 s) when room occupied and rule active
+- [ ] Two-step turn-off: dim fires at `effective_timeout × (1 − dim_ratio)`, off fires at
+  `effective_timeout`; presence during dim cancels and restores brightness
+- [ ] `timeout_mode = fixed`: effective timeout = base or fast-exit based on visit duration vs
+  `fast_exit_timeout_s × 3`
+- [ ] `timeout_mode = learned`: ring buffer per room; p25 used as fast-exit threshold after 20
+  visits; fallback to fixed before that
+- [ ] All room_type keys in catalog resolve to correct default timeouts and night-mode behavior
+- [ ] Manual OFF (non-automation context): `manual_override_active` set; turn-on suppressed until
+  window expires or presence cycle clears it
+- [ ] Manual ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected
+- [ ] Manual override window configurable via `manual_override_window_min`; 0 disables timer
+- [ ] All existing tests pass
 
 ---
 

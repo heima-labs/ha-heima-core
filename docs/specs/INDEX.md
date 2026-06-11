@@ -39,7 +39,8 @@ Related practical guides live outside this tree:
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/reaction_identity_spec.md` — canonical `reaction_type` identity and persisted reaction contract
 - `core/scheduled_routine_spec.md` — bounded admin-authored time-based routine contract
-- `core/contextual_room_lighting_assist_spec.md` — contextual room-lighting reaction contract
+- `core/smart_lighting_assist_spec.md` — `room_smart_lighting_assist` unified lighting reaction contract (Phase AB, active)
+- `core/contextual_room_lighting_assist_spec.md` — **SUPERSEDED** by Phase AB; retained as historical context
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
 - `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX

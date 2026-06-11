@@ -2,7 +2,15 @@
 
 ## Status
 
-Active v1.x contextual lighting reaction contract
+**SUPERSEDED** — replaced by Phase AB (`room_smart_lighting_assist`).
+See `core/smart_lighting_assist_spec.md` for the active contract.
+
+Both `room_contextual_lighting_assist` and `room_darkness_lighting_assist` are removed in
+Phase AB (hard cut). This document is retained as historical context only.
+
+---
+
+~~Active v1.x contextual lighting reaction contract~~
 
 ## Problem
 

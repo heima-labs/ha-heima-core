@@ -54,6 +54,14 @@ Tre `reaction_type` condividono oggi la stessa classe Python:
 | `room_cooling_assist` | `RoomSignalAssistReaction` |
 | `room_air_quality_assist` | `RoomSignalAssistReaction` |
 
+## Active lighting reaction types (Phase AB)
+
+| `reaction_type` | `reaction_class` (interno) | Note |
+|---|---|---|
+| `room_smart_lighting_assist` | `RoomSmartLightingAssistReaction` | Active — see `core/smart_lighting_assist_spec.md` |
+| ~~`room_darkness_lighting_assist`~~ | ~~`RoomLightingAssistReaction`~~ | Removed Phase AB |
+| ~~`room_contextual_lighting_assist`~~ | ~~`ContextualLightingAssistReaction`~~ | Removed Phase AB |
+
 Post-riforma il registry ha entry esplicite per tutti e tre i tipi, ognuna con il proprio builder. I builder possono condividere la stessa implementazione Python ma il lookup avviene per `reaction_type`.
 
 ---
@@ -144,7 +152,7 @@ _CLASS_TO_TYPE: dict[str, str] = {
     "LightingScheduleReaction": "lighting_scene_schedule",
     "ContextConditionedLightingReaction": "context_conditioned_lighting_scene",
     "RoomSignalAssistReaction": "room_signal_assist",   # default per i tre N:1
-    "RoomLightingAssistReaction": "room_darkness_lighting_assist",
+    "RoomLightingAssistReaction": "room_darkness_lighting_assist",  # removed in Phase AB
     "RoomLightingVacancyOffReaction": "room_vacancy_lighting_off",
     "VacationPresenceSimulationReaction": "vacation_presence_simulation",
     "HeatingPreferenceReaction": "heating_preference",
@@ -152,6 +160,11 @@ _CLASS_TO_TYPE: dict[str, str] = {
     "PresencePatternReaction": "presence_preheat",
 }
 ```
+
+**Phase AB note:** `room_darkness_lighting_assist` and `room_contextual_lighting_assist` are
+removed in Phase AB (hard cut). They no longer appear in the active registry. If encountered
+in persisted options the engine raises a config error. The mapper above retains the legacy
+entry only to document what the class was mapped to; the builder is removed.
 
 **Nota**:
 - per `RoomSignalAssistReaction` il mapper produce `room_signal_assist` di default — `room_cooling_assist` e `room_air_quality_assist` vengono prodotti solo da nuove entry post-riforma. Le entry migrate funzionano correttamente perché `room_signal_assist` è il tipo generico.
