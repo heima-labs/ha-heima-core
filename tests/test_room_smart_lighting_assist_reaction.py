@@ -233,7 +233,9 @@ def test_smart_lighting_dispatcher_ignores_owned_context_and_routes_external_cha
     owned_event = SimpleNamespace(
         data={
             "entity_id": "light.studio_main",
-            "new_state": SimpleNamespace(state="off", context=SimpleNamespace(parent_id=context_id)),
+            "new_state": SimpleNamespace(
+                state="off", context=SimpleNamespace(parent_id=context_id)
+            ),
         },
         context=SimpleNamespace(parent_id=None),
     )
@@ -310,7 +312,12 @@ def test_smart_lighting_schedules_dim_then_off_after_absence() -> None:
     ts = datetime(2026, 6, 11, 10, tzinfo=UTC)
 
     assert reaction.evaluate([_snapshot(occupied_rooms=["corridor"], ts=ts.isoformat())])
-    assert reaction.evaluate([_snapshot(occupied_rooms=[], ts=(ts + timedelta(seconds=2)).isoformat())]) == []
+    assert (
+        reaction.evaluate(
+            [_snapshot(occupied_rooms=[], ts=(ts + timedelta(seconds=2)).isoformat())]
+        )
+        == []
+    )
 
     jobs = reaction.scheduled_jobs("entry-1")
     assert sorted(jobs) == [

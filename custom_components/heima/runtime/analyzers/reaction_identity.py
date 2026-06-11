@@ -58,9 +58,11 @@ def composite_configured_reaction_slot_key(
     if reaction_type in {
         "room_smart_lighting_assist",
     }:
-        primary_signal = str(
-            cfg.get("primary_signal_name") or cfg.get("indoor_lux_signal") or ""
-        ).strip().lower()
+        primary_signal = (
+            str(cfg.get("primary_signal_name") or cfg.get("indoor_lux_signal") or "")
+            .strip()
+            .lower()
+        )
         return f"{reaction_type}|room={room_id}|primary={primary_signal}{house_state_suffix}"
 
     if reaction_type == "room_vacancy_lighting_off":

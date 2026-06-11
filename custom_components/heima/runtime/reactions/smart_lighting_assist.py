@@ -254,9 +254,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._current_house_state = str(snapshot.house_state or "unknown").strip()
         self._current_indoor_bucket = self._current_bucket_for(self._indoor_lux_signal)
         self._current_outdoor_bucket = (
-            self._current_bucket_for(self._outdoor_lux_signal)
-            if self._outdoor_lux_signal
-            else None
+            self._current_bucket_for(self._outdoor_lux_signal) if self._outdoor_lux_signal else None
         )
         self._current_outdoor_scale = self._outdoor_scale_for(self._current_outdoor_bucket)
         if self._manual_override_active:
@@ -341,7 +339,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._dim_applied = False
 
     def _effective_timeout_s(self, current_visit_duration_s: float) -> float:
-        threshold = self._fast_exit_timeout_s * 3
+        threshold = float(self._fast_exit_timeout_s * 3)
         if self._timeout_mode == "learned" and len(self._visit_durations_s) >= _LEARNED_MIN_VISITS:
             ordered = sorted(self._visit_durations_s)
             index = max(0, int(len(ordered) * 0.25) - 1)
@@ -350,7 +348,9 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
             return float(self._fast_exit_timeout_s)
         return float(self._base_timeout_s)
 
-    def _select_entity_steps(self, snapshot: DecisionSnapshot) -> tuple[str | None, list[dict[str, Any]]]:
+    def _select_entity_steps(
+        self, snapshot: DecisionSnapshot
+    ) -> tuple[str | None, list[dict[str, Any]]]:
         current_dt = parse_snapshot_ts(snapshot.ts)
         hour_bucket = _hour_bucket(current_dt)
         if self._current_house_state in self._night_mode_states:
@@ -390,7 +390,9 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
     def _configured_light_entities(self) -> set[str]:
         entities = {str(step.get("entity_id") or "").strip() for step in self._entity_steps}
         for profile in self._profiles:
-            entities.update(str(step.get("entity_id") or "").strip() for step in _profile_steps(profile))
+            entities.update(
+                str(step.get("entity_id") or "").strip() for step in _profile_steps(profile)
+            )
         return {entity_id for entity_id in entities if entity_id}
 
     def _active_profile_light_entities(self) -> set[str]:
@@ -426,7 +428,9 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
             self._issued_context_ids.popleft()
 
     def _night_fallback_steps(self) -> list[dict[str, Any]]:
-        base = self._entity_steps or (self._profiles[0].get("entity_steps") if self._profiles else [])
+        base = self._entity_steps or (
+            self._profiles[0].get("entity_steps") if self._profiles else []
+        )
         steps: list[dict[str, Any]] = []
         for raw in list(base or []):
             step = dict(raw)
@@ -524,7 +528,9 @@ def build_room_smart_lighting_assist_reaction(
         indoor_lux_signal=indoor_lux_signal,
         outdoor_lux_signal=str(cfg.get("outdoor_lux_signal") or "").strip() or None,
         lux_on_buckets=[
-            bucket for bucket in lux_on_buckets if not indoor_bucket_labels or bucket in indoor_bucket_labels
+            bucket
+            for bucket in lux_on_buckets
+            if not indoor_bucket_labels or bucket in indoor_bucket_labels
         ]
         or lux_on_buckets,
         room_type=str(cfg.get("room_type") or "generic").strip(),
@@ -538,7 +544,9 @@ def build_room_smart_lighting_assist_reaction(
         dim_ratio=_coerce_float(cfg.get("dim_ratio")) or _DEFAULT_DIM_RATIO,
         profiles=profiles,
         entity_steps=entity_steps,
-        outdoor_lux_scale={str(k): float(v) for k, v in configured_scale.items() if _coerce_float(v) is not None},
+        outdoor_lux_scale={
+            str(k): float(v) for k, v in configured_scale.items() if _coerce_float(v) is not None
+        },
         manual_override_window_min=_coerce_int(cfg.get("manual_override_window_min"))
         or _DEFAULT_MANUAL_OVERRIDE_WINDOW_MIN,
         reaction_id=proposal_id,
@@ -551,7 +559,9 @@ def validate_smart_lighting_contract(cfg: dict[str, Any]) -> bool:
     indoor_lux_signal = str(cfg.get("indoor_lux_signal") or "").strip()
     lux_on_buckets = _string_list(cfg.get("lux_on_buckets"))
     profiles = _normalize_profiles(cfg.get("profiles"))
-    entity_steps = [dict(step) for step in list(cfg.get("entity_steps") or []) if isinstance(step, dict)]
+    entity_steps = [
+        dict(step) for step in list(cfg.get("entity_steps") or []) if isinstance(step, dict)
+    ]
     if not room_id or not indoor_lux_signal or not lux_on_buckets:
         return False
     if not profiles and not entity_steps:
@@ -560,7 +570,9 @@ def validate_smart_lighting_contract(cfg: dict[str, Any]) -> bool:
         if not _valid_entity_step(step):
             return False
     for profile in profiles:
-        if not _profile_steps(profile) or any(not _valid_entity_step(step) for step in _profile_steps(profile)):
+        if not _profile_steps(profile) or any(
+            not _valid_entity_step(step) for step in _profile_steps(profile)
+        ):
             return False
     return True
 
@@ -571,17 +583,29 @@ def present_room_smart_lighting_assist_label(
     labels: dict[str, str],  # noqa: ARG001
 ) -> str | None:
     room_id = str(cfg.get("room_id") or "").strip()
-    return f"{room_id}: smart lighting" if room_id else reaction_id
+    primary_signal = str(
+        cfg.get("indoor_lux_signal") or cfg.get("primary_signal_name") or "room_lux"
+    ).strip()
+    if room_id:
+        return f"Luci {room_id} · {primary_signal}" if primary_signal else f"Luci {room_id}"
+    return reaction_id
 
 
 def present_room_smart_lighting_assist_proposal_label(
     flow: Any,  # noqa: ARG001
     proposal: Any,  # noqa: ARG001
     cfg: dict[str, Any],
-    language: str,  # noqa: ARG001
+    language: str,
 ) -> str | None:
     room_id = str(cfg.get("room_id") or "").strip()
-    return f"{room_id}: smart lighting" if room_id else None
+    primary_signal = str(
+        cfg.get("indoor_lux_signal") or cfg.get("primary_signal_name") or "room_lux"
+    ).strip()
+    if not room_id:
+        return None
+    if language.startswith("it"):
+        return f"Luci {room_id} · {primary_signal}" if primary_signal else f"Luci {room_id}"
+    return f"Lights {room_id} · {primary_signal}" if primary_signal else f"Lights {room_id}"
 
 
 def present_room_smart_lighting_assist_review_title(
@@ -589,13 +613,19 @@ def present_room_smart_lighting_assist_review_title(
     proposal: Any,  # noqa: ARG001
     cfg: dict[str, Any],
     language: str,
-    tuning: bool,  # noqa: ARG001
+    tuning: bool,
 ) -> str | None:
-    room_id = str(cfg.get("room_id") or "").strip()
+    title = present_room_smart_lighting_assist_proposal_label(flow, proposal, cfg, language)
+    if not title:
+        return None
+    if tuning:
+        return (
+            f"Affinamento luce: {title}" if language.startswith("it") else f"Light tuning: {title}"
+        )
     return (
-        f"Illuminazione smart stanza: {room_id}"
+        f"Nuova luce assistita: {title}"
         if language.startswith("it")
-        else f"Smart room lighting: {room_id}"
+        else f"New assisted light: {title}"
     )
 
 
@@ -641,8 +671,12 @@ def present_tuning_room_smart_lighting_assist_details(
     target_cfg: dict[str, Any],
     language: str,
 ) -> list[str]:
-    current = [dict(step) for step in list(target_cfg.get("entity_steps") or []) if isinstance(step, dict)]
-    proposed = [dict(step) for step in list(cfg.get("entity_steps") or []) if isinstance(step, dict)]
+    current = [
+        dict(step) for step in list(target_cfg.get("entity_steps") or []) if isinstance(step, dict)
+    ]
+    proposed = [
+        dict(step) for step in list(cfg.get("entity_steps") or []) if isinstance(step, dict)
+    ]
     if current and proposed and current != proposed:
         return render_entity_steps_tuning_details(current, proposed, language=language)
     return []
@@ -667,7 +701,9 @@ def _profile_name(profile: dict[str, Any]) -> str:
 
 
 def _profile_steps(profile: dict[str, Any]) -> list[dict[str, Any]]:
-    return [dict(step) for step in list(profile.get("entity_steps") or []) if isinstance(step, dict)]
+    return [
+        dict(step) for step in list(profile.get("entity_steps") or []) if isinstance(step, dict)
+    ]
 
 
 def _string_list(value: Any) -> list[str]:

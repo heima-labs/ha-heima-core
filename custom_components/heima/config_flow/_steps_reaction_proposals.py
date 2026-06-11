@@ -461,7 +461,7 @@ class _ReactionProposalStepsMixin:
             return f"Learned activity: {activity_name}"
         cfg = _safe_mapping(proposal.suggested_reaction_config)
         followup = self._proposal_followup_target(proposal)
-        presenter = self._reaction_presenter_for_cfg(cfg)
+        presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         language = self._flow_language()
         if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
             snapshot = _safe_mapping(cfg.get("context_snapshot"))
@@ -583,7 +583,7 @@ class _ReactionProposalStepsMixin:
                 else f"Recurring day: {weekday_label}"
             )
 
-        presenter = self._reaction_presenter_for_cfg(cfg)
+        presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         if presenter is not None and presenter.learned_review_details is not None:
             details.extend(presenter.learned_review_details(self, proposal, cfg, language))
 
@@ -710,7 +710,7 @@ class _ReactionProposalStepsMixin:
         room_id = str(cfg.get("room_id") or "").strip()
         if room_id:
             details.append(f"Stanza: {room_id}" if is_it else f"Room: {room_id}")
-        presenter = self._reaction_presenter_for_cfg(cfg)
+        presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         if presenter is not None and presenter.admin_authored_review_details is not None:
             details.extend(presenter.admin_authored_review_details(self, proposal, cfg, language))
 
@@ -724,7 +724,7 @@ class _ReactionProposalStepsMixin:
         """Build the most readable label available for a proposal."""
         cfg = _safe_mapping(cfg if cfg is not None else proposal.suggested_reaction_config)
         language = self._flow_language()
-        presenter = self._reaction_presenter_for_cfg(cfg)
+        presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         if presenter is not None and presenter.proposal_human_label is not None:
             presented = presenter.proposal_human_label(self, proposal, cfg, language)
             if presented:
@@ -811,8 +811,11 @@ class _ReactionProposalStepsMixin:
         return None
 
     @staticmethod
-    def _reaction_presenter_for_cfg(cfg: dict[str, Any]) -> Any | None:
-        reaction_type = resolve_reaction_type(cfg)
+    def _reaction_presenter_for_cfg(
+        cfg: dict[str, Any],
+        reaction_type_fallback: str | None = None,
+    ) -> Any | None:
+        reaction_type = resolve_reaction_type(cfg) or str(reaction_type_fallback or "").strip()
         if not reaction_type:
             return None
         registry = create_builtin_reaction_plugin_registry()

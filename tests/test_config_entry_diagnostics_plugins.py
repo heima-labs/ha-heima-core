@@ -63,7 +63,7 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
         for item in learning
     )
     assert any(item["reaction_type"] == "room_signal_assist" for item in reactions)
-    assert any(item["reaction_type"] == "room_darkness_lighting_assist" for item in reactions)
+    assert any(item["reaction_type"] == "room_smart_lighting_assist" for item in reactions)
     assert any(item["reaction_type"] == "scheduled_routine" for item in reactions)
 
 
@@ -225,14 +225,12 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert composite["supports_admin_authored"] is True
     assert composite["admin_authored_templates"] == [
         "room.signal_assist.basic",
-        "room.darkness_lighting_assist.basic",
-        "room.contextual_lighting_assist.basic",
+        "room.smart_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
     ]
     assert composite["implemented_admin_authored_templates"] == [
         "room.signal_assist.basic",
-        "room.darkness_lighting_assist.basic",
-        "room.contextual_lighting_assist.basic",
+        "room.smart_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
     ]
     assert composite["unimplemented_admin_authored_templates"] == []
@@ -950,10 +948,10 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
                 },
                 {
                     "id": "p2",
-                    "type": "room_darkness_lighting_assist",
+                    "type": "room_smart_lighting_assist",
                     "status": "pending",
                     "confidence": 0.83,
-                    "description": "Living darkness lighting assist",
+                    "description": "Living smart lighting assist",
                     "origin": "learned",
                     "followup_kind": "discovery",
                     "config_summary": {
@@ -975,9 +973,12 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
                     "primary_signal_name": "room_humidity",
                 },
                 "r2": {
-                    "reaction_class": "RoomLightingAssistReaction",
+                    "reaction_type": "room_smart_lighting_assist",
+                    "reaction_class": "RoomSmartLightingAssistReaction",
+                    "room_id": "living",
+                    "primary_signal_name": "room_lux",
                     "source_proposal_identity_key": (
-                        "room_darkness_lighting_assist|room=living|primary=room_lux"
+                        "room_smart_lighting_assist|room=living|primary=room_lux"
                     ),
                 },
             }
@@ -994,7 +995,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
     assert composite["configured_total"] == 2
     assert composite["configured_by_room"] == {"bathroom": 1, "living": 1}
     assert composite["configured_by_type"] == {
-        "room_darkness_lighting_assist": 1,
+        "room_smart_lighting_assist": 1,
         "room_signal_assist": 1,
     }
     assert composite["configured_by_primary_signal"] == {"room_humidity": 1, "room_lux": 1}
@@ -1003,7 +1004,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
     assert composite["pending_discovery_total"] == 1
     assert composite["pending_by_room"] == {"bathroom": 1, "living": 1}
     assert composite["pending_by_type"] == {
-        "room_darkness_lighting_assist": 1,
+        "room_smart_lighting_assist": 1,
         "room_signal_assist": 1,
     }
     assert composite["pending_by_primary_signal"] == {"room_humidity": 1, "room_lux": 1}
@@ -1020,7 +1021,7 @@ async def test_config_entry_diagnostics_exposes_composite_summary_examples() -> 
     assert composite["pending_discovery_examples"] == [
         {
             "id": "p2",
-            "type": "room_darkness_lighting_assist",
+            "type": "room_smart_lighting_assist",
             "label": "Luci living · room_lux",
             "room_id": "living",
             "primary_signal_name": "room_lux",

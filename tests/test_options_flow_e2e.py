@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -363,7 +362,7 @@ async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_
     flow._config_entry.options = {
         "learning": {"outdoor_lux_entity": "sensor.external_lux"},
         "reactions": {
-            "configured": {"r_new": {"reaction_class": "RoomLightingAssistReaction"}},
+            "configured": {"r_new": {"reaction_class": "RoomSmartLightingAssistReaction"}},
             "labels": {"r_new": "New"},
         },
     }
@@ -381,7 +380,7 @@ async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_
     updated = flow._config_entry.options
     assert updated["learning"]["outdoor_lux_entity"] == "sensor.updated_lux"
     assert updated["reactions"]["configured"] == {
-        "r_new": {"reaction_class": "RoomLightingAssistReaction"}
+        "r_new": {"reaction_class": "RoomSmartLightingAssistReaction"}
     }
     assert updated["reactions"]["labels"] == {"r_new": "New"}
 
@@ -1841,11 +1840,11 @@ async def test_proposal_human_label_for_room_lighting_assist_includes_primary_si
     proposal = ReactionProposal(
         proposal_id="proposal-darkness",
         analyzer_id="CompositePatternCatalogAnalyzer",
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         description="studio darkness",
         confidence=0.9,
         suggested_reaction_config={
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "room_id": "studio",
             "primary_signal_name": "room_lux",
         },
@@ -1862,11 +1861,11 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     proposal = ReactionProposal(
         proposal_id="proposal-darkness",
         analyzer_id="CompositePatternCatalogAnalyzer",
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         description="Living darkness lighting replay",
         confidence=0.91,
         suggested_reaction_config={
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "room_id": "living",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "primary_bucket": "ok",
@@ -1880,7 +1879,7 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
                 }
             ],
             "learning_diagnostics": {
-                "pattern_id": "room_darkness_lighting_assist",
+                "pattern_id": "room_smart_lighting_assist",
                 "episodes_observed": 5,
                 "weeks_observed": 2,
             },
@@ -1901,7 +1900,7 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     assert result["step_id"] == "init"
     assert getattr(flow, "_pending_action_configs", []) == []
     stored = flow.options["reactions"]["configured"]["proposal-darkness"]
-    assert stored["reaction_type"] == "room_darkness_lighting_assist"
+    assert stored["reaction_type"] == "room_smart_lighting_assist"
     assert stored["origin"] == "learned"
     assert stored["author_kind"] == "heima"
     assert stored["source_request"] == "learned_pattern"
@@ -2208,7 +2207,7 @@ async def test_reaction_label_from_room_smart_lighting_assist_config_is_readable
         {},
     )
 
-    assert label == "living: smart lighting"
+    assert label == "Luci living · room_lux"
 
 
 @pytest.mark.asyncio
@@ -2218,7 +2217,7 @@ async def test_proposals_step_accepts_contextual_improvement_by_replacing_darkne
             "reactions": {
                 "configured": {
                     "darkness-1": {
-                        "reaction_type": "room_darkness_lighting_assist",
+                        "reaction_type": "room_smart_lighting_assist",
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
                         "entity_steps": [
@@ -2238,17 +2237,17 @@ async def test_proposals_step_accepts_contextual_improvement_by_replacing_darkne
     proposal = ReactionProposal(
         proposal_id="proposal-contextual-upgrade",
         analyzer_id="CompositePatternCatalogAnalyzer",
-        reaction_type="room_contextual_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         description="studio contextual upgrade",
         confidence=0.86,
         followup_kind="improvement",
         target_reaction_id="darkness-1",
-        target_reaction_type="room_darkness_lighting_assist",
+        target_reaction_type="room_smart_lighting_assist",
         target_reaction_origin="learned",
-        improves_reaction_type="room_darkness_lighting_assist",
+        improves_reaction_type="room_smart_lighting_assist",
         improvement_reason="contextual_variation",
         suggested_reaction_config={
-            "reaction_type": "room_contextual_lighting_assist",
+            "reaction_type": "room_smart_lighting_assist",
             "room_id": "studio",
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
@@ -2285,8 +2284,8 @@ async def test_proposals_step_accepts_contextual_improvement_by_replacing_darkne
     assert result["step_id"] == "init"
     proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-contextual-upgrade")
     stored = flow.options["reactions"]["configured"]["darkness-1"]
-    assert stored["reaction_type"] == "room_contextual_lighting_assist"
-    assert stored["improved_from_reaction_type"] == "room_darkness_lighting_assist"
+    assert stored["reaction_type"] == "room_smart_lighting_assist"
+    assert stored["improved_from_reaction_type"] == "room_smart_lighting_assist"
     assert stored["improvement_reason"] == "contextual_variation"
     assert stored["improvement_acceptance_strategy"] == "convert_replace"
     assert stored["default_profile"] == "day_generic"
@@ -2834,11 +2833,11 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
             "reactions": {
                 "configured": {
                     "reaction-darkness-1": {
-                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
                         "room_id": "living",
                         "origin": "admin_authored",
-                        "source_template_id": "room.darkness_lighting_assist.basic",
-                        "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
+                        "source_template_id": "room.smart_lighting_assist.basic",
+                        "source_proposal_identity_key": "room_smart_lighting_assist|room=living|primary=room_lux",
                         "primary_signal_name": "room_lux",
                         "primary_bucket": "ok",
                         "primary_signal_entities": ["sensor.living_lux"],
@@ -2857,13 +2856,13 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
     proposal = ReactionProposal(
         proposal_id="proposal-darkness-followup-1",
         analyzer_id="CompositePatternCatalogAnalyzer",
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         description="Living darkness assist refined",
         confidence=0.92,
-        identity_key="room_darkness_lighting_assist|room=living|primary=room_lux",
+        identity_key="room_smart_lighting_assist|room=living|primary=room_lux",
         followup_kind="tuning_suggestion",
         suggested_reaction_config={
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "room_id": "living",
             "primary_signal_name": "room_lux",
             "primary_bucket": "dim",
@@ -2894,19 +2893,12 @@ async def test_proposals_step_marks_room_lighting_assist_followup_as_tuning_with
 
     placeholders = result["description_placeholders"]
     assert placeholders["proposal_label"].startswith("Affinamento luce: Luci living · room_lux")
-    assert (
-        "Template target: room.darkness_lighting_assist.basic" in placeholders["proposal_details"]
-    )
-    assert "Bucket: ok -> dim" in placeholders["proposal_details"]
-    assert "Entità primarie: 1 -> 2" in placeholders["proposal_details"]
-    assert "Modo corroborante: switch_on -> state_change" in placeholders["proposal_details"]
-    assert "Entità corroboranti: 1 -> 2" in placeholders["proposal_details"]
-    assert "Entità attuali: light.living_main" in placeholders["proposal_details"]
+    assert "Template target: room.smart_lighting_assist.basic" in placeholders["proposal_details"]
+    assert "Stanza: living" in placeholders["proposal_details"]
     assert (
         "Entità proposte: light.living_main, light.living_spot" in placeholders["proposal_details"]
     )
-    assert "Luci: 1 -> 2" in placeholders["proposal_details"]
-    assert "Entità aggiunte: light.living_spot" in placeholders["proposal_details"]
+    assert "Luci proposte: 2" in placeholders["proposal_details"]
 
 
 @pytest.mark.asyncio
@@ -3310,8 +3302,8 @@ async def test_room_darkness_lighting_create_and_edit_forms_share_common_fields(
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_class": "RoomLightingAssistReaction",
-                        "reaction_type": "room_darkness_lighting_assist",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
+                        "reaction_type": "room_smart_lighting_assist",
                         "enabled": True,
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
@@ -3335,7 +3327,7 @@ async def test_room_darkness_lighting_create_and_edit_forms_share_common_fields(
         }
     )
 
-    create_result = await flow.async_step_admin_authored_room_darkness_lighting_assist()
+    create_result = await flow.async_step_admin_authored_room_smart_lighting_assist()
     flow._editing_reaction_id = "r1"
     edit_result = await flow.async_step_reactions_edit_form()
 
@@ -3369,7 +3361,7 @@ async def test_room_darkness_lighting_create_and_edit_forms_share_common_fields(
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_allows_historical_non_pending_duplicate():
+async def test_admin_authored_room_smart_lighting_assist_allows_historical_non_pending_duplicate():
     # Con il nuovo flusso diretto non c'è più il concetto di "storico pending":
     # la reaction viene scritta direttamente in configured, quindi una seconda
     # submission con la stessa identity_key viene bloccata come duplicate.
@@ -3382,7 +3374,7 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
         }
     )
 
-    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
@@ -3399,12 +3391,12 @@ async def test_admin_authored_room_darkness_lighting_assist_allows_historical_no
     assert result["step_id"] == "init"
     configured = flow.options["reactions"]["configured"]
     assert any(
-        cfg.get("reaction_type") == "room_darkness_lighting_assist" for cfg in configured.values()
+        cfg.get("reaction_type") == "room_smart_lighting_assist" for cfg in configured.values()
     )
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_payload():
+async def test_admin_authored_room_smart_lighting_assist_rejects_redacted_payload():
     flow = _flow(
         {
             "rooms": [
@@ -3414,7 +3406,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_pay
         }
     )
 
-    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
@@ -3428,14 +3420,14 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_redacted_pay
     )
 
     assert result["type"] == "form"
-    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["step_id"] == "admin_authored_room_smart_lighting_assist"
     # sentinel stripped before validation → empty list → "required" error (not "redacted_payload")
     assert result["errors"]["light_entities"] == "required"
     assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_configured_identity():
+async def test_admin_authored_room_smart_lighting_assist_rejects_existing_configured_identity():
     flow = _flow(
         {
             "rooms": [
@@ -3445,9 +3437,9 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
             "reactions": {
                 "configured": {
                     "reaction-1": {
-                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
                         "source_proposal_identity_key": (
-                            "room_darkness_lighting_assist|room=studio|primary=room_lux"
+                            "room_smart_lighting_assist|room=studio|primary=room_lux"
                         ),
                     }
                 }
@@ -3455,7 +3447,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
         }
     )
 
-    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
@@ -3469,22 +3461,22 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_con
     )
 
     assert result["type"] == "form"
-    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["step_id"] == "admin_authored_room_smart_lighting_assist"
     assert result["errors"]["base"] == "duplicate"
 
 
 @pytest.mark.asyncio
 async def test_proposals_accept_rejects_redacted_config_payload():
     proposal = ReactionProposal(
-        analyzer_id="RoomDarknessLightingAnalyzer",
-        reaction_type="room_darkness_lighting_assist",
+        analyzer_id="RoomSmartLightingAnalyzer",
+        reaction_type="room_smart_lighting_assist",
         description="studio: when room_lux drops too low, apply 1 light action",
         confidence=0.8,
         origin="learned",
-        identity_key="room_darkness_lighting_assist|room=studio|primary=room_lux",
-        fingerprint="room_darkness_lighting_assist|room=studio|primary=room_lux",
+        identity_key="room_smart_lighting_assist|room=studio|primary=room_lux",
+        fingerprint="room_smart_lighting_assist|room=studio|primary=room_lux",
         suggested_reaction_config={
-            "reaction_type": "room_darkness_lighting_assist",
+            "reaction_type": "room_smart_lighting_assist",
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_bucket": "dim",
@@ -3516,7 +3508,7 @@ async def test_proposals_accept_rejects_redacted_config_payload():
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pending_identity_even_if_history_lookup_is_accepted():
+async def test_admin_authored_room_smart_lighting_assist_rejects_existing_pending_identity_even_if_history_lookup_is_accepted():
     # Con il nuovo flusso diretto il duplicate check si basa su configured.
     # Equivalente del vecchio test: configured contiene già la stessa identity_key.
     flow = _flow(
@@ -3528,9 +3520,9 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pen
             "reactions": {
                 "configured": {
                     "reaction-existing": {
-                        "reaction_class": "RoomLightingAssistReaction",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
                         "source_proposal_identity_key": (
-                            "room_darkness_lighting_assist|room=studio|primary=room_lux"
+                            "room_smart_lighting_assist|room=studio|primary=room_lux"
                         ),
                     }
                 }
@@ -3538,7 +3530,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pen
         }
     )
 
-    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_entities": ["sensor.studio_lux"],
@@ -3552,7 +3544,7 @@ async def test_admin_authored_room_darkness_lighting_assist_rejects_existing_pen
     )
 
     assert result["type"] == "form"
-    assert result["step_id"] == "admin_authored_room_darkness_lighting_assist"
+    assert result["step_id"] == "admin_authored_room_smart_lighting_assist"
     assert result["errors"]["base"] == "duplicate"
 
 
@@ -3693,7 +3685,7 @@ async def test_admin_authored_accept_persists_reaction_provenance():
             "scheduled_min": 1200,
             "entity_steps": [{"entity_id": "light.living_main", "action": "on"}],
             "context_conditions": [{"signal_name": "projector_context", "state_in": ["active"]}],
-            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+            "admin_authored_template_id": "room.smart_lighting_assist.basic",
         },
     )
     proposal_engine = SimpleNamespace(
@@ -3711,8 +3703,8 @@ async def test_admin_authored_accept_persists_reaction_provenance():
     stored = flow.options["reactions"]["configured"]["proposal-admin"]
     assert stored["origin"] == "admin_authored"
     assert stored["author_kind"] == "admin"
-    assert stored["source_request"] == "template:room.darkness_lighting_assist.basic"
-    assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
+    assert stored["source_request"] == "template:room.smart_lighting_assist.basic"
+    assert stored["source_template_id"] == "room.smart_lighting_assist.basic"
     assert stored["source_proposal_id"] == "proposal-admin"
     assert stored["source_proposal_identity_key"] == proposal.identity_key
     assert stored["created_at"] == "2026-03-30T10:00:00+00:00"
@@ -3732,7 +3724,7 @@ def test_proposal_review_label_marks_admin_authored_origin():
             "room_id": "living",
             "weekday": 0,
             "reaction_class": "ContextConditionedLightingReaction",
-            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+            "admin_authored_template_id": "room.smart_lighting_assist.basic",
         },
     )
 
@@ -4039,8 +4031,8 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_class": "RoomLightingAssistReaction",
-                        "reaction_type": "room_darkness_lighting_assist",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
+                        "reaction_type": "room_smart_lighting_assist",
                         "enabled": True,
                         "room_id": "studio",
                         "primary_signal_entities": ["sensor.studio_lux"],
@@ -4114,8 +4106,8 @@ async def test_reactions_edit_form_updates_room_lighting_assist_config():
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_class": "RoomLightingAssistReaction",
-                        "reaction_type": "room_darkness_lighting_assist",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
+                        "reaction_type": "room_smart_lighting_assist",
                         "enabled": True,
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
@@ -4358,8 +4350,8 @@ def test_composite_menu_summary_is_operational() -> None:
                         "reaction_type": "room_signal_assist",
                     },
                     "r-light-1": {
-                        "reaction_class": "RoomLightingAssistReaction",
-                        "source_proposal_identity_key": "room_darkness_lighting_assist|room=living|primary=room_lux",
+                        "reaction_class": "RoomSmartLightingAssistReaction",
+                        "source_proposal_identity_key": "room_smart_lighting_assist|room=living|primary=room_lux",
                     },
                     "r-other": {
                         "reaction_class": "ContextConditionedLightingReaction",
@@ -4383,7 +4375,7 @@ def test_composite_menu_summary_is_operational() -> None:
         ReactionProposal(
             proposal_id="p2",
             analyzer_id="CompositePatternCatalogAnalyzer",
-            reaction_type="room_darkness_lighting_assist",
+            reaction_type="room_smart_lighting_assist",
             description="tuning assist",
             confidence=1.0,
             followup_kind="tuning_suggestion",
@@ -4420,7 +4412,7 @@ def _flow_with_rooms(reactions: dict | None = None) -> "HeimaOptionsFlowHandler"
     return _flow(
         {
             "people_named": [],
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": reactions or {},
         }
     )
@@ -4461,11 +4453,29 @@ def _room_with_signals() -> dict:
     }
 
 
+def _room_with_lux_signal() -> dict:
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    return room
+
+
 @pytest.mark.asyncio
 async def test_reactions_edit_form_for_room_signal_assist_shows_bucket_fields():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
@@ -4505,7 +4515,7 @@ async def test_reactions_edit_form_for_room_signal_assist_shows_bucket_fields():
 async def test_reactions_edit_form_for_room_air_quality_assist_uses_same_handler():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
@@ -5086,7 +5096,7 @@ async def test_admin_authored_room_signal_assist_derives_entity_from_room_signal
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_contextual_lighting_assist_persists_guided_json_contract():
+async def test_admin_authored_room_smart_lighting_assist_persists_guided_contract():
     room = dict(_room_with_signals())
     room["signals"] = list(room["signals"]) + [
         {
@@ -5103,47 +5113,39 @@ async def test_admin_authored_room_contextual_lighting_assist_persists_guided_js
     ]
     flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
 
-    result = await flow.async_step_admin_authored_room_contextual_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_name": "room_lux",
             "primary_bucket": "ok",
             "primary_bucket_match_mode": "lte",
-            "preset": "all_day_adaptive",
             "light_entities": ["light.studio_main"],
-        }
-    )
-
-    assert result["type"] == "form"
-    assert result["step_id"] == "admin_authored_room_contextual_lighting_assist_json"
-    assert "preset" in result["data_schema"].schema
-
-    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
-        {
-            "config_json": flow._contextual_lighting_policy_json(
-                preset="all_day_adaptive",
-                light_entities=["light.studio_main"],
-            )
+            "action": "on",
+            "brightness": 140,
+            "color_temp_kelvin": 3600,
         }
     )
 
     assert result["type"] == "menu"
     stored = next(iter(flow.options["reactions"]["configured"].values()))
-    assert stored["reaction_type"] == "room_contextual_lighting_assist"
+    assert stored["reaction_type"] == "room_smart_lighting_assist"
     assert stored["primary_signal_entities"] == ["sensor.studio_lux"]
     assert stored["primary_bucket"] == "ok"
     assert stored["primary_bucket_match_mode"] == "lte"
-    assert stored["default_profile"] == "day_generic"
-    assert sorted(stored["profiles"]) == [
-        "day_generic",
-        "evening_relax",
-        "night_navigation",
-        "workday_focus",
+    assert stored["lux_on_buckets"] == ["dark", "dim", "ok"]
+    assert stored["entity_steps"] == [
+        {
+            "entity_id": "light.studio_main",
+            "action": "on",
+            "brightness": 140,
+            "color_temp_kelvin": 3600,
+            "rgb_color": None,
+        }
     ]
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_contextual_lighting_assist_exposes_preset_previews():
+async def test_admin_authored_room_smart_lighting_assist_uses_guided_form_without_json_preset():
     room = dict(_room_with_signals())
     room["signals"] = list(room["signals"]) + [
         {
@@ -5160,19 +5162,27 @@ async def test_admin_authored_room_contextual_lighting_assist_exposes_preset_pre
     ]
     flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
 
-    result = await flow.async_step_admin_authored_room_contextual_lighting_assist()
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist()
 
     assert result["type"] == "form"
-    assert result["step_id"] == "admin_authored_room_contextual_lighting_assist"
-    previews = result["description_placeholders"]["preset_previews"]
-    assert "Daytime focus" in previews
-    assert "Evening warmth" in previews
-    assert "Night navigation" in previews
-    assert "All-day adaptive" in previews
+    assert result["step_id"] == "admin_authored_room_smart_lighting_assist"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert {
+        "room_id",
+        "primary_signal_name",
+        "primary_bucket",
+        "primary_bucket_match_mode",
+        "light_entities",
+        "action",
+        "brightness",
+        "color_temp_kelvin",
+    } <= schema_keys
+    assert "preset" not in schema_keys
+    assert "config_json" not in schema_keys
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_json():
+async def test_admin_authored_room_smart_lighting_assist_has_no_json_step():
     room = dict(_room_with_signals())
     room["signals"] = list(room["signals"]) + [
         {
@@ -5189,81 +5199,45 @@ async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_js
     ]
     flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
 
-    first = await flow.async_step_admin_authored_room_contextual_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist()
+
+    assert result["type"] == "form"
+    assert not hasattr(flow, "async_step_admin_authored_room_smart_lighting_assist_json")
+
+
+@pytest.mark.asyncio
+async def test_admin_authored_room_smart_lighting_assist_rejects_missing_guided_fields():
+    room = dict(_room_with_signals())
+    room["signals"] = list(room["signals"]) + [
+        {
+            "entity_id": "sensor.studio_lux",
+            "signal_name": "room_lux",
+            "device_class": "illuminance",
+            "buckets": [
+                {"label": "dark", "upper_bound": 30.0},
+                {"label": "dim", "upper_bound": 100.0},
+                {"label": "ok", "upper_bound": 250.0},
+                {"label": "bright", "upper_bound": None},
+            ],
+        }
+    ]
+    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
+
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_name": "room_lux",
             "primary_bucket": "ok",
             "primary_bucket_match_mode": "lte",
-            "preset": "all_day_adaptive",
-            "light_entities": ["light.studio_main"],
-        }
-    )
-
-    assert first["type"] == "form"
-    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
-        {"config_json": "{not-json}"}
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"] == {"config_json": "invalid_json"}
-
-
-@pytest.mark.asyncio
-async def test_admin_authored_room_contextual_lighting_assist_rejects_invalid_contract():
-    room = dict(_room_with_signals())
-    room["signals"] = list(room["signals"]) + [
-        {
-            "entity_id": "sensor.studio_lux",
-            "signal_name": "room_lux",
-            "device_class": "illuminance",
-            "buckets": [
-                {"label": "dark", "upper_bound": 30.0},
-                {"label": "dim", "upper_bound": 100.0},
-                {"label": "ok", "upper_bound": 250.0},
-                {"label": "bright", "upper_bound": None},
-            ],
-        }
-    ]
-    flow = _flow({"people_named": [], "rooms": [room], "reactions": {}})
-
-    first = await flow.async_step_admin_authored_room_contextual_lighting_assist(
-        {
-            "room_id": "studio",
-            "primary_signal_name": "room_lux",
-            "primary_bucket": "ok",
-            "primary_bucket_match_mode": "lte",
-            "preset": "all_day_adaptive",
-            "light_entities": ["light.studio_main"],
-        }
-    )
-
-    assert first["type"] == "form"
-    result = await flow.async_step_admin_authored_room_contextual_lighting_assist_json(
-        {
-            "config_json": json.dumps(
-                {
-                    "profiles": {
-                        "day_generic": {
-                            "entity_steps": [
-                                {
-                                    "entity_id": "light.studio_main",
-                                    "action": "on",
-                                    "brightness": 140,
-                                    "color_temp_kelvin": 3600,
-                                }
-                            ]
-                        }
-                    },
-                    "rules": [{"profile": "day_generic", "house_state_in": ["not-a-state"]}],
-                    "default_profile": "day_generic",
-                }
-            )
+            "light_entities": [],
+            "action": "on",
+            "brightness": 140,
+            "color_temp_kelvin": 3600,
         }
     )
 
     assert result["type"] == "form"
-    assert result["errors"] == {"config_json": "invalid_contextual_contract"}
+    assert result["errors"]["light_entities"] == "required"
 
 
 def _room_with_burst_signal() -> dict:
@@ -5399,14 +5373,14 @@ async def test_reactions_edit_room_signal_assist_burst_mode_saves_correctly():
 
 
 @pytest.mark.asyncio
-async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
+async def test_reactions_edit_smart_lighting_assist_updates_guided_fields():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_type": "room_contextual_lighting_assist",
+                        "reaction_type": "room_smart_lighting_assist",
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
@@ -5448,31 +5422,20 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
     result = await flow.async_step_reactions_edit_form()
     assert result["type"] == "form"
     assert result["step_id"] == "reactions_edit_form"
-    assert "preset" in result["data_schema"].schema
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "primary_signal_name" in schema_keys
+    assert "config_json" not in schema_keys
 
-    payload = json.dumps(
-        {
-            "profiles": {
-                "day_generic": {
-                    "entity_steps": [
-                        {
-                            "entity_id": "light.studio_main",
-                            "action": "on",
-                            "brightness": 150,
-                            "color_temp_kelvin": 3700,
-                        }
-                    ]
-                }
-            },
-            "rules": [],
-            "default_profile": "day_generic",
-            "followup_window_s": 600,
-        }
-    )
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": False,
-            "config_json": payload,
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "dim",
+            "primary_bucket_match_mode": "lte",
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 150,
+            "color_temp_kelvin": 3700,
             "delete_reaction": False,
         }
     )
@@ -5480,19 +5443,28 @@ async def test_reactions_edit_contextual_lighting_assist_updates_policy_json():
     assert result["type"] == "menu"
     stored = flow.options["reactions"]["configured"]["r1"]
     assert stored["enabled"] is False
-    assert stored["followup_window_s"] == 600
-    assert list(stored["profiles"]) == ["day_generic"]
+    assert stored["primary_bucket"] == "dim"
+    assert stored["lux_on_buckets"] == ["dark", "dim"]
+    assert stored["entity_steps"] == [
+        {
+            "entity_id": "light.studio_main",
+            "action": "on",
+            "brightness": 150,
+            "color_temp_kelvin": 3700,
+            "rgb_color": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio
-async def test_reactions_edit_contextual_lighting_assist_delete_uses_public_edit_step():
+async def test_reactions_edit_smart_lighting_assist_delete_uses_public_edit_step():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_type": "room_contextual_lighting_assist",
+                        "reaction_type": "room_smart_lighting_assist",
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
@@ -5528,10 +5500,13 @@ async def test_reactions_edit_contextual_lighting_assist_delete_uses_public_edit
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": True,
-            "preset": "custom",
-            "config_json": flow._contextual_lighting_policy_for_form(
-                flow.options["reactions"]["configured"]["r1"]
-            ),
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 140,
+            "color_temp_kelvin": 3600,
             "delete_reaction": True,
         }
     )
@@ -5541,14 +5516,14 @@ async def test_reactions_edit_contextual_lighting_assist_delete_uses_public_edit
 
 
 @pytest.mark.asyncio
-async def test_reactions_edit_contextual_lighting_assist_can_regenerate_from_preset():
+async def test_reactions_edit_smart_lighting_assist_updates_light_entities():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_type": "room_contextual_lighting_assist",
+                        "reaction_type": "room_smart_lighting_assist",
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
@@ -5628,34 +5603,41 @@ async def test_reactions_edit_contextual_lighting_assist_can_regenerate_from_pre
 
     result = await flow.async_step_reactions_edit_form()
     assert result["type"] == "form"
-    config_json = flow._contextual_lighting_policy_for_form(
-        flow.options["reactions"]["configured"]["r1"]
-    )
 
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": True,
-            "preset": "night_navigation",
-            "config_json": config_json,
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "dark",
+            "primary_bucket_match_mode": "eq",
+            "light_entities": ["light.studio_main", "light.studio_desk"],
+            "action": "on",
+            "brightness": 80,
+            "color_temp_kelvin": 2400,
             "delete_reaction": False,
         }
     )
 
     assert result["type"] == "menu"
     stored = flow.options["reactions"]["configured"]["r1"]
-    assert stored["default_profile"] == "daytime_low"
-    assert sorted(stored["profiles"]) == ["daytime_low", "night_navigation"]
+    assert stored["primary_bucket"] == "dark"
+    assert stored["lux_on_buckets"] == ["dark"]
+    assert [step["entity_id"] for step in stored["entity_steps"]] == [
+        "light.studio_main",
+        "light.studio_desk",
+    ]
+    assert all(step["brightness"] == 80 for step in stored["entity_steps"])
 
 
 @pytest.mark.asyncio
-async def test_reactions_edit_contextual_lighting_assist_preserves_ambient_modulation():
+async def test_reactions_edit_smart_lighting_assist_preserves_ambient_modulation():
     flow = _flow(
         {
-            "rooms": [_room_with_signals()],
+            "rooms": [_room_with_lux_signal()],
             "reactions": {
                 "configured": {
                     "r1": {
-                        "reaction_type": "room_contextual_lighting_assist",
+                        "reaction_type": "room_smart_lighting_assist",
                         "room_id": "studio",
                         "primary_signal_name": "room_lux",
                         "primary_signal_entities": ["sensor.studio_lux"],
@@ -5693,16 +5675,17 @@ async def test_reactions_edit_contextual_lighting_assist_preserves_ambient_modul
 
     result = await flow.async_step_reactions_edit_form()
     assert result["type"] == "form"
-    config_json = flow._contextual_lighting_policy_for_form(
-        flow.options["reactions"]["configured"]["r1"]
-    )
-    payload = json.loads(config_json)
-    assert payload["ambient_modulation"]["source_signal_name"] == "outdoor_lux"
 
     result = await flow.async_step_reactions_edit_form(
         {
             "enabled": True,
-            "config_json": config_json,
+            "primary_signal_name": "room_lux",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
+            "light_entities": ["light.studio_main"],
+            "action": "on",
+            "brightness": 140,
+            "color_temp_kelvin": 3600,
             "delete_reaction": False,
         }
     )

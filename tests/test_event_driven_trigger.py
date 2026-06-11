@@ -162,11 +162,15 @@ def test_smart_lighting_outdoor_lux_schedules_only_when_room_occupied(
     monkeypatch.setattr("custom_components.heima.coordinator.async_call_later", fake_call_later)
 
     coordinator.engine = SimpleNamespace(snapshot=SimpleNamespace(occupied_rooms=[]))
-    coordinator._on_state_changed(_FakeEvent("sensor.outdoor_lux", old_state="dark", new_state="dim"))  # noqa: SLF001
+    coordinator._on_state_changed(
+        _FakeEvent("sensor.outdoor_lux", old_state="dark", new_state="dim")
+    )  # noqa: SLF001
     assert scheduled == []
 
     coordinator.engine = SimpleNamespace(snapshot=SimpleNamespace(occupied_rooms=["studio"]))
-    coordinator._on_state_changed(_FakeEvent("sensor.outdoor_lux", old_state="dim", new_state="bright"))  # noqa: SLF001
+    coordinator._on_state_changed(
+        _FakeEvent("sensor.outdoor_lux", old_state="dim", new_state="bright")
+    )  # noqa: SLF001
     assert scheduled == [60.0]
 
 
