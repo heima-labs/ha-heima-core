@@ -129,6 +129,47 @@ def test_smart_lighting_outdoor_lux_triggers_but_indoor_lux_does_not() -> None:
     assert coordinator._classify_entity("sensor.outdoor_lux") == "outdoor_lux"  # noqa: SLF001
 
 
+def test_smart_lighting_outdoor_lux_schedules_only_when_room_occupied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = _coordinator(
+        {
+            "rooms": [
+                {
+                    "room_id": "studio",
+                    "signals": [
+                        {"entity_id": "sensor.outdoor_lux", "signal_name": "outdoor_lux"},
+                    ],
+                }
+            ],
+            "reactions": {
+                "configured": {
+                    "smart-studio": {
+                        "reaction_type": "room_smart_lighting_assist",
+                        "room_id": "studio",
+                        "outdoor_lux_signal": "outdoor_lux",
+                    }
+                }
+            },
+        }
+    )
+    scheduled: list[float] = []
+
+    def fake_call_later(hass, delay, callback):  # noqa: ANN001
+        scheduled.append(delay)
+        return lambda: None
+
+    monkeypatch.setattr("custom_components.heima.coordinator.async_call_later", fake_call_later)
+
+    coordinator.engine = SimpleNamespace(snapshot=SimpleNamespace(occupied_rooms=[]))
+    coordinator._on_state_changed(_FakeEvent("sensor.outdoor_lux", old_state="dark", new_state="dim"))  # noqa: SLF001
+    assert scheduled == []
+
+    coordinator.engine = SimpleNamespace(snapshot=SimpleNamespace(occupied_rooms=["studio"]))
+    coordinator._on_state_changed(_FakeEvent("sensor.outdoor_lux", old_state="dim", new_state="bright"))  # noqa: SLF001
+    assert scheduled == [60.0]
+
+
 def test_power_threshold_crossing_triggers_both_directions() -> None:
     coordinator = _coordinator(
         {

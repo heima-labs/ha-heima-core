@@ -1177,6 +1177,10 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             return
         if entity_class == "power_threshold" and not self._power_threshold_crossed(event):
             return
+        if entity_class == "outdoor_lux" and not self._smart_lighting_outdoor_lux_room_occupied(
+            entity_id
+        ):
+            return
         self._schedule_eval(entity_class, reason=f"state_changed:{entity_id}")
 
     def _classify_entity(self, entity_id: str) -> str | None:
@@ -1218,9 +1222,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         return None
 
     def _configured_smart_lighting_outdoor_lux_entities(self, options: dict[str, Any]) -> set[str]:
+        return set(self._configured_smart_lighting_outdoor_lux_entity_rooms(options))
+
+    def _configured_smart_lighting_outdoor_lux_entity_rooms(
+        self, options: dict[str, Any]
+    ) -> dict[str, set[str]]:
         rooms = list(options.get(OPT_ROOMS) or [])
         configured = dict(options.get(OPT_REACTIONS, {}).get("configured", {}))
-        entities: set[str] = set()
+        mapping: dict[str, set[str]] = {}
         for cfg in configured.values():
             if not isinstance(cfg, dict):
                 continue
@@ -1235,8 +1244,18 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 continue
             entity_id = room_signal_entity_id(rooms, room_id, signal_name)
             if entity_id:
-                entities.add(entity_id.strip().lower())
-        return entities
+                mapping.setdefault(entity_id.strip().lower(), set()).add(room_id)
+        return mapping
+
+    def _smart_lighting_outdoor_lux_room_occupied(self, entity_id: str) -> bool:
+        options = dict(self.entry.options)
+        rooms_by_entity = self._configured_smart_lighting_outdoor_lux_entity_rooms(options)
+        rooms = rooms_by_entity.get(str(entity_id or "").strip().lower(), set())
+        if not rooms:
+            return False
+        snapshot = getattr(getattr(self, "engine", None), "snapshot", None)
+        occupied_rooms = set(getattr(snapshot, "occupied_rooms", []) or [])
+        return bool(rooms & occupied_rooms)
 
     def _configured_presence_entities(self, options: dict[str, Any]) -> set[str]:
         entities: set[str] = set()
