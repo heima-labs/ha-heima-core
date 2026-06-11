@@ -264,7 +264,7 @@ def _composite_should_suppress_followup(
         return _room_cooling_assist_should_suppress_followup(
             candidate_cfg, accepted_cfg, policy=policy
         )
-    if candidate.reaction_type == "room_darkness_lighting_assist":
+    if candidate.reaction_type == "room_smart_lighting_assist":
         return _room_darkness_lighting_assist_should_suppress_followup(
             candidate_cfg,
             accepted_cfg,

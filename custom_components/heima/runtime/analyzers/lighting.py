@@ -105,7 +105,7 @@ class LightingPatternAnalyzer:
             return []
         darkness_assist_rooms = await rooms_with_confirmed_pattern_evidence(
             event_store,
-            pattern_id="room_darkness_lighting_assist",
+            pattern_id="room_smart_lighting_assist",
         )
 
         # ------------------------------------------------------------------

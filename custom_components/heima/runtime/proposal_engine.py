@@ -523,14 +523,6 @@ class ProposalEngine:
                 suggested_reaction_config=reaction_cfg,
             )
             return self._should_suppress_followup(candidate, accepted_proxy)
-        if (
-            candidate.reaction_type == "room_darkness_lighting_assist"
-            and reaction_type == "room_contextual_lighting_assist"
-        ):
-            return _configured_contextual_lighting_covers_darkness_candidate(
-                candidate.suggested_reaction_config,
-                reaction_cfg,
-            )
         return False
 
     async def async_accept_proposal(self, proposal_id: str) -> bool:

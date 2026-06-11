@@ -371,8 +371,7 @@ class _ReactionProposalStepsMixin:
         reaction_type = resolve_reaction_type(cfg) or str(proposal.reaction_type or "").strip()
         if reaction_type in {
             HOUSE_STATE_PROPOSAL_TYPE,
-            "room_darkness_lighting_assist",
-            "room_contextual_lighting_assist",
+            "room_smart_lighting_assist",
             "vacation_presence_simulation",
             "room_signal_assist",
             "room_cooling_assist",

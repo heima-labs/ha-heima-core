@@ -128,26 +128,19 @@ class _ReactionLabelsMixin:
             except (TypeError, ValueError):
                 pass
 
-        if reaction_type == "room_darkness_lighting_assist":
+        if reaction_type == "room_smart_lighting_assist":
             try:
                 room_id = str(cfg.get("room_id", "")).strip() or reaction_id
-                primary_entities = list(cfg.get("primary_signal_entities", []))
+                primary_signal = str(
+                    cfg.get("indoor_lux_signal") or cfg.get("primary_signal_name") or "room_lux"
+                ).strip()
                 entity_steps = list(cfg.get("entity_steps", []))
-                parts = [f"Luce {room_id}"]
-                if primary_entities:
-                    parts.append(f"lux:{len(primary_entities)}")
+                parts = [f"Luce smart {room_id}"]
+                if primary_signal:
+                    parts.append(primary_signal)
                 if entity_steps:
                     parts.append(f"{len(entity_steps)} entità")
                 return " — ".join(parts)
-            except (TypeError, ValueError):
-                pass
-
-        if reaction_type == "room_contextual_lighting_assist":
-            try:
-                room_id = str(cfg.get("room_id", "")).strip() or reaction_id
-                profiles = dict(cfg.get("profiles") or {})
-                rules = list(cfg.get("rules") or [])
-                return f"Luce contestuale {room_id} — {len(profiles)} profili — {len(rules)} regole"
             except (TypeError, ValueError):
                 pass
 

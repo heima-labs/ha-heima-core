@@ -439,7 +439,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert diagnostics["observed_followup_entities"] == ["fan.office_ventilation"]
 
 
-async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
+async def test_catalog_analyzer_emits_room_smart_lighting_assist_proposal():
     analyzer = CompositePatternCatalogAnalyzer()
     base = datetime(2026, 3, 1, 18, 0, tzinfo=UTC)
     events = []
@@ -467,17 +467,17 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         )
 
     proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
-    darkness = [p for p in proposals if p.reaction_type == "room_darkness_lighting_assist"]
-    assert len(darkness) == 1
-    proposal = darkness[0]
+    smart = [p for p in proposals if p.reaction_type == "room_smart_lighting_assist"]
+    assert len(smart) == 1
+    proposal = smart[0]
     assert proposal.description.startswith("living: darkness lighting assist")
-    assert proposal.suggested_reaction_config["reaction_type"] == "room_darkness_lighting_assist"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_smart_lighting_assist"
     assert proposal.suggested_reaction_config["room_id"] == "living"
+    assert proposal.suggested_reaction_config["indoor_lux_signal"] == "room_lux"
+    assert proposal.suggested_reaction_config["lux_on_buckets"] == ["dark", "dim"]
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.living_room_lux"
     ]
-    assert proposal.suggested_reaction_config["primary_bucket"] == "dim"
-    assert proposal.suggested_reaction_config["primary_bucket_match_mode"] == "lte"
     assert proposal.suggested_reaction_config["entity_steps"] == [
         {
             "entity_id": "light.living_main",
@@ -488,7 +488,7 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         }
     ]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
-    assert diagnostics["pattern_id"] == "room_darkness_lighting_assist"
+    assert diagnostics["pattern_id"] == "room_smart_lighting_assist"
     assert diagnostics["primary_signal"] == "room_lux"
     assert diagnostics["followup_signal"] == "lighting_replay"
 

@@ -162,6 +162,63 @@ class _ReactionBuildersMixin:
             },
         )
 
+    def _build_admin_authored_room_smart_lighting_assist_proposal(
+        self,
+        *,
+        room_id: str,
+        primary_signal_entities: list[str],
+        primary_signal_name: str,
+        primary_bucket: str,
+        primary_bucket_match_mode: str,
+        entity_ids: list[str],
+        action: str,
+        brightness: int | None,
+        color_temp_kelvin: int | None,
+    ) -> ReactionProposal:
+        template_id = "room.smart_lighting_assist.basic"
+        indoor_signal = primary_signal_name.strip() or "room_lux"
+        identity_key = f"room_smart_lighting_assist|room={room_id}|primary={indoor_signal.lower()}"
+        entity_steps = [
+            {
+                "entity_id": entity_id,
+                "action": action,
+                "brightness": brightness if action == "on" else None,
+                "color_temp_kelvin": color_temp_kelvin if action == "on" else None,
+                "rgb_color": None,
+            }
+            for entity_id in entity_ids
+        ]
+        description = (
+            f"{room_id}: smart lighting when {indoor_signal.lower()} enters "
+            f"{primary_bucket.strip()} or darker"
+        )
+        return ReactionProposal(
+            analyzer_id="AdminAuthoredRoomSmartLightingTemplate",
+            reaction_type="room_smart_lighting_assist",
+            description=description,
+            confidence=1.0,
+            origin="admin_authored",
+            identity_key=identity_key,
+            fingerprint=identity_key,
+            suggested_reaction_config={
+                "reaction_type": "room_smart_lighting_assist",
+                "room_id": room_id,
+                "indoor_lux_signal": indoor_signal,
+                "lux_on_buckets": _lux_on_buckets_from_primary_bucket(primary_bucket),
+                "room_type": "generic",
+                "suppress_on_states": ["away", "vacation"],
+                "night_mode_states": ["sleeping"],
+                "timeout_mode": "learned",
+                "primary_signal_entities": list(primary_signal_entities),
+                "primary_signal_name": indoor_signal,
+                "primary_bucket": primary_bucket.strip(),
+                "primary_bucket_match_mode": primary_bucket_match_mode.strip() or "lte",
+                "entity_steps": entity_steps,
+                "plugin_family": "composite_room_assist",
+                "admin_authored_template_id": template_id,
+            },
+        )
+
     def _build_admin_authored_room_contextual_lighting_assist_proposal(
         self,
         *,
@@ -430,3 +487,14 @@ class _ReactionBuildersMixin:
         except (TypeError, ValueError):
             pass
         return str(weekday)
+
+
+def _lux_on_buckets_from_primary_bucket(primary_bucket: str) -> list[str]:
+    bucket = str(primary_bucket or "").strip()
+    if bucket == "dark":
+        return ["dark"]
+    if bucket == "dim":
+        return ["dark", "dim"]
+    if bucket:
+        return ["dark", "dim", bucket]
+    return ["dark", "dim"]

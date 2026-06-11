@@ -2191,15 +2191,15 @@ async def test_proposals_step_rejects_signal_discovery_without_reaction_config()
 
 
 @pytest.mark.asyncio
-async def test_reaction_label_from_room_lighting_assist_config_is_readable():
+async def test_reaction_label_from_room_smart_lighting_assist_config_is_readable():
     flow = _flow()
 
     label = flow._reaction_label_from_config(
         "proposal-darkness",
         {
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_type": "room_smart_lighting_assist",
             "room_id": "living",
-            "primary_signal_entities": ["sensor.living_room_lux"],
+            "indoor_lux_signal": "room_lux",
             "entity_steps": [
                 {"entity_id": "light.living_main", "action": "on", "brightness": 144},
                 {"entity_id": "light.corner", "action": "on", "brightness": 96},
@@ -2208,7 +2208,7 @@ async def test_reaction_label_from_room_lighting_assist_config_is_readable():
         {},
     )
 
-    assert label == "Luce living — lux:1 — 2 entità"
+    assert label == "living: smart lighting"
 
 
 @pytest.mark.asyncio
@@ -3223,7 +3223,7 @@ async def test_admin_authored_room_signal_assist_creates_pending_proposal_and_op
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_creates_pending_proposal_and_opens_review():
+async def test_admin_authored_room_smart_lighting_assist_creates_pending_proposal_and_opens_review():
     flow = _flow(
         {
             "rooms": [
@@ -3249,7 +3249,7 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
         }
     )
 
-    result = await flow.async_step_admin_authored_room_darkness_lighting_assist(
+    result = await flow.async_step_admin_authored_room_smart_lighting_assist(
         {
             "room_id": "studio",
             "primary_signal_name": "room_lux",
@@ -3269,13 +3269,15 @@ async def test_admin_authored_room_darkness_lighting_assist_creates_pending_prop
         (
             cfg
             for cfg in configured.values()
-            if cfg.get("reaction_type") == "room_darkness_lighting_assist"
+            if cfg.get("reaction_type") == "room_smart_lighting_assist"
         ),
         None,
     )
     assert reaction is not None
     assert reaction["origin"] == "admin_authored"
-    assert reaction["source_template_id"] == "room.darkness_lighting_assist.basic"
+    assert reaction["source_template_id"] == "room.smart_lighting_assist.basic"
+    assert reaction["indoor_lux_signal"] == "room_lux"
+    assert reaction["lux_on_buckets"] == ["dark", "dim"]
     assert reaction["primary_signal_entities"] == ["sensor.studio_lux"]
     assert reaction["primary_bucket"] == "dim"
     assert reaction["primary_bucket_match_mode"] == "eq"
@@ -3789,18 +3791,20 @@ async def test_admin_authored_room_signal_assist_accept_skips_action_configurati
 
 
 @pytest.mark.asyncio
-async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_configuration():
+async def test_admin_authored_room_smart_lighting_assist_accept_skips_action_configuration():
     flow = _flow()
     proposal = ReactionProposal(
         proposal_id="proposal-room-darkness-admin",
-        analyzer_id="AdminAuthoredRoomDarknessLightingTemplate",
-        reaction_type="room_darkness_lighting_assist",
+        analyzer_id="AdminAuthoredRoomSmartLightingTemplate",
+        reaction_type="room_smart_lighting_assist",
         description="studio: when room_lux drops too low, apply 2 light actions",
         confidence=1.0,
         origin="admin_authored",
         suggested_reaction_config={
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_type": "room_smart_lighting_assist",
             "room_id": "studio",
+            "indoor_lux_signal": "room_lux",
+            "lux_on_buckets": ["dark", "dim"],
             "primary_signal_entities": ["sensor.studio_lux"],
             "primary_signal_name": "room_lux",
             "primary_bucket": "ok",
@@ -3808,7 +3812,7 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
                 {"entity_id": "light.studio_main", "action": "on", "brightness": 190},
                 {"entity_id": "light.studio_spot", "action": "on", "brightness": 160},
             ],
-            "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+            "admin_authored_template_id": "room.smart_lighting_assist.basic",
         },
     )
     proposal_engine = SimpleNamespace(
@@ -3826,7 +3830,7 @@ async def test_admin_authored_room_darkness_lighting_assist_accept_skips_action_
     assert result["step_id"] == "init"
     stored = flow.options["reactions"]["configured"]["proposal-room-darkness-admin"]
     assert stored["origin"] == "admin_authored"
-    assert stored["source_template_id"] == "room.darkness_lighting_assist.basic"
+    assert stored["source_template_id"] == "room.smart_lighting_assist.basic"
     assert len(stored["entity_steps"]) == 2
 
 

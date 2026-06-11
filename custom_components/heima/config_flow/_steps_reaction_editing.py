@@ -12,10 +12,16 @@ from homeassistant.helpers import config_validation as cv
 
 from ..runtime.reactions import validate_contextual_lighting_contract
 from ._common import _entity_selector, _number_box_selector
+from ._reaction_builders import _lux_on_buckets_from_primary_bucket
 from ._reaction_helpers import format_min_to_hhmm as _format_min_to_hhmm
 
 if TYPE_CHECKING:
     from homeassistant.data_entry_flow import FlowResult
+
+
+def _last_lux_on_bucket(value: Any) -> str:
+    buckets = [str(item).strip() for item in list(value or []) if str(item).strip()]
+    return buckets[-1] if buckets else ""
 
 
 class _ReactionEditingStepsMixin:
@@ -89,18 +95,8 @@ class _ReactionEditingStepsMixin:
             return await self.async_step_init()
         reaction_type = self._reaction_type_from_cfg(cfg)
 
-        if reaction_type == "room_darkness_lighting_assist":
+        if reaction_type == "room_smart_lighting_assist":
             return await self._async_step_reactions_edit_room_lighting_assist(
-                pid=pid,
-                reactions_cfg=reactions_cfg,
-                configured=configured,
-                labels_map=labels_map,
-                cfg=cfg,
-                user_input=user_input,
-            )
-
-        if reaction_type == "room_contextual_lighting_assist":
-            return await self._async_step_reactions_edit_room_contextual_lighting_assist(
                 pid=pid,
                 reactions_cfg=reactions_cfg,
                 configured=configured,
@@ -490,7 +486,7 @@ class _ReactionEditingStepsMixin:
         cfg: dict[str, Any],
         user_input: dict[str, Any] | None,
     ) -> "FlowResult":
-        """Edit a room darkness lighting assist reaction using its real config contract."""
+        """Edit a room smart lighting assist reaction using its real config contract."""
         room_id = str(cfg.get("room_id") or "").strip()
         current_steps = [
             step for step in list(cfg.get("entity_steps", [])) if isinstance(step, dict)
@@ -503,8 +499,14 @@ class _ReactionEditingStepsMixin:
         first_step = current_steps[0] if current_steps else {}
         defaults = {
             "enabled": bool(cfg.get("enabled", True)),
-            "primary_signal_name": str(cfg.get("primary_signal_name") or "room_lux").strip(),
-            "primary_bucket": str(cfg.get("primary_bucket") or "dim").strip() or "dim",
+            "primary_signal_name": str(
+                cfg.get("indoor_lux_signal") or cfg.get("primary_signal_name") or "room_lux"
+            ).strip(),
+            "primary_bucket": str(
+                cfg.get("primary_bucket")
+                or (_last_lux_on_bucket(cfg.get("lux_on_buckets")) or "dim")
+            ).strip()
+            or "dim",
             "primary_bucket_match_mode": str(cfg.get("primary_bucket_match_mode") or "eq").strip()
             or "eq",
             "light_entities": current_entities,
@@ -553,8 +555,15 @@ class _ReactionEditingStepsMixin:
             )
 
         cfg["enabled"] = bool(resolved["enabled"])
+        cfg["reaction_type"] = "room_smart_lighting_assist"
         cfg["primary_signal_entities"] = list(resolved["primary_signal_entities"])
         cfg["primary_signal_name"] = str(resolved["primary_signal_name"])
+        cfg["indoor_lux_signal"] = str(resolved["primary_signal_name"])
+        cfg["lux_on_buckets"] = _lux_on_buckets_from_primary_bucket(str(resolved["primary_bucket"]))
+        cfg.setdefault("room_type", "generic")
+        cfg.setdefault("suppress_on_states", ["away", "vacation"])
+        cfg.setdefault("night_mode_states", ["sleeping"])
+        cfg.setdefault("timeout_mode", "learned")
         cfg["primary_bucket"] = str(resolved["primary_bucket"])
         cfg["primary_bucket_match_mode"] = str(resolved["primary_bucket_match_mode"])
         cfg.pop("primary_threshold", None)

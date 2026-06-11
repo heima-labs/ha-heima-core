@@ -338,14 +338,12 @@ def create_builtin_learning_plugin_registry(
                 "room_signal_assist",
                 "room_cooling_assist",
                 "room_air_quality_assist",
-                "room_darkness_lighting_assist",
-                "room_contextual_lighting_assist",
+                "room_smart_lighting_assist",
                 "room_vacancy_lighting_off",
             ),
             reaction_targets=(
                 "RoomSignalAssistReaction",
-                "RoomLightingAssistReaction",
-                "RoomContextualLightingAssistReaction",
+                "RoomSmartLightingAssistReaction",
                 "RoomLightingVacancyOffReaction",
             ),
             lifecycle_hooks=composite_room_assist_lifecycle_hooks(
@@ -363,22 +361,13 @@ def create_builtin_learning_plugin_registry(
                     flow_step_id="admin_authored_room_signal_assist",
                 ),
                 AdminAuthoredTemplateDescriptor(
-                    template_id="room.darkness_lighting_assist.basic",
-                    reaction_type="room_darkness_lighting_assist",
-                    title="Darkness Lighting Assist",
-                    description="Create a room lighting assist that reacts to darkness conditions.",
-                    config_schema_id="room_darkness_lighting_assist.basic.v1",
+                    template_id="room.smart_lighting_assist.basic",
+                    reaction_type="room_smart_lighting_assist",
+                    title="Smart Room Lighting",
+                    description="Create a room smart lighting assist driven by presence and lux.",
+                    config_schema_id="room_smart_lighting_assist.basic.v1",
                     implemented=True,
-                    flow_step_id="admin_authored_room_darkness_lighting_assist",
-                ),
-                AdminAuthoredTemplateDescriptor(
-                    template_id="room.contextual_lighting_assist.basic",
-                    reaction_type="room_contextual_lighting_assist",
-                    title="Contextual Room Lighting",
-                    description="Create a room lighting assist that selects profiles by time and context.",
-                    config_schema_id="room_contextual_lighting_assist.basic.v1",
-                    implemented=True,
-                    flow_step_id="admin_authored_room_contextual_lighting_assist",
+                    flow_step_id="admin_authored_room_smart_lighting_assist",
                 ),
                 AdminAuthoredTemplateDescriptor(
                     template_id="room.vacancy_lighting_off.basic",
@@ -391,20 +380,6 @@ def create_builtin_learning_plugin_registry(
                 ),
             ),
             improvement_proposals=(
-                ImprovementProposalDescriptor(
-                    source_reaction_type="room_darkness_lighting_assist",
-                    target_reaction_type="room_contextual_lighting_assist",
-                    improvement_reason="contextual_variation",
-                    acceptance_strategy="convert_replace",
-                    review_reason_en=(
-                        "Reason: darkness-triggered lighting varies consistently by time "
-                        "window or context."
-                    ),
-                    review_reason_it=(
-                        "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
-                        "oraria o contesto."
-                    ),
-                ),
                 ImprovementProposalDescriptor(
                     source_reaction_type="room_signal_assist",
                     target_reaction_type="room_cooling_assist",
