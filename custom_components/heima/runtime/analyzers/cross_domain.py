@@ -323,14 +323,6 @@ async def _analyze_definition(
                 ),
             )
         )
-        if definition.reaction_type == "room_darkness_lighting_assist":
-            contextual_candidate = _build_contextual_lighting_candidate(
-                room_id=room_id,
-                confirmed=confirmed,
-                quality_policy=quality_policy,
-            )
-            if contextual_candidate is not None:
-                proposals.append(contextual_candidate)
     return proposals
 
 
@@ -348,7 +340,7 @@ def _event_types_for_definition(
     definition: CompositeLearningPatternDefinition,
 ) -> tuple[str, ...]:
     reaction_type = str(definition.reaction_type or "").strip()
-    if reaction_type == "room_darkness_lighting_assist":
+    if reaction_type == "room_smart_lighting_assist":
         return ("room_signal_threshold", "lighting", "room_occupancy")
     if reaction_type == "room_vacancy_lighting_off":
         return ("room_occupancy", "lighting")
@@ -670,7 +662,7 @@ def _build_air_quality_assist_config(
     }
 
 
-def _build_darkness_lighting_assist_config(
+def _build_smart_lighting_assist_config(
     room_id: str,
     confirmed: list,
     quality_policy: CompositeProposalQualityPolicy,
@@ -681,16 +673,16 @@ def _build_darkness_lighting_assist_config(
         {step["entity_id"] for step in entity_steps if step.get("entity_id")}
     )
     return {
-        "reaction_type": "room_darkness_lighting_assist",
+        "reaction_type": "room_smart_lighting_assist",
         "room_id": room_id,
+        "indoor_lux_signal": "room_lux",
+        "lux_on_buckets": ["dark", "dim"],
+        "room_type": "generic",
+        "suppress_on_states": ["away", "vacation"],
+        "night_mode_states": ["sleeping"],
+        "timeout_mode": "learned",
         "primary_signal_entities": lux_entities,
-        "primary_bucket": "dim",
-        "primary_bucket_match_mode": "lte",
         "primary_signal_name": "room_lux",
-        "corroboration_signal_entities": [],
-        "corroboration_signal_name": "corroboration",
-        "correlation_window_s": _CORRELATION_WINDOW_S,
-        "followup_window_s": _FOLLOWUP_WINDOW_S,
         "entity_steps": entity_steps,
         "episodes_observed": len(confirmed),
         "observed_followup_entities": followup_entities,
@@ -1063,10 +1055,10 @@ _ROOM_AIR_QUALITY_PATTERN = CompositeLearningPatternDefinition(
 )
 
 
-_ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
-    pattern_id="room_darkness_lighting_assist",
+_ROOM_SMART_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
+    pattern_id="room_smart_lighting_assist",
     analyzer_id="CompositePatternCatalogAnalyzer",
-    reaction_type="room_darkness_lighting_assist",
+    reaction_type="room_smart_lighting_assist",
     fingerprint_key="room_lux_low",
     matcher_spec=CompositePatternSpec(
         primary=CompositeSignalSpec(
@@ -1090,7 +1082,7 @@ _ROOM_DARKNESS_LIGHTING_PATTERN = CompositeLearningPatternDefinition(
     min_weeks=_MIN_WEEKS,
     description_builder=_describe_darkness_lighting,
     suggested_config_builder=lambda room_id, confirmed, quality_policy: (
-        _build_darkness_lighting_assist_config(room_id, confirmed, quality_policy)
+        _build_smart_lighting_assist_config(room_id, confirmed, quality_policy)
     ),
     confidence_builder=lambda confirmed, quality_policy: _composite_confidence(
         confirmed,
@@ -1139,7 +1131,7 @@ DEFAULT_COMPOSITE_PATTERN_CATALOG: tuple[CompositeLearningPatternDefinition, ...
     _ROOM_SIGNAL_ASSIST_PATTERN,
     _ROOM_COOLING_PATTERN,
     _ROOM_AIR_QUALITY_PATTERN,
-    _ROOM_DARKNESS_LIGHTING_PATTERN,
+    _ROOM_SMART_LIGHTING_PATTERN,
     _ROOM_VACANCY_LIGHTING_OFF_PATTERN,
 )
 

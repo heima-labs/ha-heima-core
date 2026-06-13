@@ -103,30 +103,86 @@ AND NOT manual_on_hold
 
 ## Manual override
 
-### Detection
+### Detection — pending-apply records (primary)
 
-HA state changes on entities tracked by this reaction are inspected at runtime. A change is
-classified as **manual** if its `context.parent_id` does not match a call issued by this
-reaction instance.
+HA does not reliably propagate `context.parent_id` to the final state change of a light entity:
+many integrations emit the state change with their own context, breaking context-chain detection.
+The primary mechanism is therefore **pending apply records**, which do not depend on context
+propagation.
 
-### On manual OFF
+`PendingApply` carries the expected outcome of a single service call:
 
-When a manual `off` is received on any entity in the active profile's `entity_steps`:
+```python
+@dataclass
+class PendingApply:
+    expected_state: str          # "on" | "off"
+    timestamp: float             # time.monotonic()
+    ttl: float = 5.0             # seconds; covers HA async propagation latency
+    expected_brightness: int | None = None
+    expected_color_temp: int | None = None
+```
+
+`expected_brightness` and `expected_color_temp` are set when the profile step includes those
+attributes; they are `None` otherwise (attribute not verified in match).
+
+Match on `STATE_CHANGED` for a tracked entity:
+
+```
+if entity_id in pending_applies:
+    p = pending_applies[entity_id]
+    within_ttl = (now() - p.timestamp) < p.ttl
+    state_ok   = new_state.state == p.expected_state
+    bri_ok     = p.expected_brightness is None or
+                 |new_attrs.brightness - p.expected_brightness| ≤ 5
+    ct_ok      = p.expected_color_temp is None or
+                 |new_attrs.color_temp_kelvin - p.expected_color_temp| ≤ 100
+    if within_ttl AND state_ok AND bri_ok AND ct_ok:
+        → heima-owned: consume record, ignore
+    else:
+        → external: route to override logic
+else:
+    → external: route to override logic
+```
+
+Any change not matched — physical switch, another automation, scene, script, external
+integration, other Heima reaction — is classified as **external**. The criterion remains
+"not emitted by this reaction instance."
+
+`issued_context_ids`, `ApplyStep.context_id`, and the `LightingRecorderBehavior` TTL path
+are **not** used for override detection.
+
+### On external OFF
+
+When an external `off` is received on any entity in the active profile's `entity_steps`:
 - cancel any active two-step turn-off sequence
 - set `manual_override_active = True`
 - turn-on condition fails until the override clears
 
 `manual_override_active` clears on whichever comes first:
-- `manual_override_window_min` expires (default 30 min; set to 0 to disable timer)
+- `manual_override_window_min` expires (default 30 min; set to 0 to rely on presence cycle only)
 - presence is lost **and** subsequently re-detected (room fully vacated and re-entered)
 
-### On manual ON
+### On external ON
 
-When a manual `on` is received on any entity while the reaction is active or would be active:
+When an external `on` is received on any entity while the reaction is active or would be active:
 - set `manual_on_hold = True`
-- profile re-application is suppressed while `manual_on_hold` is true (user's choice respected for the entire session)
+- profile re-application is suppressed while `manual_on_hold` is true
 
 `manual_on_hold` clears **only** on presence lost → re-detected. No timer fallback.
+
+### Implementation contract
+
+- `RoomSmartLightingAssistReaction` owns `pending_applies: dict[str, PendingApply]` and all
+  override state (`manual_override_active`, `manual_on_hold`)
+- The reaction exposes `register_pending_apply_for_step(step: ApplyStep)` — called by the
+  execution layer **after** apply-plan filtering and immediately before `async_call`; not inside
+  `evaluate()`. This prevents stale pending records from steps that are later blocked by
+  constraints or guards.
+- The reaction exposes `handle_external_light_change(entity_id, new_state)`, called by a
+  coordinator-level `STATE_CHANGED` dispatcher
+- The dispatcher filters events to entities listed in active smart-lighting reaction profiles
+  before routing them; reactions are not subscribed directly to HA events
+- `ApplyStep` requires no `context_id` field for this mechanism
 
 ### Config field
 
@@ -177,12 +233,16 @@ Profiles should be authored following this guidance:
 | house_state | Color temp | Intensity |
 |---|---|---|
 | `working` | cold (4000–5500 K) | high (70–100 %) |
-| `relax` + media active | warm (2700–3000 K) | very low (5–20 %) |
-| `relax` no media | warm (2700–3000 K) | medium-low (30–60 %) |
+| `relax` | warm (2700–3000 K) | very low (5–20 %) |
 | `sleeping` (night profile) | very warm (2200–2700 K) | very low (5–15 %) |
 | `home` morning | neutral-cool (3500–4500 K) | medium (50–80 %) |
 | `home` evening | warm (2700–3000 K) | medium (50–70 %) |
 | `guest` | neutral (3000–3500 K) | medium-high (60–80 %) |
+
+Note: `house_state = relax` implies by definition that a media player is active somewhere in the
+house. Distinguishing "media active in this specific room" vs. "media active in another room"
+(`room_relax_media_active`) is not yet exposed as a profile selector and is deferred to a future
+enhancement.
 
 Brightness: if `outdoor_lux_signal` configured, modulate the profile brightness using the
 outdoor lux bucket scale; otherwise apply static brightness from the active profile or

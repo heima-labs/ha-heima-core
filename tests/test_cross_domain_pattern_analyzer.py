@@ -439,7 +439,7 @@ async def test_catalog_analyzer_emits_room_air_quality_assist_proposal():
     assert diagnostics["observed_followup_entities"] == ["fan.office_ventilation"]
 
 
-async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
+async def test_catalog_analyzer_emits_room_smart_lighting_assist_proposal():
     analyzer = CompositePatternCatalogAnalyzer()
     base = datetime(2026, 3, 1, 18, 0, tzinfo=UTC)
     events = []
@@ -467,17 +467,17 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         )
 
     proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
-    darkness = [p for p in proposals if p.reaction_type == "room_darkness_lighting_assist"]
-    assert len(darkness) == 1
-    proposal = darkness[0]
+    smart = [p for p in proposals if p.reaction_type == "room_smart_lighting_assist"]
+    assert len(smart) == 1
+    proposal = smart[0]
     assert proposal.description.startswith("living: darkness lighting assist")
-    assert proposal.suggested_reaction_config["reaction_type"] == "room_darkness_lighting_assist"
+    assert proposal.suggested_reaction_config["reaction_type"] == "room_smart_lighting_assist"
     assert proposal.suggested_reaction_config["room_id"] == "living"
+    assert proposal.suggested_reaction_config["indoor_lux_signal"] == "room_lux"
+    assert proposal.suggested_reaction_config["lux_on_buckets"] == ["dark", "dim"]
     assert proposal.suggested_reaction_config["primary_signal_entities"] == [
         "sensor.living_room_lux"
     ]
-    assert proposal.suggested_reaction_config["primary_bucket"] == "dim"
-    assert proposal.suggested_reaction_config["primary_bucket_match_mode"] == "lte"
     assert proposal.suggested_reaction_config["entity_steps"] == [
         {
             "entity_id": "light.living_main",
@@ -488,12 +488,12 @@ async def test_catalog_analyzer_emits_room_darkness_lighting_assist_proposal():
         }
     ]
     diagnostics = proposal.suggested_reaction_config["learning_diagnostics"]
-    assert diagnostics["pattern_id"] == "room_darkness_lighting_assist"
+    assert diagnostics["pattern_id"] == "room_smart_lighting_assist"
     assert diagnostics["primary_signal"] == "room_lux"
     assert diagnostics["followup_signal"] == "lighting_replay"
 
 
-async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darkness_variation():
+async def test_catalog_analyzer_emits_smart_lighting_candidate_from_darkness_variation():
     analyzer = CompositePatternCatalogAnalyzer()
     base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
     events = []
@@ -549,23 +549,29 @@ async def test_catalog_analyzer_emits_contextual_lighting_candidate_from_darknes
         )
 
     proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
-    contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
-    assert len(contextual) == 1
-    proposal = contextual[0]
+    smart = [p for p in proposals if p.reaction_type == "room_smart_lighting_assist"]
+    assert len(smart) == 1
+    proposal = smart[0]
     cfg = proposal.suggested_reaction_config
     assert cfg["room_id"] == "studio"
-    assert cfg["primary_signal_name"] == "room_lux"
-    assert cfg["primary_bucket"] == "dim"
-    assert cfg["primary_bucket_match_mode"] == "lte"
-    assert sorted(cfg["profiles"]) == ["evening_relax", "workday_focus"]
-    assert cfg["default_profile"] in {"evening_relax", "workday_focus"}
+    assert cfg["indoor_lux_signal"] == "room_lux"
+    assert cfg["lux_on_buckets"] == ["dark", "dim"]
+    assert cfg["entity_steps"] == [
+        {
+            "entity_id": "light.studio_main",
+            "action": "on",
+            "brightness": 180,
+            "color_temp_kelvin": 4300,
+            "rgb_color": None,
+        }
+    ]
     diagnostics = cfg["learning_diagnostics"]
-    assert diagnostics["pattern_id"] == "room_contextual_lighting_assist"
-    assert diagnostics["contextual_profiles"] == ["evening_relax", "workday_focus"]
-    assert "time_window" in diagnostics["contextual_variation_dimensions"]
+    assert diagnostics["pattern_id"] == "room_smart_lighting_assist"
+    assert diagnostics["primary_signal"] == "room_lux"
+    assert diagnostics["followup_signal"] == "lighting_replay"
 
 
-async def test_cross_domain_analyzer_contextual_upgrade_prefers_on_steps_over_cleanup_off_events():
+async def test_cross_domain_analyzer_smart_lighting_prefers_on_steps_over_cleanup_off_events():
     analyzer = CompositePatternCatalogAnalyzer()
     base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
     events = []
@@ -641,11 +647,10 @@ async def test_cross_domain_analyzer_contextual_upgrade_prefers_on_steps_over_cl
         )
 
     proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
-    contextual = [p for p in proposals if p.reaction_type == "room_contextual_lighting_assist"]
-    assert len(contextual) == 1
-    cfg = contextual[0].suggested_reaction_config
-    assert cfg["profiles"]["workday_focus"]["entity_steps"][0]["action"] == "on"
-    assert cfg["profiles"]["evening_relax"]["entity_steps"][0]["action"] == "on"
+    smart = [p for p in proposals if p.reaction_type == "room_smart_lighting_assist"]
+    assert len(smart) == 1
+    cfg = smart[0].suggested_reaction_config
+    assert cfg["entity_steps"][0]["action"] == "on"
 
 
 async def test_cross_domain_analyzer_does_not_treat_humidity_state_changes_as_primary_signal():
@@ -744,15 +749,15 @@ async def test_catalog_analyzer_does_not_treat_lux_state_changes_as_primary_sign
         )
 
     proposals = await _analyze_proposals(analyzer, _StoreStub(events))  # type: ignore[arg-type]
-    assert all(proposal.reaction_type != "room_darkness_lighting_assist" for proposal in proposals)
+    assert all(proposal.reaction_type != "room_smart_lighting_assist" for proposal in proposals)
 
 
-async def test_room_darkness_pattern_uses_only_canonical_event_queries():
+async def test_room_smart_lighting_pattern_uses_only_canonical_event_queries():
     store = _StoreStub([])
 
     confirmed = await rooms_with_confirmed_pattern_evidence(
         store,  # type: ignore[arg-type]
-        pattern_id="room_darkness_lighting_assist",
+        pattern_id="room_smart_lighting_assist",
     )
 
     assert confirmed == set()
@@ -978,14 +983,14 @@ def test_default_composite_pattern_catalog_exposes_current_v1_patterns():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_darkness_lighting_assist",
+        "room_smart_lighting_assist",
         "room_vacancy_lighting_off",
     }
     assert reaction_types == {
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_darkness_lighting_assist",
+        "room_smart_lighting_assist",
         "room_vacancy_lighting_off",
     }
 
@@ -1125,7 +1130,7 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_darkness_lighting_assist",
+        "room_smart_lighting_assist",
     }
     diagnostics_by_slot = {
         (
@@ -1137,4 +1142,4 @@ async def test_catalog_analyzer_emits_both_current_v1_patterns():
     assert diagnostics_by_slot[("room_signal_assist", "bathroom")]["room_id"] == "bathroom"
     assert diagnostics_by_slot[("room_cooling_assist", "studio")]["room_id"] == "studio"
     assert diagnostics_by_slot[("room_air_quality_assist", "office")]["room_id"] == "office"
-    assert diagnostics_by_slot[("room_darkness_lighting_assist", "living")]["room_id"] == "living"
+    assert diagnostics_by_slot[("room_smart_lighting_assist", "living")]["room_id"] == "living"

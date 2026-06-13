@@ -1174,7 +1174,7 @@ def _composite_example_label(
             if primary_signal_name
             else f"Assist {room_id}"
         )
-    if reaction_type == "room_darkness_lighting_assist":
+    if reaction_type == "room_smart_lighting_assist":
         return (
             f"Luci {room_id} · {primary_signal_name}" if primary_signal_name else f"Luci {room_id}"
         )

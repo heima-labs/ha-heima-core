@@ -57,14 +57,12 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_darkness_lighting_assist",
-        "room_contextual_lighting_assist",
+        "room_smart_lighting_assist",
         "room_vacancy_lighting_off",
     )
     assert descriptors[3].reaction_targets == (
         "RoomSignalAssistReaction",
-        "RoomLightingAssistReaction",
-        "RoomContextualLightingAssistReaction",
+        "RoomSmartLightingAssistReaction",
         "RoomLightingVacancyOffReaction",
     )
     assert descriptors[0].supports_admin_authored is False
@@ -74,24 +72,10 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
     assert descriptors[3].supports_admin_authored is True
     assert tuple(item.template_id for item in descriptors[3].admin_authored_templates) == (
         "room.signal_assist.basic",
-        "room.darkness_lighting_assist.basic",
-        "room.contextual_lighting_assist.basic",
+        "room.smart_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
     )
     assert descriptors[3].improvement_proposals == (
-        type(descriptors[3].improvement_proposals[0])(
-            source_reaction_type="room_darkness_lighting_assist",
-            target_reaction_type="room_contextual_lighting_assist",
-            improvement_reason="contextual_variation",
-            acceptance_strategy="convert_replace",
-            review_reason_en=(
-                "Reason: darkness-triggered lighting varies consistently by time window or context."
-            ),
-            review_reason_it=(
-                "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
-                "oraria o contesto."
-            ),
-        ),
         type(descriptors[3].improvement_proposals[0])(
             source_reaction_type="room_signal_assist",
             target_reaction_type="room_cooling_assist",
@@ -189,14 +173,12 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             "room_signal_assist",
             "room_cooling_assist",
             "room_air_quality_assist",
-            "room_darkness_lighting_assist",
-            "room_contextual_lighting_assist",
+            "room_smart_lighting_assist",
             "room_vacancy_lighting_off",
         ],
         "reaction_targets": [
             "RoomSignalAssistReaction",
-            "RoomLightingAssistReaction",
-            "RoomContextualLightingAssistReaction",
+            "RoomSmartLightingAssistReaction",
             "RoomLightingVacancyOffReaction",
         ],
         "has_lifecycle_hooks": True,
@@ -212,22 +194,13 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
                 "flow_step_id": "admin_authored_room_signal_assist",
             },
             {
-                "template_id": "room.darkness_lighting_assist.basic",
-                "reaction_type": "room_darkness_lighting_assist",
-                "title": "Darkness Lighting Assist",
-                "description": "Create a room lighting assist that reacts to darkness conditions.",
-                "config_schema_id": "room_darkness_lighting_assist.basic.v1",
+                "template_id": "room.smart_lighting_assist.basic",
+                "reaction_type": "room_smart_lighting_assist",
+                "title": "Smart Room Lighting",
+                "description": "Create a room smart lighting assist driven by presence and lux.",
+                "config_schema_id": "room_smart_lighting_assist.basic.v1",
                 "implemented": True,
-                "flow_step_id": "admin_authored_room_darkness_lighting_assist",
-            },
-            {
-                "template_id": "room.contextual_lighting_assist.basic",
-                "reaction_type": "room_contextual_lighting_assist",
-                "title": "Contextual Room Lighting",
-                "description": "Create a room lighting assist that selects profiles by time and context.",
-                "config_schema_id": "room_contextual_lighting_assist.basic.v1",
-                "implemented": True,
-                "flow_step_id": "admin_authored_room_contextual_lighting_assist",
+                "flow_step_id": "admin_authored_room_smart_lighting_assist",
             },
             {
                 "template_id": "room.vacancy_lighting_off.basic",
@@ -240,20 +213,6 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             },
         ],
         "improvement_proposals": [
-            {
-                "source_reaction_type": "room_darkness_lighting_assist",
-                "target_reaction_type": "room_contextual_lighting_assist",
-                "improvement_reason": "contextual_variation",
-                "acceptance_strategy": "convert_replace",
-                "review_reason_en": (
-                    "Reason: darkness-triggered lighting varies consistently by time "
-                    "window or context."
-                ),
-                "review_reason_it": (
-                    "Motivo: l'uso delle luci al buio varia in modo stabile per fascia "
-                    "oraria o contesto."
-                ),
-            },
             {
                 "source_reaction_type": "room_signal_assist",
                 "target_reaction_type": "room_cooling_assist",
@@ -298,16 +257,14 @@ def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
     ]
     assert [t.template_id for t in registry.admin_authored_templates()] == [
         "room.signal_assist.basic",
-        "room.darkness_lighting_assist.basic",
-        "room.contextual_lighting_assist.basic",
+        "room.smart_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
         "scheduled_routine.basic",
         "security.vacation_presence_simulation.basic",
     ]
     assert [t.template_id for t in registry.admin_authored_templates(implemented_only=True)] == [
         "room.signal_assist.basic",
-        "room.darkness_lighting_assist.basic",
-        "room.contextual_lighting_assist.basic",
+        "room.smart_lighting_assist.basic",
         "room.vacancy_lighting_off.basic",
         "scheduled_routine.basic",
         "security.vacation_presence_simulation.basic",
@@ -318,18 +275,18 @@ def test_builtin_learning_plugin_registry_exposes_improvement_descriptor_lookup(
     registry = create_builtin_learning_plugin_registry()
 
     descriptor = registry.improvement_descriptor_for(
-        target_reaction_type="room_contextual_lighting_assist",
-        source_reaction_type="room_darkness_lighting_assist",
-        improvement_reason="contextual_variation",
+        target_reaction_type="room_cooling_assist",
+        source_reaction_type="room_signal_assist",
+        improvement_reason="cooling_specialization",
     )
 
     assert descriptor is not None
     assert descriptor.acceptance_strategy == "convert_replace"
     assert descriptor.review_reason_en == (
-        "Reason: darkness-triggered lighting varies consistently by time window or context."
+        "Reason: the learned signal-followup pattern is consistently cooling-specific and is better represented as a cooling assist."
     )
     assert descriptor.review_reason_it == (
-        "Motivo: l'uso delle luci al buio varia in modo stabile per fascia oraria o contesto."
+        "Motivo: il pattern segnale-followup osservato e' stabilmente specifico del raffrescamento ed e' espresso meglio come cooling assist."
     )
     cooling = registry.improvement_descriptor_for(
         target_reaction_type="room_cooling_assist",
@@ -445,7 +402,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     registry = create_builtin_learning_plugin_registry()
 
     assert registry.lifecycle_hooks_for("presence_preheat") is not None
-    assert registry.lifecycle_hooks_for("room_contextual_lighting_assist") is not None
+    assert registry.lifecycle_hooks_for("room_smart_lighting_assist") is not None
     assert registry.lifecycle_hooks_for("heating_preference") is not None
     assert registry.lifecycle_hooks_for("heating_eco") is not None
     assert registry.lifecycle_hooks_for("context_conditioned_lighting_scene") is not None

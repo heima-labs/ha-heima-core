@@ -19,7 +19,6 @@ from custom_components.heima.runtime.reactions.heating import (
     HeatingEcoReaction,
     HeatingPreferenceReaction,
 )
-from custom_components.heima.runtime.reactions.lighting_assist import RoomLightingAssistReaction
 from custom_components.heima.runtime.reactions.presence import PresencePatternReaction
 from custom_components.heima.runtime.reactions.scheduled_routine import (
     ScheduledRoutineReaction,
@@ -33,6 +32,9 @@ from custom_components.heima.runtime.reactions.signal_assist import (
     build_room_cooling_assist_reaction,
     build_room_signal_assist_reaction,
     normalize_room_signal_assist_config,
+)
+from custom_components.heima.runtime.reactions.smart_lighting_assist import (
+    RoomSmartLightingAssistReaction,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
@@ -55,6 +57,7 @@ def _make_engine(options: dict | None = None) -> HeimaEngine:
     engine._muted_reactions = set()
     engine._configured_reaction_ids = set()
     engine._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
+    engine._events_domain = MagicMock()
     return engine
 
 
@@ -111,8 +114,7 @@ def test_builtin_reaction_plugin_registry_exposes_current_rebuildable_plugins():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_contextual_lighting_assist",
-        "room_darkness_lighting_assist",
+        "room_smart_lighting_assist",
         "room_vacancy_lighting_off",
         "scheduled_routine",
         "alarm_state_action",
@@ -133,8 +135,7 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
         "room_signal_assist",
         "room_cooling_assist",
         "room_air_quality_assist",
-        "room_contextual_lighting_assist",
-        "room_darkness_lighting_assist",
+        "room_smart_lighting_assist",
         "room_vacancy_lighting_off",
         "scheduled_routine",
         "alarm_state_action",
@@ -149,14 +150,10 @@ def test_builtin_reaction_plugin_descriptors_expose_minimal_metadata():
     assert by_type["alarm_state_action"].supports_normalizer is True
     assert by_type["scheduled_routine"].supported_config_contracts == ("scheduled_routine",)
     assert by_type["scheduled_routine"].supports_normalizer is True
-    assert by_type["room_darkness_lighting_assist"].supported_config_contracts == (
-        "room_darkness_lighting_assist",
+    assert by_type["room_smart_lighting_assist"].supported_config_contracts == (
+        "room_smart_lighting_assist",
     )
-    assert by_type["room_darkness_lighting_assist"].supports_normalizer is False
-    assert by_type["room_contextual_lighting_assist"].supported_config_contracts == (
-        "room_contextual_lighting_assist",
-    )
-    assert by_type["room_contextual_lighting_assist"].supports_normalizer is False
+    assert by_type["room_smart_lighting_assist"].supports_normalizer is False
     assert by_type["room_air_quality_assist"].supported_config_contracts == (
         "room_air_quality_assist",
     )
@@ -188,7 +185,7 @@ def test_presence_reaction_built_and_registered():
     assert "proposal-abc" in engine._configured_reaction_ids
 
 
-def test_contextual_lighting_reaction_built_and_registered():
+def test_removed_contextual_lighting_reaction_emits_config_error():
     engine = _make_engine(
         options={
             "rooms": [
@@ -231,9 +228,11 @@ def test_contextual_lighting_reaction_built_and_registered():
 
     engine._rebuild_configured_reactions()
 
-    assert len(engine._reactions) == 1
-    assert engine._reactions[0].reaction_id == "contextual-1"
-    assert "contextual-1" in engine._configured_reaction_ids
+    assert engine._reactions == []
+    assert "contextual-1" not in engine._configured_reaction_ids
+    event = engine._events_domain.queue_event.call_args.args[0]
+    assert event.type == "system.config_error"
+    assert event.context["reaction_type"] == "room_contextual_lighting_assist"
 
 
 def test_context_conditioned_lighting_reaction_built_and_registered():
@@ -2397,7 +2396,7 @@ def test_room_signal_assist_reaction_normalizer_prefers_generic_fields_over_lega
     assert normalized["corroboration_threshold_mode"] == "drop"
 
 
-def test_room_lighting_assist_reaction_built_and_registered():
+def test_removed_room_lighting_assist_reaction_emits_config_error():
     engine = _make_engine(
         options={
             "reactions": {
@@ -2425,10 +2424,58 @@ def test_room_lighting_assist_reaction_built_and_registered():
 
     engine._rebuild_configured_reactions()
 
+    assert engine._reactions == []
+    assert "la1" not in engine._configured_reaction_ids
+    event = engine._events_domain.queue_event.call_args.args[0]
+    assert event.type == "system.config_error"
+    assert event.context["reaction_type"] == "room_darkness_lighting_assist"
+
+
+def test_room_smart_lighting_assist_reaction_built_and_registered():
+    engine = _make_engine(
+        options={
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "signals": [
+                        {
+                            "signal_name": "room_lux",
+                            "buckets": [
+                                {"label": "dark"},
+                                {"label": "dim"},
+                                {"label": "bright"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "reactions": {
+                "configured": {
+                    "sla1": {
+                        "reaction_type": "room_smart_lighting_assist",
+                        "room_id": "living",
+                        "indoor_lux_signal": "room_lux",
+                        "lux_on_buckets": ["dark", "dim"],
+                        "entity_steps": [
+                            {
+                                "entity_id": "light.living_main",
+                                "action": "on",
+                                "brightness": 144,
+                                "color_temp_kelvin": 2900,
+                            }
+                        ],
+                    }
+                }
+            },
+        }
+    )
+
+    engine._rebuild_configured_reactions()
+
     assert len(engine._reactions) == 1
     reaction = engine._reactions[0]
-    assert isinstance(reaction, RoomLightingAssistReaction)
-    assert reaction.reaction_id == "la1"
+    assert isinstance(reaction, RoomSmartLightingAssistReaction)
+    assert reaction.reaction_id == "sla1"
 
 
 def test_rebuild_clears_removed_proposals():

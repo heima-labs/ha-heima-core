@@ -294,8 +294,25 @@ class _ReactionAdminAuthoredStepsMixin:
     async def async_step_admin_authored_room_darkness_lighting_assist(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
-        """Create a bounded admin-authored room darkness lighting assist proposal."""
-        template = self._admin_authored_template("room.darkness_lighting_assist.basic")
+        """Legacy alias for the Phase AB smart lighting template."""
+        return await self.async_step_admin_authored_room_smart_lighting_assist(user_input)
+
+    async def async_step_admin_authored_room_smart_lighting_assist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Create a bounded admin-authored room smart lighting assist proposal."""
+        return await self._async_step_admin_authored_room_smart_lighting_assist_form(
+            user_input=user_input,
+            step_id="admin_authored_room_smart_lighting_assist",
+        )
+
+    async def _async_step_admin_authored_room_smart_lighting_assist_form(
+        self,
+        *,
+        user_input: dict[str, Any] | None,
+        step_id: str,
+    ) -> "FlowResult":
+        template = self._admin_authored_template("room.smart_lighting_assist.basic")
         room_ids = self._room_ids()
         if template is None or not room_ids:
             return await self.async_step_init()
@@ -314,7 +331,7 @@ class _ReactionAdminAuthoredStepsMixin:
 
         if user_input is None:
             return self._show_room_darkness_lighting_editor(
-                step_id="admin_authored_room_darkness_lighting_assist",
+                step_id=step_id,
                 defaults=defaults,
                 template_title=template.title,
                 template_description=template.description,
@@ -336,7 +353,7 @@ class _ReactionAdminAuthoredStepsMixin:
 
         if errors:
             return self._show_room_darkness_lighting_editor(
-                step_id="admin_authored_room_darkness_lighting_assist",
+                step_id=step_id,
                 defaults=current_input,
                 errors=errors,
                 template_title=template.title,
@@ -347,7 +364,7 @@ class _ReactionAdminAuthoredStepsMixin:
                 include_delete=False,
             )
 
-        proposal = self._build_admin_authored_room_darkness_lighting_assist_proposal(
+        proposal = self._build_admin_authored_room_smart_lighting_assist_proposal(
             room_id=room_id,
             primary_signal_entities=resolved["primary_signal_entities"],
             primary_signal_name=str(resolved["primary_signal_name"]),
@@ -360,7 +377,7 @@ class _ReactionAdminAuthoredStepsMixin:
         )
         if self._admin_authored_identity_conflicts(proposal):
             return self._show_room_darkness_lighting_editor(
-                step_id="admin_authored_room_darkness_lighting_assist",
+                step_id=step_id,
                 defaults=current_input,
                 errors={"base": "duplicate"},
                 template_title=template.title,
@@ -373,7 +390,7 @@ class _ReactionAdminAuthoredStepsMixin:
 
         if self._has_redacted_payload(proposal.suggested_reaction_config):
             return self._show_room_darkness_lighting_editor(
-                step_id="admin_authored_room_darkness_lighting_assist",
+                step_id=step_id,
                 defaults=current_input,
                 errors={"base": "redacted_payload"},
                 template_title=template.title,
@@ -390,6 +407,7 @@ class _ReactionAdminAuthoredStepsMixin:
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
         """Create a contextual lighting assist via guided inputs + JSON policy."""
+        return await self.async_step_admin_authored_room_smart_lighting_assist(user_input)
         template = self._admin_authored_template("room.contextual_lighting_assist.basic")
         room_ids = self._room_ids()
         rooms = self._rooms()
@@ -494,6 +512,7 @@ class _ReactionAdminAuthoredStepsMixin:
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
         """Edit the generated contextual lighting JSON before persisting it."""
+        return await self.async_step_init()
         seed = dict(getattr(self, "_pending_contextual_lighting_seed", {}) or {})
         if not seed:
             return await self.async_step_init()

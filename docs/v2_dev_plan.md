@@ -2454,12 +2454,28 @@ needs_apply
 AND NOT manual_on_hold
 ```
 
-**Manual override:**
+**Manual override — pending-apply detection:**
 
-- **Manual OFF** (context.parent_id not from this reaction): set `manual_override_active = True`.
-  Clears on: `manual_override_window_min` expiry (default 30 min) OR presence lost → re-detected.
-- **Manual ON**: set `manual_on_hold = True`.
-  Clears **only** on presence lost → re-detected (no timer — user's choice respected for the whole session).
+HA does not reliably propagate `context.parent_id` through light integrations. Primary mechanism:
+**pending apply records**. `PendingApply(expected_state, timestamp, ttl=5s,
+expected_brightness, expected_color_temp)`. Match is fuzzy: state + brightness ±5 + color_temp ±100K.
+`register_pending_apply_for_step(step)` is called by the execution layer after apply-plan
+filtering and immediately before `async_call` — NOT inside `evaluate()` — to avoid stale records
+for steps blocked by constraints. `issued_context_ids` and `ApplyStep.context_id` are not used.
+The execution layer identifies the originating reaction from `ApplyStep.source` (`reaction:<id>`)
+using the existing `_reaction_from_step_source(step)` lookup; no dedicated `ApplyStep.reaction_id`
+field is required, and the lookup must not be inferred from entity ownership alone.
+For `light.turn_off`, `expected_brightness` and `expected_color_temp` remain `None`; many HA
+integrations keep stale attributes or remove them after off. If multiple smart-lighting steps target
+the same entity inside the TTL window, the latest pending record overwrites the previous one
+(`last command wins`).
+
+- **External OFF**: set `manual_override_active = True`. Clears on `manual_override_window_min`
+  expiry (default 30 min) OR presence lost → re-detected.
+- **External ON**: set `manual_on_hold = True`. Clears **only** on presence lost → re-detected.
+- `LightingRecorderBehavior` TTL provenance is NOT used for override detection (diagnostic only).
+- Coordinator-level dispatcher routes `STATE_CHANGED` to `handle_external_light_change()` on
+  the reaction; reactions do not subscribe to HA events directly.
 
 `NIGHT_SUPPRESS_ROOM_TYPES` (sleeping → suppress):
 `camera_da_letto`, `cameretta_bambini`, `studio`, `soggiorno`, `sala_da_pranzo`, `tinello`,
@@ -2604,10 +2620,19 @@ If `room_type` is not specified in the rule config, `generic` defaults apply.
 - [ ] `timeout_mode = learned`: ring buffer per room; p25 used as fast-exit threshold after 20
   visits; fallback to fixed before that
 - [ ] All room_type keys in catalog resolve to correct default timeouts and night-mode behavior
-- [ ] Manual OFF (non-automation context): `manual_override_active` set; turn-on suppressed until
-  window expires or presence cycle clears it
-- [ ] Manual ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected
+- [ ] `STATE_CHANGED` matched via `pending_applies`; heima-owned if within TTL, state matches, and
+  brightness/color_temp within tolerance (±5 / ±100 K); consumed after match
+- [ ] `light.turn_off` pending records do not verify brightness/color temperature attributes
+- [ ] Multiple pending records for the same entity use `last command wins` overwrite semantics
+- [ ] `register_pending_apply_for_step(step)` called after apply-plan filtering, immediately before
+  `async_call`; not inside `evaluate()` (prevents stale records for constraint-blocked steps)
+- [ ] Pending registration uses `ApplyStep.source = "reaction:<id>"` and
+  `_reaction_from_step_source(step)`; no entity-only lookup when registering the pending record
+- [ ] External OFF (switch, other automation, script, scene): `manual_override_active` set; turn-on
+  suppressed until window expires or presence cycle clears it
+- [ ] External ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected
 - [ ] Manual override window configurable via `manual_override_window_min`; 0 disables timer
+- [ ] `LightingRecorderBehavior` TTL path not involved in override detection
 - [ ] All existing tests pass
 
 ---

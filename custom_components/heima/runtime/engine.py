@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.util import dt as dt_util
 
@@ -103,6 +103,11 @@ from .snapshot_buffer import SnapshotBuffer
 from .state_store import CanonicalState
 
 _LOGGER = logging.getLogger(__name__)
+
+_REMOVED_REACTION_TYPES = {
+    "room_darkness_lighting_assist",
+    "room_contextual_lighting_assist",
+}
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 
@@ -294,6 +299,15 @@ class HeimaEngine:
             return None
         return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
 
+    def _register_pending_apply_for_step(self, step: ApplyStep) -> None:
+        """Register smart-lighting pending apply provenance for a step about to execute."""
+        reaction = self._reaction_from_step_source(step)
+        if reaction is None:
+            return
+        register_pending = getattr(reaction, "register_pending_apply_for_step", None)
+        if callable(register_pending):
+            register_pending(step)
+
     def _reaction_type_for_reaction_id(self, reaction_id: str) -> str | None:
         provenance = self._configured_reaction_metadata(reaction_id)
         reaction_type = provenance.get("reaction_type")
@@ -313,6 +327,26 @@ class HeimaEngine:
                 if isinstance(bucket, str) and bucket.strip():
                     return bucket.strip()
         return None
+
+    def handle_smart_lighting_state_changed(self, event: Event) -> None:
+        """Route light state changes to smart lighting reactions for override handling."""
+        entity_id = str(event.data.get("entity_id") or "").strip()
+        if not entity_id.startswith("light."):
+            return
+        new_state = event.data.get("new_state")
+        state_value = str(getattr(new_state, "state", "") or "").strip().lower()
+        if state_value not in {"on", "off"}:
+            return
+        for reaction in self._reactions:
+            tracks = getattr(reaction, "tracks_light_entity", None)
+            if not callable(tracks) or not bool(tracks(entity_id)):
+                continue
+            consume_pending = getattr(reaction, "consume_pending_apply", None)
+            if callable(consume_pending) and bool(consume_pending(entity_id, new_state)):
+                continue
+            handle_external = getattr(reaction, "handle_external_light_change", None)
+            if callable(handle_external):
+                handle_external(entity_id, state_value)
 
     def signal_burst_recent(self, room_id: str, signal_name: str, *, window_s: int) -> bool:
         """Return whether a canonical burst was observed recently for a room signal."""
@@ -644,6 +678,27 @@ class HeimaEngine:
             if not bool(dict(cfg or {}).get("enabled", True)):
                 continue
             reaction_type = self._reaction_type_from_config(cfg)
+            if reaction_type in _REMOVED_REACTION_TYPES:
+                message = (
+                    f"Configured reaction '{proposal_id}' uses removed reaction type "
+                    f"'{reaction_type}'. Use 'room_smart_lighting_assist' instead."
+                )
+                _LOGGER.error(message)
+                self._events_domain.queue_event(
+                    HeimaEvent(
+                        type="system.config_error",
+                        key=f"system.config_error.removed_reaction_type.{proposal_id}",
+                        severity="error",
+                        title="Removed reaction type",
+                        message=message,
+                        context={
+                            "proposal_id": proposal_id,
+                            "reaction_type": reaction_type,
+                            "replacement_reaction_type": "room_smart_lighting_assist",
+                        },
+                    )
+                )
+                continue
             builder = self._reaction_plugin_registry.builder_for(reaction_type)
             if builder is None:
                 _LOGGER.debug(
@@ -1625,7 +1680,10 @@ class HeimaEngine:
             s for s in plan.steps if s.domain == "input_boolean" and not s.blocked_by
         ]
 
-        await self._lighting_domain.execute_lighting_steps(lighting_steps)
+        await self._lighting_domain.execute_lighting_steps(
+            lighting_steps,
+            before_service_call=self._register_pending_apply_for_step,
+        )
 
         for step in scene_steps:
             if step.action != "scene.turn_on":
@@ -1668,6 +1726,7 @@ class HeimaEngine:
                         call_params["rgb_color"] = step.params["rgb_color"]
                     elif step.params.get("color_temp_kelvin") is not None:
                         call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
+                self._register_pending_apply_for_step(step)
                 await self._hass.services.async_call(
                     "light",
                     step.action.split(".", 1)[1],

@@ -250,14 +250,14 @@ def test_reaction_proposal_from_dict_preserves_improvement_fields() -> None:
         {
             "proposal_id": "improve-1",
             "analyzer_id": "CompositePatternCatalogAnalyzer",
-            "reaction_type": "room_contextual_lighting_assist",
+            "reaction_type": "room_smart_lighting_assist",
             "description": "studio upgrade",
             "confidence": 0.81,
             "followup_kind": "improvement",
             "target_reaction_id": "darkness-1",
-            "target_reaction_type": "room_contextual_lighting_assist",
+            "target_reaction_type": "room_smart_lighting_assist",
             "target_reaction_origin": "learned",
-            "improves_reaction_type": "room_darkness_lighting_assist",
+            "improves_reaction_type": "room_smart_lighting_assist",
             "improvement_reason": "time_window_variation",
             "suggested_reaction_config": {"room_id": "studio"},
         }
@@ -265,8 +265,8 @@ def test_reaction_proposal_from_dict_preserves_improvement_fields() -> None:
 
     assert proposal.followup_kind == "improvement"
     assert proposal.target_reaction_id == "darkness-1"
-    assert proposal.target_reaction_type == "room_contextual_lighting_assist"
-    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
+    assert proposal.target_reaction_type == "room_smart_lighting_assist"
+    assert proposal.improves_reaction_type == "room_smart_lighting_assist"
     assert proposal.improvement_reason == "time_window_variation"
 
 
@@ -447,14 +447,14 @@ async def test_proposal_engine_sensor_writer_exposes_improvement_metadata(monkey
     sensor_updates = []
     proposal = ReactionProposal(
         analyzer_id="CompositePatternCatalogAnalyzer",
-        reaction_type="room_contextual_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         description="studio upgrade",
         confidence=0.84,
         followup_kind="improvement",
         target_reaction_id="darkness-1",
-        target_reaction_type="room_contextual_lighting_assist",
+        target_reaction_type="room_smart_lighting_assist",
         target_reaction_origin="learned",
-        improves_reaction_type="room_darkness_lighting_assist",
+        improves_reaction_type="room_smart_lighting_assist",
         improvement_reason="house_state_variation",
         suggested_reaction_config={"room_id": "studio"},
     )
@@ -473,8 +473,8 @@ async def test_proposal_engine_sensor_writer_exposes_improvement_metadata(monkey
     item = next(iter(attrs["items"].values()))
     assert item["followup_kind"] == "improvement"
     assert item["target_reaction_id"] == "darkness-1"
-    assert item["target_reaction_type"] == "room_contextual_lighting_assist"
-    assert item["improves_reaction_type"] == "room_darkness_lighting_assist"
+    assert item["target_reaction_type"] == "room_smart_lighting_assist"
+    assert item["improves_reaction_type"] == "room_smart_lighting_assist"
     assert item["improvement_reason"] == "house_state_variation"
     assert "description" not in item
 
@@ -486,14 +486,14 @@ async def test_proposal_engine_dedup_pending_improvement_by_target_reaction(monk
         [
             ReactionProposal(
                 analyzer_id="CompositePatternCatalogAnalyzer",
-                reaction_type="room_contextual_lighting_assist",
+                reaction_type="room_smart_lighting_assist",
                 description="studio upgrade",
                 confidence=0.72,
                 followup_kind="improvement",
                 target_reaction_id="darkness-1",
-                target_reaction_type="room_contextual_lighting_assist",
+                target_reaction_type="room_smart_lighting_assist",
                 target_reaction_origin="learned",
-                improves_reaction_type="room_darkness_lighting_assist",
+                improves_reaction_type="room_smart_lighting_assist",
                 improvement_reason="time_window_variation",
                 suggested_reaction_config={
                     "room_id": "studio",
@@ -516,14 +516,14 @@ async def test_proposal_engine_dedup_pending_improvement_by_target_reaction(monk
         [
             ReactionProposal(
                 analyzer_id="CompositePatternCatalogAnalyzer",
-                reaction_type="room_contextual_lighting_assist",
+                reaction_type="room_smart_lighting_assist",
                 description="studio upgrade refined",
                 confidence=0.88,
                 followup_kind="improvement",
                 target_reaction_id="darkness-1",
-                target_reaction_type="room_contextual_lighting_assist",
+                target_reaction_type="room_smart_lighting_assist",
                 target_reaction_origin="learned",
-                improves_reaction_type="room_darkness_lighting_assist",
+                improves_reaction_type="room_smart_lighting_assist",
                 improvement_reason="house_state_variation",
                 suggested_reaction_config={
                     "room_id": "studio",
@@ -554,7 +554,7 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement(
             [
                 ReactionProposal(
                     analyzer_id="CompositePatternCatalogAnalyzer",
-                    reaction_type="room_contextual_lighting_assist",
+                    reaction_type="room_smart_lighting_assist",
                     description="studio contextual candidate",
                     confidence=0.82,
                     suggested_reaction_config={
@@ -571,14 +571,14 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement(
         ReactionProposal(
             proposal_id="darkness-accepted",
             analyzer_id="CompositePatternCatalogAnalyzer",
-            reaction_type="room_darkness_lighting_assist",
+            reaction_type="room_smart_lighting_assist",
             description="studio darkness",
             confidence=0.84,
             status="accepted",
             suggested_reaction_config={
                 "room_id": "studio",
                 "primary_signal_name": "room_lux",
-                "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+                "admin_authored_template_id": "room.smart_lighting_assist.basic",
             },
         )
     ]
@@ -588,12 +588,12 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement(
     pending = engine.pending_proposals()
     assert len(pending) == 1
     proposal = pending[0]
-    assert proposal.reaction_type == "room_contextual_lighting_assist"
-    assert proposal.followup_kind == "improvement"
-    assert proposal.target_reaction_id == "darkness-accepted"
-    assert proposal.target_reaction_type == "room_darkness_lighting_assist"
-    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
-    assert proposal.improvement_reason == "contextual_variation"
+    assert proposal.reaction_type == "room_smart_lighting_assist"
+    assert proposal.followup_kind == "tuning_suggestion"
+    assert proposal.target_reaction_id == ""
+    assert proposal.target_reaction_type == "room_smart_lighting_assist"
+    assert proposal.improves_reaction_type == ""
+    assert proposal.improvement_reason == ""
 
 
 async def test_proposal_engine_normalizes_contextual_candidate_into_improvement_from_configured_darkness(
@@ -607,11 +607,11 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement_
         learning_plugin_registry=registry,
         configured_reactions_provider=lambda: {
             "darkness-configured": {
-                "reaction_type": "room_darkness_lighting_assist",
+                "reaction_type": "room_smart_lighting_assist",
                 "room_id": "studio",
                 "primary_signal_name": "room_lux",
                 "origin": "admin_authored",
-                "source_template_id": "room.darkness_lighting_assist.basic",
+                "source_template_id": "room.smart_lighting_assist.basic",
             }
         },
     )
@@ -620,7 +620,7 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement_
             [
                 ReactionProposal(
                     analyzer_id="CompositePatternCatalogAnalyzer",
-                    reaction_type="room_contextual_lighting_assist",
+                    reaction_type="room_smart_lighting_assist",
                     description="studio contextual candidate",
                     confidence=0.82,
                     suggested_reaction_config={
@@ -639,13 +639,13 @@ async def test_proposal_engine_normalizes_contextual_candidate_into_improvement_
     pending = engine.pending_proposals()
     assert len(pending) == 1
     proposal = pending[0]
-    assert proposal.reaction_type == "room_contextual_lighting_assist"
-    assert proposal.followup_kind == "improvement"
-    assert proposal.target_reaction_id == "darkness-configured"
-    assert proposal.target_reaction_type == "room_darkness_lighting_assist"
-    assert proposal.target_reaction_origin == "admin_authored"
-    assert proposal.improves_reaction_type == "room_darkness_lighting_assist"
-    assert proposal.improvement_reason == "contextual_variation"
+    assert proposal.reaction_type == "room_smart_lighting_assist"
+    assert proposal.followup_kind == "discovery"
+    assert proposal.target_reaction_id == ""
+    assert proposal.target_reaction_type == ""
+    assert proposal.target_reaction_origin == ""
+    assert proposal.improves_reaction_type == ""
+    assert proposal.improvement_reason == ""
 
 
 async def test_proposal_engine_prefers_configured_darkness_over_accepted_history_for_improvement(
@@ -659,11 +659,11 @@ async def test_proposal_engine_prefers_configured_darkness_over_accepted_history
         learning_plugin_registry=registry,
         configured_reactions_provider=lambda: {
             "darkness-configured": {
-                "reaction_type": "room_darkness_lighting_assist",
+                "reaction_type": "room_smart_lighting_assist",
                 "room_id": "studio",
                 "primary_signal_name": "room_lux",
                 "origin": "admin_authored",
-                "source_template_id": "room.darkness_lighting_assist.basic",
+                "source_template_id": "room.smart_lighting_assist.basic",
             }
         },
     )
@@ -672,7 +672,7 @@ async def test_proposal_engine_prefers_configured_darkness_over_accepted_history
             [
                 ReactionProposal(
                     analyzer_id="CompositePatternCatalogAnalyzer",
-                    reaction_type="room_contextual_lighting_assist",
+                    reaction_type="room_smart_lighting_assist",
                     description="studio contextual candidate",
                     confidence=0.82,
                     suggested_reaction_config={
@@ -689,14 +689,14 @@ async def test_proposal_engine_prefers_configured_darkness_over_accepted_history
         ReactionProposal(
             proposal_id="darkness-accepted",
             analyzer_id="CompositePatternCatalogAnalyzer",
-            reaction_type="room_darkness_lighting_assist",
+            reaction_type="room_smart_lighting_assist",
             description="studio darkness",
             confidence=0.84,
             status="accepted",
             suggested_reaction_config={
                 "room_id": "studio",
                 "primary_signal_name": "room_lux",
-                "admin_authored_template_id": "room.darkness_lighting_assist.basic",
+                "admin_authored_template_id": "room.smart_lighting_assist.basic",
             },
         )
     ]
@@ -706,9 +706,9 @@ async def test_proposal_engine_prefers_configured_darkness_over_accepted_history
     pending = engine.pending_proposals()
     assert len(pending) == 1
     proposal = pending[0]
-    assert proposal.followup_kind == "improvement"
-    assert proposal.target_reaction_id == "darkness-configured"
-    assert proposal.target_reaction_origin == "admin_authored"
+    assert proposal.followup_kind == "tuning_suggestion"
+    assert proposal.target_reaction_id == ""
+    assert proposal.target_reaction_origin == "learned"
 
 
 async def test_proposal_engine_normalizes_cooling_candidate_into_improvement_from_configured_signal(
@@ -2181,7 +2181,7 @@ async def test_proposal_engine_suppresses_canonical_room_signal_followup_despite
 async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     base = _composite_proposal(
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         room_id="living",
         primary_signal_name="room_lux",
     )
@@ -2194,7 +2194,7 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
     )
     base.suggested_reaction_config.update(
         {
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
@@ -2209,13 +2209,13 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
         }
     )
     candidate = _composite_proposal(
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         room_id="living",
         primary_signal_name="room_lux",
     )
     candidate.suggested_reaction_config.update(
         {
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "primary_bucket": "dim",
             "primary_signal_entities": [
                 "sensor.living_room_lux",
@@ -2244,13 +2244,13 @@ async def test_proposal_engine_creates_room_darkness_lighting_tuning_followup(mo
     assert diagnostics["total"] == 2
     pending = next(item for item in diagnostics["proposals"] if item["status"] == "pending")
     assert pending["followup_kind"] == "tuning_suggestion"
-    assert pending["identity_key"] == "room_darkness_lighting_assist|room=living|primary=room_lux"
+    assert pending["identity_key"] == "room_smart_lighting_assist|room=living|primary=room_lux"
 
 
 async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_drift(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     base = _composite_proposal(
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         room_id="living",
         primary_signal_name="room_lux",
     )
@@ -2263,7 +2263,7 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
     )
     base.suggested_reaction_config.update(
         {
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
@@ -2278,13 +2278,13 @@ async def test_proposal_engine_suppresses_minor_room_darkness_lighting_tuning_dr
         }
     )
     candidate = _composite_proposal(
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         room_id="living",
         primary_signal_name="room_lux",
     )
     candidate.suggested_reaction_config.update(
         {
-            "reaction_class": "RoomLightingAssistReaction",
+            "reaction_class": "RoomSmartLightingAssistReaction",
             "primary_bucket": "ok",
             "primary_signal_entities": ["sensor.living_room_lux"],
             "entity_steps": [
@@ -2460,13 +2460,15 @@ async def test_proposal_engine_suppresses_darkness_when_configured_contextual_co
 ):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     candidate = _composite_proposal(
-        reaction_type="room_darkness_lighting_assist",
+        reaction_type="room_smart_lighting_assist",
         room_id="studio",
         primary_signal_name="room_lux",
     )
     candidate.suggested_reaction_config.update(
         {
-            "reaction_type": "room_darkness_lighting_assist",
+            "reaction_type": "room_smart_lighting_assist",
+            "primary_bucket": "ok",
+            "primary_bucket_match_mode": "lte",
             "primary_signal_entities": ["sensor.studio_lux"],
             "entity_steps": [
                 {
@@ -2490,21 +2492,19 @@ async def test_proposal_engine_suppresses_darkness_when_configured_contextual_co
         _EventStoreStub(),  # type: ignore[arg-type]
         configured_reactions_provider=lambda: {
             "configured-contextual": {
-                "reaction_type": "room_contextual_lighting_assist",
+                "reaction_type": "room_smart_lighting_assist",
                 "room_id": "studio",
                 "primary_signal_name": "room_lux",
+                "primary_bucket": "ok",
+                "primary_bucket_match_mode": "lte",
                 "primary_signal_entities": ["sensor.studio_lux"],
-                "profiles": {
-                    "evening": {
-                        "entity_steps": [
-                            {
-                                "entity_id": "light.studio_window",
-                                "action": "on",
-                                "brightness": 160,
-                            }
-                        ]
+                "entity_steps": [
+                    {
+                        "entity_id": "light.studio_window",
+                        "action": "on",
+                        "brightness": 160,
                     }
-                },
+                ],
             }
         },
     )

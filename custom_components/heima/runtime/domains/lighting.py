@@ -7,10 +7,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 
 from ..contracts import ApplyStep, HeimaEvent
@@ -456,7 +456,12 @@ class LightingDomain:
     # Execute lighting steps
     # ------------------------------------------------------------------
 
-    async def execute_lighting_steps(self, steps: list[ApplyStep]) -> None:
+    async def execute_lighting_steps(
+        self,
+        steps: list[ApplyStep],
+        *,
+        before_service_call: Callable[[ApplyStep], None] | None = None,
+    ) -> None:
         """Execute lighting ApplySteps (scene.turn_on / light.turn_off)."""
         apply_batch_id = f"lighting-apply:{uuid4()}"
         for step in steps:
@@ -472,7 +477,7 @@ class LightingDomain:
                         "scene",
                         "turn_on",
                         {"entity_id": scene_entity},
-                        blocking=False,
+                        **self._service_call_kwargs(step),
                     )
                     expected_subject_ids = self._expected_scene_entities(
                         step.target,
@@ -505,11 +510,13 @@ class LightingDomain:
                 if entity_id:
                     # Entity-level turn_off (from ContextConditionedLightingReaction)
                     try:
+                        if before_service_call is not None:
+                            before_service_call(step)
                         await self._hass.services.async_call(
                             "light",
                             "turn_off",
                             {"entity_id": entity_id},
-                            blocking=False,
+                            **self._service_call_kwargs(step),
                         )
                         self._mark_entity_applied(
                             room_id=step.target,
@@ -530,7 +537,7 @@ class LightingDomain:
                             "light",
                             "turn_off",
                             {"area_id": area_id},
-                            blocking=False,
+                            **self._service_call_kwargs(step),
                         )
                         self._mark_room_applied(step.target, f"light.turn_off:area:{area_id}")
                     except ServiceNotFound:
@@ -553,11 +560,13 @@ class LightingDomain:
                 elif step.params.get("color_temp_kelvin") is not None:
                     call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
                 try:
+                    if before_service_call is not None:
+                        before_service_call(step)
                     await self._hass.services.async_call(
                         "light",
                         "turn_on",
                         call_params,
-                        blocking=False,
+                        **self._service_call_kwargs(step),
                     )
                     self._mark_entity_applied(
                         room_id=step.target,
@@ -571,6 +580,13 @@ class LightingDomain:
                     )
                 except Exception:
                     _LOGGER.exception("Lighting apply failed for entity '%s'", entity_id)
+
+    @staticmethod
+    def _service_call_kwargs(step: ApplyStep) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"blocking": False}
+        if step.context_id:
+            kwargs["context"] = Context(id=step.context_id)
+        return kwargs
 
     # ------------------------------------------------------------------
     # Hold events
