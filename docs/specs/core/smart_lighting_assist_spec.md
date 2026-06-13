@@ -103,23 +103,53 @@ AND NOT manual_on_hold
 
 ## Manual override
 
-### Detection — context-based (primary)
+### Detection — pending-apply records (primary)
 
-Each `RoomSmartLightingAssistReaction` instance issues HA service calls with an explicit
-`Context(id=<uuid>)` and tracks the issued context IDs in a short-lived ring buffer (TTL ~30 s).
+HA does not reliably propagate `context.parent_id` to the final state change of a light entity:
+many integrations emit the state change with their own context, breaking context-chain detection.
+The primary mechanism is therefore **pending apply records**, which do not depend on context
+propagation.
 
-A `STATE_CHANGED` event on a tracked entity is classified as **heima-owned** if:
+`PendingApply` carries the expected outcome of a single service call:
+
+```python
+@dataclass
+class PendingApply:
+    expected_state: str          # "on" | "off"
+    timestamp: float             # time.monotonic()
+    ttl: float = 5.0             # seconds; covers HA async propagation latency
+    expected_brightness: int | None = None
+    expected_color_temp: int | None = None
+```
+
+`expected_brightness` and `expected_color_temp` are set when the profile step includes those
+attributes; they are `None` otherwise (attribute not verified in match).
+
+Match on `STATE_CHANGED` for a tracked entity:
 
 ```
-event.context.parent_id in issued_context_ids
+if entity_id in pending_applies:
+    p = pending_applies[entity_id]
+    within_ttl = (now() - p.timestamp) < p.ttl
+    state_ok   = new_state.state == p.expected_state
+    bri_ok     = p.expected_brightness is None or
+                 |new_attrs.brightness - p.expected_brightness| ≤ 5
+    ct_ok      = p.expected_color_temp is None or
+                 |new_attrs.color_temp_kelvin - p.expected_color_temp| ≤ 100
+    if within_ttl AND state_ok AND bri_ok AND ct_ok:
+        → heima-owned: consume record, ignore
+    else:
+        → external: route to override logic
+else:
+    → external: route to override logic
 ```
 
-Any other change — physical switch, another automation, a scene, a script, an external
-integration — is classified as **external** and treated as a manual override. This includes
-changes from other Heima reactions: the criterion is "not emitted by this reaction instance."
+Any change not matched — physical switch, another automation, scene, script, external
+integration, other Heima reaction — is classified as **external**. The criterion remains
+"not emitted by this reaction instance."
 
-The TTL-based `LightingRecorderBehavior` provenance mechanism is not used for override
-detection; it may remain as a diagnostic/legacy tool only.
+`issued_context_ids`, `ApplyStep.context_id`, and the `LightingRecorderBehavior` TTL path
+are **not** used for override detection.
 
 ### On external OFF
 
@@ -142,25 +172,17 @@ When an external `on` is received on any entity while the reaction is active or 
 
 ### Implementation contract
 
-- `RoomSmartLightingAssistReaction` owns a method `handle_external_light_change(entity_id, new_state)`
-  called by a coordinator-level `STATE_CHANGED` dispatcher (not by `LightingRecorderBehavior`)
+- `RoomSmartLightingAssistReaction` owns `pending_applies: dict[str, PendingApply]` and all
+  override state (`manual_override_active`, `manual_on_hold`)
+- The reaction exposes `register_pending_apply_for_step(step: ApplyStep)` — called by the
+  execution layer **after** apply-plan filtering and immediately before `async_call`; not inside
+  `evaluate()`. This prevents stale pending records from steps that are later blocked by
+  constraints or guards.
+- The reaction exposes `handle_external_light_change(entity_id, new_state)`, called by a
+  coordinator-level `STATE_CHANGED` dispatcher
 - The dispatcher filters events to entities listed in active smart-lighting reaction profiles
   before routing them; reactions are not subscribed directly to HA events
-- `RoomSmartLightingAssistReaction` pre-registers a freshly generated `context_id` in
-  `issued_context_ids` before returning `ApplyStep` objects; this avoids a race where HA emits
-  `STATE_CHANGED` immediately after `async_call`
-- The `context_id` is scoped to the reaction evaluation batch: all `ApplyStep` objects produced
-  by one `evaluate()` call share the same `context_id`
-- `ApplyStep` produced by this reaction carries that pre-registered `context_id` so the
-  coordinator can pass it to `async_call`
-
-Required ordering:
-
-```
-reaction.issued_context_ids.add(context_id, ttl=30s)
-ApplyStep(context_id=context_id, ...)  # repeated for every step in the batch
-LightingDomain.execute() -> async_call(context=Context(id=context_id))
-```
+- `ApplyStep` requires no `context_id` field for this mechanism
 
 ### Config field
 

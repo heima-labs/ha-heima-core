@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from homeassistant.core import Context, HomeAssistant
@@ -456,7 +456,12 @@ class LightingDomain:
     # Execute lighting steps
     # ------------------------------------------------------------------
 
-    async def execute_lighting_steps(self, steps: list[ApplyStep]) -> None:
+    async def execute_lighting_steps(
+        self,
+        steps: list[ApplyStep],
+        *,
+        before_service_call: Callable[[ApplyStep], None] | None = None,
+    ) -> None:
         """Execute lighting ApplySteps (scene.turn_on / light.turn_off)."""
         apply_batch_id = f"lighting-apply:{uuid4()}"
         for step in steps:
@@ -505,6 +510,8 @@ class LightingDomain:
                 if entity_id:
                     # Entity-level turn_off (from ContextConditionedLightingReaction)
                     try:
+                        if before_service_call is not None:
+                            before_service_call(step)
                         await self._hass.services.async_call(
                             "light",
                             "turn_off",
@@ -553,6 +560,8 @@ class LightingDomain:
                 elif step.params.get("color_temp_kelvin") is not None:
                     call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
                 try:
+                    if before_service_call is not None:
+                        before_service_call(step)
                     await self._hass.services.async_call(
                         "light",
                         "turn_on",

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from dataclasses import replace as dataclass_replace
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from uuid import uuid4
 
 from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
@@ -53,7 +52,20 @@ _LEARNED_MIN_VISITS = 20
 _DEFAULT_MANUAL_OVERRIDE_WINDOW_MIN = 30
 _DEFAULT_DIM_BRIGHTNESS_PCT = 15
 _DEFAULT_DIM_RATIO = 0.3
-_ISSUED_CONTEXT_TTL_S = 30.0
+_PENDING_APPLY_TTL_S = 5.0
+_PENDING_BRIGHTNESS_TOLERANCE = 5
+_PENDING_COLOR_TEMP_TOLERANCE = 100
+
+
+@dataclass(frozen=True)
+class PendingApply:
+    """Expected light state from one smart-lighting service call."""
+
+    expected_state: str
+    timestamp: float
+    ttl: float = _PENDING_APPLY_TTL_S
+    expected_brightness: int | None = None
+    expected_color_temp: int | None = None
 
 
 class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
@@ -137,7 +149,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._current_outdoor_bucket: str | None = None
         self._current_outdoor_scale: float | None = None
         self._current_house_state = "unknown"
-        self._issued_context_ids: deque[tuple[str, float]] = deque(maxlen=64)
+        self._pending_applies: dict[str, PendingApply] = {}
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         if not history:
@@ -186,7 +198,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._last_applied_profile = None
         self._last_applied_outdoor_scale = None
         self._selected_profile = None
-        self._issued_context_ids.clear()
+        self._pending_applies.clear()
 
     def diagnostics(self) -> dict[str, Any]:
         data = self._base_diagnostics()
@@ -212,18 +224,10 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
                 "dim_due_monotonic": self._dim_due_monotonic,
                 "off_due_monotonic": self._off_due_monotonic,
                 "dim_applied": self._dim_applied,
-                "issued_context_ids": len(self._issued_context_ids),
+                "pending_applies": len(self._pending_applies),
             }
         )
         return data
-
-    def owns_context_id(self, context_id: str | None) -> bool:
-        """Return whether a HA state change context belongs to this reaction instance."""
-        self._purge_issued_context_ids(time.monotonic())
-        context_id = str(context_id or "").strip()
-        if not context_id:
-            return False
-        return any(issued_id == context_id for issued_id, _expires_at in self._issued_context_ids)
 
     def tracks_light_entity(self, entity_id: str) -> bool:
         """Return whether this reaction may manage the given light entity."""
@@ -231,6 +235,51 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         if not entity_id:
             return False
         return entity_id in self._configured_light_entities()
+
+    def register_pending_apply_for_step(self, step: ApplyStep) -> None:
+        """Register the expected state for a step that is about to be executed."""
+        entity_id = str(step.params.get("entity_id") or "").strip()
+        if not entity_id or not self.tracks_light_entity(entity_id):
+            return
+        if step.action == "light.turn_on":
+            self._pending_applies[entity_id] = PendingApply(
+                expected_state="on",
+                timestamp=time.monotonic(),
+                expected_brightness=_coerce_int(step.params.get("brightness")),
+                expected_color_temp=_coerce_int(step.params.get("color_temp_kelvin")),
+            )
+        elif step.action == "light.turn_off":
+            self._pending_applies[entity_id] = PendingApply(
+                expected_state="off",
+                timestamp=time.monotonic(),
+            )
+
+    def consume_pending_apply(self, entity_id: str, new_state: Any) -> bool:
+        """Return True when a state change matches a pending Heima-owned apply."""
+        entity_id = str(entity_id or "").strip()
+        pending = self._pending_applies.pop(entity_id, None)
+        if pending is None:
+            return False
+        if time.monotonic() - pending.timestamp >= pending.ttl:
+            return False
+        state_value = str(getattr(new_state, "state", "") or "").strip().lower()
+        if state_value != pending.expected_state:
+            return False
+        attrs = getattr(new_state, "attributes", None)
+        attrs = attrs if isinstance(attrs, dict) else {}
+        if not _attr_matches(
+            attrs.get("brightness"),
+            pending.expected_brightness,
+            _PENDING_BRIGHTNESS_TOLERANCE,
+        ):
+            return False
+        if not _attr_matches(
+            attrs.get("color_temp_kelvin"),
+            pending.expected_color_temp,
+            _PENDING_COLOR_TEMP_TOLERANCE,
+        ):
+            return False
+        return True
 
     def handle_external_light_change(self, entity_id: str, new_state: str) -> None:
         """Apply manual override state for an external light change."""
@@ -276,9 +325,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._mark_fired()
         self._last_applied_profile = profile_name
         self._last_applied_outdoor_scale = self._current_outdoor_scale
-        return self._with_batch_context(
-            self._build_steps(entity_steps, reason_prefix="room_smart_lighting_assist")
-        )
+        return self._build_steps(entity_steps, reason_prefix="room_smart_lighting_assist")
 
     def _evaluate_absent(self, now: float) -> list[ApplyStep]:
         if self._off_due_monotonic is None:
@@ -289,18 +336,14 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
             and now >= self._dim_due_monotonic
         ):
             self._dim_applied = True
-            return self._with_batch_context(
-                self._build_steps(
-                    self._dimmed_steps(self._active_entity_steps()),
-                    reason_prefix="room_smart_lighting_assist:dim",
-                )
+            return self._build_steps(
+                self._dimmed_steps(self._active_entity_steps()),
+                reason_prefix="room_smart_lighting_assist:dim",
             )
         if now >= self._off_due_monotonic:
-            steps = self._with_batch_context(
-                self._build_steps(
-                    self._off_steps(self._active_entity_steps()),
-                    reason_prefix="room_smart_lighting_assist:off",
-                )
+            steps = self._build_steps(
+                self._off_steps(self._active_entity_steps()),
+                reason_prefix="room_smart_lighting_assist:off",
             )
             self._clear_absence_sequence()
             self._last_applied_profile = None
@@ -410,22 +453,6 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         if self._current_indoor_bucket not in self._lux_on_buckets:
             return False
         return True
-
-    def _with_batch_context(self, steps: list[ApplyStep]) -> list[ApplyStep]:
-        if not steps:
-            return []
-        context_id = str(uuid4())
-        self._register_issued_context_id(context_id)
-        return [dataclass_replace(step, context_id=context_id) for step in steps]
-
-    def _register_issued_context_id(self, context_id: str) -> None:
-        now = time.monotonic()
-        self._purge_issued_context_ids(now)
-        self._issued_context_ids.append((context_id, now + _ISSUED_CONTEXT_TTL_S))
-
-    def _purge_issued_context_ids(self, now: float) -> None:
-        while self._issued_context_ids and self._issued_context_ids[0][1] <= now:
-            self._issued_context_ids.popleft()
 
     def _night_fallback_steps(self) -> list[dict[str, Any]]:
         base = self._entity_steps or (
@@ -734,6 +761,13 @@ def _coerce_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _attr_matches(value: Any, expected: int | None, tolerance: int) -> bool:
+    if expected is None:
+        return True
+    observed = _coerce_int(value)
+    return observed is not None and abs(observed - expected) <= tolerance
 
 
 def _coerce_int(value: Any) -> int | None:

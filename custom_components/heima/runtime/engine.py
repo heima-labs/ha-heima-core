@@ -145,23 +145,6 @@ def _constraint_blocker(step: "ApplyStep", constraints: set[str]) -> str:
     return ""
 
 
-def _state_change_parent_context_id(event: Event, new_state: Any) -> str | None:
-    """Extract HA parent context id from a state_changed event."""
-    for candidate in (
-        getattr(getattr(new_state, "context", None), "parent_id", None),
-        getattr(getattr(event, "context", None), "parent_id", None),
-        getattr(event.data.get("context"), "parent_id", None),
-    ):
-        if isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
-    context_payload = event.data.get("context")
-    if isinstance(context_payload, dict):
-        parent_id = context_payload.get("parent_id")
-        if isinstance(parent_id, str) and parent_id.strip():
-            return parent_id.strip()
-    return None
-
-
 def _entity_domain(entity_id: str) -> str:
     return str(entity_id or "").split(".", 1)[0] or "unknown"
 
@@ -316,6 +299,15 @@ class HeimaEngine:
             return None
         return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
 
+    def _register_pending_apply_for_step(self, step: ApplyStep) -> None:
+        """Register smart-lighting pending apply provenance for a step about to execute."""
+        reaction = self._reaction_from_step_source(step)
+        if reaction is None:
+            return
+        register_pending = getattr(reaction, "register_pending_apply_for_step", None)
+        if callable(register_pending):
+            register_pending(step)
+
     def _reaction_type_for_reaction_id(self, reaction_id: str) -> str | None:
         provenance = self._configured_reaction_metadata(reaction_id)
         reaction_type = provenance.get("reaction_type")
@@ -345,13 +337,12 @@ class HeimaEngine:
         state_value = str(getattr(new_state, "state", "") or "").strip().lower()
         if state_value not in {"on", "off"}:
             return
-        parent_context_id = _state_change_parent_context_id(event, new_state)
         for reaction in self._reactions:
             tracks = getattr(reaction, "tracks_light_entity", None)
             if not callable(tracks) or not bool(tracks(entity_id)):
                 continue
-            owns_context = getattr(reaction, "owns_context_id", None)
-            if callable(owns_context) and bool(owns_context(parent_context_id)):
+            consume_pending = getattr(reaction, "consume_pending_apply", None)
+            if callable(consume_pending) and bool(consume_pending(entity_id, new_state)):
                 continue
             handle_external = getattr(reaction, "handle_external_light_change", None)
             if callable(handle_external):
@@ -1689,7 +1680,10 @@ class HeimaEngine:
             s for s in plan.steps if s.domain == "input_boolean" and not s.blocked_by
         ]
 
-        await self._lighting_domain.execute_lighting_steps(lighting_steps)
+        await self._lighting_domain.execute_lighting_steps(
+            lighting_steps,
+            before_service_call=self._register_pending_apply_for_step,
+        )
 
         for step in scene_steps:
             if step.action != "scene.turn_on":
@@ -1732,6 +1726,7 @@ class HeimaEngine:
                         call_params["rgb_color"] = step.params["rgb_color"]
                     elif step.params.get("color_temp_kelvin") is not None:
                         call_params["color_temp_kelvin"] = step.params["color_temp_kelvin"]
+                self._register_pending_apply_for_step(step)
                 await self._hass.services.async_call(
                     "light",
                     step.action.split(".", 1)[1],

@@ -2454,12 +2454,21 @@ needs_apply
 AND NOT manual_on_hold
 ```
 
-**Manual override — context-based detection:**
+**Manual override — pending-apply detection:**
 
-Each reaction instance issues `async_call` with a tracked `Context(id=<uuid>)` (ring buffer TTL
-~30 s). A `STATE_CHANGED` is heima-owned if `event.context.parent_id in issued_context_ids`.
-Everything else (physical switch, other automation, script, scene, other Heima reaction) is
-**external**.
+HA does not reliably propagate `context.parent_id` through light integrations. Primary mechanism:
+**pending apply records**. `PendingApply(expected_state, timestamp, ttl=5s,
+expected_brightness, expected_color_temp)`. Match is fuzzy: state + brightness ±5 + color_temp ±100K.
+`register_pending_apply_for_step(step)` is called by the execution layer after apply-plan
+filtering and immediately before `async_call` — NOT inside `evaluate()` — to avoid stale records
+for steps blocked by constraints. `issued_context_ids` and `ApplyStep.context_id` are not used.
+The execution layer identifies the originating reaction from `ApplyStep.source` (`reaction:<id>`)
+using the existing `_reaction_from_step_source(step)` lookup; no dedicated `ApplyStep.reaction_id`
+field is required, and the lookup must not be inferred from entity ownership alone.
+For `light.turn_off`, `expected_brightness` and `expected_color_temp` remain `None`; many HA
+integrations keep stale attributes or remove them after off. If multiple smart-lighting steps target
+the same entity inside the TTL window, the latest pending record overwrites the previous one
+(`last command wins`).
 
 - **External OFF**: set `manual_override_active = True`. Clears on `manual_override_window_min`
   expiry (default 30 min) OR presence lost → re-detected.
@@ -2611,9 +2620,14 @@ If `room_type` is not specified in the rule config, `generic` defaults apply.
 - [ ] `timeout_mode = learned`: ring buffer per room; p25 used as fast-exit threshold after 20
   visits; fallback to fixed before that
 - [ ] All room_type keys in catalog resolve to correct default timeouts and night-mode behavior
-- [ ] Reaction issues `async_call` with tracked `Context(id=<uuid>)`; context IDs held in ring
-  buffer with ~30 s TTL
-- [ ] `STATE_CHANGED` with `context.parent_id in issued_context_ids` → heima-owned, no override
+- [ ] `STATE_CHANGED` matched via `pending_applies`; heima-owned if within TTL, state matches, and
+  brightness/color_temp within tolerance (±5 / ±100 K); consumed after match
+- [ ] `light.turn_off` pending records do not verify brightness/color temperature attributes
+- [ ] Multiple pending records for the same entity use `last command wins` overwrite semantics
+- [ ] `register_pending_apply_for_step(step)` called after apply-plan filtering, immediately before
+  `async_call`; not inside `evaluate()` (prevents stale records for constraint-blocked steps)
+- [ ] Pending registration uses `ApplyStep.source = "reaction:<id>"` and
+  `_reaction_from_step_source(step)`; no entity-only lookup when registering the pending record
 - [ ] External OFF (switch, other automation, script, scene): `manual_override_active` set; turn-on
   suppressed until window expires or presence cycle clears it
 - [ ] External ON: `manual_on_hold` set; profile re-application suppressed until presence lost → re-detected

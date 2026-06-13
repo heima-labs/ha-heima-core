@@ -50,7 +50,7 @@ def test_smart_lighting_turns_on_when_presence_and_indoor_lux_match() -> None:
     assert reaction.diagnostics()["effective_suppress_states"] == []
 
 
-def test_smart_lighting_pre_registers_one_context_per_evaluate_batch() -> None:
+def test_smart_lighting_registers_pending_apply_for_step() -> None:
     hass = MagicMock()
     hass.states.get.side_effect = lambda eid: SimpleNamespace(state="off")
     reaction = RoomSmartLightingAssistReaction(
@@ -71,12 +71,100 @@ def test_smart_lighting_pre_registers_one_context_per_evaluate_batch() -> None:
     )
 
     assert len(steps) == 2
-    context_ids = {step.context_id for step in steps}
-    assert len(context_ids) == 1
-    context_id = next(iter(context_ids))
-    assert context_id
-    assert reaction.owns_context_id(context_id)
-    assert reaction.diagnostics()["issued_context_ids"] == 1
+    for step in steps:
+        reaction.register_pending_apply_for_step(step)
+    assert reaction.diagnostics()["pending_applies"] == 2
+
+    owned = reaction.consume_pending_apply(
+        "light.studio_main",
+        SimpleNamespace(state="on", attributes={"brightness": 147}),
+    )
+    assert owned is True
+    assert reaction.diagnostics()["pending_applies"] == 1
+
+
+def test_smart_lighting_pending_turn_off_does_not_match_attributes() -> None:
+    reaction = RoomSmartLightingAssistReaction(
+        hass=MagicMock(),
+        bucket_getter=lambda room_id, signal_name: "dark",
+        room_id="studio",
+        indoor_lux_signal="room_lux",
+        lux_on_buckets=["dark"],
+        entity_steps=[{"entity_id": "light.studio_main", "action": "on", "brightness": 144}],
+        reaction_id="smart-studio",
+    )
+    step = ApplyStep(
+        domain="lighting",
+        target="studio",
+        action="light.turn_off",
+        params={"entity_id": "light.studio_main", "brightness": 255, "color_temp_kelvin": 6500},
+    )
+
+    reaction.register_pending_apply_for_step(step)
+
+    assert reaction.consume_pending_apply(
+        "light.studio_main",
+        SimpleNamespace(state="off", attributes={"brightness": 1, "color_temp_kelvin": 2000}),
+    )
+
+
+def test_smart_lighting_pending_attribute_mismatch_is_external() -> None:
+    reaction = RoomSmartLightingAssistReaction(
+        hass=MagicMock(),
+        bucket_getter=lambda room_id, signal_name: "dark",
+        room_id="studio",
+        indoor_lux_signal="room_lux",
+        lux_on_buckets=["dark"],
+        entity_steps=[{"entity_id": "light.studio_main", "action": "on", "brightness": 144}],
+        reaction_id="smart-studio",
+    )
+    step = ApplyStep(
+        domain="lighting",
+        target="studio",
+        action="light.turn_on",
+        params={"entity_id": "light.studio_main", "brightness": 144, "color_temp_kelvin": 2900},
+    )
+
+    reaction.register_pending_apply_for_step(step)
+
+    assert not reaction.consume_pending_apply(
+        "light.studio_main",
+        SimpleNamespace(state="on", attributes={"brightness": 222, "color_temp_kelvin": 2900}),
+    )
+    assert reaction.diagnostics()["pending_applies"] == 0
+
+
+def test_smart_lighting_pending_last_command_wins_for_same_entity() -> None:
+    reaction = RoomSmartLightingAssistReaction(
+        hass=MagicMock(),
+        bucket_getter=lambda room_id, signal_name: "dark",
+        room_id="studio",
+        indoor_lux_signal="room_lux",
+        lux_on_buckets=["dark"],
+        entity_steps=[{"entity_id": "light.studio_main", "action": "on", "brightness": 144}],
+        reaction_id="smart-studio",
+    )
+    reaction.register_pending_apply_for_step(
+        ApplyStep(
+            domain="lighting",
+            target="studio",
+            action="light.turn_on",
+            params={"entity_id": "light.studio_main", "brightness": 144},
+        )
+    )
+    reaction.register_pending_apply_for_step(
+        ApplyStep(
+            domain="lighting",
+            target="studio",
+            action="light.turn_on",
+            params={"entity_id": "light.studio_main", "brightness": 180},
+        )
+    )
+
+    assert not reaction.consume_pending_apply(
+        "light.studio_main",
+        SimpleNamespace(state="on", attributes={"brightness": 144}),
+    )
 
 
 def test_smart_lighting_sleeping_is_suppressed_for_studio() -> None:
@@ -212,7 +300,7 @@ def test_smart_lighting_external_on_sets_manual_hold() -> None:
     assert reaction.evaluate([_snapshot(occupied_rooms=["studio"], ts=ts2)]) == []
 
 
-def test_smart_lighting_dispatcher_ignores_owned_context_and_routes_external_change() -> None:
+def test_smart_lighting_dispatcher_consumes_pending_apply_and_routes_external_change() -> None:
     hass = MagicMock()
     hass.states.get.side_effect = lambda eid: SimpleNamespace(state="off")
     reaction = RoomSmartLightingAssistReaction(
@@ -223,19 +311,21 @@ def test_smart_lighting_dispatcher_ignores_owned_context_and_routes_external_cha
         lux_on_buckets=["dark"],
         entity_steps=[{"entity_id": "light.studio_main", "action": "on"}],
     )
-    steps = reaction.evaluate(
-        [_snapshot(occupied_rooms=["studio"], ts=datetime(2026, 6, 11, 10, tzinfo=UTC).isoformat())]
+    reaction.register_pending_apply_for_step(
+        ApplyStep(
+            domain="lighting",
+            target="studio",
+            action="light.turn_off",
+            params={"entity_id": "light.studio_main"},
+        )
     )
-    context_id = steps[0].context_id
     engine = HeimaEngine.__new__(HeimaEngine)
     engine._reactions = [reaction]
 
     owned_event = SimpleNamespace(
         data={
             "entity_id": "light.studio_main",
-            "new_state": SimpleNamespace(
-                state="off", context=SimpleNamespace(parent_id=context_id)
-            ),
+            "new_state": SimpleNamespace(state="off", attributes={}, context=None),
         },
         context=SimpleNamespace(parent_id=None),
     )
@@ -291,6 +381,60 @@ async def test_lighting_domain_passes_step_context_id_to_service_call() -> None:
     assert len(services.calls) == 1
     context = services.calls[0]["kwargs"]["context"]
     assert context.id == "ctx-smart"
+
+
+@pytest.mark.asyncio
+async def test_lighting_domain_calls_pending_hook_before_light_service_call() -> None:
+    events: list[str] = []
+
+    class _FakeServices:
+        async def async_call(self, domain, service, data, **kwargs):  # noqa: ANN001, ARG002
+            events.append(f"service:{domain}.{service}")
+
+    hass = SimpleNamespace(
+        states=SimpleNamespace(get=lambda entity_id: SimpleNamespace(state="off")),
+        services=_FakeServices(),
+    )
+    domain = LightingDomain(hass, MagicMock())
+    step = ApplyStep(
+        domain="lighting",
+        target="studio",
+        action="light.turn_on",
+        params={"entity_id": "light.studio_main", "brightness": 144},
+        source="reaction:smart-studio",
+    )
+
+    await domain.execute_lighting_steps(
+        [step],
+        before_service_call=lambda observed: events.append(f"pending:{observed.source}"),
+    )
+
+    assert events == ["pending:reaction:smart-studio", "service:light.turn_on"]
+
+
+def test_engine_registers_pending_apply_from_step_source() -> None:
+    reaction = RoomSmartLightingAssistReaction(
+        hass=MagicMock(),
+        bucket_getter=lambda room_id, signal_name: "dark",
+        room_id="studio",
+        indoor_lux_signal="room_lux",
+        lux_on_buckets=["dark"],
+        entity_steps=[{"entity_id": "light.studio_main", "action": "on", "brightness": 144}],
+        reaction_id="smart-studio",
+    )
+    engine = HeimaEngine.__new__(HeimaEngine)
+    engine._reactions = [reaction]
+    step = ApplyStep(
+        domain="lighting",
+        target="studio",
+        action="light.turn_on",
+        params={"entity_id": "light.studio_main", "brightness": 144},
+        source="reaction:smart-studio",
+    )
+
+    engine._register_pending_apply_for_step(step)
+
+    assert reaction.diagnostics()["pending_applies"] == 1
 
 
 def test_smart_lighting_schedules_dim_then_off_after_absence() -> None:
