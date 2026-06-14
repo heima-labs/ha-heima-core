@@ -11,6 +11,10 @@ set -euo pipefail
 #   ./custom_components/heima
 # into:
 #   <target>/custom_components/heima
+#
+# For prod deployments only, it can also sync selected developer/operator scripts
+# into:
+#   <prod>/scripts
 
 # Load local env overrides if present (not committed)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +26,12 @@ REMOTE_PROD_BASE="${REMOTE_PROD_BASE:-HA}"
 REMOTE_DEV_BASE="${REMOTE_DEV_BASE:-HA/HA-dev/config}"
 SOURCE_DIR="custom_components/heima/"
 DEV_CONTAINER_NAME="${DEV_CONTAINER_NAME:-homeassistant-dev}"
+if [[ -z "${PROD_DEPLOY_SCRIPTS+x}" ]]; then
+  PROD_DEPLOY_SCRIPTS="scripts/generate_debug_dashboard.py"
+fi
+if [[ -z "${SCRIPT_DEPLOY_SHARED_LIBS+x}" ]]; then
+  SCRIPT_DEPLOY_SHARED_LIBS="scripts/lib/ha_client.py"
+fi
 
 usage() {
   cat <<'EOF'
@@ -37,6 +47,10 @@ Examples:
 
 Environment overrides:
   DEV_CONTAINER_NAME=homeassistant-dev
+  PROD_DEPLOY_SCRIPTS="scripts/generate_debug_dashboard.py"
+  SCRIPT_DEPLOY_SHARED_LIBS="scripts/lib/ha_client.py"
+
+Set PROD_DEPLOY_SCRIPTS="" to disable prod script deployment.
 EOF
 }
 
@@ -134,6 +148,111 @@ deploy_to_tar() {
   COPYFILE_DISABLE=1 tar "${tar_args[@]}" | ssh "$REMOTE_HOST" "tar -C '${remote_dir}' -xf -"
 }
 
+_append_unique_path() {
+  local candidate="$1"
+  local existing
+  for existing in "${deploy_script_paths[@]}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+  deploy_script_paths+=("$candidate")
+}
+
+_build_deploy_script_paths() {
+  deploy_script_paths=()
+
+  local script_path
+  # shellcheck disable=SC2206
+  local configured_scripts=($PROD_DEPLOY_SCRIPTS)
+  for script_path in "${configured_scripts[@]}"; do
+    [[ -z "$script_path" ]] && continue
+    if [[ "$script_path" = /* || "$script_path" == *".."* ]]; then
+      echo "Error: script deploy path must be a relative repo path without '..': $script_path" >&2
+      exit 1
+    fi
+    if [[ ! -f "$script_path" ]]; then
+      echo "Error: script deploy path not found: $script_path" >&2
+      exit 1
+    fi
+    _append_unique_path "$script_path"
+  done
+
+  if [[ "${#deploy_script_paths[@]}" -gt 0 && -n "$SCRIPT_DEPLOY_SHARED_LIBS" ]]; then
+    # shellcheck disable=SC2206
+    local shared_libs=($SCRIPT_DEPLOY_SHARED_LIBS)
+    for script_path in "${shared_libs[@]}"; do
+      [[ -z "$script_path" ]] && continue
+      if [[ "$script_path" = /* || "$script_path" == *".."* ]]; then
+        echo "Error: shared script deploy path must be a relative repo path without '..': $script_path" >&2
+        exit 1
+      fi
+      if [[ ! -f "$script_path" ]]; then
+        echo "Error: shared script deploy path not found: $script_path" >&2
+        exit 1
+      fi
+      _append_unique_path "$script_path"
+    done
+  fi
+}
+
+deploy_prod_scripts_rsync() {
+  local remote_base="$1"
+  local remote_path="${REMOTE_HOST}:${remote_base}/"
+
+  _build_deploy_script_paths
+  if [[ "${#deploy_script_paths[@]}" -eq 0 ]]; then
+    echo "No prod scripts configured for deployment."
+    return 0
+  fi
+
+  echo "Deploying prod scripts with rsync to ${remote_path}"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] Would ensure remote scripts directory exists: ${REMOTE_HOST}:${remote_base}/scripts"
+  else
+    ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/scripts/lib'"
+  fi
+  rsync "${rsync_base_args[@]}" --relative "${deploy_script_paths[@]}" "$remote_path"
+}
+
+deploy_prod_scripts_tar() {
+  local remote_base="$1"
+
+  _build_deploy_script_paths
+  if [[ "${#deploy_script_paths[@]}" -eq 0 ]]; then
+    echo "No prod scripts configured for deployment."
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] Would deploy prod scripts with tar to ${REMOTE_HOST}:${remote_base}/"
+    printf '[dry-run] Scripts:'
+    printf ' %s' "${deploy_script_paths[@]}"
+    printf '\n'
+    return 0
+  fi
+
+  echo "Deploying prod scripts with tar stream to ${REMOTE_HOST}:${remote_base}/"
+  ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/scripts/lib'"
+  COPYFILE_DISABLE=1 tar -cf - "${deploy_script_paths[@]}" | ssh "$REMOTE_HOST" "tar -C '${remote_base}' -xf -"
+}
+
+deploy_prod_scripts() {
+  local remote_base="$1"
+  case "$MODE" in
+    rsync)
+      deploy_prod_scripts_rsync "$remote_base"
+      ;;
+    tar)
+      deploy_prod_scripts_tar "$remote_base"
+      ;;
+    *)
+      echo "Invalid --mode value: $MODE (expected: rsync|tar)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 deploy_to() {
   local remote_base="$1"
   case "$MODE" in
@@ -163,6 +282,7 @@ restart_dev_instance() {
 case "$TARGET" in
   prod)
     deploy_to "$REMOTE_PROD_BASE"
+    deploy_prod_scripts "$REMOTE_PROD_BASE"
     ;;
   dev)
     deploy_to "$REMOTE_DEV_BASE"
@@ -170,6 +290,7 @@ case "$TARGET" in
     ;;
   both)
     deploy_to "$REMOTE_PROD_BASE"
+    deploy_prod_scripts "$REMOTE_PROD_BASE"
     deploy_to "$REMOTE_DEV_BASE"
     restart_dev_instance
     ;;
