@@ -14,7 +14,7 @@ set -euo pipefail
 #
 # For prod deployments only, it can also sync selected developer/operator scripts
 # into:
-#   <prod>/scripts
+#   <prod>/custom_components/heima/scripts
 
 # Load local env overrides if present (not committed)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -159,46 +159,55 @@ _append_unique_path() {
   deploy_script_paths+=("$candidate")
 }
 
+_validate_deploy_script_path() {
+  local script_path="$1"
+  local label="$2"
+  if [[ "$script_path" = /* || "$script_path" == *".."* || "$script_path" != scripts/* ]]; then
+    echo "Error: ${label} deploy path must be a relative repo path under scripts/ without '..': $script_path" >&2
+    exit 1
+  fi
+  if [[ ! -f "$script_path" ]]; then
+    echo "Error: ${label} deploy path not found: $script_path" >&2
+    exit 1
+  fi
+}
+
+_append_configured_deploy_paths() {
+  local configured_value="$1"
+  local label="$2"
+  local script_path
+  # shellcheck disable=SC2206
+  local configured_paths=($configured_value)
+  for script_path in "${configured_paths[@]}"; do
+    [[ -z "$script_path" ]] && continue
+    _validate_deploy_script_path "$script_path" "$label"
+    _append_unique_path "$script_path"
+  done
+}
+
 _build_deploy_script_paths() {
   deploy_script_paths=()
 
-  local script_path
-  # shellcheck disable=SC2206
-  local configured_scripts=($PROD_DEPLOY_SCRIPTS)
-  for script_path in "${configured_scripts[@]}"; do
-    [[ -z "$script_path" ]] && continue
-    if [[ "$script_path" = /* || "$script_path" == *".."* ]]; then
-      echo "Error: script deploy path must be a relative repo path without '..': $script_path" >&2
-      exit 1
-    fi
-    if [[ ! -f "$script_path" ]]; then
-      echo "Error: script deploy path not found: $script_path" >&2
-      exit 1
-    fi
-    _append_unique_path "$script_path"
-  done
+  _append_configured_deploy_paths "$PROD_DEPLOY_SCRIPTS" "script"
 
   if [[ "${#deploy_script_paths[@]}" -gt 0 && -n "$SCRIPT_DEPLOY_SHARED_LIBS" ]]; then
-    # shellcheck disable=SC2206
-    local shared_libs=($SCRIPT_DEPLOY_SHARED_LIBS)
-    for script_path in "${shared_libs[@]}"; do
-      [[ -z "$script_path" ]] && continue
-      if [[ "$script_path" = /* || "$script_path" == *".."* ]]; then
-        echo "Error: shared script deploy path must be a relative repo path without '..': $script_path" >&2
-        exit 1
-      fi
-      if [[ ! -f "$script_path" ]]; then
-        echo "Error: shared script deploy path not found: $script_path" >&2
-        exit 1
-      fi
-      _append_unique_path "$script_path"
-    done
+    _append_configured_deploy_paths "$SCRIPT_DEPLOY_SHARED_LIBS" "shared script"
   fi
 }
 
 deploy_prod_scripts_rsync() {
   local remote_base="$1"
-  local remote_path="${REMOTE_HOST}:${remote_base}/"
+  local remote_path="${REMOTE_HOST}:${remote_base}/custom_components/heima/"
+  local -a script_rsync_args=(
+    -av
+    --exclude='__pycache__/'
+    --exclude='*.pyc'
+    --exclude='*.pyo'
+  )
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    script_rsync_args+=(--dry-run)
+  fi
 
   _build_deploy_script_paths
   if [[ "${#deploy_script_paths[@]}" -eq 0 ]]; then
@@ -208,11 +217,11 @@ deploy_prod_scripts_rsync() {
 
   echo "Deploying prod scripts with rsync to ${remote_path}"
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[dry-run] Would ensure remote scripts directory exists: ${REMOTE_HOST}:${remote_base}/scripts"
+    echo "[dry-run] Would ensure remote scripts directory exists: ${REMOTE_HOST}:${remote_base}/custom_components/heima/scripts"
   else
-    ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/scripts/lib'"
+    ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/custom_components/heima/scripts/lib'"
   fi
-  rsync "${rsync_base_args[@]}" --relative "${deploy_script_paths[@]}" "$remote_path"
+  rsync "${script_rsync_args[@]}" --relative "${deploy_script_paths[@]}" "$remote_path"
 }
 
 deploy_prod_scripts_tar() {
@@ -225,16 +234,16 @@ deploy_prod_scripts_tar() {
   fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[dry-run] Would deploy prod scripts with tar to ${REMOTE_HOST}:${remote_base}/"
+    echo "[dry-run] Would deploy prod scripts with tar to ${REMOTE_HOST}:${remote_base}/custom_components/heima/"
     printf '[dry-run] Scripts:'
     printf ' %s' "${deploy_script_paths[@]}"
     printf '\n'
     return 0
   fi
 
-  echo "Deploying prod scripts with tar stream to ${REMOTE_HOST}:${remote_base}/"
-  ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/scripts/lib'"
-  COPYFILE_DISABLE=1 tar -cf - "${deploy_script_paths[@]}" | ssh "$REMOTE_HOST" "tar -C '${remote_base}' -xf -"
+  echo "Deploying prod scripts with tar stream to ${REMOTE_HOST}:${remote_base}/custom_components/heima/"
+  ssh "$REMOTE_HOST" "mkdir -p '${remote_base}/custom_components/heima/scripts/lib'"
+  COPYFILE_DISABLE=1 tar -cf - "${deploy_script_paths[@]}" | ssh "$REMOTE_HOST" "tar -C '${remote_base}/custom_components/heima' -xf -"
 }
 
 deploy_prod_scripts() {
