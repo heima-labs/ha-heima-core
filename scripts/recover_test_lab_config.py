@@ -29,7 +29,6 @@ from lib.ha_websocket import HAWebSocketClient, HAWebSocketError
 
 GENERAL_CONFIG = {
     "engine_enabled": True,
-    "timezone": "Europe/Rome",
     "language": "it",
     "lighting_apply_mode": "scene",
     "vacation_mode_entity": "input_boolean.test_heima_vacation_mode",
@@ -292,7 +291,6 @@ NOTIFICATIONS_CONFIG = {
 }
 
 LEARNING_CONFIG = {
-    "outdoor_temp_entity": "sensor.test_heima_outdoor_temp",
     "context_signal_entities": [
         "sensor.test_heima_bathroom_humidity",
         "sensor.test_heima_bathroom_temperature",
@@ -303,6 +301,10 @@ LEARNING_CONFIG = {
         "sensor.test_heima_studio_co2",
         "switch.test_heima_studio_fan",
     ],
+}
+
+EXTERNAL_CONTEXT_CONFIG = {
+    "outdoor_temp": "sensor.test_heima_outdoor_temp",
 }
 
 MQTT_BASELINE = {
@@ -791,6 +793,18 @@ def recover_learning(client: HAFlowClient, entry_id: str) -> None:
     _flow_save(client, flow_id)
 
 
+def recover_external_context(client: HAFlowClient, entry_id: str) -> None:
+    print("  → external context")
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init["flow_id"])
+    _expect_step(init, "init")
+    step = _menu_next(client, flow_id, "external_context")
+    _expect_step(step, "external_context")
+    result = client.options_flow_configure(flow_id, EXTERNAL_CONTEXT_CONFIG)
+    _expect_step(result, "init")
+    _flow_save(client, flow_id)
+
+
 def recover_mqtt(client: HAFlowClient) -> None:
     print("  → mqtt")
     existing = [
@@ -884,6 +898,7 @@ def main() -> int:
         "heating": lambda c, eid: recover_heating(c, eid),
         "security": lambda c, eid: recover_security(c, eid),
         "notifications": lambda c, eid: recover_notifications(c, eid),
+        "external_context": lambda c, eid: recover_external_context(c, eid),
         "learning": lambda c, eid: recover_learning(c, eid),
     }
 

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -88,7 +88,6 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
         house_state_cfg = {}
     payload = {
         "engine_enabled": bool(options.get("engine_enabled", True)),
-        "timezone": str(options.get("timezone", "UTC")),
         "language": str(options.get("language", "en")),
         "lighting_apply_mode": str(options.get("lighting_apply_mode", "scene")),
         "media_active_entities": [
@@ -167,7 +166,9 @@ def _recompute(client: HAClient) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify media-active config drives house_state relax")
+    parser = argparse.ArgumentParser(
+        description="Verify media-active config drives house_state relax"
+    )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=30)
@@ -211,7 +212,9 @@ def main() -> int:
             "turn_on",
             {"entity_id": "input_boolean.test_heima_room_studio_motion_raw"},
         )
-        client.wait_state("binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s)
+        client.wait_state(
+            "binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s
+        )
         _recompute(client)
         client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
         home_snapshot = _wait_house_state(
@@ -252,7 +255,9 @@ def main() -> int:
             poll_s=args.poll_s,
         )
 
-        print("PASS: configured media_active entity drives house_state relax without relax_mode binding")
+        print(
+            "PASS: configured media_active entity drives house_state relax without relax_mode binding"
+        )
         print(f"Resolved occupancy entity: {occupancy_entity}")
         print(f"Initial snapshot: {home_snapshot}")
         print(f"Relax snapshot: {relax_snapshot}")

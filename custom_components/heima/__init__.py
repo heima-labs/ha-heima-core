@@ -12,6 +12,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
 from .entities.registry import build_registry
+from .options_migration import migrate_learning_external_context_options
 from .room_sources import (
     autopopulate_room_signals,
     migrate_burst_signal_configs_and_reactions,
@@ -38,8 +39,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Heima from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    normalized_options, external_context_changed = migrate_learning_external_context_options(
+        dict(entry.options)
+    )
     normalized_options, signal_changed = autopopulate_room_signals(
-        dict(entry.options),
+        normalized_options,
         state_getter=hass.states.get,
     )
     normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
@@ -49,7 +53,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         normalized_options
     )
     normalized_options, reaction_changed = normalize_reaction_options_payload(normalized_options)
-    changed = signal_changed or bucket_changed or burst_changed or reaction_changed
+    changed = (
+        external_context_changed
+        or signal_changed
+        or bucket_changed
+        or burst_changed
+        or reaction_changed
+    )
     if changed:
         hass.config_entries.async_update_entry(entry, options=normalized_options)
 
@@ -79,8 +89,11 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     states = getattr(hass, "states", None)
     state_getter = getattr(states, "get", None)
+    normalized_options, external_context_changed = migrate_learning_external_context_options(
+        dict(entry.options)
+    )
     normalized_options, signals_changed = autopopulate_room_signals(
-        dict(entry.options),
+        normalized_options,
         state_getter=state_getter,
     )
     normalized_options, bucket_changed = migrate_room_darkness_reactions_to_primary_bucket(
@@ -90,7 +103,13 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
         normalized_options
     )
     normalized_options, reactions_changed = normalize_reaction_options_payload(normalized_options)
-    if signals_changed or bucket_changed or burst_changed or reactions_changed:
+    if (
+        external_context_changed
+        or signals_changed
+        or bucket_changed
+        or burst_changed
+        or reactions_changed
+    ):
         hass.config_entries.async_update_entry(entry, options=normalized_options)
         # Do NOT update last_options_snapshot here: the next invocation (scheduled by
         # async_update_entry) will detect the delta between the old snapshot and the

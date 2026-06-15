@@ -46,9 +46,6 @@ class _LearningStepsMixin:
             defaults["enabled_plugin_families"] = list(_LEARNING_PLUGIN_FAMILY_OPTIONS)
         schema = vol.Schema(
             {
-                vol.Optional("outdoor_lux_entity"): _entity_selector(["sensor"]),
-                vol.Optional("outdoor_temp_entity"): _entity_selector(["sensor"]),
-                vol.Optional("weather_entity"): _entity_selector(["weather"]),
                 vol.Optional("context_signal_entities"): _entity_selector(
                     ["binary_sensor", "sensor", "input_boolean", "switch", "media_player"],
                     multiple=True,
@@ -63,10 +60,6 @@ class _LearningStepsMixin:
 
     def _normalize_learning_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data: dict[str, Any] = {}
-
-        for key in ("outdoor_lux_entity", "outdoor_temp_entity", "weather_entity"):
-            val = payload.get(key)
-            data[key] = str(val).strip() if val else None
 
         raw_signals = payload.get("context_signal_entities") or []
         if isinstance(raw_signals, str):

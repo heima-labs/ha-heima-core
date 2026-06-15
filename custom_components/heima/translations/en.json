@@ -384,11 +384,8 @@
       },
       "learning": {
         "title": "Learning Context",
-        "description": "Configure the contextual signals Heima records with each event. These allow the learning system to detect patterns correlated with specific conditions (e.g. light level, weather).",
+        "description": "Configure extra contextual signals and learning policy. Outdoor and weather sources are configured in External context.",
         "data": {
-          "outdoor_lux_entity": "Outdoor light level entity (sensor)",
-          "outdoor_temp_entity": "Outdoor temperature entity (sensor)",
-          "weather_entity": "Weather entity (fallback for temp and condition)",
           "context_signal_entities": "Strong context signals (max 10 entities)",
           "enabled_plugin_families": "Enabled learning plugin families"
         },

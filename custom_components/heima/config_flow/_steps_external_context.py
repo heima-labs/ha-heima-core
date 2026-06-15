@@ -16,13 +16,13 @@ if TYPE_CHECKING:
 
 # Canonical slots with entity domain restrictions
 _SLOT_DOMAINS: dict[str, list[str]] = {
-    "outdoor_temp": ["sensor"],
+    "outdoor_temp": ["sensor", "weather"],
     "outdoor_humidity": ["sensor"],
     "outdoor_lux": ["sensor"],
     "wind_speed": ["sensor"],
     "rain_last_1h": ["sensor"],
     "rain_forecast_next_6h": ["sensor"],
-    "weather_condition": ["sensor"],
+    "weather_condition": ["sensor", "weather"],
     "weather_alert_level": ["sensor"],
     "weather_alert_phenomena": ["sensor"],
 }

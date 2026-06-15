@@ -876,22 +876,21 @@ script:
         data:
           code: "1234"
         continue_on_error: true
-      - if:
-          - condition: template
-            value_template: "{{ has_service('mqtt', 'publish') }}"
-        then:
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/motion
-              payload: "OFF"
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/presence_score
-              payload: "0.0"
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/external_temp
-              payload: "8.0"
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/motion
+          payload: "OFF"
+        continue_on_error: true
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/presence_score
+          payload: "0.0"
+        continue_on_error: true
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/external_temp
+          payload: "8.0"
+        continue_on_error: true
 
   test_heima_set_vacation_curve_short:
     alias: "Test Heima Set Vacation Curve Short"
@@ -915,22 +914,21 @@ script:
     alias: "Test Heima MQTT Publish Demo"
     icon: mdi:wifi
     sequence:
-      - if:
-          - condition: template
-            value_template: "{{ has_service('mqtt', 'publish') }}"
-        then:
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/motion
-              payload: "ON"
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/presence_score
-              payload: "0.92"
-          - action: mqtt.publish
-            data:
-              topic: heima/test/lab/external_temp
-              payload: "2.3"
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/motion
+          payload: "ON"
+        continue_on_error: true
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/presence_score
+          payload: "0.92"
+        continue_on_error: true
+      - action: mqtt.publish
+        data:
+          topic: heima/test/lab/external_temp
+          payload: "2.3"
+        continue_on_error: true
 
   test_heima_set_cold_house:
     alias: "Test Heima Set Cold House"

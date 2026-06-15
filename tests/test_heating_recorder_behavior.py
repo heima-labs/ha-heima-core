@@ -7,6 +7,7 @@ import asyncio
 from custom_components.heima.runtime.behaviors.heating_recorder import HeatingRecorderBehavior
 from custom_components.heima.runtime.context_builder import ContextBuilder
 from custom_components.heima.runtime.event_store import HeimaEvent
+from custom_components.heima.runtime.external_context import ExternalContext
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -167,7 +168,8 @@ async def test_heating_recorder_reads_weather_condition():
     }
     hass = _FakeHass(states=states)
     store = _FakeStore()
-    builder = ContextBuilder(hass, {"weather_entity": "weather.home"})
+    builder = ContextBuilder(hass)
+    builder.update_ext_ctx(ExternalContext(weather_condition="sunny", outdoor_temp=15.0))
     behavior = HeatingRecorderBehavior(hass, store, builder)  # type: ignore[arg-type]
 
     behavior.on_snapshot(_snapshot(heating_setpoint=21.0))

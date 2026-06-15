@@ -23,19 +23,15 @@ class ContextBuilder:
     The coordinator owns it and calls update_config() on options reload.
 
     Config keys (from options snapshot):
-      outdoor_lux_entity:      entity_id of an illuminance sensor (lx)
-      outdoor_temp_entity:     entity_id of a temperature sensor (°C)
-      weather_entity:          entity_id of a weather integration
       context_signal_entities: list of entity_ids (max 10) that are strong
                                context signals for learning (projector, TV, etc.)
       rooms[*].learning_sources: room-scoped signals used as learnable trigger/context inputs
+
+    Outdoor and weather context comes from ExternalContext, not learning config.
     """
 
     def __init__(self, hass: HomeAssistant, config: dict[str, Any] | None = None) -> None:
         self._hass = hass
-        self._outdoor_lux_entity: str | None = None
-        self._outdoor_temp_entity: str | None = None
-        self._weather_entity: str | None = None
         self._signal_entities: list[str] = []
         self._ext_ctx: ExternalContext | None = None
         if config:
@@ -48,9 +44,6 @@ class ContextBuilder:
     def update_config(self, config: dict[str, Any]) -> None:
         """Update builder from options or learning config (called on options reload)."""
         learning = dict(config.get("learning", {})) if "learning" in config else dict(config)
-        self._outdoor_lux_entity = learning.get("outdoor_lux_entity") or None
-        self._outdoor_temp_entity = learning.get("outdoor_temp_entity") or None
-        self._weather_entity = learning.get("weather_entity") or None
         raw_signals = learning.get("context_signal_entities", [])
         merged_signals: list[str] = []
         if isinstance(config.get("rooms"), list):
@@ -76,19 +69,12 @@ class ContextBuilder:
     ) -> EventContext:
         """Build an EventContext from snapshot + current HA state.
 
-        ext_ctx (explicit) takes precedence; falls back to self._ext_ctx (set by engine each cycle)
-        when no direct entity is configured in learning settings.
+        ext_ctx (explicit) takes precedence; falls back to self._ext_ctx (set by engine each cycle).
         """
         effective = ext_ctx or self._ext_ctx
-        outdoor_lux = self._read_float(self._outdoor_lux_entity)
-        if outdoor_lux is None and effective is not None:
-            outdoor_lux = effective.outdoor_lux
-        outdoor_temp = self._read_outdoor_temp()
-        if outdoor_temp is None and effective is not None:
-            outdoor_temp = effective.outdoor_temp
-        weather_condition = self._read_weather_condition()
-        if weather_condition is None and effective is not None:
-            weather_condition = effective.weather_condition
+        outdoor_lux = effective.outdoor_lux if effective is not None else None
+        outdoor_temp = effective.outdoor_temp if effective is not None else None
+        weather_condition = effective.weather_condition if effective is not None else None
         dt = datetime.fromisoformat(snapshot.ts)
         local_dt = dt_util.as_local(dt)
         return EventContext(
@@ -105,39 +91,6 @@ class ContextBuilder:
         )
 
     # ------------------------------------------------------------------
-
-    def _read_float(self, entity_id: str | None) -> float | None:
-        if not entity_id:
-            return None
-        state = self._hass.states.get(entity_id)
-        if state is None:
-            return None
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            return None
-
-    def _read_outdoor_temp(self) -> float | None:
-        # Prefer dedicated temp entity; fall back to weather.temperature attribute
-        val = self._read_float(self._outdoor_temp_entity)
-        if val is not None:
-            return val
-        if self._weather_entity:
-            state = self._hass.states.get(self._weather_entity)
-            if state is not None:
-                try:
-                    return float(state.attributes.get("temperature", ""))
-                except (ValueError, TypeError):
-                    pass
-        return None
-
-    def _read_weather_condition(self) -> str | None:
-        if not self._weather_entity:
-            return None
-        state = self._hass.states.get(self._weather_entity)
-        if state is None:
-            return None
-        return str(state.state) or None
 
     def _read_signals(self) -> dict[str, str]:
         signals: dict[str, str] = {}
