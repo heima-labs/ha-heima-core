@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""True live E2E test for room darkness lighting assist learning.
+"""True live E2E test for room smart lighting assist learning.
 
 The Docker lab fixture provides 4 historical studio darkness/lighting episodes.
 This script performs one real studio occupancy + lux drop + lighting activation
 sequence through Home Assistant entities so the composite catalog analyzer can
-emit a pending `room_darkness_lighting_assist` proposal without seeded runtime
+emit a pending `room_smart_lighting_assist` proposal without seeded runtime
 commands.
 """
 
@@ -92,7 +92,7 @@ def _configured_reaction_exists(
     return False
 
 
-def _find_room_darkness_lighting_assist(
+def _find_room_smart_lighting_assist(
     diag: dict[str, Any],
 ) -> tuple[str, dict[str, Any]] | None:
     proposals = diag.get("proposals")
@@ -101,7 +101,7 @@ def _find_room_darkness_lighting_assist(
     for proposal in proposals:
         if not isinstance(proposal, dict):
             continue
-        if proposal.get("type") != "room_darkness_lighting_assist":
+        if proposal.get("type") != "room_smart_lighting_assist":
             continue
         if proposal.get("status") != "pending":
             continue
@@ -176,7 +176,7 @@ def _wait_for_room_darkness_proposal(
     while time.time() < deadline:
         diag = _proposal_diagnostics(client, entry_id)
         current = _to_int(diag.get("total"))
-        found = _find_room_darkness_lighting_assist(diag)
+        found = _find_room_smart_lighting_assist(diag)
         if current > previous and found is not None:
             proposal_id, proposal = found
             return proposal_id, proposal, "count_increased"
@@ -185,7 +185,7 @@ def _wait_for_room_darkness_proposal(
             return proposal_id, proposal, "dedup_stable_count"
         time.sleep(poll_s)
     raise RuntimeError(
-        "Timeout waiting for pending room_darkness_lighting_assist proposal in diagnostics"
+        "Timeout waiting for pending room_smart_lighting_assist proposal in diagnostics"
     )
 
 
@@ -240,9 +240,7 @@ def _wait_light_brightness(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Heima true live room-darkness-lighting-assist test"
-    )
+    parser = argparse.ArgumentParser(description="Heima true live room-smart-lighting-assist test")
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=90)
@@ -282,20 +280,32 @@ def main() -> int:
     print(f"Initial room_signal_threshold events: {baseline['room_signal_threshold']}")
     print(f"Initial lighting events: {baseline['lighting']}")
     print(f"Initial proposals count: {proposals_before}")
-    existing = _find_room_darkness_lighting_assist(proposals_diag)
+    existing = _find_room_smart_lighting_assist(proposals_diag)
     if existing is not None:
         proposal_id, _ = existing
         print(
-            f"PASS: room darkness lighting assist proposal already pending [preexisting] id={proposal_id}"
+            f"PASS: room smart lighting assist proposal already pending [preexisting] id={proposal_id}"
         )
         return 0
+    if _configured_reaction_exists(
+        client,
+        entry_id,
+        reaction_type="room_smart_lighting_assist",
+        room_id="studio",
+    ):
+        print("PASS: room smart lighting assist reaction already configured [preexisting]")
+        return 0
+    # Legacy configured reactions still mean the learning target is already covered
+    # for older lab snapshots.
     if _configured_reaction_exists(
         client,
         entry_id,
         reaction_type="room_darkness_lighting_assist",
         room_id="studio",
     ):
-        print("PASS: room darkness lighting assist reaction already configured [preexisting]")
+        print(
+            "PASS: legacy room darkness lighting assist reaction already configured [preexisting]"
+        )
         return 0
     if _configured_reaction_exists(
         client,

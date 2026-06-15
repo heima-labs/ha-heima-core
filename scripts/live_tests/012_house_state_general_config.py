@@ -76,7 +76,6 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
         house_state_cfg = {}
     payload = {
         "engine_enabled": bool(options.get("engine_enabled", True)),
-        "timezone": str(options.get("timezone", "UTC")),
         "language": str(options.get("language", "en")),
         "lighting_apply_mode": str(options.get("lighting_apply_mode", "scene")),
         "media_active_entities": [

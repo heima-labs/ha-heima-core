@@ -84,7 +84,6 @@ def _normalized_general_payload(options: dict[str, Any]) -> dict[str, Any]:
         house_state_cfg = {}
     payload = {
         "engine_enabled": bool(options.get("engine_enabled", True)),
-        "timezone": str(options.get("timezone", "UTC")),
         "language": str(options.get("language", "en")),
         "lighting_apply_mode": str(options.get("lighting_apply_mode", "scene")),
         "media_active_entities": [
@@ -151,7 +150,9 @@ def _normalized_calendar_payload(options: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _save_options_slice(client: HAFlowClient, entry_id: str, *, step_id: str, payload: dict[str, Any]) -> None:
+def _save_options_slice(
+    client: HAFlowClient, entry_id: str, *, step_id: str, payload: dict[str, Any]
+) -> None:
     init = client.options_flow_init(entry_id)
     flow_id = str(init["flow_id"])
     _expect_step(init, "init")
@@ -202,7 +203,9 @@ def _wait_house_state(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify workday evidence drives house_state working")
+    parser = argparse.ArgumentParser(
+        description="Verify workday evidence drives house_state working"
+    )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--timeout-s", type=int, default=30)
@@ -244,17 +247,25 @@ def main() -> int:
         _save_general(client, entry_id, test_payload)
 
         client.call_service("script", "turn_on", {"entity_id": "script.test_heima_reset"})
-        client.wait_state("input_boolean.test_heima_vacation_mode", "off", args.timeout_s, args.poll_s)
+        client.wait_state(
+            "input_boolean.test_heima_vacation_mode", "off", args.timeout_s, args.poll_s
+        )
         client.wait_state("input_boolean.test_heima_guest_mode", "off", args.timeout_s, args.poll_s)
-        client.wait_state("binary_sensor.test_heima_work_window", "off", args.timeout_s, args.poll_s)
-        client.wait_state("binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s)
+        client.wait_state(
+            "binary_sensor.test_heima_work_window", "off", args.timeout_s, args.poll_s
+        )
+        client.wait_state(
+            "binary_sensor.test_heima_room_studio_motion", "off", args.timeout_s, args.poll_s
+        )
 
         client.call_service(
             "input_boolean",
             "turn_on",
             {"entity_id": "input_boolean.test_heima_room_studio_motion_raw"},
         )
-        client.wait_state("binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s)
+        client.wait_state(
+            "binary_sensor.test_heima_room_studio_motion", "on", args.timeout_s, args.poll_s
+        )
         _recompute(client)
         client.wait_state(occupancy_entity, "on", args.timeout_s, args.poll_s)
         home_diag = _wait_house_state(
@@ -287,7 +298,9 @@ def main() -> int:
             "turn_off",
             {"entity_id": "input_boolean.test_heima_work_mode"},
         )
-        client.wait_state("binary_sensor.test_heima_work_window", "off", args.timeout_s, args.poll_s)
+        client.wait_state(
+            "binary_sensor.test_heima_work_window", "off", args.timeout_s, args.poll_s
+        )
         _recompute(client)
         final_diag = _wait_house_state(
             client,

@@ -384,11 +384,8 @@
       },
       "learning": {
         "title": "Apprendimento",
-        "description": "Configura i segnali contestuali registrati da Heima insieme a ogni evento. Permettono al sistema di rilevare pattern correlati a condizioni specifiche (es. luminosità esterna, meteo).",
+        "description": "Configura segnali contestuali aggiuntivi e policy di apprendimento. Fonti esterne e meteo si configurano in Contesto esterno.",
         "data": {
-          "outdoor_lux_entity": "Entità luminosità esterna (sensor)",
-          "outdoor_temp_entity": "Entità temperatura esterna (sensor)",
-          "weather_entity": "Entità meteo (fallback per temperatura e condizione)",
           "context_signal_entities": "Segnali contestuali aggiuntivi (max 10 entità)",
           "enabled_plugin_families": "Famiglie plugin apprendimento abilitate"
         },

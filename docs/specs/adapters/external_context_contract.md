@@ -114,6 +114,11 @@ external_context:
 - Se un'entità configurata è `unavailable`, Heima tratta il slot come assente
   (non esiste un meccanismo di fallback automatico — la selezione della fonte
   è una decisione esplicita dell'utente)
+- Per compatibilità con configurazioni legacy, Heima può accettare una entity
+  `weather.*` come sorgente di `weather_condition` e `outdoor_temp`:
+  `weather_condition` usa lo stato dell'entità, `outdoor_temp` usa l'attributo
+  `temperature`. Gli adapter `sensor.heima_ext_*` restano la sorgente
+  raccomandata e normativamente preferita.
 
 ---
 

@@ -58,7 +58,7 @@ def test_classify_entity_prefers_explicit_config_and_patterns() -> None:
                     "sources": ["device_tracker.phone"],
                 }
             ],
-            "learning": {"weather_entity": "weather.home"},
+            "external_context": {"weather_condition": "weather.home"},
             "activity_bindings": {
                 "stove_on": {"stove_power_entity": "sensor.stove_power"},
             },

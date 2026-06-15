@@ -95,4 +95,9 @@ class ExternalContextNormalizer:
             return None
         if state.state in ("unavailable", "unknown"):
             return None
+        if slot == "outdoor_temp" and entity_id.startswith("weather."):
+            value = state.attributes.get("temperature")
+            if value in (None, "", "unavailable", "unknown"):
+                return None
+            return str(value)
         return state.state

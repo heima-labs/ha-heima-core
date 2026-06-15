@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from custom_components.heima.runtime.context_builder import ContextBuilder
-from custom_components.heima.runtime.external_context import ExternalContext
+from custom_components.heima.runtime.external_context import (
+    ExternalContext,
+    ExternalContextNormalizer,
+)
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -66,16 +69,16 @@ def test_context_builder_house_state_and_occupancy():
     assert set(ctx.occupied_rooms) == {"living", "kitchen"}
 
 
-def test_context_builder_outdoor_lux():
+def test_context_builder_outdoor_lux_from_external_context():
     hass = _FakeHass({"sensor.lux": _FakeState("320.5")})
-    builder = ContextBuilder(hass, {"outdoor_lux_entity": "sensor.lux"})
-    ctx = builder.build(_snapshot())
+    builder = ContextBuilder(hass)
+    ctx = builder.build(_snapshot(), ext_ctx=ExternalContext(outdoor_lux=320.5))
     assert ctx.outdoor_lux == 320.5
 
 
-def test_context_builder_outdoor_lux_none_when_unavailable():
-    hass = _FakeHass()
-    builder = ContextBuilder(hass, {"outdoor_lux_entity": "sensor.missing"})
+def test_context_builder_outdoor_lux_ignores_legacy_learning_entity():
+    hass = _FakeHass({"sensor.lux": _FakeState("320.5")})
+    builder = ContextBuilder(hass, {"outdoor_lux_entity": "sensor.lux"})
     ctx = builder.build(_snapshot())
     assert ctx.outdoor_lux is None
 
@@ -84,45 +87,28 @@ def test_context_builder_outdoor_lux_preserves_zero_value():
     hass = _FakeHass({"sensor.lux": _FakeState("0")})
     builder = ContextBuilder(hass, {"outdoor_lux_entity": "sensor.lux"})
     ctx = builder.build(_snapshot(), ext_ctx=ExternalContext(outdoor_lux=500.0))
-    assert ctx.outdoor_lux == 0.0
+    assert ctx.outdoor_lux == 500.0
 
 
-def test_context_builder_outdoor_temp_from_dedicated_entity():
+def test_context_builder_outdoor_temp_from_external_context():
     hass = _FakeHass({"sensor.outdoor_temp": _FakeState("12.3")})
-    builder = ContextBuilder(hass, {"outdoor_temp_entity": "sensor.outdoor_temp"})
-    ctx = builder.build(_snapshot())
+    builder = ContextBuilder(hass)
+    ctx = builder.build(_snapshot(), ext_ctx=ExternalContext(outdoor_temp=12.3))
     assert ctx.outdoor_temp == 12.3
 
 
-def test_context_builder_outdoor_temp_fallback_from_weather():
+def test_context_builder_ignores_legacy_weather_entity():
     hass = _FakeHass({"weather.home": _FakeState("cloudy", {"temperature": 8.0})})
     builder = ContextBuilder(hass, {"weather_entity": "weather.home"})
     ctx = builder.build(_snapshot())
-    assert ctx.outdoor_temp == 8.0
+    assert ctx.outdoor_temp is None
+    assert ctx.weather_condition is None
 
 
-def test_context_builder_outdoor_temp_prefers_dedicated_over_weather():
-    hass = _FakeHass(
-        {
-            "sensor.outdoor_temp": _FakeState("15.0"),
-            "weather.home": _FakeState("sunny", {"temperature": 20.0}),
-        }
-    )
-    builder = ContextBuilder(
-        hass,
-        {
-            "outdoor_temp_entity": "sensor.outdoor_temp",
-            "weather_entity": "weather.home",
-        },
-    )
-    ctx = builder.build(_snapshot())
-    assert ctx.outdoor_temp == 15.0  # dedicated wins
-
-
-def test_context_builder_weather_condition():
+def test_context_builder_weather_condition_from_external_context():
     hass = _FakeHass({"weather.home": _FakeState("rainy", {})})
-    builder = ContextBuilder(hass, {"weather_entity": "weather.home"})
-    ctx = builder.build(_snapshot())
+    builder = ContextBuilder(hass)
+    ctx = builder.build(_snapshot(), ext_ctx=ExternalContext(weather_condition="rainy"))
     assert ctx.weather_condition == "rainy"
 
 
@@ -200,7 +186,7 @@ def test_context_builder_update_config():
 
     builder.update_config({"outdoor_lux_entity": "sensor.lux"})
     ctx_after = builder.build(_snapshot())
-    assert ctx_after.outdoor_lux == 500.0
+    assert ctx_after.outdoor_lux is None
 
 
 def test_context_builder_no_config_returns_none_optionals():
@@ -211,3 +197,21 @@ def test_context_builder_no_config_returns_none_optionals():
     assert ctx.outdoor_temp is None
     assert ctx.weather_condition is None
     assert ctx.signals == {}
+
+
+def test_external_context_normalizer_reads_weather_entity_condition_and_temperature():
+    hass = _FakeHass({"weather.home": _FakeState("cloudy", {"temperature": 8.5})})
+    normalizer = ExternalContextNormalizer(hass)
+    normalizer.update_config(
+        {
+            "external_context": {
+                "weather_condition": "weather.home",
+                "outdoor_temp": "weather.home",
+            }
+        }
+    )
+
+    ctx = normalizer.compute()
+
+    assert ctx.weather_condition == "cloudy"
+    assert ctx.outdoor_temp == 8.5

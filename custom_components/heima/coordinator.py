@@ -1301,9 +1301,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         return entities
 
     def _configured_weather_entity(self, options: dict[str, Any]) -> str:
-        learning = options.get("learning", {})
-        if isinstance(learning, dict):
-            return str(learning.get("weather_entity") or "").strip().lower()
+        external_context = options.get("external_context", {})
+        if isinstance(external_context, dict):
+            return str(external_context.get("weather_condition") or "").strip().lower()
         return ""
 
     def _power_thresholds_by_entity(self) -> dict[str, list[float]]:

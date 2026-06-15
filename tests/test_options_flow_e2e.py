@@ -269,9 +269,6 @@ async def test_learning_flow_persists_enabled_plugin_families():
 
     result = await flow.async_step_learning(
         {
-            "outdoor_lux_entity": "sensor.outdoor_lux",
-            "outdoor_temp_entity": "",
-            "weather_entity": "",
             "context_signal_entities": ["media_player.projector"],
             "enabled_plugin_families": ["presence", "lighting"],
             "activity_bootstrap_mode": False,
@@ -280,9 +277,6 @@ async def test_learning_flow_persists_enabled_plugin_families():
 
     assert result["type"] == "menu"
     assert flow.options["learning"] == {
-        "outdoor_lux_entity": "sensor.outdoor_lux",
-        "outdoor_temp_entity": None,
-        "weather_entity": None,
         "context_signal_entities": ["media_player.projector"],
         "enabled_plugin_families": ["presence", "lighting"],
         "activity_bootstrap_mode": False,
@@ -295,9 +289,6 @@ async def test_learning_flow_persists_activity_bootstrap_mode():
 
     result = await flow.async_step_learning(
         {
-            "outdoor_lux_entity": "",
-            "outdoor_temp_entity": "",
-            "weather_entity": "",
             "context_signal_entities": [],
             "enabled_plugin_families": ["presence"],
             "activity_bootstrap_mode": True,
@@ -369,16 +360,13 @@ async def test_update_options_merges_on_fresh_entry_snapshot_when_flow_state_is_
 
     await flow.async_step_learning(
         {
-            "outdoor_lux_entity": "sensor.updated_lux",
-            "outdoor_temp_entity": "",
-            "weather_entity": "",
             "context_signal_entities": [],
             "enabled_plugin_families": ["presence", "lighting"],
         }
     )
 
     updated = flow._config_entry.options
-    assert updated["learning"]["outdoor_lux_entity"] == "sensor.updated_lux"
+    assert updated["learning"]["context_signal_entities"] == []
     assert updated["reactions"]["configured"] == {
         "r_new": {"reaction_class": "RoomSmartLightingAssistReaction"}
     }
