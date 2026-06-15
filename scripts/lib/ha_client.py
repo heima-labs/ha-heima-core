@@ -1,40 +1,37 @@
 """Shared Home Assistant REST client used by scripts/* live tools."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 import time
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 
 class HAApiError(RuntimeError):
     """Raised for non-success HA API calls."""
 
-    def __init__(self, message: str, *, status_code: int | None = None, body: str = "") -> None:
+    def __init__(self, message: str, *, status_code: Optional[int] = None, body: str = "") -> None:
         super().__init__(message)
         self.status_code = status_code
         self.body = body
 
 
-@dataclass
 class HAClient:
     """Minimal, dependency-free HA REST API client based on curl."""
 
-    base_url: str
-    token: str
-    timeout_s: int = 20
+    def __init__(self, base_url: str, token: str, timeout_s: int = 20) -> None:
+        self.base_url = base_url
+        self.token = token
+        self.timeout_s = timeout_s
 
     def request(
         self,
         method: str,
         path: str,
-        payload: dict[str, Any] | None = None,
+        payload: Optional[Dict[str, Any]] = None,
         *,
         accept_error: bool = False,
-    ) -> tuple[int, Any]:
+    ) -> Tuple[int, Any]:
         base_url = str(self.base_url or "").strip()
         parsed = urlparse(base_url)
         if not base_url or not parsed.scheme or not parsed.netloc:
@@ -64,7 +61,13 @@ class HAClient:
         ]
         if payload is not None:
             cmd.extend(["-d", json.dumps(payload)])
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
         if proc.returncode != 0:
             raise HAApiError(f"curl failed for {method} {path}: {(proc.stderr or '').strip()}")
 
@@ -94,13 +97,13 @@ class HAClient:
         return data
 
     def post(
-        self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False
+        self, path: str, payload: Optional[Dict[str, Any]] = None, *, accept_error: bool = False
     ) -> Any:
         _, data = self.request("POST", path, payload, accept_error=accept_error)
         return data
 
     def patch(
-        self, path: str, payload: dict[str, Any] | None = None, *, accept_error: bool = False
+        self, path: str, payload: Optional[Dict[str, Any]] = None, *, accept_error: bool = False
     ) -> Any:
         _, data = self.request("PATCH", path, payload, accept_error=accept_error)
         return data
@@ -108,7 +111,7 @@ class HAClient:
     def delete(self, path: str, *, accept_error: bool = True) -> None:
         self.request("DELETE", path, accept_error=accept_error)
 
-    def get_state(self, entity_id: str) -> dict[str, Any]:
+    def get_state(self, entity_id: str) -> Dict[str, Any]:
         data = self.get(f"/api/states/{entity_id}")
         if not isinstance(data, dict):
             raise HAApiError(f"invalid state payload for {entity_id}: {type(data)}")
@@ -121,13 +124,13 @@ class HAClient:
         status, _ = self.request("GET", f"/api/states/{entity_id}", accept_error=True)
         return status == 200
 
-    def all_states(self) -> list[dict[str, Any]]:
+    def all_states(self) -> List[Dict[str, Any]]:
         data = self.get("/api/states")
         if not isinstance(data, list):
             return []
         return [item for item in data if isinstance(item, dict)]
 
-    def state_from_list(self, entity_id: str) -> dict[str, Any] | None:
+    def state_from_list(self, entity_id: str) -> Optional[Dict[str, Any]]:
         """Find entity state by scanning /api/states list.
 
         Avoids 404 from GET /api/states/{id} when the entity is temporarily
@@ -139,7 +142,7 @@ class HAClient:
                 return s
         return None
 
-    def call_service(self, domain: str, service: str, data: dict[str, Any] | None = None) -> Any:
+    def call_service(self, domain: str, service: str, data: Optional[Dict[str, Any]] = None) -> Any:
         return self.post(f"/api/services/{domain}/{service}", data or {})
 
     def wait_state(self, entity_id: str, expected: str, timeout_s: int, poll_s: float) -> None:
@@ -153,12 +156,12 @@ class HAClient:
             time.sleep(poll_s)
         raise HAApiError(f"Timeout waiting for {entity_id}='{expected}', last='{last}'")
 
-    def list_config_entries(self) -> list[dict[str, Any]]:
+    def list_config_entries(self) -> List[Dict[str, Any]]:
         variants = [
             "/api/config/config_entries/entry",
             "/api/config/config_entries/entries",
         ]
-        last: Exception | None = None
+        last: Optional[Exception] = None
         for path in variants:
             try:
                 data = self.get(path)
@@ -168,7 +171,7 @@ class HAClient:
                 last = err
         raise HAApiError(f"unable to list config entries: {last}")
 
-    def get_entry(self, entry_id: str) -> dict[str, Any]:
+    def get_entry(self, entry_id: str) -> Dict[str, Any]:
         detail_variants = [
             f"/api/config/config_entries/entry/{entry_id}",
             f"/api/config/config_entries/entries/{entry_id}",

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Generate a Heima developer dashboard from a live Home Assistant instance."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.ha_client import HAApiError, HAClient  # noqa: E402
@@ -114,7 +112,7 @@ def _slug(value: str) -> str:
     return re.sub(r"_+", "_", text).strip("_")
 
 
-def _friendly_name(state: dict[str, Any]) -> str:
+def _friendly_name(state: Dict[str, Any]) -> str:
     attrs = state.get("attributes")
     if isinstance(attrs, dict):
         name = str(attrs.get("friendly_name") or "").strip()
@@ -123,7 +121,7 @@ def _friendly_name(state: dict[str, Any]) -> str:
     return str(state.get("entity_id") or "")
 
 
-def _state_map(states: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _state_map(states: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return {
         str(item.get("entity_id")): item
         for item in states
@@ -131,11 +129,11 @@ def _state_map(states: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     }
 
 
-def _existing(entity_ids: list[str], state_by_id: dict[str, dict[str, Any]]) -> list[str]:
+def _existing(entity_ids: List[str], state_by_id: Dict[str, Dict[str, Any]]) -> List[str]:
     return [entity_id for entity_id in entity_ids if entity_id in state_by_id]
 
 
-def _heima_entities(state_by_id: dict[str, dict[str, Any]]) -> list[str]:
+def _heima_entities(state_by_id: Dict[str, Dict[str, Any]]) -> List[str]:
     return sorted(
         entity_id
         for entity_id in state_by_id
@@ -144,11 +142,11 @@ def _heima_entities(state_by_id: dict[str, dict[str, Any]]) -> list[str]:
 
 
 def _entities_matching(
-    entity_ids: list[str],
-    patterns: tuple[str, ...],
+    entity_ids: List[str],
+    patterns: Tuple[str, ...],
     *,
-    exclude: set[str] | None = None,
-) -> list[str]:
+    exclude: Optional[Set[str]] = None,
+) -> List[str]:
     excluded = exclude or set()
     result = []
     for entity_id in entity_ids:
@@ -160,7 +158,7 @@ def _entities_matching(
     return sorted(result)
 
 
-def _diagnostics_root(client: HAClient, entry_id: str) -> dict[str, Any]:
+def _diagnostics_root(client: HAClient, entry_id: str) -> Dict[str, Any]:
     try:
         raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
     except HAApiError:
@@ -171,7 +169,7 @@ def _diagnostics_root(client: HAClient, entry_id: str) -> dict[str, Any]:
     return dict(data) if isinstance(data, dict) else {}
 
 
-def _configured_reactions(options: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _configured_reactions(options: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     reactions = options.get("reactions")
     if not isinstance(reactions, dict):
         return {}
@@ -185,7 +183,7 @@ def _configured_reactions(options: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def _rooms(options: dict[str, Any]) -> list[dict[str, Any]]:
+def _rooms(options: Dict[str, Any]) -> List[Dict[str, Any]]:
     raw = options.get("rooms")
     if not isinstance(raw, list):
         return []
@@ -208,7 +206,7 @@ def _rooms(options: dict[str, Any]) -> list[dict[str, Any]]:
     return rooms
 
 
-def _room_occupancy_mode(room_cfg: dict[str, Any]) -> str:
+def _room_occupancy_mode(room_cfg: Dict[str, Any]) -> str:
     explicit = str(room_cfg.get("occupancy_mode") or "").strip()
     if explicit:
         return explicit
@@ -220,8 +218,8 @@ def _room_occupancy_mode(room_cfg: dict[str, Any]) -> str:
     return "unknown"
 
 
-def _configured_entity_refs(value: Any) -> set[str]:
-    refs: set[str] = set()
+def _configured_entity_refs(value: Any) -> Set[str]:
+    refs: Set[str] = set()
     if isinstance(value, str):
         if "." in value:
             refs.add(value)
@@ -236,19 +234,19 @@ def _configured_entity_refs(value: Any) -> set[str]:
     return refs
 
 
-def _room_entities_from_config(room: dict[str, Any], state_by_id: dict[str, dict[str, Any]]) -> set[str]:
+def _room_entities_from_config(room: Dict[str, Any], state_by_id: Dict[str, Dict[str, Any]]) -> Set[str]:
     refs = _configured_entity_refs(room.get("raw", {}))
     return {entity_id for entity_id in refs if entity_id in state_by_id}
 
 
 def _room_entities_from_heuristics(
-    room: dict[str, Any],
-    state_by_id: dict[str, dict[str, Any]],
-) -> set[str]:
+    room: Dict[str, Any],
+    state_by_id: Dict[str, Dict[str, Any]],
+) -> Set[str]:
     room_id = _slug(room["room_id"])
     display = _slug(room["display_name"])
     tokens = {token for token in {room_id, display} if token}
-    result: set[str] = set()
+    result: Set[str] = set()
     for entity_id, state in state_by_id.items():
         if _domain(entity_id) not in ROOM_SIGNAL_DOMAINS:
             continue
@@ -259,7 +257,7 @@ def _room_entities_from_heuristics(
     return result
 
 
-def _event_canonicalizer_entities(diagnostics: dict[str, Any]) -> dict[str, list[str]]:
+def _event_canonicalizer_entities(diagnostics: Dict[str, Any]) -> Dict[str, List[str]]:
     tracked = (
         diagnostics.get("runtime", {})
         .get("engine", {})
@@ -269,7 +267,7 @@ def _event_canonicalizer_entities(diagnostics: dict[str, Any]) -> dict[str, list
     )
     if not isinstance(tracked, dict):
         return {}
-    by_room: dict[str, list[str]] = {}
+    by_room: Dict[str, List[str]] = {}
     for entity_id, payload in tracked.items():
         if not isinstance(payload, dict):
             continue
@@ -279,8 +277,8 @@ def _event_canonicalizer_entities(diagnostics: dict[str, Any]) -> dict[str, list
     return {room: sorted(set(entities)) for room, entities in by_room.items()}
 
 
-def _reaction_room_map(configured: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    result: dict[str, list[dict[str, Any]]] = {}
+def _reaction_room_map(configured: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    result: Dict[str, List[Dict[str, Any]]] = {}
     for reaction_id, cfg in configured.items():
         room_id = str(cfg.get("room_id") or "").strip()
         if not room_id:
@@ -296,14 +294,14 @@ def _reaction_room_map(configured: dict[str, dict[str, Any]]) -> dict[str, list[
     return result
 
 
-def _services(client: HAClient) -> set[str]:
+def _services(client: HAClient) -> Set[str]:
     try:
         payload = client.get("/api/services")
     except HAApiError:
         return set()
     if not isinstance(payload, list):
         return set()
-    result: set[str] = set()
+    result: Set[str] = set()
     for domain_payload in payload:
         if not isinstance(domain_payload, dict):
             continue
@@ -322,7 +320,7 @@ def discover_inventory(
     mode: str,
     max_room_entities: int,
     max_reactions: int,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     entry_id = client.find_heima_entry_id()
     entry = client.get_entry(entry_id)
     states = client.all_states()
@@ -390,7 +388,7 @@ def discover_inventory(
         max_reactions=max_reactions,
     )
 
-    test_lab_entities: list[str] = []
+    test_lab_entities: List[str] = []
     if mode == "test-lab":
         test_lab_entities = sorted(
             entity_id
@@ -453,7 +451,7 @@ def discover_inventory(
     }
 
 
-def _compact_snapshot(snapshot: Any) -> dict[str, Any]:
+def _compact_snapshot(snapshot: Any) -> Dict[str, Any]:
     if not isinstance(snapshot, dict):
         return {}
     keys = [
@@ -467,7 +465,7 @@ def _compact_snapshot(snapshot: Any) -> dict[str, Any]:
     return {key: snapshot.get(key) for key in keys if key in snapshot}
 
 
-def _compact_learning_modules(modules: Any) -> list[dict[str, Any]]:
+def _compact_learning_modules(modules: Any) -> List[Dict[str, Any]]:
     if not isinstance(modules, list):
         return []
     result = []
@@ -490,10 +488,10 @@ def _compact_learning_modules(modules: Any) -> list[dict[str, Any]]:
 
 def _compact_runtime_reactions(
     reactions: Any,
-    configured: dict[str, dict[str, Any]],
+    configured: Dict[str, Dict[str, Any]],
     *,
     max_reactions: int,
-) -> list[dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     if not isinstance(reactions, dict):
         return []
     rows = []
@@ -514,7 +512,7 @@ def _compact_runtime_reactions(
     return rows[:max_reactions]
 
 
-def _runtime_reaction_state(diag: dict[str, Any]) -> str:
+def _runtime_reaction_state(diag: Dict[str, Any]) -> str:
     for key in (
         "blocked_reason",
         "operational_state",
@@ -532,7 +530,7 @@ def _runtime_reaction_state(diag: dict[str, Any]) -> str:
     return "-"
 
 
-def _compact_lighting(payload: Any) -> dict[str, Any]:
+def _compact_lighting(payload: Any) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     recent = payload.get("recent_entity_applies", {})
@@ -550,7 +548,7 @@ def _yaml_scalar(value: str) -> str:
     return f'"{text}"'
 
 
-def _entity_card(title: str, entities: list[str]) -> str:
+def _entity_card(title: str, entities: List[str]) -> str:
     if not entities:
         return _markdown_card(title, "_No matching live entities discovered._")
     lines = [
@@ -563,7 +561,7 @@ def _entity_card(title: str, entities: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _history_card(title: str, entities: list[str], *, hours: int = 12) -> str:
+def _history_card(title: str, entities: List[str], *, hours: int = 12) -> str:
     if not entities:
         return _markdown_card(title, "_No history entities discovered._")
     lines = [
@@ -577,7 +575,7 @@ def _history_card(title: str, entities: list[str], *, hours: int = 12) -> str:
     return "\n".join(lines)
 
 
-def _button_card(name: str, icon: str, service: str, data: dict[str, Any] | None = None) -> str:
+def _button_card(name: str, icon: str, service: str, data: Optional[Dict[str, Any]] = None) -> str:
     lines = [
         "- type: button",
         f"  name: {_yaml_scalar(name)}",
@@ -605,7 +603,7 @@ def _markdown_card(title: str, content: str) -> str:
     )
 
 
-def _section(title: str, cards: list[str]) -> str:
+def _section(title: str, cards: List[str]) -> str:
     lines = [
         "  - type: grid",
         "    cards:",
@@ -615,7 +613,7 @@ def _section(title: str, cards: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _table(headers: list[str], rows: list[list[Any]]) -> str:
+def _table(headers: List[str], rows: List[List[Any]]) -> str:
     if not rows:
         return "_No data discovered._"
     header = "| " + " | ".join(headers) + " |"
@@ -631,7 +629,7 @@ def _md_cell(value: Any) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def _diagnostics_markdown(inventory: dict[str, Any]) -> str:
+def _diagnostics_markdown(inventory: Dict[str, Any]) -> str:
     summary = inventory["diagnostics_summary"]
     snapshot = summary.get("snapshot", {})
     lines = [
@@ -682,7 +680,7 @@ def _diagnostics_markdown(inventory: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _reactions_markdown(inventory: dict[str, Any]) -> str:
+def _reactions_markdown(inventory: Dict[str, Any]) -> str:
     rows = [
         [
             item["reaction_id"],
@@ -696,7 +694,7 @@ def _reactions_markdown(inventory: dict[str, Any]) -> str:
     return _table(["ID", "Type", "Room", "Enabled", "Source"], rows)
 
 
-def _runtime_reactions_markdown(inventory: dict[str, Any]) -> str:
+def _runtime_reactions_markdown(inventory: Dict[str, Any]) -> str:
     rows = [
         [
             item["reaction_id"],
@@ -711,7 +709,7 @@ def _runtime_reactions_markdown(inventory: dict[str, Any]) -> str:
     return _table(["ID", "Type", "Room", "Fire", "Suppressed", "State"], rows)
 
 
-def _lighting_markdown(inventory: dict[str, Any]) -> str:
+def _lighting_markdown(inventory: Dict[str, Any]) -> str:
     lighting = inventory["diagnostics_summary"].get("lighting", {})
     rows = []
     for room_id, value in sorted(dict(lighting.get("last_scene_by_room") or {}).items()):
@@ -734,7 +732,7 @@ def _lighting_markdown(inventory: dict[str, Any]) -> str:
     return _table(["Metric", "Value"], rows)
 
 
-def _room_markdown(room: dict[str, Any]) -> str:
+def _room_markdown(room: Dict[str, Any]) -> str:
     rows = [
         ["Room", room["room_id"]],
         ["Display", room["display_name"]],
@@ -753,7 +751,7 @@ def _room_markdown(room: dict[str, Any]) -> str:
     return _table(["Field", "Value"], rows)
 
 
-def generate_dashboard_yaml(inventory: dict[str, Any]) -> str:
+def generate_dashboard_yaml(inventory: Dict[str, Any]) -> str:
     title = "Heima Developer Debug"
     common = inventory["common_entities"]
     heima_entities = inventory["heima_entities"]
