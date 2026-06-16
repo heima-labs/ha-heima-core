@@ -86,13 +86,17 @@ Final effective resolution order:
 3. `guest`
 4. `away`
 5. `sleeping`
-6. `relax`
-7. `working`
-8. `home`
+6. explicit `relax`
+7. confirmed `working` with required active work activity
+8. passive media `relax`
+9. `home`
 
 Interpretation:
 - `vacation`, `guest`, and `away` are hard states
 - `sleeping`, `relax`, `working`, and `home` belong to the home substate machine
+- explicit `relax_mode` is stronger than `working`
+- passive media-based `relax` is weaker than confirmed `working` when
+  `work_activity_required == true` and work activity is active
 
 ---
 
@@ -247,6 +251,12 @@ Note on sleeping suppression: `relax_candidate` does **not** exclude sleeping at
 Explicit `relax_mode` may activate `relax` immediately, while passive media-based relax
 must satisfy the configured enter timer.
 
+Passive media-based `relax` is weak evidence compared with confirmed work activity.
+When `work_activity_required == true`, `work_candidate` has satisfied `work_enter_min`, and
+work activity is active, the resolver may enter `working` even if passive media keeps
+`relax_candidate == on`. This rule prevents a global media player from retaining `relax` while
+explicit work evidence indicates that the home is in a work-from-home phase.
+
 ---
 
 ## 7. Hysteresis and Timers
@@ -297,16 +307,20 @@ Rules:
 Rules:
 - if `sleeping` is active, `relax` is suppressed
 - if `current == relax`:
-  - remain `relax` while `relax_candidate == on`
+  - remain `relax` while explicit `relax_mode == on`
+  - otherwise, if `relax_candidate == on` because of passive media but confirmed work activity is
+    active, enter `working`
+  - otherwise remain `relax` while `relax_candidate == on`
   - remain `relax` while `relax_candidate == off` but the off duration is less than `relax_exit_min`
 - else if:
   - explicit `relax_mode == on`, `relax` activates immediately
+  - confirmed work activity preempts passive media-based relax
   - passive `media_active`-based relax requires `relax_enter_min`
 
 ### 8.3 Working
 
 Rules:
-- if neither `sleeping` nor `relax` is active
+- if neither `sleeping` nor explicit `relax` is active
 - and `work_candidate` has persisted for `work_enter_min`
 - then effective state becomes `working`
 - if `current == working`, `work_activity_required == true`, the base work candidate remains true,

@@ -41,16 +41,19 @@ Heima resolves states in this order:
 3. `guest`
 4. `away`
 5. `sleeping`
-6. `relax`
-7. `working`
-8. `home`
+6. explicit `relax`
+7. confirmed `working` with required active work activity
+8. passive media `relax`
+9. `home`
 
 This means:
 
 - `vacation`, `guest`, and `away` are hard states.
 - `sleeping`, `relax`, `working`, and `home` are home substates.
 - `sleeping` wins over `relax` and `working`.
-- `relax` wins over `working`.
+- explicit `relax_mode` wins over `working`.
+- passive media-based `relax` does not win over confirmed `working` when
+  `work_activity_required=true` and work activity is active.
 - `home` is the fallback.
 
 ## Why State Changes Are Not Always Immediate
@@ -198,6 +201,11 @@ Explicit `relax_mode` enters immediately.
 Passive media activity waits for `relax_enter_min`.
 
 When already in `relax`, Heima keeps it for `relax_exit_min` after passive evidence disappears. This avoids bouncing when media briefly pauses or sensors miss a cycle.
+
+Passive media activity is intentionally weaker than confirmed work activity. If
+`work_activity_required=true`, the work candidate has satisfied `work_enter_min`, and work activity
+is active, Heima may switch from `relax` to `working` even while a global media player is still
+playing. Explicit `relax_mode` remains stronger and continues to retain `relax`.
 
 ## Vacation, Guest, And Away
 

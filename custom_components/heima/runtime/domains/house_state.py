@@ -766,6 +766,29 @@ class HouseStateDomain:
         relax_enter_s = timers["relax_enter_min"] * 60
         relax_exit_s = timers["relax_exit_min"] * 60
 
+        work_trace = self._candidate_trace.get("work_candidate", {})
+        work_inputs = dict(work_trace.get("inputs", {}))
+        work_for = self._candidate_active_for("work_candidate", now_monotonic)
+        strong_work_on = bool(
+            work_on
+            and work_for >= work_enter_s
+            and bool(work_inputs.get("work_activity_required"))
+            and bool(work_inputs.get("work_activity_active"))
+        )
+
+        def work_preempts_relax_result() -> tuple[str, str, dict[str, Any]]:
+            return (
+                "working",
+                "work_candidate_confirmed",
+                {
+                    "action": "enter",
+                    "source_candidate": "work_candidate",
+                    "entered_state": "working",
+                    "preempted_candidate": "relax_candidate",
+                    "preemption_reason": "work_activity_over_media_relax",
+                },
+            )
+
         wake_for = self._candidate_active_for("wake_candidate", now_monotonic)
         if current == "sleeping":
             if wake_on and wake_for < sleep_exit_s:
@@ -827,12 +850,11 @@ class HouseStateDomain:
                 },
             )
 
+        relax_reason = str(self._candidate_trace.get("relax_candidate", {}).get("reason", ""))
+        relax_explicit = relax_reason == "anyone_home+relax_mode"
         if current == "relax":
             if relax_on:
-                relax_reason = str(
-                    self._candidate_trace.get("relax_candidate", {}).get("reason", "")
-                )
-                if relax_reason == "anyone_home+relax_mode":
+                if relax_explicit:
                     return (
                         "relax",
                         "relax_explicit_signal",
@@ -843,6 +865,8 @@ class HouseStateDomain:
                             "retention_reason": "explicit_signal",
                         },
                     )
+                if strong_work_on:
+                    return work_preempts_relax_result()
                 return (
                     "relax",
                     "relax_candidate_active",
@@ -874,8 +898,7 @@ class HouseStateDomain:
                 )
 
         if relax_on:
-            relax_reason = str(self._candidate_trace.get("relax_candidate", {}).get("reason", ""))
-            if relax_reason == "anyone_home+relax_mode":
+            if relax_explicit:
                 return (
                     "relax",
                     "relax_explicit_signal",
@@ -886,6 +909,8 @@ class HouseStateDomain:
                         "entry_mode": "explicit_signal",
                     },
                 )
+            if strong_work_on:
+                return work_preempts_relax_result()
             relax_for = self._candidate_active_for("relax_candidate", now_monotonic)
             if relax_for >= relax_enter_s:
                 return (
@@ -925,8 +950,6 @@ class HouseStateDomain:
                     "retention_reason": "candidate_still_active",
                 },
             )
-        work_trace = self._candidate_trace.get("work_candidate", {})
-        work_inputs = dict(work_trace.get("inputs", {}))
         if (
             current == "working"
             and bool(work_inputs.get("work_activity_required"))
@@ -953,7 +976,6 @@ class HouseStateDomain:
                     },
                 )
 
-        work_for = self._candidate_active_for("work_candidate", now_monotonic)
         if work_on and work_for >= work_enter_s:
             return (
                 "working",
