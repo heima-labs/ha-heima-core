@@ -4,7 +4,9 @@ from custom_components.heima.runtime.reactions.alarm_policy import (
     AlarmStateActionReaction,
     build_alarm_state_action_reaction,
     normalize_alarm_state_action_config,
+    present_admin_authored_alarm_state_action_details,
     present_alarm_state_action_label,
+    present_alarm_state_action_proposal_label,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
@@ -137,4 +139,105 @@ def test_alarm_state_action_label_summarizes_states_and_steps() -> None:
         {},
     )
 
-    assert label == "Alarm policy: armed_away -> 1 action(s)"
+    assert label == "Alarm policy: armed_away -> light.turn_off (1 target)"
+
+
+def test_alarm_state_action_label_summarizes_multiple_targets_for_same_action() -> None:
+    label = present_alarm_state_action_label(
+        "alarm-1",
+        {
+            "alarm_states": ["armed_night"],
+            "steps": [
+                _step(
+                    domain="climate",
+                    target="climate.living_room",
+                    action="climate.set_preset_mode",
+                    params={"preset_mode": "sleep"},
+                ),
+                _step(
+                    domain="climate",
+                    target="climate.bedroom",
+                    action="climate.set_preset_mode",
+                    params={"preset_mode": "sleep"},
+                ),
+            ],
+        },
+        {},
+    )
+
+    assert label == "Alarm policy: armed_night -> climate.set_preset_mode (2 targets)"
+
+
+def test_alarm_state_action_proposal_label_uses_flow_language() -> None:
+    cfg = {
+        "alarm_states": ["armed_night"],
+        "steps": [
+            _step(
+                domain="climate",
+                target="climate.living_room",
+                action="climate.set_preset_mode",
+                params={"preset_mode": "sleep"},
+            )
+        ],
+    }
+
+    assert present_alarm_state_action_proposal_label(None, None, cfg, "it") == (
+        "Policy allarme: quando l'allarme passa a armed_night, "
+        "imposta il termostato climate.living_room sul preset 'sleep'"
+    )
+    assert present_alarm_state_action_proposal_label(None, None, cfg, "en") == (
+        "Alarm policy: when alarm changes to armed_night, "
+        "set thermostat climate.living_room to preset 'sleep'"
+    )
+
+
+def test_alarm_state_action_review_details_include_trigger_action_target_and_params() -> None:
+    details = present_admin_authored_alarm_state_action_details(
+        None,
+        None,
+        {
+            "alarm_states": ["armed_night"],
+            "steps": [
+                _step(
+                    domain="climate",
+                    target="climate.living_room",
+                    action="climate.set_preset_mode",
+                    params={"preset_mode": "sleep"},
+                )
+            ],
+        },
+        "it",
+    )
+
+    assert details == [
+        "Tipo: suggerimento policy da configurazione",
+        "Stati allarme: armed_night",
+        "Azioni configurate: 1",
+        "Azione 1: imposta il termostato climate.living_room sul preset 'sleep'",
+    ]
+
+
+def test_alarm_state_action_review_details_include_english_copy() -> None:
+    details = present_admin_authored_alarm_state_action_details(
+        None,
+        None,
+        {
+            "alarm_states": ["armed_night"],
+            "steps": [
+                _step(
+                    domain="climate",
+                    target="climate.living_room",
+                    action="climate.set_preset_mode",
+                    params={"preset_mode": "sleep"},
+                )
+            ],
+        },
+        "en",
+    )
+
+    assert details == [
+        "Type: semantic policy suggestion from configured topology",
+        "Alarm states: armed_night",
+        "Configured actions: 1",
+        "Action 1: set thermostat climate.living_room to preset 'sleep'",
+    ]

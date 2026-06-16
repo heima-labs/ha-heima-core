@@ -23,6 +23,52 @@ _SUPPORTED_STEP_ACTIONS = {
     "script": {"script.turn_on"},
     "climate": {"climate.set_hvac_mode", "climate.set_preset_mode"},
 }
+_MESSAGES = {
+    "en": {
+        "alarm_state_fallback": "alarm state",
+        "label": "Alarm policy: {states} -> {action}",
+        "proposal_label": "Alarm policy: when alarm changes to {states}, {action}",
+        "zero_actions": "0 actions",
+        "target_one": "target",
+        "target_many": "targets",
+        "action_count": "{count} actions",
+        "type": "Type: semantic policy suggestion from configured topology",
+        "alarm_states": "Alarm states: {states}",
+        "configured_actions": "Configured actions: {count}",
+        "action_line": "Action {index}: {detail}",
+        "fallback_action": "{action} -> {target}{params}",
+        "climate_preset": "set thermostat {target} to preset '{preset}'",
+        "climate_hvac": "set thermostat {target} to HVAC mode '{mode}'",
+        "turn_off": "turn off {target}",
+        "turn_on": "turn on {target}",
+        "activate_scene": "activate scene {target}",
+        "run_script": "run script {target}",
+        "deactivate": "turn off {target}",
+        "activate": "turn on {target}",
+    },
+    "it": {
+        "alarm_state_fallback": "stato allarme",
+        "label": "Policy allarme: {states} -> {action}",
+        "proposal_label": "Policy allarme: quando l'allarme passa a {states}, {action}",
+        "zero_actions": "0 azioni",
+        "target_one": "target",
+        "target_many": "target",
+        "action_count": "{count} azioni",
+        "type": "Tipo: suggerimento policy da configurazione",
+        "alarm_states": "Stati allarme: {states}",
+        "configured_actions": "Azioni configurate: {count}",
+        "action_line": "Azione {index}: {detail}",
+        "fallback_action": "{action} -> {target}{params}",
+        "climate_preset": "imposta il termostato {target} sul preset '{preset}'",
+        "climate_hvac": "imposta il termostato {target} in modalita '{mode}'",
+        "turn_off": "spegni {target}",
+        "turn_on": "accendi {target}",
+        "activate_scene": "attiva la scena {target}",
+        "run_script": "esegui lo script {target}",
+        "deactivate": "disattiva {target}",
+        "activate": "attiva {target}",
+    },
+}
 
 
 class AlarmStateActionReaction(HeimaReaction):
@@ -116,8 +162,26 @@ def present_alarm_state_action_label(
     normalized = normalize_alarm_state_action_config(cfg)
     states = list(normalized.get("alarm_states") or [])
     steps = list(normalized.get("steps") or [])
-    state_label = ", ".join(states) if states else "alarm state"
-    return f"Alarm policy: {state_label} -> {len(steps)} action(s)"
+    return _format_policy_label(states=states, steps=steps, language="en", template="label")
+
+
+def present_alarm_state_action_proposal_label(
+    flow: Any,
+    proposal: Any,
+    cfg: dict[str, Any],
+    language: str,
+) -> str | None:
+    del flow, proposal
+    normalized = normalize_alarm_state_action_config(cfg)
+    states = list(normalized.get("alarm_states") or [])
+    steps = list(normalized.get("steps") or [])
+    return _format_policy_label(
+        states=states,
+        steps=steps,
+        language=language,
+        template="proposal_label",
+        human_single_step=True,
+    )
 
 
 def present_admin_authored_alarm_state_action_details(
@@ -127,14 +191,19 @@ def present_admin_authored_alarm_state_action_details(
     language: str,
 ) -> list[str]:
     del flow, proposal
-    is_it = language.startswith("it")
     normalized = normalize_alarm_state_action_config(cfg)
     states = list(normalized.get("alarm_states") or [])
     steps = list(normalized.get("steps") or [])
-    return [
-        f"Stati allarme: {', '.join(states)}" if is_it else f"Alarm states: {', '.join(states)}",
-        f"Azioni configurate: {len(steps)}" if is_it else f"Configured actions: {len(steps)}",
+    messages = _messages(language)
+    state_label = _state_label(states, language=language)
+    details = [
+        messages["type"],
+        messages["alarm_states"].format(states=state_label),
+        messages["configured_actions"].format(count=len(steps)),
     ]
+    for index, step in enumerate(steps, start=1):
+        details.append(_format_step_detail(step, index=index, language=language))
+    return details
 
 
 def _normalize_alarm_states(raw: Any) -> list[str]:
@@ -178,3 +247,116 @@ def _normalize_steps(raw_steps: Any) -> list[dict[str, Any]]:
             }
         )
     return steps
+
+
+def _format_policy_label(
+    *,
+    states: list[str],
+    steps: list[dict[str, Any]],
+    language: str,
+    template: str,
+    human_single_step: bool = False,
+) -> str:
+    messages = _messages(language)
+    return messages[template].format(
+        states=_state_label(states, language=language),
+        action=_action_summary(steps, language=language, human_single_step=human_single_step),
+    )
+
+
+def _action_summary(
+    steps: list[dict[str, Any]],
+    *,
+    language: str,
+    human_single_step: bool = False,
+) -> str:
+    messages = _messages(language)
+    if not steps:
+        return messages["zero_actions"]
+    if human_single_step and len(steps) == 1:
+        step = steps[0]
+        detail = _human_action_detail(
+            action=str(step.get("action") or "").strip(),
+            target=str(step.get("target") or "").strip(),
+            params=dict(step.get("params") or {}),
+            language=language,
+        )
+        if detail:
+            return detail
+    actions = [str(step.get("action") or "").strip() for step in steps]
+    unique_actions = sorted({action for action in actions if action})
+    if len(unique_actions) == 1:
+        target_count = len(steps)
+        target_label = messages["target_one"] if target_count == 1 else messages["target_many"]
+        return f"{unique_actions[0]} ({target_count} {target_label})"
+    return messages["action_count"].format(count=len(steps))
+
+
+def _format_step_detail(step: dict[str, Any], *, index: int, language: str) -> str:
+    messages = _messages(language)
+    action = str(step.get("action") or "").strip() or "unknown"
+    target = str(step.get("target") or "").strip() or "unknown"
+    params = dict(step.get("params") or {})
+    detail = _human_action_detail(action=action, target=target, params=params, language=language)
+    if not detail:
+        detail = messages["fallback_action"].format(
+            action=action,
+            target=target,
+            params=_format_params(params),
+        )
+    return messages["action_line"].format(index=index, detail=detail)
+
+
+def _human_action_detail(
+    *,
+    action: str,
+    target: str,
+    params: dict[str, Any],
+    language: str,
+) -> str:
+    messages = _messages(language)
+    if action == "climate.set_preset_mode":
+        preset = str(params.get("preset_mode") or "").strip()
+        if preset:
+            return messages["climate_preset"].format(target=target, preset=preset)
+    if action == "climate.set_hvac_mode":
+        hvac_mode = str(params.get("hvac_mode") or "").strip()
+        if hvac_mode:
+            return messages["climate_hvac"].format(target=target, mode=hvac_mode)
+    if action == "light.turn_off":
+        return messages["turn_off"].format(target=target)
+    if action == "light.turn_on":
+        return messages["turn_on"].format(target=target)
+    if action == "switch.turn_off":
+        return messages["turn_off"].format(target=target)
+    if action == "switch.turn_on":
+        return messages["turn_on"].format(target=target)
+    if action == "scene.turn_on":
+        return messages["activate_scene"].format(target=target)
+    if action == "script.turn_on":
+        return messages["run_script"].format(target=target)
+    if action == "input_boolean.turn_off":
+        return messages["deactivate"].format(target=target)
+    if action == "input_boolean.turn_on":
+        return messages["activate"].format(target=target)
+    return ""
+
+
+def _state_label(states: list[str], *, language: str) -> str:
+    return ", ".join(states) if states else _messages(language)["alarm_state_fallback"]
+
+
+def _messages(language: str) -> dict[str, str]:
+    return _MESSAGES["it"] if language.startswith("it") else _MESSAGES["en"]
+
+
+def _format_params(params: dict[str, Any]) -> str:
+    visible = {
+        str(key): value
+        for key, value in sorted(params.items())
+        if str(key) != "entity_id" and value not in (None, "")
+    }
+    if not visible:
+        return ""
+    rendered = ", ".join(f"{key}={value}" for key, value in visible.items())
+    return f" ({rendered})"

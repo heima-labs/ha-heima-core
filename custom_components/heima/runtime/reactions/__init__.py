@@ -16,6 +16,7 @@ from .alarm_policy import (
     normalize_alarm_state_action_config,
     present_admin_authored_alarm_state_action_details,
     present_alarm_state_action_label,
+    present_alarm_state_action_proposal_label,
 )
 from .base import HeimaReaction
 from .builtin import ConsecutiveStateReaction
@@ -334,6 +335,7 @@ def create_builtin_reaction_plugin_registry() -> ReactionPluginRegistry:
             builder=build_alarm_state_action_reaction,
             presenter_hooks=ReactionPresenterHooks(
                 reaction_label_from_config=present_alarm_state_action_label,
+                proposal_human_label=present_alarm_state_action_proposal_label,
                 admin_authored_review_details=present_admin_authored_alarm_state_action_details,
             ),
         ),
