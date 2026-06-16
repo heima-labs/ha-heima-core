@@ -255,6 +255,88 @@ def test_house_state_diagnostics_are_exposed_as_state_entities_and_attributes():
     assert attrs["candidate_summary"]["work_candidate"]["status"] == "pending_enter"
 
 
+def test_house_state_work_activity_preempts_sticky_media_relax():
+    options = _with_house_signal_binding(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                }
+            ],
+            "house_state_config": {
+                "media_active_entities": ["media_player.cineforum"],
+                "work_activity_entities": ["binary_sensor.macbook_active"],
+                "work_activity_required": True,
+                "work_enter_min": 0,
+                "relax_enter_min": 0,
+            },
+        },
+        work_window="binary_sensor.work_window",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "person.stefano": "home",
+            "binary_sensor.work_window": "on",
+            "binary_sensor.macbook_active": "on",
+            "media_player.cineforum": "playing",
+        },
+    )
+    engine.state.set_sensor("heima_house_state", "relax")
+
+    snapshot = engine._compute_snapshot(reason="test")
+
+    assert snapshot.house_state == "working"
+    assert engine.state.get_sensor("heima_house_state_reason") == "work_candidate_confirmed"
+    attrs = engine.state.get_sensor_attributes("heima_house_state") or {}
+    decision = attrs["resolution_trace"]["decision"]
+    assert decision["preempted_candidate"] == "relax_candidate"
+    assert decision["preemption_reason"] == "work_activity_over_media_relax"
+
+
+def test_house_state_explicit_relax_signal_still_preempts_work_activity():
+    options = _with_house_signal_binding(
+        {
+            "people_named": [
+                {
+                    "slug": "stefano",
+                    "display_name": "Stefano",
+                    "presence_method": "ha_person",
+                    "person_entity": "person.stefano",
+                }
+            ],
+            "house_state_config": {
+                "media_active_entities": ["media_player.cineforum"],
+                "work_activity_entities": ["binary_sensor.macbook_active"],
+                "work_activity_required": True,
+                "work_enter_min": 0,
+                "relax_enter_min": 0,
+            },
+        },
+        relax_mode="binary_sensor.relax_mode",
+        work_window="binary_sensor.work_window",
+    )
+    engine = _build_engine(
+        options,
+        {
+            "person.stefano": "home",
+            "binary_sensor.relax_mode": "on",
+            "binary_sensor.work_window": "on",
+            "binary_sensor.macbook_active": "on",
+            "media_player.cineforum": "playing",
+        },
+    )
+    engine.state.set_sensor("heima_house_state", "relax")
+
+    snapshot = engine._compute_snapshot(reason="test")
+
+    assert snapshot.house_state == "relax"
+    assert engine.state.get_sensor("heima_house_state_reason") == "relax_explicit_signal"
+
+
 def test_build_default_state_clears_stale_sensor_attributes():
     options = _with_house_signal_binding(
         {
