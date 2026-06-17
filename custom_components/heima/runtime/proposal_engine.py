@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .analyzers.base import ReactionProposal
+from .analyzers.lifecycle import ProposalReviewGrouping
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
 from .inference.approval_store import ACTIVITY_PROPOSAL_TYPE
@@ -101,6 +102,15 @@ class ActivityProposal:
 
 
 ProposalItem = ReactionProposal | ActivityProposal
+
+
+@dataclass(frozen=True)
+class _ReviewGroupDerivedState:
+    visible_pending_ids: frozenset[str]
+    group_key_by_id: dict[str, str]
+    role_by_id: dict[str, str]
+    suppressed_ids: frozenset[str]
+    groups: dict[str, list[str]]
 
 
 class ProposalEngine:
@@ -681,7 +691,7 @@ class ProposalEngine:
         return updated.proposal_id
 
     def pending_proposals(self) -> list[ProposalItem]:
-        return self._sort_proposals([p for p in self._proposals if p.status == "pending"])
+        return self._sort_proposals(self._visible_pending_proposals())
 
     def accepted_proposals(self) -> list[ProposalItem]:
         return self._sort_proposals([p for p in self._proposals if p.status == "accepted"])
@@ -753,6 +763,7 @@ class ProposalEngine:
 
     def diagnostics(self) -> dict[str, Any]:
         ordered = self._sort_proposals(self._proposals)
+        review_state = self._review_group_state()
         return {
             "total": len(ordered),
             "loaded_proposals": self._last_load_proposal_count,
@@ -760,10 +771,14 @@ class ProposalEngine:
             "analyzer_failures": self._last_analyzer_failures,
             "analyzer_output_errors": self._last_analyzer_output_errors,
             "pending": len(self.pending_proposals()),
+            "suppressed_in_review_count": len(review_state.suppressed_ids),
+            "review_groups": review_state.groups,
             "pending_stale": sum(
                 1
                 for proposal in ordered
-                if proposal.status == "pending" and self._is_stale(proposal)
+                if proposal.status == "pending"
+                and proposal.proposal_id in review_state.visible_pending_ids
+                and self._is_stale(proposal)
             ),
             "stale_after_s": int(self._stale_after.total_seconds()),
             "prune_pending_stale_after_s": int(self._prune_pending_stale_after.total_seconds()),
@@ -788,6 +803,9 @@ class ProposalEngine:
                     "target_template_id": getattr(p, "target_template_id", ""),
                     "improves_reaction_type": getattr(p, "improves_reaction_type", ""),
                     "improvement_reason": getattr(p, "improvement_reason", ""),
+                    "review_group_key": review_state.group_key_by_id.get(p.proposal_id),
+                    "review_group_role": review_state.role_by_id.get(p.proposal_id),
+                    "suppressed_by_review_group": p.proposal_id in review_state.suppressed_ids,
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p)
@@ -809,10 +827,12 @@ class ProposalEngine:
             return
         pending = self.pending_proposals()
         ordered = self._sort_proposals(self._proposals)
+        review_state = self._review_group_state()
         sensor_items = pending[: self.SENSOR_ITEMS_LIMIT]
         attributes = {
             "total": len(ordered),
             "pending": len(pending),
+            "suppressed_in_review_count": len(review_state.suppressed_ids),
             "pending_items_total": len(pending),
             "pending_items_included": len(sensor_items),
             "pending_items_truncated": len(pending) > self.SENSOR_ITEMS_LIMIT,
@@ -910,6 +930,104 @@ class ProposalEngine:
         if hooks is None or hooks.should_suppress_followup is None:
             return False
         return hooks.should_suppress_followup(candidate, accepted)
+
+    def _review_grouping(self, proposal: ProposalItem) -> ProposalReviewGrouping | None:
+        if not isinstance(proposal, ReactionProposal):
+            return None
+        hooks = self._learning_plugin_registry.lifecycle_hooks_for(proposal.reaction_type)
+        if hooks is None or hooks.review_grouping is None:
+            return None
+        grouping = hooks.review_grouping(proposal)
+        if grouping is None or not str(grouping.group_key or "").strip():
+            return None
+        return grouping
+
+    def _review_group_scope(
+        self,
+        proposal: ProposalItem,
+        grouping: ProposalReviewGrouping,
+    ) -> tuple[str, str]:
+        return (_proposal_type(proposal), str(grouping.group_key).strip())
+
+    @staticmethod
+    def _review_group_rank(grouping: ProposalReviewGrouping) -> tuple[Any, ...]:
+        return (int(grouping.specificity_rank), *tuple(grouping.quality_rank or ()))
+
+    def _visible_pending_proposals(self) -> list[ProposalItem]:
+        state = self._review_group_state()
+        return [
+            proposal
+            for proposal in self._proposals
+            if proposal.status == "pending" and proposal.proposal_id in state.visible_pending_ids
+        ]
+
+    def _review_group_state(self) -> _ReviewGroupDerivedState:
+        accepted_rank_by_group: dict[tuple[str, str], tuple[Any, ...]] = {}
+        grouped_pending: dict[tuple[str, str], tuple[tuple[Any, ...], ProposalItem]] = {}
+        ungrouped_pending_ids: set[str] = set()
+        group_key_by_id: dict[str, str] = {}
+        pending_scope_by_id: dict[str, tuple[str, str]] = {}
+        groups: dict[str, list[str]] = {}
+
+        for proposal in self._proposals:
+            grouping = self._review_grouping(proposal)
+            if grouping is None:
+                continue
+            scope = self._review_group_scope(proposal, grouping)
+            group_key = self._diagnostic_review_group_key(scope)
+            identity_key = self._identity_key(proposal)
+            group_key_by_id[proposal.proposal_id] = group_key
+            groups.setdefault(group_key, []).append(identity_key)
+
+            if proposal.status != "accepted":
+                continue
+            rank = self._review_group_rank(grouping)
+            current = accepted_rank_by_group.get(scope)
+            if current is None or rank > current:
+                accepted_rank_by_group[scope] = rank
+
+        for proposal in self._proposals:
+            if proposal.status != "pending":
+                continue
+            grouping = self._review_grouping(proposal)
+            if grouping is None:
+                ungrouped_pending_ids.add(proposal.proposal_id)
+                continue
+
+            scope = self._review_group_scope(proposal, grouping)
+            pending_scope_by_id[proposal.proposal_id] = scope
+            rank = self._review_group_rank(grouping)
+            accepted_rank = accepted_rank_by_group.get(scope)
+            if accepted_rank is not None and rank <= accepted_rank:
+                continue
+
+            current = grouped_pending.get(scope)
+            if current is None or rank > current[0]:
+                grouped_pending[scope] = (rank, proposal)
+
+        representative_ids = {proposal.proposal_id for _rank, proposal in grouped_pending.values()}
+        visible_pending_ids = frozenset(ungrouped_pending_ids | representative_ids)
+        role_by_id: dict[str, str] = {}
+        suppressed_ids: set[str] = set()
+        for proposal_id in pending_scope_by_id:
+            if proposal_id in representative_ids:
+                role_by_id[proposal_id] = "representative"
+            else:
+                role_by_id[proposal_id] = "suppressed"
+                suppressed_ids.add(proposal_id)
+
+        return _ReviewGroupDerivedState(
+            visible_pending_ids=visible_pending_ids,
+            group_key_by_id=group_key_by_id,
+            role_by_id=role_by_id,
+            suppressed_ids=frozenset(suppressed_ids),
+            groups={key: list(values) for key, values in sorted(groups.items())},
+        )
+
+    @staticmethod
+    def _diagnostic_review_group_key(scope: tuple[str, str]) -> str:
+        proposal_type, group_key = scope
+        return f"{proposal_type}:{group_key}"
 
     @staticmethod
     def _sort_proposals(proposals: list[ProposalItem]) -> list[ProposalItem]:

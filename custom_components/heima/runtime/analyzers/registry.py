@@ -20,6 +20,7 @@ from .lifecycle import (
     composite_lifecycle_policy_from_learning_config,
     composite_room_assist_lifecycle_hooks,
     heating_lifecycle_hooks,
+    house_state_learned_context_lifecycle_hooks,
     lighting_lifecycle_hooks,
     presence_lifecycle_hooks,
     security_presence_simulation_lifecycle_hooks,
@@ -404,6 +405,20 @@ def create_builtin_learning_plugin_registry(
             quality_policy=composite_quality_policy_from_learning_config(learning_config),
         ),
         enabled=_is_enabled("composite_room_assist", enabled_families),
+    )
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="builtin.house_state_contexts",
+            analyzer_id="HouseStateInferenceModule",
+            plugin_family="house_state",
+            proposal_types=("house_state_learned_context",),
+            reaction_targets=(),
+            lifecycle_hooks=house_state_learned_context_lifecycle_hooks(),
+            supports_admin_authored=False,
+            admin_authored_templates=(),
+        ),
+        analyzer=_NoopPatternAnalyzer("HouseStateInferenceModule"),
+        enabled=False,
     )
     registry.register(
         descriptor=LearningPatternPluginDescriptor(

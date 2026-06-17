@@ -15,6 +15,16 @@ LifecycleFallbackFollowupMatch = Callable[
     tuple[int, ReactionProposal] | None,
 ]
 LifecycleShouldSuppressFollowup = Callable[[ReactionProposal, ReactionProposal], bool]
+LifecycleReviewGrouping = Callable[[ReactionProposal], "ProposalReviewGrouping | None"]
+
+
+@dataclass(frozen=True)
+class ProposalReviewGrouping:
+    """Derived review grouping metadata for user-facing proposal queues."""
+
+    group_key: str
+    specificity_rank: int
+    quality_rank: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -25,6 +35,7 @@ class ProposalLifecycleHooks:
     followup_slot_key: LifecycleFollowupSlotKey | None = None
     fallback_followup_match: LifecycleFallbackFollowupMatch | None = None
     should_suppress_followup: LifecycleShouldSuppressFollowup | None = None
+    review_grouping: LifecycleReviewGrouping | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +68,13 @@ def lighting_lifecycle_hooks() -> ProposalLifecycleHooks:
 
 def security_presence_simulation_lifecycle_hooks() -> ProposalLifecycleHooks:
     return ProposalLifecycleHooks(identity_key=_security_presence_simulation_identity_key)
+
+
+def house_state_learned_context_lifecycle_hooks() -> ProposalLifecycleHooks:
+    return ProposalLifecycleHooks(
+        identity_key=_house_state_learned_context_identity_key,
+        review_grouping=_house_state_learned_context_review_grouping,
+    )
 
 
 def composite_lifecycle_policy_from_learning_config(
@@ -108,6 +126,67 @@ def _heating_identity_key(proposal: ReactionProposal) -> str:
     if proposal.reaction_type == "heating_eco":
         return "heating_eco"
     return proposal.reaction_type
+
+
+def _house_state_learned_context_identity_key(proposal: ReactionProposal) -> str:
+    if proposal.identity_key:
+        return proposal.identity_key
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    context_key = str(cfg.get("context_key") or "").strip()
+    if context_key:
+        return f"{proposal.reaction_type}:{context_key}"
+    return proposal.reaction_type
+
+
+def _house_state_learned_context_review_grouping(
+    proposal: ReactionProposal,
+) -> ProposalReviewGrouping | None:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    context = _safe_dict(cfg.get("context_snapshot"))
+    weekday = context.get("weekday", cfg.get("weekday"))
+    hour_bucket = context.get("hour_bucket", cfg.get("hour_bucket"))
+    anyone_home = context.get("anyone_home", cfg.get("anyone_home"))
+    predicted_state = (
+        context.get("predicted_state") or cfg.get("predicted_state") or cfg.get("house_state")
+    )
+    if any(value is None for value in (weekday, hour_bucket, anyone_home, predicted_state)):
+        return None
+    try:
+        weekday_i = int(weekday)
+        hour_bucket_i = int(hour_bucket)
+    except (TypeError, ValueError):
+        return None
+
+    state = str(predicted_state or "").strip().lower()
+    if not state:
+        return None
+
+    anyone_home_bool = _coerce_bool(anyone_home)
+    group_key = (
+        "house_state_ctx_group:"
+        f"weekday:{weekday_i}:hour_bucket:{hour_bucket_i}:"
+        f"anyone_home:{1 if anyone_home_bool else 0}:state:{state}"
+    )
+    tier = _house_state_context_tier(context)
+    specificity_rank = {"rich": 3, "coarse": 2, "minimal": 1}.get(tier, 2)
+    support = _coerce_non_negative_int(cfg.get("support"), 0)
+    total = _coerce_non_negative_int(cfg.get("total"), 0)
+    context_key = str(cfg.get("context_key") or proposal.identity_key or proposal.proposal_id)
+    return ProposalReviewGrouping(
+        group_key=group_key,
+        specificity_rank=specificity_rank,
+        quality_rank=(float(proposal.confidence or 0.0), support, total, context_key),
+    )
+
+
+def _house_state_context_tier(context_snapshot: dict[str, Any]) -> str:
+    learning_context = _safe_dict(context_snapshot.get("learning_context"))
+    module = str(learning_context.get("module") or "").strip()
+    if module == "house_state_inference_rich":
+        return "rich"
+    if module == "house_state_inference_minimal":
+        return "minimal"
+    return "coarse"
 
 
 def _lighting_identity_key(proposal: ReactionProposal) -> str:
@@ -570,3 +649,14 @@ def _coerce_non_negative_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(0, numeric)
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    return bool(value)

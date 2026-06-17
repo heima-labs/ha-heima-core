@@ -52,6 +52,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/063_semantic_policy_live.py"
   "scripts/live_tests/064_snapshot_alignment_live.py"
   "scripts/live_tests/065_learning_modules_p_live.py"
+  "scripts/live_tests/070_proposal_review_grouping_live.py"
 )
 
 usage() {

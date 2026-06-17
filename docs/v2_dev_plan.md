@@ -112,17 +112,20 @@ These constraints must never be violated. See spec §16 for rationale.
 | Z | Activity cold start mitigation | `DONE` | S |
 | AA | Global drift detection | `DONE` | Y |
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
+| AC | Proposal Review Grouping | `IN PROGRESS` | H, Y |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection.
-**Active phase:** None — Phase AB spec complete, pending implementation start.
-**Branch:** `feat/phase-aa-global-drift-detection` (last active). Next: `feat/phase-ab-smart-lighting`.
+**Active phase:** Phase AC — Proposal Review Grouping.
+**Branch:** `feat/phase-ac-proposal-review-grouping`.
 **Next action:**
 
-Phase AB spec approved. Open `feat/phase-ab-smart-lighting` from `feat/v2` and begin AB1.
+Phase AC implementation is complete on the feature branch with focused verification. Next action:
+run broader/full CI, then commit and merge when green. No store field, migration, or persisted
+status change was introduced.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
@@ -133,6 +136,28 @@ Phase T deferred — see Phase T section for rationale.
   - `sensor.heima_health` attributes expose the house-state model timestamp/count summary.
   - Verification: `pytest tests/test_inference_modules.py::test_house_state_inference_diagnostics_expose_only_approved_model_entries tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_disabled_by_default tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_emits_for_approved_context_drift tests/test_anomaly_analyzer_q.py::test_anomaly_analyzer_learned_model_stale_ignores_stable_distribution tests/test_health_k.py::test_health_sensor_exposes_house_state_model_summary -q`.
   - Full CI: `PATH="/Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component/.venv/bin:$PATH" bash scripts/ci_local.sh` — 1452 passed; ruff check, ruff format, and informative mypy completed.
+- Current slice: Phase AC in progress.
+  - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` §2c.
+  - Goal: centralize review grouping in `ProposalEngine` via optional plugin lifecycle hooks.
+  - Key invariant: grouping is computed dynamically at query time. Suppressed proposals keep their
+    persisted `pending` status; there are no new store fields, no migration, and no derived state
+    written back to storage.
+  - First plugin: `house_state_learned_context`, grouping by
+    `weekday:N:hour_bucket:N:anyone_home:N:state:S` and ranking Rich > Coarse > Minimal, then
+    evidence quality.
+  - User-facing pending queues and sensors must expose only current group representatives.
+    Diagnostics should still expose suppressed siblings with derived review-group metadata.
+  - Implementation completed:
+    - `ProposalLifecycleHooks` now supports optional `review_grouping`.
+    - `ProposalEngine.pending_proposals()` computes visible representatives dynamically.
+    - Diagnostics expose derived review group metadata and suppressed counts.
+    - `house_state_learned_context` is registered as a lifecycle-only built-in descriptor with
+      no enabled analyzer.
+    - House-state proposal notifications are batched and sent only for visible representatives.
+  - Focused verification:
+    - `.venv/bin/python -m pytest tests/test_proposal_engine.py tests/test_learning_plugin_registry.py tests/test_reaction_helpers.py -q` — 97 passed.
+    - `.venv/bin/ruff check custom_components/heima/runtime/analyzers/lifecycle.py custom_components/heima/runtime/analyzers/registry.py custom_components/heima/runtime/proposal_engine.py custom_components/heima/coordinator.py tests/test_learning_plugin_registry.py tests/test_proposal_engine.py` — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/runtime/analyzers/lifecycle.py custom_components/heima/runtime/analyzers/registry.py custom_components/heima/runtime/proposal_engine.py custom_components/heima/coordinator.py tests/test_learning_plugin_registry.py tests/test_proposal_engine.py` — passed.
 - Current slice: Phase Z complete.
   - `options["learning"]["activity_bootstrap_mode"]` enables early composite activity discovery.
   - `ActivityAnalyzer` uses bootstrap thresholds 5 co-occurrences / 2 distinct days only when enabled; default behavior remains 10 / 3.
@@ -2257,6 +2282,8 @@ Snapshots without `room_device_context` populate Coarse and Minimal tiers only.
   with Coarse or `RoomContextModule`.
 - `HouseStateSignal.context["tier"]` exposes the active tier; existing signal construction remains
   backward compatible because the context field defaults to `{}`.
+- Follow-up required: generalized as Phase AC. `house_state_learned_context` is the first plugin
+  using ProposalEngine review grouping; approval identity remains the exact `context_key`.
 
 ---
 
@@ -2634,6 +2661,96 @@ If `room_type` is not specified in the rule config, `generic` defaults apply.
 - [ ] Manual override window configurable via `manual_override_window_min`; 0 disables timer
 - [ ] `LightingRecorderBehavior` TTL path not involved in override detection
 - [ ] All existing tests pass
+
+---
+
+## Phase AC — Proposal Review Grouping
+
+Status: IMPLEMENTED, pending full CI, on branch `feat/phase-ac-proposal-review-grouping`.
+
+**Spec section:** `docs/specs/learning/proposal_lifecycle_spec.md` §2c
+**Goal:** Add a generalized, query-time review grouping layer to proposal lifecycle so user-facing
+review queues show one representative per semantic review group while preserving exact approval
+identity and persisted proposal status.
+**Depends on:** Phase H (`ApprovalStore`, house-state proposal approval), Phase Y (tiered
+house-state inference)
+
+### Design constraints
+
+- Review grouping is owned by `ProposalEngine`, not config flow or individual coordinators.
+- Grouping is exported by plugin lifecycle hooks through optional `review_grouping`.
+- No persisted fields are added.
+- No migration is required.
+- No new persisted status is introduced.
+- `suppressed_in_review` is derived at query/diagnostics time only.
+- Approval and rejection still apply only to the proposal's exact `identity_key`.
+- If a representative is rejected, another pending sibling may become representative automatically
+  on the next `pending_proposals()` query because grouping is recomputed from current statuses.
+
+### Working slices
+
+1. AC1 — Lifecycle hook contract:
+   - Add `ProposalReviewGrouping` dataclass.
+   - Add `LifecycleReviewGrouping`.
+   - Extend `ProposalLifecycleHooks` with optional `review_grouping`.
+   - Preserve unchanged behavior for plugins without `review_grouping`.
+
+2. AC2 — ProposalEngine query-time grouping:
+   - Resolve `review_grouping` through lifecycle hooks.
+   - Compute representative/suppressed roles dynamically.
+   - Make `pending_proposals()` return only current representatives and ungrouped pending proposals.
+   - Keep `proposal_by_id()` and persisted proposal records unchanged.
+
+3. AC3 — Diagnostics:
+   - Expose per-proposal derived fields:
+     - `review_group_key`
+     - `review_group_role`
+     - `suppressed_by_review_group`
+   - Expose per-family summary:
+     - `review_groups`
+     - `suppressed_in_review_count`
+
+4. AC4 — First plugin hook: `house_state_learned_context`:
+   - Register a lifecycle hook for `house_state_learned_context`.
+   - Group key:
+     `house_state_ctx_group:weekday:N:hour_bucket:N:anyone_home:N:state:S`
+   - Derive tier from `context_snapshot.learning_context.module`:
+     - `house_state_inference_rich` → Rich
+     - `house_state_inference_minimal` → Minimal
+     - empty/unknown module for current house-state inference → Coarse fallback
+   - Rank Rich > Coarse > Minimal, then confidence, support, total observations, and stable
+     `context_key` ordering.
+
+5. AC5 — Review queue and notification verification:
+   - Options-flow proposal review uses the filtered `pending_proposals()` view.
+   - Proposal sensor pending count uses the filtered user-facing view.
+   - Suppressed siblings do not generate user-facing review rows.
+   - Existing proposal IDs remain valid for direct lookup.
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `runtime/analyzers/lifecycle.py` | Add review grouping contract and house-state hook |
+| `runtime/analyzers/registry.py` or plugin registration path | Register `house_state_learned_context` lifecycle hook if needed |
+| `runtime/proposal_engine.py` | Query-time grouping, filtered pending view, diagnostics |
+| `coordinator.py` | Ensure house-state proposals use lifecycle-aware ProposalEngine path without local dedup |
+| `tests/` | ProposalEngine grouping tests; house-state grouping tests |
+
+### Acceptance criteria
+
+- [x] Plugins without `review_grouping` behave exactly as before
+- [x] `pending_proposals()` returns at most one pending representative per `(plugin_family, group_key)`
+- [x] Suppressed siblings remain persisted as `status="pending"` and are not mutated
+- [x] No store schema migration or persisted field is introduced
+- [x] Accepted same-or-higher-specificity proposals suppress candidate siblings in the same group
+- [x] Higher-specificity siblings remain eligible after a lower-specificity accepted proposal
+- [x] Rejected representative no longer suppresses pending siblings; next best sibling becomes visible
+- [x] `house_state_learned_context` grouping excludes opaque `ctx` hash and room detail
+- [x] `house_state_learned_context` approval records still store only the exact approved `context_key`
+- [x] Diagnostics expose review group key, role, and suppressed count without writing them to storage
+- [ ] Existing tests pass; new focused tests cover ranking, accepted suppression, rejection recovery,
+  and no-op behavior for ungrouped plugins
 
 ---
 

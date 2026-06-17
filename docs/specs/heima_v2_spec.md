@@ -967,6 +967,34 @@ unknown or pending contexts generate a review candidate and are not applied tran
 acceptance: applied silently. After rejection: computed but not consumed; no re-proposal for the
 same `(context_key_hash, predicted_state)` pair (`ApprovalStore`, persisted across restarts).
 
+Learned house-state proposals have two distinct identities:
+
+- **Approval identity**: the exact `context_key`, including tier-specific context and the opaque
+  learning-context hash. This is persisted in `ApprovalStore` and is the only scope affected by an
+  approval or rejection.
+- **Review group identity**: a UX/deduplication key used only to reduce review-queue noise:
+  `weekday:N:hour_bucket:N:anyone_home:N:state:S`.
+
+The review group identity MUST NOT include the opaque `ctx` hash or occupied-room detail. Those
+fields are either not user-readable or too volatile for review grouping. Review grouping never
+broadens approval scope: approving a representative proposal approves only that representative's
+exact approval identity.
+
+At most one pending `house_state_learned_context` proposal per review group should be visible in
+the review queue. The representative is selected by tier specificity, then evidence quality:
+
+1. Rich before Coarse before Minimal.
+2. Within the same tier: highest confidence.
+3. Then highest support count.
+4. Then highest total observations.
+5. Then lexicographic `context_key` ordering for deterministic ties.
+
+If an accepted proposal already exists in the same review group, new candidates with the same or a
+lower tier specificity are suppressed from the visible queue. A higher-tier candidate remains
+eligible and may become the visible representative, because it is more specific than the accepted
+context. Suppressed sibling candidates may remain visible in diagnostics, but MUST NOT become
+separate resident-review rows.
+
 Confidence model: `confidence = probability × min(1.0, support / MIN_SUPPORT)`.
 
 | confidence range | Behavior |

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from custom_components.heima.runtime.analyzers.base import ReactionProposal
 from custom_components.heima.runtime.analyzers.heating import HeatingPatternAnalyzer
-from custom_components.heima.runtime.analyzers.lifecycle import ProposalLifecycleHooks
+from custom_components.heima.runtime.analyzers.lifecycle import (
+    ProposalLifecycleHooks,
+    ProposalReviewGrouping,
+)
 from custom_components.heima.runtime.analyzers.presence import PresencePatternAnalyzer
 from custom_components.heima.runtime.analyzers.registry import (
     LearningPatternPluginDescriptor,
@@ -14,6 +18,7 @@ from custom_components.heima.runtime.analyzers.registry import (
     create_builtin_learning_plugin_registry,
 )
 from custom_components.heima.runtime.finding_router import FindingRouter
+from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 from custom_components.heima.runtime.plugin_contracts import (
     AnomalySignal,
     BehaviorFinding,
@@ -1961,6 +1966,279 @@ async def test_proposal_engine_uses_plugin_lifecycle_hooks_for_identity(monkeypa
     assert len(pending) == 1
     assert pending[0].proposal_id == proposal_id
     assert pending[0].identity_key == "custom|weekday=4"
+
+
+async def test_proposal_engine_review_grouping_exposes_only_best_pending_representative(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = LearningPluginRegistry()
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="test.presence",
+            analyzer_id="PresencePatternAnalyzer",
+            plugin_family="presence",
+            proposal_types=("presence_preheat",),
+            reaction_targets=("PresencePatternReaction",),
+            lifecycle_hooks=ProposalLifecycleHooks(
+                identity_key=lambda proposal: (
+                    f"custom|id={proposal.suggested_reaction_config.get('id')}"
+                ),
+                review_grouping=lambda proposal: ProposalReviewGrouping(
+                    group_key=str(proposal.suggested_reaction_config.get("group") or ""),
+                    specificity_rank=int(
+                        proposal.suggested_reaction_config.get("specificity") or 0
+                    ),
+                    quality_rank=(float(proposal.suggested_reaction_config.get("quality") or 0),),
+                ),
+            ),
+        ),
+        analyzer=_AnalyzerStub([]),
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+
+    await engine.async_initialize()
+    weak = _proposal(conf=0.8)
+    weak = replace(
+        weak,
+        suggested_reaction_config={
+            "id": "weak",
+            "group": "morning",
+            "specificity": 1,
+            "quality": 1,
+        },
+    )
+    strong = _proposal(conf=0.7)
+    strong = replace(
+        strong,
+        suggested_reaction_config={
+            "id": "strong",
+            "group": "morning",
+            "specificity": 2,
+            "quality": 0,
+        },
+    )
+    other = _proposal(conf=0.6)
+    other = replace(
+        other,
+        suggested_reaction_config={"id": "other", "group": "evening", "specificity": 1},
+    )
+
+    await engine.async_submit_proposal(weak)
+    strong_id = await engine.async_submit_proposal(strong)
+    other_id = await engine.async_submit_proposal(other)
+
+    pending = engine.pending_proposals()
+    assert {proposal.proposal_id for proposal in pending} == {strong_id, other_id}
+
+    diagnostics = engine.diagnostics()
+    assert diagnostics["pending"] == 2
+    assert diagnostics["suppressed_in_review_count"] == 1
+    suppressed = [
+        proposal
+        for proposal in diagnostics["proposals"]
+        if proposal["identity_key"] == "custom|id=weak"
+    ][0]
+    assert suppressed["review_group_key"] == "presence_preheat:morning"
+    assert suppressed["review_group_role"] == "suppressed"
+    assert suppressed["suppressed_by_review_group"] is True
+
+
+async def test_proposal_engine_review_grouping_suppresses_pending_at_or_below_accepted_rank(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = LearningPluginRegistry()
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="test.presence",
+            analyzer_id="PresencePatternAnalyzer",
+            plugin_family="presence",
+            proposal_types=("presence_preheat",),
+            reaction_targets=("PresencePatternReaction",),
+            lifecycle_hooks=ProposalLifecycleHooks(
+                identity_key=lambda proposal: (
+                    f"custom|id={proposal.suggested_reaction_config.get('id')}"
+                ),
+                review_grouping=lambda proposal: ProposalReviewGrouping(
+                    group_key=str(proposal.suggested_reaction_config.get("group") or ""),
+                    specificity_rank=int(
+                        proposal.suggested_reaction_config.get("specificity") or 0
+                    ),
+                    quality_rank=(float(proposal.suggested_reaction_config.get("quality") or 0),),
+                ),
+            ),
+        ),
+        analyzer=_AnalyzerStub([]),
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+
+    await engine.async_initialize()
+    accepted = replace(
+        _proposal(conf=0.9, status="accepted"),
+        suggested_reaction_config={"id": "accepted", "group": "morning", "specificity": 2},
+    )
+    lower = replace(
+        _proposal(conf=0.8),
+        suggested_reaction_config={"id": "lower", "group": "morning", "specificity": 1},
+    )
+    higher = replace(
+        _proposal(conf=0.7),
+        suggested_reaction_config={"id": "higher", "group": "morning", "specificity": 3},
+    )
+
+    await engine.async_submit_proposal(accepted)
+    await engine.async_submit_proposal(lower)
+    higher_id = await engine.async_submit_proposal(higher)
+
+    pending = engine.pending_proposals()
+    assert [proposal.proposal_id for proposal in pending] == [higher_id]
+
+
+async def test_proposal_engine_review_grouping_recomputes_representative_after_rejection(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    registry = LearningPluginRegistry()
+    registry.register(
+        descriptor=LearningPatternPluginDescriptor(
+            plugin_id="test.presence",
+            analyzer_id="PresencePatternAnalyzer",
+            plugin_family="presence",
+            proposal_types=("presence_preheat",),
+            reaction_targets=("PresencePatternReaction",),
+            lifecycle_hooks=ProposalLifecycleHooks(
+                identity_key=lambda proposal: (
+                    f"custom|id={proposal.suggested_reaction_config.get('id')}"
+                ),
+                review_grouping=lambda proposal: ProposalReviewGrouping(
+                    group_key=str(proposal.suggested_reaction_config.get("group") or ""),
+                    specificity_rank=int(
+                        proposal.suggested_reaction_config.get("specificity") or 0
+                    ),
+                    quality_rank=(float(proposal.suggested_reaction_config.get("quality") or 0),),
+                ),
+            ),
+        ),
+        analyzer=_AnalyzerStub([]),
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),  # type: ignore[arg-type]
+        learning_plugin_registry=registry,
+    )
+
+    await engine.async_initialize()
+    first = replace(
+        _proposal(conf=0.9),
+        suggested_reaction_config={"id": "first", "group": "morning", "specificity": 2},
+    )
+    second = replace(
+        _proposal(conf=0.8),
+        suggested_reaction_config={"id": "second", "group": "morning", "specificity": 1},
+    )
+
+    first_id = await engine.async_submit_proposal(first)
+    second_id = await engine.async_submit_proposal(second)
+    assert [proposal.proposal_id for proposal in engine.pending_proposals()] == [first_id]
+
+    assert await engine.async_reject_proposal(first_id)
+
+    pending = engine.pending_proposals()
+    assert [proposal.proposal_id for proposal in pending] == [second_id]
+    assert engine.proposal_by_id(second_id).status == "pending"  # type: ignore[union-attr]
+
+
+async def test_proposal_engine_groups_house_state_learned_context_by_review_context(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    def _house_state_proposal(
+        *,
+        context_key: str,
+        rooms: list[str],
+        learning_context: dict[str, object],
+        support: int,
+    ) -> ReactionProposal:
+        return ReactionProposal(
+            analyzer_id="house_state_inference",
+            reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+            description="Learned house-state context predicts working.",
+            confidence=1.0,
+            identity_key=f"{HOUSE_STATE_PROPOSAL_TYPE}:{context_key}",
+            suggested_reaction_config={
+                "proposal_type": HOUSE_STATE_PROPOSAL_TYPE,
+                "context_key": context_key,
+                "context_snapshot": {
+                    "weekday": 1,
+                    "hour_bucket": 17,
+                    "rooms": rooms,
+                    "anyone_home": True,
+                    "predicted_state": "working",
+                    "learning_context": learning_context,
+                },
+                "predicted_state": "working",
+                "support": support,
+                "total": support,
+            },
+        )
+
+    await engine.async_initialize()
+    minimal = _house_state_proposal(
+        context_key="minimal-key",
+        rooms=[],
+        learning_context={"module": "house_state_inference_minimal"},
+        support=10,
+    )
+    coarse = _house_state_proposal(
+        context_key="coarse-key",
+        rooms=["studio"],
+        learning_context={},
+        support=3,
+    )
+    rich = _house_state_proposal(
+        context_key="rich-key",
+        rooms=["studio"],
+        learning_context={
+            "module": "house_state_inference_rich",
+            "room_context_pattern": [
+                {"room_id": "studio", "media_on": False, "work_activity": True}
+            ],
+        },
+        support=3,
+    )
+
+    await engine.async_submit_proposal(minimal)
+    await engine.async_submit_proposal(coarse)
+    rich_id = await engine.async_submit_proposal(rich)
+
+    pending = engine.pending_proposals()
+    assert [proposal.proposal_id for proposal in pending] == [rich_id]
+
+    diagnostics = engine.diagnostics()
+    assert diagnostics["pending"] == 1
+    assert diagnostics["suppressed_in_review_count"] == 2
+    group_keys = {
+        proposal["review_group_key"]
+        for proposal in diagnostics["proposals"]
+        if proposal["type"] == HOUSE_STATE_PROPOSAL_TYPE
+    }
+    assert group_keys == {
+        (
+            "house_state_learned_context:house_state_ctx_group:"
+            "weekday:1:hour_bucket:17:anyone_home:1:state:working"
+        )
+    }
 
 
 async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(monkeypatch):
