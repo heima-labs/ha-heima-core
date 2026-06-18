@@ -133,7 +133,19 @@ class _ReactionProposalStepsMixin:
 
         if str(getattr(current, "followup_kind", "") or "") in LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS:
             if action == "accept":
-                await coordinator.proposal_engine.async_accept_proposal(current_id)
+                apply_fn = getattr(
+                    coordinator.proposal_engine,
+                    "async_apply_lifecycle_suggestion",
+                    None,
+                )
+                if callable(apply_fn):
+                    applied = bool(await apply_fn(current_id))
+                else:
+                    applied = bool(
+                        await coordinator.proposal_engine.async_accept_proposal(current_id)
+                    )
+                if applied:
+                    self._apply_lifecycle_suggestion_reaction_effect(current)
             elif action == "reject":
                 await coordinator.proposal_engine.async_reject_proposal(current_id)
             return await self.async_step_proposals() if queue else await self.async_step_init()
@@ -409,6 +421,51 @@ class _ReactionProposalStepsMixin:
             labels.pop(reaction_id, None)
         reactions_cfg["configured"] = configured
         reactions_cfg["labels"] = labels
+        self._store_reactions_options(reactions_cfg)
+
+    def _apply_lifecycle_suggestion_reaction_effect(self, proposal: ReactionProposal) -> None:
+        """Apply AD7 configured-reaction effects for an accepted lifecycle suggestion."""
+        cfg = _safe_mapping(proposal.suggested_reaction_config)
+        kind = str(cfg.get("lifecycle_suggestion_type") or proposal.followup_kind or "")
+        if kind not in {"replacement_suggestion", "retirement_suggestion"}:
+            return
+
+        target_reaction_id = str(cfg.get("target_reaction_id") or "").strip()
+        target_proposal_id = str(cfg.get("target_proposal_id") or "").strip()
+        target_identity_key = str(cfg.get("target_identity_key") or "").strip()
+        if not target_reaction_id:
+            return
+
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        raw = configured.get(target_reaction_id)
+        if not isinstance(raw, dict):
+            return
+
+        target_cfg = _safe_mapping(raw)
+        source_proposal_id = str(target_cfg.get("source_proposal_id") or "").strip()
+        source_identity_key = str(target_cfg.get("source_proposal_identity_key") or "").strip()
+        owns_target = target_reaction_id == target_proposal_id or (
+            bool(target_proposal_id) and source_proposal_id == target_proposal_id
+        )
+        owns_target = owns_target or (
+            bool(target_identity_key) and source_identity_key == target_identity_key
+        )
+        if not owns_target:
+            return
+
+        target_cfg["enabled"] = False
+        target_cfg["lifecycle_disabled"] = True
+        target_cfg["lifecycle_disabled_by"] = proposal.proposal_id
+        target_cfg["lifecycle_disabled_reason"] = kind
+        target_cfg["lifecycle_action"] = str(cfg.get("proposed_action") or "")
+        if kind == "replacement_suggestion":
+            target_cfg["lifecycle_replaced_by"] = proposal.proposal_id
+        elif kind == "retirement_suggestion":
+            target_cfg["lifecycle_retired_by"] = proposal.proposal_id
+
+        configured[target_reaction_id] = target_cfg
+        reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
 
     # ---- Proposal action configuration ----

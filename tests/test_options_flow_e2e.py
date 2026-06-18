@@ -1935,6 +1935,69 @@ async def test_proposals_step_accepts_lifecycle_suggestion_without_reaction_side
 
 
 @pytest.mark.asyncio
+async def test_proposals_step_applies_lifecycle_replacement_to_linked_reaction_only():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "rx-old": {
+                        "reaction_type": "house_state_learned_context",
+                        "source_proposal_id": "accepted-house-state",
+                        "source_proposal_identity_key": "house_state_learned_context:ctx",
+                        "enabled": True,
+                    },
+                    "rx-other": {
+                        "reaction_type": "house_state_learned_context",
+                        "source_proposal_id": "other",
+                        "enabled": True,
+                    },
+                },
+                "labels": {},
+            }
+        }
+    )
+    proposal = ReactionProposal(
+        proposal_id="proposal-lifecycle",
+        analyzer_id="proposal_lifecycle",
+        reaction_type=PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+        description="Lifecycle suggestion",
+        confidence=1.0,
+        followup_kind="replacement_suggestion",
+        suggested_reaction_config={
+            "proposal_type": PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+            "lifecycle_suggestion_type": "replacement_suggestion",
+            "target_proposal_id": "accepted-house-state",
+            "target_identity_key": "house_state_learned_context:ctx",
+            "target_reaction_id": "rx-old",
+            "proposed_action": "replace_accepted_rule_after_review",
+            "accepted_predicted_state": "working",
+            "proposed_predicted_state": "home",
+            "evidence": {"outcome_contradicted": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_apply_lifecycle_suggestion=AsyncMock(return_value=True),
+        async_accept_proposal=AsyncMock(),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    configured = flow.options["reactions"]["configured"]
+    assert configured["rx-old"]["enabled"] is False
+    assert configured["rx-old"]["lifecycle_disabled"] is True
+    assert configured["rx-old"]["lifecycle_replaced_by"] == "proposal-lifecycle"
+    assert configured["rx-other"]["enabled"] is True
+    proposal_engine.async_apply_lifecycle_suggestion.assert_awaited_once_with("proposal-lifecycle")
+    proposal_engine.async_accept_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_reviews_house_state_context_as_installer_without_reaction_config():
     flow = _flow()
     proposal = ReactionProposal(

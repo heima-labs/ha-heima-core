@@ -192,6 +192,9 @@ class _FakeLifecycleStore:
     def records(self) -> list[ProposalLifecycleRecord]:
         return list(self.records_by_id.values())
 
+    def record_by_proposal_id(self, proposal_id: str) -> ProposalLifecycleRecord | None:
+        return self.records_by_id.get(str(proposal_id or "").strip())
+
     def diagnostics(self) -> dict[str, object]:
         return {
             "storage_key": "fake",
@@ -1685,6 +1688,125 @@ async def test_house_state_lifecycle_rejected_suggestion_is_not_recreated(
         and proposal["followup_kind"] == "replacement_suggestion"
     ]
     assert len(rejected) == 1
+
+
+async def test_apply_lifecycle_replacement_marks_source_record_idempotently(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=2,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+    suggestion = next(
+        proposal
+        for proposal in engine.pending_proposals()
+        if isinstance(proposal, ReactionProposal)
+        and proposal.followup_kind == "replacement_suggestion"
+    )
+
+    assert await engine.async_apply_lifecycle_suggestion(suggestion.proposal_id)
+    first = lifecycle_store.records_by_id[proposal_id]
+    assert first.replaced_by == suggestion.proposal_id
+    assert first.retired_at == ""
+    accepted = engine.proposal_by_id(proposal_id)
+    assert isinstance(accepted, ReactionProposal)
+    assert accepted.suggested_reaction_config["predicted_state"] == "home"
+    assert accepted.suggested_reaction_config["context_snapshot"]["predicted_state"] == "home"
+    assert accepted.suggested_reaction_config["context_key"].endswith(":state:home")
+    assert accepted.identity_key.endswith(":state:home")
+
+    assert await engine.async_apply_lifecycle_suggestion(suggestion.proposal_id)
+    second = lifecycle_store.records_by_id[proposal_id]
+    assert second.replaced_by == suggestion.proposal_id
+    assert second.last_lifecycle_review_at == first.last_lifecycle_review_at
+    accepted_again = engine.proposal_by_id(proposal_id)
+    assert isinstance(accepted_again, ReactionProposal)
+    assert (
+        accepted_again.suggested_reaction_config["context_key"]
+        == accepted.suggested_reaction_config["context_key"]
+    )
+
+
+async def test_apply_lifecycle_retirement_marks_source_record_idempotently(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "relax"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=1,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+    suggestion = next(
+        proposal
+        for proposal in engine.pending_proposals()
+        if isinstance(proposal, ReactionProposal)
+        and proposal.followup_kind == "retirement_suggestion"
+    )
+
+    assert await engine.async_apply_lifecycle_suggestion(suggestion.proposal_id)
+    first = lifecycle_store.records_by_id[proposal_id]
+    assert first.retired_at
+    assert first.replaced_by == ""
+
+    assert await engine.async_apply_lifecycle_suggestion(suggestion.proposal_id)
+    second = lifecycle_store.records_by_id[proposal_id]
+    assert second.retired_at == first.retired_at
+
+
+async def test_apply_lifecycle_maintenance_marks_review_without_behavior_drift(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        configure_reaction=False,
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=1,
+            retirement_multiplier=1,
+            maintenance_threshold=1,
+            rolling_window_limit=4,
+        ),
+    )
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+    suggestion = next(
+        proposal
+        for proposal in engine.pending_proposals()
+        if isinstance(proposal, ReactionProposal)
+        and proposal.followup_kind == "maintenance_suggestion"
+    )
+
+    assert await engine.async_apply_lifecycle_suggestion(suggestion.proposal_id)
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.last_lifecycle_review_at
+    assert record.replaced_by == ""
+    assert record.retired_at == ""
 
 
 def test_reaction_proposal_preserves_lifecycle_followup_kind() -> None:

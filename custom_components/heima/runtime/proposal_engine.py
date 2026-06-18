@@ -12,11 +12,19 @@ from uuid import uuid4
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .analyzers.base import PROPOSAL_LIFECYCLE_SUGGESTION_TYPE, ReactionProposal
+from .analyzers.base import (
+    LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS,
+    PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+    ReactionProposal,
+)
 from .analyzers.lifecycle import ProposalReviewGrouping
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
-from .inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
+from .inference.approval_store import (
+    ACTIVITY_PROPOSAL_TYPE,
+    HOUSE_STATE_PROPOSAL_TYPE,
+    house_state_context_key,
+)
 from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .proposal_lifecycle_store import ProposalLifecycleRecord, ProposalLifecycleStore
 from .reactions import resolve_reaction_type
@@ -566,6 +574,82 @@ class ProposalEngine:
 
     async def async_reject_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "rejected")
+
+    async def async_apply_lifecycle_suggestion(self, proposal_id: str) -> bool:
+        """Accept and apply lifecycle-state effects for a review suggestion."""
+        proposal = self.proposal_by_id(proposal_id)
+        if not isinstance(proposal, ReactionProposal):
+            return False
+        if proposal.followup_kind not in LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS:
+            return False
+        if self._lifecycle_store is None:
+            return await self.async_accept_proposal(proposal_id)
+
+        cfg = _safe_dict(proposal.suggested_reaction_config)
+        target_proposal_id = str(cfg.get("target_proposal_id") or "").strip()
+        record = self._lifecycle_store.record_by_proposal_id(target_proposal_id)
+        if record is None:
+            return False
+
+        if proposal.status == "rejected":
+            return False
+        if proposal.status != "accepted" and not await self.async_accept_proposal(proposal_id):
+            return False
+
+        now = datetime.now(UTC).isoformat()
+        if proposal.followup_kind == "replacement_suggestion":
+            await self._async_apply_replacement_to_source_proposal(
+                record=record,
+                suggestion=proposal,
+                applied_at=now,
+            )
+        updated = _applied_lifecycle_record(
+            record=record,
+            suggestion_id=proposal.proposal_id,
+            suggestion_kind=proposal.followup_kind,
+            applied_at=now,
+        )
+        await self._lifecycle_store.async_replace_record(updated)
+        return True
+
+    async def _async_apply_replacement_to_source_proposal(
+        self,
+        *,
+        record: ProposalLifecycleRecord,
+        suggestion: ReactionProposal,
+        applied_at: str,
+    ) -> None:
+        """Update the accepted source proposal with the reviewed replacement context."""
+        cfg = _safe_dict(suggestion.suggested_reaction_config)
+        proposed_context = _safe_dict(cfg.get("proposed_context_snapshot"))
+        replacement_cfg = _replacement_house_state_config(record=record, cfg=cfg)
+        if not replacement_cfg:
+            return
+
+        for idx, current in enumerate(self._proposals):
+            if current.proposal_id != record.proposal_id:
+                continue
+            if not isinstance(current, ReactionProposal):
+                return
+            if current.status != "accepted" or current.reaction_type != HOUSE_STATE_PROPOSAL_TYPE:
+                return
+
+            source_cfg = _safe_dict(current.suggested_reaction_config)
+            source_cfg.update(replacement_cfg)
+            self._proposals[idx] = replace(
+                current,
+                description=_replacement_house_state_description(
+                    current.description,
+                    proposed_context,
+                ),
+                suggested_reaction_config=source_cfg,
+                identity_key=f"{HOUSE_STATE_PROPOSAL_TYPE}:{replacement_cfg['context_key']}",
+                updated_at=applied_at,
+                last_observed_at=applied_at,
+            )
+            await self._store.async_save(self._serialize())
+            self._write_sensor()
+            return
 
     async def async_boost_confidence(self, reaction_id: str, delta: float) -> None:
         """Boost confidence of the accepted proposal targeting reaction_id."""
@@ -1814,6 +1898,89 @@ def _lifecycle_suggestion_description(cfg: dict[str, Any]) -> str:
         reason = str(cfg.get("maintenance_reason") or "dependency_unavailable")
         return f"Lifecycle suggestion: review learned rule maintenance ({reason})."
     return "Lifecycle suggestion for learned rule."
+
+
+def _applied_lifecycle_record(
+    *,
+    record: ProposalLifecycleRecord,
+    suggestion_id: str,
+    suggestion_kind: str,
+    applied_at: str,
+) -> ProposalLifecycleRecord:
+    if suggestion_kind == "replacement_suggestion":
+        return replace(
+            record,
+            replaced_by=record.replaced_by or suggestion_id,
+            last_lifecycle_review_at=record.last_lifecycle_review_at or applied_at,
+        )
+    if suggestion_kind == "retirement_suggestion":
+        return replace(
+            record,
+            retired_at=record.retired_at or applied_at,
+            last_lifecycle_review_at=record.last_lifecycle_review_at or applied_at,
+        )
+    if suggestion_kind == "maintenance_suggestion":
+        return replace(
+            record,
+            last_lifecycle_review_at=record.last_lifecycle_review_at or applied_at,
+        )
+    return record
+
+
+def _replacement_house_state_config(
+    *,
+    record: ProposalLifecycleRecord,
+    cfg: dict[str, Any],
+) -> dict[str, Any]:
+    if record.proposal_type != HOUSE_STATE_PROPOSAL_TYPE:
+        return {}
+
+    proposed_context = _safe_dict(cfg.get("proposed_context_snapshot"))
+    proposed_state = _token(
+        proposed_context.get("predicted_state") or cfg.get("proposed_predicted_state")
+    )
+    if not proposed_state:
+        return {}
+
+    weekday = _safe_int(proposed_context.get("weekday"), default=-1)
+    hour_bucket = _safe_int(proposed_context.get("hour_bucket"), default=-1)
+    if weekday < 0 or hour_bucket < 0:
+        return {}
+
+    raw_rooms = proposed_context.get("rooms")
+    rooms = [
+        str(room).strip()
+        for room in (raw_rooms if isinstance(raw_rooms, list) else [])
+        if str(room).strip()
+    ]
+    learning_context = _safe_dict(proposed_context.get("learning_context"))
+    context_key = house_state_context_key(
+        weekday=weekday,
+        hour_bucket=hour_bucket,
+        rooms=rooms,
+        anyone_home=bool(proposed_context.get("anyone_home")),
+        predicted_state=proposed_state,
+        learning_context=learning_context,
+    )
+    proposed_context["predicted_state"] = proposed_state
+    proposed_context["rooms"] = rooms
+    proposed_context["learning_context"] = learning_context
+    return {
+        "context_key": context_key,
+        "context_snapshot": proposed_context,
+        "predicted_state": proposed_state,
+        "lifecycle_replaces_proposal_id": record.proposal_id,
+    }
+
+
+def _replacement_house_state_description(
+    fallback: str,
+    proposed_context: dict[str, Any],
+) -> str:
+    proposed_state = str(proposed_context.get("predicted_state") or "").strip()
+    if not proposed_state:
+        return fallback
+    return f"Learned house-state context predicts {proposed_state}."
 
 
 def _dominant_house_state(events: list[Any]) -> str | None:

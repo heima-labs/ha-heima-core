@@ -180,6 +180,10 @@ class ProposalLifecycleStore:
             key=lambda item: (item.accepted_at, item.proposal_id),
         )
 
+    def record_by_proposal_id(self, proposal_id: str) -> ProposalLifecycleRecord | None:
+        """Return one lifecycle record by accepted source proposal id."""
+        return self._records.get(str(proposal_id or "").strip())
+
     def diagnostics(self) -> dict[str, Any]:
         """Return lifecycle store diagnostics."""
         return {
