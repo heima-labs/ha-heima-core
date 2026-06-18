@@ -594,30 +594,7 @@ class ProposalEngine:
         if isinstance(existing, ActivityProposal):
             return existing.proposal_id
         if existing.status != "pending":
-            reopened = replace(
-                existing,
-                analyzer_id=proposal.analyzer_id,
-                reaction_type=proposal.reaction_type,
-                description=proposal.description,
-                confidence=proposal.confidence,
-                origin=proposal.origin,
-                suggested_reaction_config=_safe_dict(proposal.suggested_reaction_config),
-                status="pending",
-                updated_at=now,
-                last_observed_at=proposal.last_observed_at or now,
-                identity_key=identity_key,
-                followup_kind=proposal.followup_kind,
-                target_reaction_id=proposal.target_reaction_id,
-                target_reaction_type=proposal.target_reaction_type,
-                target_reaction_origin=proposal.target_reaction_origin,
-                target_template_id=proposal.target_template_id,
-                improves_reaction_type=proposal.improves_reaction_type,
-                improvement_reason=proposal.improvement_reason,
-            )
-            self._proposals[existing_idx] = reopened
-            await self._store.async_save(self._serialize())
-            self._write_sensor()
-            return reopened.proposal_id
+            return existing.proposal_id
 
         updated = replace(
             existing,
