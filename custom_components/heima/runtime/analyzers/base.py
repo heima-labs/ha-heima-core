@@ -14,6 +14,14 @@ if TYPE_CHECKING:
 
 HOUSE_STATE_CONCENTRATION_THRESHOLD: float = 0.75
 HOUSE_STATE_MIN_DOMINANT_OBSERVATIONS: int = 8
+PROPOSAL_LIFECYCLE_SUGGESTION_TYPE = "proposal_lifecycle_suggestion"
+LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS = frozenset(
+    {
+        "replacement_suggestion",
+        "retirement_suggestion",
+        "maintenance_suggestion",
+    }
+)
 
 
 def compute_house_state_filter(events: "list[HeimaEvent]") -> str | None:
@@ -55,6 +63,9 @@ class ReactionProposal:
         "tuning_suggestion",
         "improvement",
         "config_suggestion",
+        "replacement_suggestion",
+        "retirement_suggestion",
+        "maintenance_suggestion",
     ] = "discovery"
     status: Literal["pending", "accepted", "rejected"] = "pending"
     suggested_reaction_config: dict[str, Any] = field(default_factory=dict)
@@ -105,6 +116,9 @@ class ReactionProposal:
             "tuning_suggestion",
             "improvement",
             "config_suggestion",
+            "replacement_suggestion",
+            "retirement_suggestion",
+            "maintenance_suggestion",
         }:
             followup_kind = "discovery"
         status = str(raw.get("status") or "pending")

@@ -1603,6 +1603,103 @@ async def test_house_state_lifecycle_policy_keeps_maintenance_separate(
     assert diagnostic["lifecycle_review_kind"] == "maintenance_suggestion"
 
 
+async def test_house_state_lifecycle_generates_replacement_suggestion(
+    monkeypatch,
+):
+    (
+        engine,
+        _lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=2,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    pending = engine.pending_proposals()
+    suggestion = next(
+        proposal
+        for proposal in pending
+        if isinstance(proposal, ReactionProposal)
+        and proposal.followup_kind == "replacement_suggestion"
+    )
+    cfg = suggestion.suggested_reaction_config
+    assert suggestion.reaction_type == "proposal_lifecycle_suggestion"
+    assert suggestion.target_reaction_id == proposal_id
+    assert cfg["lifecycle_suggestion_type"] == "replacement_suggestion"
+    assert cfg["target_proposal_id"] == proposal_id
+    assert cfg["accepted_predicted_state"] == "working"
+    assert cfg["proposed_predicted_state"] == "home"
+    assert cfg["rejection_key"]
+
+
+async def test_house_state_lifecycle_rejected_suggestion_is_not_recreated(
+    monkeypatch,
+):
+    (
+        engine,
+        _lifecycle_store,
+        _proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=2,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+    suggestion = next(
+        proposal
+        for proposal in engine.pending_proposals()
+        if isinstance(proposal, ReactionProposal)
+        and proposal.followup_kind == "replacement_suggestion"
+    )
+    assert await engine.async_reject_proposal(suggestion.proposal_id)
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    assert all(
+        not (
+            isinstance(proposal, ReactionProposal)
+            and proposal.followup_kind == "replacement_suggestion"
+        )
+        for proposal in engine.pending_proposals()
+    )
+    rejected = [
+        proposal
+        for proposal in engine.diagnostics()["proposals"]
+        if proposal["status"] == "rejected"
+        and proposal["followup_kind"] == "replacement_suggestion"
+    ]
+    assert len(rejected) == 1
+
+
+def test_reaction_proposal_preserves_lifecycle_followup_kind() -> None:
+    proposal = ReactionProposal.from_dict(
+        {
+            "analyzer_id": "proposal_lifecycle",
+            "reaction_type": "proposal_lifecycle_suggestion",
+            "followup_kind": "retirement_suggestion",
+            "suggested_reaction_config": {"proposal_type": "proposal_lifecycle_suggestion"},
+        }
+    )
+
+    assert proposal.followup_kind == "retirement_suggestion"
+
+
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

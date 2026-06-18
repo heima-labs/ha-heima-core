@@ -14,7 +14,10 @@ from custom_components.heima.const import (
     SIGNAL_DISCOVERY_ANALYZER_ID,
     SIGNAL_DISCOVERY_REACTION_TYPE,
 )
-from custom_components.heima.runtime.analyzers.base import ReactionProposal
+from custom_components.heima.runtime.analyzers.base import (
+    PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+    ReactionProposal,
+)
 from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 from custom_components.heima.runtime.proposal_engine import ActivityProposal
 
@@ -1893,6 +1896,42 @@ async def test_proposals_step_skips_manual_action_for_room_lighting_assist():
     assert stored["author_kind"] == "heima"
     assert stored["source_request"] == "learned_pattern"
     assert stored["source_proposal_id"] == "proposal-darkness"
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_accepts_lifecycle_suggestion_without_reaction_side_effects():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-lifecycle",
+        analyzer_id="proposal_lifecycle",
+        reaction_type=PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+        description="Lifecycle suggestion",
+        confidence=1.0,
+        followup_kind="replacement_suggestion",
+        suggested_reaction_config={
+            "proposal_type": PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+            "lifecycle_suggestion_type": "replacement_suggestion",
+            "target_proposal_id": "accepted-house-state",
+            "accepted_predicted_state": "working",
+            "proposed_predicted_state": "home",
+            "evidence": {"outcome_contradicted": 2},
+        },
+    )
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [proposal],
+        async_accept_proposal=AsyncMock(return_value=True),
+        async_reject_proposal=AsyncMock(),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    proposal_engine.async_accept_proposal.assert_awaited_once_with("proposal-lifecycle")
+    assert flow.options.get("reactions", {}).get("configured", {}) == {}
 
 
 @pytest.mark.asyncio

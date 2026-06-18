@@ -12,7 +12,7 @@ from uuid import uuid4
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .analyzers.base import ReactionProposal
+from .analyzers.base import PROPOSAL_LIFECYCLE_SUGGESTION_TYPE, ReactionProposal
 from .analyzers.lifecycle import ProposalReviewGrouping
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
@@ -849,6 +849,7 @@ class ProposalEngine:
         for record in records:
             updated = self._evaluate_house_state_lifecycle_record(record, events)
             await self._lifecycle_store.async_replace_record(updated)
+            await self._async_submit_lifecycle_suggestion(updated)
 
     def _evaluate_house_state_lifecycle_record(
         self,
@@ -917,6 +918,49 @@ class ProposalEngine:
                 counts=counts,
                 policy=self._lifecycle_policy,
             ),
+        )
+
+    async def _async_submit_lifecycle_suggestion(self, record: ProposalLifecycleRecord) -> None:
+        if not record.lifecycle_review_kind:
+            return
+        proposal = self._lifecycle_suggestion_proposal(record)
+        if proposal is None:
+            return
+        await self.async_submit_proposal(proposal)
+
+    def _lifecycle_suggestion_proposal(
+        self, record: ProposalLifecycleRecord
+    ) -> ReactionProposal | None:
+        source = self._proposal_by_id(record.proposal_id)
+        if not isinstance(source, ReactionProposal):
+            return None
+
+        kind = str(record.lifecycle_review_kind or "").strip()
+        if kind not in {
+            "replacement_suggestion",
+            "retirement_suggestion",
+            "maintenance_suggestion",
+        }:
+            return None
+
+        cfg = _lifecycle_suggestion_config(
+            record=record,
+            source=source,
+            policy=self._lifecycle_policy,
+            link=self._classify_reaction_link_state(record),
+        )
+        rejection_key = str(cfg["rejection_key"])
+        return ReactionProposal(
+            analyzer_id="proposal_lifecycle",
+            reaction_type=PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+            description=_lifecycle_suggestion_description(cfg),
+            confidence=1.0,
+            origin="learned",
+            followup_kind=kind,  # type: ignore[arg-type]
+            identity_key=f"{PROPOSAL_LIFECYCLE_SUGGESTION_TYPE}:{rejection_key}",
+            suggested_reaction_config=cfg,
+            target_reaction_id=record.linked_reaction_id,
+            target_reaction_type=record.linked_reaction_type,
         )
 
     async def _sync_accepted_lifecycle_records(self) -> None:
@@ -1150,6 +1194,21 @@ class ProposalEngine:
                     1
                     for p in ordered
                     if getattr(p, "followup_kind", "discovery") == "config_suggestion"
+                ),
+                "replacement_suggestion": sum(
+                    1
+                    for p in ordered
+                    if getattr(p, "followup_kind", "discovery") == "replacement_suggestion"
+                ),
+                "retirement_suggestion": sum(
+                    1
+                    for p in ordered
+                    if getattr(p, "followup_kind", "discovery") == "retirement_suggestion"
+                ),
+                "maintenance_suggestion": sum(
+                    1
+                    for p in ordered
+                    if getattr(p, "followup_kind", "discovery") == "maintenance_suggestion"
                 ),
             },
             "by_type": _proposal_type_counts(ordered),
@@ -1657,6 +1716,104 @@ def _lifecycle_policy_diagnostics(policy: AcceptedRuleLifecyclePolicy) -> dict[s
         "maintenance_threshold": policy.maintenance_threshold,
         "rolling_window_limit": policy.rolling_window_limit,
     }
+
+
+def _lifecycle_suggestion_config(
+    *,
+    record: ProposalLifecycleRecord,
+    source: ReactionProposal,
+    policy: AcceptedRuleLifecyclePolicy,
+    link: dict[str, str],
+) -> dict[str, Any]:
+    source_cfg = _safe_dict(source.suggested_reaction_config)
+    accepted_context = _safe_dict(source_cfg.get("context_snapshot"))
+    kind = str(record.lifecycle_review_kind or "").strip()
+    evidence = _record_lifecycle_counts(record)
+    cfg: dict[str, Any] = {
+        "proposal_type": PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
+        "lifecycle_suggestion_type": kind,
+        "lifecycle_generation": record.lifecycle_generation,
+        "target_proposal_id": record.proposal_id,
+        "target_identity_key": record.identity_key,
+        "target_reaction_id": record.linked_reaction_id,
+        "target_reaction_type": record.linked_reaction_type,
+        "accepted_context_snapshot": accepted_context,
+        "accepted_predicted_state": str(source_cfg.get("predicted_state") or ""),
+        "evidence": evidence,
+        "policy": _lifecycle_policy_diagnostics(policy),
+        "reaction_link_state": link.get("state", ""),
+        "reaction_link_state_reason": link.get("reason", ""),
+    }
+    if kind == "replacement_suggestion":
+        proposed_state = str(record.replacement_candidate_state or "").strip()
+        proposed_context = dict(accepted_context)
+        if proposed_state:
+            proposed_context["predicted_state"] = proposed_state
+        cfg.update(
+            {
+                "proposed_predicted_state": proposed_state,
+                "proposed_context_snapshot": proposed_context,
+                "proposed_action": "replace_accepted_rule_after_review",
+            }
+        )
+    elif kind == "retirement_suggestion":
+        reason = (
+            "context_drift"
+            if record.context_miss_count >= policy.retirement_threshold
+            else "unconfirmed_outcome"
+        )
+        cfg.update(
+            {
+                "retirement_reason": reason,
+                "proposed_action": "retire_accepted_rule_after_review",
+            }
+        )
+    elif kind == "maintenance_suggestion":
+        cfg.update(
+            {
+                "maintenance_reason": link.get("reason", "") or "dependency_unavailable",
+                "proposed_action": "review_rule_dependencies_after_review",
+            }
+        )
+    cfg["rejection_key"] = _lifecycle_rejection_key(cfg)
+    return cfg
+
+
+def _lifecycle_rejection_key(cfg: dict[str, Any]) -> str:
+    parts = [
+        str(cfg.get("lifecycle_suggestion_type") or ""),
+        str(cfg.get("target_proposal_id") or ""),
+        f"generation:{cfg.get('lifecycle_generation') or 1}",
+        str(cfg.get("proposed_predicted_state") or ""),
+        str(cfg.get("retirement_reason") or ""),
+        str(cfg.get("maintenance_reason") or ""),
+    ]
+    evidence = _safe_dict(cfg.get("evidence"))
+    parts.extend(
+        [
+            f"replacement:{evidence.get('replacement_candidate_state') or ''}:"
+            f"{evidence.get('replacement_candidate_count') or 0}",
+            f"contradicted:{evidence.get('outcome_contradicted') or 0}",
+            f"context_missed:{evidence.get('context_missed') or 0}",
+            f"dependency:{evidence.get('dependency_unavailable') or 0}",
+        ]
+    )
+    return "|".join(parts)
+
+
+def _lifecycle_suggestion_description(cfg: dict[str, Any]) -> str:
+    kind = str(cfg.get("lifecycle_suggestion_type") or "")
+    accepted = str(cfg.get("accepted_predicted_state") or "unknown")
+    if kind == "replacement_suggestion":
+        proposed = str(cfg.get("proposed_predicted_state") or "unknown")
+        return f"Lifecycle suggestion: replace learned house-state rule {accepted} -> {proposed}."
+    if kind == "retirement_suggestion":
+        reason = str(cfg.get("retirement_reason") or "unconfirmed_outcome")
+        return f"Lifecycle suggestion: retire learned house-state rule ({reason})."
+    if kind == "maintenance_suggestion":
+        reason = str(cfg.get("maintenance_reason") or "dependency_unavailable")
+        return f"Lifecycle suggestion: review learned rule maintenance ({reason})."
+    return "Lifecycle suggestion for learned rule."
 
 
 def _dominant_house_state(events: list[Any]) -> str | None:

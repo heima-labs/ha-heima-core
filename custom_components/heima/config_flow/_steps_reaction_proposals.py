@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 
 from ..const import OPT_REACTIONS, SIGNAL_DISCOVERY_REACTION_TYPE
-from ..runtime.analyzers.base import ReactionProposal
+from ..runtime.analyzers.base import LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS, ReactionProposal
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
 from ..runtime.proposal_engine import ActivityProposal, ProposalItem
@@ -129,6 +129,13 @@ class _ReactionProposalStepsMixin:
                     current_id,
                     decision="rejected",
                 )
+            return await self.async_step_proposals() if queue else await self.async_step_init()
+
+        if str(getattr(current, "followup_kind", "") or "") in LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS:
+            if action == "accept":
+                await coordinator.proposal_engine.async_accept_proposal(current_id)
+            elif action == "reject":
+                await coordinator.proposal_engine.async_reject_proposal(current_id)
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
         reactions_cfg = dict(self.options.get(OPT_REACTIONS, {}))
@@ -719,6 +726,10 @@ class _ReactionProposalStepsMixin:
         followup = self._proposal_followup_target(proposal)
         presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         language = self._flow_language()
+        if proposal.followup_kind in LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS:
+            return _lifecycle_suggestion_review_title(
+                proposal, cfg, is_it=language.startswith("it")
+            )
         if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
             # Try to extract details from identity_key for better differentiation in combo box
             identity_key = str(getattr(proposal, "identity_key", "") or "")
@@ -729,27 +740,51 @@ class _ReactionProposalStepsMixin:
                     hour_bucket_idx = parts.index("hour_bucket") + 1
                     rooms_idx = parts.index("rooms") + 1
                     state_idx = parts.index("state") + 1
-                    
+
                     weekday = parts[weekday_idx]
                     hour_bucket = parts[hour_bucket_idx]
                     rooms = parts[rooms_idx]
                     predicted_state = parts[state_idx]
-                    
-                    weekdays_it = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
-                    weekdays_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                    
-                    weekday_name = weekdays_it[int(weekday)] if weekday.isdigit() and 0 <= int(weekday) < 7 else f"Day {weekday}"
+
+                    weekdays_it = [
+                        "Lunedì",
+                        "Martedì",
+                        "Mercoledì",
+                        "Giovedì",
+                        "Venerdì",
+                        "Sabato",
+                        "Domenica",
+                    ]
+                    weekdays_en = [
+                        "Monday",
+                        "Tuesday",
+                        "Wednesday",
+                        "Thursday",
+                        "Friday",
+                        "Saturday",
+                        "Sunday",
+                    ]
+
+                    weekday_name = (
+                        weekdays_it[int(weekday)]
+                        if weekday.isdigit() and 0 <= int(weekday) < 7
+                        else f"Day {weekday}"
+                    )
                     if not language.startswith("it"):
-                        weekday_name = weekdays_en[int(weekday)] if weekday.isdigit() and 0 <= int(weekday) < 7 else f"Day {weekday}"
-                    
+                        weekday_name = (
+                            weekdays_en[int(weekday)]
+                            if weekday.isdigit() and 0 <= int(weekday) < 7
+                            else f"Day {weekday}"
+                        )
+
                     rooms_display = "Nessuna" if rooms == "none" else rooms.replace(",", ", ")
-                    
+
                     if language.startswith("it"):
                         return f"[{weekday_name} {hour_bucket}:00][{rooms_display}] → {predicted_state}"
                     return f"[{weekday_name} {hour_bucket}:00][{rooms_display}] → {predicted_state}"
                 except (ValueError, IndexError, AttributeError):
                     pass  # Fallback to original
-            
+
             # Fallback to snapshot-based title
             snapshot = _safe_mapping(cfg.get("context_snapshot"))
             predicted_state = str(
@@ -794,6 +829,8 @@ class _ReactionProposalStepsMixin:
         learning = _safe_mapping(cfg.get("learning_diagnostics"))
         language = self._flow_language()
         is_it = language.startswith("it")
+        if proposal.followup_kind in LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS:
+            return _lifecycle_suggestion_review_details(cfg, is_it=is_it)
         if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
             return _house_state_proposal_review_details(proposal, cfg, is_it=is_it)
 
@@ -1121,3 +1158,86 @@ class _ReactionProposalStepsMixin:
             if origin == "learned":
                 return "learned"
         return origin
+
+
+def _lifecycle_suggestion_review_title(
+    proposal: ReactionProposal,
+    cfg: dict[str, Any],
+    *,
+    is_it: bool,
+) -> str:
+    kind = str(cfg.get("lifecycle_suggestion_type") or proposal.followup_kind or "")
+    if kind == "replacement_suggestion":
+        old_state = str(cfg.get("accepted_predicted_state") or "unknown")
+        new_state = str(cfg.get("proposed_predicted_state") or "unknown")
+        return (
+            f"Sostituzione regola appresa: {old_state} -> {new_state}"
+            if is_it
+            else f"Learned rule replacement: {old_state} -> {new_state}"
+        )
+    if kind == "retirement_suggestion":
+        return "Ritiro regola appresa" if is_it else "Learned rule retirement"
+    if kind == "maintenance_suggestion":
+        return "Manutenzione regola appresa" if is_it else "Learned rule maintenance"
+    return "Revisione lifecycle" if is_it else "Lifecycle review"
+
+
+def _lifecycle_suggestion_review_details(cfg: dict[str, Any], *, is_it: bool) -> str:
+    evidence = _safe_mapping(cfg.get("evidence"))
+    lines: list[str] = []
+    if is_it:
+        lines.append("Questa proposta non modifica subito nessuna reaction.")
+        lines.append(
+            "Accettarla registra la decisione; l'applicazione operativa e gestita da una fase successiva."
+        )
+        action = str(cfg.get("proposed_action") or "")
+        if action:
+            lines.append(f"Azione proposta: {action}")
+        reason = (
+            cfg.get("retirement_reason")
+            or cfg.get("maintenance_reason")
+            or cfg.get("reaction_link_state_reason")
+        )
+        if reason:
+            lines.append(f"Motivo: {reason}")
+        old_state = cfg.get("accepted_predicted_state")
+        new_state = cfg.get("proposed_predicted_state")
+        if old_state or new_state:
+            lines.append(
+                f"Stato: {old_state or 'unknown'} -> {new_state or old_state or 'unknown'}"
+            )
+        lines.append(
+            "Evidenza: "
+            f"conferme {evidence.get('confirmed', 0)}, "
+            f"contraddizioni {evidence.get('outcome_contradicted', 0)}, "
+            f"context missed {evidence.get('context_missed', 0)}, "
+            f"dipendenze non disponibili {evidence.get('dependency_unavailable', 0)}"
+        )
+        return "\n".join(lines)
+
+    lines.append("This proposal does not modify any reaction immediately.")
+    lines.append(
+        "Accepting it records the decision; operational application is handled by a later phase."
+    )
+    action = str(cfg.get("proposed_action") or "")
+    if action:
+        lines.append(f"Proposed action: {action}")
+    reason = (
+        cfg.get("retirement_reason")
+        or cfg.get("maintenance_reason")
+        or cfg.get("reaction_link_state_reason")
+    )
+    if reason:
+        lines.append(f"Reason: {reason}")
+    old_state = cfg.get("accepted_predicted_state")
+    new_state = cfg.get("proposed_predicted_state")
+    if old_state or new_state:
+        lines.append(f"State: {old_state or 'unknown'} -> {new_state or old_state or 'unknown'}")
+    lines.append(
+        "Evidence: "
+        f"confirmed {evidence.get('confirmed', 0)}, "
+        f"contradicted {evidence.get('outcome_contradicted', 0)}, "
+        f"context missed {evidence.get('context_missed', 0)}, "
+        f"dependency unavailable {evidence.get('dependency_unavailable', 0)}"
+    )
+    return "\n".join(lines)
