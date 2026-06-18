@@ -37,6 +37,7 @@
           "reactions": "Reazioni",
           "admin_authored_create": "Crea automazione",
           "proposals": "Revisione proposte",
+          "accepted_proposals": "Gestisci proposte accettate",
           "save": "Salva e chiudi",
           "reactions_edit": "Modifica reazione"
         }
@@ -532,6 +533,22 @@
         },
         "submit": "OK"
       },
+      "accepted_proposals": {
+        "title": "Gestisci Proposte Accettate",
+        "description": "{summary}\n\nSeleziona una proposta accettata da rivedere o rimuovere.",
+        "data": {
+          "proposal_id": "Proposta accettata"
+        },
+        "submit": "OK"
+      },
+      "accepted_proposal_manage": {
+        "title": "Proposta Accettata",
+        "description": "Proposta selezionata:\n{proposal_label}\n\nDettagli:\n{proposal_details}",
+        "data": {
+          "management_action": "Azione"
+        },
+        "submit": "OK"
+      },
       "heating_branches_menu": {
         "title": "Override Branch Riscaldamento",
         "description": "{summary}",
@@ -673,7 +690,11 @@
       "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
       "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale",
       "invalid_target_domain": "Uno o più target selezionati usano un dominio non supportato",
-      "no_burst_config": "Il segnale non ha burst_threshold configurato nei segnali della stanza"
+      "no_burst_config": "Il segnale non ha burst_threshold configurato nei segnali della stanza",
+      "no_accepted_proposals": "Non ci sono proposte accettate da gestire",
+      "proposal_not_found": "La proposta selezionata non è stata trovata",
+      "unsupported_management_action": "Questa azione di gestione proposta non è ancora supportata",
+      "remove_failed": "Heima non è riuscito a rimuovere la proposta accettata"
     }
   }
 }

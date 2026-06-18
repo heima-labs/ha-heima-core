@@ -12,7 +12,7 @@ from ..const import OPT_REACTIONS, SIGNAL_DISCOVERY_REACTION_TYPE
 from ..runtime.analyzers.base import ReactionProposal
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
-from ..runtime.proposal_engine import ActivityProposal
+from ..runtime.proposal_engine import ActivityProposal, ProposalItem
 from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
 from ._common import _entity_selector, _number_box_selector
 from ._reaction_helpers import (
@@ -215,6 +215,194 @@ class _ReactionProposalStepsMixin:
             self._store_reactions_options(reactions_cfg)
 
         return await self.async_step_proposals() if queue else await self.async_step_init()
+
+    # ---- Accepted proposal management ----
+
+    async def async_step_accepted_proposals(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Select one already accepted proposal to manage."""
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        accepted_fn = getattr(proposal_engine, "accepted_proposals", None)
+        accepted = list(accepted_fn()) if callable(accepted_fn) else []
+
+        if not accepted:
+            self._accepted_proposal_management_id = None
+            return await self.async_step_init()
+
+        accepted_map = {proposal.proposal_id: proposal for proposal in accepted}
+        if user_input is None:
+            current = accepted[0]
+            return self.async_show_form(
+                step_id="accepted_proposals",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("proposal_id", default=current.proposal_id): vol.In(
+                            self._accepted_proposal_options(accepted)
+                        ),
+                    }
+                ),
+                description_placeholders=self._accepted_proposals_placeholders(
+                    accepted,
+                ),
+            )
+
+        proposal_id = str(user_input.get("proposal_id") or "").strip()
+        current = accepted_map.get(proposal_id)
+        if current is None:
+            return self.async_show_form(
+                step_id="accepted_proposals",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("proposal_id"): vol.In(
+                            self._accepted_proposal_options(accepted)
+                        ),
+                    }
+                ),
+                errors={"base": "proposal_not_found"},
+                description_placeholders=self._accepted_proposals_placeholders(
+                    accepted,
+                ),
+            )
+
+        self._accepted_proposal_management_id = proposal_id
+        return await self.async_step_accepted_proposal_manage()
+
+    async def async_step_accepted_proposal_manage(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Apply an action to the selected accepted proposal."""
+        coordinator = self._get_coordinator()
+        proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+        accepted_fn = getattr(proposal_engine, "accepted_proposals", None)
+        accepted = list(accepted_fn()) if callable(accepted_fn) else []
+        accepted_map = {proposal.proposal_id: proposal for proposal in accepted}
+        proposal_id = str(getattr(self, "_accepted_proposal_management_id", "") or "").strip()
+        current = accepted_map.get(proposal_id)
+        if current is None:
+            self._accepted_proposal_management_id = None
+            return await self.async_step_accepted_proposals()
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="accepted_proposal_manage",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("management_action", default="remove"): vol.In(
+                            self._accepted_proposal_management_action_options()
+                        ),
+                    }
+                ),
+                description_placeholders=self._accepted_proposal_manage_placeholders(current),
+            )
+
+        action = str(user_input.get("management_action") or "").strip().lower()
+        if action != "remove":
+            return self.async_show_form(
+                step_id="accepted_proposal_manage",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("management_action", default="remove"): vol.In(
+                            self._accepted_proposal_management_action_options()
+                        ),
+                    }
+                ),
+                errors={"base": "unsupported_management_action"},
+                description_placeholders=self._accepted_proposal_manage_placeholders(current),
+            )
+
+        removed = await self._remove_accepted_proposal(current, coordinator)
+        if not removed:
+            return self.async_show_form(
+                step_id="accepted_proposal_manage",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("management_action", default="remove"): vol.In(
+                            self._accepted_proposal_management_action_options()
+                        ),
+                    }
+                ),
+                errors={"base": "remove_failed"},
+                description_placeholders=self._accepted_proposal_manage_placeholders(current),
+            )
+
+        self._accepted_proposal_management_id = None
+        return await self.async_step_accepted_proposals()
+
+    async def _remove_accepted_proposal(
+        self,
+        proposal: ProposalItem,
+        coordinator: Any | None,
+    ) -> bool:
+        """Remove one accepted proposal decision and associated configured reaction."""
+        proposal_id = str(getattr(proposal, "proposal_id", "") or "").strip()
+        if not proposal_id:
+            return False
+
+        reviewed = False
+        current_type = _proposal_review_type(proposal)
+        if coordinator is not None and current_type in {
+            HOUSE_STATE_PROPOSAL_TYPE,
+            ACTIVITY_PROPOSAL_TYPE,
+            SIGNAL_DISCOVERY_REACTION_TYPE,
+        }:
+            review_fn = getattr(coordinator, "async_review_proposal", None)
+            if callable(review_fn):
+                reviewed = bool(
+                    await review_fn(
+                        proposal_id,
+                        decision="rejected",
+                        approved_by="installer",
+                    )
+                )
+
+        if not reviewed:
+            proposal_engine = getattr(coordinator, "proposal_engine", None) if coordinator else None
+            reject_fn = getattr(proposal_engine, "async_reject_proposal", None)
+            if callable(reject_fn):
+                reviewed = bool(await reject_fn(proposal_id))
+
+        if not reviewed:
+            return False
+        self._remove_configured_reaction_for_accepted_proposal(proposal)
+        return True
+
+    def _remove_configured_reaction_for_accepted_proposal(self, proposal: ProposalItem) -> None:
+        """Drop configured reactions that were created from the accepted proposal."""
+        if not isinstance(proposal, ReactionProposal):
+            return
+        proposal_id = str(proposal.proposal_id or "").strip()
+        identity_key = str(proposal.identity_key or "").strip()
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        labels = dict(reactions_cfg.get("labels", {}))
+        remove_ids: set[str] = set()
+        for reaction_id, raw_cfg in configured.items():
+            cfg = _safe_mapping(raw_cfg)
+            if reaction_id == proposal_id:
+                remove_ids.add(str(reaction_id))
+                continue
+            if str(cfg.get("source_proposal_id") or "").strip() == proposal_id:
+                remove_ids.add(str(reaction_id))
+                continue
+            if str(cfg.get("last_tuning_proposal_id") or "").strip() == proposal_id:
+                remove_ids.add(str(reaction_id))
+                continue
+            if (
+                identity_key
+                and str(cfg.get("source_proposal_identity_key") or "").strip() == identity_key
+            ):
+                remove_ids.add(str(reaction_id))
+
+        if not remove_ids:
+            return
+        for reaction_id in remove_ids:
+            configured.pop(reaction_id, None)
+            labels.pop(reaction_id, None)
+        reactions_cfg["configured"] = configured
+        reactions_cfg["labels"] = labels
+        self._store_reactions_options(reactions_cfg)
 
     # ---- Proposal action configuration ----
 
@@ -452,6 +640,74 @@ class _ReactionProposalStepsMixin:
             "skip": "Skip for now",
         }
 
+    def _accepted_proposal_options(self, proposals: list[ProposalItem]) -> dict[str, str]:
+        """Return selector options for accepted proposal management."""
+        options: dict[str, str] = {}
+        for proposal in proposals:
+            proposal_id = str(getattr(proposal, "proposal_id", "") or "").strip()
+            if not proposal_id:
+                continue
+            title = self._proposal_review_title_for_item(proposal)
+            options[proposal_id] = title or proposal_id
+        return options
+
+    def _accepted_proposal_management_action_options(self) -> dict[str, str]:
+        """Return localized management actions for accepted proposals."""
+        if self._flow_language().startswith("it"):
+            return {"remove": "Rimuovi questa proposta accettata"}
+        return {"remove": "Remove this accepted proposal"}
+
+    def _accepted_proposals_placeholders(
+        self,
+        proposals: list[ProposalItem],
+    ) -> dict[str, str]:
+        """Build placeholders for accepted proposal management."""
+        is_it = self._flow_language().startswith("it")
+        total = len(proposals)
+        if total == 0:
+            summary = (
+                "Nessuna proposta accettata da gestire"
+                if is_it
+                else "No accepted proposals to manage"
+            )
+            return {"summary": summary}
+
+        return {"summary": self._accepted_proposals_summary(total, is_it=is_it)}
+
+    def _accepted_proposal_manage_placeholders(
+        self,
+        proposal: ProposalItem,
+    ) -> dict[str, str]:
+        """Build placeholders for the selected accepted proposal action step."""
+        return {
+            "proposal_label": self._proposal_review_title_for_item(proposal),
+            "proposal_details": self._proposal_review_details_for_item(proposal),
+        }
+
+    @staticmethod
+    def _accepted_proposals_summary(total: int, *, is_it: bool) -> str:
+        if is_it:
+            return "1 proposta accettata" if total == 1 else f"{total} proposte accettate"
+        return "1 accepted proposal" if total == 1 else f"{total} accepted proposals"
+
+    def _proposal_review_title_for_item(self, proposal: ProposalItem) -> str:
+        """Build a review title for any proposal item type."""
+        if isinstance(proposal, ActivityProposal):
+            activity_name = str(proposal.activity_name or "unknown").replace("_", " ")
+            if self._flow_language().startswith("it"):
+                return f"Attivita appresa: {activity_name}"
+            return f"Learned activity: {activity_name}"
+        return self._proposal_review_title(proposal)
+
+    def _proposal_review_details_for_item(self, proposal: ProposalItem) -> str:
+        """Build review details for any proposal item type."""
+        if isinstance(proposal, ActivityProposal):
+            return _activity_proposal_review_details(
+                proposal,
+                is_it=self._flow_language().startswith("it"),
+            )
+        return self._proposal_review_details(proposal)
+
     def _proposal_review_title(self, proposal: ReactionProposal) -> str:
         """Build a concise, user-facing title for the current proposal."""
         if isinstance(proposal, ActivityProposal):
@@ -464,6 +720,37 @@ class _ReactionProposalStepsMixin:
         presenter = self._reaction_presenter_for_cfg(cfg, proposal.reaction_type)
         language = self._flow_language()
         if proposal.reaction_type == HOUSE_STATE_PROPOSAL_TYPE:
+            # Try to extract details from identity_key for better differentiation in combo box
+            identity_key = str(getattr(proposal, "identity_key", "") or "")
+            if identity_key and "house_state_learned_context:" in identity_key:
+                try:
+                    parts = identity_key.split(":")
+                    weekday_idx = parts.index("weekday") + 1
+                    hour_bucket_idx = parts.index("hour_bucket") + 1
+                    rooms_idx = parts.index("rooms") + 1
+                    state_idx = parts.index("state") + 1
+                    
+                    weekday = parts[weekday_idx]
+                    hour_bucket = parts[hour_bucket_idx]
+                    rooms = parts[rooms_idx]
+                    predicted_state = parts[state_idx]
+                    
+                    weekdays_it = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+                    weekdays_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    
+                    weekday_name = weekdays_it[int(weekday)] if weekday.isdigit() and 0 <= int(weekday) < 7 else f"Day {weekday}"
+                    if not language.startswith("it"):
+                        weekday_name = weekdays_en[int(weekday)] if weekday.isdigit() and 0 <= int(weekday) < 7 else f"Day {weekday}"
+                    
+                    rooms_display = "Nessuna" if rooms == "none" else rooms.replace(",", ", ")
+                    
+                    if language.startswith("it"):
+                        return f"[{weekday_name} {hour_bucket}:00][{rooms_display}] → {predicted_state}"
+                    return f"[{weekday_name} {hour_bucket}:00][{rooms_display}] → {predicted_state}"
+                except (ValueError, IndexError, AttributeError):
+                    pass  # Fallback to original
+            
+            # Fallback to snapshot-based title
             snapshot = _safe_mapping(cfg.get("context_snapshot"))
             predicted_state = str(
                 snapshot.get("predicted_state") or cfg.get("predicted_state") or ""

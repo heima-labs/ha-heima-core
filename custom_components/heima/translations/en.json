@@ -37,6 +37,7 @@
           "reactions": "Reactions",
           "admin_authored_create": "Create automation",
           "proposals": "Review proposals",
+          "accepted_proposals": "Manage accepted proposals",
           "save": "Save and close",
           "reactions_edit": "Edit reaction"
         }
@@ -532,6 +533,22 @@
         },
         "submit": "OK"
       },
+      "accepted_proposals": {
+        "title": "Manage Accepted Proposals",
+        "description": "{summary}\n\nSelect one accepted proposal to review or remove.",
+        "data": {
+          "proposal_id": "Accepted proposal"
+        },
+        "submit": "OK"
+      },
+      "accepted_proposal_manage": {
+        "title": "Accepted Proposal",
+        "description": "Selected proposal:\n{proposal_label}\n\nDetails:\n{proposal_details}",
+        "data": {
+          "management_action": "Action"
+        },
+        "submit": "OK"
+      },
       "heating_branches_menu": {
         "title": "Heating Override Branches",
         "description": "{summary}",
@@ -673,7 +690,11 @@
       "invalid_signal_name": "Signal name not found in room signal configuration",
       "invalid_bucket": "Bucket label not found in the configured signal buckets",
       "invalid_target_domain": "One or more selected targets use an unsupported domain",
-      "no_burst_config": "Signal has no burst_threshold configured in room signals"
+      "no_burst_config": "Signal has no burst_threshold configured in room signals",
+      "no_accepted_proposals": "There are no accepted proposals to manage",
+      "proposal_not_found": "Selected proposal was not found",
+      "unsupported_management_action": "This proposal management action is not supported yet",
+      "remove_failed": "Heima could not remove the accepted proposal"
     }
   }
 }
