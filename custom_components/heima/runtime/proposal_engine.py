@@ -16,8 +16,9 @@ from .analyzers.base import ReactionProposal
 from .analyzers.lifecycle import ProposalReviewGrouping
 from .analyzers.registry import LearningPluginRegistry, create_builtin_learning_plugin_registry
 from .event_store import EventStore
-from .inference.approval_store import ACTIVITY_PROPOSAL_TYPE
+from .inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
 from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
+from .proposal_lifecycle_store import ProposalLifecycleRecord, ProposalLifecycleStore
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
@@ -133,6 +134,7 @@ class ProposalEngine:
         stale_after: timedelta | None = None,
         prune_pending_stale_after: timedelta | None = None,
         sensor_writer: Callable[[int, dict[str, Any]], None] | None = None,
+        lifecycle_store: ProposalLifecycleStore | None = None,
     ) -> None:
         self._hass = hass
         self._event_store = event_store
@@ -142,6 +144,7 @@ class ProposalEngine:
             prune_pending_stale_after or self.DEFAULT_PRUNE_PENDING_STALE_AFTER
         )
         self._sensor_writer = sensor_writer
+        self._lifecycle_store = lifecycle_store
         self._configured_reactions_provider = configured_reactions_provider
         self._learning_plugin_registry = (
             learning_plugin_registry or create_builtin_learning_plugin_registry()
@@ -187,6 +190,9 @@ class ProposalEngine:
                         continue
                     self._proposals.append(proposal)
         self._last_load_proposal_count = len(self._proposals)
+        if self._lifecycle_store is not None:
+            await self._lifecycle_store.async_load()
+            await self._sync_accepted_lifecycle_records()
         self._write_sensor()
 
     async def async_run(self) -> None:
@@ -734,6 +740,7 @@ class ProposalEngine:
                 updates["target_reaction_type"] = proposal.reaction_type
             self._proposals[idx] = replace(proposal, **updates)
             await self._store.async_save(self._serialize())
+            await self._sync_lifecycle_record_for(self._proposals[idx])
             self._write_sensor()
             return True
         return False
@@ -750,6 +757,7 @@ class ProposalEngine:
             "pending": len(self.pending_proposals()),
             "suppressed_in_review_count": len(review_state.suppressed_ids),
             "review_groups": review_state.groups,
+            "lifecycle_monitoring": self._lifecycle_diagnostics(),
             "pending_stale": sum(
                 1
                 for proposal in ordered
@@ -798,6 +806,51 @@ class ProposalEngine:
 
     def _serialize(self) -> dict[str, Any]:
         return {"data": {"proposals": [p.as_dict() for p in self._proposals]}}
+
+    async def _sync_accepted_lifecycle_records(self) -> None:
+        for proposal in self._proposals:
+            await self._sync_lifecycle_record_for(proposal)
+
+    async def _sync_lifecycle_record_for(self, proposal: ProposalItem) -> None:
+        if self._lifecycle_store is None:
+            return
+        if not isinstance(proposal, ReactionProposal):
+            return
+        if proposal.status != "accepted" or proposal.reaction_type != HOUSE_STATE_PROPOSAL_TYPE:
+            return
+        record = self._lifecycle_record_for_house_state_proposal(proposal)
+        await self._lifecycle_store.async_upsert_missing(record)
+
+    def _lifecycle_record_for_house_state_proposal(
+        self, proposal: ReactionProposal
+    ) -> ProposalLifecycleRecord:
+        accepted_at = proposal.updated_at or proposal.created_at
+        linked_reaction_id = str(proposal.target_reaction_id or "").strip()
+        linked_reaction_type = str(
+            proposal.target_reaction_type or proposal.reaction_type or ""
+        ).strip()
+        return ProposalLifecycleRecord(
+            proposal_id=proposal.proposal_id,
+            identity_key=self._identity_key(proposal),
+            plugin_family="house_state",
+            proposal_type=HOUSE_STATE_PROPOSAL_TYPE,
+            accepted_at=accepted_at,
+            linked_reaction_id=linked_reaction_id,
+            linked_reaction_type=linked_reaction_type,
+            reaction_link_state="linked_clean" if linked_reaction_id else "",
+            monitoring_window_start=accepted_at,
+        )
+
+    def _lifecycle_diagnostics(self) -> dict[str, Any]:
+        if self._lifecycle_store is None:
+            return {
+                "enabled": False,
+                "record_count": 0,
+                "records": [],
+            }
+        diagnostics = dict(self._lifecycle_store.diagnostics())
+        diagnostics["enabled"] = True
+        return diagnostics
 
     def _write_sensor(self) -> None:
         if not self._sensor_writer:

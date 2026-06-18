@@ -25,6 +25,10 @@ from custom_components.heima.runtime.plugin_contracts import (
     IBehaviorAnalyzer,
 )
 from custom_components.heima.runtime.proposal_engine import ActivityProposal, ProposalEngine
+from custom_components.heima.runtime.proposal_lifecycle_store import (
+    ProposalLifecycleRecord,
+    ProposalLifecycleStore,
+)
 
 
 class _FakeStore:
@@ -131,6 +135,31 @@ class _EventStoreStub:
     pass
 
 
+class _FakeLifecycleStore:
+    def __init__(self) -> None:
+        self.loaded = False
+        self.records_by_id: dict[str, ProposalLifecycleRecord] = {}
+        self.upsert_calls = 0
+
+    async def async_load(self) -> None:
+        self.loaded = True
+
+    async def async_upsert_missing(self, record: ProposalLifecycleRecord) -> bool:
+        self.upsert_calls += 1
+        if record.proposal_id in self.records_by_id:
+            return False
+        self.records_by_id[record.proposal_id] = record
+        return True
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "storage_key": "fake",
+            "loaded": self.loaded,
+            "record_count": len(self.records_by_id),
+            "records": [record.as_dict() for record in self.records_by_id.values()],
+        }
+
+
 def _proposal(*, conf: float, weekday: int = 0, status: str = "pending") -> ReactionProposal:
     return ReactionProposal(
         analyzer_id="PresencePatternAnalyzer",
@@ -158,6 +187,29 @@ def _activity_proposal(
         representative_ts=["2026-05-01T20:00:00+00:00"],
         bootstrap=bootstrap,
         status=status,
+    )
+
+
+def _house_state_lifecycle_proposal(*, context_key: str = "ctx-alpha") -> ReactionProposal:
+    return ReactionProposal(
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description="Learned house-state context predicts working.",
+        confidence=1.0,
+        identity_key=f"{HOUSE_STATE_PROPOSAL_TYPE}:{context_key}",
+        suggested_reaction_config={
+            "proposal_type": HOUSE_STATE_PROPOSAL_TYPE,
+            "context_key": context_key,
+            "context_snapshot": {
+                "weekday": 1,
+                "hour_bucket": 17,
+                "anyone_home": True,
+                "predicted_state": "working",
+            },
+            "predicted_state": "working",
+            "support": 3,
+            "total": 3,
+        },
     )
 
 
@@ -940,6 +992,99 @@ async def test_proposal_engine_persist_and_load_preserves_fingerprint(monkeypatc
     )
     assert pending[0].origin == "learned"
     assert engine2.diagnostics()["load_errors"] == 0
+
+
+async def test_proposal_lifecycle_store_loads_records_and_reports_malformed(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.proposal_lifecycle_store.Store",
+        _FakeStore,
+    )
+    store = ProposalLifecycleStore(object())  # type: ignore[arg-type]
+    store._store._data = {  # noqa: SLF001
+        "data": {
+            "records": [
+                ProposalLifecycleRecord(
+                    proposal_id="proposal-1",
+                    identity_key="house_state_learned_context:ctx",
+                    plugin_family="house_state",
+                    proposal_type=HOUSE_STATE_PROPOSAL_TYPE,
+                    accepted_at="2026-06-18T10:00:00+00:00",
+                    confirmed_count=2,
+                ).as_dict(),
+                {"proposal_id": ""},
+                "bad",
+            ]
+        }
+    }
+
+    await store.async_load()
+
+    diagnostics = store.diagnostics()
+    assert diagnostics["record_count"] == 1
+    assert diagnostics["load_errors"] == 2
+    assert diagnostics["records"][0]["proposal_id"] == "proposal-1"
+    assert diagnostics["records"][0]["confirmed_count"] == 2
+
+
+async def test_proposal_engine_creates_lifecycle_record_for_accepted_house_state(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    assert lifecycle_store.records_by_id == {}
+
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    diagnostics = engine.diagnostics()["lifecycle_monitoring"]
+    assert record.proposal_id == proposal_id
+    assert record.identity_key == "house_state_learned_context:ctx-alpha"
+    assert record.plugin_family == "house_state"
+    assert record.proposal_type == HOUSE_STATE_PROPOSAL_TYPE
+    assert record.linked_reaction_id == proposal_id
+    assert record.linked_reaction_type == HOUSE_STATE_PROPOSAL_TYPE
+    assert record.reaction_link_state == "linked_clean"
+    assert record.monitoring_window_start == record.accepted_at
+    assert diagnostics["enabled"] is True
+    assert diagnostics["record_count"] == 1
+
+
+async def test_proposal_engine_loads_lifecycle_records_for_persisted_accepted_house_state(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    accepted = replace(
+        _house_state_lifecycle_proposal(),
+        status="accepted",
+        target_reaction_id="reaction-1",
+        target_reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+    )
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+    engine._store._data = {"data": {"proposals": [accepted.as_dict()]}}  # noqa: SLF001
+
+    await engine.async_initialize()
+
+    record = lifecycle_store.records_by_id[accepted.proposal_id]
+    assert lifecycle_store.loaded is True
+    assert record.linked_reaction_id == "reaction-1"
+    assert record.identity_key == accepted.identity_key
+    assert engine.pending_proposals() == []
+    assert len(engine.accepted_proposals()) == 1
 
 
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):

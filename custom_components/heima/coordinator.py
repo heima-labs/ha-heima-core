@@ -82,6 +82,7 @@ from .runtime.inference.approval_store import (
 from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalEngine
+from .runtime.proposal_lifecycle_store import ProposalLifecycleStore
 from .runtime.room_context import RoomDeviceContextBuilder
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
@@ -251,6 +252,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 (((entry.options or {}).get("reactions") or {}).get("configured") or {})
             ),
             sensor_writer=self._write_proposals_sensor,
+            lifecycle_store=ProposalLifecycleStore(hass),
         )
         self.engine.set_proposal_engine(self._proposal_engine)
         for plugin in self._learning_plugin_registry.analyzers():
