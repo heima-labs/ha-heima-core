@@ -29,6 +29,10 @@ class ProposalLifecycleRecord:
     context_miss_count: int = 0
     unknown_transient_count: int = 0
     dependency_unavailable_count: int = 0
+    evaluated_window_count: int = 0
+    replacement_candidate_state: str = ""
+    replacement_candidate_count: int = 0
+    lifecycle_review_kind: str = ""
     last_lifecycle_review_at: str = ""
     replaced_by: str = ""
     retired_at: str = ""
@@ -52,6 +56,10 @@ class ProposalLifecycleRecord:
             "context_miss_count": self.context_miss_count,
             "unknown_transient_count": self.unknown_transient_count,
             "dependency_unavailable_count": self.dependency_unavailable_count,
+            "evaluated_window_count": self.evaluated_window_count,
+            "replacement_candidate_state": self.replacement_candidate_state,
+            "replacement_candidate_count": self.replacement_candidate_count,
+            "lifecycle_review_kind": self.lifecycle_review_kind,
             "last_lifecycle_review_at": self.last_lifecycle_review_at,
             "replaced_by": self.replaced_by,
             "retired_at": self.retired_at,
@@ -89,6 +97,12 @@ class ProposalLifecycleRecord:
             dependency_unavailable_count=max(
                 0, _safe_int(raw.get("dependency_unavailable_count"), default=0)
             ),
+            evaluated_window_count=max(0, _safe_int(raw.get("evaluated_window_count"), default=0)),
+            replacement_candidate_state=str(raw.get("replacement_candidate_state") or "").strip(),
+            replacement_candidate_count=max(
+                0, _safe_int(raw.get("replacement_candidate_count"), default=0)
+            ),
+            lifecycle_review_kind=str(raw.get("lifecycle_review_kind") or "").strip(),
             last_lifecycle_review_at=str(raw.get("last_lifecycle_review_at") or "").strip(),
             replaced_by=str(raw.get("replaced_by") or "").strip(),
             retired_at=str(raw.get("retired_at") or "").strip(),

@@ -24,6 +24,24 @@ from .reactions import resolve_reaction_type
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class AcceptedRuleLifecyclePolicy:
+    """Internal policy for monitored accepted-rule lifecycle evidence."""
+
+    required_observations: int = 3
+    retirement_multiplier: int = 2
+    maintenance_threshold: int = 2
+    rolling_window_limit: int = 12
+
+    @property
+    def replacement_threshold(self) -> int:
+        return self.required_observations
+
+    @property
+    def retirement_threshold(self) -> int:
+        return self.required_observations * self.retirement_multiplier
+
+
 @dataclass
 class ActivityProposal:
     """User-reviewable composite activity proposal."""
@@ -135,6 +153,7 @@ class ProposalEngine:
         prune_pending_stale_after: timedelta | None = None,
         sensor_writer: Callable[[int, dict[str, Any]], None] | None = None,
         lifecycle_store: ProposalLifecycleStore | None = None,
+        lifecycle_policy: AcceptedRuleLifecyclePolicy | None = None,
     ) -> None:
         self._hass = hass
         self._event_store = event_store
@@ -145,6 +164,7 @@ class ProposalEngine:
         )
         self._sensor_writer = sensor_writer
         self._lifecycle_store = lifecycle_store
+        self._lifecycle_policy = lifecycle_policy or AcceptedRuleLifecyclePolicy()
         self._configured_reactions_provider = configured_reactions_provider
         self._learning_plugin_registry = (
             learning_plugin_registry or create_builtin_learning_plugin_registry()
@@ -837,17 +857,25 @@ class ProposalEngine:
     ) -> ProposalLifecycleRecord:
         proposal = self._proposal_by_id(record.proposal_id)
         if not isinstance(proposal, ReactionProposal):
-            return replace(record, dependency_unavailable_count=1)
+            return self._dependency_unavailable_lifecycle_record(record)
 
         link_state = self._classify_reaction_link_state(record)["state"]
         if link_state in {"reaction_missing", "linked_uninterpretable"}:
-            return replace(record, dependency_unavailable_count=1)
+            return self._dependency_unavailable_lifecycle_record(record)
 
         baseline = _house_state_lifecycle_baseline(proposal)
         if baseline is None:
-            return replace(record, dependency_unavailable_count=1)
+            return self._dependency_unavailable_lifecycle_record(record)
 
-        counts = _house_state_lifecycle_counts(events, baseline)
+        counts = _house_state_lifecycle_counts(
+            events,
+            baseline,
+            window_limit=self._lifecycle_policy.rolling_window_limit,
+        )
+        review_kind = _lifecycle_review_kind(
+            counts=counts,
+            policy=self._lifecycle_policy,
+        )
         return replace(
             record,
             last_confirmed_at=str(counts.get("last_confirmed_at") or ""),
@@ -856,6 +884,39 @@ class ProposalEngine:
             context_miss_count=int(counts["context_missed"]),
             unknown_transient_count=int(counts["unknown_transient"]),
             dependency_unavailable_count=int(counts["dependency_unavailable"]),
+            evaluated_window_count=int(counts["evaluated_windows"]),
+            replacement_candidate_state=str(counts.get("replacement_candidate_state") or ""),
+            replacement_candidate_count=int(counts["replacement_candidate_count"]),
+            lifecycle_review_kind=review_kind,
+        )
+
+    def _dependency_unavailable_lifecycle_record(
+        self, record: ProposalLifecycleRecord
+    ) -> ProposalLifecycleRecord:
+        counts = {
+            "confirmed": 0,
+            "outcome_contradicted": 0,
+            "context_missed": 0,
+            "unknown_transient": 0,
+            "dependency_unavailable": 1,
+            "evaluated_windows": 0,
+            "replacement_candidate_state": "",
+            "replacement_candidate_count": 0,
+        }
+        return replace(
+            record,
+            confirmed_count=0,
+            outcome_contradiction_count=0,
+            context_miss_count=0,
+            unknown_transient_count=0,
+            dependency_unavailable_count=1,
+            evaluated_window_count=0,
+            replacement_candidate_state="",
+            replacement_candidate_count=0,
+            lifecycle_review_kind=_lifecycle_review_kind(
+                counts=counts,
+                policy=self._lifecycle_policy,
+            ),
         )
 
     async def _sync_accepted_lifecycle_records(self) -> None:
@@ -913,6 +974,11 @@ class ProposalEngine:
         payload["reaction_link_state_reason"] = link["reason"]
         payload["resolved_reaction_id"] = link["resolved_reaction_id"]
         payload["configured_reaction_type"] = link["configured_reaction_type"]
+        payload["policy"] = _lifecycle_policy_diagnostics(self._lifecycle_policy)
+        payload["lifecycle_review_kind"] = record.lifecycle_review_kind or _lifecycle_review_kind(
+            counts=_record_lifecycle_counts(record),
+            policy=self._lifecycle_policy,
+        )
         return payload
 
     def _classify_reaction_link_state(self, record: ProposalLifecycleRecord) -> dict[str, str]:
@@ -1454,23 +1520,39 @@ def _house_state_lifecycle_baseline(proposal: ReactionProposal) -> dict[str, Any
 def _house_state_lifecycle_counts(
     events: list[Any],
     baseline: dict[str, Any],
+    *,
+    window_limit: int,
 ) -> dict[str, Any]:
     windows = _house_state_lifecycle_windows(events, baseline)
+    window_items = list(windows.items())[-max(1, int(window_limit)) :]
     counts = {
         "confirmed": 0,
         "outcome_contradicted": 0,
         "context_missed": 0,
         "unknown_transient": 0,
         "dependency_unavailable": 0,
+        "evaluated_windows": len(window_items),
         "last_confirmed_at": "",
+        "replacement_candidate_state": "",
+        "replacement_candidate_count": 0,
     }
-    for window_events in windows.values():
+    replacement_counts: dict[str, int] = {}
+    for _window_key, window_events in window_items:
         outcome = _classify_house_state_lifecycle_window(window_events, baseline)
-        counts[outcome] += 1
-        if outcome == "confirmed":
+        outcome_class = str(outcome["class"])
+        counts[outcome_class] += 1
+        if outcome_class == "outcome_contradicted":
+            state = str(outcome.get("state") or "")
+            if state:
+                replacement_counts[state] = replacement_counts.get(state, 0) + 1
+        if outcome_class == "confirmed":
             last_ts = max(str(getattr(event, "ts", "") or "") for event in window_events)
             if last_ts > str(counts["last_confirmed_at"] or ""):
                 counts["last_confirmed_at"] = last_ts
+    candidate_state = _dominant_key(replacement_counts)
+    if candidate_state is not None:
+        counts["replacement_candidate_state"] = candidate_state
+        counts["replacement_candidate_count"] = replacement_counts[candidate_state]
     return counts
 
 
@@ -1491,22 +1573,22 @@ def _house_state_lifecycle_windows(
             continue
         key = _house_state_lifecycle_window_key(event, weekday=weekday, hour_bucket=hour_bucket)
         windows.setdefault(key, []).append(event)
-    return windows
+    return {key: windows[key] for key in sorted(windows)}
 
 
 def _classify_house_state_lifecycle_window(
     events: list[Any],
     baseline: dict[str, Any],
-) -> str:
+) -> dict[str, Any]:
     if not events:
-        return "unknown_transient"
+        return {"class": "unknown_transient"}
 
     anyone_home = _dominant_bool(
         bool(_safe_int(getattr(getattr(event, "context", None), "occupants_count", 0), default=0))
         for event in events
     )
     if anyone_home is None:
-        return "unknown_transient"
+        return {"class": "unknown_transient"}
 
     occupied_rooms: set[str] = set()
     for event in events:
@@ -1520,14 +1602,61 @@ def _classify_house_state_lifecycle_window(
     if anyone_home != bool(baseline["anyone_home"]) or (
         expected_rooms and not expected_rooms.issubset(occupied_rooms)
     ):
-        return "context_missed"
+        return {"class": "context_missed"}
 
     state = _dominant_house_state(events)
     if state is None:
-        return "unknown_transient"
+        return {"class": "unknown_transient"}
     if state == baseline["predicted_state"]:
-        return "confirmed"
-    return "outcome_contradicted"
+        return {"class": "confirmed", "state": state}
+    return {"class": "outcome_contradicted", "state": state}
+
+
+def _lifecycle_review_kind(
+    *,
+    counts: dict[str, Any],
+    policy: AcceptedRuleLifecyclePolicy,
+) -> str:
+    if _safe_int(counts.get("dependency_unavailable"), default=0) >= policy.maintenance_threshold:
+        return "maintenance_suggestion"
+    if (
+        _safe_int(counts.get("replacement_candidate_count"), default=0)
+        >= policy.replacement_threshold
+    ):
+        return "replacement_suggestion"
+    if _safe_int(counts.get("context_missed"), default=0) >= policy.retirement_threshold:
+        return "retirement_suggestion"
+    if (
+        _safe_int(counts.get("outcome_contradicted"), default=0) >= policy.retirement_threshold
+        and _safe_int(counts.get("replacement_candidate_count"), default=0)
+        < policy.replacement_threshold
+    ):
+        return "retirement_suggestion"
+    return ""
+
+
+def _record_lifecycle_counts(record: ProposalLifecycleRecord) -> dict[str, Any]:
+    return {
+        "confirmed": record.confirmed_count,
+        "outcome_contradicted": record.outcome_contradiction_count,
+        "context_missed": record.context_miss_count,
+        "unknown_transient": record.unknown_transient_count,
+        "dependency_unavailable": record.dependency_unavailable_count,
+        "evaluated_windows": record.evaluated_window_count,
+        "replacement_candidate_state": record.replacement_candidate_state,
+        "replacement_candidate_count": record.replacement_candidate_count,
+    }
+
+
+def _lifecycle_policy_diagnostics(policy: AcceptedRuleLifecyclePolicy) -> dict[str, int]:
+    return {
+        "required_observations": policy.required_observations,
+        "replacement_threshold": policy.replacement_threshold,
+        "retirement_multiplier": policy.retirement_multiplier,
+        "retirement_threshold": policy.retirement_threshold,
+        "maintenance_threshold": policy.maintenance_threshold,
+        "rolling_window_limit": policy.rolling_window_limit,
+    }
 
 
 def _dominant_house_state(events: list[Any]) -> str | None:

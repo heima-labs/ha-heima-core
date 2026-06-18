@@ -25,7 +25,11 @@ from custom_components.heima.runtime.plugin_contracts import (
     BehaviorFinding,
     IBehaviorAnalyzer,
 )
-from custom_components.heima.runtime.proposal_engine import ActivityProposal, ProposalEngine
+from custom_components.heima.runtime.proposal_engine import (
+    AcceptedRuleLifecyclePolicy,
+    ActivityProposal,
+    ProposalEngine,
+)
 from custom_components.heima.runtime.proposal_lifecycle_store import (
     ProposalLifecycleRecord,
     ProposalLifecycleStore,
@@ -289,6 +293,21 @@ def _house_state_event(
         source=None,
         data={"to_state": house_state},
     )
+
+
+def _house_state_events_for_days(
+    states: list[str],
+    *,
+    anyone_home: bool = True,
+) -> list[HeimaEvent]:
+    return [
+        _house_state_event(
+            ts=f"2999-06-{index + 1:02d}T17:05:00+00:00",
+            house_state=state,
+            anyone_home=anyone_home,
+        )
+        for index, state in enumerate(states)
+    ]
 
 
 def _lighting_proposal(
@@ -1297,6 +1316,7 @@ async def _accepted_house_state_lifecycle_engine(
     events: list[HeimaEvent],
     *,
     configure_reaction: bool = True,
+    lifecycle_policy: AcceptedRuleLifecyclePolicy | None = None,
 ) -> tuple[ProposalEngine, _FakeLifecycleStore, str, dict[str, object]]:
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     lifecycle_store = _FakeLifecycleStore()
@@ -1306,6 +1326,7 @@ async def _accepted_house_state_lifecycle_engine(
         _EventStoreWithEvents(events),  # type: ignore[arg-type]
         configured_reactions_provider=lambda: configured,
         lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+        lifecycle_policy=lifecycle_policy,
     )
     await engine.async_initialize()
     proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
@@ -1436,6 +1457,150 @@ async def test_house_state_lifecycle_evaluation_counts_dependency_unavailable(
     assert record.outcome_contradiction_count == 0
     assert record.context_miss_count == 0
     assert record.dependency_unavailable_count == 1
+
+
+async def test_house_state_lifecycle_policy_uses_rolling_window_without_resetting_drift(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home", "working"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=2,
+            maintenance_threshold=2,
+            rolling_window_limit=3,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    diagnostic = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record.confirmed_count == 1
+    assert record.outcome_contradiction_count == 2
+    assert record.replacement_candidate_state == "home"
+    assert record.replacement_candidate_count == 2
+    assert record.lifecycle_review_kind == "replacement_suggestion"
+    assert diagnostic["policy"]["rolling_window_limit"] == 3
+    assert diagnostic["policy"]["replacement_threshold"] == 2
+
+
+async def test_house_state_lifecycle_policy_naturally_evicts_old_drift(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home", "working"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=2,
+            maintenance_threshold=2,
+            rolling_window_limit=1,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.evaluated_window_count == 1
+    assert record.confirmed_count == 1
+    assert record.outcome_contradiction_count == 0
+    assert record.lifecycle_review_kind == ""
+
+
+async def test_house_state_lifecycle_policy_prefers_replacement_over_retirement(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=1,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.outcome_contradiction_count == 2
+    assert record.replacement_candidate_count == 2
+    assert record.lifecycle_review_kind == "replacement_suggestion"
+
+
+async def test_house_state_lifecycle_policy_uses_retirement_without_stable_replacement(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "relax"]),
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=2,
+            retirement_multiplier=1,
+            maintenance_threshold=2,
+            rolling_window_limit=4,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.outcome_contradiction_count == 2
+    assert record.replacement_candidate_count == 0
+    assert record.lifecycle_review_kind == "retirement_suggestion"
+
+
+async def test_house_state_lifecycle_policy_keeps_maintenance_separate(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        _house_state_events_for_days(["home", "home"]),
+        configure_reaction=False,
+        lifecycle_policy=AcceptedRuleLifecyclePolicy(
+            required_observations=1,
+            retirement_multiplier=1,
+            maintenance_threshold=1,
+            rolling_window_limit=4,
+        ),
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.dependency_unavailable_count == 1
+    assert record.outcome_contradiction_count == 0
+    assert record.lifecycle_review_kind == "maintenance_suggestion"
+    diagnostic = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert diagnostic["lifecycle_review_kind"] == "maintenance_suggestion"
 
 
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):
