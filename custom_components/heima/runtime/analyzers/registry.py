@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Literal
 
 from ..plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .base import ReactionProposal
@@ -29,6 +29,8 @@ from .lighting import LightingPatternAnalyzer
 from .policy import composite_catalog_with_policy, learning_policy_from_config
 from .presence import PresencePatternAnalyzer
 from .security_presence_simulation import SecurityPresenceSimulationAnalyzer
+
+LearningPluginExecutionMode = Literal["analyzer", "lifecycle_only", "admin_authored_only"]
 
 
 class _NoopPatternAnalyzer:
@@ -93,6 +95,7 @@ class LearningPatternPluginDescriptor:
     supports_admin_authored: bool = False
     admin_authored_templates: tuple[AdminAuthoredTemplateDescriptor, ...] = ()
     improvement_proposals: tuple[ImprovementProposalDescriptor, ...] = ()
+    execution_mode: LearningPluginExecutionMode = "analyzer"
 
 
 @dataclass(frozen=True)
@@ -129,7 +132,11 @@ class LearningPluginRegistry:
         )
 
     def analyzers(self, *, enabled_only: bool = True) -> tuple[IBehaviorAnalyzer, ...]:
-        return tuple(item.analyzer for item in self._plugins if item.enabled or not enabled_only)
+        return tuple(
+            item.analyzer
+            for item in self._plugins
+            if item.descriptor.execution_mode == "analyzer" and (item.enabled or not enabled_only)
+        )
 
     def descriptors(
         self, *, enabled_only: bool = False
@@ -187,6 +194,7 @@ class LearningPluginRegistry:
                 "proposal_types": list(item.descriptor.proposal_types),
                 "reaction_targets": list(item.descriptor.reaction_targets),
                 "has_lifecycle_hooks": item.descriptor.lifecycle_hooks is not None,
+                "execution_mode": item.descriptor.execution_mode,
                 "supports_admin_authored": item.descriptor.supports_admin_authored,
                 "admin_authored_templates": list(
                     _template_diagnostics(item.descriptor.admin_authored_templates)
@@ -416,6 +424,7 @@ def create_builtin_learning_plugin_registry(
             lifecycle_hooks=house_state_learned_context_lifecycle_hooks(),
             supports_admin_authored=False,
             admin_authored_templates=(),
+            execution_mode="lifecycle_only",
         ),
         analyzer=_NoopPatternAnalyzer("HouseStateInferenceModule"),
         enabled=False,
@@ -440,6 +449,7 @@ def create_builtin_learning_plugin_registry(
                     flow_step_id="admin_authored_scheduled_routine",
                 ),
             ),
+            execution_mode="admin_authored_only",
         ),
         analyzer=_NoopPatternAnalyzer("ScheduledRoutineAdminTemplate"),
         enabled=True,

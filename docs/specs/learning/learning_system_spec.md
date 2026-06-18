@@ -358,6 +358,45 @@ Registry integration guidance:
 - analyzers MAY preserve their existing constructor fields temporarily, but the registry SHOULD be
   the canonical injection point for family learning policy
 
+### 0.3b Learning plugin execution mode
+
+`LearningPatternPluginDescriptor` MUST expose an explicit `execution_mode` field. This field
+defines how the registry entry participates in runtime learning and diagnostics.
+
+Valid values:
+
+| `execution_mode` | Meaning | Analyzer execution | Typical examples |
+|---|---|---|---|
+| `analyzer` | The plugin owns an analyzer that can produce proposals from EventStore/snapshot data. | Included in `LearningPluginRegistry.analyzers()` when the family is enabled. | presence, heating, lighting, composite room assist, security presence simulation |
+| `lifecycle_only` | The plugin owns lifecycle contracts for proposal identity, review grouping, follow-up semantics, or diagnostics claim ownership, but does not run an analyzer. | Never included in analyzer execution. `enabled_plugin_families` must not treat it as a user-disabled analyzer family. | `house_state_learned_context` lifecycle/review grouping hook |
+| `admin_authored_only` | The plugin exposes admin-authored templates or reaction metadata but does not produce learned proposals. | Never included in analyzer execution. It may still be visible in authoring surfaces. | scheduled routine templates, if no analyzer-backed proposal generation exists |
+
+`enabled_plugin_families` applies only to `execution_mode="analyzer"` families. A lifecycle-only
+plugin may have proposal types, lifecycle hooks, and diagnostics ownership even though it is not an
+enabled analyzer family.
+
+Diagnostics MUST distinguish:
+
+- `enabled_plugin_families`: analyzer families currently allowed to run
+- `disabled_plugin_families`: analyzer families explicitly not allowed to run
+- `lifecycle_only_plugin_families`: lifecycle-only families that claim proposal contracts but do not
+  run analyzers
+- `admin_authored_only_plugin_families`: template/authoring-only families, when applicable
+
+`disabled_plugin_families` MUST NOT include lifecycle-only or admin-authored-only families. Reporting
+`house_state` as disabled while `house_state_learned_context` proposals are grouped/claimed is
+diagnostically incorrect.
+
+Registry invariants:
+
+1. A descriptor with `execution_mode="lifecycle_only"` MUST NOT be returned by
+   `LearningPluginRegistry.analyzers()`.
+2. A lifecycle-only descriptor MAY still be returned by `descriptors(enabled_only=False)` and MAY
+   be consulted by `lifecycle_hooks_for(...)`.
+3. Proposal type ownership and `unclaimed_proposal_types` MUST include lifecycle-only descriptors.
+4. `enabled=False` MUST NOT be the only way to represent lifecycle-only behavior; it is ambiguous
+   because it conflates "do not run this analyzer" with "the user disabled this family".
+
 Migration guidance:
 1. Add policy module and tests for coercion/defaults.
 2. Wire registry to build the bundle once from `learning_config`.

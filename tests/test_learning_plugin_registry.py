@@ -29,7 +29,6 @@ def test_builtin_learning_pattern_plugins_exposes_default_learning_plugins():
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
-        "ScheduledRoutineAdminTemplate",
         "SecurityPresenceSimulationAnalyzer",
     ]
 
@@ -124,7 +123,6 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "HeatingPatternAnalyzer",
         "LightingPatternAnalyzer",
         "CompositePatternCatalogAnalyzer",
-        "ScheduledRoutineAdminTemplate",
         "SecurityPresenceSimulationAnalyzer",
     ]
     assert registry.diagnostics()[-1] == {
@@ -134,6 +132,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "proposal_types": ["vacation_presence_simulation"],
         "reaction_targets": ["VacationPresenceSimulationReaction"],
         "has_lifecycle_hooks": True,
+        "execution_mode": "analyzer",
         "supports_admin_authored": True,
         "admin_authored_templates": [
             {
@@ -156,6 +155,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "proposal_types": [],
         "reaction_targets": ["ScheduledRoutineReaction"],
         "has_lifecycle_hooks": False,
+        "execution_mode": "admin_authored_only",
         "supports_admin_authored": True,
         "admin_authored_templates": [
             {
@@ -179,6 +179,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "proposal_types": ["house_state_learned_context"],
         "reaction_targets": [],
         "has_lifecycle_hooks": True,
+        "execution_mode": "lifecycle_only",
         "supports_admin_authored": False,
         "admin_authored_templates": [],
         "improvement_proposals": [],
@@ -201,6 +202,7 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
             "RoomLightingVacancyOffReaction",
         ],
         "has_lifecycle_hooks": True,
+        "execution_mode": "analyzer",
         "supports_admin_authored": True,
         "admin_authored_templates": [
             {
@@ -257,18 +259,34 @@ def test_builtin_learning_plugin_registry_can_disable_families():
     assert [analyzer.analyzer_id for analyzer in registry.analyzers()] == [
         "PresencePatternAnalyzer",
         "LightingPatternAnalyzer",
-        "ScheduledRoutineAdminTemplate",
     ]
     diagnostics = registry.diagnostics()
-    enabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is True}
-    disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
-    assert enabled == {"presence", "lighting", "scheduled_routine"}
+    enabled = {
+        item["plugin_family"]
+        for item in diagnostics
+        if item["enabled"] is True and item["execution_mode"] == "analyzer"
+    }
+    disabled = {
+        item["plugin_family"]
+        for item in diagnostics
+        if item["enabled"] is False and item["execution_mode"] == "analyzer"
+    }
+    lifecycle_only = {
+        item["plugin_family"] for item in diagnostics if item["execution_mode"] == "lifecycle_only"
+    }
+    admin_authored_only = {
+        item["plugin_family"]
+        for item in diagnostics
+        if item["execution_mode"] == "admin_authored_only"
+    }
+    assert enabled == {"presence", "lighting"}
     assert disabled == {
         "heating",
         "composite_room_assist",
-        "house_state",
         "security_presence_simulation",
     }
+    assert lifecycle_only == {"house_state"}
+    assert admin_authored_only == {"scheduled_routine"}
 
 
 def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():

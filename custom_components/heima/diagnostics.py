@@ -162,6 +162,7 @@ def _learning_summary_diagnostics(
             continue
         plugin_id = str(plugin.get("plugin_id") or "")
         family = str(plugin.get("plugin_family") or "unknown")
+        execution_mode = str(plugin.get("execution_mode") or "analyzer")
         proposal_types = [str(item) for item in plugin.get("proposal_types") or [] if str(item)]
         plugin_proposals = [
             proposal
@@ -175,6 +176,7 @@ def _learning_summary_diagnostics(
         plugin_stats.update(
             {
                 "plugin_family": family,
+                "execution_mode": execution_mode,
                 "proposal_types": proposal_types,
                 "supports_admin_authored": bool(plugin.get("supports_admin_authored") is True),
                 "admin_authored_templates": _template_ids(
@@ -249,6 +251,7 @@ def _learning_summary_diagnostics(
         for family, stats in family_summary.items()
         if any(
             plugin.get("enabled") is True
+            and str(plugin.get("execution_mode") or "analyzer") == "analyzer"
             for plugin in learning_plugins
             if isinstance(plugin, dict) and str(plugin.get("plugin_family") or "") == family
         )
@@ -257,7 +260,27 @@ def _learning_summary_diagnostics(
         {
             str(plugin.get("plugin_family") or "unknown")
             for plugin in learning_plugins
-            if isinstance(plugin, dict) and plugin.get("enabled") is False
+            if (
+                isinstance(plugin, dict)
+                and plugin.get("enabled") is False
+                and str(plugin.get("execution_mode") or "analyzer") == "analyzer"
+            )
+        }
+    )
+    lifecycle_only_families = sorted(
+        {
+            str(plugin.get("plugin_family") or "unknown")
+            for plugin in learning_plugins
+            if isinstance(plugin, dict)
+            and str(plugin.get("execution_mode") or "analyzer") == "lifecycle_only"
+        }
+    )
+    admin_authored_only_families = sorted(
+        {
+            str(plugin.get("plugin_family") or "unknown")
+            for plugin in learning_plugins
+            if isinstance(plugin, dict)
+            and str(plugin.get("execution_mode") or "analyzer") == "admin_authored_only"
         }
     )
 
@@ -270,6 +293,8 @@ def _learning_summary_diagnostics(
         "config_source": "learning.enabled_plugin_families",
         "enabled_plugin_families": enabled_families,
         "disabled_plugin_families": disabled_families,
+        "lifecycle_only_plugin_families": lifecycle_only_families,
+        "admin_authored_only_plugin_families": admin_authored_only_families,
         "families": family_summary,
         "plugins": plugin_summary,
         "unclaimed_proposal_types": sorted(unclaimed_types),
