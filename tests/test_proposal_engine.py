@@ -17,6 +17,7 @@ from custom_components.heima.runtime.analyzers.registry import (
     LearningPluginRegistry,
     create_builtin_learning_plugin_registry,
 )
+from custom_components.heima.runtime.event_store import EventContext, HeimaEvent
 from custom_components.heima.runtime.finding_router import FindingRouter
 from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
 from custom_components.heima.runtime.plugin_contracts import (
@@ -135,6 +136,33 @@ class _EventStoreStub:
     pass
 
 
+class _EventStoreWithEvents:
+    def __init__(self, events: list[HeimaEvent]) -> None:
+        self.events = events
+
+    async def async_query(
+        self,
+        *,
+        event_type=None,  # noqa: ANN001
+        room_id=None,  # noqa: ANN001
+        subject_id=None,  # noqa: ANN001
+        since=None,  # noqa: ANN001
+        limit=None,  # noqa: ANN001
+    ) -> list[HeimaEvent]:
+        results = list(self.events)
+        if since:
+            results = [event for event in results if event.ts >= since]
+        if event_type:
+            results = [event for event in results if event.event_type == event_type]
+        if room_id is not None:
+            results = [event for event in results if event.room_id == room_id]
+        if subject_id is not None:
+            results = [event for event in results if event.subject_id == subject_id]
+        if limit is not None and limit >= 0:
+            return results[-limit:]
+        return results
+
+
 class _FakeLifecycleStore:
     def __init__(self) -> None:
         self.loaded = False
@@ -147,6 +175,12 @@ class _FakeLifecycleStore:
     async def async_upsert_missing(self, record: ProposalLifecycleRecord) -> bool:
         self.upsert_calls += 1
         if record.proposal_id in self.records_by_id:
+            return False
+        self.records_by_id[record.proposal_id] = record
+        return True
+
+    async def async_replace_record(self, record: ProposalLifecycleRecord) -> bool:
+        if self.records_by_id.get(record.proposal_id) == record:
             return False
         self.records_by_id[record.proposal_id] = record
         return True
@@ -226,6 +260,35 @@ def _configured_house_state_lifecycle_reaction(proposal: ReactionProposal) -> di
     cfg["created_at"] = proposal.created_at
     cfg["source_request"] = "learned_pattern"
     return cfg
+
+
+def _house_state_event(
+    *,
+    ts: str,
+    weekday: int = 1,
+    hour_bucket: int = 17,
+    house_state: str = "working",
+    anyone_home: bool = True,
+    occupied_rooms: tuple[str, ...] = (),
+) -> HeimaEvent:
+    return HeimaEvent(
+        ts=ts,
+        event_type="house_state",
+        context=EventContext(
+            weekday=weekday,
+            minute_of_day=hour_bucket * 60,
+            month=6,
+            house_state=house_state,
+            occupants_count=1 if anyone_home else 0,
+            occupied_rooms=occupied_rooms,
+            outdoor_lux=None,
+            outdoor_temp=None,
+            weather_condition=None,
+            signals={},
+        ),
+        source=None,
+        data={"to_state": house_state},
+    )
 
 
 def _lighting_proposal(
@@ -1227,6 +1290,152 @@ async def test_proposal_lifecycle_diagnostics_classify_missing_reaction(
     record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
     assert record["reaction_link_state"] == "reaction_missing"
     assert record["reaction_link_state_reason"] == "configured_reaction_not_found"
+
+
+async def _accepted_house_state_lifecycle_engine(
+    monkeypatch,
+    events: list[HeimaEvent],
+    *,
+    configure_reaction: bool = True,
+) -> tuple[ProposalEngine, _FakeLifecycleStore, str, dict[str, object]]:
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    configured: dict[str, object] = {}
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreWithEvents(events),  # type: ignore[arg-type]
+        configured_reactions_provider=lambda: configured,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    accepted = next(item for item in engine.pending_proposals() if item.proposal_id == proposal_id)
+    assert isinstance(accepted, ReactionProposal)
+    if configure_reaction:
+        configured[proposal_id] = _configured_house_state_lifecycle_reaction(accepted)
+    assert await engine.async_accept_proposal(proposal_id)
+    return engine, lifecycle_store, proposal_id, configured
+
+
+async def test_house_state_lifecycle_evaluation_counts_confirmed_opportunities(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        [
+            _house_state_event(ts="2999-06-16T17:05:00+00:00", house_state="working"),
+            _house_state_event(ts="2999-06-16T17:25:00+00:00", house_state="working"),
+        ],
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.confirmed_count == 1
+    assert record.outcome_contradiction_count == 0
+    assert record.context_miss_count == 0
+    assert record.unknown_transient_count == 0
+    assert record.dependency_unavailable_count == 0
+    assert record.last_confirmed_at == "2999-06-16T17:25:00+00:00"
+
+
+async def test_house_state_lifecycle_evaluation_counts_contradicted_opportunities(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        [_house_state_event(ts="2999-06-16T17:05:00+00:00", house_state="home")],
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.confirmed_count == 0
+    assert record.outcome_contradiction_count == 1
+    assert record.context_miss_count == 0
+
+
+async def test_house_state_lifecycle_evaluation_counts_context_missed_opportunities(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        [
+            _house_state_event(
+                ts="2999-06-16T17:05:00+00:00",
+                house_state="working",
+                anyone_home=False,
+            )
+        ],
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.confirmed_count == 0
+    assert record.outcome_contradiction_count == 0
+    assert record.context_miss_count == 1
+
+
+async def test_house_state_lifecycle_evaluation_counts_unknown_transient(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        [_house_state_event(ts="2999-06-16T17:05:00+00:00", house_state="unknown")],
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.confirmed_count == 0
+    assert record.outcome_contradiction_count == 0
+    assert record.context_miss_count == 0
+    assert record.unknown_transient_count == 1
+
+
+async def test_house_state_lifecycle_evaluation_counts_dependency_unavailable(
+    monkeypatch,
+):
+    (
+        engine,
+        lifecycle_store,
+        proposal_id,
+        _configured,
+    ) = await _accepted_house_state_lifecycle_engine(
+        monkeypatch,
+        [_house_state_event(ts="2999-06-16T17:05:00+00:00", house_state="working")],
+        configure_reaction=False,
+    )
+
+    await engine.async_evaluate_house_state_lifecycle_opportunities()
+
+    record = lifecycle_store.records_by_id[proposal_id]
+    assert record.confirmed_count == 0
+    assert record.outcome_contradiction_count == 0
+    assert record.context_miss_count == 0
+    assert record.dependency_unavailable_count == 1
 
 
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):

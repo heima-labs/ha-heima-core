@@ -807,6 +807,57 @@ class ProposalEngine:
     def _serialize(self) -> dict[str, Any]:
         return {"data": {"proposals": [p.as_dict() for p in self._proposals]}}
 
+    async def async_evaluate_house_state_lifecycle_opportunities(self) -> None:
+        """Refresh accepted house-state lifecycle evidence from aggregate event windows."""
+        if self._lifecycle_store is None:
+            return
+        records = [
+            record
+            for record in self._lifecycle_store.records()
+            if record.proposal_type == HOUSE_STATE_PROPOSAL_TYPE
+            and not record.retired_at
+            and not record.replaced_by
+        ]
+        if not records:
+            return
+
+        since = min(
+            (record.monitoring_window_start or record.accepted_at for record in records),
+            default="",
+        )
+        events = await self._event_store.async_query(since=since or None)
+        for record in records:
+            updated = self._evaluate_house_state_lifecycle_record(record, events)
+            await self._lifecycle_store.async_replace_record(updated)
+
+    def _evaluate_house_state_lifecycle_record(
+        self,
+        record: ProposalLifecycleRecord,
+        events: list[Any],
+    ) -> ProposalLifecycleRecord:
+        proposal = self._proposal_by_id(record.proposal_id)
+        if not isinstance(proposal, ReactionProposal):
+            return replace(record, dependency_unavailable_count=1)
+
+        link_state = self._classify_reaction_link_state(record)["state"]
+        if link_state in {"reaction_missing", "linked_uninterpretable"}:
+            return replace(record, dependency_unavailable_count=1)
+
+        baseline = _house_state_lifecycle_baseline(proposal)
+        if baseline is None:
+            return replace(record, dependency_unavailable_count=1)
+
+        counts = _house_state_lifecycle_counts(events, baseline)
+        return replace(
+            record,
+            last_confirmed_at=str(counts.get("last_confirmed_at") or ""),
+            confirmed_count=int(counts["confirmed"]),
+            outcome_contradiction_count=int(counts["outcome_contradicted"]),
+            context_miss_count=int(counts["context_missed"]),
+            unknown_transient_count=int(counts["unknown_transient"]),
+            dependency_unavailable_count=int(counts["dependency_unavailable"]),
+        )
+
     async def _sync_accepted_lifecycle_records(self) -> None:
         for proposal in self._proposals:
             await self._sync_lifecycle_record_for(proposal)
@@ -1380,6 +1431,149 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _house_state_lifecycle_baseline(proposal: ReactionProposal) -> dict[str, Any] | None:
+    cfg = _safe_dict(proposal.suggested_reaction_config)
+    snapshot = _safe_dict(cfg.get("context_snapshot"))
+    weekday = _safe_int(snapshot.get("weekday"), default=-1)
+    hour_bucket = _safe_int(snapshot.get("hour_bucket"), default=-1)
+    predicted_state = _token(snapshot.get("predicted_state") or cfg.get("predicted_state"))
+    if weekday < 0 or hour_bucket < 0 or not predicted_state:
+        return None
+    rooms = snapshot.get("rooms")
+    if not isinstance(rooms, list):
+        rooms = []
+    return {
+        "weekday": weekday,
+        "hour_bucket": hour_bucket,
+        "rooms": frozenset(str(room).strip() for room in rooms if str(room).strip()),
+        "anyone_home": bool(snapshot.get("anyone_home")),
+        "predicted_state": predicted_state,
+    }
+
+
+def _house_state_lifecycle_counts(
+    events: list[Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    windows = _house_state_lifecycle_windows(events, baseline)
+    counts = {
+        "confirmed": 0,
+        "outcome_contradicted": 0,
+        "context_missed": 0,
+        "unknown_transient": 0,
+        "dependency_unavailable": 0,
+        "last_confirmed_at": "",
+    }
+    for window_events in windows.values():
+        outcome = _classify_house_state_lifecycle_window(window_events, baseline)
+        counts[outcome] += 1
+        if outcome == "confirmed":
+            last_ts = max(str(getattr(event, "ts", "") or "") for event in window_events)
+            if last_ts > str(counts["last_confirmed_at"] or ""):
+                counts["last_confirmed_at"] = last_ts
+    return counts
+
+
+def _house_state_lifecycle_windows(
+    events: list[Any],
+    baseline: dict[str, Any],
+) -> dict[str, list[Any]]:
+    windows: dict[str, list[Any]] = {}
+    expected_weekday = int(baseline["weekday"])
+    expected_hour = int(baseline["hour_bucket"])
+    for event in events:
+        context = getattr(event, "context", None)
+        if context is None:
+            continue
+        weekday = _safe_int(getattr(context, "weekday", None), default=-1)
+        hour_bucket = _safe_int(getattr(context, "minute_of_day", None), default=-60) // 60
+        if weekday != expected_weekday or hour_bucket != expected_hour:
+            continue
+        key = _house_state_lifecycle_window_key(event, weekday=weekday, hour_bucket=hour_bucket)
+        windows.setdefault(key, []).append(event)
+    return windows
+
+
+def _classify_house_state_lifecycle_window(
+    events: list[Any],
+    baseline: dict[str, Any],
+) -> str:
+    if not events:
+        return "unknown_transient"
+
+    anyone_home = _dominant_bool(
+        bool(_safe_int(getattr(getattr(event, "context", None), "occupants_count", 0), default=0))
+        for event in events
+    )
+    if anyone_home is None:
+        return "unknown_transient"
+
+    occupied_rooms: set[str] = set()
+    for event in events:
+        context = getattr(event, "context", None)
+        occupied_rooms.update(
+            str(room).strip()
+            for room in getattr(context, "occupied_rooms", ()) or ()
+            if str(room).strip()
+        )
+    expected_rooms = set(baseline.get("rooms") or ())
+    if anyone_home != bool(baseline["anyone_home"]) or (
+        expected_rooms and not expected_rooms.issubset(occupied_rooms)
+    ):
+        return "context_missed"
+
+    state = _dominant_house_state(events)
+    if state is None:
+        return "unknown_transient"
+    if state == baseline["predicted_state"]:
+        return "confirmed"
+    return "outcome_contradicted"
+
+
+def _dominant_house_state(events: list[Any]) -> str | None:
+    counts: dict[str, int] = {}
+    for event in events:
+        state = _house_state_from_event(event)
+        if state in {"", "unknown", "unavailable", "none"}:
+            continue
+        counts[state] = counts.get(state, 0) + 1
+    return _dominant_key(counts)
+
+
+def _house_state_from_event(event: Any) -> str:
+    data = getattr(event, "data", {})
+    if getattr(event, "event_type", "") == "house_state" and isinstance(data, dict):
+        state = _token(data.get("to_state"))
+        if state:
+            return state
+    context = getattr(event, "context", None)
+    return _token(getattr(context, "house_state", ""))
+
+
+def _dominant_bool(values: Any) -> bool | None:
+    counts = {True: 0, False: 0}
+    for value in values:
+        counts[bool(value)] += 1
+    if counts[True] == counts[False]:
+        return None
+    return counts[True] > counts[False]
+
+
+def _dominant_key(counts: dict[str, int]) -> str | None:
+    if not counts:
+        return None
+    ordered = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    if len(ordered) > 1 and ordered[0][1] == ordered[1][1]:
+        return None
+    return ordered[0][0]
+
+
+def _house_state_lifecycle_window_key(event: Any, *, weekday: int, hour_bucket: int) -> str:
+    ts = str(getattr(event, "ts", "") or "")
+    day = ts.split("T", 1)[0] if "T" in ts else ts[:10]
+    return f"{day}:weekday:{weekday}:hour:{hour_bucket}"
+
+
 def _lifecycle_comparable_config(value: dict[str, Any]) -> str:
     excluded = {
         "last_tuned_at",
@@ -1409,6 +1603,13 @@ def _reaction_link_result(
 def _safe_float(value: Any, *, default: float) -> float:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return default
 

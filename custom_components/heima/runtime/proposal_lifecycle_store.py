@@ -148,6 +148,17 @@ class ProposalLifecycleStore:
         await self.async_flush()
         return True
 
+    async def async_replace_record(self, record: ProposalLifecycleRecord) -> bool:
+        """Replace a tracked record when its persisted monitoring state changed."""
+        if not self._loaded:
+            await self.async_load()
+        current = self._records.get(record.proposal_id)
+        if current == record:
+            return False
+        self._records[record.proposal_id] = record
+        await self.async_flush()
+        return True
+
     def records(self) -> list[ProposalLifecycleRecord]:
         """Return lifecycle records sorted by accepted time and proposal id."""
         return sorted(

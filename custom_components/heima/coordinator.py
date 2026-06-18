@@ -1438,6 +1438,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         ):
             await module.analyze(self._house_snapshot_store)
         await self._async_submit_house_state_candidates()
+        await self._proposal_engine.async_evaluate_house_state_lifecycle_opportunities()
         await self._async_run_anomaly_analyzer()
 
     async def _async_run_anomaly_analyzer(self) -> None:
