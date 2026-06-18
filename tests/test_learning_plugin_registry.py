@@ -42,6 +42,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.house_state_contexts",
         "builtin.scheduled_routines",
         "builtin.security_presence_simulation",
     ]
@@ -50,6 +51,7 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
         "heating",
         "lighting",
         "composite_room_assist",
+        "house_state",
         "scheduled_routine",
         "security_presence_simulation",
     ]
@@ -91,12 +93,15 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
             ),
         ),
     )
-    assert descriptors[4].supports_admin_authored is True
-    assert tuple(item.template_id for item in descriptors[4].admin_authored_templates) == (
-        "scheduled_routine.basic",
-    )
+    assert descriptors[4].supports_admin_authored is False
+    assert descriptors[4].admin_authored_templates == ()
+    assert descriptors[4].proposal_types == ("house_state_learned_context",)
     assert descriptors[5].supports_admin_authored is True
     assert tuple(item.template_id for item in descriptors[5].admin_authored_templates) == (
+        "scheduled_routine.basic",
+    )
+    assert descriptors[6].supports_admin_authored is True
+    assert tuple(item.template_id for item in descriptors[6].admin_authored_templates) == (
         "security.vacation_presence_simulation.basic",
     )
 
@@ -104,12 +109,13 @@ def test_builtin_learning_pattern_plugin_descriptors_expose_minimal_metadata():
 def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata():
     registry = create_builtin_learning_plugin_registry()
 
-    assert len(registry) == 6
+    assert len(registry) == 7
     assert [item.descriptor.plugin_id for item in registry] == [
         "builtin.presence_preheat",
         "builtin.heating_preferences",
         "builtin.lighting_routines",
         "builtin.composite_room_assist",
+        "builtin.house_state_contexts",
         "builtin.scheduled_routines",
         "builtin.security_presence_simulation",
     ]
@@ -165,7 +171,20 @@ def test_builtin_learning_plugin_registry_exposes_default_plugins_and_metadata()
         "improvement_proposals": [],
         "enabled": True,
     }
-    assert registry.diagnostics()[-3] == {
+    diagnostics_by_id = {item["plugin_id"]: item for item in registry.diagnostics()}
+    assert diagnostics_by_id["builtin.house_state_contexts"] == {
+        "plugin_id": "builtin.house_state_contexts",
+        "analyzer_id": "HouseStateInferenceModule",
+        "plugin_family": "house_state",
+        "proposal_types": ["house_state_learned_context"],
+        "reaction_targets": [],
+        "has_lifecycle_hooks": True,
+        "supports_admin_authored": False,
+        "admin_authored_templates": [],
+        "improvement_proposals": [],
+        "enabled": False,
+    }
+    assert diagnostics_by_id["builtin.composite_room_assist"] == {
         "plugin_id": "builtin.composite_room_assist",
         "analyzer_id": "CompositePatternCatalogAnalyzer",
         "plugin_family": "composite_room_assist",
@@ -244,7 +263,12 @@ def test_builtin_learning_plugin_registry_can_disable_families():
     enabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is True}
     disabled = {item["plugin_family"] for item in diagnostics if item["enabled"] is False}
     assert enabled == {"presence", "lighting", "scheduled_routine"}
-    assert disabled == {"heating", "composite_room_assist", "security_presence_simulation"}
+    assert disabled == {
+        "heating",
+        "composite_room_assist",
+        "house_state",
+        "security_presence_simulation",
+    }
 
 
 def test_builtin_learning_plugin_registry_exposes_admin_authored_templates():
@@ -405,6 +429,7 @@ def test_builtin_learning_plugin_registry_exposes_lifecycle_hooks_by_reaction_ty
     assert registry.lifecycle_hooks_for("room_smart_lighting_assist") is not None
     assert registry.lifecycle_hooks_for("heating_preference") is not None
     assert registry.lifecycle_hooks_for("heating_eco") is not None
+    assert registry.lifecycle_hooks_for("house_state_learned_context") is not None
     assert registry.lifecycle_hooks_for("context_conditioned_lighting_scene") is not None
     assert registry.lifecycle_hooks_for("lighting_scene_schedule") is None
     assert registry.lifecycle_hooks_for("room_signal_assist") is not None

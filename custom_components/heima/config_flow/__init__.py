@@ -155,6 +155,7 @@ class HeimaOptionsFlowHandler(
                 "reactions_edit",
                 "admin_authored_create",
                 "proposals",
+                "accepted_proposals",
                 "save",
             ],
             description_placeholders=self._init_status_block(),

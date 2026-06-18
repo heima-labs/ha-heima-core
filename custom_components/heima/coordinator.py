@@ -1463,11 +1463,20 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         room_context_module = getattr(self, "_room_context_module", None)
         if room_context_module is not None:
             modules.append(room_context_module)
+        submitted: list[tuple[ReactionProposal, str]] = []
         for module in modules:
             for candidate in module.generate_candidates():
                 proposal = _proposal_from_house_state_candidate(candidate)
                 proposal_id = await self._proposal_engine.async_submit_proposal(proposal)
-                await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
+                submitted.append((proposal, proposal_id))
+
+        visible_pending_ids = {
+            proposal.proposal_id for proposal in self._proposal_engine.pending_proposals()
+        }
+        for proposal, proposal_id in submitted:
+            if proposal_id not in visible_pending_ids:
+                continue
+            await self._async_notify_house_state_proposal(proposal, proposal_id=proposal_id)
 
     async def _async_run_signal_discovery_audit(self) -> None:
         audit = getattr(self, "_signal_discovery_audit", None)

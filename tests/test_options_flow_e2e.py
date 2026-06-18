@@ -2006,6 +2006,127 @@ async def test_proposals_step_rejects_house_state_context_as_installer():
 
 
 @pytest.mark.asyncio
+async def test_accepted_proposals_step_removes_house_state_via_review_dispatch():
+    flow = _flow()
+    proposal = ReactionProposal(
+        proposal_id="proposal-house-state",
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description="Learned house-state context predicts working.",
+        confidence=0.8,
+        status="accepted",
+        suggested_reaction_config={
+            "context_key": "ctx-working",
+            "context_snapshot": {
+                "weekday": 1,
+                "hour_bucket": 17,
+                "rooms": ["studio"],
+                "anyone_home": True,
+                "predicted_state": "working",
+                "learning_context": {},
+            },
+            "predicted_state": "working",
+            "support": 3,
+            "total": 3,
+        },
+    )
+    proposal_engine = SimpleNamespace(accepted_proposals=lambda: [proposal])
+    review = AsyncMock(return_value=True)
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_proposal=review,
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_accepted_proposals()
+    assert shown["type"] == "form"
+    assert shown["step_id"] == "accepted_proposals"
+
+    manage = await flow.async_step_accepted_proposals(
+        {
+            "proposal_id": "proposal-house-state",
+        }
+    )
+    assert manage["type"] == "form"
+    assert manage["step_id"] == "accepted_proposal_manage"
+    assert "Stato casa appreso: working" in manage["description_placeholders"]["proposal_label"]
+
+    result = await flow.async_step_accepted_proposal_manage({"management_action": "remove"})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "accepted_proposals"
+    review.assert_awaited_once_with(
+        "proposal-house-state",
+        decision="rejected",
+        approved_by="installer",
+    )
+
+
+@pytest.mark.asyncio
+async def test_accepted_proposals_step_removes_configured_reaction_proposal():
+    proposal = ReactionProposal(
+        proposal_id="proposal-lighting",
+        analyzer_id="CompositePatternCatalogAnalyzer",
+        reaction_type="room_smart_lighting_assist",
+        description="Studio smart lighting",
+        confidence=0.92,
+        status="accepted",
+        identity_key="lighting:studio",
+        suggested_reaction_config={
+            "reaction_class": "RoomSmartLightingAssistReaction",
+            "room_id": "studio",
+        },
+    )
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "proposal-lighting": {
+                        "reaction_type": "room_smart_lighting_assist",
+                        "source_proposal_id": "proposal-lighting",
+                    },
+                    "other": {
+                        "reaction_type": "room_signal_assist",
+                        "source_proposal_id": "other-proposal",
+                    },
+                },
+                "labels": {
+                    "proposal-lighting": "Studio smart lighting",
+                    "other": "Other reaction",
+                },
+            }
+        }
+    )
+    proposal_engine = SimpleNamespace(
+        accepted_proposals=lambda: [proposal],
+        async_reject_proposal=AsyncMock(return_value=True),
+    )
+    flow.hass.data = {
+        DOMAIN: {"entry-1": {"coordinator": SimpleNamespace(proposal_engine=proposal_engine)}}
+    }
+
+    manage = await flow.async_step_accepted_proposals({"proposal_id": "proposal-lighting"})
+    assert manage["type"] == "form"
+    assert manage["step_id"] == "accepted_proposal_manage"
+
+    result = await flow.async_step_accepted_proposal_manage({"management_action": "remove"})
+
+    assert result["type"] == "form"
+    proposal_engine.async_reject_proposal.assert_awaited_once_with("proposal-lighting")
+    configured = flow.options["reactions"]["configured"]
+    labels = flow.options["reactions"]["labels"]
+    assert "proposal-lighting" not in configured
+    assert "proposal-lighting" not in labels
+    assert "other" in configured
+    assert "other" in labels
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_reviews_activity_context_as_installer_without_reaction_config():
     flow = _flow()
     proposal = ActivityProposal(

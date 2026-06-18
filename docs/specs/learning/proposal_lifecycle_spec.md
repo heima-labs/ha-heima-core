@@ -119,6 +119,185 @@ composite_room_assist_lifecycle_hooks(policy) → ProposalLifecycleHooks
 
 ---
 
+## 2c. Review Grouping
+
+### Motivation
+
+`identity_key` deduplicates exact behavioral slots; `followup_slot_key` deduplicates tuning
+follow-ups. Neither deduplicates **semantically equivalent** proposals that differ only by
+inference tier, context granularity, or specificity level.
+
+Without review grouping, the review queue shows multiple pending proposals that represent the same
+user-facing insight at different granularity levels (e.g., "working on Tuesday at 17:00" at rich,
+coarse, and minimal tier). This produces review noise without adding decision value.
+
+Review grouping is a **UX-only** mechanism. It does not affect approval semantics, identity keys,
+or persisted status.
+
+### New hook: `review_grouping`
+
+`ProposalLifecycleHooks` is extended with one optional field:
+
+```python
+LifecycleReviewGrouping = Callable[
+    [ReactionProposal],
+    "ProposalReviewGrouping | None",
+]
+
+@dataclass(frozen=True)
+class ProposalLifecycleHooks:
+    identity_key:             LifecycleIdentityKey
+    followup_slot_key:        LifecycleFollowupSlotKey        | None = None
+    fallback_followup_match:  LifecycleFallbackFollowupMatch  | None = None
+    should_suppress_followup: LifecycleShouldSuppressFollowup | None = None
+    review_grouping:          LifecycleReviewGrouping         | None = None  # NEW
+```
+
+If `review_grouping` is `None`, behavior is unchanged: all pending proposals for the plugin
+family remain visible.
+
+### `ProposalReviewGrouping` dataclass
+
+```python
+@dataclass(frozen=True)
+class ProposalReviewGrouping:
+    group_key: str
+    specificity_rank: int    # higher = more specific (e.g. rich=3, coarse=2, minimal=1)
+    quality_rank: tuple      # tie-break within same specificity (e.g. (confidence, support, ...))
+```
+
+- `group_key` groups proposals that compete for the same slot of user attention.
+- `specificity_rank` determines which proposal is the preferred representative.
+- `quality_rank` breaks ties within the same `specificity_rank`; compared lexicographically,
+  higher is better.
+
+### ProposalEngine behavior
+
+The `followup_slot_key` / `should_suppress_followup` path runs first (tuning dedup). Review
+grouping runs after, on proposals that survive tuning dedup.
+
+For each new candidate that has a `review_grouping` result:
+
+**Against accepted proposals in the same group:**
+
+```
+if any accepted proposal exists in the same group with the same predicted outcome:
+    if candidate.specificity_rank <= accepted.specificity_rank:
+        suppress candidate (do not surface in review queue)
+    else:
+        surface candidate (more specific evidence than what was approved)
+```
+
+**Against pending proposals in the same group:**
+
+```
+if a pending representative exists in the same group:
+    if candidate.quality_rank_tuple > representative.quality_rank_tuple
+       OR candidate.specificity_rank > representative.specificity_rank:
+        demote current representative to suppressed_in_review
+        promote candidate as new representative
+    else:
+        suppress candidate
+else:
+    candidate becomes the group representative
+```
+
+At most one pending proposal per `(plugin_family, group_key)` is visible in the review queue
+at any time.
+
+### `suppressed_in_review` state
+
+`suppressed_in_review` is a **purely derived, read-time** state. It is never written to the
+proposal store and requires no new persisted field.
+
+`ProposalEngine.pending_proposals()` (or any equivalent read method) computes review grouping
+on the fly from current store state:
+
+```
+for each (plugin_family, group_key):
+    candidates = all pending proposals in group, sorted by
+                 (specificity_rank DESC, quality_rank DESC)
+    representative = candidates[0]   → visible
+    siblings       = candidates[1:]  → suppressed_in_review
+```
+
+When the representative is rejected, the next call to `pending_proposals()` automatically
+promotes the best remaining sibling as the new representative. No write to the store is
+required; no migration needed.
+
+`suppressed_in_review` proposals:
+- are hidden from the user-facing review queue and notification count
+- remain visible in diagnostics with `review_group_role: "suppressed"`
+- retain their `pending` persisted status unchanged
+
+### Approval scope invariant
+
+Approving a group representative approves **only** its exact `identity_key`. Group siblings
+are not implicitly approved. There is no "approve all group" action in v1.
+
+If the user accepts the representative and later a sibling with higher `specificity_rank`
+surfaces, that sibling is shown as a new pending representative (more specific than what was
+accepted).
+
+### Interaction with other hooks
+
+| Hook | Runs before review grouping? |
+|------|------------------------------|
+| `identity_key` | Yes — dedup by exact slot |
+| `followup_slot_key` / `should_suppress_followup` | Yes — tuning dedup |
+| `review_grouping` | Last — UX-only suppression |
+
+Review grouping never overrides identity dedup or tuning suppression.
+
+### House-state learned context: first plugin
+
+`house_state_learned_context` is the first plugin to implement `review_grouping`.
+
+```python
+def _house_state_review_grouping(proposal: ReactionProposal) -> ProposalReviewGrouping | None:
+    cfg = proposal.suggested_reaction_config or {}
+    weekday        = cfg.get("weekday")
+    hour_bucket    = cfg.get("hour_bucket")
+    anyone_home    = cfg.get("anyone_home")
+    predicted_state = cfg.get("predicted_state") or cfg.get("house_state")
+    tier           = cfg.get("tier", "minimal")  # "rich" | "coarse" | "minimal"
+
+    if any(v is None for v in [weekday, hour_bucket, anyone_home, predicted_state]):
+        return None
+
+    group_key = (
+        f"house_state_ctx_group:"
+        f"weekday:{weekday}:hour:{hour_bucket}:"
+        f"anyone_home:{int(anyone_home)}:state:{predicted_state}"
+    )
+    specificity_rank = {"rich": 3, "coarse": 2, "minimal": 1}.get(tier, 1)
+    quality_rank = (
+        proposal.confidence or 0.0,
+        proposal.observations_count or 0,
+    )
+    return ProposalReviewGrouping(
+        group_key=group_key,
+        specificity_rank=specificity_rank,
+        quality_rank=quality_rank,
+    )
+```
+
+`group_key` is stable across sessions: it does not include `context_key` hash, room list, or
+other tier-specific fields. Approval identity (exact `context_key`) remains unaffected.
+
+### Diagnostics additions
+
+ProposalEngine SHOULD expose per proposal:
+- `review_group_key: str | None`
+- `review_group_role: "representative" | "suppressed" | None`
+- `suppressed_by_review_group: bool`
+
+ProposalEngine SHOULD expose per plugin family:
+- `review_groups: dict[group_key, list[identity_key]]` — all proposals per group
+- `suppressed_in_review_count: int`
+
+---
+
 ## 3. Persisted States
 
 Persisted proposal `status` remains:
@@ -133,6 +312,7 @@ The following are **not** primary persisted states in v1:
 - `stale`
 - `superseded`
 - `archived`
+- `suppressed_in_review` — computed at read time by `pending_proposals()`; never written to store; no new persisted field; underlying status remains `pending`
 
 These concepts may appear in diagnostics or pruning logic, but they do not replace the three review states above.
 
