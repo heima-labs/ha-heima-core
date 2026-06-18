@@ -151,6 +151,9 @@ class _FakeLifecycleStore:
         self.records_by_id[record.proposal_id] = record
         return True
 
+    def records(self) -> list[ProposalLifecycleRecord]:
+        return list(self.records_by_id.values())
+
     def diagnostics(self) -> dict[str, object]:
         return {
             "storage_key": "fake",
@@ -211,6 +214,18 @@ def _house_state_lifecycle_proposal(*, context_key: str = "ctx-alpha") -> Reacti
             "total": 3,
         },
     )
+
+
+def _configured_house_state_lifecycle_reaction(proposal: ReactionProposal) -> dict[str, object]:
+    cfg = dict(proposal.suggested_reaction_config)
+    cfg["reaction_type"] = proposal.reaction_type
+    cfg["origin"] = proposal.origin
+    cfg["author_kind"] = "heima"
+    cfg["source_proposal_id"] = proposal.proposal_id
+    cfg["source_proposal_identity_key"] = proposal.identity_key
+    cfg["created_at"] = proposal.created_at
+    cfg["source_request"] = "learned_pattern"
+    return cfg
 
 
 def _lighting_proposal(
@@ -1085,6 +1100,133 @@ async def test_proposal_engine_loads_lifecycle_records_for_persisted_accepted_ho
     assert record.identity_key == accepted.identity_key
     assert engine.pending_proposals() == []
     assert len(engine.accepted_proposals()) == 1
+
+
+async def test_proposal_lifecycle_diagnostics_classify_clean_linked_reaction(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    configured: dict[str, dict[str, object]] = {}
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        configured_reactions_provider=lambda: configured,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal = _house_state_lifecycle_proposal()
+    proposal_id = await engine.async_submit_proposal(proposal)
+    accepted = next(item for item in engine.pending_proposals() if item.proposal_id == proposal_id)
+    assert isinstance(accepted, ReactionProposal)
+    configured[proposal_id] = _configured_house_state_lifecycle_reaction(accepted)
+
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record["reaction_link_state"] == "linked_clean"
+    assert record["reaction_link_state_reason"] == "matches_accepted_baseline"
+    assert record["resolved_reaction_id"] == proposal_id
+
+
+async def test_proposal_lifecycle_diagnostics_classify_interpretable_user_baseline(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    configured: dict[str, dict[str, object]] = {}
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        configured_reactions_provider=lambda: configured,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    accepted = next(item for item in engine.pending_proposals() if item.proposal_id == proposal_id)
+    assert isinstance(accepted, ReactionProposal)
+    configured[proposal_id] = _configured_house_state_lifecycle_reaction(accepted)
+    configured[proposal_id]["note"] = "admin edited but still interpretable"
+
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record["reaction_link_state"] == "linked_user_baseline"
+    assert record["reaction_link_state_reason"] == "interpretable_user_modified_baseline"
+
+
+async def test_proposal_lifecycle_diagnostics_classify_uninterpretable_reaction(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    configured: dict[str, dict[str, object]] = {}
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        configured_reactions_provider=lambda: configured,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    accepted = next(item for item in engine.pending_proposals() if item.proposal_id == proposal_id)
+    assert isinstance(accepted, ReactionProposal)
+    configured[proposal_id] = _configured_house_state_lifecycle_reaction(accepted)
+    configured[proposal_id]["reaction_type"] = "room_smart_lighting_assist"
+
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record["reaction_link_state"] == "linked_uninterpretable"
+    assert record["reaction_link_state_reason"] == "reaction_type_mismatch"
+
+
+async def test_proposal_lifecycle_diagnostics_classify_malformed_reaction_payload(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    configured: dict[str, object] = {}
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        configured_reactions_provider=lambda: configured,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    configured[proposal_id] = "not-a-dict"
+
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record["reaction_link_state"] == "linked_uninterpretable"
+    assert record["reaction_link_state_reason"] == "configured_reaction_payload_malformed"
+
+
+async def test_proposal_lifecycle_diagnostics_classify_missing_reaction(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    lifecycle_store = _FakeLifecycleStore()
+    engine = ProposalEngine(
+        object(),  # type: ignore[arg-type]
+        _EventStoreStub(),
+        configured_reactions_provider=dict,
+        lifecycle_store=lifecycle_store,  # type: ignore[arg-type]
+    )
+
+    await engine.async_initialize()
+    proposal_id = await engine.async_submit_proposal(_house_state_lifecycle_proposal())
+    assert await engine.async_accept_proposal(proposal_id)
+
+    record = engine.diagnostics()["lifecycle_monitoring"]["records"][0]
+    assert record["reaction_link_state"] == "reaction_missing"
+    assert record["reaction_link_state_reason"] == "configured_reaction_not_found"
 
 
 async def test_proposal_engine_assigns_identity_key_and_last_observed_at(monkeypatch):

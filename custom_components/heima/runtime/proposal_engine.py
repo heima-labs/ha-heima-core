@@ -850,7 +850,152 @@ class ProposalEngine:
             }
         diagnostics = dict(self._lifecycle_store.diagnostics())
         diagnostics["enabled"] = True
+        diagnostics["records"] = [
+            self._lifecycle_record_diagnostics(record) for record in self._lifecycle_store.records()
+        ]
         return diagnostics
+
+    def _lifecycle_record_diagnostics(self, record: ProposalLifecycleRecord) -> dict[str, Any]:
+        payload = record.as_dict()
+        link = self._classify_reaction_link_state(record)
+        payload["reaction_link_state"] = link["state"]
+        payload["reaction_link_state_reason"] = link["reason"]
+        payload["resolved_reaction_id"] = link["resolved_reaction_id"]
+        payload["configured_reaction_type"] = link["configured_reaction_type"]
+        return payload
+
+    def _classify_reaction_link_state(self, record: ProposalLifecycleRecord) -> dict[str, str]:
+        configured = self._configured_reactions()
+        linked_id = str(record.linked_reaction_id or record.proposal_id or "").strip()
+        if not linked_id:
+            return _reaction_link_result("reaction_missing", reason="missing_link")
+
+        if linked_id in configured and not isinstance(configured.get(linked_id), dict):
+            return _reaction_link_result(
+                "linked_uninterpretable",
+                reason="configured_reaction_payload_malformed",
+                resolved_reaction_id=linked_id,
+            )
+
+        reaction_id, reaction_cfg = self._find_lifecycle_reaction(record, configured)
+        if reaction_cfg is None:
+            return _reaction_link_result(
+                "reaction_missing",
+                reason="configured_reaction_not_found",
+                resolved_reaction_id=linked_id,
+            )
+
+        reaction_type = resolve_reaction_type(reaction_cfg)
+        expected_type = str(record.linked_reaction_type or record.proposal_type or "").strip()
+        if not reaction_type or (expected_type and reaction_type != expected_type):
+            return _reaction_link_result(
+                "linked_uninterpretable",
+                reason="reaction_type_mismatch",
+                resolved_reaction_id=reaction_id,
+                configured_reaction_type=reaction_type,
+            )
+
+        source_proposal_id = str(reaction_cfg.get("source_proposal_id") or "").strip()
+        source_identity = str(reaction_cfg.get("source_proposal_identity_key") or "").strip()
+        has_source_metadata = bool(source_proposal_id or source_identity)
+        source_matches = source_proposal_id == record.proposal_id or (
+            bool(record.identity_key) and source_identity == record.identity_key
+        )
+        if has_source_metadata and not source_matches:
+            return _reaction_link_result(
+                "linked_uninterpretable",
+                reason="source_metadata_mismatch",
+                resolved_reaction_id=reaction_id,
+                configured_reaction_type=reaction_type,
+            )
+
+        if str(reaction_cfg.get("author_kind") or "").strip() and str(
+            reaction_cfg.get("author_kind") or ""
+        ).strip() not in {"heima", "admin"}:
+            return _reaction_link_result(
+                "linked_uninterpretable",
+                reason="author_kind_uninterpretable",
+                resolved_reaction_id=reaction_id,
+                configured_reaction_type=reaction_type,
+            )
+
+        proposal = self._proposal_by_id(record.proposal_id)
+        if not isinstance(proposal, ReactionProposal):
+            return _reaction_link_result(
+                "linked_user_baseline",
+                reason="accepted_proposal_history_unavailable",
+                resolved_reaction_id=reaction_id,
+                configured_reaction_type=reaction_type,
+            )
+
+        baseline = self._configured_baseline_for_proposal(proposal)
+        if _lifecycle_comparable_config(reaction_cfg) == _lifecycle_comparable_config(baseline):
+            return _reaction_link_result(
+                "linked_clean",
+                reason="matches_accepted_baseline",
+                resolved_reaction_id=reaction_id,
+                configured_reaction_type=reaction_type,
+            )
+        return _reaction_link_result(
+            "linked_user_baseline",
+            reason="interpretable_user_modified_baseline",
+            resolved_reaction_id=reaction_id,
+            configured_reaction_type=reaction_type,
+        )
+
+    def _configured_reactions(self) -> dict[str, Any]:
+        if self._configured_reactions_provider is None:
+            return {}
+        configured = self._configured_reactions_provider()
+        if not isinstance(configured, dict):
+            return {}
+        return configured
+
+    def _find_lifecycle_reaction(
+        self,
+        record: ProposalLifecycleRecord,
+        configured: dict[str, Any],
+    ) -> tuple[str, dict[str, Any] | None]:
+        linked_id = str(record.linked_reaction_id or record.proposal_id or "").strip()
+        direct = configured.get(linked_id)
+        if isinstance(direct, dict):
+            return linked_id, direct
+
+        for reaction_id, raw in configured.items():
+            if not isinstance(raw, dict):
+                continue
+            cfg = _safe_dict(raw)
+            if str(cfg.get("source_proposal_id") or "").strip() == record.proposal_id:
+                return str(reaction_id), cfg
+            if (
+                record.identity_key
+                and str(cfg.get("source_proposal_identity_key") or "").strip()
+                == record.identity_key
+            ):
+                return str(reaction_id), cfg
+        return linked_id, None
+
+    def _proposal_by_id(self, proposal_id: str) -> ProposalItem | None:
+        target = str(proposal_id or "").strip()
+        for proposal in self._proposals:
+            if proposal.proposal_id == target:
+                return proposal
+        return None
+
+    @staticmethod
+    def _configured_baseline_for_proposal(proposal: ReactionProposal) -> dict[str, Any]:
+        configured = _safe_dict(proposal.suggested_reaction_config)
+        configured.pop("reaction_class", None)
+        configured["reaction_type"] = str(proposal.reaction_type or "").strip()
+        configured["origin"] = proposal.origin
+        configured["author_kind"] = "admin" if proposal.origin == "admin_authored" else "heima"
+        configured["source_proposal_id"] = proposal.proposal_id
+        if proposal.identity_key:
+            configured["source_proposal_identity_key"] = proposal.identity_key
+        if proposal.created_at:
+            configured["created_at"] = proposal.created_at
+        configured.setdefault("source_request", "learned_pattern")
+        return configured
 
     def _write_sensor(self) -> None:
         if not self._sensor_writer:
@@ -1233,6 +1378,32 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _lifecycle_comparable_config(value: dict[str, Any]) -> str:
+    excluded = {
+        "last_tuned_at",
+        "last_tuning_followup_kind",
+        "last_tuning_origin",
+        "last_tuning_proposal_id",
+    }
+    comparable = {key: item for key, item in value.items() if key not in excluded}
+    return json.dumps(comparable, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _reaction_link_result(
+    state: str,
+    *,
+    reason: str,
+    resolved_reaction_id: str = "",
+    configured_reaction_type: str = "",
+) -> dict[str, str]:
+    return {
+        "state": state,
+        "reason": reason,
+        "resolved_reaction_id": resolved_reaction_id,
+        "configured_reaction_type": configured_reaction_type,
+    }
 
 
 def _safe_float(value: Any, *, default: float) -> float:
