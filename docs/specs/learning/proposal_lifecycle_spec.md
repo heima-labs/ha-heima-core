@@ -117,6 +117,27 @@ security_presence_simulation_lifecycle_hooks() → ProposalLifecycleHooks
 composite_room_assist_lifecycle_hooks(policy) → ProposalLifecycleHooks
 ```
 
+### Lifecycle-only plugin registration
+
+Some proposal types need lifecycle ownership even though no analyzer plugin should be executed for
+them. These descriptors MUST use the registry-level
+`execution_mode = "lifecycle_only"` contract defined in
+`learning_system_spec.md` §0.3b.
+
+Lifecycle-only descriptors:
+
+- may claim `proposal_types`
+- may expose `ProposalLifecycleHooks`
+- may provide `review_grouping`
+- must be included in proposal type ownership checks and `unclaimed_proposal_types`
+- must not appear as disabled analyzer families in diagnostics
+- must not be returned by analyzer execution APIs
+
+`house_state_learned_context` is the first required lifecycle-only proposal type. Its candidates are
+created by the inference/coordinator path, but its proposal identity and review grouping are owned by
+the learning lifecycle registry. Therefore the descriptor must be represented as lifecycle-only, not
+as a disabled analyzer plugin.
+
 ---
 
 ## 2c. Review Grouping

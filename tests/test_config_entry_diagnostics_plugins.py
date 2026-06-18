@@ -209,6 +209,8 @@ async def test_config_entry_diagnostics_exposes_learning_summary() -> None:
     assert summary["config_source"] == "learning.enabled_plugin_families"
     assert "lighting" in summary["enabled_plugin_families"]
     assert summary["disabled_plugin_families"] == []
+    assert summary["lifecycle_only_plugin_families"] == ["house_state"]
+    assert summary["admin_authored_only_plugin_families"] == ["scheduled_routine"]
 
     lighting = summary["families"]["lighting"]
     assert lighting["pending"] == 1
@@ -257,12 +259,14 @@ async def test_config_entry_diagnostics_exposes_disabled_learning_families() -> 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
     summary = diagnostics["runtime"]["plugins"]["learning_summary"]
 
-    assert summary["enabled_plugin_families"] == ["lighting", "presence", "scheduled_routine"]
+    assert summary["enabled_plugin_families"] == ["lighting", "presence"]
     assert summary["disabled_plugin_families"] == [
         "composite_room_assist",
         "heating",
         "security_presence_simulation",
     ]
+    assert summary["lifecycle_only_plugin_families"] == ["house_state"]
+    assert summary["admin_authored_only_plugin_families"] == ["scheduled_routine"]
 
 
 async def test_config_entry_diagnostics_exposes_configured_reaction_summary() -> None:

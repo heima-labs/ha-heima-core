@@ -147,6 +147,10 @@ Phase T deferred — see Phase T section for rationale.
     evidence quality.
   - User-facing pending queues and sensors must expose only current group representatives.
     Diagnostics should still expose suppressed siblings with derived review-group metadata.
+  - Diagnostic follow-up identified: `house_state` lifecycle ownership is currently represented as
+    a disabled learning family because the registry lacks an explicit plugin execution-mode
+    contract. Spec draft now requires `LearningPatternPluginDescriptor.execution_mode`; no code
+    implementation is authorized until user confirmation.
   - Implementation completed:
     - `ProposalLifecycleHooks` now supports optional `review_grouping`.
     - `ProposalEngine.pending_proposals()` computes visible representatives dynamically.
@@ -2751,6 +2755,40 @@ house-state inference)
 - [x] Diagnostics expose review group key, role, and suppressed count without writing them to storage
 - [ ] Existing tests pass; new focused tests cover ranking, accepted suppression, rejection recovery,
   and no-op behavior for ungrouped plugins
+
+### Spec revision note: learning plugin execution mode
+
+Status: SPEC DRAFT ONLY — implementation requires explicit user confirmation.
+
+Problem:
+- `builtin.house_state_contexts` exists to claim `house_state_learned_context` lifecycle hooks and
+  review grouping.
+- It should not execute an analyzer.
+- Representing it only as `enabled=False` makes diagnostics report `house_state` as a disabled
+  learning family, even while house-state proposals are claimed and grouped correctly.
+
+Spec direction:
+- Add explicit `LearningPatternPluginDescriptor.execution_mode`.
+- Valid values:
+  - `analyzer`
+  - `lifecycle_only`
+  - `admin_authored_only`
+- `enabled_plugin_families` and `disabled_plugin_families` apply only to analyzer-mode families.
+- Lifecycle-only families must be exposed separately, e.g. `lifecycle_only_plugin_families`.
+- `house_state_learned_context` must be registered as lifecycle-only.
+
+Implementation plan, pending approval:
+1. Extend `LearningPatternPluginDescriptor` with `execution_mode`, default `analyzer`.
+2. Register `builtin.house_state_contexts` with `execution_mode="lifecycle_only"`.
+3. Register admin-authored-only plugins without analyzer execution when applicable.
+4. Make `LearningPluginRegistry.analyzers()` return only enabled analyzer-mode plugins.
+5. Make diagnostics compute:
+   - `enabled_plugin_families`
+   - `disabled_plugin_families`
+   - `lifecycle_only_plugin_families`
+   - `admin_authored_only_plugin_families`
+6. Keep lifecycle hooks and proposal type ownership available for lifecycle-only descriptors.
+7. Update registry/diagnostics tests and dashboard expectations.
 
 ---
 
