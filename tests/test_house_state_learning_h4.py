@@ -85,6 +85,11 @@ class _ServicesStub:
         self.calls.append((domain, service, dict(data), blocking))
 
 
+class _LifecycleRegistryStub:
+    def lifecycle_hooks_for(self, reaction_type: str) -> None:
+        return None
+
+
 def _record(
     *,
     context_key: str,
@@ -117,6 +122,7 @@ def test_proposal_sensor_includes_house_state_context_snapshot() -> None:
     engine = ProposalEngine.__new__(ProposalEngine)
     engine._sensor_writer = lambda count, attrs: written.append((count, attrs))
     engine._stale_after = ProposalEngine.DEFAULT_STALE_AFTER
+    engine._learning_plugin_registry = _LifecycleRegistryStub()
     proposal = _proposal_from_house_state_candidate(_candidate("ctx-sensor"))
     engine._proposals = [proposal]
 
@@ -300,6 +306,9 @@ async def test_analyze_inference_modules_includes_activity_module() -> None:
     coordinator._room_state_correlation_module = SimpleNamespace(analyze=AsyncMock())
     coordinator._occupancy_inference_module = SimpleNamespace(analyze=AsyncMock())
     coordinator._async_submit_house_state_candidates = AsyncMock()
+    coordinator._proposal_engine = SimpleNamespace(
+        async_evaluate_house_state_lifecycle_opportunities=AsyncMock()
+    )
 
     await coordinator._async_analyze_inference_modules()
 
@@ -316,6 +325,7 @@ async def test_analyze_inference_modules_includes_activity_module() -> None:
         coordinator._house_snapshot_store
     )
     coordinator._async_submit_house_state_candidates.assert_awaited_once()
+    coordinator._proposal_engine.async_evaluate_house_state_lifecycle_opportunities.assert_awaited_once()
 
 
 def test_sensorless_occupancy_room_ids_uses_derived_rooms_without_occupancy_sources() -> None:
@@ -362,8 +372,16 @@ async def test_submit_house_state_candidates_submits_generated_proposals() -> No
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     candidate = _candidate("ctx-submit")
     coordinator._house_state_module = SimpleNamespace(generate_candidates=lambda: [candidate])
+    submitted_proposals: list[ReactionProposal] = []
+
+    async def _submit(proposal: ReactionProposal) -> str:
+        proposal.proposal_id = "proposal-submit"
+        submitted_proposals.append(proposal)
+        return proposal.proposal_id
+
     coordinator._proposal_engine = SimpleNamespace(
-        async_submit_proposal=AsyncMock(return_value="proposal-submit")
+        async_submit_proposal=AsyncMock(side_effect=_submit),
+        pending_proposals=lambda: list(submitted_proposals),
     )
     coordinator._sync_house_state_approval_state = MagicMock()
     services = _ServicesStub()
@@ -386,8 +404,16 @@ async def test_house_state_candidate_notification_is_deduplicated() -> None:
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     candidate = _candidate("ctx-dedup")
     coordinator._house_state_module = SimpleNamespace(generate_candidates=lambda: [candidate])
+    submitted_proposals: list[ReactionProposal] = []
+
+    async def _submit(proposal: ReactionProposal) -> str:
+        proposal.proposal_id = "proposal-dedup"
+        submitted_proposals.append(proposal)
+        return proposal.proposal_id
+
     coordinator._proposal_engine = SimpleNamespace(
-        async_submit_proposal=AsyncMock(return_value="proposal-dedup")
+        async_submit_proposal=AsyncMock(side_effect=_submit),
+        pending_proposals=lambda: list(submitted_proposals),
     )
     coordinator._sync_house_state_approval_state = MagicMock()
     services = _ServicesStub()

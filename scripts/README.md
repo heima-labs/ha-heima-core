@@ -175,6 +175,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - current examples:
     - `020_learning_pipeline.py`: uses `heima.set_override` for presence transitions
     - `060_lighting_schedule.py`: relies on `seed_lighting_events` for proposal generation
+    - `073_house_state_lifecycle_suggestion.py`: uses seeded house-state snapshots/events to verify a replacement lifecycle suggestion path
   - `diagnostic`
   - read-only assertions on sensors / diagnostics / counters
 

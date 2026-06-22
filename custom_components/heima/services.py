@@ -96,6 +96,8 @@ SUPPORTED_COMMANDS = {
     "seed_lighting_events",
     "seed_presence_events",
     "seed_lighting_scene_events",
+    "seed_house_state_snapshots",
+    "seed_house_state_events",
     "upsert_configured_reactions",
 }
 
@@ -426,6 +428,76 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 total,
                 room_id,
             )
+            return
+
+        if command == "seed_house_state_snapshots":
+            p = params
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1020))
+            count = int(p.get("count", 3))
+            house_state = str(p.get("house_state") or "").strip()
+            if not house_state:
+                raise ServiceValidationError(
+                    "seed_house_state_snapshots requires 'house_state' in params"
+                )
+            anyone_home = bool(p.get("anyone_home", True))
+            rooms_raw = p.get("occupied_rooms", [])
+            if rooms_raw is None:
+                rooms_raw = []
+            if not isinstance(rooms_raw, list):
+                raise ServiceValidationError(
+                    "seed_house_state_snapshots 'occupied_rooms' must be a list"
+                )
+            occupied_rooms = [str(room).strip() for room in rooms_raw if str(room).strip()]
+            room_device_context_raw = p.get("room_device_context", {})
+            if not isinstance(room_device_context_raw, dict):
+                raise ServiceValidationError(
+                    "seed_house_state_snapshots 'room_device_context' must be a dict"
+                )
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_house_state_snapshots(
+                    weekday=weekday,
+                    minute=minute,
+                    count=count,
+                    house_state=house_state,
+                    anyone_home=anyone_home,
+                    occupied_rooms=occupied_rooms,
+                    room_device_context=dict(room_device_context_raw),
+                )
+            _LOGGER.info("seed_house_state_snapshots: injected %d snapshots", total)
+            return
+
+        if command == "seed_house_state_events":
+            p = params
+            weekday = int(p.get("weekday", 0))
+            minute = int(p.get("minute", 1020))
+            count = int(p.get("count", 3))
+            house_state = str(p.get("house_state") or "").strip()
+            if not house_state:
+                raise ServiceValidationError(
+                    "seed_house_state_events requires 'house_state' in params"
+                )
+            anyone_home = bool(p.get("anyone_home", True))
+            rooms_raw = p.get("occupied_rooms", [])
+            if rooms_raw is None:
+                rooms_raw = []
+            if not isinstance(rooms_raw, list):
+                raise ServiceValidationError(
+                    "seed_house_state_events 'occupied_rooms' must be a list"
+                )
+            occupied_rooms = [str(room).strip() for room in rooms_raw if str(room).strip()]
+            total = 0
+            for coordinator in coordinators:
+                total += await coordinator.async_seed_house_state_events(
+                    weekday=weekday,
+                    minute=minute,
+                    count=count,
+                    house_state=house_state,
+                    anyone_home=anyone_home,
+                    occupied_rooms=occupied_rooms,
+                )
+            _LOGGER.info("seed_house_state_events: injected %d events", total)
             return
 
         if command == "upsert_configured_reactions":

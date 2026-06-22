@@ -36,6 +36,28 @@ def test_generate_dashboard_yaml_includes_runtime_rooms_and_actions() -> None:
             "sensor.heima_house_state",
             "sensor.heima_reaction_proposals",
         ],
+        "state_by_id": {
+            "binary_sensor.heima_occupancy_studio": {
+                "state": "on",
+                "attributes": {"friendly_name": "Studio occupancy"},
+            },
+            "light.studio_main": {
+                "state": "off",
+                "attributes": {"friendly_name": "Studio main"},
+            },
+            "sensor.heima_house_state": {
+                "state": "home",
+                "attributes": {"friendly_name": "Heima house state"},
+            },
+            "sensor.heima_reaction_proposals": {
+                "state": "0",
+                "attributes": {"friendly_name": "Heima reaction proposals"},
+            },
+            "script.test_heima_reset": {
+                "state": "off",
+                "attributes": {"friendly_name": "Test Heima reset"},
+            },
+        },
         "common_entities": ["sensor.heima_house_state"],
         "learning_entities": ["sensor.heima_reaction_proposals"],
         "anomaly_entities": [],
@@ -69,7 +91,9 @@ def test_generate_dashboard_yaml_includes_runtime_rooms_and_actions() -> None:
 def test_runtime_reactions_markdown_renders_compact_table() -> None:
     module = _load_module()
     inventory = {
+        "configured_reactions": [],
         "diagnostics_summary": {
+            "lighting": {},
             "active_reaction_rows": [
                 {
                     "reaction_id": "rx-1",
@@ -79,12 +103,13 @@ def test_runtime_reactions_markdown_renders_compact_table() -> None:
                     "suppressed_count": 1,
                     "state": "entity_steps",
                 }
-            ]
-        }
+            ],
+        },
     }
 
-    rendered = module._runtime_reactions_markdown(inventory)
+    cards = module.generate_reactions_section(inventory)
+    rendered = "\n".join(cards)
 
-    assert "| ID | Type | Room | Fire | Suppressed | State |" in rendered
+    assert "Reazioni Runtime Attive" in rendered
     assert "room_smart_lighting_assist" in rendered
     assert "entity_steps" in rendered

@@ -64,6 +64,7 @@ from .runtime.inference import (
     ApprovalRecord,
     ApprovalStore,
     HeatingPreferenceModule,
+    HouseSnapshot,
     HouseStateInferenceModule,
     LearnedHouseStateCandidate,
     LearnedRoomContextCandidate,
@@ -244,6 +245,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         self._house_snapshot_store = SnapshotStore(hass)
         self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
+        self._proposal_lifecycle_store = ProposalLifecycleStore(hass)
         self._proposal_engine = ProposalEngine(
             hass,
             self._event_store,
@@ -252,7 +254,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 (((entry.options or {}).get("reactions") or {}).get("configured") or {})
             ),
             sensor_writer=self._write_proposals_sensor,
-            lifecycle_store=ProposalLifecycleStore(hass),
+            lifecycle_store=self._proposal_lifecycle_store,
         )
         self.engine.set_proposal_engine(self._proposal_engine)
         for plugin in self._learning_plugin_registry.analyzers():
@@ -625,6 +627,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._house_snapshot_store.async_clear()
         await self._house_snapshot_store.async_flush()
         await self._proposal_engine.async_clear()
+        await self._proposal_lifecycle_store.async_clear()
         await self._approval_store.async_clear()
         await self._approval_store.async_flush()
         self._sync_house_state_approval_state()
@@ -1029,6 +1032,99 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._event_store.async_flush()
         self._write_event_store_sensor()
         return total
+
+    async def async_seed_house_state_snapshots(
+        self,
+        *,
+        weekday: int,
+        minute: int,
+        count: int = 3,
+        house_state: str,
+        anyone_home: bool = True,
+        occupied_rooms: list[str] | None = None,
+        room_device_context: dict[str, Any] | None = None,
+    ) -> int:
+        """Inject synthetic house-state snapshots for seeded learning tests."""
+        from datetime import timedelta
+
+        now_utc = datetime.now(UTC)
+        safe_count = max(0, int(count))
+        rooms = tuple(str(room).strip() for room in (occupied_rooms or []) if str(room).strip())
+        room_occupancy = {room: True for room in rooms}
+        device_context = {
+            str(room_id): dict(payload)
+            for room_id, payload in dict(room_device_context or {}).items()
+            if str(room_id).strip() and isinstance(payload, dict)
+        }
+
+        for idx in range(safe_count):
+            ts = (now_utc - timedelta(days=safe_count - idx)).isoformat()
+            await self._house_snapshot_store.async_append(
+                HouseSnapshot(
+                    ts=ts,
+                    weekday=int(weekday),
+                    minute_of_day=int(minute),
+                    anyone_home=bool(anyone_home),
+                    named_present=("test",) if anyone_home else (),
+                    room_occupancy=room_occupancy,
+                    house_state=str(house_state).strip(),
+                    room_device_context=device_context,
+                    security_state="disarmed",
+                )
+            )
+
+        await self._house_snapshot_store.async_flush()
+        return safe_count
+
+    async def async_seed_house_state_events(
+        self,
+        *,
+        weekday: int,
+        minute: int,
+        count: int = 3,
+        house_state: str,
+        anyone_home: bool = True,
+        occupied_rooms: list[str] | None = None,
+    ) -> int:
+        """Inject synthetic house-state events for accepted-rule lifecycle tests."""
+        from datetime import timedelta
+
+        from .runtime.event_store import EventContext, HeimaEvent
+
+        now_utc = datetime.now(UTC)
+        safe_count = max(0, int(count))
+        rooms = tuple(str(room).strip() for room in (occupied_rooms or []) if str(room).strip())
+
+        for idx in range(safe_count):
+            ts = (now_utc + timedelta(days=idx + 1)).isoformat()
+            ctx = EventContext(
+                weekday=int(weekday),
+                minute_of_day=int(minute),
+                month=now_utc.month,
+                house_state=str(house_state).strip(),
+                occupants_count=1 if anyone_home else 0,
+                occupied_rooms=rooms,
+                outdoor_lux=None,
+                outdoor_temp=None,
+                weather_condition=None,
+                signals={},
+            )
+            await self._event_store.async_append(
+                HeimaEvent(
+                    ts=ts,
+                    event_type="house_state",
+                    context=ctx,
+                    source=None,
+                    data={"from_state": "unknown", "to_state": str(house_state).strip()},
+                    domain="house_state",
+                    subject_type="house",
+                    subject_id="house",
+                )
+            )
+
+        await self._event_store.async_flush()
+        self._write_event_store_sensor()
+        return safe_count
 
     async def async_shutdown(self) -> None:
         """Shutdown runtime."""

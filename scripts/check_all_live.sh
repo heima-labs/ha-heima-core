@@ -43,6 +43,7 @@ LIVE_E2E_SCRIPTS=(
 SEEDED_INTEGRATION_SCRIPTS=(
   "scripts/live_tests/015_learning_reset.sh"
   "scripts/live_tests/052_context_conditioned_lighting_learning_e2e.py"
+  "scripts/live_tests/073_house_state_lifecycle_suggestion.py"
 )
 
 DIAGNOSTIC_SCRIPTS=(

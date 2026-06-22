@@ -173,6 +173,13 @@ class ProposalLifecycleStore:
         await self.async_flush()
         return True
 
+    async def async_clear(self) -> None:
+        """Clear all persisted lifecycle monitoring records."""
+        if not self._loaded:
+            await self.async_load()
+        self._records.clear()
+        await self.async_flush()
+
     def records(self) -> list[ProposalLifecycleRecord]:
         """Return lifecycle records sorted by accepted time and proposal id."""
         return sorted(

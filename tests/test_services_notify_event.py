@@ -943,6 +943,97 @@ async def test_heima_command_seed_lighting_scene_events_passes_signals(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_heima_command_seed_house_state_snapshots_calls_coordinator(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    coordinator = SimpleNamespace(async_seed_house_state_snapshots=AsyncMock(return_value=3))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "seed_house_state_snapshots",
+                "target": {},
+                "params": {
+                    "weekday": 3,
+                    "minute": 1020,
+                    "count": 3,
+                    "house_state": "working",
+                    "anyone_home": True,
+                    "occupied_rooms": ["studio"],
+                    "room_device_context": {
+                        "studio": {
+                            "room_id": "studio",
+                            "work_activity": True,
+                        }
+                    },
+                },
+            }
+        )
+    )
+
+    coordinator.async_seed_house_state_snapshots.assert_awaited_once_with(
+        weekday=3,
+        minute=1020,
+        count=3,
+        house_state="working",
+        anyone_home=True,
+        occupied_rooms=["studio"],
+        room_device_context={"studio": {"room_id": "studio", "work_activity": True}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_heima_command_seed_house_state_events_calls_coordinator(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    coordinator = SimpleNamespace(async_seed_house_state_events=AsyncMock(return_value=3))
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "seed_house_state_events",
+                "target": {},
+                "params": {
+                    "weekday": 3,
+                    "minute": 1020,
+                    "count": 3,
+                    "house_state": "home",
+                    "anyone_home": True,
+                    "occupied_rooms": ["studio"],
+                },
+            }
+        )
+    )
+
+    coordinator.async_seed_house_state_events.assert_awaited_once_with(
+        weekday=3,
+        minute=1020,
+        count=3,
+        house_state="home",
+        anyone_home=True,
+        occupied_rooms=["studio"],
+    )
+
+
+@pytest.mark.asyncio
 async def test_heima_command_upsert_configured_reactions_rejects_invalid_payload(monkeypatch):
     services = _FakeServicesRegistry()
     hass = SimpleNamespace(

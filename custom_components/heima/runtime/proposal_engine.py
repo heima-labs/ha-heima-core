@@ -1668,34 +1668,44 @@ def _house_state_lifecycle_counts(
 ) -> dict[str, Any]:
     windows = _house_state_lifecycle_windows(events, baseline)
     window_items = list(windows.items())[-max(1, int(window_limit)) :]
-    counts = {
+    outcome_counts: dict[str, int] = {
         "confirmed": 0,
         "outcome_contradicted": 0,
         "context_missed": 0,
         "unknown_transient": 0,
         "dependency_unavailable": 0,
+    }
+    last_confirmed_at = ""
+    replacement_candidate_state = ""
+    replacement_candidate_count = 0
+    counts: dict[str, Any] = {
+        **outcome_counts,
         "evaluated_windows": len(window_items),
-        "last_confirmed_at": "",
-        "replacement_candidate_state": "",
-        "replacement_candidate_count": 0,
+        "last_confirmed_at": last_confirmed_at,
+        "replacement_candidate_state": replacement_candidate_state,
+        "replacement_candidate_count": replacement_candidate_count,
     }
     replacement_counts: dict[str, int] = {}
     for _window_key, window_events in window_items:
         outcome = _classify_house_state_lifecycle_window(window_events, baseline)
         outcome_class = str(outcome["class"])
-        counts[outcome_class] += 1
+        outcome_counts[outcome_class] += 1
         if outcome_class == "outcome_contradicted":
             state = str(outcome.get("state") or "")
             if state:
                 replacement_counts[state] = replacement_counts.get(state, 0) + 1
         if outcome_class == "confirmed":
             last_ts = max(str(getattr(event, "ts", "") or "") for event in window_events)
-            if last_ts > str(counts["last_confirmed_at"] or ""):
-                counts["last_confirmed_at"] = last_ts
+            if last_ts > last_confirmed_at:
+                last_confirmed_at = last_ts
     candidate_state = _dominant_key(replacement_counts)
     if candidate_state is not None:
-        counts["replacement_candidate_state"] = candidate_state
-        counts["replacement_candidate_count"] = replacement_counts[candidate_state]
+        replacement_candidate_state = candidate_state
+        replacement_candidate_count = replacement_counts[candidate_state]
+    counts.update(outcome_counts)
+    counts["last_confirmed_at"] = last_confirmed_at
+    counts["replacement_candidate_state"] = replacement_candidate_state
+    counts["replacement_candidate_count"] = replacement_candidate_count
     return counts
 
 

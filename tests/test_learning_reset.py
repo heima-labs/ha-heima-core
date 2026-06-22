@@ -72,6 +72,7 @@ async def test_coordinator_learning_reset_flushes_and_resets_runtime_state():
         async_flush=AsyncMock(),
     )
     coordinator._proposal_engine = SimpleNamespace(async_clear=AsyncMock())
+    coordinator._proposal_lifecycle_store = SimpleNamespace(async_clear=AsyncMock())
     coordinator._approval_store = SimpleNamespace(
         async_clear=AsyncMock(),
         async_flush=AsyncMock(),
@@ -88,6 +89,7 @@ async def test_coordinator_learning_reset_flushes_and_resets_runtime_state():
     coordinator._house_snapshot_store.async_clear.assert_awaited_once()
     coordinator._house_snapshot_store.async_flush.assert_awaited_once()
     coordinator._proposal_engine.async_clear.assert_awaited_once()
+    coordinator._proposal_lifecycle_store.async_clear.assert_awaited_once()
     coordinator._approval_store.async_clear.assert_awaited_once()
     coordinator._approval_store.async_flush.assert_awaited_once()
     coordinator._sync_house_state_approval_state.assert_called_once()

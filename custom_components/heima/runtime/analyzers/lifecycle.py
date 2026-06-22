@@ -149,7 +149,7 @@ def _house_state_learned_context_review_grouping(
     predicted_state = (
         context.get("predicted_state") or cfg.get("predicted_state") or cfg.get("house_state")
     )
-    if any(value is None for value in (weekday, hour_bucket, anyone_home, predicted_state)):
+    if weekday is None or hour_bucket is None or anyone_home is None or predicted_state is None:
         return None
     try:
         weekday_i = int(weekday)

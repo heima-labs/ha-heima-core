@@ -112,24 +112,62 @@ These constraints must never be violated. See spec §16 for rationale.
 | Z | Activity cold start mitigation | `DONE` | S |
 | AA | Global drift detection | `DONE` | Y |
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
-| AC | Proposal Review Grouping | `IN PROGRESS` | H, Y |
+| AC | Proposal Review Grouping | `DONE` | H, Y |
+| AD | Proposal/Reaction Lifecycle Management | `IN PROGRESS` | AC, H, Y |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection.
-**Active phase:** Phase AC — Proposal Review Grouping.
-**Branch:** `feat/phase-ac-proposal-review-grouping`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping.
+**Active phase:** Phase AD — Proposal/Reaction Lifecycle Management.
+**Branch:** `feat/ad1-proposal-engine-invariants`.
 **Next action:**
 
-Phase AC implementation is complete on the feature branch with focused verification. Next action:
-run broader/full CI, then commit and merge when green. No store field, migration, or persisted
-status change was introduced.
+Phase AD implementation is functionally complete through AD9 on the feature branch, but the last
+verification/test-stub/mypy cleanup changes are still in the working tree and must be committed
+before merge. Next action: review/stage the Phase AD files, commit the current AD9 verification
+cleanup, then merge to `feat/v2` after confirming no unrelated untracked files are included.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
+- Current slice: Phase AD in progress.
+  - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` and
+    `docs/specs/learning/learning_system_spec.md`.
+  - Goal: manage the full lifecycle of accepted learned proposal-backed reactions: birth, active
+    monitoring, drift/replacement suggestion, retirement suggestion, explicit user review, and
+    restart-safe recovery.
+  - Branch: `feat/ad1-proposal-engine-invariants`.
+  - Completed/committed AD slices on this branch:
+    - AD1 — Preserve reviewed proposal identities across proposal refresh/recovery.
+    - AD2 — Add proposal lifecycle monitoring store.
+    - AD3 — Add proposal lifecycle/reaction-link diagnostics.
+    - AD4 — Evaluate house-state lifecycle opportunities from observed runtime events.
+    - AD5 — Add accepted-rule lifecycle policy.
+    - AD6 — Generate lifecycle review suggestions.
+    - AD7 — Apply proposal lifecycle review decisions.
+    - AD8 — Add proposal lifecycle recovery tests.
+    - AD9a — Add proposal lifecycle diagnostics live probe.
+  - Current uncommitted AD9 cleanup:
+    - Add `heima.command` seed commands for house-state snapshots/events.
+    - Add seeded live test `scripts/live_tests/073_house_state_lifecycle_suggestion.py`.
+    - Add `073` to the `seeded_integration` live-test tier and script docs.
+    - Clear proposal lifecycle store during learning reset.
+    - Keep a single coordinator-owned `ProposalLifecycleStore` instance shared with
+      `ProposalEngine`.
+    - Update dashboard/house-state test stubs to the current proposal lifecycle contract.
+    - Fix mypy issues in lifecycle grouping and lifecycle counts without changing runtime behavior.
+  - Verification already run after AD9 cleanup:
+    - `PATH="/Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component/.venv/bin:$PATH" bash scripts/ci_local.sh` — 1527 passed, ruff check passed, ruff format passed, mypy clean.
+    - `source scripts/.env && ./scripts/check_all_live.sh` — `live_e2e` passed.
+    - `source scripts/.env && ./scripts/check_all_live.sh --tier seeded_integration` — passed,
+      including `073_house_state_lifecycle_suggestion.py`.
+    - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic` — passed.
+  - Pending before merge:
+    - Commit tracked AD files plus new `scripts/live_tests/073_house_state_lifecycle_suggestion.py`.
+    - Do not include unrelated untracked files: `DEBUG_HEIMA_STATE.txt`, `VIBE.md`,
+      `docs/audit/code_quality_audit_plan_2026-06-08.md`.
 - Current slice: Phase AA complete.
   - `HouseStateInferenceModule.diagnostics()` exposes model first/last snapshot timestamps, model total snapshot count, and approved model entries only.
   - `AnomalyAnalyzer` adds disabled-by-default `learned_model_stale`, evaluating only approved house-state contexts provided by coordinator diagnostics.
@@ -2789,6 +2827,143 @@ Implementation plan, pending approval:
    - `admin_authored_only_plugin_families`
 6. Keep lifecycle hooks and proposal type ownership available for lifecycle-only descriptors.
 7. Update registry/diagnostics tests and dashboard expectations.
+
+---
+
+## Phase AD — Proposal/Reaction Lifecycle Management
+
+Status: IN PROGRESS, implementation complete through AD9 but current working-tree cleanup is not
+committed yet, on branch `feat/ad1-proposal-engine-invariants`.
+
+**Spec sections:**
+- `docs/specs/learning/proposal_lifecycle_spec.md`
+- `docs/specs/learning/learning_system_spec.md`
+
+**Goal:** Treat accepted proposal-backed behavior as a full lifecycle rather than a one-way
+proposal approval. The lifecycle must cover creation, accepted-rule monitoring, replacement
+suggestions, retirement suggestions, explicit user decisions, diagnostics, and restart-safe recovery.
+
+**Depends on:** Phase AC (review grouping), Phase H (approval store), Phase Y (tiered
+house-state learned context)
+
+### Design constraints
+
+- Proposal/reaction lifecycle state must remain coherent after Home Assistant restart.
+- Accepted/reviewed proposal identity must be preserved; refresh must not silently erase user
+  decisions.
+- Replacement and retirement must be reviewable proposals, not automatic destructive changes.
+- Replacement has priority when a stable alternative exists; retirement is suggested only when no
+  replacement candidate is stable enough.
+- User-modified reactions become the new user-approved baseline; Heima must not silently overwrite
+  them.
+- Dependency-unavailable signals are distinct from transient misses and must not automatically retire
+  a learned rule.
+- Lifecycle diagnostics must show enough state to debug why a rule is confirmed, contradicted,
+  missing context, unavailable, replacement-ready, or retirement-ready.
+
+### Working slices
+
+1. AD1 — ProposalEngine invariants and reviewed identity preservation:
+   - Preserve reviewed proposal identity across proposal refresh/recovery.
+   - Keep exact approval/rejection identity semantics from Phase AC.
+   - Ensure accepted proposal records can be associated with configured reactions.
+
+2. AD2 — Proposal lifecycle monitoring store:
+   - Add a dedicated lifecycle store for accepted proposal/reaction monitoring state.
+   - Store lifecycle records separately from proposal records.
+   - Keep lifecycle state restart-safe.
+
+3. AD3 — Reaction-link diagnostics:
+   - Expose whether an accepted proposal still has a linked configured reaction.
+   - Classify link state so missing/deleted/modified reactions are visible in diagnostics.
+   - Avoid hidden lifecycle state divergence when config changes outside the proposal path.
+
+4. AD4 — House-state lifecycle opportunity evaluation:
+   - Evaluate accepted house-state learned contexts against observed house-state events.
+   - Track confirmation, contradiction, context miss, transient unknown, and dependency unavailable
+     outcomes.
+   - Use stable aggregation windows rather than single observations.
+
+5. AD5 — Accepted-rule lifecycle policy:
+   - Apply lifecycle policy to determine confirmed, replacement candidate, retirement candidate,
+     and unavailable states.
+   - Prefer replacement over retirement when a stable alternative exists.
+   - Treat user-modified reactions as a user-approved baseline rather than as an error to overwrite.
+
+6. AD6 — Lifecycle suggestion generation:
+   - Generate reviewable lifecycle suggestions for replacement/retirement decisions.
+   - Keep suggestions in the proposal review path instead of performing automatic destructive
+     changes.
+   - Preserve proposal provenance and target references for user-facing review.
+
+7. AD7 — Lifecycle review decision application:
+   - Apply accepted lifecycle decisions to the target proposal/reaction.
+   - Preserve rejected/skipped decisions as explicit user feedback.
+   - Keep exact-key approval behavior intact.
+
+8. AD8 — Recovery and persistence tests:
+   - Add tests proving lifecycle state can be recovered after reload/restart.
+   - Verify accepted/reviewed identity and lifecycle records remain coherent.
+
+9. AD9 — Diagnostics and live verification:
+   - Add lifecycle diagnostics live probe.
+   - Add seeded services for deterministic house-state snapshot/event setup.
+   - Add `073_house_state_lifecycle_suggestion.py` seeded live test covering accepted house-state
+     proposal -> contradictory observations -> replacement suggestion.
+   - Add lifecycle-store clearing to learning reset so live tests and diagnostics start from a clean
+     baseline.
+   - Update test stubs to the current proposal lifecycle contract.
+   - Remove mypy warnings from lifecycle grouping/count code.
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `runtime/proposal_engine.py` | Lifecycle monitoring/evaluation, lifecycle suggestions, diagnostics, typed lifecycle counts |
+| `runtime/proposal_lifecycle_store.py` | Dedicated restart-safe lifecycle store and clear/reset support |
+| `runtime/analyzers/lifecycle.py` | Lifecycle hook typing and house-state grouping parsing fix |
+| `runtime/analyzers/registry.py` | Lifecycle-only proposal ownership and execution-mode integration |
+| `coordinator.py` | Lifecycle store ownership, lifecycle evaluation wiring, seeded test helpers, reset cleanup |
+| `services.py` | `heima.command` seed commands for deterministic lifecycle live tests |
+| `scripts/check_all_live.sh` | Include lifecycle seeded live test in `seeded_integration` tier |
+| `scripts/live_tests/073_house_state_lifecycle_suggestion.py` | New deterministic AD lifecycle replacement live test |
+| `scripts/README.md` | Document new live test |
+| `tests/` | Proposal lifecycle, recovery, seed command, dashboard/test-stub, and mypy-related coverage |
+
+### Acceptance criteria
+
+- [x] Reviewed proposal identity is preserved across refresh/recovery.
+- [x] Lifecycle state is stored separately from proposal records.
+- [x] Lifecycle state remains coherent after restart/reload.
+- [x] Accepted house-state learned contexts are monitored against runtime observations.
+- [x] Replacement suggestions are generated when a stable contradictory state appears.
+- [x] Retirement remains reviewable and does not run when a stable replacement exists.
+- [x] Dependency-unavailable is distinct from transient unknown and does not auto-retire rules.
+- [x] User-facing lifecycle changes go through proposal review.
+- [x] Diagnostics expose lifecycle records, reaction-link state, and lifecycle suggestions.
+- [x] Learning reset clears proposal lifecycle state.
+- [x] Deterministic seeded live test covers the replacement suggestion path.
+- [x] Local CI is green with mypy clean.
+- [ ] Current AD9 cleanup is committed.
+- [ ] Phase AD branch is merged into `feat/v2`.
+
+### Verification
+
+- `.venv/bin/python -m pytest tests/test_proposal_engine.py tests/test_house_state_learning_h4.py -q` — 126 passed.
+- `.venv/bin/mypy custom_components/heima` — success, no issues found in 165 source files.
+- `PATH="/Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component/.venv/bin:$PATH" bash scripts/ci_local.sh` — 1527 passed, ruff check passed, ruff format passed, mypy clean.
+- `source scripts/.env && ./scripts/check_all_live.sh` — `live_e2e` passed.
+- `source scripts/.env && ./scripts/check_all_live.sh --tier seeded_integration` — passed, including `073_house_state_lifecycle_suggestion.py`.
+- `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic` — passed.
+
+### Current open items
+
+- Commit current AD9 cleanup and dev-plan correction.
+- Exclude unrelated untracked local files from the commit:
+  - `DEBUG_HEIMA_STATE.txt`
+  - `VIBE.md`
+  - `docs/audit/code_quality_audit_plan_2026-06-08.md`
+- Merge `feat/ad1-proposal-engine-invariants` into `feat/v2` only after the AD commit is in place.
 
 ---
 
