@@ -1,7 +1,7 @@
 # Heima v2.1 — Development Plan
 
 **Spec:** `docs/specs/heima_v2_spec.md` (v2.1.0-draft)
-**Branch:** `feat/phase-u-physical-light-state`
+**Branch:** `feat/v2`
 **Solo developer:** Stefano — no backward compatibility with v1 required during development.
 
 ---
@@ -113,33 +113,35 @@ These constraints must never be violated. See spec §16 for rationale.
 | AA | Global drift detection | `DONE` | Y |
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 | AC | Proposal Review Grouping | `DONE` | H, Y |
-| AD | Proposal/Reaction Lifecycle Management | `IN PROGRESS` | AC, H, Y |
+| AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping.
-**Active phase:** Phase AD — Proposal/Reaction Lifecycle Management.
-**Branch:** `feat/ad1-proposal-engine-invariants`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management.
+**Active phase:** None. `feat/v2` is ready for the next planned phase or a new spec-first branch.
+**Branch:** `feat/v2`.
 **Next action:**
 
-Phase AD implementation is functionally complete through AD9 on the feature branch, but the last
-verification/test-stub/mypy cleanup changes are still in the working tree and must be committed
-before merge. Next action: review/stage the Phase AD files, commit the current AD9 verification
-cleanup, then merge to `feat/v2` after confirming no unrelated untracked files are included.
+Phase AD is committed, merged into `feat/v2`, and pushed. Next action: choose the next scoped
+spec-first change. One known open product gap is that activity power candidates discovered from HA
+are recorded as ambiguous candidates but are not yet user-bindable to concrete activity detectors
+such as `washing_machine_running`.
 Phase T deferred — see Phase T section for rationale.
 
 ### Current Working Notes
 
-- Current slice: Phase AD in progress.
+- Current slice: post-AD on `feat/v2`.
   - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` and
     `docs/specs/learning/learning_system_spec.md`.
-  - Goal: manage the full lifecycle of accepted learned proposal-backed reactions: birth, active
-    monitoring, drift/replacement suggestion, retirement suggestion, explicit user review, and
-    restart-safe recovery.
-  - Branch: `feat/ad1-proposal-engine-invariants`.
-  - Completed/committed AD slices on this branch:
+  - Phase AD goal completed: manage the full lifecycle of accepted learned proposal-backed
+    reactions: birth, active monitoring, drift/replacement suggestion, retirement suggestion,
+    explicit user review, and restart-safe recovery.
+  - Source branch: `feat/ad1-proposal-engine-invariants`.
+  - Merge target: `feat/v2`.
+  - Final AD commit included in `feat/v2`: `de65adf Complete proposal lifecycle live verification`.
+  - Completed AD slices:
     - AD1 — Preserve reviewed proposal identities across proposal refresh/recovery.
     - AD2 — Add proposal lifecycle monitoring store.
     - AD3 — Add proposal lifecycle/reaction-link diagnostics.
@@ -149,7 +151,7 @@ Phase T deferred — see Phase T section for rationale.
     - AD7 — Apply proposal lifecycle review decisions.
     - AD8 — Add proposal lifecycle recovery tests.
     - AD9a — Add proposal lifecycle diagnostics live probe.
-  - Current uncommitted AD9 cleanup:
+  - AD9 verification cleanup completed:
     - Add `heima.command` seed commands for house-state snapshots/events.
     - Add seeded live test `scripts/live_tests/073_house_state_lifecycle_suggestion.py`.
     - Add `073` to the `seeded_integration` live-test tier and script docs.
@@ -158,16 +160,12 @@ Phase T deferred — see Phase T section for rationale.
       `ProposalEngine`.
     - Update dashboard/house-state test stubs to the current proposal lifecycle contract.
     - Fix mypy issues in lifecycle grouping and lifecycle counts without changing runtime behavior.
-  - Verification already run after AD9 cleanup:
+  - Verification run after AD9 cleanup:
     - `PATH="/Users/StefanoIOD/MyProjects/heima-labs/ha-heima-component/.venv/bin:$PATH" bash scripts/ci_local.sh` — 1527 passed, ruff check passed, ruff format passed, mypy clean.
     - `source scripts/.env && ./scripts/check_all_live.sh` — `live_e2e` passed.
     - `source scripts/.env && ./scripts/check_all_live.sh --tier seeded_integration` — passed,
       including `073_house_state_lifecycle_suggestion.py`.
     - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic` — passed.
-  - Pending before merge:
-    - Commit tracked AD files plus new `scripts/live_tests/073_house_state_lifecycle_suggestion.py`.
-    - Do not include unrelated untracked files: `DEBUG_HEIMA_STATE.txt`, `VIBE.md`,
-      `docs/audit/code_quality_audit_plan_2026-06-08.md`.
 - Current slice: Phase AA complete.
   - `HouseStateInferenceModule.diagnostics()` exposes model first/last snapshot timestamps, model total snapshot count, and approved model entries only.
   - `AnomalyAnalyzer` adds disabled-by-default `learned_model_stale`, evaluating only approved house-state contexts provided by coordinator diagnostics.
@@ -2832,8 +2830,8 @@ Implementation plan, pending approval:
 
 ## Phase AD — Proposal/Reaction Lifecycle Management
 
-Status: IN PROGRESS, implementation complete through AD9 but current working-tree cleanup is not
-committed yet, on branch `feat/ad1-proposal-engine-invariants`.
+Status: DONE. Implemented through AD9 on branch `feat/ad1-proposal-engine-invariants`, then
+merged and pushed to `feat/v2`.
 
 **Spec sections:**
 - `docs/specs/learning/proposal_lifecycle_spec.md`
@@ -2944,8 +2942,8 @@ house-state learned context)
 - [x] Learning reset clears proposal lifecycle state.
 - [x] Deterministic seeded live test covers the replacement suggestion path.
 - [x] Local CI is green with mypy clean.
-- [ ] Current AD9 cleanup is committed.
-- [ ] Phase AD branch is merged into `feat/v2`.
+- [x] Current AD9 cleanup is committed.
+- [x] Phase AD branch is merged into `feat/v2`.
 
 ### Verification
 
@@ -2958,12 +2956,11 @@ house-state learned context)
 
 ### Current open items
 
-- Commit current AD9 cleanup and dev-plan correction.
-- Exclude unrelated untracked local files from the commit:
+- None for Phase AD.
+- Unrelated local untracked files are intentionally outside the AD merge:
   - `DEBUG_HEIMA_STATE.txt`
   - `VIBE.md`
   - `docs/audit/code_quality_audit_plan_2026-06-08.md`
-- Merge `feat/ad1-proposal-engine-invariants` into `feat/v2` only after the AD commit is in place.
 
 ---
 
