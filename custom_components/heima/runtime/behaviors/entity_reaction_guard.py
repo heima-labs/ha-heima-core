@@ -15,16 +15,16 @@ from .base import HeimaBehavior
 
 class EntityReactionGuardBehavior(HeimaBehavior):
     """Block reaction-generated entity steps when manual hold is active.
-    
+
     This is a generic guard behavior that can be configured to work with any domain
     (switch, light, cover, etc.). It checks for manual hold entities and blocks
     corresponding actions when the hold is active.
-    
+
     Configuration:
         - hold_entity_pattern: Pattern for hold entities (e.g., "heima_{domain}_manual_hold")
         - target_domain: Domain to filter (e.g., "switch", "light", "cover")
         - extract_entity_id: Optional function to extract entity ID from target
-    
+
     Hold entities:
         - Global: {hold_entity_pattern} (e.g., "heima_switch_manual_hold")
         - Per-entity: {hold_entity_pattern}_{entity_id} (e.g., "heima_switch_manual_hold_camera1")
@@ -56,9 +56,7 @@ class EntityReactionGuardBehavior(HeimaBehavior):
             if blocker:
                 entity_id = blocker.split(":", 1)[1]
                 self._blocked_total += 1
-                self._blocked_by_entity[entity_id] = (
-                    self._blocked_by_entity.get(entity_id, 0) + 1
-                )
+                self._blocked_by_entity[entity_id] = self._blocked_by_entity.get(entity_id, 0) + 1
                 filtered.append(dataclass_replace(step, blocked_by=blocker))
             else:
                 filtered.append(step)

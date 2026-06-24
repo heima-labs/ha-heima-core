@@ -225,10 +225,13 @@ def test_alarm_night_camera_privacy_returns_proposal_with_skip_states():
     assert proposal.suggested_reaction_config["alarm_states"] == ["armed_night"]
     assert proposal.suggested_reaction_config["skip_house_states"] == ["guest", "vacation"]
     assert len(proposal.suggested_reaction_config["steps"]) == 2
-    assert {
-        step["target"] for step in proposal.suggested_reaction_config["steps"]
-    } == {"switch.cam1_privacy", "switch.cam2_privacy"}
-    assert all(step["action"] == "switch.turn_on" for step in proposal.suggested_reaction_config["steps"])
+    assert {step["target"] for step in proposal.suggested_reaction_config["steps"]} == {
+        "switch.cam1_privacy",
+        "switch.cam2_privacy",
+    }
+    assert all(
+        step["action"] == "switch.turn_on" for step in proposal.suggested_reaction_config["steps"]
+    )
 
 
 @pytest.mark.asyncio

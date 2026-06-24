@@ -55,9 +55,7 @@ class TestEntityReactionGuardBehavior:
         filtered = default_behavior.apply_filter(plan, None)
         assert filtered.steps[0].blocked_by == ""
 
-    def test_global_hold_blocks_all_switches(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_global_hold_blocks_all_switches(self, mock_state: _MockState) -> None:
         """Global hold should block all steps for the target domain."""
         mock_state._binary["heima_switch_manual_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -88,9 +86,7 @@ class TestEntityReactionGuardBehavior:
         assert behavior._blocked_total == 2
         assert behavior._blocked_by_entity["global"] == 2
 
-    def test_per_entity_hold_blocks_only_that_entity(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_per_entity_hold_blocks_only_that_entity(self, mock_state: _MockState) -> None:
         """Per-entity hold should block only the corresponding entity."""
         mock_state._binary["heima_switch_manual_hold_camera1_privacy"] = True
         behavior = EntityReactionGuardBehavior(
@@ -119,9 +115,7 @@ class TestEntityReactionGuardBehavior:
         assert filtered.steps[0].blocked_by == "switch.manual_hold:camera1_privacy"
         assert filtered.steps[1].blocked_by == ""
 
-    def test_base_entity_hold_blocks_with_suffix(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_base_entity_hold_blocks_with_suffix(self, mock_state: _MockState) -> None:
         """Hold entity without suffix (e.g., camera1) should block camera1_privacy."""
         mock_state._binary["heima_switch_manual_hold_camera1"] = True
         behavior = EntityReactionGuardBehavior(
@@ -144,9 +138,7 @@ class TestEntityReactionGuardBehavior:
         # Should match camera1 (without _privacy suffix)
         assert filtered.steps[0].blocked_by == "switch.manual_hold:camera1"
 
-    def test_different_domain_not_blocked(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_different_domain_not_blocked(self, mock_state: _MockState) -> None:
         """Steps for other domains should not be blocked."""
         mock_state._binary["heima_switch_manual_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -168,9 +160,7 @@ class TestEntityReactionGuardBehavior:
         filtered = behavior.apply_filter(plan, None)
         assert filtered.steps[0].blocked_by == ""
 
-    def test_already_blocked_step_not_reblocked(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_already_blocked_step_not_reblocked(self, mock_state: _MockState) -> None:
         """Steps already blocked by another guard should not be reblocked."""
         mock_state._binary["heima_switch_manual_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -193,9 +183,7 @@ class TestEntityReactionGuardBehavior:
         filtered = behavior.apply_filter(plan, None)
         assert filtered.steps[0].blocked_by == "some_other_guard"
 
-    def test_invalid_target_format_not_blocked(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_invalid_target_format_not_blocked(self, mock_state: _MockState) -> None:
         """Steps with invalid target format should not be blocked."""
         mock_state._binary["heima_switch_manual_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -230,9 +218,7 @@ class TestEntityReactionGuardBehavior:
         assert diagnostics["blocked_total"] == 0
         assert diagnostics["blocked_by_entity"] == {}
 
-    def test_custom_pattern_and_domain(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_custom_pattern_and_domain(self, mock_state: _MockState) -> None:
         """Custom hold pattern and target domain should work."""
         mock_state._binary["custom_light_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -255,9 +241,7 @@ class TestEntityReactionGuardBehavior:
         # The pattern is formatted with domain="light" -> "custom_light_hold"
         assert filtered.steps[0].blocked_by == "light.manual_hold:global"
 
-    def test_works_for_cover_domain(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_works_for_cover_domain(self, mock_state: _MockState) -> None:
         """Behavior should work for cover domain."""
         mock_state._binary["heima_cover_manual_hold"] = True
         behavior = EntityReactionGuardBehavior(
@@ -283,9 +267,7 @@ class TestEntityReactionGuardBehavior:
 class TestEntityReactionGuardBehaviorIntegration:
     """Integration tests for EntityReactionGuardBehavior."""
 
-    def test_multiple_holds_multiple_blocks(
-        self, mock_state: _MockState
-    ) -> None:
+    def test_multiple_holds_multiple_blocks(self, mock_state: _MockState) -> None:
         """Multiple hold entities should block their corresponding targets."""
         mock_state._binary = {
             "heima_switch_manual_hold": False,  # Global off
@@ -300,9 +282,15 @@ class TestEntityReactionGuardBehaviorIntegration:
         )
         plan = ApplyPlan(
             steps=[
-                ApplyStep(domain="switch", target="switch.camera1_privacy", action="turn_on", reason="t1"),
-                ApplyStep(domain="switch", target="switch.camera2_privacy", action="turn_on", reason="t2"),
-                ApplyStep(domain="switch", target="switch.camera3_privacy", action="turn_on", reason="t3"),
+                ApplyStep(
+                    domain="switch", target="switch.camera1_privacy", action="turn_on", reason="t1"
+                ),
+                ApplyStep(
+                    domain="switch", target="switch.camera2_privacy", action="turn_on", reason="t2"
+                ),
+                ApplyStep(
+                    domain="switch", target="switch.camera3_privacy", action="turn_on", reason="t3"
+                ),
             ]
         )
         filtered = behavior.apply_filter(plan, None)

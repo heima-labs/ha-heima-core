@@ -89,16 +89,22 @@ def _climate_sleep(rule: SemanticRule, options: dict[str, Any]) -> ReactionPropo
     )
 
 
-def _camera_privacy_proposal(rule: SemanticRule, options: dict[str, Any]) -> ReactionProposal | None:
+def _camera_privacy_proposal(
+    rule: SemanticRule, options: dict[str, Any]
+) -> ReactionProposal | None:
     if not _alarm_entity(options):
         return None
-    privacy_entities = _configured_camera_entity_entities(options, field="privacy_entity", domain="switch")
+    privacy_entities = _configured_camera_entity_entities(
+        options, field="privacy_entity", domain="switch"
+    )
     if not privacy_entities:
         return None
     return _proposal(
         rule,
         alarm_state="armed_night",
-        steps=[{"domain": "switch", "target": e, "action": "switch.turn_on"} for e in privacy_entities],
+        steps=[
+            {"domain": "switch", "target": e, "action": "switch.turn_on"} for e in privacy_entities
+        ],
         skip_house_states=["guest", "vacation"],
     )
 
@@ -251,12 +257,12 @@ def _configured_camera_entity_entities(
     domain: str,
 ) -> list[str]:
     """Extract entity IDs from camera_evidence_sources for a specific field.
-    
+
     Args:
         options: The full configuration options
         field: The field name to extract (e.g., "privacy_entity", "light_entity")
         domain: The expected domain prefix (e.g., "switch", "light")
-    
+
     Returns:
         List of entity IDs that match the domain prefix
     """
