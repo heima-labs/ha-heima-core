@@ -111,6 +111,7 @@ def test_alarm_state_action_normalizes_climate_steps() -> None:
                 "params": {"hvac_mode": "off", "entity_id": "climate.living_room"},
             }
         ],
+        "skip_house_states": [],
     }
 
 

@@ -405,6 +405,7 @@ def test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps(
                 "params": {"hvac_mode": "off", "entity_id": "climate.living_room"},
             }
         ],
+        "skip_house_states": [],
     }
 
 

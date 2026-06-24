@@ -114,24 +114,30 @@ These constraints must never be violated. See spec §16 for rationale.
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 | AC | Proposal Review Grouping | `DONE` | H, Y |
 | AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
+| AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD |
+| AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management.
-**Active phase:** None. `feat/v2` is ready for the next planned phase or a new spec-first branch.
-**Branch:** `feat/v2`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
+**Active phase:** None. `feat/privacy-guard-alarm-states` is ready for review.
+**Branch:** `feat/privacy-guard-alarm-states` (from `feat/v2`).
 **Next action:**
-
-Phase AD is committed, merged into `feat/v2`, and pushed. Next action: choose the next scoped
-spec-first change. One known open product gap is that activity power candidates discovered from HA
-are recorded as ambiguous candidates but are not yet user-bindable to concrete activity detectors
-such as `washing_machine_running`.
-Phase T deferred — see Phase T section for rationale.
+Ready for code review and merge into `feat/v2`.
 
 ### Current Working Notes
 
+- Current slice: **AE completed on `feat/privacy-guard-alarm-states`** (2026-06-15).
+  - Spec source: `docs/specs/core/privacy_guard_for_alarm_states.md`.
+  - All AE slices completed (AE1-AE5):
+    - AE1: Created `EntityReactionGuardBehavior` (generic guard for any entity domain)
+    - AE2: Extended `camera_evidence_sources` with `privacy_entity` and `manual_hold_entity` fields
+    - AE3: Added `skip_house_states` to `AlarmStateActionReaction`
+    - AE4: Added `alarm_night_camera_privacy` semantic rule with `skip_house_states` support
+    - AE5: Verification complete — 1541 tests pass, ruff check/format pass, mypy clean
+  - Commits: 6092458, 2ac388f, fcd7daf, 2d4995a, fb6e875
 - Current slice: post-AD on `feat/v2`.
   - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` and
     `docs/specs/learning/learning_system_spec.md`.
@@ -2961,6 +2967,105 @@ house-state learned context)
   - `DEBUG_HEIMA_STATE.txt`
   - `VIBE.md`
   - `docs/audit/code_quality_audit_plan_2026-06-08.md`
+
+---
+
+## Phase AE — Camera Privacy Guard & Extensible Entity Actions
+
+**Spec:** `docs/specs/core/privacy_guard_for_alarm_states.md`
+**Status:** `NOT STARTED`
+**Depends on:** AD
+**Branch:** `feat/privacy-guard-alarm-states`
+
+### Goal
+Implement a **generic** system to:
+1. Block automatic actions on **any entity** when a manual hold is active.
+2. Skip reactions based on `house_state` (e.g., `guest`, `vacation`).
+3. Generate **automatic proposals** for camera privacy actions (extensible to other use cases).
+
+### Slices
+
+1. **AE1 — `EntityReactionGuardBehavior` (Generic)**
+   - Create: `custom_components/heima/runtime/behaviors/entity_reaction_guard.py`
+   - Purpose: Block actions on **any entity** (switch, light, cover, etc.) when the corresponding manual hold is active.
+   - Contract:
+     - Configurable `hold_entity_pattern` (default: `"heima_{domain}_manual_hold"`).
+     - Configurable `target_domain` (e.g., `"switch"`, `"light"`, `"cover"`).
+   - Logic:
+     - If global hold entity (e.g., `heima_switch_manual_hold`) is ON → block all actions for that domain.
+     - If per-entity hold (e.g., `heima_switch_manual_hold_{entity_id}`) is ON → block only that entity.
+   - Acceptance Criteria:
+     - [ ] Blocks actions on `switch.*_privacy` if `heima_switch_manual_hold` or `heima_switch_manual_hold_{entity_id}` is ON.
+     - [ ] Works for any domain (`switch`, `light`, `cover`, etc.).
+     - [ ] Unit tests: `tests/test_entity_reaction_guard.py`.
+
+2. **AE2 — Extend `camera_evidence_sources` with Optional Fields**
+   - Modify: `custom_components/heima/config_flow/_steps_security.py`
+   - Add optional fields to `camera_evidence_sources`:
+     - `privacy_entity`: `switch.*` (optional).
+     - `manual_hold_entity`: `input_boolean.*` (optional, default: global).
+   - Acceptance Criteria:
+     - [ ] Optional fields do not break existing configurations.
+     - [ ] User can configure them via **options flow** (UI).
+     - [ ] Validation: `privacy_entity` must be a `switch.*` entity, `manual_hold_entity` must be `input_boolean.*`.
+
+3. **AE3 — `skip_house_states` in `AlarmStateActionReaction`**
+   - Modify: `custom_components/heima/runtime/reactions/alarm_policy.py`
+   - Add:
+     - `skip_house_states: list[str]` field to the reaction contract.
+     - Skip logic in `evaluate()` if `house_state` is in `skip_house_states`.
+   - Acceptance Criteria:
+     - [ ] Actions are skipped if `house_state` is in `skip_house_states`.
+     - [ ] All existing `alarm_policy.py` tests still pass.
+
+4. **AE4 — Semantic Policy for Privacy (Generic Helpers)**
+   - Modify: `custom_components/heima/runtime/semantic_policies.py`
+   - Add:
+     - New semantic rule: `alarm_night_camera_privacy`.
+     - Generic helper: `_configured_camera_entity_entities(options, field, domain)`.
+     - Evaluator: `_camera_privacy_proposal()` using the generic helper.
+   - Acceptance Criteria:
+     - [ ] Rule generates proposals **only if** `privacy_entity` is configured.
+     - [ ] Proposal includes `skip_house_states=["guest", "vacation"]`.
+     - [ ] Unit tests: `tests/test_semantic_policies_camera_privacy.py`.
+
+5. **AE5 — Integration and Verification**
+   - All **660 existing tests** must pass.
+   - New tests:
+     - `tests/test_entity_reaction_guard.py` (AE1).
+     - `tests/test_alarm_policy_skip_house_states.py` (AE3).
+     - `tests/test_semantic_policies_camera_privacy.py` (AE4).
+   - Acceptance Criteria:
+     - [ ] `PATH=".venv/bin:$PATH" bash scripts/ci_local.sh` — all tests pass.
+     - [ ] `ruff check` and `ruff format` pass.
+     - [ ] Mypy clean.
+
+### Files to Modify/Create
+
+| # | Action | File | Slice |
+|---|--------|------|-------|
+| 1 | Create | `custom_components/heima/runtime/behaviors/entity_reaction_guard.py` | AE1 |
+| 2 | Modify | `custom_components/heima/runtime/behaviors/__init__.py` | AE1 |
+| 3 | Modify | `custom_components/heima/config_flow/_steps_security.py` | AE2 |
+| 4 | Modify | `custom_components/heima/runtime/reactions/alarm_policy.py` | AE3 |
+| 5 | Modify | `custom_components/heima/runtime/semantic_policies.py` | AE4 |
+| 6 | Create | `tests/test_entity_reaction_guard.py` | AE5 |
+| 7 | Create/Modify | `tests/test_alarm_policy_skip_house_states.py` | AE5 |
+| 8 | Create/Modify | `tests/test_semantic_policies_camera_privacy.py` | AE5 |
+
+### Acceptance Criteria
+
+- [ ] `EntityReactionGuardBehavior` blocks switch actions when manual hold is active.
+- [ ] `skip_house_states` skips actions for configured house states.
+- [ ] Semantic policy generates proposals for camera privacy when configured.
+- [ ] Optional fields in `camera_evidence_sources` work in options flow.
+- [ ] All 660 existing tests pass.
+- [ ] New unit tests cover all new functionality.
+- [ ] Local CI (`scripts/ci_local.sh`) passes.
+
+### Current open items
+
+- None for Phase AE.
 
 ---
 

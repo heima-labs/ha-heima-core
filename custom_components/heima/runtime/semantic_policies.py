@@ -44,6 +44,10 @@ BUILTIN_SEMANTIC_RULES: tuple[SemanticRule, ...] = (
         rule_id="alarm_night_climate_sleep",
         description="Set configured thermostats to sleep preset when the alarm is armed night.",
     ),
+    SemanticRule(
+        rule_id="alarm_night_camera_privacy",
+        description="Enable camera privacy when alarm is armed night (except guest/vacation states).",
+    ),
 )
 
 
@@ -85,11 +89,32 @@ def _climate_sleep(rule: SemanticRule, options: dict[str, Any]) -> ReactionPropo
     )
 
 
+def _camera_privacy_proposal(
+    rule: SemanticRule, options: dict[str, Any]
+) -> ReactionProposal | None:
+    if not _alarm_entity(options):
+        return None
+    privacy_entities = _configured_camera_entity_entities(
+        options, field="privacy_entity", domain="switch"
+    )
+    if not privacy_entities:
+        return None
+    return _proposal(
+        rule,
+        alarm_state="armed_night",
+        steps=[
+            {"domain": "switch", "target": e, "action": "switch.turn_on"} for e in privacy_entities
+        ],
+        skip_house_states=["guest", "vacation"],
+    )
+
+
 _RULE_EVALUATORS: dict[str, Callable[[SemanticRule, dict[str, Any]], ReactionProposal | None]] = {
     "alarm_away_lights_off": _lights_off,
     "alarm_triggered_lights_on": _lights_on,
     "alarm_away_climate_off": _climate_off,
     "alarm_night_climate_sleep": _climate_sleep,
+    "alarm_night_camera_privacy": _camera_privacy_proposal,
 }
 
 
@@ -147,7 +172,15 @@ def _proposal(
     *,
     alarm_state: str,
     steps: list[dict[str, Any]],
+    skip_house_states: list[str] | None = None,
 ) -> ReactionProposal:
+    config: dict[str, Any] = {
+        "reaction_type": "alarm_state_action",
+        "alarm_states": [alarm_state],
+        "steps": steps,
+    }
+    if skip_house_states:
+        config["skip_house_states"] = skip_house_states
     return ReactionProposal(
         analyzer_id=_ANALYZER_ID,
         reaction_type="alarm_state_action",
@@ -155,13 +188,7 @@ def _proposal(
         confidence=1.0,
         origin="admin_authored",
         identity_key=rule.rule_id,
-        suggested_reaction_config=normalize_alarm_state_action_config(
-            {
-                "reaction_type": "alarm_state_action",
-                "alarm_states": [alarm_state],
-                "steps": steps,
-            }
-        ),
+        suggested_reaction_config=normalize_alarm_state_action_config(config),
     )
 
 
@@ -222,3 +249,32 @@ def _unique_entities(values: list[Any], *, domain: str) -> list[str]:
         seen.add(entity_id)
         entities.append(entity_id)
     return entities
+
+
+def _configured_camera_entity_entities(
+    options: dict[str, Any],
+    field: str,
+    domain: str,
+) -> list[str]:
+    """Extract entity IDs from camera_evidence_sources for a specific field.
+
+    Args:
+        options: The full configuration options
+        field: The field name to extract (e.g., "privacy_entity", "light_entity")
+        domain: The expected domain prefix (e.g., "switch", "light")
+
+    Returns:
+        List of entity IDs that match the domain prefix
+    """
+    security = options.get(OPT_SECURITY)
+    if not isinstance(security, dict):
+        return []
+    sources = security.get("camera_evidence_sources", [])
+    entities: list[str] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        entity = source.get(field)
+        if entity and isinstance(entity, str):
+            entities.append(entity.strip())
+    return _unique_entities(entities, domain=domain)
