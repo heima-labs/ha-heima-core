@@ -114,25 +114,30 @@ These constraints must never be violated. See spec §16 for rationale.
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 | AC | Proposal Review Grouping | `DONE` | H, Y |
 | AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
-| AE | Camera Privacy Guard & Extensible Entity Actions | `NOT STARTED` | AD |
+| AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD |
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management.
-**Active phase:** AE — Camera Privacy Guard & Extensible Entity Actions.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
+**Active phase:** None. `feat/privacy-guard-alarm-states` is ready for review.
 **Branch:** `feat/privacy-guard-alarm-states` (from `feat/v2`).
 **Next action:**
-Start AE1 — Implement `EntityReactionGuardBehavior` in `custom_components/heima/runtime/behaviors/entity_reaction_guard.py`.
+Ready for code review and merge into `feat/v2`.
 
 ### Current Working Notes
 
-- Current slice: **AE on `feat/privacy-guard-alarm-states`** (started 2026-06-15).
+- Current slice: **AE completed on `feat/privacy-guard-alarm-states`** (2026-06-15).
   - Spec source: `docs/specs/core/privacy_guard_for_alarm_states.md`.
-  - Goal: Implement generic entity reaction guard, skip_house_states, and semantic policy for camera privacy.
-  - Next concrete step: AE1 — Create `EntityReactionGuardBehavior`.
+  - All AE slices completed (AE1-AE5):
+    - AE1: Created `EntityReactionGuardBehavior` (generic guard for any entity domain)
+    - AE2: Extended `camera_evidence_sources` with `privacy_entity` and `manual_hold_entity` fields
+    - AE3: Added `skip_house_states` to `AlarmStateActionReaction`
+    - AE4: Added `alarm_night_camera_privacy` semantic rule with `skip_house_states` support
+    - AE5: Verification complete — 1541 tests pass, ruff check/format pass, mypy clean
+  - Commits: 6092458, 2ac388f, fcd7daf, 2d4995a, fb6e875
 - Current slice: post-AD on `feat/v2`.
   - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` and
     `docs/specs/learning/learning_system_spec.md`.
