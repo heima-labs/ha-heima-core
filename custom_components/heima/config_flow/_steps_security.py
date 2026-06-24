@@ -119,23 +119,29 @@ class _SecurityStepsMixin:
             return (
                 "Formato atteso per ogni camera: "
                 "{id, display_name?, enabled, role, motion_entity?, person_entity?, "
-                "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?}.\n"
+                "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?, "
+                "privacy_entity?, manual_hold_entity?}.\n"
                 "Ruoli consigliati: entry, garage.\n"
                 "Esempio: "
                 '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
                 '"person_entity": "binary_sensor.front_cam_person", '
                 '"contact_entity": "binary_sensor.front_door_contact", '
+                '"privacy_entity": "switch.front_cam_privacy", '
+                '"manual_hold_entity": "input_boolean.heima_switch_manual_hold_front_cam", '
                 '"return_home_contributor": true, "security_priority": "high"}}'
             )
         return (
             "Expected shape for each camera source: "
             "{id, display_name?, enabled, role, motion_entity?, person_entity?, "
-            "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?}.\n"
+            "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?, "
+            "privacy_entity?, manual_hold_entity?}.\n"
             "Recommended roles: entry, garage.\n"
             "Example: "
             '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
             '"person_entity": "binary_sensor.front_cam_person", '
             '"contact_entity": "binary_sensor.front_door_contact", '
+            '"privacy_entity": "switch.front_cam_privacy", '
+            '"manual_hold_entity": "input_boolean.heima_switch_manual_hold_front_cam", '
             '"return_home_contributor": true, "security_priority": "high"}}'
         )
 
@@ -218,5 +224,14 @@ class _SecurityStepsMixin:
                 )
             ):
                 return {"camera_evidence_sources": "required"}
+
+            # Validate optional fields
+            for item_field, expected_prefix in (
+                ("privacy_entity", "switch."),
+                ("manual_hold_entity", "input_boolean."),
+            ):
+                entity_value = str(item.get(item_field) or "").strip()
+                if entity_value and not entity_value.startswith(expected_prefix):
+                    return {"camera_evidence_sources": f"invalid_{item_field}"}
 
         return {}
