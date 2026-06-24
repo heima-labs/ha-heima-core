@@ -80,10 +80,12 @@ class AlarmStateActionReaction(HeimaReaction):
         alarm_states: list[str],
         steps: list[dict[str, Any]],
         reaction_id: str | None = None,
+        skip_house_states: list[str] | None = None,
     ) -> None:
         self._alarm_states = _normalize_alarm_states(alarm_states)
         self._steps = _normalize_steps(steps)
         self._reaction_id = reaction_id or self.__class__.__name__
+        self._skip_house_states = skip_house_states or []
         self._last_fired_state: str | None = None
 
     @property
@@ -93,9 +95,13 @@ class AlarmStateActionReaction(HeimaReaction):
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         if not history or not self._alarm_states or not self._steps:
             return []
-        security_state = str(getattr(history[-1], "security_state", "") or "").strip()
+        snapshot = history[-1]
+        security_state = str(getattr(snapshot, "security_state", "") or "").strip()
         if security_state not in self._alarm_states:
             self._last_fired_state = None
+            return []
+        house_state = str(getattr(snapshot, "house_state", "") or "").strip()
+        if self._skip_house_states and house_state in self._skip_house_states:
             return []
         if security_state == self._last_fired_state:
             return []
@@ -109,6 +115,7 @@ class AlarmStateActionReaction(HeimaReaction):
         return {
             "alarm_states": list(self._alarm_states),
             "steps": len(self._steps),
+            "skip_house_states": list(self._skip_house_states),
             "last_fired_state": self._last_fired_state,
         }
 
@@ -131,6 +138,7 @@ def normalize_alarm_state_action_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "reaction_type": "alarm_state_action",
         "alarm_states": _normalize_alarm_states(cfg.get("alarm_states")),
         "steps": _normalize_steps(cfg.get("steps")),
+        "skip_house_states": _normalize_house_states(cfg.get("skip_house_states")),
     }
 
 
@@ -143,12 +151,14 @@ def build_alarm_state_action_reaction(
     normalized = normalize_alarm_state_action_config(cfg)
     alarm_states = list(normalized.get("alarm_states") or [])
     steps = list(normalized.get("steps") or [])
+    skip_house_states = list(normalized.get("skip_house_states") or [])
     if not alarm_states or not steps:
         return None
     return AlarmStateActionReaction(
         alarm_states=alarm_states,
         steps=steps,
         reaction_id=proposal_id,
+        skip_house_states=skip_house_states,
     )
 
 
@@ -212,6 +222,19 @@ def _normalize_alarm_states(raw: Any) -> list[str]:
     for value in list(raw or []):
         state = str(value).strip()
         if state not in VALID_ALARM_STATES or state in seen:
+            continue
+        seen.add(state)
+        states.append(state)
+    return states
+
+
+def _normalize_house_states(raw: Any) -> list[str]:
+    """Normalize house states list."""
+    states: list[str] = []
+    seen: set[str] = set()
+    for value in list(raw or []):
+        state = str(value).strip()
+        if not state or state in seen:
             continue
         seen.add(state)
         states.append(state)

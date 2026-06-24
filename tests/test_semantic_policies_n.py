@@ -115,6 +115,7 @@ def test_alarm_away_lights_off_returns_admin_authored_proposal():
                 "params": {"entity_id": "light.studio_desk"},
             },
         ],
+        "skip_house_states": [],
     }
 
 
@@ -160,6 +161,7 @@ def test_alarm_away_climate_off_returns_admin_authored_proposal():
                 "params": {"entity_id": "climate.hall", "hvac_mode": "off"},
             }
         ],
+        "skip_house_states": [],
     }
 
 
@@ -179,6 +181,7 @@ def test_alarm_night_climate_sleep_returns_sleep_preset_proposal():
                 "params": {"entity_id": "climate.hall", "preset_mode": "sleep"},
             }
         ],
+        "skip_house_states": [],
     }
 
 
