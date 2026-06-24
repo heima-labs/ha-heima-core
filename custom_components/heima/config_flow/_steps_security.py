@@ -122,7 +122,8 @@ class _SecurityStepsMixin:
                 "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?, "
                 "privacy_entity?, manual_hold_entity?}.\n"
                 "Ruoli consigliati: entry, garage.\n"
-                "Esempio: "
+                "Nota: una camera può essere configurata SOLO con privacy_entity (senza altri campi di evidenza).\n"
+                "Esempio (evidenza + privacy): "
                 '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
                 '"person_entity": "binary_sensor.front_cam_person", '
                 '"contact_entity": "binary_sensor.front_door_contact", '
@@ -136,7 +137,8 @@ class _SecurityStepsMixin:
             "vehicle_entity?, contact_entity?, return_home_contributor?, security_priority?, "
             "privacy_entity?, manual_hold_entity?}.\n"
             "Recommended roles: entry, garage.\n"
-            "Example: "
+            "Note: a camera can be configured with ONLY privacy_entity (without other evidence fields).\n"
+            "Example (evidence + privacy): "
             '{"entry_cam": {"display_name": "Front Door Camera", "enabled": true, "role": "entry", '
             '"person_entity": "binary_sensor.front_cam_person", '
             '"contact_entity": "binary_sensor.front_door_contact", '
@@ -221,6 +223,7 @@ class _SecurityStepsMixin:
                     "person_entity",
                     "vehicle_entity",
                     "contact_entity",
+                    "privacy_entity",  # Support camera with privacy-only configuration
                 )
             ):
                 return {"camera_evidence_sources": "required"}
