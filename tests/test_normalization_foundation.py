@@ -82,6 +82,22 @@ def test_input_normalizer_security_mapping_and_transition():
     assert obs_pending.state == "transition"
 
 
+def test_input_normalizer_security_preserves_alarm_policy_states():
+    normalizer = InputNormalizer(
+        _hass(
+            {
+                "alarm.night": "armed_night",
+                "alarm.vacation": "armed_vacation",
+                "alarm.triggered": "triggered",
+            }
+        )
+    )
+
+    assert normalizer.security("alarm.night", {}).state == "armed_night"
+    assert normalizer.security("alarm.vacation", {}).state == "armed_vacation"
+    assert normalizer.security("alarm.triggered", {}).state == "triggered"
+
+
 def test_builtin_registry_has_core_plugins():
     reg = NormalizationFusionRegistry()
     register_builtin_fusion_plugins(reg)

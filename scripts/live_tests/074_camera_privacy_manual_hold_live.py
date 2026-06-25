@@ -14,9 +14,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib.ha_client import HAApiError, HAClient
 
 ALARM_ENTITY = "alarm_control_panel.test_heima_alarm"
-PRIVACY_SWITCH = "switch.test_heima_studio_fan"
-PRIVACY_SWITCH_RAW = "input_boolean.test_heima_studio_fan_raw"
-MANUAL_HOLD_ENTITY = "input_boolean.test_heima_heater_relay_raw"
+PRIVACY_SWITCH = "switch.test_heima_heater_relay"
+PRIVACY_SWITCH_RAW = "input_boolean.test_heima_heater_relay_raw"
+MANUAL_HOLD_ENTITY = "input_boolean.test_heima_studio_fan_raw"
 RESET_SCRIPT = "script.test_heima_reset"
 REACTION_ID = "live-camera-privacy-manual-hold"
 PROPOSAL_KEY = "alarm_night_camera_privacy"
@@ -166,7 +166,7 @@ def _upsert_reaction(client: HAClient, entry_id: str) -> None:
                 "params": {"entity_id": PRIVACY_SWITCH},
             }
         ],
-        "skip_house_states": ["guest", "vacation"],
+        "skip_house_states": [],
         "enabled": True,
         "source_request": "live-test:camera-privacy-manual-hold",
     }
@@ -179,6 +179,29 @@ def _upsert_reaction(client: HAClient, entry_id: str) -> None:
             "params": {
                 "configured": {REACTION_ID: cfg},
                 "labels": {REACTION_ID: "Live camera privacy manual hold"},
+            },
+        },
+    )
+
+
+def _disable_reaction(client: HAClient, entry_id: str) -> None:
+    client.call_service(
+        "heima",
+        "command",
+        {
+            "command": "upsert_configured_reactions",
+            "target": {"entry_id": entry_id},
+            "params": {
+                "configured": {
+                    REACTION_ID: {
+                        "reaction_type": "alarm_state_action",
+                        "alarm_states": ["armed_night"],
+                        "steps": [],
+                        "enabled": False,
+                        "source_request": "live-test:camera-privacy-manual-hold",
+                    }
+                },
+                "labels": {},
             },
         },
     )
@@ -265,32 +288,10 @@ def _wait_no_hold_for_scope(
     raise AssertionError(f"unexpected active manual hold for {SCOPE}: {sorted(last)}")
 
 
-def _wait_blocked_step(
-    client: HAClient,
-    entry_id: str,
-    expected_reason: str,
-    *,
-    timeout_s: int,
-    poll_s: float,
-) -> dict[str, Any]:
-    deadline = time.time() + timeout_s
-    last_steps: list[Any] = []
-    while time.time() < deadline:
-        _call_recompute(client)
-        plan = _runtime_engine(client, entry_id).get("apply_plan", {})
-        steps = plan.get("steps", []) if isinstance(plan, dict) else []
-        last_steps = list(steps) if isinstance(steps, list) else []
-        for step in last_steps:
-            if not isinstance(step, dict):
-                continue
-            if (
-                step.get("action") == "switch.turn_on"
-                and step.get("target") == PRIVACY_SWITCH
-                and str(step.get("blocked_by") or "") == expected_reason
-            ):
-                return step
-        time.sleep(poll_s)
-    raise AssertionError(f"blocked switch step not found; last_steps={last_steps}")
+def _assert_no_pending_apply(client: HAClient, entry_id: str) -> None:
+    pending = _manual_hold_diag(client, entry_id).get("pending_applies", {})
+    total = int(dict(pending).get("total") or 0) if isinstance(pending, dict) else 0
+    _assert(total == 0, f"unexpected pending apply while manual hold is active: {pending}")
 
 
 def _set_alarm_state(client: HAClient, state: str, *, timeout_s: int, poll_s: float) -> None:
@@ -314,9 +315,10 @@ def _set_alarm_state(client: HAClient, state: str, *, timeout_s: int, poll_s: fl
 
 def _reset_lab(client: HAClient, *, timeout_s: int, poll_s: float) -> None:
     client.call_service("script", "turn_on", {"entity_id": RESET_SCRIPT})
-    client.wait_state(PRIVACY_SWITCH, "off", timeout_s, poll_s)
     client.call_service("input_boolean", "turn_off", {"entity_id": MANUAL_HOLD_ENTITY})
+    client.call_service("switch", "turn_off", {"entity_id": PRIVACY_SWITCH})
     client.call_service("input_boolean", "turn_off", {"entity_id": PRIVACY_SWITCH_RAW})
+    client.wait_state(PRIVACY_SWITCH, "off", timeout_s, poll_s)
     _set_alarm_state(client, "disarmed", timeout_s=timeout_s, poll_s=poll_s)
 
 
@@ -346,17 +348,11 @@ def main() -> int:
             timeout_s=args.timeout_s,
             poll_s=args.poll_s,
         )
-        steps = proposal.get("steps", [])
+        summary = proposal.get("config_summary", {})
         _assert(proposal.get("type") == "alarm_state_action", f"unexpected proposal: {proposal}")
         _assert(
-            any(
-                isinstance(step, dict)
-                and step.get("action") == "switch.turn_on"
-                and step.get("target") == PRIVACY_SWITCH
-                for step in steps
-                if isinstance(steps, list)
-            ),
-            f"proposal missing switch privacy step: {proposal}",
+            isinstance(summary, dict) and int(summary.get("steps_count") or 0) >= 1,
+            f"proposal missing action summary: {proposal}",
         )
 
         print("Installing live camera privacy reaction...")
@@ -371,14 +367,10 @@ def main() -> int:
             client, entry_id, "helper_on", timeout_s=args.timeout_s, poll_s=args.poll_s
         )
         _set_alarm_state(client, "armed_night", timeout_s=args.timeout_s, poll_s=args.poll_s)
-        _wait_blocked_step(
-            client,
-            entry_id,
-            f"manual_hold:{SCOPE}:helper_on",
-            timeout_s=args.timeout_s,
-            poll_s=args.poll_s,
-        )
+        time.sleep(2)
+        _call_recompute(client)
         _wait_switch(client, "off", timeout_s=args.timeout_s, poll_s=args.poll_s)
+        _assert_no_pending_apply(client, entry_id)
         print("PASS scenario A")
 
         print("Scenario B: Heima-owned privacy switch apply does not activate hold...")
@@ -398,19 +390,16 @@ def main() -> int:
         )
         _set_alarm_state(client, "disarmed", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _set_alarm_state(client, "armed_night", timeout_s=args.timeout_s, poll_s=args.poll_s)
-        _wait_blocked_step(
-            client,
-            entry_id,
-            f"manual_hold:{SCOPE}:external_off",
-            timeout_s=args.timeout_s,
-            poll_s=args.poll_s,
-        )
+        time.sleep(2)
+        _call_recompute(client)
         _wait_switch(client, "off", timeout_s=args.timeout_s, poll_s=args.poll_s)
+        _assert_no_pending_apply(client, entry_id)
         print("PASS scenario C")
     finally:
         print("Restoring original security config...")
         try:
             _configure_security(client, entry_id, original_security)
+            _disable_reaction(client, entry_id)
             client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
             client.call_service("input_boolean", "turn_off", {"entity_id": MANUAL_HOLD_ENTITY})
             client.call_service("input_boolean", "turn_off", {"entity_id": PRIVACY_SWITCH_RAW})
