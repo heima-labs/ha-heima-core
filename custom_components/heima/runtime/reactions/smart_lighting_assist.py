@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from ...room_sources import room_signal_bucket_labels
 from ..contracts import ApplyStep
+from ..manual_hold import ManualHoldManager, ManualHoldScope
 from ..scheduler import ScheduledRuntimeJob
 from ..snapshot import DecisionSnapshot
 from ._lighting_review import (
@@ -52,20 +52,6 @@ _LEARNED_MIN_VISITS = 20
 _DEFAULT_MANUAL_OVERRIDE_WINDOW_MIN = 30
 _DEFAULT_DIM_BRIGHTNESS_PCT = 15
 _DEFAULT_DIM_RATIO = 0.3
-_PENDING_APPLY_TTL_S = 5.0
-_PENDING_BRIGHTNESS_TOLERANCE = 5
-_PENDING_COLOR_TEMP_TOLERANCE = 100
-
-
-@dataclass(frozen=True)
-class PendingApply:
-    """Expected light state from one smart-lighting service call."""
-
-    expected_state: str
-    timestamp: float
-    ttl: float = _PENDING_APPLY_TTL_S
-    expected_brightness: int | None = None
-    expected_color_temp: int | None = None
 
 
 class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
@@ -92,6 +78,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         entity_steps: list[dict[str, Any]] | None = None,
         outdoor_lux_scale: dict[str, float] | None = None,
         manual_override_window_min: int = _DEFAULT_MANUAL_OVERRIDE_WINDOW_MIN,
+        manual_hold_manager: ManualHoldManager | None = None,
         reaction_id: str | None = None,
     ) -> None:
         room_type = room_type if room_type in ROOM_TYPE_DEFAULTS else "generic"
@@ -149,7 +136,7 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._current_outdoor_bucket: str | None = None
         self._current_outdoor_scale: float | None = None
         self._current_house_state = "unknown"
-        self._pending_applies: dict[str, PendingApply] = {}
+        self._manual_hold_manager = manual_hold_manager or ManualHoldManager()
 
     def evaluate(self, history: list[DecisionSnapshot]) -> list[ApplyStep]:
         if not history:
@@ -198,7 +185,6 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         self._last_applied_profile = None
         self._last_applied_outdoor_scale = None
         self._selected_profile = None
-        self._pending_applies.clear()
 
     def diagnostics(self) -> dict[str, Any]:
         data = self._base_diagnostics()
@@ -224,7 +210,9 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
                 "dim_due_monotonic": self._dim_due_monotonic,
                 "off_due_monotonic": self._off_due_monotonic,
                 "dim_applied": self._dim_applied,
-                "pending_applies": len(self._pending_applies),
+                "pending_applies": self._manual_hold_manager.diagnostics()["pending_applies"][
+                    "total"
+                ],
             }
         )
         return data
@@ -241,45 +229,16 @@ class RoomSmartLightingAssistReaction(_BaseRoomLightingAssist):
         entity_id = str(step.params.get("entity_id") or "").strip()
         if not entity_id or not self.tracks_light_entity(entity_id):
             return
-        if step.action == "light.turn_on":
-            self._pending_applies[entity_id] = PendingApply(
-                expected_state="on",
-                timestamp=time.monotonic(),
-                expected_brightness=_coerce_int(step.params.get("brightness")),
-                expected_color_temp=_coerce_int(step.params.get("color_temp_kelvin")),
-            )
-        elif step.action == "light.turn_off":
-            self._pending_applies[entity_id] = PendingApply(
-                expected_state="off",
-                timestamp=time.monotonic(),
-            )
+        self._manual_hold_manager.register_pending_apply(
+            step,
+            scope=ManualHoldScope("light", "room", self._room_id),
+        )
 
     def consume_pending_apply(self, entity_id: str, new_state: Any) -> bool:
         """Return True when a state change matches a pending Heima-owned apply."""
-        entity_id = str(entity_id or "").strip()
-        pending = self._pending_applies.pop(entity_id, None)
-        if pending is None:
-            return False
-        if time.monotonic() - pending.timestamp >= pending.ttl:
-            return False
-        state_value = str(getattr(new_state, "state", "") or "").strip().lower()
-        if state_value != pending.expected_state:
-            return False
-        attrs = getattr(new_state, "attributes", None)
-        attrs = attrs if isinstance(attrs, dict) else {}
-        if not _attr_matches(
-            attrs.get("brightness"),
-            pending.expected_brightness,
-            _PENDING_BRIGHTNESS_TOLERANCE,
-        ):
-            return False
-        if not _attr_matches(
-            attrs.get("color_temp_kelvin"),
-            pending.expected_color_temp,
-            _PENDING_COLOR_TEMP_TOLERANCE,
-        ):
-            return False
-        return True
+        return (
+            self._manual_hold_manager.classify_state_change(entity_id, new_state) == "heima_owned"
+        )
 
     def handle_external_light_change(self, entity_id: str, new_state: str) -> None:
         """Apply manual override state for an external light change."""
@@ -576,6 +535,7 @@ def build_room_smart_lighting_assist_reaction(
         },
         manual_override_window_min=_coerce_int(cfg.get("manual_override_window_min"))
         or _DEFAULT_MANUAL_OVERRIDE_WINDOW_MIN,
+        manual_hold_manager=getattr(engine, "_manual_hold_manager", None),
         reaction_id=proposal_id,
     )
 
@@ -761,13 +721,6 @@ def _coerce_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def _attr_matches(value: Any, expected: int | None, tolerance: int) -> bool:
-    if expected is None:
-        return True
-    observed = _coerce_int(value)
-    return observed is not None and abs(observed - expected) <= tolerance
 
 
 def _coerce_int(value: Any) -> int | None:

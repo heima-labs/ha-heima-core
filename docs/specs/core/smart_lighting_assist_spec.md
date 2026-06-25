@@ -6,7 +6,7 @@ Active — introduced in Phase AB.
 Supersedes `contextual_room_lighting_assist_spec.md` and `room_darkness_lighting_assist` (both
 types removed with hard cut in Phase AB).
 
-**Last reviewed:** 2026-06-10
+**Last reviewed:** 2026-06-25
 
 ---
 
@@ -172,12 +172,14 @@ When an external `on` is received on any entity while the reaction is active or 
 
 ### Implementation contract
 
-- `RoomSmartLightingAssistReaction` owns `pending_applies: dict[str, PendingApply]` and all
-  override state (`manual_override_active`, `manual_on_hold`)
-- The reaction exposes `register_pending_apply_for_step(step: ApplyStep)` — called by the
-  execution layer **after** apply-plan filtering and immediately before `async_call`; not inside
-  `evaluate()`. This prevents stale pending records from steps that are later blocked by
-  constraints or guards.
+- `ManualHoldManager` owns pending apply provenance and classifies light state changes as
+  Heima-owned or external.
+- `RoomSmartLightingAssistReaction` owns smart-lighting-specific override state
+  (`manual_override_active`, `manual_on_hold`) and release policy.
+- The reaction exposes `register_pending_apply_for_step(step: ApplyStep)`, delegating to
+  `ManualHoldManager`. The execution layer calls it **after** apply-plan filtering and immediately
+  before `async_call`; not inside `evaluate()`. This prevents stale pending records from steps that
+  are later blocked by constraints or holds.
 - The reaction exposes `handle_external_light_change(entity_id, new_state)`, called by a
   coordinator-level `STATE_CHANGED` dispatcher
 - The dispatcher filters events to entities listed in active smart-lighting reaction profiles

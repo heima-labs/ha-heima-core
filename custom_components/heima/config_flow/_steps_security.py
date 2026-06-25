@@ -237,4 +237,8 @@ class _SecurityStepsMixin:
                 if entity_value and not entity_value.startswith(expected_prefix):
                     return {"camera_evidence_sources": f"invalid_{item_field}"}
 
+            privacy_action = str(item.get("privacy_action") or "").strip()
+            if privacy_action and privacy_action not in {"turn_on", "turn_off"}:
+                return {"camera_evidence_sources": "invalid_privacy_action"}
+
         return {}

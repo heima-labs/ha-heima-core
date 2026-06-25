@@ -217,7 +217,12 @@ def test_alarm_night_camera_privacy_returns_proposal_with_skip_states():
     options = _base_options()
     options["security"]["camera_evidence_sources"] = [
         {"id": "cam1", "role": "entry", "privacy_entity": "switch.cam1_privacy"},
-        {"id": "cam2", "role": "entry", "privacy_entity": "switch.cam2_privacy"},
+        {
+            "id": "cam2",
+            "role": "entry",
+            "privacy_entity": "switch.cam2_privacy",
+            "privacy_action": "turn_off",
+        },
     ]
     proposal = _rule("alarm_night_camera_privacy").evaluate(options)
     assert proposal is not None
@@ -229,9 +234,13 @@ def test_alarm_night_camera_privacy_returns_proposal_with_skip_states():
         "switch.cam1_privacy",
         "switch.cam2_privacy",
     }
-    assert all(
-        step["action"] == "switch.turn_on" for step in proposal.suggested_reaction_config["steps"]
-    )
+    actions_by_target = {
+        step["target"]: step["action"] for step in proposal.suggested_reaction_config["steps"]
+    }
+    assert actions_by_target == {
+        "switch.cam1_privacy": "switch.turn_on",
+        "switch.cam2_privacy": "switch.turn_off",
+    }
 
 
 @pytest.mark.asyncio

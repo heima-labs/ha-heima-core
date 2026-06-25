@@ -94,16 +94,20 @@ def _camera_privacy_proposal(
 ) -> ReactionProposal | None:
     if not _alarm_entity(options):
         return None
-    privacy_entities = _configured_camera_entity_entities(
-        options, field="privacy_entity", domain="switch"
-    )
-    if not privacy_entities:
+    privacy_configs = _configured_camera_privacy_configs(options)
+    if not privacy_configs:
         return None
     return _proposal(
         rule,
         alarm_state="armed_night",
         steps=[
-            {"domain": "switch", "target": e, "action": "switch.turn_on"} for e in privacy_entities
+            {
+                "domain": "switch",
+                "target": entity_id,
+                "action": f"switch.{action}",
+                "params": {"entity_id": entity_id},
+            }
+            for entity_id, action in privacy_configs
         ],
         skip_house_states=["guest", "vacation"],
     )
@@ -278,3 +282,25 @@ def _configured_camera_entity_entities(
         if entity and isinstance(entity, str):
             entities.append(entity.strip())
     return _unique_entities(entities, domain=domain)
+
+
+def _configured_camera_privacy_configs(options: dict[str, Any]) -> list[tuple[str, str]]:
+    """Extract unique privacy entity/action pairs from camera evidence sources."""
+    security = options.get(OPT_SECURITY)
+    if not isinstance(security, dict):
+        return []
+    sources = security.get("camera_evidence_sources", [])
+    configs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        entity_id = str(source.get("privacy_entity") or "").strip()
+        if not entity_id.startswith("switch.") or entity_id in seen:
+            continue
+        seen.add(entity_id)
+        action = str(source.get("privacy_action") or "turn_on").strip()
+        if action not in {"turn_on", "turn_off"}:
+            action = "turn_on"
+        configs.append((entity_id, action))
+    return configs

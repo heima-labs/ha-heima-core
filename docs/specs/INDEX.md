@@ -36,6 +36,7 @@ Related practical guides live outside this tree:
 - `core/security_mismatch_generalization_spec.md` — canonical `security.mismatch` taxonomy and compatibility contract
 - `core/runtime_scheduler_spec.md` — runtime timer scheduler
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
+- `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/reaction_identity_spec.md` — canonical `reaction_type` identity and persisted reaction contract
 - `core/scheduled_routine_spec.md` — bounded admin-authored time-based routine contract

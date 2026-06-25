@@ -607,6 +607,66 @@ async def test_security_step_rejects_camera_source_without_any_evidence_entity()
 
 
 @pytest.mark.asyncio
+async def test_security_step_accepts_privacy_only_camera_source_with_action_and_hold():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": [
+                {
+                    "id": "entry_cam",
+                    "role": "entry",
+                    "privacy_entity": "switch.entry_cam_privacy",
+                    "privacy_action": "turn_off",
+                    "manual_hold_entity": "input_boolean.entry_cam_privacy_hold",
+                }
+            ],
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["security"]["camera_evidence_sources"] == [
+        {
+            "id": "entry_cam",
+            "role": "entry",
+            "privacy_entity": "switch.entry_cam_privacy",
+            "privacy_action": "turn_off",
+            "manual_hold_entity": "input_boolean.entry_cam_privacy_hold",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_security_step_rejects_invalid_privacy_action():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": [
+                {
+                    "id": "entry_cam",
+                    "role": "entry",
+                    "privacy_entity": "switch.entry_cam_privacy",
+                    "privacy_action": "toggle",
+                }
+            ],
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "security"
+    assert result["errors"]["camera_evidence_sources"] == "invalid_privacy_action"
+
+
+@pytest.mark.asyncio
 async def test_security_step_shows_camera_evidence_help_text():
     flow = _flow()
 

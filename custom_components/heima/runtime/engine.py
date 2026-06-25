@@ -81,6 +81,7 @@ from .invariants import (
     SecurityPresenceMismatch,
     SensorStuck,
 )
+from .manual_hold import ManualHoldManager, ManualHoldReason, ManualHoldScope
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .outcome_tracker import OutcomeTracker
@@ -202,6 +203,7 @@ class HeimaEngine:
         self._configured_reaction_ids: set[str] = set()
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
+        self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
         self._signal_router = SignalRouter()
         self._learning_modules: list[ILearningModule] = []
@@ -300,13 +302,19 @@ class HeimaEngine:
         return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
 
     def _register_pending_apply_for_step(self, step: ApplyStep) -> None:
-        """Register smart-lighting pending apply provenance for a step about to execute."""
+        """Register pending apply provenance for a step about to execute."""
         reaction = self._reaction_from_step_source(step)
         if reaction is None:
+            self._manual_hold_manager.register_pending_apply(step)
             return
         register_pending = getattr(reaction, "register_pending_apply_for_step", None)
         if callable(register_pending):
             register_pending(step)
+            return
+        self._manual_hold_manager.register_pending_apply(
+            step,
+            source_reaction_type=self._reaction_type_for_reaction_id(reaction.reaction_id),
+        )
 
     def _reaction_type_for_reaction_id(self, reaction_id: str) -> str | None:
         provenance = self._configured_reaction_metadata(reaction_id)
@@ -347,6 +355,28 @@ class HeimaEngine:
             handle_external = getattr(reaction, "handle_external_light_change", None)
             if callable(handle_external):
                 handle_external(entity_id, state_value)
+
+    def handle_camera_privacy_state_changed(self, event: Event) -> None:
+        """Route configured camera privacy switch changes to manual-hold handling."""
+        entity_id = str(event.data.get("entity_id") or "").strip()
+        if not entity_id or entity_id not in self._camera_privacy_scopes_by_entity():
+            return
+        new_state = event.data.get("new_state")
+        state_value = str(getattr(new_state, "state", "") or "").strip().lower()
+        if state_value not in {"on", "off"}:
+            return
+        if self._manual_hold_manager.classify_state_change(entity_id, new_state) == "heima_owned":
+            return
+        scope = self._camera_privacy_scopes_by_entity()[entity_id]
+        self._manual_hold_manager.activate_hold(
+            scope,
+            ManualHoldReason(
+                kind=f"external_{state_value}",
+                source_entity=entity_id,
+                message="External camera privacy switch change",
+            ),
+            release_policy="manual_clear",
+        )
 
     def signal_burst_recent(self, room_id: str, signal_name: str, *, window_s: int) -> bool:
         """Return whether a canonical burst was observed recently for a room signal."""
@@ -1631,6 +1661,9 @@ class HeimaEngine:
             outcome_tracker.reset_positive_streak(reaction_id)
 
     def _dispatch_apply_filter(self, plan: ApplyPlan, snapshot: DecisionSnapshot) -> ApplyPlan:
+        self._sync_lighting_explicit_holds()
+        self._sync_camera_privacy_explicit_holds()
+        self._sync_heating_explicit_hold()
         for behavior in self._behaviors:
             try:
                 plan = behavior.apply_filter(plan, snapshot)
@@ -1642,7 +1675,113 @@ class HeimaEngine:
                     hook="apply_filter",
                     error="exception_raised",
                 )
-        return plan
+        return self._dispatch_manual_hold_filter(plan)
+
+    def _dispatch_manual_hold_filter(self, plan: ApplyPlan) -> ApplyPlan:
+        filtered: list[ApplyStep] = []
+        changed = False
+        for step in plan.steps:
+            if step.blocked_by:
+                filtered.append(step)
+                continue
+            blocker = self._manual_hold_manager.held_reason_for_step(step)
+            if blocker:
+                changed = True
+                filtered.append(dataclass_replace(step, blocked_by=blocker))
+            else:
+                filtered.append(step)
+        if not changed:
+            return plan
+        return ApplyPlan(plan_id=plan.plan_id, steps=filtered)
+
+    def _camera_privacy_scopes_by_entity(self) -> dict[str, ManualHoldScope]:
+        security = self._entry.options.get(OPT_SECURITY, {})
+        if not isinstance(security, dict):
+            return {}
+        scopes: dict[str, ManualHoldScope] = {}
+        for source in security.get("camera_evidence_sources", []) or []:
+            if not isinstance(source, dict):
+                continue
+            entity_id = str(source.get("privacy_entity") or "").strip()
+            if entity_id.startswith("switch."):
+                scopes[entity_id] = ManualHoldScope("switch", "entity", entity_id)
+        return scopes
+
+    def _camera_privacy_manual_hold_entities(self) -> dict[str, str]:
+        security = self._entry.options.get(OPT_SECURITY, {})
+        if not isinstance(security, dict):
+            return {}
+        holds: dict[str, str] = {}
+        for source in security.get("camera_evidence_sources", []) or []:
+            if not isinstance(source, dict):
+                continue
+            privacy_entity = str(source.get("privacy_entity") or "").strip()
+            hold_entity = str(source.get("manual_hold_entity") or "").strip()
+            if privacy_entity.startswith("switch.") and hold_entity.startswith("input_boolean."):
+                holds[privacy_entity] = hold_entity
+        return holds
+
+    def _sync_camera_privacy_explicit_holds(self) -> None:
+        scopes = self._camera_privacy_scopes_by_entity()
+        holds = self._camera_privacy_manual_hold_entities()
+        for privacy_entity, hold_entity in holds.items():
+            scope = scopes.get(privacy_entity)
+            if scope is None:
+                continue
+            state = self._hass.states.get(hold_entity)
+            is_on = str(getattr(state, "state", "") or "").strip().lower() == "on"
+            if is_on:
+                self._manual_hold_manager.activate_hold(
+                    scope,
+                    ManualHoldReason(
+                        kind="helper_on",
+                        source_entity=hold_entity,
+                        message="Camera privacy manual hold helper is on",
+                    ),
+                    release_policy="helper_off",
+                )
+            else:
+                self._manual_hold_manager.release_scope(scope, reason_kind="helper_on")
+
+    def _sync_lighting_explicit_holds(self) -> None:
+        rooms = self._entry.options.get(OPT_LIGHTING_ROOMS, [])
+        if not isinstance(rooms, list):
+            return
+        for item in rooms:
+            if not isinstance(item, dict) or not bool(item.get("enable_manual_hold", True)):
+                continue
+            room_id = str(item.get("room_id") or "").strip()
+            if not room_id:
+                continue
+            scope = ManualHoldScope("lighting", "room", room_id)
+            hold_entity = f"heima_lighting_hold_{room_id}"
+            if bool(self._state.get_binary(hold_entity)):
+                self._manual_hold_manager.activate_hold(
+                    scope,
+                    ManualHoldReason(
+                        kind="helper_on",
+                        source_entity=hold_entity,
+                        message="Lighting room manual hold helper is on",
+                    ),
+                    release_policy="helper_off",
+                )
+            else:
+                self._manual_hold_manager.release_scope(scope, reason_kind="helper_on")
+
+    def _sync_heating_explicit_hold(self) -> None:
+        scope = ManualHoldScope("climate", "domain", "heating")
+        if bool(self._state.get_binary("heima_heating_manual_hold")):
+            self._manual_hold_manager.activate_hold(
+                scope,
+                ManualHoldReason(
+                    kind="helper_on",
+                    source_entity="heima_heating_manual_hold",
+                    message="Heating manual hold helper is on",
+                ),
+                release_policy="helper_off",
+            )
+        else:
+            self._manual_hold_manager.release_scope(scope, reason_kind="helper_on")
 
     def _queue_behavior_error_event(
         self,
@@ -1848,6 +1987,7 @@ class HeimaEngine:
                 _LOGGER.warning("Skipping missing switch entity: %s", switch_entity)
                 continue
             try:
+                self._register_pending_apply_for_step(step)
                 await self._hass.services.async_call(
                     "switch",
                     step.action.split(".", 1)[1],
@@ -2229,6 +2369,11 @@ class HeimaEngine:
                 outcome_tracker.diagnostics()
                 if (outcome_tracker := getattr(self, "_outcome_tracker", None)) is not None
                 else {}
+            ),
+            "manual_hold": (
+                manual_hold_manager.diagnostics()
+                if (manual_hold_manager := getattr(self, "_manual_hold_manager", None)) is not None
+                else ManualHoldManager().diagnostics()
             ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},
             "reactions": {r.reaction_id: r.diagnostics() for r in self._reactions},

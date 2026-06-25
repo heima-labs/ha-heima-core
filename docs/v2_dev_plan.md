@@ -114,22 +114,42 @@ These constraints must never be violated. See spec §16 for rationale.
 | AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
 | AC | Proposal Review Grouping | `DONE` | H, Y |
 | AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
-| AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD |
-| AB | Smart Lighting Automation (Unified) | `PLANNED` | U, X |
+| AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD, MH |
+| MH | Manual Hold Framework | `DONE` | AB, AE |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
-**Active phase:** None. `feat/privacy-guard-alarm-states` is ready for review.
-**Branch:** `feat/privacy-guard-alarm-states` (from `feat/v2`).
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
+**Active phase:** None.
+**Branch:** `feat/v2`.
 **Next action:**
-Ready for code review and merge into `feat/v2`.
+Review Manual Hold Framework and AE camera privacy changes. Optional next verification: `bash scripts/ci_local.sh`.
 
 ### Current Working Notes
 
-- Current slice: **AE completed on `feat/privacy-guard-alarm-states`** (2026-06-15).
+- Current slice: **Manual Hold Framework + AE residual work completed** (2026-06-25).
+  - Spec source: `docs/specs/core/manual_hold_framework_spec.md`.
+  - Reason: AE camera privacy manual hold overlapped with existing smart-lighting manual override,
+    `LightingReactionGuardBehavior`, heating manual hold, and the initial unwired
+    `EntityReactionGuardBehavior`.
+  - Implemented:
+    - Added shared `ManualHoldManager` with pending apply provenance and scope-aware holds.
+    - Migrated smart-lighting pending apply classification to the manager while preserving
+      reaction-owned release policy.
+    - Added central manager-backed apply filtering.
+    - Adopted camera privacy scopes, `manual_hold_entity`, switch pending apply, switch
+      state-change handling, and `privacy_action`.
+    - Represented `heima_heating_manual_hold` as a manager-backed domain scope.
+    - Removed legacy `EntityReactionGuardBehavior` and `LightingReactionGuardBehavior`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/ -q` — 1546 passed.
+    - `.venv/bin/ruff check ...` on touched files — passed.
+    - `.venv/bin/ruff format --check ...` on touched files — passed after formatting.
+    - `scripts/ci_local.sh` not run in this slice.
+
+- Previous slice: **AE initial implementation on `feat/privacy-guard-alarm-states`** (2026-06-15).
   - Spec source: `docs/specs/core/privacy_guard_for_alarm_states.md`.
   - All AE slices completed (AE1-AE5):
     - AE1: Created `EntityReactionGuardBehavior` (generic guard for any entity domain)
@@ -2970,12 +2990,123 @@ house-state learned context)
 
 ---
 
+## Phase MH — Manual Hold Framework
+
+**Spec:** `docs/specs/core/manual_hold_framework_spec.md`
+**Status:** `DONE`
+**Depends on:** AB smart-lighting behavior, AE audit
+**Branch:** `feat/v2` or a dedicated `feat/manual-hold-framework` branch
+
+### Goal
+
+Replace fragmented manual-hold behavior with one shared runtime framework used by smart lighting,
+camera privacy, heating, and future entity automations.
+
+The framework must support:
+
+1. pending-apply provenance to distinguish Heima-owned state changes from external/manual changes;
+2. implicit holds from external state changes;
+3. explicit holds from configured helper entities;
+4. scope-aware blocking for entity, room, reaction, and domain targets;
+5. diagnostics explaining active holds and pending applies.
+
+### Slices
+
+1. **MH1 — Core framework skeleton**
+   - Add `ManualHoldScope`, `ManualHoldReason`, `ManualHoldState`, `PendingApply`, and
+     `ManualHoldManager`.
+   - Wire manager into `HeimaEngine` diagnostics.
+   - No behavior changes.
+   - Acceptance:
+     - [x] Unit tests for scope serialization/keying.
+     - [x] Unit tests for pending apply match/expiry.
+     - [x] Diagnostics expose empty manager state.
+
+2. **MH2 — Smart-lighting migration**
+   - Move pending-apply storage and external light-change classification from
+     `RoomSmartLightingAssistReaction` into `ManualHoldManager`.
+   - Preserve current behavior:
+     - external OFF suppresses automatic turn-on;
+     - external ON suppresses profile re-application;
+     - Heima-owned light changes do not activate hold;
+     - release policies stay unchanged.
+   - Acceptance:
+     - [x] Existing `tests/test_room_smart_lighting_assist_reaction.py` remain green.
+     - [x] New manager-level tests cover light pending apply and external classification.
+
+3. **MH3 — Central apply-filter integration**
+   - Add manager-backed hold filtering after domain/reaction steps are merged and before execution.
+   - Do not overwrite existing `blocked_by`.
+   - Keep step blocking visible in diagnostics.
+   - Acceptance:
+     - [x] Held steps are marked `blocked_by="manual_hold:..."`.
+     - [x] Blocked steps are not executed.
+     - [x] Pending apply is not registered for blocked steps.
+
+4. **MH4 — AE camera privacy adoption**
+   - Register camera privacy scopes from `security.camera_evidence_sources[*].privacy_entity`.
+   - Use `manual_hold_entity` as explicit hold source.
+   - Register pending apply for `switch.turn_on` and `switch.turn_off` privacy steps.
+   - Route state changes for configured `privacy_entity` switches to the manager.
+   - Implement `privacy_action` support in semantic policy and options-flow validation.
+   - Acceptance:
+     - [x] Missing `privacy_action` defaults to `switch.turn_on`.
+     - [x] `privacy_action="turn_off"` emits `switch.turn_off`.
+     - [x] Invalid `privacy_action` is rejected.
+     - [x] Heima-owned switch privacy changes do not activate hold.
+     - [x] External/manual switch privacy changes activate entity-scoped hold.
+     - [x] `manual_hold_entity` blocks camera privacy actions while on.
+
+5. **MH5 — Heating adoption**
+   - Represent `heima_heating_manual_hold` as a domain-scoped explicit hold.
+   - Preserve existing heating behavior.
+   - Acceptance:
+     - [x] Existing heating manual-hold tests remain green.
+     - [x] Heating diagnostics expose manager-backed hold state.
+
+6. **MH6 — Cleanup and docs**
+   - Remove or refactor `EntityReactionGuardBehavior`.
+   - Replace or refactor `LightingReactionGuardBehavior`.
+   - Update:
+     - `docs/specs/core/manual_hold_framework_spec.md`
+     - `docs/specs/core/smart_lighting_assist_spec.md`
+     - `docs/specs/core/privacy_guard_for_alarm_states.md`
+     - heating docs if touched.
+   - Acceptance:
+     - [x] No duplicate manual-hold behavior classes remain for migrated automations.
+     - [ ] Full local CI passes.
+
+### Current open items
+
+- Full `scripts/ci_local.sh` not run in this slice.
+
+---
+
 ## Phase AE — Camera Privacy Guard & Extensible Entity Actions
 
 **Spec:** `docs/specs/core/privacy_guard_for_alarm_states.md`
-**Status:** `NOT STARTED`
+**Status:** `DONE`
 **Depends on:** AD
-**Branch:** `feat/privacy-guard-alarm-states`
+**Branch:** `feat/v2`
+
+**Spec revision note — 2026-06-25**
+
+Phase AE was initially implemented on `feat/privacy-guard-alarm-states` and merged into `feat/v2`,
+but the implementation audit found that camera privacy manual hold is not equivalent to the
+smart-lighting manual override contract:
+
+- The initial `EntityReactionGuardBehavior` existed and had unit tests, but was not registered by
+  the runtime. It has now been removed in favor of `ManualHoldManager`.
+- `manual_hold_entity` is accepted and validated but not consumed by runtime blocking logic.
+- `privacy_action` is specified but not implemented; camera privacy proposals currently emit
+  `switch.turn_on` only.
+- Switch privacy actions do not have pending-apply provenance, so Heima-owned switch changes cannot
+  be distinguished from external/manual switch changes.
+
+Resolution implemented:
+
+- Implemented Phase MH — Manual Hold Framework (`docs/specs/core/manual_hold_framework_spec.md`).
+- Completed MH4 camera privacy adoption plus `privacy_action` support.
 
 ### Goal
 Implement a **generic** system to:
@@ -3055,17 +3186,19 @@ Implement a **generic** system to:
 
 ### Acceptance Criteria
 
-- [ ] `EntityReactionGuardBehavior` blocks switch actions when manual hold is active.
-- [ ] `skip_house_states` skips actions for configured house states.
-- [ ] Semantic policy generates proposals for camera privacy when configured.
-- [ ] Optional fields in `camera_evidence_sources` work in options flow.
-- [ ] All 660 existing tests pass.
-- [ ] New unit tests cover all new functionality.
-- [ ] Local CI (`scripts/ci_local.sh`) passes.
+- [x] `skip_house_states` skips actions for configured house states.
+- [x] Semantic policy generates proposals for camera privacy when `privacy_entity` is configured.
+- [x] `privacy_entity` and `manual_hold_entity` validation does not break existing camera source configuration.
+- [x] `privacy_entity`-only camera source configuration is accepted.
+- [x] `privacy_action` supports `turn_on` and `turn_off` with default `turn_on`.
+- [x] `manual_hold_entity` blocks camera privacy actions through the shared manual-hold framework.
+- [x] Heima-owned camera privacy switch changes do not activate manual hold.
+- [x] External/manual camera privacy switch changes activate manual hold.
+- [ ] Full local CI (`scripts/ci_local.sh`) passes after MH + AE completion.
 
 ### Current open items
 
-- None for Phase AE.
+- Full `scripts/ci_local.sh` not run in this slice.
 
 ---
 
