@@ -247,7 +247,7 @@ def smart_lighting_cfg(
     *,
     reaction_id: str,
     brightness: int = 144,
-    color_temp_kelvin: int = 2900,
+    color_temp_kelvin: int | None = 2900,
     timeout_s: int = 30,
     dim_warning_s: int = 10,
     outdoor_lux_signal: str | None = None,
