@@ -24,7 +24,7 @@ This audit reflects the code currently on `feat/v2`.
 |---|---|---|
 | AE1 — manual hold framework | Implemented | Runtime blocking is now owned by `ManualHoldManager`; the previous `EntityReactionGuardBehavior` was removed. |
 | AE2 — camera source fields | Implemented | `privacy_entity`, `privacy_action`, and `manual_hold_entity` are accepted and validated. `privacy_entity` alone is allowed. |
-| AE3 — `skip_house_states` | Implemented | `AlarmStateActionReaction` normalizes and honors `skip_house_states`. |
+| AE3 — house-state filters | Implemented | `AlarmStateActionReaction` normalizes and honors `skip_house_states` and `only_house_states`. |
 | AE4 — camera privacy semantic rule | Implemented | `alarm_night_camera_privacy` emits switch steps for configured `privacy_entity` values, honors `privacy_action`, and includes `skip_house_states=["guest", "vacation"]`. |
 | AE5 — verification | Implemented | Full pytest passed: `1546 passed` on 2026-06-25. Ruff check/format on touched files passed. Full `scripts/ci_local.sh` was not rerun during this slice. |
 
@@ -76,9 +76,15 @@ Camera privacy uses the shared `ManualHoldManager`:
 
 Implemented reaction: `alarm_state_action`.
 
-Supported AE field:
+`steps` use the canonical `ApplyStep` contract documented in
+`docs/specs/core/apply_step_contract.md`. For direct camera privacy switch actions,
+`target` and `params.entity_id` must both be the same `switch.*` entity.
+
+Supported AE fields:
 
 ```yaml
+only_house_states:
+  - home
 skip_house_states:
   - guest
   - vacation
@@ -88,6 +94,8 @@ Runtime behavior:
 
 - If the current `security_state` is not configured, the reaction does nothing and clears
   `_last_fired_state`.
+- If `only_house_states` is configured and current `house_state` is not in that list, the
+  reaction does nothing.
 - If `security_state` is configured but current `house_state` is in `skip_house_states`, the
   reaction does nothing.
 - If the same configured alarm state was already fired, the reaction does nothing.
@@ -142,6 +150,26 @@ Disable privacy on armed night:
   "role": "perimeter",
   "privacy_entity": "switch.perimeter_privacy",
   "privacy_action": "turn_off"
+}
+```
+
+Custom alarm-state action with a positive house-state filter:
+
+```json
+{
+  "reaction_type": "alarm_state_action",
+  "alarm_states": ["armed_home"],
+  "only_house_states": ["home"],
+  "steps": [
+    {
+      "domain": "switch",
+      "target": "switch.front_door_privacy",
+      "action": "switch.turn_off",
+      "params": {
+        "entity_id": "switch.front_door_privacy"
+      }
+    }
+  ]
 }
 ```
 

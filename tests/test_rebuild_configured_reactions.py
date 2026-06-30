@@ -406,6 +406,7 @@ def test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps(
             }
         ],
         "skip_house_states": [],
+        "only_house_states": [],
     }
 
 

@@ -117,6 +117,7 @@ def test_alarm_away_lights_off_returns_admin_authored_proposal():
             },
         ],
         "skip_house_states": [],
+        "only_house_states": [],
     }
 
 
@@ -163,6 +164,7 @@ def test_alarm_away_climate_off_returns_admin_authored_proposal():
             }
         ],
         "skip_house_states": [],
+        "only_house_states": [],
     }
 
 
@@ -183,6 +185,7 @@ def test_alarm_night_climate_sleep_returns_sleep_preset_proposal():
             }
         ],
         "skip_house_states": [],
+        "only_house_states": [],
     }
 
 

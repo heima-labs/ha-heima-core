@@ -3140,13 +3140,16 @@ Implement a **generic** system to:
      - [ ] User can configure them via **options flow** (UI).
      - [ ] Validation: `privacy_entity` must be a `switch.*` entity, `manual_hold_entity` must be `input_boolean.*`.
 
-3. **AE3 — `skip_house_states` in `AlarmStateActionReaction`**
+3. **AE3 — house-state filters in `AlarmStateActionReaction`**
    - Modify: `custom_components/heima/runtime/reactions/alarm_policy.py`
    - Add:
      - `skip_house_states: list[str]` field to the reaction contract.
+     - `only_house_states: list[str]` field to the reaction contract.
+     - Skip logic in `evaluate()` if `only_house_states` is set and `house_state` is not in it.
      - Skip logic in `evaluate()` if `house_state` is in `skip_house_states`.
    - Acceptance Criteria:
      - [ ] Actions are skipped if `house_state` is in `skip_house_states`.
+     - [ ] Actions are skipped if `only_house_states` is set and `house_state` is outside it.
      - [ ] All existing `alarm_policy.py` tests still pass.
 
 4. **AE4 — Semantic Policy for Privacy (Generic Helpers)**
@@ -3187,6 +3190,7 @@ Implement a **generic** system to:
 ### Acceptance Criteria
 
 - [x] `skip_house_states` skips actions for configured house states.
+- [x] `only_house_states` allows alarm-state actions to require specific house states.
 - [x] Semantic policy generates proposals for camera privacy when `privacy_entity` is configured.
 - [x] `privacy_entity` and `manual_hold_entity` validation does not break existing camera source configuration.
 - [x] `privacy_entity`-only camera source configuration is accepted.
