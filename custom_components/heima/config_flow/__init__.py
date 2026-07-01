@@ -147,6 +147,7 @@ class HeimaOptionsFlowHandler(
                 "lighting_rooms_menu",
                 "heating",
                 "security",
+                "camera_privacy_policies",
                 "notifications",
                 "calendar",
                 "learning",

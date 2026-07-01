@@ -4,12 +4,21 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
-from ..const import OPT_SECURITY
+from ..const import HOUSE_STATES_CANONICAL, OPT_SECURITY
+from ._camera_privacy_policy import (
+    CAMERA_PRIVACY_ACTIONS,
+    CAMERA_PRIVACY_ALARM_STATES,
+    CAMERA_PRIVACY_HOUSE_FILTERS,
+    CameraPrivacyPolicyRow,
+    apply_camera_privacy_policy_rows_to_options,
+    parse_camera_privacy_policy_rows_from_options,
+)
 from ._common import _entity_selector, _is_valid_slug, _object_selector
 
 if TYPE_CHECKING:
@@ -20,6 +29,115 @@ class _SecurityStepsMixin:
     """Mixin for security step."""
 
     _SECURITY_PRIORITIES = {"low", "normal", "high"}
+
+    async def async_step_camera_privacy_policies(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        policies = parse_camera_privacy_policy_rows_from_options(self.options)
+        policy_options = self._camera_privacy_policy_options(policies)
+        if user_input is None:
+            return self.async_show_form(
+                step_id="camera_privacy_policies",
+                data_schema=self._camera_privacy_policy_action_schema(policy_options),
+                description_placeholders={
+                    "summary": self._camera_privacy_policy_summary(policies),
+                },
+            )
+
+        action = str(user_input.get("action") or "").strip()
+        if action == "back":
+            return await self.async_step_init()
+        if action == "add":
+            self._editing_camera_privacy_reaction_id = None
+            return await self.async_step_camera_privacy_policy_form()
+        if action not in {"edit", "delete", "toggle_enabled"}:
+            return self.async_show_form(
+                step_id="camera_privacy_policies",
+                data_schema=self._camera_privacy_policy_action_schema(policy_options),
+                errors={"action": "invalid_selection"},
+                description_placeholders={
+                    "summary": self._camera_privacy_policy_summary(policies),
+                },
+            )
+
+        reaction_id = str(user_input.get("policy") or "").strip()
+        if not reaction_id or reaction_id not in policy_options:
+            return self.async_show_form(
+                step_id="camera_privacy_policies",
+                data_schema=self._camera_privacy_policy_action_schema(policy_options),
+                errors={"policy": "required"},
+                description_placeholders={
+                    "summary": self._camera_privacy_policy_summary(policies),
+                },
+            )
+        self._editing_camera_privacy_reaction_id = reaction_id
+        if action == "edit":
+            return await self.async_step_camera_privacy_policy_form()
+        if action == "toggle_enabled":
+            return await self._toggle_camera_privacy_policy(reaction_id)
+        return await self.async_step_camera_privacy_policy_delete_confirm()
+
+    async def async_step_camera_privacy_policy_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        sources = self._camera_privacy_source_options()
+        if not sources:
+            return self.async_show_form(
+                step_id="camera_privacy_policies",
+                data_schema=self._camera_privacy_policy_action_schema({}),
+                errors={"base": "no_camera_privacy_sources"},
+                description_placeholders={"summary": "0 policies"},
+            )
+        editing_id = str(getattr(self, "_editing_camera_privacy_reaction_id", "") or "").strip()
+        defaults = self._camera_privacy_policy_form_defaults(editing_id)
+        if user_input is None:
+            return self.async_show_form(
+                step_id="camera_privacy_policy_form",
+                data_schema=self._camera_privacy_policy_form_schema(sources, defaults),
+            )
+
+        row, errors = self._camera_privacy_policy_row_from_input(user_input, sources)
+        if errors:
+            return self.async_show_form(
+                step_id="camera_privacy_policy_form",
+                data_schema=self._camera_privacy_policy_form_schema(sources, user_input),
+                errors=errors,
+            )
+
+        selected = self._parsed_camera_privacy_policy(editing_id)
+        rows = self._managed_camera_privacy_rows(exclude_ids={editing_id} if editing_id else set())
+        rows.append(row)
+        replace_ids = {editing_id} if selected is not None and selected.imported else set()
+        self.options = apply_camera_privacy_policy_rows_to_options(
+            self.options,
+            rows,
+            replace_reaction_ids=replace_ids,
+        )
+        self._editing_camera_privacy_reaction_id = None
+        return await self.async_step_camera_privacy_policies()
+
+    async def async_step_camera_privacy_policy_delete_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        reaction_id = str(getattr(self, "_editing_camera_privacy_reaction_id", "") or "").strip()
+        if not reaction_id:
+            return await self.async_step_camera_privacy_policies()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="camera_privacy_policy_delete_confirm",
+                data_schema=vol.Schema({vol.Required("confirm", default=False): bool}),
+            )
+        if bool(user_input.get("confirm")):
+            selected = self._parsed_camera_privacy_policy(reaction_id)
+            rows = self._managed_camera_privacy_rows(exclude_ids={reaction_id})
+            replace_ids = {reaction_id} if selected is not None and selected.imported else set()
+            self.options = apply_camera_privacy_policy_rows_to_options(
+                self.options,
+                rows,
+                replace_reaction_ids=replace_ids,
+            )
+        self._editing_camera_privacy_reaction_id = None
+        return await self.async_step_camera_privacy_policies()
 
     async def async_step_security(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         current = dict(self.options.get(OPT_SECURITY, {}))
@@ -89,6 +207,170 @@ class _SecurityStepsMixin:
                 suffix = f" | cameras {camera_count}"
             return f"{security['security_state_entity']}{suffix}"
         return "—"
+
+    def _camera_privacy_policy_action_schema(self, policy_options: dict[str, str]) -> vol.Schema:
+        schema_fields: dict[Any, Any] = {
+            vol.Required("action", default="add"): vol.In(
+                {
+                    "add": "Add policy",
+                    "edit": "Edit policy",
+                    "delete": "Delete policy",
+                    "toggle_enabled": "Enable/disable policy",
+                    "back": "Back",
+                }
+            ),
+        }
+        if policy_options:
+            schema_fields[vol.Optional("policy")] = vol.In(policy_options)
+        return vol.Schema(schema_fields)
+
+    def _camera_privacy_policy_form_schema(
+        self,
+        sources: dict[str, str],
+        defaults: dict[str, Any],
+    ) -> vol.Schema:
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    "camera_source_id",
+                    default=defaults.get("camera_source_id") or next(iter(sources.keys())),
+                ): vol.In(sources),
+                vol.Required(
+                    "alarm_states",
+                    default=defaults.get("alarm_states", []),
+                ): cv.multi_select({state: state for state in CAMERA_PRIVACY_ALARM_STATES}),
+                vol.Required(
+                    "house_filter_mode",
+                    default=defaults.get("house_filter_mode", "always"),
+                ): vol.In({mode: mode for mode in CAMERA_PRIVACY_HOUSE_FILTERS}),
+                vol.Optional(
+                    "house_states",
+                    default=defaults.get("house_states", []),
+                ): cv.multi_select({state: state for state in HOUSE_STATES_CANONICAL}),
+                vol.Required(
+                    "privacy_action",
+                    default=defaults.get("privacy_action", "turn_on"),
+                ): vol.In({action: action for action in CAMERA_PRIVACY_ACTIONS}),
+                vol.Optional("enabled", default=bool(defaults.get("enabled", True))): bool,
+            }
+        )
+        return self._with_suggested(schema, defaults)
+
+    def _camera_privacy_policy_row_from_input(
+        self,
+        user_input: dict[str, Any],
+        sources: dict[str, str],
+    ) -> tuple[CameraPrivacyPolicyRow | None, dict[str, str]]:
+        source_id = str(user_input.get("camera_source_id") or "").strip()
+        source = self._camera_privacy_source_by_id(source_id)
+        if not source_id or source_id not in sources or source is None:
+            return None, {"camera_source_id": "required"}
+        alarm_states = tuple(self._normalize_multi_value(user_input.get("alarm_states")))
+        house_filter_mode = str(user_input.get("house_filter_mode") or "always").strip()
+        house_states = tuple(self._normalize_multi_value(user_input.get("house_states")))
+        if not alarm_states:
+            return None, {"alarm_states": "required"}
+        if house_filter_mode in {"only", "except"} and not house_states:
+            return None, {"house_states": "required"}
+        try:
+            return (
+                CameraPrivacyPolicyRow(
+                    camera_source_id=source_id,
+                    camera_display_name=str(source.get("display_name") or source_id),
+                    privacy_entity=str(source.get("privacy_entity") or ""),
+                    alarm_states=alarm_states,
+                    house_filter_mode=house_filter_mode,
+                    house_states=house_states,
+                    privacy_action=str(user_input.get("privacy_action") or "turn_on"),
+                    enabled=bool(user_input.get("enabled", True)),
+                ),
+                {},
+            )
+        except ValueError:
+            return None, {"base": "invalid"}
+
+    def _camera_privacy_source_options(self) -> dict[str, str]:
+        options: dict[str, str] = {}
+        for source in (
+            dict(self.options.get(OPT_SECURITY, {})).get("camera_evidence_sources", []) or []
+        ):
+            if not isinstance(source, dict):
+                continue
+            source_id = str(source.get("id") or "").strip()
+            privacy_entity = str(source.get("privacy_entity") or "").strip()
+            if source_id and privacy_entity.startswith("switch."):
+                options[source_id] = str(source.get("display_name") or source_id)
+        return options
+
+    def _camera_privacy_source_by_id(self, source_id: str) -> dict[str, Any] | None:
+        for source in (
+            dict(self.options.get(OPT_SECURITY, {})).get("camera_evidence_sources", []) or []
+        ):
+            if isinstance(source, dict) and str(source.get("id") or "").strip() == source_id:
+                return dict(source)
+        return None
+
+    @staticmethod
+    def _camera_privacy_policy_options(policies: list[Any]) -> dict[str, str]:
+        options: dict[str, str] = {}
+        for parsed in policies:
+            suffix = " (imported)" if bool(getattr(parsed, "imported", False)) else ""
+            options[str(parsed.reaction_id)] = f"{parsed.label}{suffix}"
+        return options
+
+    @staticmethod
+    def _camera_privacy_policy_summary(policies: list[Any]) -> str:
+        managed = sum(1 for item in policies if not bool(getattr(item, "imported", False)))
+        imported = sum(1 for item in policies if bool(getattr(item, "imported", False)))
+        return f"{managed} managed | {imported} imported"
+
+    def _camera_privacy_policy_form_defaults(self, reaction_id: str) -> dict[str, Any]:
+        parsed = self._parsed_camera_privacy_policy(reaction_id)
+        if parsed is None:
+            return {"alarm_states": [], "house_filter_mode": "always", "house_states": []}
+        row = parsed.row
+        return {
+            "camera_source_id": row.camera_source_id,
+            "alarm_states": list(row.alarm_states),
+            "house_filter_mode": row.house_filter_mode,
+            "house_states": list(row.house_states),
+            "privacy_action": row.privacy_action,
+            "enabled": row.enabled,
+        }
+
+    def _parsed_camera_privacy_policy(self, reaction_id: str) -> Any | None:
+        reaction_id = str(reaction_id or "").strip()
+        if not reaction_id:
+            return None
+        for parsed in parse_camera_privacy_policy_rows_from_options(self.options):
+            if parsed.reaction_id == reaction_id:
+                return parsed
+        return None
+
+    def _managed_camera_privacy_rows(
+        self, *, exclude_ids: set[str]
+    ) -> list[CameraPrivacyPolicyRow]:
+        rows: list[CameraPrivacyPolicyRow] = []
+        for parsed in parse_camera_privacy_policy_rows_from_options(self.options):
+            if parsed.imported or parsed.reaction_id in exclude_ids:
+                continue
+            rows.append(parsed.row)
+        return rows
+
+    async def _toggle_camera_privacy_policy(self, reaction_id: str) -> "FlowResult":
+        selected = self._parsed_camera_privacy_policy(reaction_id)
+        if selected is None:
+            return await self.async_step_camera_privacy_policies()
+        rows = self._managed_camera_privacy_rows(exclude_ids={reaction_id})
+        rows.append(replace(selected.row, enabled=not selected.row.enabled))
+        replace_ids = {reaction_id} if selected.imported else set()
+        self.options = apply_camera_privacy_policy_rows_to_options(
+            self.options,
+            rows,
+            replace_reaction_ids=replace_ids,
+        )
+        self._editing_camera_privacy_reaction_id = None
+        return await self.async_step_camera_privacy_policies()
 
     def _security_schema(self, defaults: dict[str, Any]) -> vol.Schema:
         schema = vol.Schema(
