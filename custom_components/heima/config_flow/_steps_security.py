@@ -17,6 +17,7 @@ from ._camera_privacy_policy import (
     CAMERA_PRIVACY_HOUSE_FILTERS,
     CameraPrivacyPolicyRow,
     apply_camera_privacy_policy_rows_to_options,
+    camera_privacy_policy_slot_key,
     parse_camera_privacy_policy_rows_from_options,
 )
 from ._common import _entity_selector, _is_valid_slug, _object_selector
@@ -105,6 +106,12 @@ class _SecurityStepsMixin:
             )
 
         selected = self._parsed_camera_privacy_policy(editing_id)
+        if self._camera_privacy_policy_duplicate(row, exclude_ids={editing_id}):
+            return self.async_show_form(
+                step_id="camera_privacy_policy_form",
+                data_schema=self._camera_privacy_policy_form_schema(sources, user_input),
+                errors={"base": "duplicate"},
+            )
         rows = self._managed_camera_privacy_rows(exclude_ids={editing_id} if editing_id else set())
         rows.append(row)
         replace_ids = {editing_id} if selected is not None and selected.imported else set()
@@ -357,6 +364,20 @@ class _SecurityStepsMixin:
             rows.append(parsed.row)
         return rows
 
+    def _camera_privacy_policy_duplicate(
+        self,
+        row: CameraPrivacyPolicyRow,
+        *,
+        exclude_ids: set[str],
+    ) -> bool:
+        target_slot = camera_privacy_policy_slot_key(row)
+        for parsed in parse_camera_privacy_policy_rows_from_options(self.options):
+            if parsed.reaction_id in exclude_ids:
+                continue
+            if camera_privacy_policy_slot_key(parsed.row) == target_slot:
+                return True
+        return False
+
     async def _toggle_camera_privacy_policy(self, reaction_id: str) -> "FlowResult":
         selected = self._parsed_camera_privacy_policy(reaction_id)
         if selected is None:
@@ -476,6 +497,8 @@ class _SecurityStepsMixin:
                     return {"camera_evidence_sources": "invalid"}
                 sources.append(dict(item))
         elif isinstance(value, dict):
+            if "security" in value or "reactions" in value:
+                return {"camera_evidence_sources": "wrong_level_payload"}
             for key, raw in value.items():
                 if not isinstance(raw, dict):
                     return {"camera_evidence_sources": "invalid"}

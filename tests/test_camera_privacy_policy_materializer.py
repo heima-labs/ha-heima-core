@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from custom_components.heima.config_flow._camera_privacy_policy import (
@@ -11,9 +13,12 @@ from custom_components.heima.config_flow._camera_privacy_policy import (
     materialize_camera_privacy_policy_row,
     parse_camera_privacy_policy_rows_from_options,
 )
+from custom_components.heima.runtime.contracts import ApplyPlan
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.manual_hold import ManualHoldManager
 from custom_components.heima.runtime.reactions import create_builtin_reaction_plugin_registry
 from custom_components.heima.runtime.reactions.alarm_policy import AlarmStateActionReaction
+from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
 def _make_engine(options: dict | None = None) -> HeimaEngine:
@@ -207,6 +212,48 @@ def test_generated_camera_privacy_policy_rebuilds_through_reaction_registry() ->
     assert len(engine._reactions) == 1
     assert isinstance(engine._reactions[0], AlarmStateActionReaction)
     assert engine._reactions[0].reaction_id == materialized.reaction_id
+
+
+def test_generated_camera_privacy_policy_action_is_blocked_by_manual_hold() -> None:
+    materialized = materialize_camera_privacy_policy_row(
+        CameraPrivacyPolicyRow(
+            camera_source_id="interna",
+            privacy_entity="switch.interna_privacy",
+            alarm_states=("armed_away",),
+            privacy_action="turn_off",
+        )
+    )
+    engine = _make_engine(
+        {
+            "security": {
+                "camera_evidence_sources": [
+                    {
+                        "id": "interna",
+                        "role": "interior",
+                        "privacy_entity": "switch.interna_privacy",
+                        "manual_hold_entity": "input_boolean.corridoio_privacy_hold",
+                    }
+                ]
+            },
+            "reactions": {"configured": {materialized.reaction_id: materialized.config}},
+        }
+    )
+    engine._manual_hold_manager = ManualHoldManager()
+    engine._behaviors = []
+    engine._state = SimpleNamespace(get_binary=lambda _key: False)
+    engine._hass.states.get.side_effect = lambda entity_id: SimpleNamespace(
+        state="on" if entity_id == "input_boolean.corridoio_privacy_hold" else "off"
+    )
+    engine._rebuild_configured_reactions()
+    snapshot = replace(DecisionSnapshot.empty(), security_state="armed_away", house_state="home")
+
+    steps = engine._reactions[0].evaluate([snapshot])
+    filtered = engine._dispatch_apply_filter(ApplyPlan(steps=steps), snapshot)
+
+    assert len(filtered.steps) == 1
+    assert filtered.steps[0].blocked_by == (
+        "manual_hold:switch:entity:switch.interna_privacy:helper_on"
+    )
 
 
 def test_parse_camera_privacy_policy_rows_reads_managed_metadata() -> None:

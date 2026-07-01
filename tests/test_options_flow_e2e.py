@@ -667,6 +667,35 @@ async def test_security_step_rejects_invalid_privacy_action():
 
 
 @pytest.mark.asyncio
+async def test_security_step_rejects_wrong_level_camera_evidence_payload():
+    flow = _flow()
+
+    result = await flow.async_step_security(
+        {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+            "armed_away_value": "armed_away",
+            "armed_home_value": "armed_home",
+            "camera_evidence_sources": {
+                "security": {
+                    "camera_evidence_sources": {
+                        "entry_cam": {
+                            "role": "entry",
+                            "privacy_entity": "switch.entry_cam_privacy",
+                        }
+                    }
+                },
+                "reactions": {"configured": {}},
+            },
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "security"
+    assert result["errors"]["camera_evidence_sources"] == "wrong_level_payload"
+
+
+@pytest.mark.asyncio
 async def test_security_step_shows_camera_evidence_help_text():
     flow = _flow()
 
@@ -855,6 +884,77 @@ async def test_camera_privacy_policy_flow_toggles_and_deletes_policy():
     assert result["step_id"] == "camera_privacy_policies"
     assert reaction_id not in flow.options["reactions"]["configured"]
     assert reaction_id not in flow.options["reactions"]["labels"]
+
+
+@pytest.mark.asyncio
+async def test_camera_privacy_policy_flow_rejects_duplicate_policy_slot():
+    flow = _flow(
+        {
+            "security": {
+                "camera_evidence_sources": [
+                    {
+                        "id": "interna",
+                        "display_name": "Corridoio",
+                        "role": "interior",
+                        "privacy_entity": "switch.interna_privacy",
+                    }
+                ]
+            },
+            "reactions": {"configured": {}, "labels": {}},
+        }
+    )
+    payload = {
+        "camera_source_id": "interna",
+        "alarm_states": ["armed_away"],
+        "house_filter_mode": "always",
+        "house_states": [],
+        "privacy_action": "turn_off",
+        "enabled": True,
+    }
+    await flow.async_step_camera_privacy_policies({"action": "add"})
+    await flow.async_step_camera_privacy_policy_form(payload)
+
+    await flow.async_step_camera_privacy_policies({"action": "add"})
+    result = await flow.async_step_camera_privacy_policy_form(payload)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "camera_privacy_policy_form"
+    assert result["errors"]["base"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_camera_privacy_policy_flow_requires_house_states_for_filtered_policy():
+    flow = _flow(
+        {
+            "security": {
+                "camera_evidence_sources": [
+                    {
+                        "id": "interna",
+                        "display_name": "Corridoio",
+                        "role": "interior",
+                        "privacy_entity": "switch.interna_privacy",
+                    }
+                ]
+            },
+            "reactions": {"configured": {}, "labels": {}},
+        }
+    )
+    await flow.async_step_camera_privacy_policies({"action": "add"})
+
+    result = await flow.async_step_camera_privacy_policy_form(
+        {
+            "camera_source_id": "interna",
+            "alarm_states": ["armed_night"],
+            "house_filter_mode": "except",
+            "house_states": [],
+            "privacy_action": "turn_off",
+            "enabled": True,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "camera_privacy_policy_form"
+    assert result["errors"]["house_states"] == "required"
 
 
 @pytest.mark.asyncio

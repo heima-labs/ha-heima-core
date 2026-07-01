@@ -181,6 +181,20 @@ def camera_privacy_policy_label(row: CameraPrivacyPolicyRow) -> str:
     return f"{camera_label} privacy: {action_label} when alarm is {states_label}{house_label}"
 
 
+def camera_privacy_policy_slot_key(row: CameraPrivacyPolicyRow) -> str:
+    """Return duplicate-detection key in camera privacy policy terms."""
+    normalized = _normalized_row(row)
+    return "|".join(
+        (
+            normalized.camera_source_id,
+            ",".join(normalized.alarm_states),
+            normalized.house_filter_mode,
+            ",".join(normalized.house_states),
+            normalized.privacy_action,
+        )
+    )
+
+
 def _parse_managed_camera_privacy_policy(
     reaction_id: str,
     cfg: dict[str, Any],

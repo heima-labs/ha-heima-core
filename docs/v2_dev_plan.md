@@ -126,8 +126,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
 **Branch:** `feat/policy-editor-implementation-plan`.
 **Next action:**
-Continue Phase AF by tightening Camera Privacy Policy validation, duplicate detection, and
-wrong-level payload errors.
+Run broader AF verification, including representative camera privacy policy scenarios and local CI,
+before marking Phase AF complete.
 
 ### Current Working Notes
 
@@ -3290,14 +3290,15 @@ domain-specific, not a generic HA automation clone.
 - [x] Imported compatible reactions can be adopted without losing runtime behavior.
 - [x] Existing camera evidence fields survive policy editor saves.
 - [x] Existing unrelated configured reactions survive policy editor saves.
-- [ ] Manual hold continues to block generated privacy-switch actions.
-- [ ] Wrong-level camera source payloads produce domain-specific validation errors.
-- [ ] Focused tests cover create, edit, delete, enable/disable, duplicate detection, metadata
+- [x] Manual hold continues to block generated privacy-switch actions.
+- [x] Wrong-level camera source payloads produce domain-specific validation errors.
+- [x] Focused tests cover create, edit, delete, enable/disable, duplicate detection, metadata
   survival, unrelated-option preservation, and runtime rebuild.
 
 ### Current open items
 
 - Full `scripts/ci_local.sh` not run in this slice.
+- Representative live camera privacy policy scenarios not run yet.
 
 ---
 
