@@ -116,16 +116,18 @@ These constraints must never be violated. See spec §16 for rationale.
 | AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
 | AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD, MH |
 | MH | Manual Hold Framework | `DONE` | AB, AE |
+| AF | Policy Editor Framework + Camera Privacy Policy UI | `IN PROGRESS` | AE, MH |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
-**Active phase:** None.
-**Branch:** `feat/v2`.
+**Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
+**Branch:** `feat/policy-editor-implementation-plan`.
 **Next action:**
-Review Manual Hold Framework and AE camera privacy changes. Optional next verification: `bash scripts/ci_local.sh`.
+Implement the Phase AF development plan: first fix reaction config envelope normalization for
+`alarm_state_action`, then build the domain-specific Camera Privacy Policy editor.
 
 ### Current Working Notes
 
@@ -3199,6 +3201,99 @@ Implement a **generic** system to:
 - [x] Heima-owned camera privacy switch changes do not activate manual hold.
 - [x] External/manual camera privacy switch changes activate manual hold.
 - [ ] Full local CI (`scripts/ci_local.sh`) passes after MH + AE completion.
+
+## Phase AF — Policy Editor Framework + Camera Privacy Policy UI
+
+**Status:** `IN PROGRESS`
+**Spec:** `docs/specs/core/camera_privacy_policy_ui_spec.md`
+**Framework:** `docs/specs/core/policy_editor_framework_spec.md`
+**Branch:** `feat/policy-editor-implementation-plan`
+**Depends on:** AE, MH
+
+### Context
+
+AE made camera privacy behavior expressible, but the raw `security.camera_evidence_sources` +
+`reactions.configured[*].alarm_state_action` shape is not admin-friendly. The follow-up UI must be
+domain-specific, not a generic HA automation clone.
+
+### Scope
+
+- Add a bounded Camera Privacy Policy editor in Options Flow.
+- Let admins choose camera, alarm states, house-state filter, and privacy on/off.
+- Materialize normal `alarm_state_action` reactions under the hood.
+- Preserve existing camera evidence fields and manual hold semantics.
+- Keep raw `ApplyStep` fields out of the primary UI.
+- Improve wrong-level YAML validation for the existing low-level camera source editor.
+
+### Architecture Decision
+
+- Generalize the authoring method as domain-specific Policy Editors.
+- Do not build a generic trigger/condition/action automation editor.
+- Future domains/plugins must follow `policy_editor_framework_spec.md`.
+
+### Development Plan
+
+1. **Fix reaction config envelope normalization**
+   - Keep `alarm_state_action` runtime normalization focused on builder-consumed fields.
+   - Add persisted-config envelope preservation for allowlisted fields on the same configured
+     reaction entry.
+   - Preserve at least `enabled`, provenance fields, `admin_authored_template_id`,
+     `source_template_id`, `source_request`, and policy metadata objects such as
+     `camera_privacy_policy`.
+   - Add focused tests for `alarm_state_action` metadata survival and `enabled: false` survival.
+
+2. **Build the camera privacy policy materializer**
+   - Define the bounded policy-row model described by `camera_privacy_policy_ui_spec.md`.
+   - Generate normal `alarm_state_action` configs.
+   - Use stable reaction ids and deterministic collision handling.
+   - Persist human labels in `reactions.labels`.
+   - Preserve unrelated configured reactions and unrelated camera evidence fields.
+
+3. **Build reverse parser and import path**
+   - Reconstruct managed policy rows from `camera_privacy_policy` metadata.
+   - Detect compatible one-step `alarm_state_action` reactions without metadata as imported rows.
+   - Mark imported rows clearly and write metadata on the first editor save.
+
+4. **Add the Options Flow UI**
+   - Add a Security-domain entry point: `Camera privacy policies`.
+   - Implement list, add, edit, delete, enable, and disable flows.
+   - Expose only camera privacy concepts: camera, alarm states, house-state filter, privacy action,
+     and manual-hold status.
+   - Do not expose raw `target`, `params.entity_id`, service payloads, or arbitrary conditions in
+     the primary UI.
+
+5. **Tighten validation**
+   - Validate `privacy_entity` as `switch.*`.
+   - Validate `manual_hold_entity` as `input_boolean.*`.
+   - Validate non-empty alarm-state selections.
+   - Validate `only`/`except` house-state filters require at least one house state.
+   - Detect duplicate policy slots.
+   - Return domain-specific errors for wrong-level YAML/object payloads containing `security` or
+     `reactions`.
+
+6. **Verify runtime and live behavior**
+   - Confirm generated config rebuilds into `AlarmStateActionReaction`.
+   - Confirm manual hold blocks camera privacy switch actions generated by policy rows.
+   - Verify representative live scenarios:
+     - alarm `disarmed` -> privacy on;
+     - alarm `armed_away` -> privacy off regardless of house state;
+     - alarm `armed_night` + house state not `guest` -> privacy off;
+     - alarm `armed_night` + house state `guest` -> no privacy-off action.
+
+### Acceptance Criteria
+
+- [ ] `alarm_state_action` compatibility normalization preserves allowlisted envelope fields.
+- [ ] `enabled: false` configured reactions remain disabled after normalization.
+- [ ] Camera privacy policy rows materialize to normal `reactions.configured` entries.
+- [ ] Generated reactions rebuild through the existing reaction plugin system.
+- [ ] Policy metadata round-trips through Options Flow edit/save.
+- [ ] Imported compatible reactions can be adopted without losing runtime behavior.
+- [ ] Existing camera evidence fields survive policy editor saves.
+- [ ] Existing unrelated configured reactions survive policy editor saves.
+- [ ] Manual hold continues to block generated privacy-switch actions.
+- [ ] Wrong-level camera source payloads produce domain-specific validation errors.
+- [ ] Focused tests cover create, edit, delete, enable/disable, duplicate detection, metadata
+  survival, unrelated-option preservation, and runtime rebuild.
 
 ### Current open items
 
