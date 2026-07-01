@@ -126,8 +126,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
 **Branch:** `feat/policy-editor-implementation-plan`.
 **Next action:**
-Implement the Phase AF development plan: first fix reaction config envelope normalization for
-`alarm_state_action`, then build the domain-specific Camera Privacy Policy editor.
+Continue Phase AF by building the Camera Privacy Policy materializer after completing
+`alarm_state_action` envelope normalization.
 
 ### Current Working Notes
 
@@ -3282,8 +3282,8 @@ domain-specific, not a generic HA automation clone.
 
 ### Acceptance Criteria
 
-- [ ] `alarm_state_action` compatibility normalization preserves allowlisted envelope fields.
-- [ ] `enabled: false` configured reactions remain disabled after normalization.
+- [x] `alarm_state_action` compatibility normalization preserves allowlisted envelope fields.
+- [x] `enabled: false` configured reactions remain disabled after normalization.
 - [ ] Camera privacy policy rows materialize to normal `reactions.configured` entries.
 - [ ] Generated reactions rebuild through the existing reaction plugin system.
 - [ ] Policy metadata round-trips through Options Flow edit/save.

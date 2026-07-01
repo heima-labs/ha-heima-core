@@ -23,6 +23,22 @@ _SUPPORTED_STEP_ACTIONS = {
     "script": {"script.turn_on"},
     "climate": {"climate.set_hvac_mode", "climate.set_preset_mode"},
 }
+_ALARM_STATE_ACTION_ENVELOPE_FIELDS = (
+    "enabled",
+    "origin",
+    "author_kind",
+    "source_proposal_id",
+    "source_proposal_identity_key",
+    "created_at",
+    "last_tuned_at",
+    "last_tuning_proposal_id",
+    "last_tuning_origin",
+    "last_tuning_followup_kind",
+    "source_template_id",
+    "source_request",
+    "admin_authored_template_id",
+    "camera_privacy_policy",
+)
 _MESSAGES = {
     "en": {
         "alarm_state_fallback": "alarm state",
@@ -137,8 +153,8 @@ class AlarmStateActionReaction(HeimaReaction):
         ]
 
 
-def normalize_alarm_state_action_config(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Normalize persisted alarm-state-action config to the canonical contract."""
+def _normalize_alarm_state_action_runtime_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Normalize only fields consumed by the alarm-state-action runtime builder."""
     return {
         "reaction_type": "alarm_state_action",
         "alarm_states": _normalize_alarm_states(cfg.get("alarm_states")),
@@ -146,6 +162,15 @@ def normalize_alarm_state_action_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "skip_house_states": _normalize_house_states(cfg.get("skip_house_states")),
         "only_house_states": _normalize_house_states(cfg.get("only_house_states")),
     }
+
+
+def normalize_alarm_state_action_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Normalize persisted alarm-state-action config while preserving allowed envelope fields."""
+    normalized = _normalize_alarm_state_action_runtime_config(cfg)
+    for field in _ALARM_STATE_ACTION_ENVELOPE_FIELDS:
+        if field in cfg:
+            normalized[field] = cfg[field]
+    return normalized
 
 
 def build_alarm_state_action_reaction(
