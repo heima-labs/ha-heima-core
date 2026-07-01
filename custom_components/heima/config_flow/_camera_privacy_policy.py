@@ -9,7 +9,7 @@ from typing import Any
 
 from homeassistant.util import slugify
 
-from ..const import HOUSE_STATES_CANONICAL, OPT_REACTIONS
+from ..const import HOUSE_STATES_CANONICAL, OPT_REACTIONS, OPT_SECURITY
 from ..runtime.reactions.alarm_policy import normalize_alarm_state_action_config
 
 CAMERA_PRIVACY_POLICY_TYPE = "security.camera_privacy_policy"
@@ -47,6 +47,16 @@ class CameraPrivacyPolicyMaterialization:
     reaction_id: str
     config: dict[str, Any]
     label: str
+
+
+@dataclass(frozen=True)
+class ParsedCameraPrivacyPolicyRow:
+    """Parsed camera privacy policy row from configured reactions."""
+
+    reaction_id: str
+    row: CameraPrivacyPolicyRow
+    label: str
+    imported: bool = False
 
 
 def materialize_camera_privacy_policy_row(
@@ -95,15 +105,18 @@ def materialize_camera_privacy_policy_row(
 def apply_camera_privacy_policy_rows_to_options(
     options: dict[str, Any],
     rows: list[CameraPrivacyPolicyRow],
+    *,
+    replace_reaction_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Replace managed camera privacy policies while preserving unrelated options."""
     updated_options = dict(options or {})
     reactions = dict(updated_options.get(OPT_REACTIONS, {}) or {})
     configured = dict(reactions.get("configured", {}) or {})
     labels = dict(reactions.get("labels", {}) or {})
+    replace_ids = {str(item).strip() for item in replace_reaction_ids or set() if str(item).strip()}
 
     for reaction_id, cfg in list(configured.items()):
-        if _is_camera_privacy_policy_config(cfg):
+        if reaction_id in replace_ids or _is_camera_privacy_policy_config(cfg):
             configured.pop(reaction_id, None)
             labels.pop(reaction_id, None)
 
@@ -121,6 +134,38 @@ def apply_camera_privacy_policy_rows_to_options(
     return updated_options
 
 
+def parse_camera_privacy_policy_rows_from_options(
+    options: dict[str, Any],
+) -> list[ParsedCameraPrivacyPolicyRow]:
+    """Parse managed and compatible imported camera privacy policy rows from options."""
+    reactions = dict(dict(options or {}).get(OPT_REACTIONS, {}) or {})
+    configured = dict(reactions.get("configured", {}) or {})
+    labels = dict(reactions.get("labels", {}) or {})
+    sources = _camera_sources_by_privacy_entity(options)
+    parsed: list[ParsedCameraPrivacyPolicyRow] = []
+    for reaction_id, raw_cfg in configured.items():
+        if not isinstance(raw_cfg, dict):
+            continue
+        managed = _parse_managed_camera_privacy_policy(
+            str(reaction_id),
+            raw_cfg,
+            labels,
+            sources,
+        )
+        if managed is not None:
+            parsed.append(managed)
+            continue
+        imported = _parse_imported_camera_privacy_policy(
+            str(reaction_id),
+            raw_cfg,
+            labels,
+            sources,
+        )
+        if imported is not None:
+            parsed.append(imported)
+    return parsed
+
+
 def camera_privacy_policy_label(row: CameraPrivacyPolicyRow) -> str:
     """Return the human label persisted in reactions.labels."""
     normalized = _normalized_row(row)
@@ -134,6 +179,135 @@ def camera_privacy_policy_label(row: CameraPrivacyPolicyRow) -> str:
     else:
         house_label = ""
     return f"{camera_label} privacy: {action_label} when alarm is {states_label}{house_label}"
+
+
+def _parse_managed_camera_privacy_policy(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels: dict[str, str],
+    sources: dict[str, dict[str, str]],
+) -> ParsedCameraPrivacyPolicyRow | None:
+    metadata = cfg.get(CAMERA_PRIVACY_POLICY_METADATA_KEY)
+    if not isinstance(metadata, dict):
+        return None
+    if str(cfg.get("reaction_type") or "").strip() != "alarm_state_action":
+        return None
+    try:
+        row = _row_from_config_and_metadata(cfg, metadata, sources)
+    except ValueError:
+        return None
+    return ParsedCameraPrivacyPolicyRow(
+        reaction_id=reaction_id,
+        row=row,
+        label=str(labels.get(reaction_id) or camera_privacy_policy_label(row)),
+        imported=False,
+    )
+
+
+def _parse_imported_camera_privacy_policy(
+    reaction_id: str,
+    cfg: dict[str, Any],
+    labels: dict[str, str],
+    sources: dict[str, dict[str, str]],
+) -> ParsedCameraPrivacyPolicyRow | None:
+    if _is_camera_privacy_policy_config(cfg):
+        return None
+    if str(cfg.get("reaction_type") or "").strip() != "alarm_state_action":
+        return None
+    raw_steps = cfg.get("steps")
+    if not isinstance(raw_steps, list) or len(raw_steps) != 1 or not isinstance(raw_steps[0], dict):
+        return None
+    raw_step = dict(raw_steps[0])
+    raw_target = str(raw_step.get("target") or "").strip()
+    raw_params = dict(raw_step.get("params") or {})
+    if raw_target != str(raw_params.get("entity_id") or "").strip():
+        return None
+    normalized = normalize_alarm_state_action_config(cfg)
+    steps = list(normalized.get("steps") or [])
+    if len(steps) != 1:
+        return None
+    step = dict(steps[0])
+    if str(step.get("domain") or "").strip() != "switch":
+        return None
+    target = str(step.get("target") or "").strip()
+    params = dict(step.get("params") or {})
+    if target != str(params.get("entity_id") or "").strip():
+        return None
+    source = sources.get(target)
+    if source is None:
+        return None
+    action = str(step.get("action") or "").strip()
+    if action not in {"switch.turn_on", "switch.turn_off"}:
+        return None
+    privacy_action = action.split(".", 1)[1]
+    try:
+        row = _row_from_config_and_metadata(
+            normalized,
+            {
+                "camera_source_id": source["id"],
+                "privacy_entity": target,
+                "privacy_action": privacy_action,
+            },
+            sources,
+        )
+    except ValueError:
+        return None
+    return ParsedCameraPrivacyPolicyRow(
+        reaction_id=reaction_id,
+        row=row,
+        label=str(labels.get(reaction_id) or camera_privacy_policy_label(row)),
+        imported=True,
+    )
+
+
+def _row_from_config_and_metadata(
+    cfg: dict[str, Any],
+    metadata: dict[str, Any],
+    sources: dict[str, dict[str, str]],
+) -> CameraPrivacyPolicyRow:
+    normalized = normalize_alarm_state_action_config(cfg)
+    privacy_entity = str(metadata.get("privacy_entity") or "").strip()
+    if not privacy_entity:
+        steps = list(normalized.get("steps") or [])
+        if len(steps) == 1:
+            privacy_entity = str(dict(steps[0]).get("target") or "").strip()
+    source = sources.get(privacy_entity, {})
+    camera_source_id = str(metadata.get("camera_source_id") or source.get("id") or "").strip()
+    only_house_states = tuple(normalized.get("only_house_states") or ())
+    skip_house_states = tuple(normalized.get("skip_house_states") or ())
+    if only_house_states and skip_house_states:
+        raise ValueError("camera privacy policy cannot use both only and except filters")
+    if only_house_states:
+        house_filter_mode = "only"
+        house_states = only_house_states
+    elif skip_house_states:
+        house_filter_mode = "except"
+        house_states = skip_house_states
+    else:
+        house_filter_mode = str(metadata.get("house_filter_mode") or "always").strip()
+        house_states = tuple(metadata.get("house_states") or ())
+    if house_filter_mode == "always":
+        house_states = ()
+    privacy_action = str(metadata.get("privacy_action") or "").strip()
+    if not privacy_action:
+        steps = list(normalized.get("steps") or [])
+        if len(steps) == 1:
+            action = str(dict(steps[0]).get("action") or "").strip()
+            if action in {"switch.turn_on", "switch.turn_off"}:
+                privacy_action = action.split(".", 1)[1]
+    return _normalized_row(
+        CameraPrivacyPolicyRow(
+            camera_source_id=camera_source_id,
+            privacy_entity=privacy_entity,
+            alarm_states=tuple(normalized.get("alarm_states") or ()),
+            house_filter_mode=house_filter_mode,
+            house_states=house_states,
+            privacy_action=privacy_action,
+            enabled=bool(normalized.get("enabled", True)),
+            camera_display_name=str(source.get("display_name") or camera_source_id),
+            created_at=str(normalized.get("created_at") or ""),
+        )
+    )
 
 
 def _normalized_row(row: CameraPrivacyPolicyRow) -> CameraPrivacyPolicyRow:
@@ -231,6 +405,23 @@ def _is_camera_privacy_policy_config(value: Any) -> bool:
     if str(value.get("source_template_id") or "").strip() == CAMERA_PRIVACY_POLICY_TYPE:
         return True
     return isinstance(value.get(CAMERA_PRIVACY_POLICY_METADATA_KEY), dict)
+
+
+def _camera_sources_by_privacy_entity(options: dict[str, Any]) -> dict[str, dict[str, str]]:
+    security = dict(dict(options or {}).get(OPT_SECURITY, {}) or {})
+    sources: dict[str, dict[str, str]] = {}
+    for raw_source in security.get("camera_evidence_sources", []) or []:
+        if not isinstance(raw_source, dict):
+            continue
+        source_id = str(raw_source.get("id") or "").strip()
+        privacy_entity = str(raw_source.get("privacy_entity") or "").strip()
+        if not source_id or not privacy_entity.startswith("switch."):
+            continue
+        sources[privacy_entity] = {
+            "id": source_id,
+            "display_name": str(raw_source.get("display_name") or source_id).strip(),
+        }
+    return sources
 
 
 def _ordered_known_values(

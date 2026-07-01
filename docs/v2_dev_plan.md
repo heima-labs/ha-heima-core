@@ -126,8 +126,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
 **Branch:** `feat/policy-editor-implementation-plan`.
 **Next action:**
-Continue Phase AF by building the Camera Privacy Policy reverse parser and imported-row adoption
-path.
+Continue Phase AF by adding the Camera Privacy Policy Options Flow UI.
 
 ### Current Working Notes
 
@@ -3287,7 +3286,7 @@ domain-specific, not a generic HA automation clone.
 - [x] Camera privacy policy rows materialize to normal `reactions.configured` entries.
 - [x] Generated reactions rebuild through the existing reaction plugin system.
 - [ ] Policy metadata round-trips through Options Flow edit/save.
-- [ ] Imported compatible reactions can be adopted without losing runtime behavior.
+- [x] Imported compatible reactions can be adopted without losing runtime behavior.
 - [x] Existing camera evidence fields survive policy editor saves.
 - [x] Existing unrelated configured reactions survive policy editor saves.
 - [ ] Manual hold continues to block generated privacy-switch actions.

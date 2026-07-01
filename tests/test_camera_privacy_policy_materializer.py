@@ -9,6 +9,7 @@ from custom_components.heima.config_flow._camera_privacy_policy import (
     CameraPrivacyPolicyRow,
     apply_camera_privacy_policy_rows_to_options,
     materialize_camera_privacy_policy_row,
+    parse_camera_privacy_policy_rows_from_options,
 )
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.reactions import create_builtin_reaction_plugin_registry
@@ -206,3 +207,220 @@ def test_generated_camera_privacy_policy_rebuilds_through_reaction_registry() ->
     assert len(engine._reactions) == 1
     assert isinstance(engine._reactions[0], AlarmStateActionReaction)
     assert engine._reactions[0].reaction_id == materialized.reaction_id
+
+
+def test_parse_camera_privacy_policy_rows_reads_managed_metadata() -> None:
+    materialized = materialize_camera_privacy_policy_row(
+        CameraPrivacyPolicyRow(
+            camera_source_id="interna",
+            privacy_entity="switch.interna_privacy",
+            alarm_states=("armed_night",),
+            house_filter_mode="except",
+            house_states=("guest",),
+            privacy_action="turn_off",
+            enabled=False,
+        )
+    )
+    options = {
+        "security": {
+            "camera_evidence_sources": [
+                {
+                    "id": "interna",
+                    "display_name": "Corridoio",
+                    "role": "interior",
+                    "privacy_entity": "switch.interna_privacy",
+                }
+            ]
+        },
+        "reactions": {
+            "configured": {materialized.reaction_id: materialized.config},
+            "labels": {materialized.reaction_id: "Corridoio policy"},
+        },
+    }
+
+    parsed = parse_camera_privacy_policy_rows_from_options(options)
+
+    assert len(parsed) == 1
+    assert parsed[0].reaction_id == materialized.reaction_id
+    assert parsed[0].imported is False
+    assert parsed[0].label == "Corridoio policy"
+    assert parsed[0].row == CameraPrivacyPolicyRow(
+        camera_source_id="interna",
+        privacy_entity="switch.interna_privacy",
+        alarm_states=("armed_night",),
+        house_filter_mode="except",
+        house_states=("guest",),
+        privacy_action="turn_off",
+        enabled=False,
+        camera_display_name="Corridoio",
+    )
+
+
+def test_parse_camera_privacy_policy_rows_imports_compatible_alarm_state_action() -> None:
+    options = {
+        "security": {
+            "camera_evidence_sources": [
+                {
+                    "id": "interna",
+                    "display_name": "Corridoio",
+                    "role": "interior",
+                    "privacy_entity": "switch.interna_privacy",
+                }
+            ]
+        },
+        "reactions": {
+            "configured": {
+                "raw-privacy-off": {
+                    "reaction_type": "alarm_state_action",
+                    "enabled": True,
+                    "alarm_states": ["armed_away", "armed_night"],
+                    "skip_house_states": ["guest"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.interna_privacy"},
+                        }
+                    ],
+                }
+            },
+            "labels": {"raw-privacy-off": "Raw privacy off"},
+        },
+    }
+
+    parsed = parse_camera_privacy_policy_rows_from_options(options)
+
+    assert len(parsed) == 1
+    assert parsed[0].reaction_id == "raw-privacy-off"
+    assert parsed[0].imported is True
+    assert parsed[0].label == "Raw privacy off"
+    assert parsed[0].row == CameraPrivacyPolicyRow(
+        camera_source_id="interna",
+        privacy_entity="switch.interna_privacy",
+        alarm_states=("armed_away", "armed_night"),
+        house_filter_mode="except",
+        house_states=("guest",),
+        privacy_action="turn_off",
+        enabled=True,
+        camera_display_name="Corridoio",
+    )
+
+
+def test_parse_camera_privacy_policy_rows_ignores_incompatible_alarm_state_actions() -> None:
+    options = {
+        "security": {
+            "camera_evidence_sources": [
+                {
+                    "id": "interna",
+                    "role": "interior",
+                    "privacy_entity": "switch.interna_privacy",
+                }
+            ]
+        },
+        "reactions": {
+            "configured": {
+                "wrong-entity": {
+                    "reaction_type": "alarm_state_action",
+                    "alarm_states": ["armed_away"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.other",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.other"},
+                        }
+                    ],
+                },
+                "two-steps": {
+                    "reaction_type": "alarm_state_action",
+                    "alarm_states": ["armed_away"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.interna_privacy"},
+                        },
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_on",
+                            "params": {"entity_id": "switch.interna_privacy"},
+                        },
+                    ],
+                },
+                "target-mismatch": {
+                    "reaction_type": "alarm_state_action",
+                    "alarm_states": ["armed_away"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.other"},
+                        }
+                    ],
+                },
+            }
+        },
+    }
+
+    assert parse_camera_privacy_policy_rows_from_options(options) == []
+
+
+def test_apply_camera_privacy_policy_rows_can_adopt_imported_reaction_id() -> None:
+    options = {
+        "security": {
+            "camera_evidence_sources": [
+                {
+                    "id": "interna",
+                    "display_name": "Corridoio",
+                    "role": "interior",
+                    "privacy_entity": "switch.interna_privacy",
+                }
+            ]
+        },
+        "reactions": {
+            "configured": {
+                "raw-privacy-off": {
+                    "reaction_type": "alarm_state_action",
+                    "alarm_states": ["armed_away"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.interna_privacy"},
+                        }
+                    ],
+                },
+                "unrelated": {"reaction_type": "scheduled_routine"},
+            },
+            "labels": {
+                "raw-privacy-off": "Raw privacy off",
+                "unrelated": "Unrelated",
+            },
+        },
+    }
+    imported = parse_camera_privacy_policy_rows_from_options(options)
+
+    updated = apply_camera_privacy_policy_rows_to_options(
+        options,
+        [imported[0].row],
+        replace_reaction_ids={imported[0].reaction_id},
+    )
+
+    new_id = "camera_privacy_policy__interna__armed_away__any__turn_off"
+    assert "raw-privacy-off" not in updated["reactions"]["configured"]
+    assert "raw-privacy-off" not in updated["reactions"]["labels"]
+    assert new_id in updated["reactions"]["configured"]
+    assert updated["reactions"]["configured"][new_id]["camera_privacy_policy"] == {
+        "camera_source_id": "interna",
+        "privacy_entity": "switch.interna_privacy",
+        "house_filter_mode": "always",
+        "house_states": [],
+        "privacy_action": "turn_off",
+    }
+    assert updated["reactions"]["configured"]["unrelated"] == {"reaction_type": "scheduled_routine"}
+    assert updated["reactions"]["labels"]["unrelated"] == "Unrelated"
