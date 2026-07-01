@@ -298,7 +298,9 @@ def _row_from_config_and_metadata(
         steps = list(normalized.get("steps") or [])
         if len(steps) == 1:
             privacy_entity = str(dict(steps[0]).get("target") or "").strip()
-    source = sources.get(privacy_entity, {})
+    source = sources.get(privacy_entity)
+    if source is None:
+        raise ValueError("camera privacy policy source is not configured")
     camera_source_id = str(metadata.get("camera_source_id") or source.get("id") or "").strip()
     only_house_states = tuple(normalized.get("only_house_states") or ())
     skip_house_states = tuple(normalized.get("skip_house_states") or ())

@@ -17,6 +17,9 @@ PRIVACY_SWITCH = "switch.test_heima_heater_relay"
 RAW_REACTION_ID = "live-raw-camera-privacy-policy"
 STALE_REACTION_ID = "live-stale-camera-privacy-policy"
 MANAGED_REACTION_ID = "camera_privacy_policy__live_privacy_policy_cam__armed_away__any__turn_off"
+STALE_MATERIALIZED_REACTION_ID = (
+    "camera_privacy_policy__missing_live_camera__disarmed__any__turn_on"
+)
 
 
 class HAFlowClient(HAClient):
@@ -221,6 +224,8 @@ def _delete_managed_policy(client: HAFlowClient, entry_id: str) -> None:
 
 
 def _delete_generic_reaction(client: HAFlowClient, entry_id: str, reaction_id: str) -> None:
+    if reaction_id not in _configured_reactions(client, entry_id):
+        return
     flow = client.options_flow_init(entry_id)
     flow_id = str(flow["flow_id"])
     try:
@@ -266,7 +271,12 @@ def run(ha_url: str, ha_token: str) -> None:
         _assert(STALE_REACTION_ID in configured, "stale managed policy was removed by delete")
     finally:
         print("Cleaning up live camera privacy policy artifacts...")
-        for reaction_id in (MANAGED_REACTION_ID, RAW_REACTION_ID, STALE_REACTION_ID):
+        for reaction_id in (
+            MANAGED_REACTION_ID,
+            RAW_REACTION_ID,
+            STALE_REACTION_ID,
+            STALE_MATERIALIZED_REACTION_ID,
+        ):
             try:
                 _delete_generic_reaction(client, entry_id, reaction_id)
             except Exception as err:  # noqa: BLE001
