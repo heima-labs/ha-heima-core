@@ -126,8 +126,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
 **Branch:** `feat/policy-editor-implementation-plan`.
 **Next action:**
-Continue Phase AF by building the Camera Privacy Policy materializer after completing
-`alarm_state_action` envelope normalization.
+Continue Phase AF by building the Camera Privacy Policy reverse parser and imported-row adoption
+path.
 
 ### Current Working Notes
 
@@ -3284,12 +3284,12 @@ domain-specific, not a generic HA automation clone.
 
 - [x] `alarm_state_action` compatibility normalization preserves allowlisted envelope fields.
 - [x] `enabled: false` configured reactions remain disabled after normalization.
-- [ ] Camera privacy policy rows materialize to normal `reactions.configured` entries.
-- [ ] Generated reactions rebuild through the existing reaction plugin system.
+- [x] Camera privacy policy rows materialize to normal `reactions.configured` entries.
+- [x] Generated reactions rebuild through the existing reaction plugin system.
 - [ ] Policy metadata round-trips through Options Flow edit/save.
 - [ ] Imported compatible reactions can be adopted without losing runtime behavior.
-- [ ] Existing camera evidence fields survive policy editor saves.
-- [ ] Existing unrelated configured reactions survive policy editor saves.
+- [x] Existing camera evidence fields survive policy editor saves.
+- [x] Existing unrelated configured reactions survive policy editor saves.
 - [ ] Manual hold continues to block generated privacy-switch actions.
 - [ ] Wrong-level camera source payloads produce domain-specific validation errors.
 - [ ] Focused tests cover create, edit, delete, enable/disable, duplicate detection, metadata
