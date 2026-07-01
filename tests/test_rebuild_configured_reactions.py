@@ -410,6 +410,101 @@ def test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps(
     }
 
 
+def test_normalize_reaction_options_payload_preserves_alarm_state_action_envelope():
+    options = {
+        "reactions": {
+            "configured": {
+                "alarm-1": {
+                    "reaction_type": "alarm_state_action",
+                    "enabled": False,
+                    "origin": "admin_authored",
+                    "author_kind": "admin",
+                    "source_proposal_id": "proposal-1",
+                    "source_proposal_identity_key": "camera:interna",
+                    "created_at": "2026-07-01T10:00:00+00:00",
+                    "admin_authored_template_id": "security.camera_privacy_policy",
+                    "source_template_id": "security.camera_privacy_policy",
+                    "source_request": "template:security.camera_privacy_policy",
+                    "camera_privacy_policy": {
+                        "camera_source_id": "interna",
+                        "privacy_entity": "switch.interna_privacy",
+                        "house_filter_mode": "except",
+                        "house_states": ["guest"],
+                        "privacy_action": "turn_off",
+                    },
+                    "unknown_editor_field": "drop-me",
+                    "alarm_states": ["armed_night"],
+                    "steps": [
+                        {
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                        },
+                    ],
+                }
+            },
+            "labels": {"alarm-1": "Corridoio privacy"},
+            "muted": ["alarm-1"],
+        }
+    }
+
+    normalized, changed = normalize_reaction_options_payload(options)
+
+    assert changed is True
+    cfg = normalized["reactions"]["configured"]["alarm-1"]
+    assert cfg["enabled"] is False
+    assert cfg["origin"] == "admin_authored"
+    assert cfg["author_kind"] == "admin"
+    assert cfg["source_proposal_id"] == "proposal-1"
+    assert cfg["source_proposal_identity_key"] == "camera:interna"
+    assert cfg["created_at"] == "2026-07-01T10:00:00+00:00"
+    assert cfg["admin_authored_template_id"] == "security.camera_privacy_policy"
+    assert cfg["source_template_id"] == "security.camera_privacy_policy"
+    assert cfg["source_request"] == "template:security.camera_privacy_policy"
+    assert cfg["camera_privacy_policy"]["camera_source_id"] == "interna"
+    assert cfg["steps"] == [
+        {
+            "domain": "switch",
+            "target": "switch.interna_privacy",
+            "action": "switch.turn_off",
+            "params": {"entity_id": "switch.interna_privacy"},
+        }
+    ]
+    assert "unknown_editor_field" not in cfg
+    assert normalized["reactions"]["labels"] == {"alarm-1": "Corridoio privacy"}
+    assert normalized["reactions"]["muted"] == ["alarm-1"]
+
+
+def test_disabled_alarm_state_action_stays_disabled_after_options_normalization():
+    options = {
+        "reactions": {
+            "configured": {
+                "alarm-1": {
+                    "reaction_type": "alarm_state_action",
+                    "enabled": False,
+                    "alarm_states": ["armed_away"],
+                    "steps": [
+                        {
+                            "domain": "switch",
+                            "target": "switch.interna_privacy",
+                            "action": "switch.turn_off",
+                            "params": {"entity_id": "switch.interna_privacy"},
+                        }
+                    ],
+                }
+            }
+        }
+    }
+
+    normalized, _changed = normalize_reaction_options_payload(options)
+    engine = _make_engine(options=normalized)
+
+    engine._rebuild_configured_reactions()
+
+    assert normalized["reactions"]["configured"]["alarm-1"]["enabled"] is False
+    assert engine._reactions == []
+    assert engine._configured_reaction_ids == set()
+
+
 def test_reaction_pre_seeded_with_synthetic_arrivals():
     engine = _make_engine(
         options={

@@ -157,6 +157,60 @@ def test_alarm_state_action_normalizes_climate_steps() -> None:
     }
 
 
+def test_alarm_state_action_normalization_preserves_allowed_envelope_fields() -> None:
+    cfg = normalize_alarm_state_action_config(
+        {
+            "reaction_type": "alarm_state_action",
+            "enabled": False,
+            "origin": "admin_authored",
+            "author_kind": "admin",
+            "source_proposal_id": "proposal-1",
+            "source_proposal_identity_key": "camera:interna",
+            "created_at": "2026-07-01T10:00:00+00:00",
+            "last_tuned_at": None,
+            "last_tuning_proposal_id": "tuning-1",
+            "last_tuning_origin": "admin_authored",
+            "last_tuning_followup_kind": "tuning_suggestion",
+            "admin_authored_template_id": "security.camera_privacy_policy",
+            "source_template_id": "security.camera_privacy_policy",
+            "source_request": "template:security.camera_privacy_policy",
+            "camera_privacy_policy": {
+                "camera_source_id": "interna",
+                "privacy_entity": "switch.interna_privacy",
+                "house_filter_mode": "except",
+                "house_states": ["guest"],
+                "privacy_action": "turn_off",
+            },
+            "unknown_editor_field": {"must": "drop"},
+            "alarm_states": ["armed_night"],
+            "skip_house_states": ["guest"],
+            "steps": [
+                _step(
+                    domain="switch",
+                    target="switch.interna_privacy",
+                    action="switch.turn_off",
+                )
+            ],
+        }
+    )
+
+    assert cfg["enabled"] is False
+    assert cfg["origin"] == "admin_authored"
+    assert cfg["author_kind"] == "admin"
+    assert cfg["source_proposal_id"] == "proposal-1"
+    assert cfg["source_proposal_identity_key"] == "camera:interna"
+    assert cfg["created_at"] == "2026-07-01T10:00:00+00:00"
+    assert cfg["last_tuned_at"] is None
+    assert cfg["last_tuning_proposal_id"] == "tuning-1"
+    assert cfg["last_tuning_origin"] == "admin_authored"
+    assert cfg["last_tuning_followup_kind"] == "tuning_suggestion"
+    assert cfg["admin_authored_template_id"] == "security.camera_privacy_policy"
+    assert cfg["source_template_id"] == "security.camera_privacy_policy"
+    assert cfg["source_request"] == "template:security.camera_privacy_policy"
+    assert cfg["camera_privacy_policy"]["camera_source_id"] == "interna"
+    assert "unknown_editor_field" not in cfg
+
+
 def test_alarm_state_action_builder_rejects_incomplete_config() -> None:
     assert (
         build_alarm_state_action_reaction(None, "alarm-1", {"alarm_states": ["armed_away"]}) is None

@@ -30,6 +30,7 @@
           "lighting_rooms_menu": "Lighting",
           "heating": "Heating",
           "security": "Security",
+          "camera_privacy_policies": "Camera privacy policies",
           "notifications": "Notifications",
           "calendar": "Calendar",
           "learning": "Learning context",
@@ -333,6 +334,34 @@
           "armed_away_value": "Armed away value",
           "armed_home_value": "Armed home value",
           "camera_evidence_sources": "Camera evidence sources (object mapping: source_id -> config)"
+        },
+        "submit": "OK"
+      },
+      "camera_privacy_policies": {
+        "title": "Camera Privacy Policies",
+        "description": "Summary: {summary}",
+        "data": {
+          "action": "Action",
+          "policy": "Policy"
+        },
+        "submit": "OK"
+      },
+      "camera_privacy_policy_form": {
+        "title": "Camera Privacy Policy",
+        "data": {
+          "camera_source_id": "Camera",
+          "alarm_states": "Alarm states",
+          "house_filter_mode": "House-state filter",
+          "house_states": "House states",
+          "privacy_action": "Privacy action",
+          "enabled": "Enabled"
+        },
+        "submit": "OK"
+      },
+      "camera_privacy_policy_delete_confirm": {
+        "title": "Delete Camera Privacy Policy",
+        "data": {
+          "confirm": "Confirm deletion"
         },
         "submit": "OK"
       },
