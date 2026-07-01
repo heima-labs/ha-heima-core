@@ -1463,6 +1463,12 @@ Config format (`suggested_reaction_config`):
 }
 ```
 
+`steps` use the canonical `ApplyStep` contract documented in
+`docs/specs/core/apply_step_contract.md`. For direct HA entity actions, `target` is the logical
+Heima subject and normally matches `params.entity_id`, which is the concrete HA service parameter.
+Domain-specific steps may use `target` for a room or zone while placing the HA entity in
+`params.entity_id`.
+
 `alarm_states` valid values mirror HA alarm control panel states: `"armed_away"`, `"armed_home"`,
 `"armed_night"`, `"triggered"`, `"disarmed"`.
 

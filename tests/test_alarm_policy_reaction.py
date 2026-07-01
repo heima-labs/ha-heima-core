@@ -11,11 +11,11 @@ from custom_components.heima.runtime.reactions.alarm_policy import (
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
-def _snapshot(security_state: str) -> DecisionSnapshot:
+def _snapshot(security_state: str, *, house_state: str = "home") -> DecisionSnapshot:
     return DecisionSnapshot(
         snapshot_id=f"snap-{security_state}",
         ts="2026-05-15T10:00:00+00:00",
-        house_state="home",
+        house_state=house_state,
         anyone_home=False,
         people_count=0,
         occupied_rooms=[],
@@ -84,6 +84,47 @@ def test_alarm_state_action_can_fire_on_different_configured_state_entry() -> No
     assert triggered[0].reason == "alarm_state_action:alarm-lights:triggered"
 
 
+def test_alarm_state_action_skips_configured_house_states() -> None:
+    reaction = AlarmStateActionReaction(
+        alarm_states=["armed_night"],
+        steps=[_step(domain="switch", target="switch.camera_privacy", action="switch.turn_on")],
+        reaction_id="alarm-camera-privacy",
+        skip_house_states=["guest", "vacation"],
+    )
+
+    assert reaction.evaluate([_snapshot("armed_night", house_state="guest")]) == []
+    assert len(reaction.evaluate([_snapshot("armed_night", house_state="home")])) == 1
+
+
+def test_alarm_state_action_only_fires_for_allowed_house_states() -> None:
+    reaction = AlarmStateActionReaction(
+        alarm_states=["armed_home"],
+        steps=[_step(domain="switch", target="switch.camera_privacy", action="switch.turn_off")],
+        reaction_id="alarm-camera-privacy-off",
+        only_house_states=["home"],
+    )
+
+    assert reaction.evaluate([_snapshot("armed_home", house_state="guest")]) == []
+    fired = reaction.evaluate([_snapshot("armed_home", house_state="home")])
+
+    assert len(fired) == 1
+    assert fired[0].action == "switch.turn_off"
+
+
+def test_alarm_state_action_only_house_states_and_skip_house_states_are_combined() -> None:
+    reaction = AlarmStateActionReaction(
+        alarm_states=["armed_home"],
+        steps=[_step(domain="switch", target="switch.camera_privacy", action="switch.turn_on")],
+        reaction_id="alarm-camera-privacy-on",
+        only_house_states=["home", "guest"],
+        skip_house_states=["guest"],
+    )
+
+    assert reaction.evaluate([_snapshot("armed_home", house_state="vacation")]) == []
+    assert reaction.evaluate([_snapshot("armed_home", house_state="guest")]) == []
+    assert len(reaction.evaluate([_snapshot("armed_home", house_state="home")])) == 1
+
+
 def test_alarm_state_action_normalizes_climate_steps() -> None:
     cfg = normalize_alarm_state_action_config(
         {
@@ -112,6 +153,7 @@ def test_alarm_state_action_normalizes_climate_steps() -> None:
             }
         ],
         "skip_house_states": [],
+        "only_house_states": [],
     }
 
 

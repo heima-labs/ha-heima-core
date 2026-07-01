@@ -219,6 +219,10 @@ class InputNormalizer:
         lowered = raw.lower()
         armed_away_value = str(mapping_cfg.get("armed_away_value", "armed_away")).lower()
         armed_home_value = str(mapping_cfg.get("armed_home_value", "armed_home")).lower()
+        armed_night_value = str(mapping_cfg.get("armed_night_value", "armed_night")).lower()
+        armed_vacation_value = str(
+            mapping_cfg.get("armed_vacation_value", "armed_vacation")
+        ).lower()
 
         if lowered == "unavailable":
             state, reason, available = "unavailable", "raw_unavailable", False
@@ -228,9 +232,15 @@ class InputNormalizer:
             state, reason, available = "armed_away", "mapped_armed_away", True
         elif lowered == armed_home_value:
             state, reason, available = "armed_home", "mapped_armed_home", True
+        elif lowered == armed_night_value:
+            state, reason, available = "armed_night", "mapped_armed_night", True
+        elif lowered == armed_vacation_value:
+            state, reason, available = "armed_vacation", "mapped_armed_vacation", True
         elif lowered == "disarmed":
             state, reason, available = "disarmed", "raw_disarmed", True
-        elif lowered in {"arming", "pending", "triggered"}:
+        elif lowered == "triggered":
+            state, reason, available = "triggered", "raw_triggered", True
+        elif lowered in {"arming", "pending"}:
             state, reason, available = "transition", f"raw_{lowered}", True
         else:
             state, reason, available = "unknown", "unmapped_raw_state", True

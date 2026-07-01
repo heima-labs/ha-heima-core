@@ -169,6 +169,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - `070_proposal_review_grouping_live.py`: read-only check for query-time proposal review grouping diagnostics and proposal sensor count
   - `071_learning_plugin_execution_modes_live.py`: read-only check for analyzer, lifecycle-only, and admin-authored-only plugin execution buckets
   - `072_proposal_lifecycle_diag.py`: read-only check for Phase AD proposal/reaction lifecycle monitoring diagnostics and lifecycle suggestion rows
+  - `074_camera_privacy_manual_hold_live.py`: live AE camera privacy check for semantic proposal generation, Heima-owned switch apply provenance, explicit hold blocking, and external switch manual hold
 - `seeded_integration`
   - allowed to accelerate historical data / proposals deterministically
   - not labeled as true E2E

@@ -49,7 +49,6 @@ from .runtime.behaviors import (
     EventCanonicalizer,
     EventRecorderBehavior,
     HeatingRecorderBehavior,
-    LightingReactionGuardBehavior,
     LightingRecorderBehavior,
 )
 from .runtime.context_builder import ContextBuilder
@@ -215,9 +214,6 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.set_event_recorder(self._event_recorder)
         self.engine.register_behavior(
             HeatingRecorderBehavior(hass, self._event_store, self._context_builder)
-        )
-        self.engine.register_behavior(
-            LightingReactionGuardBehavior(self.engine.state, dict(entry.options))
         )
         self._lighting_recorder = LightingRecorderBehavior(
             hass,
@@ -1270,6 +1266,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             return
         if entity_id.startswith("light."):
             self.engine.handle_smart_lighting_state_changed(event)
+        if entity_id.startswith("switch."):
+            self.engine.handle_camera_privacy_state_changed(event)
         entity_class = self._classify_entity(entity_id)
         if entity_class is None:
             return
