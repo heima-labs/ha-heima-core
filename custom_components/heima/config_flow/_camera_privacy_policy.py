@@ -107,6 +107,7 @@ def apply_camera_privacy_policy_rows_to_options(
     rows: list[CameraPrivacyPolicyRow],
     *,
     replace_reaction_ids: set[str] | None = None,
+    replace_managed_reaction_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Replace managed camera privacy policies while preserving unrelated options."""
     updated_options = dict(options or {})
@@ -114,11 +115,16 @@ def apply_camera_privacy_policy_rows_to_options(
     configured = dict(reactions.get("configured", {}) or {})
     labels = dict(reactions.get("labels", {}) or {})
     replace_ids = {str(item).strip() for item in replace_reaction_ids or set() if str(item).strip()}
+    replace_ids.update(
+        str(item).strip() for item in replace_managed_reaction_ids or set() if str(item).strip()
+    )
+    removed_ids: set[str] = set()
 
     for reaction_id, cfg in list(configured.items()):
-        if reaction_id in replace_ids or _is_camera_privacy_policy_config(cfg):
+        if reaction_id in replace_ids:
             configured.pop(reaction_id, None)
             labels.pop(reaction_id, None)
+            removed_ids.add(str(reaction_id))
 
     for row in rows:
         materialized = materialize_camera_privacy_policy_row(
@@ -128,6 +134,13 @@ def apply_camera_privacy_policy_rows_to_options(
         configured[materialized.reaction_id] = materialized.config
         labels[materialized.reaction_id] = materialized.label
 
+    if removed_ids:
+        stale_removed_ids = removed_ids - set(configured)
+        reactions["muted"] = [
+            str(reaction_id)
+            for reaction_id in list(reactions.get("muted", []) or [])
+            if str(reaction_id) not in stale_removed_ids
+        ]
     reactions["configured"] = configured
     reactions["labels"] = labels
     updated_options[OPT_REACTIONS] = reactions

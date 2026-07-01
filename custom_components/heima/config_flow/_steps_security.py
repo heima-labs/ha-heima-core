@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 class _SecurityStepsMixin:
     """Mixin for security step."""
 
+    if TYPE_CHECKING:
+        options: dict[str, Any]
+
     _SECURITY_PRIORITIES = {"low", "normal", "high"}
 
     async def async_step_camera_privacy_policies(
@@ -104,14 +107,37 @@ class _SecurityStepsMixin:
                 data_schema=self._camera_privacy_policy_form_schema(sources, user_input),
                 errors=errors,
             )
+        if row is None:
+            return self.async_show_form(
+                step_id="camera_privacy_policy_form",
+                data_schema=self._camera_privacy_policy_form_schema(sources, user_input),
+                errors={"base": "invalid"},
+            )
 
         selected = self._parsed_camera_privacy_policy(editing_id)
+        if editing_id and selected is None:
+            self._editing_camera_privacy_reaction_id = None
+            return self.async_show_form(
+                step_id="camera_privacy_policies",
+                data_schema=self._camera_privacy_policy_action_schema(
+                    self._camera_privacy_policy_options(
+                        parse_camera_privacy_policy_rows_from_options(self.options)
+                    )
+                ),
+                errors={"policy": "invalid_selection"},
+                description_placeholders={
+                    "summary": self._camera_privacy_policy_summary(
+                        parse_camera_privacy_policy_rows_from_options(self.options)
+                    ),
+                },
+            )
         if self._camera_privacy_policy_duplicate(row, exclude_ids={editing_id}):
             return self.async_show_form(
                 step_id="camera_privacy_policy_form",
                 data_schema=self._camera_privacy_policy_form_schema(sources, user_input),
                 errors={"base": "duplicate"},
             )
+        managed_replace_ids = self._managed_camera_privacy_reaction_ids(exclude_ids=set())
         rows = self._managed_camera_privacy_rows(exclude_ids={editing_id} if editing_id else set())
         rows.append(row)
         replace_ids = {editing_id} if selected is not None and selected.imported else set()
@@ -119,6 +145,7 @@ class _SecurityStepsMixin:
             self.options,
             rows,
             replace_reaction_ids=replace_ids,
+            replace_managed_reaction_ids=managed_replace_ids,
         )
         self._editing_camera_privacy_reaction_id = None
         return await self.async_step_camera_privacy_policies()
@@ -136,12 +163,14 @@ class _SecurityStepsMixin:
             )
         if bool(user_input.get("confirm")):
             selected = self._parsed_camera_privacy_policy(reaction_id)
+            managed_replace_ids = self._managed_camera_privacy_reaction_ids(exclude_ids=set())
             rows = self._managed_camera_privacy_rows(exclude_ids={reaction_id})
             replace_ids = {reaction_id} if selected is not None and selected.imported else set()
             self.options = apply_camera_privacy_policy_rows_to_options(
                 self.options,
                 rows,
                 replace_reaction_ids=replace_ids,
+                replace_managed_reaction_ids=managed_replace_ids,
             )
         self._editing_camera_privacy_reaction_id = None
         return await self.async_step_camera_privacy_policies()
@@ -364,6 +393,14 @@ class _SecurityStepsMixin:
             rows.append(parsed.row)
         return rows
 
+    def _managed_camera_privacy_reaction_ids(self, *, exclude_ids: set[str]) -> set[str]:
+        reaction_ids: set[str] = set()
+        for parsed in parse_camera_privacy_policy_rows_from_options(self.options):
+            if parsed.imported or parsed.reaction_id in exclude_ids:
+                continue
+            reaction_ids.add(str(parsed.reaction_id))
+        return reaction_ids
+
     def _camera_privacy_policy_duplicate(
         self,
         row: CameraPrivacyPolicyRow,
@@ -382,6 +419,7 @@ class _SecurityStepsMixin:
         selected = self._parsed_camera_privacy_policy(reaction_id)
         if selected is None:
             return await self.async_step_camera_privacy_policies()
+        managed_replace_ids = self._managed_camera_privacy_reaction_ids(exclude_ids=set())
         rows = self._managed_camera_privacy_rows(exclude_ids={reaction_id})
         rows.append(replace(selected.row, enabled=not selected.row.enabled))
         replace_ids = {reaction_id} if selected.imported else set()
@@ -389,6 +427,7 @@ class _SecurityStepsMixin:
             self.options,
             rows,
             replace_reaction_ids=replace_ids,
+            replace_managed_reaction_ids=managed_replace_ids,
         )
         self._editing_camera_privacy_reaction_id = None
         return await self.async_step_camera_privacy_policies()

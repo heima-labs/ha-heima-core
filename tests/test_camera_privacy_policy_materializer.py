@@ -106,6 +106,14 @@ def test_materialize_camera_privacy_policy_row_maps_only_filter_and_enabled_defa
 
 
 def test_apply_camera_privacy_policy_rows_preserves_unrelated_options_and_reactions() -> None:
+    old_policy = materialize_camera_privacy_policy_row(
+        CameraPrivacyPolicyRow(
+            camera_source_id="interna",
+            privacy_entity="switch.interna_privacy",
+            alarm_states=("disarmed",),
+            privacy_action="turn_on",
+        )
+    )
     options = {
         "security": {
             "camera_evidence_sources": [
@@ -120,21 +128,17 @@ def test_apply_camera_privacy_policy_rows_preserves_unrelated_options_and_reacti
         },
         "reactions": {
             "configured": {
-                "old-camera-policy": {
-                    "reaction_type": "alarm_state_action",
-                    "source_template_id": CAMERA_PRIVACY_POLICY_TYPE,
-                    "camera_privacy_policy": {"camera_source_id": "interna"},
-                },
+                old_policy.reaction_id: old_policy.config,
                 "unrelated": {
                     "reaction_type": "scheduled_routine",
                     "weekday": 1,
                 },
             },
             "labels": {
-                "old-camera-policy": "Old camera policy",
+                old_policy.reaction_id: "Old camera policy",
                 "unrelated": "Unrelated",
             },
-            "muted": ["unrelated"],
+            "muted": ["unrelated", old_policy.reaction_id],
         },
     }
 
@@ -149,11 +153,12 @@ def test_apply_camera_privacy_policy_rows_preserves_unrelated_options_and_reacti
                 privacy_action="turn_off",
             )
         ],
+        replace_managed_reaction_ids={old_policy.reaction_id},
     )
 
     assert updated["security"] == options["security"]
-    assert "old-camera-policy" not in updated["reactions"]["configured"]
-    assert "old-camera-policy" not in updated["reactions"]["labels"]
+    assert old_policy.reaction_id not in updated["reactions"]["configured"]
+    assert old_policy.reaction_id not in updated["reactions"]["labels"]
     assert updated["reactions"]["configured"]["unrelated"] == {
         "reaction_type": "scheduled_routine",
         "weekday": 1,
@@ -165,6 +170,74 @@ def test_apply_camera_privacy_policy_rows_preserves_unrelated_options_and_reacti
     assert updated["reactions"]["labels"][new_id] == (
         "Corridoio privacy: off when alarm is armed_away"
     )
+
+
+def test_apply_camera_privacy_policy_rows_preserves_unparseable_managed_policy() -> None:
+    parseable_policy = materialize_camera_privacy_policy_row(
+        CameraPrivacyPolicyRow(
+            camera_source_id="interna",
+            privacy_entity="switch.interna_privacy",
+            alarm_states=("disarmed",),
+            privacy_action="turn_on",
+        )
+    )
+    stale_policy = {
+        "reaction_type": "alarm_state_action",
+        "source_template_id": CAMERA_PRIVACY_POLICY_TYPE,
+        "camera_privacy_policy": {
+            "camera_source_id": "missing_camera",
+            "privacy_entity": "switch.missing_privacy",
+            "privacy_action": "turn_on",
+        },
+        "alarm_states": ["disarmed"],
+        "steps": [
+            {
+                "domain": "switch",
+                "target": "switch.missing_privacy",
+                "action": "switch.turn_on",
+                "params": {"entity_id": "switch.missing_privacy"},
+            }
+        ],
+    }
+    options = {
+        "security": {
+            "camera_evidence_sources": [
+                {
+                    "id": "interna",
+                    "role": "interior",
+                    "privacy_entity": "switch.interna_privacy",
+                }
+            ]
+        },
+        "reactions": {
+            "configured": {
+                parseable_policy.reaction_id: parseable_policy.config,
+                "stale-camera-policy": stale_policy,
+            },
+            "labels": {
+                parseable_policy.reaction_id: "Old parseable",
+                "stale-camera-policy": "Stale camera policy",
+            },
+            "muted": ["stale-camera-policy"],
+        },
+    }
+
+    updated = apply_camera_privacy_policy_rows_to_options(
+        options,
+        [
+            CameraPrivacyPolicyRow(
+                camera_source_id="interna",
+                privacy_entity="switch.interna_privacy",
+                alarm_states=("armed_away",),
+                privacy_action="turn_off",
+            )
+        ],
+        replace_managed_reaction_ids={parseable_policy.reaction_id},
+    )
+
+    assert updated["reactions"]["configured"]["stale-camera-policy"] == stale_policy
+    assert updated["reactions"]["labels"]["stale-camera-policy"] == "Stale camera policy"
+    assert updated["reactions"]["muted"] == ["stale-camera-policy"]
 
 
 def test_materialize_camera_privacy_policy_row_uses_deterministic_suffix_on_conflict() -> None:
@@ -448,6 +521,7 @@ def test_apply_camera_privacy_policy_rows_can_adopt_imported_reaction_id() -> No
                 "raw-privacy-off": "Raw privacy off",
                 "unrelated": "Unrelated",
             },
+            "muted": ["raw-privacy-off", "unrelated"],
         },
     }
     imported = parse_camera_privacy_policy_rows_from_options(options)
@@ -461,6 +535,7 @@ def test_apply_camera_privacy_policy_rows_can_adopt_imported_reaction_id() -> No
     new_id = "camera_privacy_policy__interna__armed_away__any__turn_off"
     assert "raw-privacy-off" not in updated["reactions"]["configured"]
     assert "raw-privacy-off" not in updated["reactions"]["labels"]
+    assert updated["reactions"]["muted"] == ["unrelated"]
     assert new_id in updated["reactions"]["configured"]
     assert updated["reactions"]["configured"][new_id]["camera_privacy_policy"] == {
         "camera_source_id": "interna",

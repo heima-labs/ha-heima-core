@@ -800,6 +800,7 @@ async def test_camera_privacy_policy_flow_adopts_imported_reaction_on_edit():
                     "unrelated": {"reaction_type": "scheduled_routine"},
                 },
                 "labels": {"raw-privacy": "Raw privacy", "unrelated": "Unrelated"},
+                "muted": ["raw-privacy", "unrelated"],
             },
         }
     )
@@ -836,6 +837,7 @@ async def test_camera_privacy_policy_flow_adopts_imported_reaction_on_edit():
         "reaction_type": "scheduled_routine"
     }
     assert flow.options["reactions"]["labels"]["unrelated"] == "Unrelated"
+    assert flow.options["reactions"]["muted"] == ["unrelated"]
 
 
 @pytest.mark.asyncio
@@ -867,6 +869,7 @@ async def test_camera_privacy_policy_flow_toggles_and_deletes_policy():
         }
     )
     reaction_id = "camera_privacy_policy__interna__disarmed__any__turn_on"
+    flow.options["reactions"]["muted"] = [reaction_id]
 
     toggled = await flow.async_step_camera_privacy_policies(
         {"action": "toggle_enabled", "policy": reaction_id}
@@ -874,6 +877,7 @@ async def test_camera_privacy_policy_flow_toggles_and_deletes_policy():
 
     assert toggled["step_id"] == "camera_privacy_policies"
     assert flow.options["reactions"]["configured"][reaction_id]["enabled"] is False
+    assert flow.options["reactions"]["muted"] == [reaction_id]
 
     delete_form = await flow.async_step_camera_privacy_policies(
         {"action": "delete", "policy": reaction_id}
@@ -884,6 +888,43 @@ async def test_camera_privacy_policy_flow_toggles_and_deletes_policy():
     assert result["step_id"] == "camera_privacy_policies"
     assert reaction_id not in flow.options["reactions"]["configured"]
     assert reaction_id not in flow.options["reactions"]["labels"]
+    assert flow.options["reactions"]["muted"] == []
+
+
+@pytest.mark.asyncio
+async def test_camera_privacy_policy_form_rejects_stale_edit_id():
+    flow = _flow(
+        {
+            "security": {
+                "camera_evidence_sources": [
+                    {
+                        "id": "interna",
+                        "display_name": "Corridoio",
+                        "role": "interior",
+                        "privacy_entity": "switch.interna_privacy",
+                    }
+                ]
+            },
+            "reactions": {"configured": {}, "labels": {}},
+        }
+    )
+    flow._editing_camera_privacy_reaction_id = "missing-policy"
+
+    result = await flow.async_step_camera_privacy_policy_form(
+        {
+            "camera_source_id": "interna",
+            "alarm_states": ["disarmed"],
+            "house_filter_mode": "always",
+            "house_states": [],
+            "privacy_action": "turn_on",
+            "enabled": True,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "camera_privacy_policies"
+    assert result["errors"]["policy"] == "invalid_selection"
+    assert flow.options["reactions"]["configured"] == {}
 
 
 @pytest.mark.asyncio
