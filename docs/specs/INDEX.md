@@ -38,6 +38,8 @@ Related practical guides live outside this tree:
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/apply_step_contract.md` — canonical runtime action contract, including `target` vs `params.entity_id`
+- `core/policy_editor_framework_spec.md` — shared contract for domain-specific policy editors that materialize Heima runtime config
+- `core/camera_privacy_policy_ui_spec.md` — domain-specific admin UI for camera privacy policies backed by `alarm_state_action`
 - `core/reactive_behavior_spec.md` — behavior/reaction runtime
 - `core/reaction_identity_spec.md` — canonical `reaction_type` identity and persisted reaction contract
 - `core/scheduled_routine_spec.md` — bounded admin-authored time-based routine contract

@@ -37,7 +37,7 @@ def test_manual_hold_manager_reports_empty_diagnostics() -> None:
 
     assert manager.diagnostics() == {
         "active_holds": [],
-        "pending_applies": {"total": 0, "by_domain": {}},
+        "pending_applies": {"total": 0, "by_domain": {}, "items": []},
     }
 
 
@@ -77,7 +77,11 @@ def test_manual_hold_manager_registers_and_consumes_light_pending_apply() -> Non
 
     manager.register_pending_apply(step)
 
-    assert manager.diagnostics()["pending_applies"] == {"total": 1, "by_domain": {"light": 1}}
+    pending = manager.diagnostics()["pending_applies"]
+    assert pending["total"] == 1
+    assert pending["by_domain"] == {"light": 1}
+    assert pending["items"][0]["entity_id"] == "light.studio_main"
+    assert pending["items"][0]["expected_state"] == "on"
     assert manager.consume_pending_apply(
         "light.studio_main",
         SimpleNamespace(
@@ -85,7 +89,7 @@ def test_manual_hold_manager_registers_and_consumes_light_pending_apply() -> Non
             attributes={"brightness": 148, "color_temp_kelvin": 3050},
         ),
     )
-    assert manager.diagnostics()["pending_applies"] == {"total": 0, "by_domain": {}}
+    assert manager.diagnostics()["pending_applies"] == {"total": 0, "by_domain": {}, "items": []}
 
 
 def test_manual_hold_manager_classifies_owned_and_external_light_changes() -> None:
@@ -132,6 +136,7 @@ def test_manual_hold_manager_rejects_expired_pending_apply() -> None:
         "switch.front_door_privacy",
         SimpleNamespace(state="off", attributes={}),
     )
+    assert manager.diagnostics()["pending_applies"] == {"total": 0, "by_domain": {}, "items": []}
 
 
 def test_manual_hold_manager_returns_step_hold_reason_for_entity_scope() -> None:
@@ -174,7 +179,7 @@ def test_engine_diagnostics_include_manual_hold_manager() -> None:
 
     assert engine.diagnostics()["manual_hold"] == {
         "active_holds": [],
-        "pending_applies": {"total": 0, "by_domain": {}},
+        "pending_applies": {"total": 0, "by_domain": {}, "items": []},
     }
 
 
@@ -297,6 +302,40 @@ def test_engine_camera_privacy_heima_owned_switch_change_does_not_hold() -> None
     assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
 
 
+def test_engine_camera_privacy_initial_switch_state_does_not_hold() -> None:
+    engine = _privacy_engine(hold_state="off")
+
+    engine.handle_camera_privacy_state_changed(
+        SimpleNamespace(
+            data={
+                "entity_id": "switch.front_privacy",
+                "old_state": None,
+                "new_state": SimpleNamespace(state="on", attributes={}),
+            }
+        )
+    )
+
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+
+
+def test_engine_camera_privacy_restored_switch_state_does_not_hold() -> None:
+    engine = _privacy_engine(hold_state="off")
+
+    engine.handle_camera_privacy_state_changed(
+        SimpleNamespace(
+            data={
+                "entity_id": "switch.front_privacy",
+                "old_state": SimpleNamespace(state="unavailable", attributes={"restored": True}),
+                "new_state": SimpleNamespace(state="on", attributes={}),
+            }
+        )
+    )
+
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+
+
 def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
     engine = _privacy_engine(hold_state="off")
 
@@ -304,6 +343,7 @@ def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
         SimpleNamespace(
             data={
                 "entity_id": "switch.front_privacy",
+                "old_state": SimpleNamespace(state="on", attributes={}),
                 "new_state": SimpleNamespace(state="off", attributes={}),
             }
         )

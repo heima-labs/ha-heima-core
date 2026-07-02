@@ -3,6 +3,7 @@
 **Status:** Implemented on `feat/v2` via Manual Hold Framework  
 **Last audited:** 2026-06-25  
 **Phase:** AE — Camera Privacy Guard & Extensible Entity Actions
+**UI follow-up:** `camera_privacy_policy_ui_spec.md`
 
 ## Purpose
 
@@ -79,6 +80,10 @@ Implemented reaction: `alarm_state_action`.
 `steps` use the canonical `ApplyStep` contract documented in
 `docs/specs/core/apply_step_contract.md`. For direct camera privacy switch actions,
 `target` and `params.entity_id` must both be the same `switch.*` entity.
+
+Camera privacy actions are direct `switch` apply steps. They are controlled by the global
+`engine_enabled` gate and must not depend on `lighting_apply_mode`; that option only controls
+Heima-owned lighting-domain execution.
 
 Supported AE fields:
 

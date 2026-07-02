@@ -361,9 +361,15 @@ class HeimaEngine:
         entity_id = str(event.data.get("entity_id") or "").strip()
         if not entity_id or entity_id not in self._camera_privacy_scopes_by_entity():
             return
+        old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
+        old_state_value = str(getattr(old_state, "state", "") or "").strip().lower()
         state_value = str(getattr(new_state, "state", "") or "").strip().lower()
+        if old_state_value not in {"on", "off"}:
+            return
         if state_value not in {"on", "off"}:
+            return
+        if old_state_value == state_value:
             return
         if self._manual_hold_manager.classify_state_change(entity_id, new_state) == "heima_owned":
             return
@@ -772,6 +778,17 @@ class HeimaEngine:
     ) -> tuple[str, str | None, str | None]:
         return self._house_state_domain.set_override(mode=mode, enabled=enabled, source=source)
 
+    def clear_manual_hold(self, *, domain: str, subject_type: str, subject_id: str) -> None:
+        """Clear a runtime manual hold scope."""
+        self._manual_hold_manager.release_scope(
+            ManualHoldScope(
+                str(domain).strip(),
+                str(subject_type).strip(),
+                str(subject_id).strip(),
+            ),
+            reason="service:clear_manual_hold",
+        )
+
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
         _LOGGER.debug("Heima evaluation requested: %s", reason)
@@ -810,8 +827,11 @@ class HeimaEngine:
                 self._sync_event_sensors()
             self._last_engine_enabled_state = self._options.engine_enabled
 
-        if self._options.engine_enabled and self._lighting_apply_mode() == "scene":
-            await self._execute_apply_plan(plan)
+        if self._options.engine_enabled:
+            await self._execute_apply_plan(
+                plan,
+                include_lighting_domain_steps=self._should_apply_lighting_domain_steps(),
+            )
 
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
@@ -1808,8 +1828,17 @@ class HeimaEngine:
             )
         )
 
-    async def _execute_apply_plan(self, plan: ApplyPlan) -> None:
-        lighting_steps = [s for s in plan.steps if s.domain == "lighting" and not s.blocked_by]
+    async def _execute_apply_plan(
+        self,
+        plan: ApplyPlan,
+        *,
+        include_lighting_domain_steps: bool = True,
+    ) -> None:
+        lighting_steps = [
+            s
+            for s in plan.steps
+            if include_lighting_domain_steps and s.domain == "lighting" and not s.blocked_by
+        ]
         heating_steps = [s for s in plan.steps if s.domain == "heating" and not s.blocked_by]
         script_steps = [s for s in plan.steps if s.domain == "script" and not s.blocked_by]
         scene_steps = [s for s in plan.steps if s.domain == "scene" and not s.blocked_by]
@@ -1987,12 +2016,25 @@ class HeimaEngine:
                 _LOGGER.warning("Skipping missing switch entity: %s", switch_entity)
                 continue
             try:
+                service = step.action.split(".", 1)[1]
+                _LOGGER.debug(
+                    "Applying switch step: service=switch.%s entity_id=%s source=%s reason=%s",
+                    service,
+                    switch_entity,
+                    step.source,
+                    step.reason,
+                )
                 self._register_pending_apply_for_step(step)
                 await self._hass.services.async_call(
                     "switch",
-                    step.action.split(".", 1)[1],
+                    service,
                     {"entity_id": switch_entity},
-                    blocking=False,
+                    blocking=True,
+                )
+                _LOGGER.debug(
+                    "Switch step service completed: service=switch.%s entity_id=%s",
+                    service,
+                    switch_entity,
                 )
             except ServiceNotFound:
                 _LOGGER.warning(
@@ -2104,6 +2146,11 @@ class HeimaEngine:
                 "fire_count": diag.get("fire_count", 0),
                 "suppressed_count": diag.get("suppressed_count", 0),
                 "last_fired_ts": diag.get("last_fired_ts"),
+                **{
+                    key: value
+                    for key, value in diag.items()
+                    if key not in {"fire_count", "suppressed_count", "last_fired_ts"}
+                },
                 **provenance,
             }
         self._state.set_sensor("heima_reactions_active", len(payload))
@@ -2146,6 +2193,10 @@ class HeimaEngine:
         if mode not in {"scene", "delegate"}:
             return DEFAULT_LIGHTING_APPLY_MODE
         return mode
+
+    def _should_apply_lighting_domain_steps(self) -> bool:
+        """Return whether Heima-owned lighting-domain steps should execute directly."""
+        return self._lighting_apply_mode() == "scene"
 
     async def _emit_lighting_hold_events(self) -> None:
         await self._lighting_domain.emit_hold_events(

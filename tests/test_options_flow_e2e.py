@@ -202,6 +202,27 @@ def test_rooms_menu_summary_includes_new_and_orphaned_labels():
     assert "orfane: Studio" in summary
 
 
+def test_general_delegate_warning_is_scoped_to_lighting_apply_mode():
+    flow = _flow(
+        {
+            "lighting_apply_mode": "delegate",
+            "reactions": {
+                "configured": {
+                    "camera_privacy": {
+                        "reaction_type": "alarm_state_action",
+                    }
+                }
+            },
+        }
+    )
+
+    warning = flow._general_description_placeholders()["delegate_warning"]
+
+    assert "dominio lighting" in warning
+    assert "switch/script/input_boolean/heating" in warning
+    assert "le reazioni non vengono eseguite" not in warning
+
+
 @pytest.mark.asyncio
 async def test_general_flow_persists_house_signal_bindings():
     flow = _flow()

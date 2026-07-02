@@ -171,6 +171,7 @@ class ManualHoldManager:
     def diagnostics(self) -> dict[str, Any]:
         """Return manual-hold diagnostics."""
         self._expire_holds()
+        self._expire_pending_applies()
         now = float(self._monotonic())
         return {
             "active_holds": [
@@ -192,6 +193,21 @@ class ManualHoldManager:
             "pending_applies": {
                 "total": len(self._pending_applies),
                 "by_domain": self._pending_apply_counts_by_domain(),
+                "items": [
+                    {
+                        "entity_id": pending.entity_id,
+                        "expected_domain": pending.expected_domain,
+                        "expected_state": pending.expected_state,
+                        "age_s": max(0.0, now - pending.timestamp),
+                        "expires_in_s": max(0.0, pending.ttl - (now - pending.timestamp)),
+                        "source_reaction_id": pending.source_reaction_id,
+                        "source_reaction_type": pending.source_reaction_type,
+                        "scope": pending.scope.key if pending.scope is not None else None,
+                    }
+                    for pending in sorted(
+                        self._pending_applies.values(), key=lambda item: item.entity_id
+                    )
+                ],
             },
         }
 
@@ -248,6 +264,16 @@ class ManualHoldManager:
         ]
         for key in expired:
             self._active_holds.pop(key, None)
+
+    def _expire_pending_applies(self) -> None:
+        now = float(self._monotonic())
+        expired = [
+            entity_id
+            for entity_id, pending in self._pending_applies.items()
+            if now - pending.timestamp >= pending.ttl
+        ]
+        for entity_id in expired:
+            self._pending_applies.pop(entity_id, None)
 
     @staticmethod
     def _attributes_match(pending: PendingApply, attrs: dict[str, Any]) -> bool:

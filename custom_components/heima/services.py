@@ -87,6 +87,7 @@ SUPPORTED_COMMANDS = {
     "set_lighting_intent",
     "set_security_intent",
     "set_room_lighting_hold",
+    "clear_manual_hold",
     "notify_event",
     "mute_reaction",
     "unmute_reaction",
@@ -240,6 +241,22 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 state=bool(state),
                 reason=f"service:set_room_lighting_hold:{room_id}:{bool(state)}",
             )
+            return
+
+        if command == "clear_manual_hold":
+            hold_target = params or target
+            domain = _require_target_value(hold_target, "domain")
+            subject_type = _require_target_value(hold_target, "subject_type")
+            subject_id = _require_target_value(hold_target, "subject_id")
+            for coordinator in coordinators:
+                coordinator.engine.clear_manual_hold(
+                    domain=domain,
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                )
+                await coordinator.async_request_evaluation(
+                    reason=f"service:clear_manual_hold:{domain}:{subject_type}:{subject_id}"
+                )
             return
 
         if command == "notify_event":

@@ -46,8 +46,13 @@ timezone override.
   - `scene`
   - `delegate`
 - Meaning:
-  - `scene`: Heima applies `scene.turn_on`
-  - `delegate`: Heima computes lighting state but does not directly apply scenes
+  - `scene`: Heima directly executes Heima-owned lighting-domain apply steps.
+  - `delegate`: Heima computes lighting state but skips Heima-owned lighting-domain apply steps.
+
+This option is scoped to lighting only. It does not disable direct actuator steps produced by
+admin-authored or plugin-authored automations, such as camera privacy `switch.turn_on` /
+`switch.turn_off`, scripts, input booleans, or heating actions. Use `engine_enabled = false`
+to disable all Heima applies globally.
 
 Guide:
 - for practical guidance on when to prefer `scene.*` vs `script.*`, see

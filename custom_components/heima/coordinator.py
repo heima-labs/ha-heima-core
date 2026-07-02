@@ -1309,6 +1309,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         options = dict(self.entry.options)
         if entity_id in self._configured_presence_entities(options):
             return "presence"
+        if entity_id == self._configured_security_state_entity(options):
+            return "security"
         if entity_id == self._configured_weather_entity(options):
             return "weather"
         if entity_id in self._power_thresholds_by_entity():
@@ -1316,6 +1318,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if entity_id in self._configured_smart_lighting_outdoor_lux_entities(options):
             return "outdoor_lux"
         return None
+
+    def _configured_security_state_entity(self, options: dict[str, Any]) -> str:
+        security = options.get(OPT_SECURITY, {})
+        if not isinstance(security, dict):
+            return ""
+        return str(security.get("security_state_entity") or "").strip().lower()
 
     def _configured_smart_lighting_outdoor_lux_entities(self, options: dict[str, Any]) -> set[str]:
         return set(self._configured_smart_lighting_outdoor_lux_entity_rooms(options))

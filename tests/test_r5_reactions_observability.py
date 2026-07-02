@@ -146,6 +146,35 @@ def test_sync_reactions_sensor_exposes_configured_reaction_provenance():
     assert val["my_reaction"]["source_proposal_id"] == "proposal-admin"
 
 
+def test_sync_reactions_sensor_exposes_alarm_state_action_diagnostics():
+    from dataclasses import replace
+
+    from custom_components.heima.runtime.reactions.alarm_policy import AlarmStateActionReaction
+
+    engine = _make_engine()
+    reaction = AlarmStateActionReaction(
+        alarm_states=["armed_night"],
+        steps=[
+            {
+                "domain": "switch",
+                "target": "switch.front_privacy",
+                "action": "switch.turn_off",
+                "params": {"entity_id": "switch.front_privacy"},
+            }
+        ],
+        reaction_id="camera_privacy",
+    )
+    reaction.evaluate([replace(DecisionSnapshot.empty(), security_state="armed_night")])
+    engine._reactions.append(reaction)
+
+    engine._sync_reactions_sensor()
+
+    val = engine._state.get_sensor_attributes("heima_reactions_active")["reactions"]
+    assert val["camera_privacy"]["last_fired_state"] == "armed_night"
+    assert val["camera_privacy"]["alarm_states"] == ["armed_night"]
+    assert val["camera_privacy"]["steps"] == 1
+
+
 def test_sync_reactions_sensor_keeps_state_compact_for_large_payload():
     engine = _make_engine()
     engine._entry.options = {
