@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.exceptions import ServiceNotFound
@@ -632,6 +633,42 @@ async def test_execute_apply_plan_runs_scheduled_routine_direct_actuator_steps()
         ("switch", "turn_off", {"entity_id": "switch.fountain"}, False),
         ("input_boolean", "turn_on", {"entity_id": "input_boolean.night_mode"}, False),
     ]
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_executes_switch_steps_when_lighting_apply_mode_delegates():
+    engine = _build_engine(
+        {"engine_enabled": True, "lighting_apply_mode": "delegate"},
+        {"switch.interna_privacy": "on"},
+    )
+    engine._lighting_domain.execute_lighting_steps = AsyncMock()
+    plan = ApplyPlan(
+        steps=[
+            ApplyStep(
+                domain="lighting",
+                target="studio",
+                action="scene.turn_on",
+                params={"entity_id": "scene.studio_evening"},
+                reason="lighting:test",
+            ),
+            ApplyStep(
+                domain="switch",
+                target="switch.interna_privacy",
+                action="switch.turn_off",
+                params={"entity_id": "switch.interna_privacy"},
+                reason="alarm_state_action:camera_privacy:armed_night",
+            ),
+        ]
+    )
+    engine._build_apply_plan = lambda _snapshot: plan  # type: ignore[method-assign]
+
+    await engine.async_evaluate(reason="test:camera_privacy")
+
+    assert ("switch", "turn_off", {"entity_id": "switch.interna_privacy"}, False) in (
+        engine._hass.services.calls
+    )
+    engine._lighting_domain.execute_lighting_steps.assert_awaited_once()
+    assert engine._lighting_domain.execute_lighting_steps.await_args.args[0] == []
 
 
 def test_constraints_block_scene_and_light_turn_on_when_armed_away():

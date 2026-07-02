@@ -2,7 +2,7 @@
 
 **Status:** v1 improvement target  
 **Scope:** Admin-authored automations alongside learned proposals in Heima v1  
-**Related:** `learning_system_spec.md`, `proposal_lifecycle_spec.md`, `core/reactive_behavior_spec.md`
+**Related:** `learning_system_spec.md`, `proposal_lifecycle_spec.md`, `core/reactive_behavior_spec.md`, `core/policy_editor_framework_spec.md`
 
 ## 1. Goal
 
@@ -47,6 +47,10 @@ proposal/reaction shape:
 - `supports_admin_authored = false` means the family is learned-only unless the spec explicitly says otherwise
 - template IDs, display labels, and schema fragments SHOULD come from the plugin declaration, not from a
   standalone automation builder
+
+Domain policy editors are a stricter form of admin-authored configuration. They must follow
+`core/policy_editor_framework_spec.md`: domain-specific subject/context/action, bounded actions,
+normal Heima persistence, and no generic trigger/condition/action builder.
 
 For plugin families that support multiple bounded automations:
 

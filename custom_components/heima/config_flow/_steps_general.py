@@ -40,8 +40,10 @@ class _GeneralStepsMixin:
             reaction_ids = ", ".join(sorted(reactions_cfg.keys()))
             return {
                 "delegate_warning": (
-                    f"⚠ Modalità 'delegate': le reazioni non vengono eseguite "
-                    f"(reactions: {reaction_ids}). Passa a 'scene' per attivarle."
+                    f"⚠ Modalità 'delegate': Heima non applica direttamente gli step "
+                    f"del dominio lighting (reactions: {reaction_ids}). Le altre "
+                    f"azioni, inclusi switch/script/input_boolean/heating, restano attive "
+                    f"se il motore è abilitato."
                 )
             }
         return {"delegate_warning": ""}

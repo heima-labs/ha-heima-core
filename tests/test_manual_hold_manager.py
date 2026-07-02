@@ -297,6 +297,40 @@ def test_engine_camera_privacy_heima_owned_switch_change_does_not_hold() -> None
     assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
 
 
+def test_engine_camera_privacy_initial_switch_state_does_not_hold() -> None:
+    engine = _privacy_engine(hold_state="off")
+
+    engine.handle_camera_privacy_state_changed(
+        SimpleNamespace(
+            data={
+                "entity_id": "switch.front_privacy",
+                "old_state": None,
+                "new_state": SimpleNamespace(state="on", attributes={}),
+            }
+        )
+    )
+
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+
+
+def test_engine_camera_privacy_restored_switch_state_does_not_hold() -> None:
+    engine = _privacy_engine(hold_state="off")
+
+    engine.handle_camera_privacy_state_changed(
+        SimpleNamespace(
+            data={
+                "entity_id": "switch.front_privacy",
+                "old_state": SimpleNamespace(state="unavailable", attributes={"restored": True}),
+                "new_state": SimpleNamespace(state="on", attributes={}),
+            }
+        )
+    )
+
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+
+
 def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
     engine = _privacy_engine(hold_state="off")
 
@@ -304,6 +338,7 @@ def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
         SimpleNamespace(
             data={
                 "entity_id": "switch.front_privacy",
+                "old_state": SimpleNamespace(state="on", attributes={}),
                 "new_state": SimpleNamespace(state="off", attributes={}),
             }
         )

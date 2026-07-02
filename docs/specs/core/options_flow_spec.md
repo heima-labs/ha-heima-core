@@ -121,6 +121,12 @@ Bounded time-based admin utility:
 - `language` (string, default: HA language)
 - `lighting_apply_mode` (enum: `scene`, `delegate`)
 
+### Runtime Apply Gates
+- `engine_enabled` is the only global apply gate. When false, Heima still computes state and diagnostics but must not execute any apply step.
+- `lighting_apply_mode` is scoped only to Heima-owned lighting-domain steps (`domain: lighting`).
+  It must not suppress admin-authored or plugin-authored direct actuator steps such as `switch.*`, `input_boolean.*`, `script.*`, `scene.*`, `light.*`, or `heating`.
+- Camera privacy policies materialize as direct `switch` steps and must execute independently of `lighting_apply_mode`.
+
 Optional house-signal bindings:
 - `vacation_mode_entity` (entity picker: `input_boolean|binary_sensor|sensor`)
 - `guest_mode_entity` (entity picker: `input_boolean|binary_sensor|sensor`)
@@ -561,6 +567,22 @@ Current v1 implementation:
 - the bounded template flow is implemented for `lighting.scene_schedule.basic`
 - plugin families may declare more admin-authored templates than the current flow exposes
 - only templates explicitly implemented in the options flow are user-selectable
+
+### Domain Policy Editors
+
+Domain policy editors are bounded admin configuration surfaces governed by
+`core/policy_editor_framework_spec.md`.
+
+Normative rules:
+- they MUST be domain-specific and must not become a generic HA automation builder
+- they MUST materialize into existing Heima runtime config, usually `reactions.configured`
+- they MUST preserve unrelated options and reactions
+- they MUST expose domain concepts rather than raw `ApplyStep` fields in the primary UI
+- each editor MUST define materialization, reverse parsing, duplicate slot semantics, validation,
+  labels, and tests
+
+Current first target:
+- `security.camera_privacy_policy`
 
 ### Proposals
 

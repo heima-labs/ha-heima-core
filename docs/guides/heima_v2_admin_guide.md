@@ -174,10 +174,13 @@ Recommended first-run settings:
 
 `lighting_apply_mode`:
 
-- `scene`: Heima can apply scene/script-backed lighting reactions.
-- `delegate`: Heima computes and stores configuration but does not execute configured reactions.
+- `scene`: Heima can directly apply Heima-owned lighting-domain steps.
+- `delegate`: Heima computes lighting state but does not directly apply Heima-owned lighting-domain steps.
 
-If `delegate` is active while reactions exist, the General step shows a warning. This is expected.
+`lighting_apply_mode` does not control non-lighting automations. Camera privacy policies,
+scheduled routines, scripts, input booleans, switch actions, and heating actions still execute
+when `engine_enabled` is true. Use `engine_enabled = false` only when you want to disable all
+Heima apply phases globally.
 
 House-state signal guidance:
 

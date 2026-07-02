@@ -20,6 +20,7 @@ from custom_components.heima.coordinator import HeimaCoordinator
 from custom_components.heima.runtime.analyzers import AnomalyAnalyzer
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.inference import HouseSnapshot
+from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
 from custom_components.heima.services import (
     _coordinators_for_target,
     _validate_command,
@@ -806,6 +807,51 @@ async def test_heima_command_set_room_lighting_hold_updates_binary(monkeypatch):
     )
 
     assert engine.state.get_binary("heima_lighting_hold_studio") is True
+
+
+@pytest.mark.asyncio
+async def test_heima_command_clear_manual_hold_releases_scope(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    engine._manual_hold_manager.activate_hold(
+        scope,
+        ManualHoldReason(
+            kind="external_on",
+            source_entity="switch.front_privacy",
+        ),
+    )
+    coordinator = _FakeCoordinator(engine)
+    coordinator.async_request_evaluation = AsyncMock()
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(
+            data={
+                "command": "clear_manual_hold",
+                "target": {},
+                "params": {
+                    "domain": "switch",
+                    "subject_type": "entity",
+                    "subject_id": "switch.front_privacy",
+                },
+            }
+        )
+    )
+
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+    coordinator.async_request_evaluation.assert_awaited_once_with(
+        reason="service:clear_manual_hold:switch:entity:switch.front_privacy"
+    )
 
 
 @pytest.mark.asyncio
