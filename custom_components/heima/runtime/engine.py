@@ -2016,12 +2016,25 @@ class HeimaEngine:
                 _LOGGER.warning("Skipping missing switch entity: %s", switch_entity)
                 continue
             try:
+                service = step.action.split(".", 1)[1]
+                _LOGGER.debug(
+                    "Applying switch step: service=switch.%s entity_id=%s source=%s reason=%s",
+                    service,
+                    switch_entity,
+                    step.source,
+                    step.reason,
+                )
                 self._register_pending_apply_for_step(step)
                 await self._hass.services.async_call(
                     "switch",
-                    step.action.split(".", 1)[1],
+                    service,
                     {"entity_id": switch_entity},
-                    blocking=False,
+                    blocking=True,
+                )
+                _LOGGER.debug(
+                    "Switch step service completed: service=switch.%s entity_id=%s",
+                    service,
+                    switch_entity,
                 )
             except ServiceNotFound:
                 _LOGGER.warning(

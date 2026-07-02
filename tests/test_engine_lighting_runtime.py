@@ -664,7 +664,7 @@ async def test_async_evaluate_executes_switch_steps_when_lighting_apply_mode_del
 
     await engine.async_evaluate(reason="test:camera_privacy")
 
-    assert ("switch", "turn_off", {"entity_id": "switch.interna_privacy"}, False) in (
+    assert ("switch", "turn_off", {"entity_id": "switch.interna_privacy"}, True) in (
         engine._hass.services.calls
     )
     engine._lighting_domain.execute_lighting_steps.assert_awaited_once()

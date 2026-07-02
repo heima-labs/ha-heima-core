@@ -134,8 +134,17 @@ def _manual_hold_rows(runtime_engine: dict[str, Any], *, privacy_switch: str) ->
         if isinstance(item, dict) and str(item.get("scope") or "") == scope
     ]
     pending = _as_dict(manual_hold.get("pending_applies"))
+    pending_items = [
+        item
+        for item in _as_list(pending.get("items"))
+        if isinstance(item, dict)
+        and (
+            str(item.get("entity_id") or "") == privacy_switch
+            or str(item.get("scope") or "") == scope
+        )
+    ]
     filtered["active_holds_for_privacy_switch"] = active
-    filtered["pending_apply_for_privacy_switch"] = pending.get(scope)
+    filtered["pending_applies_for_privacy_switch"] = pending_items
     return filtered
 
 

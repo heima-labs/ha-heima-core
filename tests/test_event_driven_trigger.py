@@ -62,6 +62,10 @@ def test_classify_entity_prefers_explicit_config_and_patterns() -> None:
             "activity_bindings": {
                 "stove_on": {"stove_power_entity": "sensor.stove_power"},
             },
+            "security": {
+                "enabled": True,
+                "security_state_entity": "alarm_control_panel.home",
+            },
             "rooms": [
                 {
                     "room_id": "studio",
@@ -77,6 +81,7 @@ def test_classify_entity_prefers_explicit_config_and_patterns() -> None:
     assert coordinator._classify_entity("binary_sensor.hall_motion") == "motion"  # noqa: SLF001
     assert coordinator._classify_entity("binary_sensor.front_door") == "door_window"  # noqa: SLF001
     assert coordinator._classify_entity("calendar.family") == "calendar"  # noqa: SLF001
+    assert coordinator._classify_entity("alarm_control_panel.home") == "security"  # noqa: SLF001
     assert coordinator._classify_entity("weather.home") == "weather"  # noqa: SLF001
     assert coordinator._classify_entity("sensor.stove_power") == "power_threshold"  # noqa: SLF001
     assert coordinator._classify_entity("binary_sensor.room_presence") == "presence"  # noqa: SLF001
@@ -215,6 +220,40 @@ def test_state_changed_schedules_debounced_evaluation(monkeypatch: pytest.Monkey
     assert scheduled == [(5.0, scheduled[0][1])]
     assert coordinator._eval_pending is True  # noqa: SLF001
     assert coordinator._pending_eval_reasons == {"presence": "state_changed:person.stefano"}  # noqa: SLF001
+
+
+def test_security_state_changed_schedules_immediate_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = _coordinator(
+        {
+            "security": {
+                "enabled": True,
+                "security_state_entity": "alarm_control_panel.home",
+            }
+        }
+    )
+    scheduled: list[tuple[float, object]] = []
+
+    def fake_call_later(hass, delay, callback):  # noqa: ANN001
+        scheduled.append((delay, callback))
+        return lambda: None
+
+    monkeypatch.setattr("custom_components.heima.coordinator.async_call_later", fake_call_later)
+
+    coordinator._on_state_changed(  # noqa: SLF001
+        _FakeEvent(
+            "alarm_control_panel.home",
+            old_state="disarmed",
+            new_state="armed_night",
+        )
+    )
+
+    assert scheduled == [(0.0, scheduled[0][1])]
+    assert coordinator._eval_pending is True  # noqa: SLF001
+    assert coordinator._pending_eval_reasons == {  # noqa: SLF001
+        "security": "state_changed:alarm_control_panel.home"
+    }
 
 
 def test_same_class_debounce_collapses_pending_evaluation(
