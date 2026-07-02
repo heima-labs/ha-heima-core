@@ -980,6 +980,20 @@ fields are either not user-readable or too volatile for review grouping. Review 
 broadens approval scope: approving a representative proposal approves only that representative's
 exact approval identity.
 
+House-state review also has a third, derived UX structure:
+
+- **Temporal review bundle**: a read-time review grouping over adjacent visible review-group
+  representatives. It uses `weekday:N:anyone_home:N:state:S` plus a contiguous hour-bucket span.
+  It exists only to present patterns such as "Friday morning, working" as one review row instead of
+  several adjacent hourly rows.
+
+Temporal review bundles do not replace approval identity or review group identity. Accepting or
+rejecting a bundle is an explicit multi-proposal action over the exact visible representative
+`identity_key` values in that bundle at action time. Hidden review-group siblings may still surface
+later if a visible representative is rejected. A separate explicit "dismiss similar" action is
+required to reject hidden pending siblings in the same review groups. Future proposals are never
+implicitly accepted or rejected by bundle actions.
+
 At most one pending `house_state_learned_context` proposal per review group should be visible in
 the review queue. The representative is selected by tier specificity, then evidence quality:
 
@@ -994,6 +1008,10 @@ lower tier specificity are suppressed from the visible queue. A higher-tier cand
 eligible and may become the visible representative, because it is more specific than the accepted
 context. Suppressed sibling candidates may remain visible in diagnostics, but MUST NOT become
 separate resident-review rows.
+
+Review UIs SHOULD prefer temporal bundles for house-state learned contexts when several visible
+representatives share weekday, anyone-home state, and predicted house state across adjacent hour
+buckets. The UI MUST allow expansion to individual representatives.
 
 Confidence model: `confidence = probability × min(1.0, support / MIN_SUPPORT)`.
 

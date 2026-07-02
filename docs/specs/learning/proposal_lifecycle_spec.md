@@ -319,6 +319,153 @@ ProposalEngine SHOULD expose per plugin family:
 
 ---
 
+## 2d. Temporal Review Bundles
+
+### Motivation
+
+Review grouping removes near-duplicates inside one proposal slot. For
+`house_state_learned_context`, the current group key is intentionally scoped to one
+`weekday + hour_bucket + anyone_home + predicted_state` slot. This correctly suppresses variants
+caused by occupied-room detail, inference tier, or opaque context hashes.
+
+Production backlog analysis showed a second source of review noise: many visible proposals are
+adjacent time slots that communicate the same user-facing pattern, for example:
+
+- Friday 09:00 home
+- Friday 10:00 home
+- Friday 11:00 home
+- Friday 12:00 home
+
+These are not duplicates under `review_grouping`, because their exact approval identities and hour
+buckets differ. However, they are naturally reviewed by a person as one temporal pattern. The
+system therefore needs an additional **temporal review bundle** layer above review grouping.
+
+### Definition
+
+A temporal review bundle is a derived, read-time UX structure that groups multiple **visible**
+proposal representatives into one review item when they describe a contiguous or near-contiguous
+time span for the same user-facing outcome.
+
+Temporal bundles are distinct from `review_grouping`:
+
+| Mechanism | Scope | Effect | Approval semantics |
+|-----------|-------|--------|--------------------|
+| `identity_key` | exact behavioral slot | dedup/refresh one proposal | one exact proposal |
+| `review_grouping` | same review slot, different specificity | show one representative; suppress siblings | one exact proposal |
+| temporal review bundle | adjacent review slots over time | show one bundled review row | explicit multi-proposal action |
+
+Temporal bundles MUST NOT be persisted as proposal status. They are computed from current proposal
+diagnostics / pending proposals, just like `suppressed_in_review`.
+
+### House-state learned context bundle key
+
+For `house_state_learned_context`, the temporal bundle key SHOULD be:
+
+```text
+house_state_temporal_bundle:
+  proposal_type=house_state_learned_context
+  weekday=N
+  anyone_home=N
+  predicted_state=S
+```
+
+The bundle key intentionally omits:
+
+- `hour_bucket`, because the bundle spans multiple hour buckets
+- `context_key` / opaque context hash
+- occupied-room detail
+- inference tier
+
+The bundle candidate set is built from **visible representatives only**. Suppressed
+`review_grouping` siblings remain hidden behind their representative and are not counted as
+additional bundle rows.
+
+### Time-span construction
+
+Within one bundle key, proposals are ordered by `hour_bucket`. Consecutive hour buckets form one
+span. A span MAY tolerate a small gap when product UX prefers fewer rows, but v1 SHOULD start with
+strict adjacency:
+
+```text
+gap <= 1 hour_bucket
+```
+
+Examples:
+
+```text
+weekday=4, buckets 9,10,11,12, state=working -> one span 09:00-13:00
+weekday=4, buckets 9,10,15,16, state=working -> two spans: 09:00-11:00 and 15:00-17:00
+```
+
+The display label SHOULD summarize:
+
+- weekday
+- start/end bucket or localized time range
+- predicted state
+- number of proposal representatives in the span
+- confidence/support range or aggregate
+- representative rooms/context only as secondary detail
+
+### Bundle actions
+
+The review UI SHOULD support four actions:
+
+- **Accept bundle**: accept each visible proposal representative in the bundle span.
+- **Reject bundle**: reject each visible proposal representative in the bundle span.
+- **Expand bundle**: show individual proposal representatives for manual review.
+- **Dismiss similar**: reject each visible representative and all pending `review_grouping`
+  siblings hidden behind those representatives.
+
+Bundle actions are explicit multi-proposal operations. This preserves the approval scope invariant:
+there is no implicit approval of hidden `review_grouping` siblings, unrelated hour buckets, or future
+proposals.
+
+Accepting a bundle accepts only the exact `identity_key` values of its visible representatives at
+action time. Rejecting a bundle rejects only those same visible representatives. This keeps review
+exploratory: if the user rejects a representative because it is too coarse or otherwise less
+representative than a hidden sibling, the next best sibling may be promoted by `review_grouping` and
+shown later.
+
+`Dismiss similar` is the broader negative action. It means the user is rejecting the displayed
+pattern family, not only the current representative. It MAY reject hidden pending siblings in the
+same review groups, but it MUST still be explicit in the UI and MUST NOT affect unrelated hour
+buckets, future proposals, accepted proposals, or rejected history.
+
+### Diagnostics additions
+
+ProposalEngine or a dedicated review-view builder SHOULD expose:
+
+- `temporal_bundle_key: str | None`
+- `temporal_bundle_role: "member" | None`
+- `temporal_bundle_span_key: str | None`
+- `temporal_bundle_member_count: int`
+- `temporal_bundles: dict[span_key, list[identity_key]]`
+
+The existing `pending` count MAY continue to mean "visible individual representatives" for backward
+compatibility. UI surfaces that want reduced review noise SHOULD display bundle count separately,
+for example:
+
+```text
+pending representatives: 103
+temporal bundles: 31
+suppressed by review grouping: 122
+```
+
+### Implementation boundary
+
+Temporal bundles belong in the review/read model, not in analyzers:
+
+- analyzers continue to emit exact proposal candidates
+- `ProposalEngine` continues to own identity, persisted status, refresh, and diagnostics
+- bundle construction may live in `ProposalEngine` diagnostics or a dedicated review view-model
+  helper
+- options flow / admin UI consumes the bundle view and performs explicit bundle actions:
+  accept/reject visible representatives, expand, or dismiss similar siblings
+
+This keeps the learning model precise while making review manageable.
+
+---
+
 ## 3. Persisted States
 
 Persisted proposal `status` remains:

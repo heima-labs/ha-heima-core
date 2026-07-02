@@ -426,6 +426,52 @@ Stato attuale:
     normalizzati
   - la documentazione e la UI devono rendere esplicita la differenza tra trigger/context signals e
     observed responses
+- backlog proposal house-state:
+  - audit produzione 2026-07-02: 225 pending, di cui 122 gia soppressi da `review_grouping`
+  - rumore residuo: 102 representative visibili quasi tutte `house_state_learned_context`
+  - causa: `review_grouping` sopprime varianti stanza/tier dentro uno stesso `hour_bucket`, ma non
+    aggrega hour bucket adiacenti con stesso weekday/anyone_home/predicted_state
+  - prossimo intervento: introdurre temporal review bundles per `house_state_learned_context`
+    come read-model/UI layer, con azioni bundle esplicite sui representative visibili e azione
+    separata `dismiss similar` per i sibling nascosti, senza modificare approval identity o
+    persisted status
+  - sviluppo pianificato:
+    - TB1 Proposal review bundle model:
+      - introdurre un helper/read-model per costruire temporal bundles da `pending_proposals()`
+      - input: solo representative visibili dopo `review_grouping`
+      - output: bundle span con `bundle_key`, `span_key`, member proposal ids, identity keys,
+        weekday, start/end bucket, predicted state, confidence/support summary
+      - regola v1: creare bundle solo con almeno 2 member e bucket strettamente adiacenti
+        (`next_bucket == previous_bucket + 1`)
+      - non modificare store proposal, status persistiti, `identity_key`, `review_grouping`
+    - TB2 Diagnostics and audit:
+      - esporre `temporal_bundles`, `temporal_bundle_*` e `review_rows` nei diagnostics o in un
+        view-model dedicato
+      - aggiornare `scripts/proposal_backlog_audit.py` per mostrare `review_rows` e top temporal
+        bundles
+      - criterio: sull'audit produzione il conteggio reviewable deve scendere sotto i
+        representative visibili attuali senza perdere il dettaglio espandibile
+    - TB3 Bundle review actions:
+      - aggiungere servizi/metodi coordinator per batch action esplicite su liste di proposal id
+      - `accept_bundle`: accetta solo i visible representatives member del bundle
+      - `reject_bundle`: rifiuta solo i visible representatives member del bundle
+      - `dismiss_similar`: rifiuta i visible representatives e i pending sibling nascosti nei
+        rispettivi review group
+      - non toccare accepted/rejected history non appartenente al batch esplicito
+    - TB4 Options Flow review UI:
+      - mostrare bundle rows per `house_state_learned_context` invece di ogni representative
+        orario quando un bundle ha almeno 2 member
+      - azioni UI: accept, reject, expand, dismiss similar
+      - l'espansione deve permettere la gestione dei singoli representative e non dei sibling
+        nascosti, salvo azione dismiss similar esplicita
+      - mantenere fallback alla review proposal esistente per proposte non bundle o bundle size 1
+    - TB5 Test and live validation:
+      - unit test del builder con bucket adiacenti, gap, stati diversi, weekday diversi e bundle
+        size 1
+      - test ProposalEngine/view-model per verificare che i bundle usino solo representative
+        visibili e ignorino sibling soppressi
+      - test Options Flow per accept/reject/expand/dismiss similar
+      - aggiornare live diagnostic per confermare riduzione del backlog reviewable su produzione
 
 Nota architetturale futura:
 - comportamenti adattativi continui o di mantenimento (`constant brightness`, `maintain setpoint`,
