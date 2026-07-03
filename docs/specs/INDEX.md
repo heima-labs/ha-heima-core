@@ -1,7 +1,7 @@
 # Heima — Specifications Index
 ## Canonical Specs Structure
 
-**Last verified against code:** 2026-04-30 (`main`)
+**Last verified against code:** 2026-07-03 (`main`, post v2 merge)
 
 This folder is organized by maturity and scope:
 
@@ -11,10 +11,13 @@ This folder is organized by maturity and scope:
 - `rfc/` → future architecture and historical baseline specs
 
 Interpretation notes:
-- documents under `core/`, `domains/`, and `learning/` are the canonical v1.x contract unless
-  they explicitly say `Draft`, `Target vNext`, or `RFC`
-- documents under `rfc/` are not the source of truth for current runtime behavior unless they
-  explicitly say `Implemented on main`
+- documents under `core/`, `domains/`, and `learning/` are the canonical contract for the
+  architecture now on `main` (formerly tracked as "v2") unless they explicitly say `Draft`,
+  `Target vNext`, or `RFC`
+- `rfc/heima_spec_v1.md` and `rfc/heima_spec_v1_1_behavior_framework.md` describe the superseded
+  v1 architecture, replaced on `main` by the v2 merge; historical reference only
+- other documents under `rfc/` are not the source of truth for current runtime behavior unless
+  they explicitly say `Implemented on main`
 - legacy root-level `docs/specs/heima_*` redirect stubs have been removed; use only the canonical
   paths listed below
 
@@ -68,7 +71,7 @@ Related practical guides live outside this tree:
 - `learning/proposal_lifecycle_spec.md` — v1 proposal identity, refresh, and staleness
 - `learning/context_conditioned_lighting_learning_spec.md` — learned context-scoped lighting proposals and review contract
 - `learning/admin_authored_automation_spec.md` — admin-requested automations and follow-up tuning
-- `learning/inference_engine_spec.md` — inference v2 draft
+- `learning/inference_engine_spec.md` — **SUPERSEDED** by `heima_v2_spec.md` §10 (Inference Engine v2, implemented Phase D)
 - `learning/signal_discovery_spec.md` — Phase V: rule-based HA entity classification and signal suggestion pipeline
 
 ## Adapters
@@ -96,17 +99,19 @@ Ogni adapter vive in un repo separato sotto `heima-labs/`.
 
 ## DAG Evolution Note
 
-**v1** uses a **hardcoded DAG** defined in `engine.py`. Domain evaluation order is fixed:
+The architecture on `main` (`heima_v2_spec.md` v2.1.0-draft, formerly tracked as "v2") uses a
+**declarative DAG** with `depends_on` and topological sort. Core domains (People, Occupancy,
+Activity, HouseState) are fixed-order; plugin domains (Lighting, Heating, Security, Calendar, ...)
+are sorted by dependency graph. `ActivityDomain` is the fourth core domain, between Occupancy and
+HouseState. Evaluation is event-driven with a fallback polling interval.
+
+**Historical:** the superseded v1 architecture used a **hardcoded DAG** defined in `engine.py`,
+with no plugin registration mechanism:
 `InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply`.
-No plugin registration mechanism exists in v1.
+It was replaced on `main` by the v2 merge; see `rfc/heima_spec_v1.md` for reference only.
 
-**v2** (RFC — `heima_v2_spec.md` v2.1.0-draft) introduces a **declarative DAG** with `depends_on` and
-topological sort, a fourth core domain `ActivityDomain` (between Occupancy and HouseState), an
-event-driven evaluation trigger, and a full activity recognition + inference pipeline.
-Core domains (People, Occupancy, Activity, HouseState) remain fixed-order; plugin domains are sorted by dependency graph.
-
-These are **not alternative implementations**. v2 replaces v1 when implemented and scheduled.
-Until then, the v1 hardcoded order is the only runtime contract.
+Remaining v2-track phases not yet complete (e.g. Phase AB) are tracked in `docs/v2_dev_plan.md`,
+not in this index.
 
 ## Compatibility Notes
 

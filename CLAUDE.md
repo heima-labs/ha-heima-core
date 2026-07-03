@@ -2,7 +2,7 @@
 
 ## Project
 Intent-driven home intelligence engine as Home Assistant custom integration.
-GitHub org: Heima Labs. Repo: `ha-heima-component`.
+GitHub org: Heima Labs. Repo: `ha-heima-core`.
 
 ## Language
 Respond in Italian in chat.
@@ -22,7 +22,7 @@ test names, and any persistent project artifact in English.
 ## Commit style
 - Messaggi brevi: titolo imperativo + 2-3 righe di contesto max.
 - Non committare su `main` senza richiesta esplicita dell'utente.
-- Su branch di sviluppo v2 (`feat/v2`) sono ammessi commit intermedi a fine slice stabile,
+- Su branch di sviluppo dedicati sono ammessi commit intermedi a fine slice stabile,
   se aiutano continuità tra sessioni/compattamenti. Prima del commit: test mirati verdi o
   stato dei test documentato in `docs/v2_dev_plan.md`.
 - Non fare push, merge o release commit senza richiesta esplicita dell'utente.
@@ -48,19 +48,21 @@ Non fare merge se `ci_local.sh` fallisce.
 - Nessun backward compatibility: unico utente del progetto.
 - No ML libraries nei built-in. Pure Python + statistics stdlib. Il core resta dependency-free.
 - Tutti i test devono essere verdi dopo ogni modifica.
-- Test count attuale: 660. Non rompere test esistenti senza motivo esplicito.
+- Test count attuale: 1594. Non rompere test esistenti senza motivo esplicito.
 - Prima di modificare un file: leggerlo.
 
 ## Architecture invariants
 
-**v1 (branch `main`, codice attivo):**
-DAG fisso: `InputNormalizer → People → Occupancy → Calendar → HouseState → Lighting → Heating → Security → Apply`.
+DAG core fisso: `People → Occupancy → Activity → HouseState`, poi plugin ordinati per dipendenza
+(`Lighting`, `Heating`, `Security`, `Calendar`, ...). ActivityDomain è il 4° core domain, inserito
+tra Occupancy e HouseState.
 
-**v2 (branch `feat/v2`, in sviluppo):**
-DAG: core fisso `People → Occupancy → Activity → HouseState`, poi plugin ordinati per DAG (`Lighting`, `Heating`, `Security`).
-ActivityDomain è il 4° core domain, inserito tra Occupancy e HouseState.
+**Nota storica:** la v1 (DAG fisso `InputNormalizer → People → Occupancy → Calendar → HouseState →
+Lighting → Heating → Security → Apply`, nessun plugin dichiarativo) è stata sostituita da questa
+architettura al merge di `feat/v2` su `main`. Non è più codice attivo; resta solo come riferimento
+storico in `docs/specs/rfc/heima_spec_v1.md`.
 
-**Invarianti comuni a entrambe le versioni:**
+**Invarianti architetturali:**
 - I domini leggono CanonicalState (ciclo precedente), NON gli output degli altri domini nel ciclo corrente.
 - Nessuna dipendenza circolare tra domini.
 - Apply plan è l'unico canale di output per le azioni su HA.
@@ -68,21 +70,26 @@ ActivityDomain è il 4° core domain, inserito tra Occupancy e HouseState.
 ## Decisioni architetturali prese
 
 ### Multi-persona
-v1 apprende pattern a livello household, non per persona. È una limitazione nota e documentata,
-non un bug. Per-person learning è pianificato per v2, non schedulato.
+L'architettura corrente apprende pattern a livello household, non per persona. È una limitazione
+nota e documentata, non un bug. Per-person learning non è ancora pianificato/schedulato.
 
 ### Inference Engine v2
-Incorporato in `docs/specs/heima_v2_spec.md` §10. Pianificato per Phase D di `feat/v2`.
-Il file `docs/specs/learning/inference_engine_spec.md` è superato dalla spec v2.1.0-draft.
+Incorporato in `docs/specs/heima_v2_spec.md` §10. Implementato in Phase D (`DONE`,
+vedi `docs/v2_dev_plan.md`). Il file `docs/specs/learning/inference_engine_spec.md` è superato
+dalla spec v2.1.0-draft.
 
 ### Plugin API
-In v1 i registry sono built-in. Il caricamento dinamico di plugin di terze parti non è supportato.
-Chi vuole aggiungere un plugin deve modificare `registry.py`. Questo è by design fino a v2.
+I registry restano built-in. Il caricamento dinamico di plugin di terze parti non è supportato
+neanche nell'architettura corrente: è un non-goal esplicito (`heima_v2_spec.md`, nota su
+`monitored_entities`). Chi vuole aggiungere un dominio/plugin built-in modifica il codice
+direttamente seguendo il contratto DAG dichiarativo (Phase A). Riapertura a plugin di terze parti
+resta by design non pianificata.
 
 ## v2 development
 
-Lo sviluppo attivo è su `feat/v2`. Il piano di sviluppo è in `docs/v2_dev_plan.md`.
-**Ogni sessione che lavora su v2 deve iniziare leggendo `docs/v2_dev_plan.md`.**
+L'architettura v2 è stata mergiata su `main`. Le fasi v2 ancora aperte (es. Phase AB) continuano
+su branch dedicati seguendo `docs/v2_dev_plan.md`, che resta la fonte di verità operativa.
+**Ogni sessione che lavora su fasi v2 deve iniziare leggendo `docs/v2_dev_plan.md`.**
 Il documento traccia fase corrente, stato, prossima azione e criteri di accettazione per ogni fase.
 Non prendere decisioni architetturali non già presenti nella spec o nel piano.
 
@@ -101,11 +108,11 @@ Aggiornare le note prima di pause rischiose, a fine slice significativa, e prima
 Se una scelta architetturale non è già coperta da spec o piano, fermarsi e chiedere al developer.
 
 ## Key specs
-- v1: `docs/specs/rfc/heima_spec_v1.md`
-- v2: `docs/specs/heima_v2_spec.md` (v2.1.0-draft — spec attiva)
+- Architettura corrente: `docs/specs/heima_v2_spec.md` (v2.1.0-draft — spec attiva su `main`)
 - v2 dev plan: `docs/v2_dev_plan.md` (stato operativo corrente)
 - Learning system: `docs/specs/learning/learning_system_spec.md`
 - Spec index: `docs/specs/INDEX.md`
+- v1 (storico, superato): `docs/specs/rfc/heima_spec_v1.md`
 
 ## Auditing e debug
 - Per diagnostics runtime: `python3 scripts/diagnostics.py --section <engine|plugins|event_store>`
