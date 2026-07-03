@@ -2557,7 +2557,7 @@ async def test_proposals_step_shows_house_state_temporal_bundle():
 
     assert shown["step_id"] == "proposals"
     placeholders = shown["description_placeholders"]
-    assert placeholders["current_position"] == "1/1"
+    assert placeholders["current_position"] == "1/1 righe review (2 proposte reali)"
     assert "Bundle stato casa" in placeholders["proposal_label"]
     assert "Proposte nel bundle: 2" in placeholders["proposal_details"]
     assert "Espandi" in shown["data_schema"].schema["review_action"].container.values()

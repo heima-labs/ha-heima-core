@@ -736,18 +736,51 @@ class _ReactionProposalStepsMixin:
         queue_len: int,
     ) -> dict[str, str]:
         """Build placeholders for guided proposal review."""
-        pending = [proposal for proposal in proposals if proposal.status == "pending"]
-        total = len(pending)
-        position = total - queue_len + 1
-        remaining = max(total - position, 0)
+        position, total, real_total, remaining = self._proposal_review_queue_counts(
+            proposals, queue_len
+        )
         return {
             "summary": self._proposals_step_summary(
                 proposals, current=current, remaining=remaining
             ),
-            "current_position": f"{position}/{total}",
+            "current_position": self._proposal_review_queue_position_label(
+                position,
+                total,
+                real_total,
+            ),
             "proposal_label": self._proposal_review_title(current),
             "proposal_details": self._proposal_review_details(current),
         }
+
+    def _proposal_review_queue_counts(
+        self,
+        proposals: list[ProposalItem],
+        queue_len: int,
+    ) -> tuple[int, int, int, int]:
+        """Return review-row position plus real pending proposal totals."""
+        pending = [proposal for proposal in proposals if proposal.status == "pending"]
+        review_row_total = sum(
+            1 for item in self._proposal_review_rows(proposals) if item.get("default_row")
+        )
+        total = max(review_row_total, queue_len, 1)
+        position = max(total - queue_len + 1, 1)
+        remaining = max(total - position, 0)
+        return position, total, len(pending), remaining
+
+    def _proposal_review_queue_position_label(
+        self,
+        position: int,
+        review_row_total: int,
+        real_proposal_total: int,
+    ) -> str:
+        """Format queue position, distinguishing review rows from real proposals."""
+        if review_row_total == real_proposal_total:
+            return f"{position}/{review_row_total}"
+        if self._flow_language().startswith("it"):
+            return (
+                f"{position}/{review_row_total} righe review ({real_proposal_total} proposte reali)"
+            )
+        return f"{position}/{review_row_total} review rows ({real_proposal_total} real proposals)"
 
     def _proposal_bundle_review_placeholders(
         self,
@@ -756,9 +789,9 @@ class _ReactionProposalStepsMixin:
         queue_len: int,
     ) -> dict[str, str]:
         """Build placeholders for one temporal bundle review row."""
-        total = sum(1 for item in self._proposal_review_rows(proposals) if item.get("default_row"))
-        position = total - queue_len + 1
-        remaining = max(total - position, 0)
+        position, total, real_total, remaining = self._proposal_review_queue_counts(
+            proposals, queue_len
+        )
         language = self._flow_language()
         is_it = language.startswith("it")
         weekday_label = self._weekday_label(row.get("weekday"), language)
@@ -798,7 +831,11 @@ class _ReactionProposalStepsMixin:
             details.append("Expand to review the hourly proposals one by one.")
         return {
             "summary": self._proposal_bundle_summary(total, remaining, is_it=is_it),
-            "current_position": f"{position}/{total}",
+            "current_position": self._proposal_review_queue_position_label(
+                position,
+                total,
+                real_total,
+            ),
             "proposal_label": title,
             "proposal_details": "\n".join(details),
         }

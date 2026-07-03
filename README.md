@@ -2,9 +2,10 @@
 
 Heima is an intent-driven home intelligence engine for Home Assistant.
 
-It observes the home, learns its patterns, and automates it — without requiring inhabitants to
-think about it. The success metric is invisibility: if the people living in the home never notice
-the system, it is working correctly.
+It observes the home, learns its patterns, proposes behavior in plain language, and automates
+approved routines while continuing to verify that they still match reality. The success metric is
+invisibility: if the people living in the home rarely need to think about the system, it is working
+correctly.
 
 ## Who is Heima for?
 
@@ -27,32 +28,37 @@ Home Assistant provides infrastructure: UI, storage, device services, event bus.
 Heima provides reasoning: **what should the home be doing right now, given everything it knows?**
 
 Every evaluation cycle, Heima runs a pipeline of domain models — presence, occupancy, activity,
-house state, lighting, heating, security — and produces a coherent set of actions. It observes
-behavioral patterns from real usage, generates proposals in plain language, routes them to the
-resident for approval, and tracks whether its actions produced the expected outcomes.
+house state, lighting, heating, calendar, security — and produces a coherent set of actions. It
+observes behavioral patterns from real usage, generates proposals in plain language, routes them to
+the resident for approval, and tracks whether its actions produced the expected outcomes.
 
-No YAML. No fragile script chains. No configuration drift.
+The aim is not to remove configuration entirely. Installers still bind entities, define domain
+policies, and review diagnostics. The aim is to replace brittle, manually maintained automation
+chains with learned, reviewable, lifecycle-aware behavior.
 
 ## Architecture
 
-The v2 pipeline runs a fixed core domain sequence followed by a declarative plugin DAG:
+The v2 pipeline runs a fixed core domain sequence with support for declarative built-in domain
+plugins:
 
 ```
-People → Occupancy → Activity → HouseState → [Lighting, Heating, Security, ...]
+People → Occupancy → Activity → HouseState → [Lighting, Heating, Calendar, Security, ...]
 ```
 
 Key subsystems:
 
 | Subsystem | Role |
 |---|---|
-| Plugin DAG | Declarative `depends_on` ordering; built-in and third-party domain plugins |
+| Domain DAG | Declarative `depends_on` ordering for built-in runtime domain plugins |
 | ActivityDomain | Primitive activity detection (stove, shower, TV, …) with hysteresis state machine |
 | InferenceEngine | Per-cycle `ILearningModule` execution; `SnapshotStore` for pattern history |
-| IBehaviorAnalyzer | Offline pattern analysis producing `BehaviorFinding` proposals |
+| Behavior analyzers | Offline pattern, anomaly, lifecycle, composite, and cross-domain analysis producing typed findings and proposals |
 | AnomalyAnalyzer | Statistical behavioral drift detection; emits remediation proposals on model staleness |
 | IInvariantCheck | Per-cycle structural constraint checks with debounce and resolution events |
 | OutcomeTracker | Act→verify loop; degradation proposals after consecutive negative outcomes |
-| ProposalEngine | Approval-gated routing of SUGGEST-level learning signals to the resident |
+| ProposalEngine | Approval-gated routing of learning signals; lifecycle, grouping, replacement, retirement, and temporal review bundles |
+| ManualHold | Shared override framework for deferring automation when a user manually changes an actuator |
+| Admin-authored policies | Domain-specific policy templates such as camera privacy policies for alarm/house-state driven privacy control |
 | SignalDiscoveryAudit | Runtime classification of HA entities into room-level signal candidates |
 | Event-driven trigger | `state_changed`-driven evaluation with per-class debounce; 300 s fallback |
 
@@ -83,7 +89,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
 ```
 
-Active development is on branch `feat/v2`. Current phase status: `docs/v2_dev_plan.md`.
+Active v2 integration happens on branch `feat/v2`; focused work usually lands first on feature
+branches. Current phase status: `docs/v2_dev_plan.md`.
 
 ## Test House
 
