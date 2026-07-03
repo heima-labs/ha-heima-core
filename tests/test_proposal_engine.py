@@ -3413,6 +3413,125 @@ async def test_proposal_engine_groups_house_state_learned_context_by_review_cont
     }
 
 
+async def test_proposal_engine_diagnostics_expose_temporal_review_bundles(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+
+    def _house_state_proposal(
+        *,
+        proposal_id: str,
+        context_key: str,
+        hour_bucket: int,
+        learning_context: dict[str, object] | None = None,
+    ) -> ReactionProposal:
+        return ReactionProposal(
+            proposal_id=proposal_id,
+            analyzer_id="house_state_inference",
+            reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+            description="Learned house-state context predicts working.",
+            confidence=0.9,
+            identity_key=f"{HOUSE_STATE_PROPOSAL_TYPE}:{context_key}",
+            suggested_reaction_config={
+                "proposal_type": HOUSE_STATE_PROPOSAL_TYPE,
+                "context_key": context_key,
+                "context_snapshot": {
+                    "weekday": 1,
+                    "hour_bucket": hour_bucket,
+                    "rooms": ["studio"],
+                    "anyone_home": True,
+                    "predicted_state": "working",
+                    "learning_context": learning_context or {},
+                },
+                "predicted_state": "working",
+                "support": 5,
+                "total": 5,
+            },
+        )
+
+    await engine.async_initialize()
+    await engine.async_submit_proposal(
+        _house_state_proposal(
+            proposal_id="coarse-8",
+            context_key="coarse-8",
+            hour_bucket=8,
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_proposal(
+            proposal_id="rich-8",
+            context_key="rich-8",
+            hour_bucket=8,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_proposal(
+            proposal_id="rich-9",
+            context_key="rich-9",
+            hour_bucket=9,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_proposal(
+            proposal_id="rich-11",
+            context_key="rich-11",
+            hour_bucket=11,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+
+    diagnostics = engine.diagnostics()
+
+    assert diagnostics["pending"] == 3
+    assert diagnostics["suppressed_in_review_count"] == 1
+    assert diagnostics["temporal_bundle_count"] == 1
+    assert diagnostics["temporal_bundle_member_count"] == 2
+    assert diagnostics["review_row_count"] == 2
+    bundle_row = [
+        row for row in diagnostics["review_rows"] if row["row_type"] == "temporal_bundle"
+    ][0]
+    assert bundle_row == {
+        "row_type": "temporal_bundle",
+        "bundle_id": (
+            "house_state_temporal_bundle:"
+            "weekday:1:anyone_home:1:state:working:hours:8-9"
+        ),
+        "bundle_type": "house_state_temporal",
+        "proposal_ids": ["rich-8", "rich-9"],
+        "identity_keys": [
+            f"{HOUSE_STATE_PROPOSAL_TYPE}:rich-8",
+            f"{HOUSE_STATE_PROPOSAL_TYPE}:rich-9",
+        ],
+        "member_count": 2,
+        "weekday": 1,
+        "start_hour_bucket": 8,
+        "end_hour_bucket": 9,
+        "anyone_home": True,
+        "predicted_state": "working",
+        "confidence_min": 0.9,
+        "confidence_max": 0.9,
+        "confidence_avg": 0.9,
+        "support_total": 10,
+        "total_observations": 10,
+    }
+    proposal_row = [row for row in diagnostics["review_rows"] if row["row_type"] == "proposal"][0]
+    assert proposal_row == {
+        "row_type": "proposal",
+        "proposal_id": "rich-11",
+        "type": HOUSE_STATE_PROPOSAL_TYPE,
+        "identity_key": f"{HOUSE_STATE_PROPOSAL_TYPE}:rich-11",
+        "confidence": 0.9,
+    }
+
+    proposals = {proposal["id"]: proposal for proposal in diagnostics["proposals"]}
+    assert proposals["rich-8"]["temporal_bundle_role"] == "member"
+    assert proposals["rich-9"]["temporal_bundle_role"] == "member"
+    assert proposals["rich-11"]["temporal_bundle_role"] is None
+    assert proposals["coarse-8"]["suppressed_by_review_group"] is True
+    assert proposals["coarse-8"]["temporal_bundle_role"] is None
+
+
 async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]

@@ -27,6 +27,7 @@ from .inference.approval_store import (
 )
 from .plugin_contracts import BehaviorFinding, IBehaviorAnalyzer
 from .proposal_lifecycle_store import ProposalLifecycleRecord, ProposalLifecycleStore
+from .proposal_review_bundles import ProposalReviewBundleView, build_temporal_review_bundles
 from .reactions import resolve_reaction_type
 
 _LOGGER = logging.getLogger(__name__)
@@ -852,15 +853,24 @@ class ProposalEngine:
     def diagnostics(self) -> dict[str, Any]:
         ordered = self._sort_proposals(self._proposals)
         review_state = self._review_group_state()
+        visible_pending = self.pending_proposals()
+        bundle_view = build_temporal_review_bundles(visible_pending)
+        review_rows = _proposal_review_rows(visible_pending, bundle_view)
+        temporal_bundle_by_proposal_id = _temporal_bundle_member_map(bundle_view)
         return {
             "total": len(ordered),
             "loaded_proposals": self._last_load_proposal_count,
             "load_errors": self._load_errors,
             "analyzer_failures": self._last_analyzer_failures,
             "analyzer_output_errors": self._last_analyzer_output_errors,
-            "pending": len(self.pending_proposals()),
+            "pending": len(visible_pending),
             "suppressed_in_review_count": len(review_state.suppressed_ids),
             "review_groups": review_state.groups,
+            "review_rows": review_rows,
+            "review_row_count": len(review_rows),
+            "temporal_bundles": [bundle.as_dict() for bundle in bundle_view.bundles],
+            "temporal_bundle_count": len(bundle_view.bundles),
+            "temporal_bundle_member_count": len(bundle_view.bundled_proposal_ids),
             "lifecycle_monitoring": self._lifecycle_diagnostics(),
             "pending_stale": sum(
                 1
@@ -895,6 +905,18 @@ class ProposalEngine:
                     "review_group_key": review_state.group_key_by_id.get(p.proposal_id),
                     "review_group_role": review_state.role_by_id.get(p.proposal_id),
                     "suppressed_by_review_group": p.proposal_id in review_state.suppressed_ids,
+                    "temporal_bundle_key": temporal_bundle_by_proposal_id.get(
+                        p.proposal_id, {}
+                    ).get("key"),
+                    "temporal_bundle_role": temporal_bundle_by_proposal_id.get(
+                        p.proposal_id, {}
+                    ).get("role"),
+                    "temporal_bundle_span_key": temporal_bundle_by_proposal_id.get(
+                        p.proposal_id, {}
+                    ).get("span_key"),
+                    "temporal_bundle_member_count": temporal_bundle_by_proposal_id.get(
+                        p.proposal_id, {}
+                    ).get("member_count", 0),
                     "is_stale": self._is_stale(p),
                     "stale_reason": self._stale_reason(p),
                     "config_summary": self._proposal_config_summary(p)
@@ -2096,6 +2118,70 @@ def _proposal_context_snapshot(proposal: ProposalItem) -> dict[str, Any]:
     if isinstance(proposal, ActivityProposal):
         return _activity_config_summary(proposal)
     return _safe_dict(_safe_dict(proposal.suggested_reaction_config).get("context_snapshot"))
+
+
+def _proposal_review_rows(
+    visible_pending: list[ProposalItem],
+    bundle_view: ProposalReviewBundleView,
+) -> list[dict[str, Any]]:
+    bundle_by_first_member = {
+        bundle.proposal_ids[0]: bundle
+        for bundle in bundle_view.bundles
+        if bundle.proposal_ids
+    }
+    bundled_ids = set(bundle_view.bundled_proposal_ids)
+    rows: list[dict[str, Any]] = []
+    for proposal in visible_pending:
+        bundle = bundle_by_first_member.get(proposal.proposal_id)
+        if bundle is not None:
+            rows.append(
+                {
+                    "row_type": "temporal_bundle",
+                    "bundle_id": bundle.bundle_id,
+                    "bundle_type": bundle.bundle_type,
+                    "proposal_ids": list(bundle.proposal_ids),
+                    "identity_keys": list(bundle.identity_keys),
+                    "member_count": bundle.member_count,
+                    "weekday": bundle.weekday,
+                    "start_hour_bucket": bundle.start_hour_bucket,
+                    "end_hour_bucket": bundle.end_hour_bucket,
+                    "anyone_home": bundle.anyone_home,
+                    "predicted_state": bundle.predicted_state,
+                    "confidence_min": bundle.confidence_min,
+                    "confidence_max": bundle.confidence_max,
+                    "confidence_avg": bundle.confidence_avg,
+                    "support_total": bundle.support_total,
+                    "total_observations": bundle.total_observations,
+                }
+            )
+            continue
+        if proposal.proposal_id in bundled_ids:
+            continue
+        rows.append(
+            {
+                "row_type": "proposal",
+                "proposal_id": proposal.proposal_id,
+                "type": _proposal_type(proposal),
+                "identity_key": getattr(proposal, "identity_key", ""),
+                "confidence": round(float(getattr(proposal, "confidence", 0.0) or 0.0), 2),
+            }
+        )
+    return rows
+
+
+def _temporal_bundle_member_map(
+    bundle_view: ProposalReviewBundleView,
+) -> dict[str, dict[str, Any]]:
+    by_proposal_id: dict[str, dict[str, Any]] = {}
+    for bundle in bundle_view.bundles:
+        for proposal_id in bundle.proposal_ids:
+            by_proposal_id[proposal_id] = {
+                "key": bundle.grouping_key,
+                "role": "member",
+                "span_key": bundle.bundle_id,
+                "member_count": bundle.member_count,
+            }
+    return by_proposal_id
 
 
 def _activity_config_summary(proposal: ActivityProposal) -> dict[str, Any]:
