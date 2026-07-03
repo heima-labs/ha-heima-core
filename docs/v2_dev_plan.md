@@ -116,22 +116,21 @@ These constraints must never be violated. See spec §16 for rationale.
 | AD | Proposal/Reaction Lifecycle Management | `DONE` | AC, H, Y |
 | AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD, MH |
 | MH | Manual Hold Framework | `DONE` | AB, AE |
-| AF | Policy Editor Framework + Camera Privacy Policy UI | `IN PROGRESS` | AE, MH |
+| AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
 **Active slice:** Proposal Temporal Review Bundles — completed.
-**Branch:** `feat/proposal-temporal-bundles`.
+**Branch:** `feat/v2`.
 **Next action:**
-Review and merge the Proposal Temporal Review Bundles branch into `feat/v2`; then resume the next
-planned v2 slice from this document.
+Select and branch the next planned v2 slice from this document.
 
 ### Current Working Notes
 
-- Current slice: **Proposal Temporal Review Bundles** on `feat/proposal-temporal-bundles`
+- Current slice: **Proposal Temporal Review Bundles** completed and merged into `feat/v2`
   (2026-07-03).
   - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` §2d and
     `docs/specs/heima_v2_spec.md` house-state review grouping notes.
@@ -3247,10 +3246,10 @@ Implement a **generic** system to:
 
 ## Phase AF — Policy Editor Framework + Camera Privacy Policy UI
 
-**Status:** `IN PROGRESS`
+**Status:** `DONE`
 **Spec:** `docs/specs/core/camera_privacy_policy_ui_spec.md`
 **Framework:** `docs/specs/core/policy_editor_framework_spec.md`
-**Branch:** `feat/policy-editor-implementation-plan`
+**Branch:** `feat/policy-editor-implementation-plan` (merged into `feat/v2`)
 **Depends on:** AE, MH
 
 ### Context
@@ -3340,8 +3339,28 @@ domain-specific, not a generic HA automation clone.
 
 ### Current open items
 
-- Full `scripts/ci_local.sh` not run in this slice.
-- Representative live camera privacy policy scenarios not run yet.
+- None for Phase AF.
+
+### Verification
+
+- Code audit confirmed the feature is implemented in the expected layers:
+  - Options Flow policy editor in `custom_components/heima/config_flow/_steps_security.py`.
+  - Domain-specific materializer/parser in
+    `custom_components/heima/config_flow/_camera_privacy_policy.py`.
+  - Runtime execution through normal `alarm_state_action` reactions and shared manual-hold
+    filtering.
+- Focused regression check on 2026-07-03:
+  - `.venv/bin/python -m pytest tests/test_camera_privacy_policy_materializer.py tests/test_options_flow_e2e.py tests/test_manual_hold_manager.py tests/test_engine_lighting_runtime.py -k "camera_privacy_policy or camera_privacy"` — 22 passed.
+- Live coverage exists for the main AF/AE overlap:
+  - `scripts/live_tests/074_camera_privacy_manual_hold_live.py` verifies camera privacy manual
+    hold behavior.
+  - `scripts/live_tests/075_camera_privacy_policy_editor_live.py` verifies editor import/adopt,
+    delete, stale-policy preservation, and options-flow persistence.
+  - `scripts/live_tests/076_camera_privacy_policy_runtime_live.py` verifies runtime policy actions,
+    including `disarmed -> privacy on` and `armed_night -> privacy off`.
+- Runtime follow-up fixes are merged into `feat/v2` via `ad151fb Merge camera privacy runtime
+  fixes`; these corrected the security-triggered switch apply path found during production
+  debugging.
 
 ---
 
