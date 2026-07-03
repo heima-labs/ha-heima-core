@@ -588,9 +588,7 @@ async def test_review_house_state_proposal_batch_dismiss_similar_records_expande
         "ctx-hidden",
     ]
     assert {record.decision for record in coordinator._approval_store.records()} == {"rejected"}
-    assert {record.approved_by for record in coordinator._approval_store.records()} == {
-        "installer"
-    }
+    assert {record.approved_by for record in coordinator._approval_store.records()} == {"installer"}
     coordinator._approval_store.async_flush.assert_awaited_once()
     coordinator._sync_house_state_approval_state.assert_called_once()
 

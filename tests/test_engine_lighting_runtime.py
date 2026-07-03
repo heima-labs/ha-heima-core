@@ -630,7 +630,7 @@ async def test_execute_apply_plan_runs_scheduled_routine_direct_actuator_steps()
     assert engine._hass.services.calls == [
         ("scene", "turn_on", {"entity_id": "scene.movie_time"}, False),
         ("light", "turn_on", {"entity_id": "light.corner", "brightness": 120}, False),
-        ("switch", "turn_off", {"entity_id": "switch.fountain"}, False),
+        ("switch", "turn_off", {"entity_id": "switch.fountain"}, True),
         ("input_boolean", "turn_on", {"entity_id": "input_boolean.night_mode"}, False),
     ]
 

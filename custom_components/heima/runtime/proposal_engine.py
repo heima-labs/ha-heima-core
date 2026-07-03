@@ -637,11 +637,30 @@ class ProposalEngine:
 
         requested_ids = _normalized_unique_ids(proposal_ids)
         review_state = self._review_group_state()
+        visible_pending_ids = set(review_state.visible_pending_ids)
+        missing: list[str] = []
+        ineligible: list[str] = []
+        for proposal_id in requested_ids:
+            proposal = self.proposal_by_id(proposal_id)
+            if proposal is None:
+                missing.append(proposal_id)
+            elif proposal.status != "pending" or proposal_id not in visible_pending_ids:
+                ineligible.append(proposal_id)
+        if missing or ineligible or not requested_ids:
+            return ProposalBatchActionResult(
+                action="dismiss_similar",
+                requested_ids=requested_ids,
+                applied_ids=(),
+                missing_ids=tuple(missing),
+                ineligible_ids=tuple(ineligible),
+                expanded_ids=(),
+            )
+
         expanded_ids = list(requested_ids)
         requested_scopes = {
             self._review_group_scope_for_proposal_id(proposal_id)
             for proposal_id in requested_ids
-            if proposal_id in review_state.visible_pending_ids
+            if proposal_id in visible_pending_ids
         }
         requested_scopes.discard(None)
         if requested_scopes:
@@ -947,32 +966,68 @@ class ProposalEngine:
         requested = requested_ids or _normalized_unique_ids(proposal_ids)
         target_ids = _normalized_unique_ids(proposal_ids)
         visible_pending_ids = set(self._review_group_state().visible_pending_ids)
-        applied: list[str] = []
         missing: list[str] = []
         ineligible: list[str] = []
+        target_indexes: list[int] = []
 
         for proposal_id in target_ids:
-            proposal = self.proposal_by_id(proposal_id)
-            if proposal is None:
+            match = next(
+                (
+                    (idx, proposal)
+                    for idx, proposal in enumerate(self._proposals)
+                    if proposal.proposal_id == proposal_id
+                ),
+                None,
+            )
+            if match is None:
                 missing.append(proposal_id)
                 continue
+            idx, proposal = match
             if proposal.status != "pending":
                 ineligible.append(proposal_id)
                 continue
             if visible_only and proposal_id not in visible_pending_ids:
                 ineligible.append(proposal_id)
                 continue
-            if await self._set_status(proposal_id, status):
-                applied.append(proposal_id)
-            else:
-                ineligible.append(proposal_id)
+            target_indexes.append(idx)
+
+        if missing or ineligible or not target_indexes:
+            return ProposalBatchActionResult(
+                action=action,
+                requested_ids=requested,
+                applied_ids=(),
+                missing_ids=tuple(missing),
+                ineligible_ids=tuple(ineligible),
+            )
+
+        now = datetime.now(UTC).isoformat()
+        updated_proposals: list[ProposalItem] = []
+        for idx in target_indexes:
+            proposal = self._proposals[idx]
+            updates: dict[str, Any] = {
+                "status": status,
+                "updated_at": now,
+            }
+            if (
+                status == "accepted"
+                and isinstance(proposal, ReactionProposal)
+                and not proposal.target_reaction_id
+            ):
+                updates["target_reaction_id"] = proposal.proposal_id
+                updates["target_reaction_type"] = proposal.reaction_type
+            updated = replace(proposal, **updates)
+            self._proposals[idx] = updated
+            updated_proposals.append(updated)
+
+        await self._store.async_save(self._serialize())
+        for proposal in updated_proposals:
+            await self._sync_lifecycle_record_for(proposal)
+        self._write_sensor()
 
         return ProposalBatchActionResult(
             action=action,
             requested_ids=requested,
-            applied_ids=tuple(applied),
-            missing_ids=tuple(missing),
-            ineligible_ids=tuple(ineligible),
+            applied_ids=tuple(proposal.proposal_id for proposal in updated_proposals),
         )
 
     def diagnostics(self) -> dict[str, Any]:
@@ -2271,9 +2326,7 @@ def _proposal_review_rows(
     bundle_view: ProposalReviewBundleView,
 ) -> list[dict[str, Any]]:
     bundle_by_first_member = {
-        bundle.proposal_ids[0]: bundle
-        for bundle in bundle_view.bundles
-        if bundle.proposal_ids
+        bundle.proposal_ids[0]: bundle for bundle in bundle_view.bundles if bundle.proposal_ids
     }
     bundled_ids = set(bundle_view.bundled_proposal_ids)
     rows: list[dict[str, Any]] = []

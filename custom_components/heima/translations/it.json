@@ -716,6 +716,7 @@
       "invalid_hhmm": "Inserisci un orario valido nel formato HH:MM",
       "missing_vacation_bindings": "La configurazione del riscaldamento deve includere tutti i binding di timing vacanza e temperatura esterna",
       "redacted_payload": "Configurazione non valida: il payload contiene valori redatti",
+      "proposal_review_stale": "La review delle proposte è cambiata mentre la stavi valutando. Ricarica la lista aggiornata.",
       "invalid_signal_name": "Nome segnale non trovato nella configurazione segnali della stanza",
       "invalid_bucket": "Etichetta bucket non trovata nei bucket configurati per questo segnale",
       "invalid_target_domain": "Uno o più target selezionati usano un dominio non supportato",

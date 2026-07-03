@@ -179,18 +179,12 @@ def build_temporal_review_bundles(
         for proposal in proposal_list
         if str(getattr(proposal, "proposal_id", "") or "").strip()
     ]
-    unbundled_ids = [
-        proposal_id
-        for proposal_id in all_ids
-        if proposal_id not in bundled_ids
-    ]
+    unbundled_ids = [proposal_id for proposal_id in all_ids if proposal_id not in bundled_ids]
 
     return ProposalReviewBundleView(
         bundles=tuple(bundles),
         bundled_proposal_ids=tuple(
-            proposal_id
-            for bundle in bundles
-            for proposal_id in bundle.proposal_ids
+            proposal_id for bundle in bundles for proposal_id in bundle.proposal_ids
         ),
         unbundled_proposal_ids=tuple(unbundled_ids),
     )
@@ -218,10 +212,7 @@ def _bundle_from_run(
     confidence_values = [member.confidence for member in members]
     start_hour = members[0].hour_bucket
     end_hour = members[-1].hour_bucket
-    bundle_id = (
-        "house_state_temporal_bundle:"
-        f"{grouping_key}:hours:{start_hour}-{end_hour}"
-    )
+    bundle_id = f"house_state_temporal_bundle:{grouping_key}:hours:{start_hour}-{end_hour}"
     return ProposalReviewBundle(
         bundle_id=bundle_id,
         bundle_type="house_state_temporal",

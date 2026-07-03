@@ -19,7 +19,10 @@ from custom_components.heima.runtime.analyzers.base import (
     ReactionProposal,
 )
 from custom_components.heima.runtime.inference.approval_store import HOUSE_STATE_PROPOSAL_TYPE
-from custom_components.heima.runtime.proposal_engine import ActivityProposal
+from custom_components.heima.runtime.proposal_engine import (
+    ActivityProposal,
+    ProposalBatchActionResult,
+)
 
 
 class _FakeAreaRegistry:
@@ -2591,6 +2594,49 @@ async def test_proposals_step_accepts_house_state_temporal_bundle_as_batch():
 
 
 @pytest.mark.asyncio
+async def test_proposals_step_uses_displayed_bundle_snapshot_on_submit():
+    flow = _flow()
+    first = _house_state_review_proposal("proposal-8", hour_bucket=8)
+    displayed_second = _house_state_review_proposal("proposal-9", hour_bucket=9)
+    replacement_second = _house_state_review_proposal("proposal-9-new", hour_bucket=9)
+    review_batch = AsyncMock(
+        return_value=ProposalBatchActionResult(
+            action="accept_bundle",
+            requested_ids=("proposal-8", "proposal-9"),
+            applied_ids=(),
+            ineligible_ids=("proposal-9",),
+        )
+    )
+    pending_calls = [[first, displayed_second], [first, replacement_second]]
+    proposal_engine = SimpleNamespace(
+        pending_proposals=MagicMock(side_effect=pending_calls),
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal_batch=review_batch,
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_proposals()
+    assert shown["step_id"] == "proposals"
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["step_id"] == "proposals"
+    assert result["errors"]["base"] == "proposal_review_stale"
+    review_batch.assert_awaited_once_with(
+        ["proposal-8", "proposal-9"],
+        decision="approved",
+        approved_by="installer",
+    )
+
+
+@pytest.mark.asyncio
 async def test_proposals_step_dismisses_similar_house_state_temporal_bundle():
     flow = _flow()
     first = _house_state_review_proposal("proposal-8", hour_bucket=8)
@@ -2646,7 +2692,20 @@ async def test_proposals_step_expands_house_state_temporal_bundle_to_members():
 
     assert shown["step_id"] == "proposals"
     assert "Stato casa appreso: working" in shown["description_placeholders"]["proposal_label"]
-    assert getattr(flow, "_proposal_review_queue") == ["proposal-8", "proposal-9"]
+    assert getattr(flow, "_proposal_review_queue") == [
+        {
+            "row_id": "proposal-8",
+            "row_type": "proposal",
+            "primary_proposal_id": "proposal-8",
+            "proposal_id": "proposal-8",
+        },
+        {
+            "row_id": "proposal-9",
+            "row_type": "proposal",
+            "primary_proposal_id": "proposal-9",
+            "proposal_id": "proposal-9",
+        },
+    ]
     review_batch.assert_not_awaited()
 
 

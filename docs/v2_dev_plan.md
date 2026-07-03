@@ -123,11 +123,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions.
-**Active phase:** Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
-**Branch:** `feat/policy-editor-implementation-plan`.
+**Active slice:** Proposal Temporal Review Bundles — completed.
+**Branch:** `feat/proposal-temporal-bundles`.
 **Next action:**
-Run broader AF verification, including representative camera privacy policy scenarios and local CI,
-before marking Phase AF complete.
+Review and merge the Proposal Temporal Review Bundles branch into `feat/v2`; then resume the next
+planned v2 slice from this document.
 
 ### Current Working Notes
 

@@ -736,7 +736,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 list(proposals_before)
             )
             for proposal_id in result.applied_ids:
-                proposals_before.setdefault(proposal_id, self._proposal_engine.proposal_by_id(proposal_id))
+                proposals_before.setdefault(
+                    proposal_id, self._proposal_engine.proposal_by_id(proposal_id)
+                )
         elif decision == "rejected":
             result = await self._proposal_engine.async_reject_proposals(list(proposals_before))
         else:

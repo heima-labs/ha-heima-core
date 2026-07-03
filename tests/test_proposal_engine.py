@@ -3505,8 +3505,7 @@ async def test_proposal_engine_diagnostics_expose_temporal_review_bundles(monkey
     assert bundle_row == {
         "row_type": "temporal_bundle",
         "bundle_id": (
-            "house_state_temporal_bundle:"
-            "weekday:1:anyone_home:1:state:working:hours:8-9"
+            "house_state_temporal_bundle:weekday:1:anyone_home:1:state:working:hours:8-9"
         ),
         "bundle_type": "house_state_temporal",
         "proposal_ids": ["rich-8", "rich-9"],
@@ -3543,7 +3542,7 @@ async def test_proposal_engine_diagnostics_expose_temporal_review_bundles(monkey
     assert proposals["coarse-8"]["temporal_bundle_role"] is None
 
 
-async def test_proposal_engine_accepts_visible_bundle_members_only(monkeypatch):
+async def test_proposal_engine_rejects_stale_accept_bundle_without_partial_apply(monkeypatch):
     monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
     engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
     await engine.async_initialize()
@@ -3577,13 +3576,13 @@ async def test_proposal_engine_accepts_visible_bundle_members_only(monkeypatch):
         "action": "accept_bundle",
         "ok": False,
         "requested_ids": ["rich-8", "rich-9", "coarse-8", "missing"],
-        "applied_ids": ["rich-8", "rich-9"],
+        "applied_ids": [],
         "missing_ids": ["missing"],
         "ineligible_ids": ["coarse-8"],
         "expanded_ids": [],
     }
-    assert engine.proposal_by_id("rich-8").status == "accepted"  # type: ignore[union-attr]
-    assert engine.proposal_by_id("rich-9").status == "accepted"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-8").status == "pending"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-9").status == "pending"  # type: ignore[union-attr]
     assert engine.proposal_by_id("coarse-8").status == "pending"  # type: ignore[union-attr]
 
 

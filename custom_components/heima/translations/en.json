@@ -716,6 +716,7 @@
       "invalid_hhmm": "Enter a valid time in HH:MM format",
       "missing_vacation_bindings": "Heating general configuration must include all vacation timing and outdoor temperature bindings",
       "redacted_payload": "Invalid configuration: payload contains redacted values",
+      "proposal_review_stale": "This proposal review changed while you were reviewing it. Reload the updated proposal list.",
       "invalid_signal_name": "Signal name not found in room signal configuration",
       "invalid_bucket": "Bucket label not found in the configured signal buckets",
       "invalid_target_domain": "One or more selected targets use an unsupported domain",

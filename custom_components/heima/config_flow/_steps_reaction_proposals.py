@@ -55,16 +55,27 @@ class _ReactionProposalStepsMixin:
         row_map = {str(row["row_id"]): row for row in review_rows}
         queue = list(getattr(self, "_proposal_review_queue", []))
         if not queue:
-            queue = [str(row["row_id"]) for row in review_rows if bool(row.get("default_row"))]
+            queue = [
+                self._proposal_review_queue_entry(row)
+                for row in review_rows
+                if bool(row.get("default_row"))
+            ]
 
-        queue = [row_id for row_id in queue if row_id in row_map]
+        queue = self._normalize_proposal_review_queue(queue, row_map)
         if not queue:
             self._proposal_review_queue = []
             return await self.async_step_init()
 
-        current_row_id = queue[0]
+        current_entry = queue[0]
+        current_row_id = self._proposal_review_queue_row_id(current_entry)
         current_row = row_map[current_row_id]
-        current = pending_map[str(current_row.get("primary_proposal_id") or current_row_id)]
+        current = pending_map[
+            str(
+                current_entry.get("primary_proposal_id")
+                or current_row.get("primary_proposal_id")
+                or current_row_id
+            )
+        ]
 
         if user_input is None:
             self._proposal_review_queue = queue
@@ -97,34 +108,45 @@ class _ReactionProposalStepsMixin:
         if str(current_row.get("row_type") or "") == "temporal_bundle":
             proposal_ids = [
                 str(proposal_id)
-                for proposal_id in list(current_row.get("proposal_ids") or [])
+                for proposal_id in list(current_entry.get("proposal_ids") or [])
                 if str(proposal_id).strip()
             ]
             if action == "accept":
-                await coordinator.async_review_house_state_proposal_batch(
+                result = await coordinator.async_review_house_state_proposal_batch(
                     proposal_ids,
                     decision="approved",
                     approved_by="installer",
                 )
             elif action == "reject":
-                await coordinator.async_review_house_state_proposal_batch(
+                result = await coordinator.async_review_house_state_proposal_batch(
                     proposal_ids,
                     decision="rejected",
                     approved_by="installer",
                 )
             elif action == "dismiss_similar":
-                await coordinator.async_review_house_state_proposal_batch(
+                result = await coordinator.async_review_house_state_proposal_batch(
                     proposal_ids,
                     decision="rejected",
                     approved_by="installer",
                     dismiss_similar=True,
                 )
             elif action == "expand":
-                self._proposal_review_queue = [*proposal_ids, *queue]
+                expanded = [
+                    self._proposal_review_queue_entry(row_map[proposal_id])
+                    for proposal_id in proposal_ids
+                    if proposal_id in row_map
+                ]
+                self._proposal_review_queue = [*expanded, *queue]
                 return await self.async_step_proposals()
+            else:
+                result = None
+            if result is not None and not result.ok:
+                return self._proposal_review_stale_form(pending, review_rows)
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
-        current_id = str(current_row.get("proposal_id") or current_row_id)
+        current_id = str(
+            current_entry.get("proposal_id") or current_row.get("proposal_id") or current_row_id
+        )
         current_type = _proposal_review_type(current)
         if current_type == HOUSE_STATE_PROPOSAL_TYPE:
             if action == "accept":
@@ -747,7 +769,9 @@ class _ReactionProposalStepsMixin:
         confidence_avg = row.get("confidence_avg")
         support_total = row.get("support_total")
         if is_it:
-            title = f"Bundle stato casa: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            title = (
+                f"Bundle stato casa: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            )
             details = [
                 f"Proposte nel bundle: {member_count}",
                 f"Stato previsto: {state}",
@@ -759,7 +783,9 @@ class _ReactionProposalStepsMixin:
                 details.append(f"Evidenza totale: {support_total} osservazioni")
             details.append("Espandi per rivedere le proposte orarie singolarmente.")
         else:
-            title = f"House-state bundle: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            title = (
+                f"House-state bundle: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            )
             details = [
                 f"Bundle proposals: {member_count}",
                 f"Predicted state: {state}",
@@ -808,14 +834,102 @@ class _ReactionProposalStepsMixin:
             "skip": "Skip for now",
         }
 
+    @staticmethod
+    def _proposal_review_queue_entry(row: dict[str, Any]) -> dict[str, Any]:
+        """Return a stable review queue snapshot for the row shown to the user."""
+        row_id = str(row.get("row_id") or "").strip()
+        row_type = str(row.get("row_type") or "proposal").strip() or "proposal"
+        entry: dict[str, Any] = {
+            "row_id": row_id,
+            "row_type": row_type,
+            "primary_proposal_id": str(row.get("primary_proposal_id") or row_id).strip(),
+        }
+        if row_type == "temporal_bundle":
+            proposal_ids = tuple(
+                str(proposal_id).strip()
+                for proposal_id in list(row.get("proposal_ids") or [])
+                if str(proposal_id).strip()
+            )
+            entry["proposal_ids"] = proposal_ids
+            entry["member_signature"] = "|".join(proposal_ids)
+        else:
+            entry["proposal_id"] = str(row.get("proposal_id") or row_id).strip()
+        return entry
+
+    @staticmethod
+    def _proposal_review_queue_row_id(entry: Any) -> str:
+        """Return the current row id from legacy string or snapshot queue entries."""
+        if isinstance(entry, dict):
+            return str(entry.get("row_id") or "").strip()
+        return str(entry or "").strip()
+
+    def _normalize_proposal_review_queue(
+        self,
+        queue: list[Any],
+        row_map: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Normalize legacy queue entries and drop rows no longer present."""
+        normalized: list[dict[str, Any]] = []
+        for entry in queue:
+            row_id = self._proposal_review_queue_row_id(entry)
+            if row_id not in row_map:
+                continue
+            if isinstance(entry, dict):
+                normalized.append(entry)
+            else:
+                normalized.append(self._proposal_review_queue_entry(row_map[row_id]))
+        return normalized
+
+    def _proposal_review_stale_form(
+        self,
+        pending: list[ProposalItem],
+        review_rows: list[dict[str, Any]],
+    ) -> "FlowResult":
+        """Rebuild the proposal review queue and show a stale-review error."""
+        queue = [
+            self._proposal_review_queue_entry(row)
+            for row in review_rows
+            if bool(row.get("default_row"))
+        ]
+        self._proposal_review_queue = queue
+        if not queue:
+            return self.async_show_form(
+                step_id="proposals",
+                data_schema=vol.Schema({}),
+                errors={"base": "proposal_review_stale"},
+                description_placeholders={},
+            )
+
+        current_entry = queue[0]
+        current_row_id = self._proposal_review_queue_row_id(current_entry)
+        current_row = {str(row.get("row_id") or ""): row for row in review_rows}[current_row_id]
+        pending_map = {proposal.proposal_id: proposal for proposal in pending}
+        is_bundle = str(current_row.get("row_type") or "") == "temporal_bundle"
+        current = pending_map[str(current_entry.get("primary_proposal_id") or current_row_id)]
+        return self.async_show_form(
+            step_id="proposals",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "review_action",
+                        default="accept",
+                    ): vol.In(self._proposal_review_action_options(bundle=is_bundle)),
+                }
+            ),
+            errors={"base": "proposal_review_stale"},
+            description_placeholders=(
+                self._proposal_bundle_review_placeholders(current_row, pending, len(queue))
+                if is_bundle
+                else self._proposal_review_placeholders(pending, current, len(queue))
+            ),
+        )
+
     def _proposal_review_rows(self, proposals: list[ProposalItem]) -> list[dict[str, Any]]:
         """Build proposal review rows, replacing bundle members in the default queue."""
         bundle_view = build_temporal_review_bundles(proposals)
         rows: list[dict[str, Any]] = []
         bundle_by_first_member = {
-            bundle.proposal_ids[0]: bundle
-            for bundle in bundle_view.bundles
-            if bundle.proposal_ids
+            bundle.proposal_ids[0]: bundle for bundle in bundle_view.bundles if bundle.proposal_ids
         }
         bundled_ids = set(bundle_view.bundled_proposal_ids)
         for proposal in proposals:
