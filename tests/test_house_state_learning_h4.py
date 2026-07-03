@@ -22,7 +22,11 @@ from custom_components.heima.runtime.inference.approval_store import (
 from custom_components.heima.runtime.inference.modules.house_state_inference import (
     LearnedHouseStateCandidate,
 )
-from custom_components.heima.runtime.proposal_engine import ActivityProposal, ProposalEngine
+from custom_components.heima.runtime.proposal_engine import (
+    ActivityProposal,
+    ProposalBatchActionResult,
+    ProposalEngine,
+)
 
 
 def _candidate(context_key: str = "ctx-1") -> LearnedHouseStateCandidate:
@@ -488,6 +492,107 @@ async def test_review_house_state_proposal_records_rejected_installer_override()
     assert record.context_key == "ctx-rejected"
     coordinator._sync_house_state_approval_state.assert_called_once()
     assert proposal.identity_key not in coordinator._notified_house_state_proposal_keys
+
+
+@pytest.mark.asyncio
+async def test_review_house_state_proposal_batch_records_applied_decisions_once() -> None:
+    first = _proposal_from_house_state_candidate(_candidate("ctx-batch-1"))
+    first.proposal_id = "proposal-batch-1"
+    second = _proposal_from_house_state_candidate(_candidate("ctx-batch-2"))
+    second.proposal_id = "proposal-batch-2"
+    skipped = _proposal_from_house_state_candidate(_candidate("ctx-batch-skipped"))
+    skipped.proposal_id = "proposal-batch-skipped"
+    proposals = {
+        first.proposal_id: first,
+        second.proposal_id: second,
+        skipped.proposal_id: skipped,
+    }
+    result = ProposalBatchActionResult(
+        action="accept_bundle",
+        requested_ids=("proposal-batch-1", "proposal-batch-2", "proposal-batch-skipped"),
+        applied_ids=("proposal-batch-1", "proposal-batch-2"),
+        ineligible_ids=("proposal-batch-skipped",),
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(side_effect=lambda proposal_id: proposals.get(proposal_id)),
+        async_accept_proposals=AsyncMock(return_value=result),
+        async_reject_proposals=AsyncMock(),
+        async_dismiss_similar_proposals=AsyncMock(),
+    )
+    coordinator._approval_store = _ApprovalStoreStub()
+    coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._notified_house_state_proposal_keys = {first.identity_key, second.identity_key}
+
+    review_result = await coordinator.async_review_house_state_proposal_batch(
+        ["proposal-batch-1", "proposal-batch-2", "proposal-batch-skipped"],
+        decision="approved",
+        approved_by="resident",
+    )
+
+    assert review_result == result
+    coordinator._proposal_engine.async_accept_proposals.assert_awaited_once_with(
+        ["proposal-batch-1", "proposal-batch-2", "proposal-batch-skipped"]
+    )
+    assert [record.context_key for record in coordinator._approval_store.records()] == [
+        "ctx-batch-1",
+        "ctx-batch-2",
+    ]
+    assert {record.decision for record in coordinator._approval_store.records()} == {"approved"}
+    coordinator._approval_store.async_flush.assert_awaited_once()
+    coordinator._sync_house_state_approval_state.assert_called_once()
+    assert first.identity_key not in coordinator._notified_house_state_proposal_keys
+    assert second.identity_key not in coordinator._notified_house_state_proposal_keys
+
+
+@pytest.mark.asyncio
+async def test_review_house_state_proposal_batch_dismiss_similar_records_expanded_sibling() -> None:
+    visible = _proposal_from_house_state_candidate(_candidate("ctx-visible"))
+    visible.proposal_id = "proposal-visible"
+    hidden = _proposal_from_house_state_candidate(_candidate("ctx-hidden"))
+    hidden.proposal_id = "proposal-hidden"
+    proposals = {
+        visible.proposal_id: visible,
+        hidden.proposal_id: hidden,
+    }
+    result = ProposalBatchActionResult(
+        action="dismiss_similar",
+        requested_ids=("proposal-visible",),
+        applied_ids=("proposal-visible", "proposal-hidden"),
+        expanded_ids=("proposal-visible", "proposal-hidden"),
+    )
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator._proposal_engine = SimpleNamespace(
+        proposal_by_id=MagicMock(side_effect=lambda proposal_id: proposals.get(proposal_id)),
+        async_accept_proposals=AsyncMock(),
+        async_reject_proposals=AsyncMock(),
+        async_dismiss_similar_proposals=AsyncMock(return_value=result),
+    )
+    coordinator._approval_store = _ApprovalStoreStub()
+    coordinator._sync_house_state_approval_state = MagicMock()
+    coordinator._notified_house_state_proposal_keys = {visible.identity_key, hidden.identity_key}
+
+    review_result = await coordinator.async_review_house_state_proposal_batch(
+        ["proposal-visible"],
+        decision="rejected",
+        approved_by="installer",
+        dismiss_similar=True,
+    )
+
+    assert review_result == result
+    coordinator._proposal_engine.async_dismiss_similar_proposals.assert_awaited_once_with(
+        ["proposal-visible"]
+    )
+    assert [record.context_key for record in coordinator._approval_store.records()] == [
+        "ctx-visible",
+        "ctx-hidden",
+    ]
+    assert {record.decision for record in coordinator._approval_store.records()} == {"rejected"}
+    assert {record.approved_by for record in coordinator._approval_store.records()} == {
+        "installer"
+    }
+    coordinator._approval_store.async_flush.assert_awaited_once()
+    coordinator._sync_house_state_approval_state.assert_called_once()
 
 
 @pytest.mark.asyncio

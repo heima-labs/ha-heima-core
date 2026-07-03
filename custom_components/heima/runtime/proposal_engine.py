@@ -51,6 +51,33 @@ class AcceptedRuleLifecyclePolicy:
         return self.required_observations * self.retirement_multiplier
 
 
+@dataclass(frozen=True)
+class ProposalBatchActionResult:
+    """Result for explicit multi-proposal review actions."""
+
+    action: str
+    requested_ids: tuple[str, ...]
+    applied_ids: tuple[str, ...]
+    missing_ids: tuple[str, ...] = ()
+    ineligible_ids: tuple[str, ...] = ()
+    expanded_ids: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.applied_ids) and not self.missing_ids and not self.ineligible_ids
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "ok": self.ok,
+            "requested_ids": list(self.requested_ids),
+            "applied_ids": list(self.applied_ids),
+            "missing_ids": list(self.missing_ids),
+            "ineligible_ids": list(self.ineligible_ids),
+            "expanded_ids": list(self.expanded_ids),
+        }
+
+
 @dataclass
 class ActivityProposal:
     """User-reviewable composite activity proposal."""
@@ -576,6 +603,64 @@ class ProposalEngine:
     async def async_reject_proposal(self, proposal_id: str) -> bool:
         return await self._set_status(proposal_id, "rejected")
 
+    async def async_accept_proposals(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+    ) -> ProposalBatchActionResult:
+        """Accept visible pending proposal representatives explicitly listed by id."""
+
+        return await self._async_apply_batch_status(
+            proposal_ids,
+            status="accepted",
+            action="accept_bundle",
+            visible_only=True,
+        )
+
+    async def async_reject_proposals(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+    ) -> ProposalBatchActionResult:
+        """Reject visible pending proposal representatives explicitly listed by id."""
+
+        return await self._async_apply_batch_status(
+            proposal_ids,
+            status="rejected",
+            action="reject_bundle",
+            visible_only=True,
+        )
+
+    async def async_dismiss_similar_proposals(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+    ) -> ProposalBatchActionResult:
+        """Reject visible representatives and pending hidden siblings in their review groups."""
+
+        requested_ids = _normalized_unique_ids(proposal_ids)
+        review_state = self._review_group_state()
+        expanded_ids = list(requested_ids)
+        requested_scopes = {
+            self._review_group_scope_for_proposal_id(proposal_id)
+            for proposal_id in requested_ids
+            if proposal_id in review_state.visible_pending_ids
+        }
+        requested_scopes.discard(None)
+        if requested_scopes:
+            for proposal in self._proposals:
+                if proposal.status != "pending" or proposal.proposal_id in expanded_ids:
+                    continue
+                scope = self._review_group_scope_for_proposal_id(proposal.proposal_id)
+                if scope in requested_scopes:
+                    expanded_ids.append(proposal.proposal_id)
+
+        result = await self._async_apply_batch_status(
+            expanded_ids,
+            status="rejected",
+            action="dismiss_similar",
+            visible_only=False,
+            requested_ids=requested_ids,
+        )
+        return replace(result, expanded_ids=tuple(expanded_ids))
+
     async def async_apply_lifecycle_suggestion(self, proposal_id: str) -> bool:
         """Accept and apply lifecycle-state effects for a review suggestion."""
         proposal = self.proposal_by_id(proposal_id)
@@ -849,6 +934,46 @@ class ProposalEngine:
             self._write_sensor()
             return True
         return False
+
+    async def _async_apply_batch_status(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+        *,
+        status: str,
+        action: str,
+        visible_only: bool,
+        requested_ids: tuple[str, ...] | None = None,
+    ) -> ProposalBatchActionResult:
+        requested = requested_ids or _normalized_unique_ids(proposal_ids)
+        target_ids = _normalized_unique_ids(proposal_ids)
+        visible_pending_ids = set(self._review_group_state().visible_pending_ids)
+        applied: list[str] = []
+        missing: list[str] = []
+        ineligible: list[str] = []
+
+        for proposal_id in target_ids:
+            proposal = self.proposal_by_id(proposal_id)
+            if proposal is None:
+                missing.append(proposal_id)
+                continue
+            if proposal.status != "pending":
+                ineligible.append(proposal_id)
+                continue
+            if visible_only and proposal_id not in visible_pending_ids:
+                ineligible.append(proposal_id)
+                continue
+            if await self._set_status(proposal_id, status):
+                applied.append(proposal_id)
+            else:
+                ineligible.append(proposal_id)
+
+        return ProposalBatchActionResult(
+            action=action,
+            requested_ids=requested,
+            applied_ids=tuple(applied),
+            missing_ids=tuple(missing),
+            ineligible_ids=tuple(ineligible),
+        )
 
     def diagnostics(self) -> dict[str, Any]:
         ordered = self._sort_proposals(self._proposals)
@@ -1405,6 +1530,15 @@ class ProposalEngine:
         grouping: ProposalReviewGrouping,
     ) -> tuple[str, str]:
         return (_proposal_type(proposal), str(grouping.group_key).strip())
+
+    def _review_group_scope_for_proposal_id(self, proposal_id: str) -> tuple[str, str] | None:
+        proposal = self.proposal_by_id(proposal_id)
+        if proposal is None:
+            return None
+        grouping = self._review_grouping(proposal)
+        if grouping is None:
+            return None
+        return self._review_group_scope(proposal, grouping)
 
     @staticmethod
     def _review_group_rank(grouping: ProposalReviewGrouping) -> tuple[Any, ...]:
@@ -2112,6 +2246,18 @@ def _proposal_description(proposal: ProposalItem) -> str:
             f"{proposal.occurrence_count} times."
         )
     return proposal.description
+
+
+def _normalized_unique_ids(proposal_ids: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in proposal_ids:
+        proposal_id = str(raw or "").strip()
+        if not proposal_id or proposal_id in seen:
+            continue
+        normalized.append(proposal_id)
+        seen.add(proposal_id)
+    return tuple(normalized)
 
 
 def _proposal_context_snapshot(proposal: ProposalItem) -> dict[str, Any]:

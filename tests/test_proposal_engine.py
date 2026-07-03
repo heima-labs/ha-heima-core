@@ -235,8 +235,18 @@ def _activity_proposal(
     )
 
 
-def _house_state_lifecycle_proposal(*, context_key: str = "ctx-alpha") -> ReactionProposal:
+def _house_state_lifecycle_proposal(
+    *,
+    context_key: str = "ctx-alpha",
+    proposal_id: str | None = None,
+    hour_bucket: int = 17,
+    learning_context: dict[str, object] | None = None,
+) -> ReactionProposal:
+    kwargs: dict[str, object] = {}
+    if proposal_id is not None:
+        kwargs["proposal_id"] = proposal_id
     return ReactionProposal(
+        **kwargs,
         analyzer_id="house_state_inference",
         reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
         description="Learned house-state context predicts working.",
@@ -247,9 +257,10 @@ def _house_state_lifecycle_proposal(*, context_key: str = "ctx-alpha") -> Reacti
             "context_key": context_key,
             "context_snapshot": {
                 "weekday": 1,
-                "hour_bucket": 17,
+                "hour_bucket": hour_bucket,
                 "anyone_home": True,
                 "predicted_state": "working",
+                "learning_context": learning_context or {},
             },
             "predicted_state": "working",
             "support": 3,
@@ -3530,6 +3541,140 @@ async def test_proposal_engine_diagnostics_expose_temporal_review_bundles(monkey
     assert proposals["rich-11"]["temporal_bundle_role"] is None
     assert proposals["coarse-8"]["suppressed_by_review_group"] is True
     assert proposals["coarse-8"]["temporal_bundle_role"] is None
+
+
+async def test_proposal_engine_accepts_visible_bundle_members_only(monkeypatch):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="coarse-8",
+            context_key="coarse-8",
+            hour_bucket=8,
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-8",
+            context_key="rich-8",
+            hour_bucket=8,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-9",
+            context_key="rich-9",
+            hour_bucket=9,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+
+    result = await engine.async_accept_proposals(["rich-8", "rich-9", "coarse-8", "missing"])
+
+    assert result.as_dict() == {
+        "action": "accept_bundle",
+        "ok": False,
+        "requested_ids": ["rich-8", "rich-9", "coarse-8", "missing"],
+        "applied_ids": ["rich-8", "rich-9"],
+        "missing_ids": ["missing"],
+        "ineligible_ids": ["coarse-8"],
+        "expanded_ids": [],
+    }
+    assert engine.proposal_by_id("rich-8").status == "accepted"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-9").status == "accepted"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("coarse-8").status == "pending"  # type: ignore[union-attr]
+
+
+async def test_proposal_engine_rejects_visible_bundle_members_without_hidden_siblings(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="coarse-8",
+            context_key="coarse-8",
+            hour_bucket=8,
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-8",
+            context_key="rich-8",
+            hour_bucket=8,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-9",
+            context_key="rich-9",
+            hour_bucket=9,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+
+    result = await engine.async_reject_proposals(["rich-8", "rich-9"])
+
+    assert result.ok is True
+    assert result.applied_ids == ("rich-8", "rich-9")
+    assert engine.proposal_by_id("rich-8").status == "rejected"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-9").status == "rejected"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("coarse-8").status == "pending"  # type: ignore[union-attr]
+    assert [proposal.proposal_id for proposal in engine.pending_proposals()] == ["coarse-8"]
+
+
+async def test_proposal_engine_dismiss_similar_rejects_hidden_review_group_siblings(
+    monkeypatch,
+):
+    monkeypatch.setattr("custom_components.heima.runtime.proposal_engine.Store", _FakeStore)
+    engine = ProposalEngine(object(), _EventStoreStub())  # type: ignore[arg-type]
+    await engine.async_initialize()
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="coarse-8",
+            context_key="coarse-8",
+            hour_bucket=8,
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-8",
+            context_key="rich-8",
+            hour_bucket=8,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-9",
+            context_key="rich-9",
+            hour_bucket=9,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+    await engine.async_submit_proposal(
+        _house_state_lifecycle_proposal(
+            proposal_id="rich-11",
+            context_key="rich-11",
+            hour_bucket=11,
+            learning_context={"module": "house_state_inference_rich"},
+        )
+    )
+
+    result = await engine.async_dismiss_similar_proposals(["rich-8", "rich-9"])
+
+    assert result.action == "dismiss_similar"
+    assert result.requested_ids == ("rich-8", "rich-9")
+    assert result.applied_ids == ("rich-8", "rich-9", "coarse-8")
+    assert result.expanded_ids == ("rich-8", "rich-9", "coarse-8")
+    assert engine.proposal_by_id("rich-8").status == "rejected"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-9").status == "rejected"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("coarse-8").status == "rejected"  # type: ignore[union-attr]
+    assert engine.proposal_by_id("rich-11").status == "pending"  # type: ignore[union-attr]
 
 
 async def test_proposal_engine_composite_identity_uses_room_and_primary_signal(monkeypatch):

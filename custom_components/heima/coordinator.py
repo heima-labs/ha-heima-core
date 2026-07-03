@@ -81,7 +81,7 @@ from .runtime.inference.approval_store import (
 )
 from .runtime.outcome_tracker import OutcomeTracker
 from .runtime.plugin_contracts import AnomalySignal
-from .runtime.proposal_engine import ActivityProposal, ProposalEngine
+from .runtime.proposal_engine import ActivityProposal, ProposalBatchActionResult, ProposalEngine
 from .runtime.proposal_lifecycle_store import ProposalLifecycleStore
 from .runtime.room_context import RoomDeviceContextBuilder
 from .runtime.scheduler import RuntimeScheduler
@@ -713,6 +713,66 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 self._notified_house_state_proposal_keys.discard(proposal.identity_key)
 
         return True
+
+    async def async_review_house_state_proposal_batch(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+        *,
+        decision: ApprovalDecision,
+        approved_by: ApprovalActor,
+        dismiss_similar: bool = False,
+    ) -> ProposalBatchActionResult:
+        """Review multiple house-state proposal representatives as one explicit action."""
+
+        proposals_before = {
+            str(proposal_id): self._proposal_engine.proposal_by_id(str(proposal_id))
+            for proposal_id in proposal_ids
+            if str(proposal_id or "").strip()
+        }
+        if decision == "approved":
+            result = await self._proposal_engine.async_accept_proposals(list(proposals_before))
+        elif decision == "rejected" and dismiss_similar:
+            result = await self._proposal_engine.async_dismiss_similar_proposals(
+                list(proposals_before)
+            )
+            for proposal_id in result.applied_ids:
+                proposals_before.setdefault(proposal_id, self._proposal_engine.proposal_by_id(proposal_id))
+        elif decision == "rejected":
+            result = await self._proposal_engine.async_reject_proposals(list(proposals_before))
+        else:
+            return ProposalBatchActionResult(
+                action="review_house_state_batch",
+                requested_ids=tuple(proposals_before),
+                applied_ids=(),
+                ineligible_ids=tuple(proposals_before),
+            )
+
+        recorded = False
+        for proposal_id in result.applied_ids:
+            proposal = proposals_before.get(proposal_id)
+            if proposal is None:
+                proposal = self._proposal_engine.proposal_by_id(proposal_id)
+            if not isinstance(proposal, ReactionProposal):
+                continue
+            if proposal.reaction_type != HOUSE_STATE_PROPOSAL_TYPE:
+                continue
+            record = _approval_record_from_house_state_proposal(
+                proposal,
+                decision=decision,
+                approved_by=approved_by,
+            )
+            if record is None:
+                continue
+            await self._approval_store.async_record(record)
+            recorded = True
+            if proposal.identity_key:
+                self._notified_house_state_proposal_keys.discard(proposal.identity_key)
+
+        if recorded:
+            await self._approval_store.async_flush()
+            self._sync_house_state_approval_state()
+
+        return result
 
     async def async_review_activity_proposal(
         self,
