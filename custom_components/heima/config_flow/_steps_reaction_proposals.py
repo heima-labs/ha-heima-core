@@ -13,6 +13,7 @@ from ..runtime.analyzers.base import LIFECYCLE_SUGGESTION_FOLLOWUP_KINDS, Reacti
 from ..runtime.analyzers.registry import ImprovementProposalDescriptor
 from ..runtime.inference.approval_store import ACTIVITY_PROPOSAL_TYPE, HOUSE_STATE_PROPOSAL_TYPE
 from ..runtime.proposal_engine import ActivityProposal, ProposalItem
+from ..runtime.proposal_review_bundles import ProposalReviewBundle, build_temporal_review_bundles
 from ..runtime.reactions import create_builtin_reaction_plugin_registry, resolve_reaction_type
 from ._common import _entity_selector, _number_box_selector
 from ._reaction_helpers import (
@@ -43,40 +44,46 @@ class _ReactionProposalStepsMixin:
     async def async_step_proposals(self, user_input: dict[str, Any] | None = None) -> "FlowResult":
         """Review pending learning proposals one at a time. Skip silently if none are pending."""
         coordinator = self._get_coordinator()
-        pending = coordinator.proposal_engine.pending_proposals() if coordinator else []
+        pending = list(coordinator.proposal_engine.pending_proposals()) if coordinator else []
+        review_rows = self._proposal_review_rows(pending)
 
-        if not pending:
+        if not pending or not review_rows:
             self._proposal_review_queue = []
             return await self.async_step_init()
 
         pending_map = {proposal.proposal_id: proposal for proposal in pending}
+        row_map = {str(row["row_id"]): row for row in review_rows}
         queue = list(getattr(self, "_proposal_review_queue", []))
         if not queue:
-            queue = [proposal.proposal_id for proposal in pending]
+            queue = [str(row["row_id"]) for row in review_rows if bool(row.get("default_row"))]
 
-        queue = [proposal_id for proposal_id in queue if proposal_id in pending_map]
+        queue = [row_id for row_id in queue if row_id in row_map]
         if not queue:
             self._proposal_review_queue = []
             return await self.async_step_init()
 
-        current_id = queue[0]
-        current = pending_map[current_id]
+        current_row_id = queue[0]
+        current_row = row_map[current_row_id]
+        current = pending_map[str(current_row.get("primary_proposal_id") or current_row_id)]
 
         if user_input is None:
             self._proposal_review_queue = queue
+            is_bundle = str(current_row.get("row_type") or "") == "temporal_bundle"
             schema = vol.Schema(
                 {
                     vol.Required(
                         "review_action",
                         default="accept",
-                    ): vol.In(self._proposal_review_action_options()),
+                    ): vol.In(self._proposal_review_action_options(bundle=is_bundle)),
                 }
             )
             return self.async_show_form(
                 step_id="proposals",
                 data_schema=schema,
-                description_placeholders=self._proposal_review_placeholders(
-                    pending, current, len(queue)
+                description_placeholders=(
+                    self._proposal_bundle_review_placeholders(current_row, pending, len(queue))
+                    if is_bundle
+                    else self._proposal_review_placeholders(pending, current, len(queue))
                 ),
             )
 
@@ -87,6 +94,37 @@ class _ReactionProposalStepsMixin:
         if not coordinator:
             return await self.async_step_proposals() if queue else await self.async_step_init()
 
+        if str(current_row.get("row_type") or "") == "temporal_bundle":
+            proposal_ids = [
+                str(proposal_id)
+                for proposal_id in list(current_row.get("proposal_ids") or [])
+                if str(proposal_id).strip()
+            ]
+            if action == "accept":
+                await coordinator.async_review_house_state_proposal_batch(
+                    proposal_ids,
+                    decision="approved",
+                    approved_by="installer",
+                )
+            elif action == "reject":
+                await coordinator.async_review_house_state_proposal_batch(
+                    proposal_ids,
+                    decision="rejected",
+                    approved_by="installer",
+                )
+            elif action == "dismiss_similar":
+                await coordinator.async_review_house_state_proposal_batch(
+                    proposal_ids,
+                    decision="rejected",
+                    approved_by="installer",
+                    dismiss_similar=True,
+                )
+            elif action == "expand":
+                self._proposal_review_queue = [*proposal_ids, *queue]
+                return await self.async_step_proposals()
+            return await self.async_step_proposals() if queue else await self.async_step_init()
+
+        current_id = str(current_row.get("proposal_id") or current_row_id)
         current_type = _proposal_review_type(current)
         if current_type == HOUSE_STATE_PROPOSAL_TYPE:
             if action == "accept":
@@ -689,20 +727,133 @@ class _ReactionProposalStepsMixin:
             "proposal_details": self._proposal_review_details(current),
         }
 
-    def _proposal_review_action_options(self) -> dict[str, str]:
+    def _proposal_bundle_review_placeholders(
+        self,
+        row: dict[str, Any],
+        proposals: list[ProposalItem],
+        queue_len: int,
+    ) -> dict[str, str]:
+        """Build placeholders for one temporal bundle review row."""
+        total = sum(1 for item in self._proposal_review_rows(proposals) if item.get("default_row"))
+        position = total - queue_len + 1
+        remaining = max(total - position, 0)
+        language = self._flow_language()
+        is_it = language.startswith("it")
+        weekday_label = self._weekday_label(row.get("weekday"), language)
+        start_hour = row.get("start_hour_bucket")
+        end_hour = row.get("end_hour_bucket")
+        state = str(row.get("predicted_state") or "").strip() or "unknown"
+        member_count = int(row.get("member_count") or 0)
+        confidence_avg = row.get("confidence_avg")
+        support_total = row.get("support_total")
+        if is_it:
+            title = f"Bundle stato casa: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            details = [
+                f"Proposte nel bundle: {member_count}",
+                f"Stato previsto: {state}",
+                f"Intervallo: {weekday_label} {start_hour}:00-{end_hour + 1}:00",
+            ]
+            if confidence_avg not in (None, ""):
+                details.append(f"Affidabilita media: {float(confidence_avg):.0%}")
+            if support_total not in (None, ""):
+                details.append(f"Evidenza totale: {support_total} osservazioni")
+            details.append("Espandi per rivedere le proposte orarie singolarmente.")
+        else:
+            title = f"House-state bundle: {weekday_label} {start_hour}:00-{end_hour + 1}:00 -> {state}"
+            details = [
+                f"Bundle proposals: {member_count}",
+                f"Predicted state: {state}",
+                f"Time span: {weekday_label} {start_hour}:00-{end_hour + 1}:00",
+            ]
+            if confidence_avg not in (None, ""):
+                details.append(f"Average confidence: {float(confidence_avg):.0%}")
+            if support_total not in (None, ""):
+                details.append(f"Total evidence: {support_total} observations")
+            details.append("Expand to review the hourly proposals one by one.")
+        return {
+            "summary": self._proposal_bundle_summary(total, remaining, is_it=is_it),
+            "current_position": f"{position}/{total}",
+            "proposal_label": title,
+            "proposal_details": "\n".join(details),
+        }
+
+    def _proposal_review_action_options(self, *, bundle: bool = False) -> dict[str, str]:
         """Return localized review actions for the proposal step."""
         language = self._flow_language()
         if language.startswith("it"):
+            if bundle:
+                return {
+                    "accept": "Accetta il bundle",
+                    "reject": "Rifiuta il bundle",
+                    "dismiss_similar": "Rifiuta anche simili",
+                    "expand": "Espandi",
+                    "skip": "Salta per ora",
+                }
             return {
                 "accept": "Accetta questa proposta",
                 "reject": "Rifiuta questa proposta",
                 "skip": "Salta per ora",
+            }
+        if bundle:
+            return {
+                "accept": "Accept bundle",
+                "reject": "Reject bundle",
+                "dismiss_similar": "Dismiss similar",
+                "expand": "Expand",
+                "skip": "Skip for now",
             }
         return {
             "accept": "Accept this proposal",
             "reject": "Reject this proposal",
             "skip": "Skip for now",
         }
+
+    def _proposal_review_rows(self, proposals: list[ProposalItem]) -> list[dict[str, Any]]:
+        """Build proposal review rows, replacing bundle members in the default queue."""
+        bundle_view = build_temporal_review_bundles(proposals)
+        rows: list[dict[str, Any]] = []
+        bundle_by_first_member = {
+            bundle.proposal_ids[0]: bundle
+            for bundle in bundle_view.bundles
+            if bundle.proposal_ids
+        }
+        bundled_ids = set(bundle_view.bundled_proposal_ids)
+        for proposal in proposals:
+            proposal_id = str(getattr(proposal, "proposal_id", "") or "").strip()
+            bundle = bundle_by_first_member.get(proposal_id)
+            if bundle is not None:
+                rows.append(self._proposal_bundle_row(bundle))
+            rows.append(
+                {
+                    "row_id": proposal_id,
+                    "row_type": "proposal",
+                    "default_row": proposal_id not in bundled_ids,
+                    "proposal_id": proposal_id,
+                    "primary_proposal_id": proposal_id,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _proposal_bundle_row(bundle: ProposalReviewBundle) -> dict[str, Any]:
+        row = bundle.as_dict()
+        row.update(
+            {
+                "row_id": bundle.bundle_id,
+                "row_type": "temporal_bundle",
+                "default_row": True,
+                "primary_proposal_id": bundle.proposal_ids[0] if bundle.proposal_ids else "",
+            }
+        )
+        return row
+
+    @staticmethod
+    def _proposal_bundle_summary(total: int, remaining: int, *, is_it: bool) -> str:
+        if is_it:
+            label = "riga review" if total == 1 else "righe review"
+            return f"{total} {label}, {remaining} rimanenti"
+        label = "review row" if total == 1 else "review rows"
+        return f"{total} {label}, {remaining} remaining"
 
     def _accepted_proposal_options(self, proposals: list[ProposalItem]) -> dict[str, str]:
         """Return selector options for accepted proposal management."""

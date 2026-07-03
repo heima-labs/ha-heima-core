@@ -96,6 +96,32 @@ def _flow(
     return flow
 
 
+def _house_state_review_proposal(proposal_id: str, *, hour_bucket: int) -> ReactionProposal:
+    return ReactionProposal(
+        proposal_id=proposal_id,
+        analyzer_id="house_state_inference",
+        reaction_type=HOUSE_STATE_PROPOSAL_TYPE,
+        description="Learned house-state context predicts working.",
+        confidence=0.8,
+        identity_key=f"{HOUSE_STATE_PROPOSAL_TYPE}:ctx-{proposal_id}",
+        suggested_reaction_config={
+            "proposal_type": HOUSE_STATE_PROPOSAL_TYPE,
+            "context_key": f"ctx-{proposal_id}",
+            "context_snapshot": {
+                "weekday": 1,
+                "hour_bucket": hour_bucket,
+                "rooms": ["bedroom"],
+                "anyone_home": True,
+                "predicted_state": "working",
+                "learning_context": {},
+            },
+            "predicted_state": "working",
+            "support": 4,
+            "total": 5,
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_rooms_flow_persists_actuation_only_room_with_save_and_close():
     flow = _flow()
@@ -2503,6 +2529,125 @@ async def test_proposals_step_rejects_house_state_context_as_installer():
         approved_by="installer",
     )
     proposal_engine.async_reject_proposal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_shows_house_state_temporal_bundle():
+    flow = _flow()
+    first = _house_state_review_proposal("proposal-8", hour_bucket=8)
+    second = _house_state_review_proposal("proposal-9", hour_bucket=9)
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [first, second],
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal_batch=AsyncMock(),
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_proposals()
+
+    assert shown["step_id"] == "proposals"
+    placeholders = shown["description_placeholders"]
+    assert placeholders["current_position"] == "1/1"
+    assert "Bundle stato casa" in placeholders["proposal_label"]
+    assert "Proposte nel bundle: 2" in placeholders["proposal_details"]
+    assert "Espandi" in shown["data_schema"].schema["review_action"].container.values()
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_accepts_house_state_temporal_bundle_as_batch():
+    flow = _flow()
+    first = _house_state_review_proposal("proposal-8", hour_bucket=8)
+    second = _house_state_review_proposal("proposal-9", hour_bucket=9)
+    review_batch = AsyncMock()
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [first, second],
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal_batch=review_batch,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "accept"})
+
+    assert result["type"] == "menu"
+    review_batch.assert_awaited_once_with(
+        ["proposal-8", "proposal-9"],
+        decision="approved",
+        approved_by="installer",
+    )
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_dismisses_similar_house_state_temporal_bundle():
+    flow = _flow()
+    first = _house_state_review_proposal("proposal-8", hour_bucket=8)
+    second = _house_state_review_proposal("proposal-9", hour_bucket=9)
+    review_batch = AsyncMock()
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [first, second],
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal_batch=review_batch,
+                )
+            }
+        }
+    }
+
+    result = await flow.async_step_proposals({"review_action": "dismiss_similar"})
+
+    assert result["type"] == "menu"
+    review_batch.assert_awaited_once_with(
+        ["proposal-8", "proposal-9"],
+        decision="rejected",
+        approved_by="installer",
+        dismiss_similar=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_proposals_step_expands_house_state_temporal_bundle_to_members():
+    flow = _flow()
+    first = _house_state_review_proposal("proposal-8", hour_bucket=8)
+    second = _house_state_review_proposal("proposal-9", hour_bucket=9)
+    review_batch = AsyncMock()
+    proposal_engine = SimpleNamespace(
+        pending_proposals=lambda: [first, second],
+    )
+    flow.hass.data = {
+        DOMAIN: {
+            "entry-1": {
+                "coordinator": SimpleNamespace(
+                    proposal_engine=proposal_engine,
+                    async_review_house_state_proposal_batch=review_batch,
+                    async_review_house_state_proposal=AsyncMock(),
+                )
+            }
+        }
+    }
+
+    shown = await flow.async_step_proposals({"review_action": "expand"})
+
+    assert shown["step_id"] == "proposals"
+    assert "Stato casa appreso: working" in shown["description_placeholders"]["proposal_label"]
+    assert getattr(flow, "_proposal_review_queue") == ["proposal-8", "proposal-9"]
+    review_batch.assert_not_awaited()
 
 
 @pytest.mark.asyncio
