@@ -166,7 +166,7 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
   - `063_semantic_policy_live.py`: live reload check for Phase N semantic policy proposals and `admin_authored` provenance
   - `064_snapshot_alignment_live.py`: live runtime/storage check for Phase O snapshot fields (`security_state`, `heating_current_temperature`) and legacy `security_armed` removal
   - `065_learning_modules_p_live.py`: live diagnostics check for Phase P learning module registration/readiness and sensorless room sync
-  - `070_proposal_review_grouping_live.py`: read-only check for query-time proposal review grouping diagnostics and proposal sensor count
+  - `070_proposal_review_grouping_live.py`: read-only check for query-time proposal review grouping, temporal bundle diagnostics, review-row count, and proposal sensor count
   - `071_learning_plugin_execution_modes_live.py`: read-only check for analyzer, lifecycle-only, and admin-authored-only plugin execution buckets
   - `072_proposal_lifecycle_diag.py`: read-only check for Phase AD proposal/reaction lifecycle monitoring diagnostics and lifecycle suggestion rows
   - `074_camera_privacy_manual_hold_live.py`: live AE camera privacy check for semantic proposal generation, Heima-owned switch apply provenance, explicit hold blocking, and external switch manual hold

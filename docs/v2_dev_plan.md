@@ -131,6 +131,49 @@ before marking Phase AF complete.
 
 ### Current Working Notes
 
+- Current slice: **Proposal Temporal Review Bundles** on `feat/proposal-temporal-bundles`
+  (2026-07-03).
+  - Spec source: `docs/specs/learning/proposal_lifecycle_spec.md` §2d and
+    `docs/specs/heima_v2_spec.md` house-state review grouping notes.
+  - Reason: production audit found 225 pending proposals, 122 already suppressed by
+    `review_grouping`, and residual visible noise dominated by adjacent
+    `house_state_learned_context` representatives for the same
+    `weekday + anyone_home + predicted_state`.
+  - Architecture decision:
+    - Temporal bundles are a read-time review/UI structure above `review_grouping`.
+    - They use only visible representatives from `pending_proposals()`.
+    - They do not modify persisted proposal status, `identity_key`, approval identity, or
+      `review_grouping`.
+    - `reject bundle` rejects only visible representatives; `dismiss similar` is the explicit
+      broader rejection that also rejects hidden pending siblings in the same review groups.
+  - TB1 — Proposal review bundle model: `DONE`.
+    - Added a pure runtime read model for strict adjacent-hour temporal bundles.
+    - Unit coverage for adjacency, gaps, context dimensions, fallback fields, and non-house-state
+      proposals.
+    - Commit: `1464eb6 Add proposal temporal bundle read model`.
+  - TB2 — Diagnostics and audit: `DONE`.
+    - Proposal diagnostics expose `temporal_bundles`, `temporal_bundle_*`, `review_rows`, and
+      `review_row_count`.
+    - `scripts/proposal_backlog_audit.py` reports review rows and top temporal bundles.
+    - Commit: `9b4a84e Expose proposal temporal bundle diagnostics`.
+  - TB3 — Bundle review actions: `DONE`.
+    - Added explicit batch actions in `ProposalEngine`.
+    - Added coordinator batch review wrapper that records approval decisions for applied
+      house-state proposal ids.
+    - Commit: `8890d8c Add proposal bundle review actions`.
+  - TB4 — Options Flow review UI: `DONE`.
+    - Options Flow shows temporal bundle rows instead of individual adjacent representatives.
+    - Bundle actions: accept, reject, dismiss similar, expand, skip.
+    - Expansion returns the individual representatives to the existing single-proposal flow.
+    - Commit: `7e802de Show proposal temporal bundles in options flow`.
+  - TB5 — Test and live validation: `DONE`.
+    - Local focused tests, ruff, and py_compile passed for TB1-TB4 coverage.
+    - `scripts/live_tests/070_proposal_review_grouping_live.py` now validates temporal bundle
+      diagnostics and review-row counts.
+    - Live validation passed after Docker/HA restart:
+      - `scripts/live_tests/070_proposal_review_grouping_live.py` — passed.
+      - `./scripts/check_all_live.sh --tier diagnostic` — passed.
+
 - Current slice: **Manual Hold Framework + AE residual work completed** (2026-06-25).
   - Spec source: `docs/specs/core/manual_hold_framework_spec.md`.
   - Reason: AE camera privacy manual hold overlapped with existing smart-lighting manual override,
