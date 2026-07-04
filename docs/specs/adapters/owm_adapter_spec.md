@@ -1,67 +1,68 @@
 # Heima OWM Adapter — Spec v1
 
-**Status:** Reference spec per implementazione  
+**Status:** Reference spec for implementation  
 **Repo target:** `heima-labs/ha-heima-owm-adapter`  
-**Contratto implementato:** External Context Contract v1.0  
+**Contract implemented:** External Context Contract v1.0  
 **Last Updated:** 2026-04-27
 
 ---
 
-## Scopo
+## Purpose
 
-Normalizzare i dati esposti dall'integrazione nativa **OpenWeatherMap** di Home
-Assistant verso le entità del [Heima External Context Contract v1](./external_context_contract.md).
+Normalize the data exposed by Home Assistant's native **OpenWeatherMap**
+integration into entities of the [Heima External Context Contract v1](./external_context_contract.md).
 
-L'adapter non chiama direttamente le API di OpenWeatherMap. Legge le entità
-HA già create dall'integrazione OWM nativa e le trasforma.
+The adapter does not call the OpenWeatherMap APIs directly. It reads the HA
+entities already created by the native OWM integration and transforms them.
 
 ---
 
-## Prerequisiti
+## Prerequisites
 
-| Requisito                        | Note                                                      |
+| Requirement                      | Notes                                                      |
 |----------------------------------|-----------------------------------------------------------|
-| HA con OWM integration nativa    | Configurabile da Impostazioni → Integrazioni              |
-| API key OWM                      | Richiesta dall'integrazione nativa, non dall'adapter      |
-| Heima installato                 | Opzionale per il funzionamento dell'adapter, necessario per il consumo |
+| HA with the native OWM integration    | Configurable from Settings → Integrations              |
+| OWM API key                      | Required by the native integration, not by the adapter    |
+| Heima installed                  | Optional for the adapter to function, required to consume it |
 
-L'adapter non richiede HACS. È distribuito come custom integration standard.
+The adapter does not require HACS. It's distributed as a standard custom integration.
 
 ---
 
-## Entità sorgente OWM → entità contratto Heima
+## OWM source entities → Heima contract entities
 
-### Mapping diretto
+### Direct mapping
 
-| Entità OWM nativa (HA)                         | Entità contratto Heima                          | Trasformazione                    |
+| Native OWM entity (HA)                         | Heima contract entity                          | Transformation                    |
 |------------------------------------------------|-------------------------------------------------|-----------------------------------|
-| `sensor.openweathermap_temperature`            | `sensor.heima_ext_outdoor_temp`                 | Nessuna (già °C)                  |
-| `sensor.openweathermap_humidity`               | `sensor.heima_ext_outdoor_humidity`             | Nessuna (già %)                   |
-| `sensor.openweathermap_wind_speed`             | `sensor.heima_ext_wind_speed`                   | Conversione km/h → m/s (÷ 3.6)   |
-| `sensor.openweathermap_rain`                   | `sensor.heima_ext_rain_last_1h`                 | Nessuna (già mm)                  |
-| `sensor.openweathermap_forecast_precipitation` | `sensor.heima_ext_rain_forecast_next_6h`        | Somma forecast 6h (vedi §Forecast)|
-| `weather.openweathermap`                       | `sensor.heima_ext_weather_condition`            | Mapping enum (vedi §Condition)    |
+| `sensor.openweathermap_temperature`            | `sensor.heima_ext_outdoor_temp`                 | None (already °C)                  |
+| `sensor.openweathermap_humidity`               | `sensor.heima_ext_outdoor_humidity`             | None (already %)                   |
+| `sensor.openweathermap_wind_speed`             | `sensor.heima_ext_wind_speed`                   | km/h → m/s conversion (÷ 3.6)   |
+| `sensor.openweathermap_rain`                   | `sensor.heima_ext_rain_last_1h`                 | None (already mm)                  |
+| `sensor.openweathermap_forecast_precipitation` | `sensor.heima_ext_rain_forecast_next_6h`        | Sum of 6h forecast (see §Forecast)|
+| `weather.openweathermap`                       | `sensor.heima_ext_weather_condition`            | Enum mapping (see §Condition)    |
 
-### Entità calcolate
+### Computed entities
 
-| Entità contratto Heima              | Fonte                                                      |
-|-------------------------------------|------------------------------------------------------------|
-| `sensor.heima_ext_outdoor_lux`      | Stimato da cloud coverage + UV index + ora solare (vedi §Lux) |
+| Heima contract entity              | Source                                                      |
+|-------------------------------------|--------------------------------------------------------------|
+| `sensor.heima_ext_outdoor_lux`      | Estimated from cloud coverage + UV index + solar time (see §Lux) |
 
-> **Nota:** L'adapter non espone `weather_alert_level` né `weather_alert_phenomena`.
-> Questi segnali sono di competenza di adapter dedicati alle fonti di allerta
-> (es. ha-heima-pc-adapter). OWM non è una fonte autoritativa di allerte civili.
+> **Note:** the adapter does not expose `weather_alert_level` or
+> `weather_alert_phenomena`. Those signals are the responsibility of adapters
+> dedicated to alert sources (e.g. ha-heima-pc-adapter). OWM is not an
+> authoritative source of civil alerts.
 
 ---
 
-## Logica di normalizzazione
+## Normalization logic
 
 ### Condition mapping
 
-OWM espone il condition code come stato dell'entità `weather.openweathermap`.
-Il mapping verso il contratto Heima è:
+OWM exposes the condition code as the state of the `weather.openweathermap`
+entity. The mapping to the Heima contract is:
 
-| Stato OWM                                  | `weather_condition` Heima |
+| OWM state                                  | Heima `weather_condition` |
 |--------------------------------------------|---------------------------|
 | `sunny`, `clear-night`                     | `clear`                   |
 | `partlycloudy`                             | `partly_cloudy`           |
@@ -72,46 +73,48 @@ Il mapping verso il contratto Heima è:
 | `lightning-rainy`, `lightning`             | `storm`                   |
 | `snowy`, `snowy-rainy`                     | `snow`                    |
 | `windy`, `windy-variant`, `exceptional`    | `overcast`                |
-| qualsiasi altro                            | `unknown`                 |
+| any other                                  | `unknown`                 |
 
 ### Lux estimation
 
-OWM non fornisce illuminamento in lux. L'adapter stima `outdoor_lux` da:
+OWM does not provide illuminance in lux. The adapter estimates `outdoor_lux` from:
 
 1. **Cloud coverage** (`sensor.openweathermap_cloud_coverage`, %)
-2. **UV index** (`sensor.openweathermap_uv_index`) come proxy dell'irraggiamento
-3. **Ora solare** calcolata dalla posizione geografica del sistema HA
+2. **UV index** (`sensor.openweathermap_uv_index`) as a proxy for irradiance
+3. **Solar time** computed from the HA system's geographic location
 
-Algoritmo:
+Algorithm:
 
 ```python
 def estimate_lux(cloud_pct: float, uv_index: float, solar_elevation_deg: float) -> float:
     if solar_elevation_deg <= 0:
-        return 0.0  # notte
+        return 0.0  # night
 
-    # lux massimo atteso a cielo sereno a quell'elevazione solare
+    # max lux expected under a clear sky at that solar elevation
     max_lux = 120_000 * math.sin(math.radians(solar_elevation_deg))
 
-    # attenuazione nuvolosità (relazione approssimata lineare)
+    # cloud attenuation (approximated linear relationship)
     cloud_factor = 1.0 - (cloud_pct / 100.0) * 0.85
 
-    # attenuazione UV (UV 0 = overcast pesante, UV 11+ = pieno sole tropicale)
+    # UV attenuation (UV 0 = heavy overcast, UV 11+ = full tropical sun)
     uv_factor = min(uv_index / 11.0, 1.0) if uv_index is not None else 0.5
 
     estimated = max_lux * cloud_factor * uv_factor
     return round(max(estimated, 0.0), 1)
 ```
 
-**Approssimazione accettabile:** l'adapter non pretende precisione fotometrica.
-L'uso in Heima (lighting compensation, gloomy detection) tollera un errore del
-±30%. Se `cloud_coverage` o `uv_index` sono `unavailable`, l'adapter scrive
-`unavailable` anche per `outdoor_lux` invece di usare un fallback silente.
+**Acceptable approximation:** the adapter does not claim photometric
+precision. Its use in Heima (lighting compensation, gloomy detection)
+tolerates a ±30% error. If `cloud_coverage` or `uv_index` are `unavailable`,
+the adapter writes `unavailable` for `outdoor_lux` too, instead of using a
+silent fallback.
 
-### Forecast precipitazioni (next 6h)
+### Precipitation forecast (next 6h)
 
-OWM nativo espone forecast orari come attributi di `weather.openweathermap`.
-L'adapter legge l'attributo `forecast` (lista di dict) e somma le
-precipitazioni dei primi 6 record con `datetime` nel futuro:
+The native OWM integration exposes hourly forecasts as attributes of
+`weather.openweathermap`. The adapter reads the `forecast` attribute (a list
+of dicts) and sums the precipitation of the first 6 records with a
+`datetime` in the future:
 
 ```python
 def sum_rain_next_6h(forecast: list[dict], now: datetime) -> float:
@@ -127,70 +130,70 @@ def sum_rain_next_6h(forecast: list[dict], now: datetime) -> float:
     return round(total, 1)
 ```
 
-Se `forecast` è assente o vuoto, l'entità è `unavailable`.
+If `forecast` is absent or empty, the entity is `unavailable`.
 
 ---
 
-## Configurazione
+## Configuration
 
-L'adapter è configurabile tramite Config Flow HA. Parametri:
+The adapter is configurable via the HA Config Flow. Parameters:
 
-| Parametro              | Tipo    | Default                          | Descrizione                                       |
-|------------------------|---------|----------------------------------|---------------------------------------------------|
-| `owm_entity_prefix`    | string  | `openweathermap`                 | Prefisso delle entità OWM nativa (per installazioni multiple) |
-| `weather_entity`       | string  | `weather.openweathermap`         | Entity ID dell'entità weather principale          |
-| `ha_latitude`          | float   | (da HA config)                   | Latitudine per calcolo elevazione solare          |
-| `ha_longitude`         | float   | (da HA config)                   | Longitudine per calcolo elevazione solare         |
-| `update_interval_min`  | int     | `10`                             | Frequenza aggiornamento entità meteo (minuti)     |
-| `forecast_interval_min`| int     | `30`                             | Frequenza aggiornamento forecast (minuti)         |
+| Parameter              | Type    | Default                          | Description                                       |
+|------------------------|---------|-----------------------------------|---------------------------------------------------|
+| `owm_entity_prefix`    | string  | `openweathermap`                 | Prefix of the native OWM entities (for multiple installations) |
+| `weather_entity`       | string  | `weather.openweathermap`         | Entity ID of the main weather entity              |
+| `ha_latitude`          | float   | (from HA config)                   | Latitude for solar elevation calculation          |
+| `ha_longitude`         | float   | (from HA config)                   | Longitude for solar elevation calculation         |
+| `update_interval_min`  | int     | `10`                             | Weather entity update frequency (minutes)     |
+| `forecast_interval_min`| int     | `30`                             | Forecast update frequency (minutes)         |
 
-Latitudine e longitudine sono precompilate dalla configurazione di HA e
-modificabili dall'utente.
-
----
-
-## Frequenza di aggiornamento
-
-| Segnale                        | Frequenza    | Note                                         |
-|--------------------------------|--------------|----------------------------------------------|
-| temp, humidity, wind, rain     | 10 min       | Bound al polling OWM nativo                  |
-| weather_condition              | 10 min       | Stessa fonte                                 |
-| outdoor_lux                    | 5 min        | Ricalcolo locale (non dipende da polling OWM)|
-| rain_forecast_next_6h          | 30 min       | Forecast HA aggiornati meno frequentemente   |
+Latitude and longitude are pre-filled from the HA configuration and
+editable by the user.
 
 ---
 
-## Gestione errori
+## Update frequency
 
-| Condizione                                  | Comportamento adapter                           |
+| Signal                        | Frequency    | Notes                                         |
+|--------------------------------|--------------|------------------------------------------------|
+| temp, humidity, wind, rain     | 10 min       | Bound to native OWM polling                  |
+| weather_condition              | 10 min       | Same source                                 |
+| outdoor_lux                    | 5 min        | Local recomputation (does not depend on OWM polling)|
+| rain_forecast_next_6h          | 30 min       | HA forecasts updated less frequently   |
+
+---
+
+## Error handling
+
+| Condition                                  | Adapter behavior                           |
 |---------------------------------------------|-------------------------------------------------|
-| Entità OWM sorgente `unavailable`           | Entità heima corrispondente → `unavailable`     |
-| Entità OWM sorgente assente (non installata)| Entità heima corrispondente → `unavailable`     |
-| Valore fuori dominio (es. humidity > 100)   | Log warning, entità → `unavailable`             |
-| Errore nel calcolo lux                      | `outdoor_lux` → `unavailable`, log warning      |
-| Forecast malformato                         | `rain_forecast_next_6h` → `unavailable`         |
+| Source OWM entity `unavailable`           | Corresponding heima entity → `unavailable`     |
+| Source OWM entity absent (not installed)| Corresponding heima entity → `unavailable`     |
+| Out-of-domain value (e.g. humidity > 100)   | Log warning, entity → `unavailable`             |
+| Error computing lux                      | `outdoor_lux` → `unavailable`, log warning      |
+| Malformed forecast                         | `rain_forecast_next_6h` → `unavailable`         |
 
-L'adapter **non solleva eccezioni propagate a HA** per errori di normalizzazione.
-Tutti gli errori sono contenuti internamente e risultano in `unavailable`.
+The adapter **does not raise exceptions propagated to HA** for normalization
+errors. All errors are handled internally and result in `unavailable`.
 
 ---
 
-## Attributi per entità
+## Attributes per entity
 
-Ogni entità espone:
+Every entity exposes:
 
 ```python
 {
     "heima_contract_version": "1.0",
     "adapter_id": "owm",
-    "source_entity": "<entity_id_sorgente_OWM>",   # o lista per lux
+    "source_entity": "<source_OWM_entity_id>",   # or a list for lux
     "last_updated": "2026-04-27T14:32:00+02:00",
 }
 ```
 
 ---
 
-## Struttura repo
+## Repo structure
 
 ```
 ha-heima-owm-adapter/
@@ -199,9 +202,9 @@ ha-heima-owm-adapter/
 │       ├── __init__.py
 │       ├── manifest.json
 │       ├── config_flow.py
-│       ├── sensor.py          # entità heima_ext_*
+│       ├── sensor.py          # heima_ext_* entities
 │       ├── coordinator.py     # DataUpdateCoordinator
-│       ├── lux_estimator.py   # logica stima lux
+│       ├── lux_estimator.py   # lux estimation logic
 │       └── const.py
 ├── tests/
 ├── hacs.json
@@ -210,9 +213,9 @@ ha-heima-owm-adapter/
 
 ---
 
-## Segnali non coperti da questo adapter
+## Signals not covered by this adapter
 
-| Segnale                        | Motivo assenza                                         | Adapter raccomandato              |
+| Signal                        | Reason for absence                                         | Recommended adapter              |
 |--------------------------------|--------------------------------------------------------|-----------------------------------|
-| `weather_alert_level`          | OWM non è fonte autoritativa di allerte civili         | ha-heima-pc-adapter (Italia)      |
-| `weather_alert_phenomena`      | Idem                                                   | ha-heima-pc-adapter (Italia)      |
+| `weather_alert_level`          | OWM is not an authoritative source of civil alerts         | ha-heima-pc-adapter (Italy)      |
+| `weather_alert_phenomena`      | Same                                                   | ha-heima-pc-adapter (Italy)      |

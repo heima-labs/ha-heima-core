@@ -5,7 +5,7 @@ from .formatting import format_entity_name, format_entity_value
 from .translations import translate
 
 def yaml_scalar(value: str) -> str:
-    """Escapa un valore per YAML."""
+    """Escape a value for YAML."""
     text = str(value).replace("\\", "\\\\").replace('"', '\\"')
     return f'"{text}"'
 
@@ -16,11 +16,11 @@ def entity_card(
     lang: str = "it",
     max_columns: int = 4,
 ) -> str:
-    """Genera una card di tipo 'entities' con nomi e valori formattati."""
+    """Generate an 'entities'-type card with formatted names and values."""
     if not entities:
         return markdown_card(title, "_Nessuna entità corrispondente._", lang)
 
-    # Calcola il layout
+    # Calculate the layout
     max_cols = calculate_max_columns(entities)
 
     lines = [
@@ -35,14 +35,14 @@ def entity_card(
         name = format_entity_name(entity_id, state, lang)
         value = format_entity_value(entity_id, state, lang)
         lines.append(f"    - entity: {entity_id}")
-        if name != entity_id:  # Se il nome è stato formattato
+        if name != entity_id:  # If the name was formatted
             lines.append(f"      name: {yaml_scalar(name)}")
-        if value:  # Aggiungi il valore come secondary_info
+        if value:  # Add the value as secondary_info
             lines.append(f"      secondary_info: {yaml_scalar(value)}")
     return "\n".join(lines)
 
 def markdown_card(title: str, content: str, lang: str = "it") -> str:
-    """Genera una card di tipo 'markdown'."""
+    """Generate a 'markdown'-type card."""
     translated_title = translate(title, lang)
     body = "\n".join(f"    {line}" if line else "" for line in content.splitlines())
     return "\n".join(
@@ -61,7 +61,7 @@ def button_card(
     data: Optional[Dict[str, Any]] = None,
     lang: str = "it",
 ) -> str:
-    """Genera una card di tipo 'button'."""
+    """Generate a 'button'-type card."""
     translated_name = translate(name, lang)
     lines = [
         "- type: button",
@@ -85,16 +85,16 @@ def history_card(
     hours: int = 12,
     max_columns: int = 4,
 ) -> str:
-    """Genera una card di tipo 'history-graph'."""
+    """Generate a 'history-graph'-type card."""
     if not entities:
         return markdown_card(title, "_Nessuna entità con storia._", lang)
 
-    # Filtra solo le entità con dominio supportato da history-graph
+    # Only keep entities with a domain supported by history-graph
     supported_domains = {"sensor", "binary_sensor", "light"}
     filtered_entities = [
         e for e in entities
         if domain(e) in supported_domains
-    ][:8]  # Limita a 8 entità per performance
+    ][:8]  # Limit to 8 entities for performance
 
     lines = [
         "- type: history-graph",

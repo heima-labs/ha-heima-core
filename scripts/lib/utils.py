@@ -3,20 +3,20 @@ import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 def domain(entity_id: str) -> str:
-    """Estrae il dominio da un entity_id (es. 'sensor' da 'sensor.temperature')."""
+    """Extract the domain from an entity_id (e.g. 'sensor' from 'sensor.temperature')."""
     return entity_id.split(".", 1)[0] if "." in entity_id else ""
 
 def object_id(entity_id: str) -> str:
-    """Estrae l'object_id da un entity_id (es. 'temperature' da 'sensor.temperature')."""
+    """Extract the object_id from an entity_id (e.g. 'temperature' from 'sensor.temperature')."""
     return entity_id.split(".", 1)[1] if "." in entity_id else entity_id
 
 def slug(value: str) -> str:
-    """Converte un valore in uno slug (es. 'Soggiorno' -> 'soggiorno')."""
+    """Convert a value into a slug (e.g. 'Living Room' -> 'living_room')."""
     text = re.sub(r"[^a-z0-9_]+", "_", str(value or "").strip().lower())
     return re.sub(r"_+", "_", text).strip("_")
 
 def friendly_name(state: Dict[str, Any]) -> str:
-    """Restituisce il friendly_name di un'entità o l'entity_id se non disponibile."""
+    """Return an entity's friendly_name, or the entity_id if unavailable."""
     attrs = state.get("attributes")
     if isinstance(attrs, dict):
         name = str(attrs.get("friendly_name") or "").strip()
@@ -26,12 +26,12 @@ def friendly_name(state: Dict[str, Any]) -> str:
 
 
 def _state_map(states: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Converte una lista di stati in un dizionario entity_id -> state."""
+    """Convert a list of states into an entity_id -> state dictionary."""
     return {str(state.get("entity_id")): state for state in states if state.get("entity_id")}
 
 
 def _existing(candidates: List[str], state_by_id: Dict[str, Dict[str, Any]]) -> List[str]:
-    """Filtra i candidati, restituendo solo quelli presenti in state_by_id."""
+    """Filter candidates, returning only those present in state_by_id."""
     return [e for e in candidates if e in state_by_id]
 
 
@@ -46,7 +46,7 @@ HEIMA_ENTITY_PREFIXES = (
 
 
 def _heima_entities(state_by_id: Dict[str, Dict[str, Any]]) -> List[str]:
-    """Restituisce tutte le entità Heima da state_by_id."""
+    """Return all Heima entities from state_by_id."""
     return [
         entity_id for entity_id in state_by_id
         if any(entity_id.startswith(prefix) for prefix in HEIMA_ENTITY_PREFIXES)

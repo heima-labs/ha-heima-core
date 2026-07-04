@@ -21,10 +21,10 @@ sections:
       - type: markdown
         content: |
           ## Security Presence
-          Pannello operativo per `security_presence_simulation`.
+          Operational panel for `security_presence_simulation`.
 
-          Usa i pulsanti qui sotto per mutare o riattivare tutta la family `vacation_presence_simulation`
-          senza cercare gli id interni delle reaction.
+          Use the buttons below to mute or re-enable the whole `vacation_presence_simulation` family
+          without looking up the reactions' internal ids.
 
       - type: tile
         entity: sensor.heima_house_state
@@ -54,10 +54,10 @@ sections:
       - type: markdown
         content: |
           ## Reading
-          Lettura rapida:
-          - `vacation` + `Anyone Home = off` è il contesto base di eligibilità
-          - se la family è mutata, il runtime resta visibile ma non agirà
-          - per il dettaglio di selected/excluded sources usa:
+          Quick read:
+          - `vacation` + `Anyone Home = off` is the base eligibility context
+          - if the family is muted, the runtime stays visible but won't act
+          - for selected/excluded source details use:
             `python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section security_presence`
 
   - type: grid
@@ -65,7 +65,7 @@ sections:
       - type: markdown
         content: |
           ## Admin Actions
-          Queste azioni operano sulla family `vacation_presence_simulation`.
+          These actions operate on the `vacation_presence_simulation` family.
 
       - type: button
         name: Mute Family
@@ -129,7 +129,7 @@ sections:
       - type: markdown
         content: |
           ## Suggested Entities
-          Queste entità non sono create specificamente dalla family ma aiutano a leggere il contesto.
+          These entities aren't created specifically by the family, but help read the context.
 
       - type: entities
         title: Presence And Lighting Signals

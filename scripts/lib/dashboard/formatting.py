@@ -4,7 +4,7 @@ from typing import Any, Dict
 from ..utils import domain, object_id, friendly_name
 from .translations import translate
 
-# Mappatura per accorciare i nomi delle entità
+# Mapping to shorten entity names
 ENTITY_NAME_REPLACEMENTS = {
     "heima_": "",
     "_last_change": " (⏱️)",
@@ -22,7 +22,7 @@ ENTITY_NAME_REPLACEMENTS = {
     "_room": " Stanza",
 }
 
-# Mappatura per formattare i valori
+# Mapping to format values
 VALUE_FORMATTERS = {
     "sensor": {
         "default": lambda v, u: f"{float(v):.1f} {u}" if u else str(v),
@@ -35,18 +35,18 @@ VALUE_FORMATTERS = {
 }
 
 def format_entity_name(entity_id: str, state: Dict[str, Any], lang: str = "it") -> str:
-    """Formatta il nome di un'entità in modo leggibile."""
-    # Usa friendly_name se disponibile
+    """Format an entity's name in a human-readable way."""
+    # Use friendly_name if available
     name = friendly_name(state)
     if name and name != entity_id:
         return name
 
-    # Applica sostituzioni
+    # Apply replacements
     name = entity_id
     for pattern, replacement in ENTITY_NAME_REPLACEMENTS.items():
         name = name.replace(pattern, replacement)
 
-    # Traduce parti note del nome
+    # Translate known parts of the name
     parts = name.split("_")
     translated_parts = []
     for part in parts:
@@ -57,19 +57,19 @@ def format_entity_name(entity_id: str, state: Dict[str, Any], lang: str = "it") 
             translated_parts.append(part)
     name = " ".join(translated_parts).strip()
 
-    # Rimuovi spazi multipli
+    # Remove multiple spaces
     return " ".join(name.split())
 
 def format_entity_value(entity_id: str, state: Dict[str, Any], lang: str = "it") -> str:
-    """Formatta il valore di un'entità in base al dominio e agli attributi."""
+    """Format an entity's value based on its domain and attributes."""
     domain_name = domain(entity_id)
     state_value = state.get("state")
     attributes = state.get("attributes", {})
 
-    # Formattazione specifica per dominio
+    # Domain-specific formatting
     if domain_name in VALUE_FORMATTERS:
         formatter = VALUE_FORMATTERS[domain_name].get(
-            object_id(entity_id).split("_")[0],  # Es. "temperature" da "sensor.temperature_room"
+            object_id(entity_id).split("_")[0],  # E.g. "temperature" from "sensor.temperature_room"
             VALUE_FORMATTERS[domain_name]["default"]
         )
         unit = attributes.get("unit_of_measurement", "")
@@ -78,11 +78,11 @@ def format_entity_value(entity_id: str, state: Dict[str, Any], lang: str = "it")
         except (ValueError, TypeError):
             pass
 
-    # Formattazione generica
+    # Generic formatting
     if isinstance(state_value, (int, float)):
         return f"{state_value:.1f}"
     elif isinstance(state_value, str):
-        if state_value.startswith(("202", "197")):  # Data/ora ISO
+        if state_value.startswith(("202", "197")):  # ISO date/time
             from datetime import datetime
             try:
                 dt = datetime.fromisoformat(state_value.replace("Z", "+00:00"))

@@ -1,71 +1,76 @@
 # Heima Protezione Civile Adapter — Spec v1
 
-**Status:** Reference spec per implementazione  
+**Status:** Reference spec for implementation  
 **Repo target:** `heima-labs/ha-heima-pc-adapter`  
-**Contratto implementato:** External Context Contract v1.0  
+**Contract implemented:** External Context Contract v1.0  
 **Last Updated:** 2026-04-27
 
 ---
 
-## Scopo
+## Purpose
 
-Normalizzare i dati di allerta meteo della **Protezione Civile Italiana** verso
-le entità del [Heima External Context Contract v1](./external_context_contract.md),
-leggendo le entità esposte dall'integrazione HACS
+Normalize weather alert data from the **Italian Protezione Civile** into
+entities of the [Heima External Context Contract v1](./external_context_contract.md),
+reading the entities exposed by the HACS integration
 [`caronc/protezione_civile`](https://github.com/caronc/ha-protezione-civile).
 
-L'adapter non interroga direttamente i servizi della Protezione Civile.
-Si posiziona come normalizzatore sopra l'integrazione `caronc/protezione_civile`.
+The adapter does not query Protezione Civile services directly. It sits as a
+normalizer on top of the `caronc/protezione_civile` integration.
 
 ---
 
-## Prerequisiti
+## Prerequisites
 
-| Requisito                                  | Note                                                        |
+| Requirement                                  | Notes                                                        |
 |--------------------------------------------|-------------------------------------------------------------|
-| HACS installato in HA                      | Per installare `caronc/protezione_civile`                   |
-| `caronc/protezione_civile` configurato     | Con comune/zona di riferimento                              |
-| Heima installato                           | Opzionale per il funzionamento, necessario per il consumo   |
+| HACS installed in HA                      | To install `caronc/protezione_civile`                   |
+| `caronc/protezione_civile` configured     | With the reference comune/zone                              |
+| Heima installed                           | Optional for the adapter to function, required to consume it   |
 
 ---
 
-## Fonte dati: `caronc/protezione_civile`
+## Data source: `caronc/protezione_civile`
 
-L'integrazione caronc espone una o più entità di tipo `sensor` per ogni zona
-configurata. Ogni entità ha:
+The caronc integration exposes one or more `sensor` entities for each
+configured zone. Each entity has:
 
-- **State**: livello allerta massimo corrente per la zona
+- **State**: current maximum alert level for the zone
   (`Verde` / `Giallo` / `Arancione` / `Rosso` / `unknown`)
-- **Attributi**: livello per ogni fenomeno (`idrogeologico`, `temporali`,
+- **Attributes**: level for each phenomenon (`idrogeologico`, `temporali`,
   `vento`, `neve_e_gelate`, `mare`, `valanghe`, `incendi_boschivi`, ...)
 
-Ogni attributo contiene il livello come stringa: `"Verde"`, `"Giallo"`,
+Each attribute contains the level as a string: `"Verde"`, `"Giallo"`,
 `"Arancione"`, `"Rosso"`, `"Non Disponibile"`.
 
+*(Note: state/attribute values and phenomenon IDs above are the literal
+Italian strings produced by the upstream `caronc/protezione_civile`
+integration and Italy's civil protection service; they are external data
+contracts, not adapter documentation, and must not be translated.)*
+
 ---
 
-## Entità prodotte dall'adapter
+## Entities produced by the adapter
 
-| Entità contratto Heima                   | Tipo   | Descrizione                                           |
+| Heima contract entity                   | Type   | Description                                           |
 |------------------------------------------|--------|-------------------------------------------------------|
-| `sensor.heima_ext_weather_alert_level`   | int    | Livello massimo (0–3) tra i fenomeni selezionati      |
-| `sensor.heima_ext_weather_alert_phenomena` | string | Fenomeni attivi al livello massimo corrente (CSV)   |
+| `sensor.heima_ext_weather_alert_level`   | int    | Maximum level (0–3) among the selected phenomena      |
+| `sensor.heima_ext_weather_alert_phenomena` | string | Phenomena active at the current maximum level (CSV)   |
 
-L'adapter **non** espone segnali meteo continui (temp, lux, ecc.).
-Questi sono di competenza di adapter come ha-heima-owm-adapter.
+The adapter does **not** expose continuous weather signals (temp, lux, etc.).
+Those are the responsibility of adapters like ha-heima-owm-adapter.
 
 ---
 
-## Logica di aggregazione
+## Aggregation logic
 
-### Configurazione fenomeni (sottoinsieme)
+### Phenomena configuration (subset)
 
-L'utente configura quali fenomeni considerare. Il default è **tutti i fenomeni
-disponibili**. Fenomeni non configurati vengono ignorati nell'aggregazione.
+The user configures which phenomena to consider. The default is **all
+available phenomena**. Unconfigured phenomena are ignored in the aggregation.
 
-Fenomeni supportati (corrispondenti agli attributi caronc):
+Supported phenomena (corresponding to the caronc attributes):
 
-| ID fenomeno             | Label display                |
+| Phenomenon ID             | Display label                |
 |-------------------------|------------------------------|
 | `idrogeologico`         | Rischio idrogeologico        |
 | `temporali`             | Temporali                    |
@@ -75,18 +80,22 @@ Fenomeni supportati (corrispondenti agli attributi caronc):
 | `valanghe`              | Valanghe                     |
 | `incendi_boschivi`      | Incendi boschivi             |
 
-### Mapping livelli
+*(Display labels are kept in Italian: this adapter is specific to the
+Italian civil protection service, and these are the labels the Italian
+integration and its users expect.)*
 
-| Valore caronc        | `alert_level` Heima |
+### Level mapping
+
+| caronc value        | Heima `alert_level` |
 |----------------------|---------------------|
 | `Verde`              | `0`                 |
 | `Giallo`             | `1`                 |
 | `Arancione`          | `2`                 |
 | `Rosso`              | `3`                 |
 | `Non Disponibile`    | `unavailable`       |
-| assente / errore     | `unavailable`       |
+| absent / error     | `unavailable`       |
 
-### Aggregazione
+### Aggregation
 
 ```python
 def aggregate_alert_level(
@@ -96,7 +105,7 @@ def aggregate_alert_level(
 ) -> tuple[int | None, list[str]]:
     """
     Returns (max_level, active_phenomena_at_max_level).
-    Returns (None, []) se tutti i valori sono unavailable.
+    Returns (None, []) if all values are unavailable.
     """
     LEVEL_MAP = {"Verde": 0, "Giallo": 1, "Arancione": 2, "Rosso": 3}
 
@@ -125,97 +134,97 @@ def aggregate_alert_level(
 
 ### `weather_alert_phenomena`
 
-L'entità contiene i fenomeni attivi al livello massimo corrente, come stringa
-CSV con gli ID fenomeno:
+The entity contains the phenomena active at the current maximum level, as a
+CSV string of phenomenon IDs:
 
 ```
 "temporali,vento"
 ```
 
-Se `alert_level` è `0` (Verde), `phenomena` è stringa vuota `""`.
-Se `alert_level` è `unavailable`, `phenomena` è `unavailable`.
+If `alert_level` is `0` (Verde), `phenomena` is the empty string `""`.
+If `alert_level` is `unavailable`, `phenomena` is `unavailable`.
 
 ---
 
-## Configurazione
+## Configuration
 
-L'adapter è configurabile tramite Config Flow HA. Parametri:
+The adapter is configurable via the HA Config Flow. Parameters:
 
-| Parametro                | Tipo          | Default             | Descrizione                                                        |
+| Parameter                | Type          | Default             | Description                                                        |
 |--------------------------|---------------|---------------------|--------------------------------------------------------------------|
-| `pc_sensor_entity`       | string        | (obbligatorio)      | Entity ID del sensore `caronc/protezione_civile` da usare come fonte |
-| `phenomena_subset`       | list[string]  | tutti i fenomeni    | Sottoinsieme di fenomeni da considerare nell'aggregazione          |
-| `update_interval_min`    | int           | `15`                | Frequenza polling dell'entità sorgente (minuti)                    |
+| `pc_sensor_entity`       | string        | (required)      | Entity ID of the `caronc/protezione_civile` sensor to use as the source |
+| `phenomena_subset`       | list[string]  | all phenomena    | Subset of phenomena to consider in the aggregation          |
+| `update_interval_min`    | int           | `15`                | Polling frequency of the source entity (minutes)                    |
 
-**`pc_sensor_entity`** è l'unico parametro obbligatorio. L'utente lo seleziona
-da una dropdown che elenca i sensori `protezione_civile` disponibili in HA
-(rilevati per `platform: protezione_civile`).
+**`pc_sensor_entity`** is the only required parameter. The user selects it
+from a dropdown listing the `protezione_civile` sensors available in HA
+(detected via `platform: protezione_civile`).
 
-**`phenomena_subset`** è configurabile come multi-select con tutti i fenomeni
-supportati preselezionati. L'utente può deselezionare quelli non rilevanti
-(es. `valanghe` e `mare` per chi è in città di pianura).
+**`phenomena_subset`** is configurable as a multi-select with all supported
+phenomena preselected. The user can deselect the ones that aren't relevant
+(e.g. `valanghe` and `mare` for those living in a lowland town).
 
 ---
 
-## Frequenza di aggiornamento
+## Update frequency
 
-| Segnale              | Frequenza | Note                                                       |
+| Signal              | Frequency | Notes                                                       |
 |----------------------|-----------|------------------------------------------------------------|
-| `alert_level`        | 15 min    | Le allerte PC si aggiornano tipicamente ogni ora           |
-| `alert_phenomena`    | 15 min    | Calcolato insieme ad `alert_level`                         |
+| `alert_level`        | 15 min    | PC alerts are typically updated hourly           |
+| `alert_phenomena`    | 15 min    | Computed together with `alert_level`                         |
 
-L'adapter usa un `DataUpdateCoordinator` con intervallo configurabile.
-Il polling non avviene tramite service call: l'adapter legge lo stato HA
-dell'entità caronc già presente in memoria (zero overhead su HA).
+The adapter uses a `DataUpdateCoordinator` with a configurable interval.
+Polling does not happen via a service call: the adapter reads the HA state
+of the caronc entity already in memory (zero overhead on HA).
 
 ---
 
-## Gestione errori
+## Error handling
 
-| Condizione                                         | Comportamento adapter                                  |
+| Condition                                         | Adapter behavior                                  |
 |----------------------------------------------------|--------------------------------------------------------|
-| Entità caronc `unavailable` o `unknown`            | `alert_level` → `unavailable`, `phenomena` → `unavailable` |
-| Entità caronc non trovata in HA                    | Idem, log warning a startup                            |
-| Fenomeno configurato assente negli attributi       | Fenomeno ignorato silenziosamente (log debug)          |
-| Tutti i fenomeni del subset sono `Non Disponibile` | `alert_level` → `unavailable`                          |
-| Valore attributo non mappabile                     | Fenomeno ignorato, log warning                         |
+| caronc entity `unavailable` or `unknown`            | `alert_level` → `unavailable`, `phenomena` → `unavailable` |
+| caronc entity not found in HA                    | Same, log warning at startup                            |
+| Configured phenomenon absent from attributes       | Phenomenon silently ignored (debug log)          |
+| All phenomena in the subset are `Non Disponibile` | `alert_level` → `unavailable`                          |
+| Unmappable attribute value                     | Phenomenon ignored, log warning                         |
 
 ---
 
-## Attributi per entità
+## Attributes per entity
 
 ```python
 {
     "heima_contract_version": "1.0",
     "adapter_id": "protezione_civile",
     "source_entity": "<pc_sensor_entity>",
-    "phenomena_subset": ["idrogeologico", "temporali", ...],   # configurati
+    "phenomena_subset": ["idrogeologico", "temporali", ...],   # configured
     "last_updated": "2026-04-27T14:32:00+02:00",
 }
 ```
 
 ---
 
-## Comportamento atteso in Heima
+## Expected behavior in Heima
 
-Con `alert_level` disponibile, Heima può:
+With `alert_level` available, Heima can:
 
-| `alert_level` | Comportamento Heima (v1)                                                  |
+| `alert_level` | Heima behavior (v1)                                                  |
 |---------------|---------------------------------------------------------------------------|
-| `0`           | Nessuna azione speciale                                                   |
-| `1` (Giallo)  | Notifica informativa (opzionale, configurabile dall'utente)               |
-| `2` (Arancione)| Notifica + apply filter: evita irrigazione, posticipa routine esterne    |
-| `3` (Rosso)   | Notifica urgente + apply filter esteso: blocca routine outdoor, suggerisce chiusura tapparelle/tende |
+| `0`           | No special action                                                   |
+| `1` (Giallo)  | Informational notification (optional, user-configurable)               |
+| `2` (Arancione)| Notification + apply filter: skip irrigation, postpone outdoor routines    |
+| `3` (Rosso)   | Urgent notification + extended apply filter: blocks outdoor routines, suggests closing shutters/curtains |
 
-I `phenomena` permettono notifiche contestuali (es. "Allerta vento: ritira
-tende esterne") invece di messaggi generici.
+The `phenomena` enable contextual notifications (e.g. "Wind alert: retract
+outdoor awnings") instead of generic messages.
 
-> Il comportamento esatto di Heima in risposta agli alert è definito nella spec
-> del dominio Apply/Notifications, non in questa spec adapter.
+> Heima's exact behavior in response to alerts is defined in the
+> Apply/Notifications domain spec, not in this adapter spec.
 
 ---
 
-## Struttura repo
+## Repo structure
 
 ```
 ha-heima-pc-adapter/
@@ -224,7 +233,7 @@ ha-heima-pc-adapter/
 │       ├── __init__.py
 │       ├── manifest.json
 │       ├── config_flow.py
-│       ├── sensor.py          # entità heima_ext_weather_alert_*
+│       ├── sensor.py          # heima_ext_weather_alert_* entities
 │       ├── coordinator.py     # DataUpdateCoordinator
 │       └── const.py
 ├── tests/
@@ -234,26 +243,27 @@ ha-heima-pc-adapter/
 
 ---
 
-## Limitazioni v1
+## v1 limitations
 
-- **Una sola zona per istanza adapter.** Chi ha più zone configurate in caronc
-  deve installare più istanze dell'adapter, ognuna con il proprio `pc_sensor_entity`.
-  In quel caso, Heima legge l'istanza "principale" (la prima trovata per entity ID
-  standard `sensor.heima_ext_weather_alert_level`).
-- **Solo Italia.** Questo adapter è specifico per la Protezione Civile italiana.
-  Per altri paesi esistono o esisteranno adapter dedicati (DWD per Germania,
-  Meteoalarm per Europa, ecc.).
-- **Solo allerta in corso.** L'adapter non espone previsioni di allerta futura.
-  Le allerte PC vengono emesse tipicamente per il giorno corrente o il giorno
-  successivo; l'interpretazione temporale è lasciata a Heima.
+- **One zone per adapter instance.** Those with multiple zones configured in
+  caronc must install multiple instances of the adapter, each with its own
+  `pc_sensor_entity`. In that case, Heima reads the "main" instance (the
+  first one found for the standard entity ID
+  `sensor.heima_ext_weather_alert_level`).
+- **Italy only.** This adapter is specific to the Italian Protezione Civile.
+  For other countries, dedicated adapters exist or will exist (DWD for
+  Germany, Meteoalarm for Europe, etc.).
+- **Current alert only.** The adapter does not expose future alert
+  forecasts. PC alerts are typically issued for the current day or the
+  following day; temporal interpretation is left to Heima.
 
 ---
 
-## Segnali non coperti da questo adapter
+## Signals not covered by this adapter
 
-| Segnale                      | Motivo assenza                              | Adapter raccomandato    |
+| Signal                      | Reason for absence                              | Recommended adapter    |
 |------------------------------|---------------------------------------------|-------------------------|
-| `outdoor_temp`               | Fonte non autoritativa per meteo continuo   | ha-heima-owm-adapter    |
-| `outdoor_lux`                | Idem                                        | ha-heima-owm-adapter    |
-| `rain_forecast_next_6h`      | PC non espone quantitativi previsti         | ha-heima-owm-adapter    |
-| `weather_condition`          | PC non classifica condizioni meteo          | ha-heima-owm-adapter    |
+| `outdoor_temp`               | Not an authoritative source for continuous weather   | ha-heima-owm-adapter    |
+| `outdoor_lux`                | Same                                        | ha-heima-owm-adapter    |
+| `rain_forecast_next_6h`      | PC does not expose forecast quantities         | ha-heima-owm-adapter    |
+| `weather_condition`          | PC does not classify weather conditions         | ha-heima-owm-adapter    |

@@ -10,112 +10,112 @@ Write code, documentation, comments, specs, changelog entries, commit messages, 
 test names, and any persistent project artifact in English.
 
 ## Communication style
-- Risposte stringate. Dettagli solo se richiesti esplicitamente.
-- Per scelte architetturali: breve discussione prima di toccare il codice.
-- **Spec-first, sempre.** Prima di scrivere codice (o delegare a Codex), la spec della fase deve
-  essere completa e **approvata esplicitamente dal developer**. "Discussa" non equivale ad
-  "approvata". Il gate è la conferma esplicita: "ok, procedi".
-- Ogni nuovo contratto (tipo, campo, enum, interfaccia) introdotto nella spec deve essere
-  validato rispetto ai costrutti esistenti prima della conferma. Domanda obbligatoria:
-  "questo costrutto si sovrappone a qualcosa che già esiste?"
+- Terse replies. Details only if explicitly requested.
+- For architectural choices: brief discussion before touching code.
+- **Spec-first, always.** Before writing code (or delegating to Codex), the phase's spec must be
+  complete and **explicitly approved by the developer**. "Discussed" does not equal "approved".
+  The gate is explicit confirmation: "ok, proceed".
+- Every new contract (type, field, enum, interface) introduced in the spec must be validated
+  against existing constructs before confirmation. Mandatory question:
+  "does this construct overlap with something that already exists?"
 
 ## Commit style
-- Messaggi brevi: titolo imperativo + 2-3 righe di contesto max.
-- Non committare su `main` senza richiesta esplicita dell'utente.
-- Su branch di sviluppo dedicati sono ammessi commit intermedi a fine slice stabile,
-  se aiutano continuità tra sessioni/compattamenti. Prima del commit: test mirati verdi o
-  stato dei test documentato in `docs/v2_dev_plan.md`.
-- Non fare push, merge o release commit senza richiesta esplicita dell'utente.
-- Aggiungere sempre `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`.
+- Short messages: imperative title + 2-3 lines of context max.
+- Do not commit to `main` without the user's explicit request.
+- On dedicated development branches, intermediate commits at the end of a stable slice are
+  allowed, if they help continuity across sessions/compactions. Before committing: targeted tests
+  green, or test status documented in `docs/v2_dev_plan.md`.
+- Do not push, merge, or make release commits without the user's explicit request.
+- Always add `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`.
 
 ## Branch model
-- `main` è il branch di produzione. Si fa merge solo quando la feature/fix è completa.
-- Il lavoro avviene su branch dedicati (es. `feat/...`, `fix/...`).
-- Non committare direttamente su `main` a meno che non sia un fix banale o documentazione.
+- `main` is the production branch. Merge only when the feature/fix is complete.
+- Work happens on dedicated branches (e.g. `feat/...`, `fix/...`).
+- Do not commit directly to `main` unless it's a trivial fix or documentation.
 
-### Procedura obbligatoria prima di ogni merge su main
+### Mandatory procedure before every merge to main
 
 1. Bump minor version: `python3 scripts/bump_minor.py`
-2. Aggiornare `CHANGELOG.md` con un entry per la versione nuova.
-3. Eseguire la CI locale completa: `bash scripts/ci_local.sh`
-   - Tutti i job devono passare (test + lint + format). mypy è informativo.
-4. Committare manifest.json + CHANGELOG.md insieme al codice.
-5. Il push su main fa partire automaticamente `.github/workflows/ci.yml`.
+2. Update `CHANGELOG.md` with an entry for the new version.
+3. Run the full local CI: `bash scripts/ci_local.sh`
+   - All jobs must pass (test + lint + format). mypy is informational.
+4. Commit manifest.json + CHANGELOG.md together with the code.
+5. Pushing to main automatically triggers `.github/workflows/ci.yml`.
 
-Non fare merge se `ci_local.sh` fallisce.
+Do not merge if `ci_local.sh` fails.
 
 ## Code rules
-- Nessun backward compatibility: unico utente del progetto.
-- No ML libraries nei built-in. Pure Python + statistics stdlib. Il core resta dependency-free.
-- Tutti i test devono essere verdi dopo ogni modifica.
-- Test count attuale: 1594. Non rompere test esistenti senza motivo esplicito.
-- Prima di modificare un file: leggerlo.
+- No backward compatibility: sole user of the project.
+- No ML libraries in built-ins. Pure Python + statistics stdlib. The core stays dependency-free.
+- All tests must be green after every change.
+- Current test count: 1594. Do not break existing tests without an explicit reason.
+- Before modifying a file: read it.
 
 ## Architecture invariants
 
-DAG core fisso: `People → Occupancy → Activity → HouseState`, poi plugin ordinati per dipendenza
-(`Lighting`, `Heating`, `Security`, `Calendar`, ...). ActivityDomain è il 4° core domain, inserito
-tra Occupancy e HouseState.
+Fixed core DAG: `People → Occupancy → Activity → HouseState`, then plugins ordered by dependency
+(`Lighting`, `Heating`, `Security`, `Calendar`, ...). ActivityDomain is the 4th core domain,
+inserted between Occupancy and HouseState.
 
-**Nota storica:** la v1 (DAG fisso `InputNormalizer → People → Occupancy → Calendar → HouseState →
-Lighting → Heating → Security → Apply`, nessun plugin dichiarativo) è stata sostituita da questa
-architettura al merge di `feat/v2` su `main`. Non è più codice attivo; resta solo come riferimento
-storico in `docs/specs/rfc/heima_spec_v1.md`.
+**Historical note:** v1 (fixed DAG `InputNormalizer → People → Occupancy → Calendar → HouseState →
+Lighting → Heating → Security → Apply`, no declarative plugins) was replaced by this architecture
+at the merge of `feat/v2` into `main`. It is no longer active code; it remains only as historical
+reference in `docs/specs/rfc/heima_spec_v1.md`.
 
-**Invarianti architetturali:**
-- I domini leggono CanonicalState (ciclo precedente), NON gli output degli altri domini nel ciclo corrente.
-- Nessuna dipendenza circolare tra domini.
-- Apply plan è l'unico canale di output per le azioni su HA.
+**Architectural invariants:**
+- Domains read CanonicalState (previous cycle), NOT the outputs of other domains in the current cycle.
+- No circular dependency between domains.
+- Apply plan is the only output channel for actions on HA.
 
-## Decisioni architetturali prese
+## Architectural decisions made
 
-### Multi-persona
-L'architettura corrente apprende pattern a livello household, non per persona. È una limitazione
-nota e documentata, non un bug. Per-person learning non è ancora pianificato/schedulato.
+### Multi-person
+The current architecture learns patterns at the household level, not per person. This is a known,
+documented limitation, not a bug. Per-person learning is not yet planned/scheduled.
 
 ### Inference Engine v2
-Incorporato in `docs/specs/heima_v2_spec.md` §10. Implementato in Phase D (`DONE`,
-vedi `docs/v2_dev_plan.md`). Il file `docs/specs/learning/inference_engine_spec.md` è superato
-dalla spec v2.1.0-draft.
+Incorporated in `docs/specs/heima_v2_spec.md` §10. Implemented in Phase D (`DONE`,
+see `docs/v2_dev_plan.md`). The file `docs/specs/learning/inference_engine_spec.md` is superseded
+by the v2.1.0-draft spec.
 
 ### Plugin API
-I registry restano built-in. Il caricamento dinamico di plugin di terze parti non è supportato
-neanche nell'architettura corrente: è un non-goal esplicito (`heima_v2_spec.md`, nota su
-`monitored_entities`). Chi vuole aggiungere un dominio/plugin built-in modifica il codice
-direttamente seguendo il contratto DAG dichiarativo (Phase A). Riapertura a plugin di terze parti
-resta by design non pianificata.
+Registries remain built-in. Dynamic loading of third-party plugins is not supported even in the
+current architecture: it's an explicit non-goal (`heima_v2_spec.md`, note on `monitored_entities`).
+Anyone who wants to add a built-in domain/plugin modifies the code directly, following the
+declarative DAG contract (Phase A). Reopening to third-party plugins remains, by design, not
+planned.
 
 ## v2 development
 
-L'architettura v2 è stata mergiata su `main`. Le fasi v2 ancora aperte (es. Phase AB) continuano
-su branch dedicati seguendo `docs/v2_dev_plan.md`, che resta la fonte di verità operativa.
-**Ogni sessione che lavora su fasi v2 deve iniziare leggendo `docs/v2_dev_plan.md`.**
-Il documento traccia fase corrente, stato, prossima azione e criteri di accettazione per ogni fase.
-Non prendere decisioni architetturali non già presenti nella spec o nel piano.
+The v2 architecture has been merged into `main`. Remaining open v2 phases (e.g. Phase AB) continue
+on dedicated branches following `docs/v2_dev_plan.md`, which remains the operational source of
+truth. **Every session working on v2 phases must start by reading `docs/v2_dev_plan.md`.**
+The document tracks the current phase, status, next action, and acceptance criteria for each
+phase. Do not make architectural decisions not already present in the spec or the plan.
 
-### Continuità tra sessioni e compattamenti
+### Continuity across sessions and compactions
 
-`docs/v2_dev_plan.md` è anche il registro operativo per riprendere il lavoro dopo nuove chat
-o compattamenti del prompt. Durante una fase attiva, mantenere una sezione `Current Working Notes`
-con:
-- slice corrente e stato;
-- file modificati;
-- test eseguiti e risultato;
-- prossimo passo concreto;
-- blocker o decisioni aperte.
+`docs/v2_dev_plan.md` is also the operational log for resuming work after new chats or prompt
+compactions. During an active phase, maintain a `Current Working Notes` section with:
+- current slice and status;
+- files changed;
+- tests run and result;
+- concrete next step;
+- open blockers or decisions.
 
-Aggiornare le note prima di pause rischiose, a fine slice significativa, e prima di commit intermedi.
-Se una scelta architetturale non è già coperta da spec o piano, fermarsi e chiedere al developer.
+Update the notes before risky pauses, at the end of a significant slice, and before intermediate
+commits. If an architectural choice is not already covered by a spec or the plan, stop and ask the
+developer.
 
 ## Key specs
-- Architettura corrente: `docs/specs/heima_v2_spec.md` (v2.1.0-draft — spec attiva su `main`)
-- v2 dev plan: `docs/v2_dev_plan.md` (stato operativo corrente)
+- Current architecture: `docs/specs/heima_v2_spec.md` (v2.1.0-draft — spec active on `main`)
+- v2 dev plan: `docs/v2_dev_plan.md` (current operational status)
 - Learning system: `docs/specs/learning/learning_system_spec.md`
 - Spec index: `docs/specs/INDEX.md`
-- v1 (storico, superato): `docs/specs/rfc/heima_spec_v1.md`
+- v1 (historical, superseded): `docs/specs/rfc/heima_spec_v1.md`
 
-## Auditing e debug
-- Per diagnostics runtime: `python3 scripts/diagnostics.py --section <engine|plugins|event_store>`
-- Per learning audit: `python3 scripts/learning_audit.py --ha-url $HA_URL --ha-token $HA_TOKEN`
-- Per review longitudinale: `ops_audit.py --snapshot-out` + `--compare-to`
-- Portare a Claude il JSON di output, non chiedere di inferire lo stato dal codice.
+## Auditing and debugging
+- For runtime diagnostics: `python3 scripts/diagnostics.py --section <engine|plugins|event_store>`
+- For learning audit: `python3 scripts/learning_audit.py --ha-url $HA_URL --ha-token $HA_TOKEN`
+- For longitudinal review: `ops_audit.py --snapshot-out` + `--compare-to`
+- Bring the output JSON to Claude; don't ask it to infer state from the code.

@@ -94,7 +94,7 @@ def discover_inventory(
     max_room_entities: int,
     max_reactions: int,
 ) -> Dict[str, Any]:
-    """Scopre le entità e le informazioni per la dashboard."""
+    """Discover entities and information for the dashboard."""
     entry_id = client.find_heima_entry_id()
     entry = client.get_entry(entry_id)
     states = client.all_states()
@@ -224,10 +224,10 @@ def discover_inventory(
             "heima_command": "heima.command" in services,
             "test_reset": "script.test_heima_reset" in state_by_id,
         },
-        "state_by_id": state_by_id,  # Aggiunto per passarlo ai moduli
+        "state_by_id": state_by_id,  # Added to pass it to the modules
     }
 
-# Funzioni ausiliarie (spostate qui per ora, potrebbero essere spostate in utils.py)
+# Helper functions (moved here for now, could be moved to utils.py)
 def _diagnostics_root(client: HAClient, entry_id: str) -> Dict[str, Any]:
     try:
         raw = client.get(f"/api/diagnostics/config_entry/{entry_id}")
@@ -462,7 +462,7 @@ def _compact_lighting(payload: Any) -> Dict[str, Any]:
     }
 
 def generate_dashboard_yaml(inventory: Dict[str, Any], lang: str = "it") -> str:
-    """Genera il YAML della dashboard."""
+    """Generate the dashboard YAML."""
     title = translate("Heima Developer Debug", lang)
     state_by_id = inventory["state_by_id"]
 
@@ -519,13 +519,13 @@ def generate_dashboard_yaml(inventory: Dict[str, Any], lang: str = "it") -> str:
     )
 
 def _section(title: str, cards: List[str], lang: str = "it") -> str:
-    """Genera una sezione della dashboard."""
+    """Generate a dashboard section."""
     if not cards:
         return ""
     return get_grid_layout(cards)
 
 def yaml_scalar(value: str) -> str:
-    """Escapa un valore per YAML (duplicato da cards.py per evitare import circolari)."""
+    """Escape a value for YAML (duplicated from cards.py to avoid circular imports)."""
     text = str(value).replace("\\", "\\\\").replace('"', '\\"')
     return f'"{text}"'
 

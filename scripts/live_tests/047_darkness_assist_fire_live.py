@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Live E2E test: verifica che una room_darkness_lighting_assist reaction
-accenda la luce quando si entra in una stanza buia.
+"""Live E2E test: verifies that a room_darkness_lighting_assist reaction
+turns on the light when entering a dark room.
 
-Flusso:
-  1. Trova la reaction per label o ID
-  2. Pre-check: stanza vuota, lux nel bucket atteso, luce spenta, cooldown libero
-  3. Inietta presenza (POST /api/states/) sul primo occupancy_source della room
-  4. Aspetta che Heima rilevi occupancy e che la luce si accenda
-  5. Verifica diagnostics: fire_count aumentato, last_fired_iso impostato
-  6. Cleanup: ripristina presenza, spegni la luce se l'abbiamo accesa noi
+Flow:
+  1. Find the reaction by label or ID
+  2. Pre-check: empty room, lux in expected bucket, light off, cooldown free
+  3. Inject presence (POST /api/states/) on the room's first occupancy_source
+  4. Wait for Heima to detect occupancy and turn on the light
+  5. Verify diagnostics: fire_count increased, last_fired_iso set
+  6. Cleanup: restore presence, turn off the light if we turned it on
 
-Uso:
+Usage:
   python3 scripts/live_tests/047_darkness_assist_fire_live.py \\
       --ha-url http://192.168.178.75:8123 \\
       --ha-token <token> \\
       --label-contains "studio"
 
-  # oppure con ID esplicito:
+  # or with an explicit ID:
   python3 scripts/live_tests/047_darkness_assist_fire_live.py \\
       --ha-url http://192.168.178.75:8123 \\
       --ha-token <token> \\
@@ -169,7 +169,7 @@ def _find_reaction_id(
             if reaction_type == "room_darkness_lighting_assist":
                 return rid
         raise HAApiError(
-            f"nessuna room_darkness_lighting_assist con label contenente {label_contains_arg!r}"
+            f"no room_darkness_lighting_assist with a label containing {label_contains_arg!r}"
         )
 
     # no filter: find the only darkness-lighting-assist
@@ -180,10 +180,10 @@ def _find_reaction_id(
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        raise HAApiError("nessuna reaction room_darkness_lighting_assist trovata")
+        raise HAApiError("no room_darkness_lighting_assist reaction found")
     raise HAApiError(
-        f"trovate {len(candidates)} room_darkness_lighting_assist: "
-        "specifica --label-contains o --reaction-id"
+        f"found {len(candidates)} room_darkness_lighting_assist: "
+        "specify --label-contains or --reaction-id"
     )
 
 
@@ -263,7 +263,7 @@ def run_test(
     rcfg = _reaction_cfg(options, reaction_id)
     room_id = str(rdiag.get("room_id") or rcfg.get("room_id") or "").strip()
     if not room_id:
-        _fail("room_id non trovato in diagnostics")
+        _fail("room_id not found in diagnostics")
         return False
 
     stored_labels = _safe_dict(_safe_dict(options.get("reactions")).get("labels"))
@@ -289,7 +289,7 @@ def run_test(
         ]
     if not light_entities:
         _fail(
-            "nessun target light trovato né nel config né nei diagnostics runtime "
+            "no light target found in either the config or the runtime diagnostics "
             "(entity_step_ids)"
         )
         return False
@@ -308,25 +308,25 @@ def run_test(
     payload = _reactions_payload(client)
     reaction_state = _safe_dict(payload.get(reaction_id))
     if bool(reaction_state.get("muted")):
-        _fail("reaction è muted")
+        _fail("reaction is muted")
         ok = False
     else:
-        _ok("reaction non muted")
+        _ok("reaction not muted")
 
-    # 2. stanza vuota
+    # 2. room empty
     snap = _snapshot(rt)
     occupied_rooms = [str(r) for r in _safe_list(snap.get("occupied_rooms"))]
     if room_id in occupied_rooms:
         if not force:
-            _fail(f"room '{room_id}' è già occupata — interrompo (usa --force per ignorare)")
+            _fail(f"room '{room_id}' is already occupied — aborting (use --force to ignore)")
             return False
         else:
-            _fail(f"room '{room_id}' è già occupata (--force: procedo comunque)")
+            _fail(f"room '{room_id}' is already occupied (--force: continuing anyway)")
             ok = False
     else:
-        _ok(f"room '{room_id}' vuota")
+        _ok(f"room '{room_id}' empty")
 
-    # 3. lux nel bucket atteso
+    # 3. lux in expected bucket
     if primary_bucket:
         lux_ok = _bucket_matches_mode(
             current=current_lux_bucket,
@@ -336,16 +336,16 @@ def run_test(
         )
         if not lux_ok:
             _fail(
-                f"lux bucket corrente={current_lux_bucket!r}, atteso {match_mode}={primary_bucket!r} "
-                f"(labels={bucket_labels}) — impossibile testare senza il bucket giusto"
+                f"current lux bucket={current_lux_bucket!r}, expected {match_mode}={primary_bucket!r} "
+                f"(labels={bucket_labels}) — cannot test without the right bucket"
             )
             return False
         else:
-            _ok(f"lux bucket={current_lux_bucket!r} soddisfa {match_mode}={primary_bucket!r}")
+            _ok(f"lux bucket={current_lux_bucket!r} satisfies {match_mode}={primary_bucket!r}")
     else:
-        _ok("primary_bucket non configurato — skip controllo lux")
+        _ok("primary_bucket not configured — skipping lux check")
 
-    # 4. luci spente
+    # 4. lights off
     lights_were_on: list[str] = []
     for eid in light_entities:
         s = client.state_from_list(eid)
@@ -357,46 +357,46 @@ def run_test(
                 for x in client.all_states()
                 if str(x.get("entity_id", "")).startswith(f"{domain}.")
             )
-            # trova la più simile per token condivisi
+            # find the closest match by shared tokens
             def _score(a: str) -> int:
                 al = a.split(".")[-1].lower()
                 return sum(1 for t in local.split("_") if t and t in al)
             best = sorted(available, key=_score, reverse=True)
             _fail(
-                f"entity_id configurato nella reaction non trovato in /api/states\n"
-                f"  Configurato:  {eid}\n"
-                f"  Più simile:   {best[0] if best else '(nessuna)'}"
+                f"entity_id configured in the reaction not found in /api/states\n"
+                f"  Configured: {eid}\n"
+                f"  Closest match: {best[0] if best else '(none)'}"
             )
-            print(f"  Entità {domain}.* disponibili ({len(available)}):")
+            print(f"  Available {domain}.* entities ({len(available)}):")
             for a in available:
                 print(f"    {a}")
             return False
         state = str(s.get("state") or "").strip()
         if state == "on":
             lights_were_on.append(eid)
-            _fail(f"{eid} è già on")
+            _fail(f"{eid} is already on")
             ok = False
         else:
-            _ok(f"{eid} è {state or 'unknown'}")
+            _ok(f"{eid} is {state or 'unknown'}")
     if lights_were_on and not force:
-        _fail("luci già accese — interrompo (usa --force per ignorare)")
+        _fail("lights already on — aborting (use --force to ignore)")
         return False
 
-    # 5. cooldown libero
+    # 5. cooldown free
     last_fired_iso = rdiag.get("last_fired_iso")
     if last_fired_iso:
-        _fail(f"cooldown potenzialmente attivo: last_fired_iso={last_fired_iso}")
+        _fail(f"cooldown potentially active: last_fired_iso={last_fired_iso}")
         if not force:
             return False
     else:
-        _ok("last_fired_iso=None → cooldown libero")
+        _ok("last_fired_iso=None → cooldown free")
 
     fire_count_before = int(rdiag.get("fire_count") or 0)
     suppressed_before = int(rdiag.get("suppressed_count") or 0)
     print(f"  fire_count={fire_count_before}  suppressed_count={suppressed_before}")
 
     if not ok and not force:
-        _fail("pre-check fallito — interrompo")
+        _fail("pre-check failed — aborting")
         return False
 
     # --- find occupancy source ---
@@ -404,8 +404,8 @@ def run_test(
     sim_entity = _first_occupancy_source(rcfg_room)
     if not sim_entity:
         _fail(
-            f"nessun occupancy_source trovato nella room config di '{room_id}'. "
-            "Impossibile simulare presenza."
+            f"no occupancy_source found in the room config for '{room_id}'. "
+            "Cannot simulate presence."
         )
         return False
     print(f"\n=== simulate occupancy via {sim_entity} ===")
@@ -421,12 +421,12 @@ def run_test(
 
     try:
         # inject presence
-        _step(f"POST stato=on su {sim_entity} (era {original_sim_state!r})")
+        _step(f"POST state=on on {sim_entity} (was {original_sim_state!r})")
         client.request("POST", f"/api/states/{sim_entity}", {"state": "on"})
         time.sleep(0.5)
 
         # wait for occupancy (via Heima snapshot, no HA entity lookup needed)
-        print(f"\n=== attendo occupancy (timeout={timeout_s}s) ===")
+        print(f"\n=== waiting for occupancy (timeout={timeout_s}s) ===")
         deadline = time.time() + timeout_s
         occupied = False
         while time.time() < deadline:
@@ -440,11 +440,11 @@ def run_test(
                 break
             time.sleep(poll_s)
         if not occupied:
-            _fail(f"timeout: room '{room_id}' non è entrata in occupied_rooms entro {timeout_s}s")
+            _fail(f"timeout: room '{room_id}' did not enter occupied_rooms within {timeout_s}s")
             return False
 
         # wait for ALL lights to turn on
-        print(f"\n=== attendo accensione luci (timeout={timeout_s}s) ===")
+        print(f"\n=== waiting for lights to turn on (timeout={timeout_s}s) ===")
         pending = list(light_entities)
         deadline = time.time() + timeout_s
         while time.time() < deadline and pending:
@@ -452,7 +452,7 @@ def run_test(
             for eid in pending:
                 s = client.state_from_list(eid)
                 if s is not None and str(s.get("state") or "") == "on":
-                    _ok(f"{eid} è on")
+                    _ok(f"{eid} is on")
                     lights_we_turned_on.append(eid)
                 else:
                     still_pending.append(eid)
@@ -461,7 +461,7 @@ def run_test(
                 time.sleep(poll_s)
 
         if pending:
-            _fail(f"timeout: {len(pending)}/{len(light_entities)} luci non accese entro {timeout_s}s")
+            _fail(f"timeout: {len(pending)}/{len(light_entities)} lights not on within {timeout_s}s")
             for eid in pending:
                 s = client.state_from_list(eid)
                 state = str(s.get("state") or "not_found") if s else "not_in_ha"
@@ -479,7 +479,7 @@ def run_test(
             return False
 
         # verify diagnostics
-        print(f"\n=== verifica diagnostics ===")
+        print(f"\n=== verify diagnostics ===")
         diag3 = _load_diag(client)
         rt3 = _runtime(diag3)
         rdiag3 = _reaction_diag(rt3, reaction_id)
@@ -490,16 +490,16 @@ def run_test(
             _ok(f"fire_count {fire_count_before} → {fire_count_after}")
         else:
             _fail(
-                f"fire_count non aumentato ({fire_count_before} → {fire_count_after}): "
-                "la luce potrebbe essersi accesa per un'altra ragione"
+                f"fire_count not increased ({fire_count_before} → {fire_count_after}): "
+                "the light may have turned on for another reason"
             )
         if last_fired_iso_after:
             _ok(f"last_fired_iso={last_fired_iso_after}")
         else:
-            _fail("last_fired_iso non impostato dopo il fire")
+            _fail("last_fired_iso not set after the fire")
 
         print(f"\n=== PASS ===")
-        print(f"  reaction '{label}' ha acceso: {', '.join(lights_we_turned_on) or '(nessuna — già on)'}")
+        print(f"  reaction '{label}' turned on: {', '.join(lights_we_turned_on) or '(none — already on)'}")
         print(f"  fire_count={fire_count_after}  last_fired_iso={last_fired_iso_after}")
         return fire_count_after > fire_count_before
 
@@ -507,16 +507,16 @@ def run_test(
         print(f"\n=== cleanup ===")
         try:
             client.request("POST", f"/api/states/{sim_entity}", {"state": original_sim_state})
-            _step(f"ripristinato {sim_entity}={original_sim_state!r}")
+            _step(f"restored {sim_entity}={original_sim_state!r}")
         except Exception as exc:  # noqa: BLE001
-            _step(f"WARNING: impossibile ripristinare {sim_entity}: {exc}")
+            _step(f"WARNING: could not restore {sim_entity}: {exc}")
         for eid in lights_we_turned_on:
             if original_light_states.get(eid) != "on":
                 try:
                     client.call_service("light", "turn_off", {"entity_id": eid})
-                    _step(f"spento {eid}")
+                    _step(f"turned off {eid}")
                 except Exception as exc:  # noqa: BLE001
-                    _step(f"WARNING: impossibile spegnere {eid}: {exc}")
+                    _step(f"WARNING: could not turn off {eid}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +525,7 @@ def run_test(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Live E2E: verifica che room_darkness_lighting_assist accenda la luce"
+        description="Live E2E: verifies that room_darkness_lighting_assist turns on the light"
     )
     parser.add_argument("--ha-url", default=os.environ.get("HA_URL", "http://127.0.0.1:8123"))
     parser.add_argument("--ha-token", default=os.environ.get("HA_TOKEN", ""))
@@ -536,12 +536,12 @@ def main() -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="procedi anche se pre-check fallisce (stanza già occupata, cooldown attivo, etc.)",
+        help="continue even if the pre-check fails (room already occupied, cooldown active, etc.)",
     )
     args = parser.parse_args()
 
     if not args.ha_token:
-        print("ERROR: --ha-token richiesto (o variabile HA_TOKEN)")
+        print("ERROR: --ha-token required (or HA_TOKEN variable)")
         return 2
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token)
@@ -558,7 +558,7 @@ def main() -> int:
         print(f"\nERROR: {exc}")
         return 1
     except KeyboardInterrupt:
-        print("\ninterrotto")
+        print("\ninterrupted")
         return 130
 
     return 0 if passed else 1

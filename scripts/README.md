@@ -48,12 +48,12 @@ This folder contains deploy/patch tooling plus multiple Home Assistant-facing te
       - `037_admin_authored_room_signal_binary_modes.py`
       - `048_admin_authored_room_contextual_lighting_flow.py`
 - Diagnostics:
-  - `diagnostics.py`: stampa i diagnostics runtime di Heima (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). Per `learning`, `reactions` e `lighting` mostra anche un summary leggibile prima del JSON, inclusi family abilitate/disabilitate, template implementati/solo dichiarati, collisioni lighting per slot e pending tuning lighting.
-  - `reaction_live_debug.py`: polling live di una singola reaction con vista unica su `heima_reactions_active`, `engine diagnostics`, `apply_plan`, ultimo evento e stato delle entita osservate.
-  - `learning_audit.py`: summary leggibile del learning per family/plugin, con breakdown di pending/accepted/rejected/stale, template implementati/solo dichiarati, collisioni lighting per slot e overview lighting-specifica su configured/pending/tuning.
-  - `ops_audit.py`: summary operativo compatto per monitoring continuo (health, house state, learning backlog, reactions, security, camera evidence, security presence).
-    Può anche esportare uno snapshot JSON stabile con `--snapshot-out <path>` per review longitudinali.
-  - `prod_daily_check.py`: summary rapido giornaliero per una istanza Heima in produzione (health, event store, tracked learning signals, proposals).
+  - `diagnostics.py`: prints Heima's runtime diagnostics (event_store, proposals, calendar, engine, house_state, events, scheduler, plugins, learning, reactions, lighting). For `learning`, `reactions`, and `lighting` it also shows a readable summary before the JSON, including enabled/disabled families, implemented vs. declared-only templates, per-slot lighting collisions, and pending lighting tuning.
+  - `reaction_live_debug.py`: live polling of a single reaction with a unified view of `heima_reactions_active`, `engine diagnostics`, `apply_plan`, the last event, and the state of the observed entities.
+  - `learning_audit.py`: readable learning summary per family/plugin, with a pending/accepted/rejected/stale breakdown, implemented vs. declared-only templates, per-slot lighting collisions, and a lighting-specific overview of configured/pending/tuning.
+  - `ops_audit.py`: compact operational summary for continuous monitoring (health, house state, learning backlog, reactions, security, camera evidence, security presence).
+    Can also export a stable JSON snapshot with `--snapshot-out <path>` for longitudinal reviews.
+  - `prod_daily_check.py`: quick daily summary for a Heima instance in production (health, event store, tracked learning signals, proposals).
 - Deploy / patch:
   - `deploy_heima.sh`: deploy custom component to prod/dev hosts.
   - `patch_heima_dev_options.sh`: patch Heima options in HA-dev `.storage`.
@@ -89,32 +89,32 @@ HA_TOKEN='<token>' PERSON_SLUG='stefano' \
 ./scripts/check_all_live.sh --tier all --ha-url http://ha-host:8123
 ```
 
-- Per visualizzare i diagnostics runtime:
+- To view the runtime diagnostics:
 
 ```bash
 source scripts/.env
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 
-# Solo una sezione: event_store | proposals | calendar | house_state | events | engine | scheduler | plugins | learning
+# Only one section: event_store | proposals | calendar | house_state | events | engine | scheduler | plugins | learning
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section event_store
 
-# Solo il resolver house_state
+# Only the house_state resolver
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section house_state
 
-# Solo gli ultimi eventi e i contatori della pipeline
+# Only the latest events and pipeline counters
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section events
 
-# Solo il summary learning plugin-centric
+# Only the plugin-centric learning summary
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section learning
 python3 scripts/diagnostics.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --section lighting
 python3 scripts/learning_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 python3 scripts/ops_audit.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --snapshot-out /tmp/heima_ops_snapshot.json
 
-# Debug live di una reaction specifica per label
+# Live debug of a specific reaction by label
 python3 scripts/reaction_live_debug.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --label-contains "Luce studio"
 
-# Oppure per reaction_id, aggiungendo entita da monitorare esplicitamente
+# Or by reaction_id, explicitly adding entities to monitor
 python3 scripts/reaction_live_debug.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" \
   --reaction-id "<reaction_id>" \
   --entity sensor.study_illuminance \
@@ -122,14 +122,14 @@ python3 scripts/reaction_live_debug.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
   --entity light.study_main
 ```
 
-- Per un check rapido giornaliero su produzione:
+- For a quick daily check on production:
 
 ```bash
 source scripts/.env
 python3 scripts/prod_daily_check.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"
 ```
 
-- Per run della learning seeded-integration path da baseline pulita:
+- To run the learning seeded-integration path from a clean baseline:
 
 ```bash
 HA_TOKEN='<token>' PERSON_SLUG='stefano' \

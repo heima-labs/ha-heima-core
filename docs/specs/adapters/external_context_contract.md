@@ -5,101 +5,101 @@
 
 ---
 
-## Scopo
+## Purpose
 
-Heima è agnostico rispetto alle fonti di dati meteorologici e di allerta. Per
-consumare contesto esterno, dipende da **adapter**: custom integration HA
-indipendenti che normalizzano una fonte specifica (OpenWeatherMap, DWD,
-Protezione Civile, stazione meteo casalinga, ecc.) verso un insieme di entità
-con naming e semantica stabili.
+Heima is agnostic to weather and alert data sources. To consume external
+context, it depends on **adapters**: independent HA custom integrations that
+normalize a specific source (OpenWeatherMap, DWD, Protezione Civile, a home
+weather station, etc.) into a set of entities with stable naming and
+semantics.
 
-Questo documento definisce:
-- il naming convention degli entity ID prodotti dagli adapter
-- la semantica e i vincoli di ogni segnale
-- come Heima mappa gli slot canonici alle entità degli adapter via config
-- le regole di degradazione se un segnale è assente o non disponibile
-- le responsabilità dell'adapter vs. quelle di Heima
-
----
-
-## Principi
-
-**Naming specifico per fonte.** Ogni adapter scrive entità con entity ID che
-includono l'`adapter_id` della fonte: `sensor.heima_ext_<adapter_id>_<slot>`.
-Questo permette a più adapter di coesistere senza conflitti (es. OWM e una
-stazione casalinga espongono entrambi `outdoor_temp` su entity ID distinti).
-
-**Mapping esplicito in Heima.** L'utente configura in Heima quali entità
-mappare su quali slot canonici. Slot non configurati → feature disabilitata,
-nessun errore.
-
-**Graceful degradation.** Ogni slot è opzionale. Se l'entità mappata è assente,
-`unavailable` o `unknown`, Heima disabilita le feature che ne dipendono senza
-errori. Non è un fault.
-
-**Adapter indipendenti.** Un adapter non deve conoscere Heima internamente.
-Deve solo esporre le entità con il naming e la semantica corretta. Più adapter
-possono coesistere sugli stessi slot (es. OWM per meteo + DPC per allerte) o
-sullo stesso slot con fonti diverse (es. OWM e stazione casalinga entrambi per
-`outdoor_temp` — l'utente sceglie quale usare nella config Heima).
-
-**Contratto stabile.** Questa specifica è versionata. Breaking change al
-contratto (cambi di naming convention, cambi di unità, cambi di dominio valori)
-richiedono una nuova versione major. Gli adapter devono dichiarare la versione
-del contratto che implementano.
+This document defines:
+- the naming convention for entity IDs produced by adapters
+- the semantics and constraints of each signal
+- how Heima maps canonical slots to adapter entities via config
+- degradation rules when a signal is absent or unavailable
+- the adapter's responsibilities vs. Heima's
 
 ---
 
-## Naming convention entity ID
+## Principles
+
+**Source-specific naming.** Every adapter writes entities with entity IDs that
+include the source's `adapter_id`: `sensor.heima_ext_<adapter_id>_<slot>`.
+This lets multiple adapters coexist without conflicts (e.g. OWM and a home
+station both expose `outdoor_temp` on distinct entity IDs).
+
+**Explicit mapping in Heima.** The user configures in Heima which entities to
+map to which canonical slots. Unconfigured slots → feature disabled, no
+error.
+
+**Graceful degradation.** Every slot is optional. If the mapped entity is
+absent, `unavailable`, or `unknown`, Heima disables the features that depend
+on it without errors. This is not a fault.
+
+**Independent adapters.** An adapter does not need to know about Heima
+internally. It only has to expose entities with the correct naming and
+semantics. Multiple adapters can coexist on the same slots (e.g. OWM for
+weather + DPC for alerts) or on the same slot with different sources (e.g.
+OWM and a home station both for `outdoor_temp` — the user chooses which to
+use in the Heima config).
+
+**Stable contract.** This spec is versioned. Breaking changes to the contract
+(naming convention changes, unit changes, value domain changes) require a new
+major version. Adapters must declare the contract version they implement.
+
+---
+
+## Entity ID naming convention
 
 ```
 sensor.heima_ext_<adapter_id>_<slot>
 ```
 
-| Parte         | Descrizione                                           | Esempi                    |
-|---------------|-------------------------------------------------------|---------------------------|
-| `heima_ext_`  | Prefisso fisso — identifica entità del contratto Heima| —                         |
-| `<adapter_id>`| Identificatore breve della fonte, definito dall'adapter | `owm`, `dpc`, `station` |
-| `<slot>`      | Nome del segnale canonico (vedi §Slot canonici)       | `outdoor_temp`, `wind_speed` |
+| Part          | Description                                            | Examples                    |
+|---------------|---------------------------------------------------------|---------------------------|
+| `heima_ext_`  | Fixed prefix — identifies entities of the Heima contract| —                         |
+| `<adapter_id>`| Short identifier for the source, defined by the adapter | `owm`, `dpc`, `station` |
+| `<slot>`      | Name of the canonical signal (see §Canonical slots)     | `outdoor_temp`, `wind_speed` |
 
-### Esempi
+### Examples
 
-| Adapter              | `adapter_id` | Entità prodotte                                                   |
+| Adapter              | `adapter_id` | Entities produced                                                   |
 |----------------------|--------------|-------------------------------------------------------------------|
 | OWM Adapter          | `owm`        | `sensor.heima_ext_owm_outdoor_temp`, `sensor.heima_ext_owm_wind_speed`, … |
 | DPC Adapter          | `dpc`        | `sensor.heima_ext_dpc_weather_alert_level`, `sensor.heima_ext_dpc_weather_alert_phenomena` |
-| Stazione casalinga   | `station`    | `sensor.heima_ext_station_outdoor_temp`, `sensor.heima_ext_station_outdoor_humidity`, … |
+| Home station   | `station`    | `sensor.heima_ext_station_outdoor_temp`, `sensor.heima_ext_station_outdoor_humidity`, … |
 
 ---
 
-## Slot canonici
+## Canonical slots
 
-Gli slot sono i segnali che Heima conosce e può consumare. Ogni adapter
-implementa il sottoinsieme di slot che la sua fonte è in grado di produrre.
+Slots are the signals that Heima knows about and can consume. Each adapter
+implements the subset of slots its source is able to produce.
 
-| Slot                        | Tipo    | Unità | Descrizione                                          |
+| Slot                        | Type    | Unit | Description                                          |
 |-----------------------------|---------|-------|------------------------------------------------------|
-| `outdoor_temp`              | float   | °C    | Temperatura esterna corrente                         |
-| `outdoor_humidity`          | float   | %     | Umidità relativa esterna (0–100)                     |
-| `outdoor_lux`               | float   | lx    | Illuminamento esterno (misurato o stimato)           |
-| `wind_speed`                | float   | m/s   | Velocità vento corrente                              |
-| `rain_last_1h`              | float   | mm    | Precipitazioni nell'ultima ora                       |
-| `rain_forecast_next_6h`     | float   | mm    | Precipitazioni previste nelle prossime 6 ore         |
-| `weather_condition`         | string  | —     | Condizione meteo corrente (enum, vedi §Enumerazioni) |
-| `weather_alert_level`       | int     | —     | Livello allerta massimo attivo (0–3)                 |
-| `weather_alert_phenomena`   | string  | —     | Fenomeni attivi all'alert level corrente (CSV)       |
+| `outdoor_temp`              | float   | °C    | Current outdoor temperature                          |
+| `outdoor_humidity`          | float   | %     | Outdoor relative humidity (0–100)                    |
+| `outdoor_lux`               | float   | lx    | Outdoor illuminance (measured or estimated)          |
+| `wind_speed`                | float   | m/s   | Current wind speed                                   |
+| `rain_last_1h`              | float   | mm    | Precipitation in the last hour                       |
+| `rain_forecast_next_6h`     | float   | mm    | Forecast precipitation for the next 6 hours          |
+| `weather_condition`         | string  | —     | Current weather condition (enum, see §Enumerations)  |
+| `weather_alert_level`       | int     | —     | Highest active alert level (0–3)                     |
+| `weather_alert_phenomena`   | string  | —     | Phenomena active at the current alert level (CSV)    |
 
 ---
 
-## Configurazione mapping in Heima
+## Mapping configuration in Heima
 
-L'utente dichiara nel config flow di Heima quale entità usare per ogni slot:
+The user declares in Heima's config flow which entity to use for each slot:
 
 ```yaml
-# esempio — sezione external_context nelle opzioni Heima
+# example — external_context section in Heima options
 external_context:
-  outdoor_temp: sensor.heima_ext_station_outdoor_temp     # stazione casalinga preferita
-  outdoor_humidity: sensor.heima_ext_owm_outdoor_humidity # OWM come fallback
+  outdoor_temp: sensor.heima_ext_station_outdoor_temp     # preferred home station
+  outdoor_humidity: sensor.heima_ext_owm_outdoor_humidity # OWM as fallback
   outdoor_lux: sensor.heima_ext_owm_outdoor_lux
   wind_speed: sensor.heima_ext_owm_wind_speed
   rain_last_1h: sensor.heima_ext_owm_rain_last_1h
@@ -109,126 +109,127 @@ external_context:
   weather_alert_phenomena: sensor.heima_ext_dpc_weather_alert_phenomena
 ```
 
-- Slot non configurati → feature corrispondente disabilitata, nessun errore
-- L'utente può mappare slot diversi su adapter diversi liberamente
-- Se un'entità configurata è `unavailable`, Heima tratta il slot come assente
-  (non esiste un meccanismo di fallback automatico — la selezione della fonte
-  è una decisione esplicita dell'utente)
-- Per compatibilità con configurazioni legacy, Heima può accettare una entity
-  `weather.*` come sorgente di `weather_condition` e `outdoor_temp`:
-  `weather_condition` usa lo stato dell'entità, `outdoor_temp` usa l'attributo
-  `temperature`. Gli adapter `sensor.heima_ext_*` restano la sorgente
-  raccomandata e normativamente preferita.
+- Unconfigured slots → the corresponding feature is disabled, no error
+- The user can freely map different slots to different adapters
+- If a configured entity is `unavailable`, Heima treats the slot as absent
+  (there is no automatic fallback mechanism — source selection is an
+  explicit user decision)
+- For compatibility with legacy configurations, Heima can accept a
+  `weather.*` entity as the source of `weather_condition` and `outdoor_temp`:
+  `weather_condition` uses the entity's state, `outdoor_temp` uses the
+  `temperature` attribute. The `sensor.heima_ext_*` adapters remain the
+  recommended and normatively preferred source.
 
 ---
 
-## Enumerazioni
+## Enumerations
 
 ### `weather_condition`
 
-| Valore          | Significato                                 |
-|-----------------|---------------------------------------------|
-| `clear`         | Cielo sereno                                |
-| `partly_cloudy` | Parzialmente nuvoloso (< 60% copertura)     |
-| `cloudy`        | Nuvoloso (60–90% copertura)                 |
-| `overcast`      | Coperto (> 90% copertura, no precipitazioni)|
-| `fog`           | Nebbia o foschia                            |
-| `rain`          | Pioggia (qualsiasi intensità)               |
-| `heavy_rain`    | Pioggia intensa (> 7.5 mm/h)               |
-| `storm`         | Temporale con fulmini                       |
-| `snow`          | Neve (qualsiasi intensità)                  |
-| `unknown`       | Non determinabile dalla fonte               |
+| Value           | Meaning                                      |
+|-----------------|-----------------------------------------------|
+| `clear`         | Clear sky                                     |
+| `partly_cloudy` | Partly cloudy (< 60% cover)                   |
+| `cloudy`        | Cloudy (60–90% cover)                         |
+| `overcast`      | Overcast (> 90% cover, no precipitation)      |
+| `fog`           | Fog or haze                                   |
+| `rain`          | Rain (any intensity)                          |
+| `heavy_rain`    | Heavy rain (> 7.5 mm/h)                       |
+| `storm`         | Thunderstorm                                  |
+| `snow`          | Snow (any intensity)                          |
+| `unknown`       | Cannot be determined from the source          |
 
 ### `weather_alert_level`
 
-| Valore | Colore    | Significato                          |
+| Value | Color    | Meaning                              |
 |--------|-----------|--------------------------------------|
-| `0`    | Verde     | Nessuna allerta attiva               |
-| `1`    | Giallo    | Allerta ordinaria / attenzione       |
-| `2`    | Arancione | Allerta moderata / preallarme        |
-| `3`    | Rosso     | Allerta grave / allarme              |
+| `0`    | Green     | No active alert                      |
+| `1`    | Yellow    | Ordinary alert / attention            |
+| `2`    | Orange    | Moderate alert / pre-alarm            |
+| `3`    | Red       | Severe alert / alarm                  |
 
 ---
 
-## Attributi obbligatori per ogni entità
+## Mandatory attributes for every entity
 
-Ogni entità del contratto deve esporre i seguenti attributi HA:
+Every entity of the contract must expose the following HA attributes:
 
 ```python
 {
-    "heima_contract_version": "1.0",   # versione del contratto implementata
-    "adapter_id": str,                 # es. "owm" | "dpc" | "station"
-    "source_entity": str | list[str],  # entity ID HA sorgente
-    "last_updated": ISO8601 str,       # timestamp ultimo aggiornamento dalla fonte
+    "heima_contract_version": "1.0",   # contract version implemented
+    "adapter_id": str,                 # e.g. "owm" | "dpc" | "station"
+    "source_entity": str | list[str],  # source HA entity ID
+    "last_updated": ISO8601 str,       # timestamp of the last update from the source
 }
 ```
 
 ---
 
-## Responsabilità dell'adapter
+## Adapter responsibilities
 
-L'adapter è responsabile di:
+The adapter is responsible for:
 
-1. **Usare il naming convention** `sensor.heima_ext_<adapter_id>_<slot>`
-2. **Normalizzare** i valori dalla fonte verso il dominio e le unità del contratto
-3. **Scrivere `unavailable`** se la fonte non è raggiungibile o il dato è fuori
-   dominio, invece di scrivere un valore potenzialmente errato
-4. **Aggiornare le entità** con frequenza coerente con la natura del segnale
-   (meteo corrente: ≤ 10 min; forecast: ≤ 30 min; allerte: ≤ 15 min)
-5. **Dichiarare la versione del contratto** in ogni entità tramite attributo
-6. **Non interferire** con le entità native HA: le entità `heima_ext_*` sono
-   nuove entità create dall'adapter, non alias
-
----
-
-## Responsabilità di Heima
-
-Heima è responsabile di:
-
-1. Leggere le entità tramite il mapping configurato dall'utente
-2. Trattare `unavailable`, `unknown` e assenza dell'entità come equivalenti
-   (segnale non disponibile → feature disabilitata)
-3. Validare la versione del contratto dall'attributo `heima_contract_version`;
-   loggare un warning se incompatibile, non bloccare il runtime
-4. Non fare assunzioni sulla fonte: Heima non sa e non deve sapere se il dato
-   viene da OWM, DWD, una stazione casalinga o un sensore custom
+1. **Using the naming convention** `sensor.heima_ext_<adapter_id>_<slot>`
+2. **Normalizing** values from the source into the contract's domain and units
+3. **Writing `unavailable`** if the source is unreachable or the data is out
+   of domain, instead of writing a potentially wrong value
+4. **Updating entities** at a frequency consistent with the nature of the
+   signal (current weather: ≤ 10 min; forecast: ≤ 30 min; alerts: ≤ 15 min)
+5. **Declaring the contract version** on every entity via an attribute
+6. **Not interfering** with native HA entities: `heima_ext_*` entities are
+   new entities created by the adapter, not aliases
 
 ---
 
-## Degradazione per slot
+## Heima's responsibilities
 
-| Slot assente                          | Comportamento Heima                                         |
+Heima is responsible for:
+
+1. Reading entities through the user-configured mapping
+2. Treating `unavailable`, `unknown`, and entity absence as equivalent
+   (signal unavailable → feature disabled)
+3. Validating the contract version from the `heima_contract_version`
+   attribute; logging a warning if incompatible, without blocking the runtime
+4. Making no assumptions about the source: Heima does not know and must not
+   need to know whether the data comes from OWM, DWD, a home station, or a
+   custom sensor
+
+---
+
+## Degradation per slot
+
+| Slot absent                          | Heima behavior                                               |
 |---------------------------------------|-------------------------------------------------------------|
-| `outdoor_temp`                        | Safety floor heating disabilitata; vacation curve usa solo orario |
-| `outdoor_lux`                         | Lighting usa solo sensori interni                           |
-| `outdoor_humidity`                    | Nessun impatto v1                                           |
-| `wind_speed`                          | Nessun impatto v1                                           |
-| `rain_last_1h` / `rain_forecast_next_6h` | Watering skip disabilitato (v2)                          |
-| `weather_condition`                   | Lighting gloomy compensation disabilitata                   |
-| `weather_alert_level`                 | Apply filter allerta disabilitato                           |
-| `weather_alert_phenomena`             | Notifica fenomeni specifica disabilitata                    |
+| `outdoor_temp`                        | Safety floor heating disabled; vacation curve uses time-of-day only |
+| `outdoor_lux`                         | Lighting uses only indoor sensors                            |
+| `outdoor_humidity`                    | No impact in v1                                              |
+| `wind_speed`                          | No impact in v1                                              |
+| `rain_last_1h` / `rain_forecast_next_6h` | Watering skip disabled (v2)                               |
+| `weather_condition`                   | Lighting gloomy compensation disabled                        |
+| `weather_alert_level`                 | Alert apply filter disabled                                  |
+| `weather_alert_phenomena`             | Specific phenomena notification disabled                     |
 
 ---
 
-## Versioning del contratto
+## Contract versioning
 
-Il contratto segue semantic versioning (MAJOR.MINOR):
+The contract follows semantic versioning (MAJOR.MINOR):
 
-- **MINOR bump**: aggiunta di nuovi slot opzionali; gli adapter esistenti
-  restano compatibili
-- **MAJOR bump**: cambio naming convention, cambio unità, cambio dominio valori;
-  richiede migrazione adapter
+- **MINOR bump**: addition of new optional slots; existing adapters remain
+  compatible
+- **MAJOR bump**: naming convention change, unit change, value domain change;
+  requires adapter migration
 
-Gli adapter devono dichiarare quale versione MAJOR.MINOR implementano.
-Heima accetta adapter con MAJOR identica e MINOR ≤ propria.
+Adapters must declare which MAJOR.MINOR version they implement.
+Heima accepts adapters with an identical MAJOR and MINOR ≤ its own.
 
-**Versione corrente del contratto: 1.0**
+**Current contract version: 1.0**
 
 ---
 
-## Adapter di riferimento
+## Reference adapters
 
-| Adapter                   | Repo                                      | `adapter_id` | Slot coperti                                              |
+| Adapter                   | Repo                                      | `adapter_id` | Slots covered                                              |
 |---------------------------|-------------------------------------------|--------------|-----------------------------------------------------------|
 | OWM Adapter               | `heima-labs/ha-heima-owm-adapter`         | `owm`        | temp, humidity, lux, wind, rain, rain_forecast, condition |
 | DPC Adapter               | `heima-labs/ha-heima-DPC-adapter`         | `dpc`        | alert_level, alert_phenomena                              |

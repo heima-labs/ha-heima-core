@@ -1,5 +1,10 @@
 # Heima - Piano di Sviluppo (v1.x)
 
+**SUPERSEDED:** this document describes the v1.x architecture, replaced on `main` by the v2
+architecture merged from `feat/v2`. It is kept as historical reference only and is not translated
+to English for that reason. The active operational plan is `docs/v2_dev_plan.md`; the active spec
+is `docs/specs/heima_v2_spec.md`.
+
 ## Sintesi
 Heima e una integrazione custom per Home Assistant che fornisce un motore di policy per casa intelligente. L'integrazione crea e possiede entita canoniche, calcola stato della casa e intenti, e applica azioni in modo sicuro tramite un orchestratore. L'architettura e intent-driven e supporta un framework di behavior estendibile senza fork del core.
 

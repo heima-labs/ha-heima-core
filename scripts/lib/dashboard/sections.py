@@ -11,7 +11,7 @@ def generate_runtime_section(
     state_by_id: Dict[str, Dict[str, Any]],
     lang: str = "it",
 ) -> List[str]:
-    """Genera la sezione 'Runtime'."""
+    """Generate the 'Runtime' section."""
     common = inventory["common_entities"]
     occupancy = inventory["occupancy_entities"]
     diagnostics_markdown = _generate_diagnostics_markdown(inventory, lang)
@@ -34,7 +34,7 @@ def generate_learning_section(
     state_by_id: Dict[str, Dict[str, Any]],
     lang: str = "it",
 ) -> List[str]:
-    """Genera la sezione 'Learning And Events'."""
+    """Generate the 'Learning And Events' section."""
     learning = inventory["learning_entities"]
     anomalies = inventory["anomaly_entities"]
     heating = inventory["heating_entities"]
@@ -52,7 +52,7 @@ def generate_reactions_section(
     inventory: Dict[str, Any],
     lang: str = "it",
 ) -> List[str]:
-    """Genera la sezione 'Runtime Reactions'."""
+    """Generate the 'Runtime Reactions' section."""
     runtime_reactions_markdown = _generate_runtime_reactions_markdown(inventory, lang)
     reactions_markdown = _generate_reactions_markdown(inventory, lang)
     lighting_markdown = _generate_lighting_markdown(inventory, lang)
@@ -69,7 +69,7 @@ def generate_room_section(
     state_by_id: Dict[str, Dict[str, Any]],
     lang: str = "it",
 ) -> List[str]:
-    """Genera la sezione per una singola stanza."""
+    """Generate the section for a single room."""
     room_markdown = _generate_room_markdown(room, lang)
     entities = sort_entities(room["entities"], state_by_id)
 
@@ -90,7 +90,7 @@ def generate_actions_section(
     inventory: Dict[str, Any],
     lang: str = "it",
 ) -> List[str]:
-    """Genera la sezione 'Developer Actions' o 'Test Lab'."""
+    """Generate the 'Developer Actions' or 'Test Lab' section."""
     action_cards = []
     actions = inventory["actions"]
 
@@ -129,7 +129,7 @@ def generate_actions_section(
     return []
 
 def _generate_diagnostics_markdown(inventory: Dict[str, Any], lang: str) -> str:
-    """Genera il markdown per la diagnostica."""
+    """Generate the markdown for diagnostics."""
     summary = inventory["diagnostics_summary"]
     snapshot = summary.get("snapshot", {})
 
@@ -177,7 +177,7 @@ def _generate_diagnostics_markdown(inventory: Dict[str, Any], lang: str) -> str:
     return "\n".join(lines)
 
 def _generate_table(headers: List[str], rows: List[List[Any]], lang: str) -> str:
-    """Genera una tabella in markdown con traduzione degli header."""
+    """Generate a markdown table with translated headers."""
     translated_headers = [translate(h, lang) for h in headers]
     header = "| " + " | ".join(translated_headers) + " |"
     sep = "| " + " | ".join("---" for _ in headers) + " |"
@@ -187,18 +187,18 @@ def _generate_table(headers: List[str], rows: List[List[Any]], lang: str) -> str
     return "\n".join([header, sep, *body])
 
 def _md_cell(value: Any) -> str:
-    """Formatta una cella per markdown."""
+    """Format a cell for markdown."""
     text = str(value if value is not None else "")
     return text.replace("|", "\\|").replace("\n", " ")
 
 def _format_snapshot_value(value: Any) -> str:
-    """Formatta un valore dello snapshot."""
+    """Format a snapshot value."""
     if isinstance(value, dict):
         return ", ".join(f"{k}: {v}" for k, v in value.items())
     return str(value)
 
 def _generate_runtime_reactions_markdown(inventory: Dict[str, Any], lang: str) -> str:
-    """Genera il markdown per le reazioni runtime attive."""
+    """Generate the markdown for active runtime reactions."""
     rows = [
         [
             item["reaction_id"],
@@ -214,7 +214,7 @@ def _generate_runtime_reactions_markdown(inventory: Dict[str, Any], lang: str) -
     return _generate_table(headers, rows, lang)
 
 def _generate_reactions_markdown(inventory: Dict[str, Any], lang: str) -> str:
-    """Genera il markdown per le reazioni configurate."""
+    """Generate the markdown for configured reactions."""
     rows = [
         [
             item["reaction_id"],
@@ -229,7 +229,7 @@ def _generate_reactions_markdown(inventory: Dict[str, Any], lang: str) -> str:
     return _generate_table(headers, rows, lang)
 
 def _generate_lighting_markdown(inventory: Dict[str, Any], lang: str) -> str:
-    """Genera il markdown per il runtime illuminazione."""
+    """Generate the markdown for the lighting runtime."""
     lighting = inventory["diagnostics_summary"].get("lighting", {})
     rows = []
     for room_id, value in sorted(dict(lighting.get("last_scene_by_room") or {}).items()):
@@ -253,7 +253,7 @@ def _generate_lighting_markdown(inventory: Dict[str, Any], lang: str) -> str:
     return _generate_table(headers, rows, lang)
 
 def _generate_room_markdown(room: Dict[str, Any], lang: str) -> str:
-    """Genera il markdown per una stanza."""
+    """Generate the markdown for a room."""
     rows = [
         ["Stanza", room["room_id"]],
         ["Nome visualizzato", room["display_name"]],

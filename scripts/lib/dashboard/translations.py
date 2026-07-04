@@ -3,14 +3,14 @@ from typing import Dict
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "it": {
-        # Titoli delle sezioni
+        # Section titles
         "Runtime": "Runtime",
         "Learning And Events": "Apprendimento ed Eventi",
         "Runtime Reactions": "Reazioni Runtime",
         "Test Lab": "Laboratorio di Test",
         "Developer Actions": "Azioni Sviluppatore",
         "All Heima Entities": "Tutte le Entità Heima",
-        # Titoli delle card
+        # Card titles
         "Runtime Diagnostics": "Diagnostica Sistema",
         "Core Runtime Entities": "Entità Runtime Principali",
         "Runtime Trend": "Andamento Runtime",
@@ -23,7 +23,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "Configured Reactions": "Reazioni Configurate",
         "Lighting Runtime": "Runtime Illuminazione",
         "Uncategorized Heima Entities": "Entità Heima Non Categorizzate",
-        # Etichette
+        # Labels
         "House State": "Stato Casa",
         "Anyone Home": "Presenza in Casa",
         "People Count": "Numero Persone",
@@ -53,13 +53,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "Reset Test Lab": "Reimposta Laboratorio di Test",
     },
     "en": {
-        # Default: stesso testo originale
+        # Default: same text as the original
         "Runtime": "Runtime",
         "Learning And Events": "Learning And Events",
-        # ... (copia dei test originali)
+        # ... (copy of the original strings)
     },
 }
 
 def translate(key: str, lang: str = "it") -> str:
-    """Traduce una chiave nella lingua specificata."""
+    """Translate a key into the given language."""
     return TRANSLATIONS.get(lang, {}).get(key, key)

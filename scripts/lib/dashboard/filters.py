@@ -2,18 +2,18 @@
 from typing import List, Dict, Any, Set, Tuple, Optional
 from ..utils import domain, object_id, slug
 
-# Pattern per categorizzare le entità
+# Patterns to categorize entities
 LEARNING_PATTERNS = ("learning", "proposal", "reaction", "event_store", "last_event")
 ANOMALY_PATTERNS = ("anomaly", "invariant", "alert")
 OCCUPANCY_PATTERNS = ("occupancy", "anonymous_presence", "anyone_home", "people_", "person_")
 HEATING_PATTERNS = ("heating",)
 SECURITY_PATTERNS = ("security",)
 
-# Priorità dei domini (più alto = più importante)
+# Domain priority (higher = more important)
 DOMAIN_PRIORITY = {
-    "binary_sensor": 4,  # Stato (es. presenza)
-    "sensor": 3,         # Dati (es. temperatura)
-    "switch": 2,         # Controllo
+    "binary_sensor": 4,  # State (e.g. presence)
+    "sensor": 3,         # Data (e.g. temperature)
+    "switch": 2,         # Control
     "light": 2,
     "climate": 2,
     "button": 1,
@@ -21,7 +21,7 @@ DOMAIN_PRIORITY = {
     "number": 1,
 }
 
-# Priorità dei pattern (più alto = più importante)
+# Pattern priority (higher = more important)
 PATTERN_PRIORITY = {
     "house_state": 10,
     "security_state": 10,
@@ -33,7 +33,7 @@ PATTERN_PRIORITY = {
 }
 
 def get_entity_priority(entity_id: str) -> int:
-    """Calcola la priorità di un'entità in base a dominio e pattern."""
+    """Compute an entity's priority based on domain and pattern."""
     priority = DOMAIN_PRIORITY.get(domain(entity_id), 0)
     object_id_part = object_id(entity_id)
 
@@ -49,15 +49,15 @@ def sort_entities(
     state_by_id: Dict[str, Dict[str, Any]],
     max_entities: int = 30,
 ) -> List[str]:
-    """Ordina le entità per priorità e nome, e le troncate a max_entities."""
-    # Assegna priorità e ordina
+    """Sort entities by priority and name, and truncate to max_entities."""
+    # Assign priority and sort
     entities_with_priority = [
         (entity_id, get_entity_priority(entity_id))
         for entity_id in entity_ids
     ]
-    entities_with_priority.sort(key=lambda x: (-x[1], x[0]))  # Ordina per priorità (desc) e nome (asc)
+    entities_with_priority.sort(key=lambda x: (-x[1], x[0]))  # Sort by priority (desc) and name (asc)
 
-    # Estrai gli ID ordinati
+    # Extract the sorted IDs
     sorted_entities = [e[0] for e in entities_with_priority]
     return sorted_entities[:max_entities]
 
@@ -67,7 +67,7 @@ def filter_entities_by_patterns(
     *,
     exclude: Optional[Set[str]] = None,
 ) -> List[str]:
-    """Filtra le entità in base a pattern nel loro object_id."""
+    """Filter entities based on patterns in their object_id."""
     excluded = exclude or set()
     result = []
     for entity_id in entity_ids:

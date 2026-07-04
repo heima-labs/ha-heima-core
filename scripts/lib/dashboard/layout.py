@@ -12,7 +12,7 @@ def calculate_max_columns(entities: List[str], min_width_per_entity: int = 20) -
     return 4
 
 def get_grid_layout(cards: List[str], max_columns: int = 4) -> str:
-    """Genera la struttura YAML per un grid layout."""
+    """Generate the YAML structure for a grid layout."""
     lines = [
         "  - type: grid",
         f"    columns: {max_columns}",
