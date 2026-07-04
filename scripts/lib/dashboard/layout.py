@@ -3,8 +3,8 @@ from typing import List, Dict, Any
 
 def calculate_max_columns(entities: List[str], min_width_per_entity: int = 20) -> int:
     """
-    Calcola il numero massimo di colonne in base alla lunghezza media dei nomi delle entità.
-    Regola empirica: se la media supera `min_width_per_entity * 2`, riduci le colonne.
+    Compute the maximum number of columns based on the average length of entity names.
+    Empirical rule: if the average exceeds `min_width_per_entity * 2`, reduce the columns.
     """
     avg_length = sum(len(e) for e in entities) / len(entities) if entities else 0
     if avg_length > min_width_per_entity * 2:
