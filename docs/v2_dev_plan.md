@@ -117,19 +117,18 @@ These constraints must never be violated. See spec §16 for rationale.
 | AE | Camera Privacy Guard & Extensible Entity Actions | `DONE` | AD, MH |
 | MH | Manual Hold Framework | `DONE` | AB, AE |
 | AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
-| AG | Translate Developer Scripts, Docs, and Specs to English | `IN PROGRESS` | AF |
+| AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI.
-**Active slice:** Phase AG — Translate Developer Scripts, Docs, and Specs to English.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
+**Active slice:** none — Phase AG complete, merged onto `feat/remove-hardcoded-italian`, not yet merged into `feat/v2`/`main`.
 **Branch:** `feat/remove-hardcoded-italian`.
 **Next action:**
-Implement AG3 (developer scripts), then AG4a (operational docs), then AG4b (canonical specs,
-dedicated review), then AG5 (final verification). AG1/AG2 were dropped — see the Phase AG spec
-revision note.
+Merge `feat/remove-hardcoded-italian` into `feat/v2` (or wherever the developer wants it), then
+pick the next planned slice (e.g. Phase AB — Smart Lighting Automation, still `PLANNED`).
 
 ### Current Working Notes
 
@@ -3412,7 +3411,7 @@ domain-specific, not a generic HA automation clone.
 
 ## Phase AG — Translate Developer Scripts, Docs, and Specs to English
 
-**Status:** `IN PROGRESS`
+**Status:** `DONE`
 **Branch:** `feat/remove-hardcoded-italian`
 **Depends on:** AF
 
@@ -3521,10 +3520,33 @@ AG3–AG5, renumbered below). No runtime/UI/config-flow code is touched by this 
    - Perform targeted repository searches as a final manual review aid; do not add a permanent CI
      language gate.
    - Acceptance:
-     - [ ] `scripts/ci_local.sh` passes.
-     - [ ] Manual repository review finds no Italian text outside the documented exceptions.
-     - [ ] Relevant live tests pass or are documented as not required because only docs/comments
-       changed.
+     - [x] `scripts/ci_local.sh` passes (1594 tests, lint, format all green across every commit).
+     - [x] Manual repository review finds no Italian text outside the documented exceptions
+       (verified via broad-wordlist grep sweeps across every AG-touched file; one missed
+       multi-line docstring in `layout.py` found and fixed during this sweep).
+     - [x] `047_darkness_assist_fire_live.py` and `060_lighting_schedule.py` had only
+       print/error-message text translated, no logic change; verified via `py_compile` and the
+       full unit test suite. Not run against a live HA instance in this session (none available);
+       documented here as not required since only text changed.
+
+### AG completion summary (2026-07-04)
+
+- AG1/AG2 dropped (see spec revision note above) — `is_it` runtime localization preserved.
+- AG3: dev script comments/docstrings/output translated (`pyproject.toml`,
+  `scripts/generate_debug_dashboard.py`, `scripts/lib/dashboard/*.py`, `scripts/lib/utils.py`,
+  `scripts/live_tests/047_darkness_assist_fire_live.py`,
+  `scripts/live_tests/060_lighting_schedule.py`). Dashboard-rendered content (card titles, table
+  labels generated via `translate()`) intentionally left in Italian, same category as `is_it`.
+- AG4a: `CLAUDE.md`, `docs/v2_dev_plan.md` residual fragments (Phases O–U), `scripts/README.md`,
+  `docs/examples/heima_security_presence_panel.yaml`, and the three adapter specs translated.
+  `docs/DEVELOPMENT_PLAN.md` marked `SUPERSEDED` instead of translated (describes v1, replaced by
+  this document). `heima_non_admin_dashboard_spec.md`'s one hit was an intentional Italian UI-copy
+  example, left as-is.
+- AG4b: `heima_v2_spec.md`, `options_flow_ux_spec.md`, `calendar_domain_spec.md`,
+  `learning_system_spec.md` translated with a numeric-token diff review per file to confirm no
+  threshold/contract drift. Calendar keyword lists and `is_it`-example UI text preserved and
+  annotated inline as intentional exceptions.
+- Commits: `9ed842a` (AG3+AG4a), `9ae6d1c` (AG4b), `af5d058` (AG5 fix).
 
 ### Current open items
 
