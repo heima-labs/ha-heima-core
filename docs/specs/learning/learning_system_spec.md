@@ -1426,8 +1426,8 @@ Normative rule:
 
 | Field | Why |
 |---|---|
-| `entity_id` | Granularità per entità: Heima impara quale specifica luce l'utente tocca, non solo la stanza |
-| `room_id` | Contesto stanza per il grouping in scene candidate (fase 2 di P9) |
+| `entity_id` | Per-entity granularity: Heima learns which specific light the user touches, not just the room |
+| `room_id` | Room context for grouping into scene candidates (phase 2 of P9) |
 | `action` | Both "on" and "off" are learnable; going to bed at 23:00 is as valuable as waking at 07:00 |
 | `scene` | When a named scene is activated, the proposal can replicate it exactly, not just "turn on" |
 | `brightness` | Dim at 10% warm for cinema vs full brightness for cooking — same action, different intent |
@@ -1686,18 +1686,18 @@ The main remaining gap is stronger provenance for arbitrary `script.turn_on` flo
 entities across domains; the current implementation already applies short-lived batch provenance as a fallback,
 but does not yet reconstruct the full concrete entity set touched by every script.
 
-Rilevare configurazioni ricorrenti di luci per stanza e giorno della settimana, e proporre
-all'utente di automatizzarle come una reazione temporizzata. L'analisi avviene in tre fasi:
+Detect recurring light configurations per room and day of week, and propose
+that the user automate them as a scheduled reaction. The analysis happens in three phases:
 
-1. **Entity-level pattern detection** — per ogni `(entity_id, action, weekday)`, rileva se
-   l'entità viene modificata in modo ricorrente a un orario consistente.
-2. **Scene candidate grouping** — raggruppa le entità della stessa stanza con `scheduled_min`
-   simili (entro `SCENE_GROUP_WINDOW_MIN = 15 min`) in un'unica "scena candidata".
-3. **Proposal emission** — emette una `ReactionProposal` per ogni scena candidata, con la lista
-   completa degli stati entità da applicare.
+1. **Entity-level pattern detection** — for each `(entity_id, action, weekday)`, detects whether
+   the entity is changed recurringly at a consistent time.
+2. **Scene candidate grouping** — groups entities of the same room with similar `scheduled_min`
+   (within `SCENE_GROUP_WINDOW_MIN = 15 min`) into a single "candidate scene".
+3. **Proposal emission** — emits a `ReactionProposal` for each candidate scene, with the full
+   list of entity states to apply.
 
-Questo approccio cattura l'intento reale dell'utente: "ogni lunedì sera configuro il living così",
-senza frammentare in 4-8 proposte separate per ogni singola luce.
+This approach captures the user's actual intent: "every Monday evening I set up the living room
+like this", instead of fragmenting it into 4-8 separate proposals for every single light.
 
 ### P9.2 Algorithm
 
@@ -1748,21 +1748,21 @@ For each key (entity_id, action, weekday):
     )
 ```
 
-`_median_int(values)`: mediana dei valori non-None; `None` se meno di `MIN_OCCURRENCES // 2`
-valori sono presenti (luce senza dimmer o attributo non disponibile).
+`_median_int(values)`: median of non-None values; `None` if fewer than `MIN_OCCURRENCES // 2`
+values are present (light with no dimmer, or attribute unavailable).
 
-`_mode_rgb(values)`: moda dei vettori `[r,g,b]` non-None (confronto esatto); `None` se
-misto o insufficiente. La rgb ha precedenza su `color_temp_kelvin` se entrambi presenti.
+`_mode_rgb(values)`: mode of non-None `[r,g,b]` vectors (exact comparison); `None` if
+mixed or insufficient. RGB takes precedence over `color_temp_kelvin` if both are present.
 
-#### Fase 2 — Scene candidate grouping
+#### Phase 2 — Scene candidate grouping
 
 ```
-# Raggruppa per (room_id, weekday), poi clusterizza per scheduled_min
+# Group by (room_id, weekday), then cluster by scheduled_min
 
 for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
     sorted_patterns = sorted(patterns, key=lambda p: p.scheduled_min)
 
-    # Gap-based clustering: nuovo cluster se gap > SCENE_GROUP_WINDOW_MIN
+    # Gap-based clustering: new cluster if gap > SCENE_GROUP_WINDOW_MIN
     clusters = []
     current_cluster = [sorted_patterns[0]]
     for p in sorted_patterns[1:]:
@@ -1775,62 +1775,62 @@ for (room_id, weekday), patterns in group_by_room_weekday(entity_patterns):
 
     for cluster in clusters:
         scheduled_min = median([p.scheduled_min for p in cluster])
-        confidence    = mean([p.confidence for p in cluster])   # media, non min
+        confidence    = mean([p.confidence for p in cluster])   # mean, not min
         entity_steps  = [p.as_entity_step() for p in cluster]
         Emit SceneCandidate(room_id, weekday, scheduled_min, confidence, entity_steps)
 ```
 
-**Confidence del gruppo:** media delle confidence individuali. Riflette la qualità complessiva del
-pattern; penalizza meno i casi in cui la maggioranza delle entità è consistente ma una sola è
-leggermente più variabile.
+**Group confidence:** average of the individual confidences. Reflects the pattern's overall
+quality; penalizes less the cases where most entities are consistent but only one is
+slightly more variable.
 
-**Confidence operativa v1:** la confidence lighting NON dovrebbe dipendere solo da IQR.
-Anche pattern con IQR molto basso ma evidenza minima (es. appena 5 eventi su 2 settimane) dovrebbero
-restare leggermente meno confident di pattern osservati più spesso e su più settimane. In v1:
-- IQR resta il driver principale
-- `observations_count` e `weeks_observed` agiscono come moltiplicatori moderati, non come gate nuovi
+**v1 operational confidence:** lighting confidence should NOT depend on IQR alone.
+Even patterns with a very low IQR but minimal evidence (e.g. just 5 events over 2 weeks) should
+remain slightly less confident than patterns observed more often and over more weeks. In v1:
+- IQR remains the main driver
+- `observations_count` and `weeks_observed` act as moderate multipliers, not as new gates
 
-**Noise gate operativo v1:** oltre alla confidence, il lighting analyzer può scartare pattern con
-evidenza appena minima ma già troppo dispersi nel tempo. In pratica:
-- un pattern lighting con solo `5` osservazioni su `2` settimane e `IQR` ancora ampia non dovrebbe
-  diventare proposal solo perché supera di poco il `min_confidence` globale
-- in v1 è accettabile introdurre un gate conservativo del tipo:
-  - evidenza minima (`observations_count <= 5` e `weeks_observed <= 2`)
-  - dispersione temporale già larga (`IQR > 30`)
-  - quindi pattern scartato come rumoroso
+**v1 operational noise gate:** besides confidence, the lighting analyzer can discard patterns with
+just-minimal evidence that are still too spread out in time. In practice:
+- a lighting pattern with only `5` observations over `2` weeks and still-wide `IQR` should not
+  become a proposal just because it slightly exceeds the global `min_confidence`
+- in v1 it's acceptable to introduce a conservative gate along the lines of:
+  - minimal evidence (`observations_count <= 5` and `weeks_observed <= 2`)
+  - already-wide temporal dispersion (`IQR > 30`)
+  - the pattern is then discarded as noisy
 
-Questo NON introduce sessioni multi-evento o un nuovo modello: è solo un filtro pragmatico per
-ridurre proposal lighting deboli ma formalmente valide.
+This does NOT introduce multi-event sessions or a new model: it's just a pragmatic filter to
+reduce weak-but-formally-valid lighting proposals.
 
-#### Finestra runtime adattiva
+#### Adaptive runtime window
 
-`window_half_min` per lighting non dovrebbe essere sempre fisso. In v1 può essere derivato dalla
-stabilità del cluster:
-- pattern molto stretti → finestra più piccola
-- pattern più variabili ma ancora accettati → finestra più larga
+`window_half_min` for lighting shouldn't always be fixed. In v1 it can be derived from the
+cluster's stability:
+- very tight patterns → smaller window
+- more variable but still-accepted patterns → wider window
 
 Recommended v1 mapping:
 - `IQR <= 5` → `window_half_min = 5`
 - `IQR <= 15` → `window_half_min = 10`
-- altrimenti → `window_half_min = 15`
+- otherwise → `window_half_min = 15`
 
-#### Fase 3 — Proposal emission
+#### Phase 3 — Proposal emission
 
-Per ogni `SceneCandidate`, emetti una `ReactionProposal` (vedi §P9.3).
+For every `SceneCandidate`, emit a `ReactionProposal` (see §P9.3).
 
 **Why IQR, not std-dev:** same rationale as `PresencePatternAnalyzer` — robust to outliers.
 
-**Why `MIN_WEEKS=2`:** previene che una settimana di comportamento consistente (es. settimana di
-vacanza) generi proposte spurie. Mancante in `PresencePatternAnalyzer` (open item futuro).
+**Why `MIN_WEEKS=2`:** prevents a single week of consistent behavior (e.g. a vacation week)
+from generating spurious proposals. Missing in `PresencePatternAnalyzer` (future open item).
 
-**Why entity-level + grouping, not session detection on raw events:** il session detection richiede
-clustering temporale sugli eventi grezzi e una misura di similarità tra sessioni diverse — complessità
-significativa. Il grouping post-analisi (fase 2) ottiene lo stesso risultato lavorando su mediane già
-calcolate, con un algoritmo molto più semplice.
+**Why entity-level + grouping, not session detection on raw events:** session detection would require
+temporal clustering over raw events and a similarity measure between different sessions — significant
+complexity. Post-analysis grouping (phase 2) achieves the same result by working on already-computed
+medians, with a much simpler algorithm.
 
-**Why no HA scene creation:** Heima non crea scene HA persistenti. Applica gli stati entità
-direttamente tramite il service `light.turn_on`/`light.turn_off`. La logica è self-contained e non
-dipende dalla configurazione scene dell'utente.
+**Why no HA scene creation:** Heima does not create persistent HA scenes. It applies entity states
+directly via the `light.turn_on`/`light.turn_off` service. The logic is self-contained and does not
+depend on the user's scene configuration.
 
 ### P9.2b Product direction: learned lighting requires more than clock time
 
@@ -1904,13 +1904,13 @@ ReactionProposal(
             }
         ],
         "entity_steps": [
-            # Un dict per entità nel cluster
+            # One dict per entity in the cluster
             {
                 "entity_id": "light.living_main",
                 "action": "on",
-                "brightness": 128,          # int o None
-                "color_temp_kelvin": 3000,  # int o None
-                "rgb_color": None,          # [r,g,b] o None
+                "brightness": 128,          # int or None
+                "color_temp_kelvin": 3000,  # int or None
+                "rgb_color": None,          # [r,g,b] or None
             },
             {
                 "entity_id": "light.living_spot",
@@ -1937,8 +1937,8 @@ ReactionProposal(
 f"LightingPatternAnalyzer|context_conditioned_lighting_scene|{room_id}|{weekday}|{scheduled_min}"
 ```
 
-Il `scheduled_min` nel fingerprint è la mediana del cluster, arrotondata a 5 minuti per evitare
-che piccole variazioni di un'iterazione all'altra creino proposte duplicate.
+The `scheduled_min` in the fingerprint is the cluster's median, rounded to 5 minutes to avoid
+small iteration-to-iteration variations creating duplicate proposals.
 
 ```python
 fingerprint_min = (scheduled_min // 5) * 5
@@ -1980,10 +1980,10 @@ Minor drift that SHOULD NOT create a separate logical scene:
 
 #### Trigger — RuntimeScheduler
 
-Usa il `RuntimeScheduler` già presente. La reaction implementa `scheduled_jobs(entry_id)` (nuovo
-hook no-op su `HeimaReaction` base). L'engine raccoglie i job da tutte le reaction in
-`scheduled_runtime_jobs()` e li passa al coordinator via `_sync_scheduler()`. Quando il job
-scatta → eval cycle → `evaluate()` verifica la finestra e produce gli step.
+Uses the already-present `RuntimeScheduler`. The reaction implements `scheduled_jobs(entry_id)` (a
+new no-op hook on the `HeimaReaction` base). The engine collects jobs from all reactions in
+`scheduled_runtime_jobs()` and passes them to the coordinator via `_sync_scheduler()`. When the job
+fires → eval cycle → `evaluate()` checks the window and produces the steps.
 
 ```python
 def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
@@ -2000,28 +2000,28 @@ def scheduled_jobs(self, entry_id: str) -> dict[str, ScheduledRuntimeJob]:
     }
 ```
 
-`_next_due_monotonic()`: prossimo wall-clock in cui inizia la finestra
-`scheduled_min ± window_half_min` per il `weekday` configurato. L'implementazione reale deve
-gestire correttamente le finestre che attraversano mezzanotte.
+`_next_due_monotonic()`: the next wall-clock time at which the window
+`scheduled_min ± window_half_min` starts for the configured `weekday`. The real implementation must
+correctly handle windows that cross midnight.
 
 #### Evaluate — time-window check + debounce
 
-La finestra deve supportare wrap su mezzanotte. Il debounce non è legato semplicemente alla data
-wall-clock corrente, ma al giorno logico dell'occorrenza configurata: una schedule `00:05 ± 10 min`
-può iniziare il giorno precedente e non deve double-fire dopo mezzanotte.
+The window must support wrapping across midnight. Debounce is not tied simply to the current
+wall-clock date, but to the logical day of the configured occurrence: a `00:05 ± 10 min` schedule
+can start the previous day and must not double-fire after midnight.
 
 #### Runtime guardrails
 
-Le lighting reaction non dovrebbero bypassare i guardrail operativi del dominio lighting. In v1:
-- un `LightingScheduleReaction` può ancora emettere i suoi `ApplyStep`
-- ma gli step lighting reaction-generated devono passare anche da un `apply_filter` behavior che
-  rispetta il manual hold della stanza
-- se `heima_lighting_hold_<room_id>` è attivo e la stanza è configurata con manual hold abilitato,
-  gli step lighting con `source="reaction:<...>"` dovrebbero essere bloccati con una ragione
-  esplicita tipo:
+Lighting reactions should not bypass the lighting domain's operational guardrails. In v1:
+- a `LightingScheduleReaction` can still emit its `ApplyStep`s
+- but reaction-generated lighting steps must also pass through an `apply_filter` behavior that
+  respects the room's manual hold
+- if `heima_lighting_hold_<room_id>` is active and the room is configured with manual hold enabled,
+  lighting steps with `source="reaction:<...>"` should be blocked with an explicit reason
+  such as:
   - `lighting.manual_hold:<room_id>`
 
-Questo è un guardrail runtime, non un cambio del modello di learning.
+This is a runtime guardrail, not a change to the learning model.
 
 #### Policy position for ordinary room lighting
 
@@ -2098,7 +2098,7 @@ ContextConditionedLightingReaction(
 )
 ```
 
-Istanziata da `_rebuild_configured_reactions()` quando `reaction_class == "ContextConditionedLightingReaction"`.
+Instantiated by `_rebuild_configured_reactions()` when `reaction_class == "ContextConditionedLightingReaction"`.
 
 ### P9.6 Registration
 
