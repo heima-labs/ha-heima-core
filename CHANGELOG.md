@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0] — 2026-07-07
+
+- Release implicit camera privacy manual holds when the configured alarm transitions from
+  `disarmed` to any armed state, allowing privacy policies to resume on the next arm cycle.
+- Preserve explicit `manual_hold_entity` behavior: helper-backed holds still remain active until
+  their helper is turned off.
+
 ## [0.9.0] — 2026-07-03
 
 Merge v2 architecture into `main`. Replaces the v1 hardcoded DAG
