@@ -355,6 +355,73 @@ def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
     )
 
 
+def test_engine_camera_privacy_external_hold_releases_when_alarm_arms_from_disarmed() -> None:
+    engine = _privacy_engine(hold_state="off")
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    engine._manual_hold_manager.activate_hold(
+        scope,
+        ManualHoldReason("external_off", "switch.front_privacy"),
+        release_policy="manual_clear",
+    )
+
+    engine.handle_security_state_changed_for_camera_privacy(
+        SimpleNamespace(
+            data={
+                "old_state": SimpleNamespace(state="disarmed"),
+                "new_state": SimpleNamespace(state="armed_night"),
+            }
+        )
+    )
+
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
+
+
+def test_engine_camera_privacy_external_hold_does_not_release_without_disarmed_to_armed() -> None:
+    engine = _privacy_engine(hold_state="off")
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    engine._manual_hold_manager.activate_hold(
+        scope,
+        ManualHoldReason("external_on", "switch.front_privacy"),
+        release_policy="manual_clear",
+    )
+
+    engine.handle_security_state_changed_for_camera_privacy(
+        SimpleNamespace(
+            data={
+                "old_state": SimpleNamespace(state="armed_night"),
+                "new_state": SimpleNamespace(state="disarmed"),
+            }
+        )
+    )
+
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == (
+        "manual_hold:switch:entity:switch.front_privacy:external_on"
+    )
+
+
+def test_engine_camera_privacy_alarm_arm_release_preserves_explicit_helper_hold() -> None:
+    engine = _privacy_engine(hold_state="on")
+    scope = ManualHoldScope("switch", "entity", "switch.front_privacy")
+    engine._manual_hold_manager.activate_hold(
+        scope,
+        ManualHoldReason("helper_on", "input_boolean.front_privacy_hold"),
+        release_policy="helper_off",
+    )
+
+    engine.handle_security_state_changed_for_camera_privacy(
+        SimpleNamespace(
+            data={
+                "old_state": SimpleNamespace(state="disarmed"),
+                "new_state": SimpleNamespace(state="armed_away"),
+            }
+        )
+    )
+
+    assert engine._manual_hold_manager.held_reason_for_scope(scope) == (
+        "manual_hold:switch:entity:switch.front_privacy:helper_on"
+    )
+
+
 def test_engine_heating_manual_hold_blocks_heating_step() -> None:
     engine = HeimaEngine.__new__(HeimaEngine)
     engine._manual_hold_manager = ManualHoldManager(monotonic=_Clock())

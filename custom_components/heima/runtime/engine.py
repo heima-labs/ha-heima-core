@@ -146,6 +146,10 @@ def _constraint_blocker(step: "ApplyStep", constraints: set[str]) -> str:
     return ""
 
 
+def _is_armed_security_state(state: str) -> bool:
+    return state in {"armed_away", "armed_home", "armed_night", "armed_vacation"}
+
+
 def _entity_domain(entity_id: str) -> str:
     return str(entity_id or "").split(".", 1)[0] or "unknown"
 
@@ -383,6 +387,16 @@ class HeimaEngine:
             ),
             release_policy="manual_clear",
         )
+
+    def handle_security_state_changed_for_camera_privacy(self, event: Event) -> None:
+        """Release implicit camera privacy holds when the alarm is armed from disarmed."""
+        old_state = self._normalize_security_event_state(event.data.get("old_state"))
+        new_state = self._normalize_security_event_state(event.data.get("new_state"))
+        if old_state != "disarmed" or not _is_armed_security_state(new_state):
+            return
+        for scope in self._camera_privacy_scopes_by_entity().values():
+            self._manual_hold_manager.release_scope(scope, reason_kind="external_off")
+            self._manual_hold_manager.release_scope(scope, reason_kind="external_on")
 
     def signal_burst_recent(self, room_id: str, signal_name: str, *, window_s: int) -> bool:
         """Return whether a canonical burst was observed recently for a room signal."""
@@ -1740,6 +1754,26 @@ class HeimaEngine:
             if privacy_entity.startswith("switch.") and hold_entity.startswith("input_boolean."):
                 holds[privacy_entity] = hold_entity
         return holds
+
+    def _normalize_security_event_state(self, state: Any) -> str:
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if not raw:
+            return ""
+        security = self._entry.options.get(OPT_SECURITY, {})
+        security = security if isinstance(security, dict) else {}
+        mapped_states = {
+            str(security.get("armed_away_value") or "armed_away").strip().lower(): "armed_away",
+            str(security.get("armed_home_value") or "armed_home").strip().lower(): "armed_home",
+            str(security.get("armed_night_value") or "armed_night").strip().lower(): "armed_night",
+            str(security.get("armed_vacation_value") or "armed_vacation")
+            .strip()
+            .lower(): "armed_vacation",
+        }
+        if raw in mapped_states:
+            return mapped_states[raw]
+        if raw in {"disarmed", "triggered", "pending", "arming", "unknown", "unavailable"}:
+            return raw
+        return ""
 
     def _sync_camera_privacy_explicit_holds(self) -> None:
         scopes = self._camera_privacy_scopes_by_entity()
