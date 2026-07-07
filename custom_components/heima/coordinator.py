@@ -1330,6 +1330,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self.engine.handle_smart_lighting_state_changed(event)
         if entity_id.startswith("switch."):
             self.engine.handle_camera_privacy_state_changed(event)
+        if entity_id == self._configured_security_state_entity(dict(self.entry.options)):
+            handle_security_change = getattr(
+                getattr(self, "engine", None),
+                "handle_security_state_changed_for_camera_privacy",
+                None,
+            )
+            if callable(handle_security_change):
+                handle_security_change(event)
         entity_class = self._classify_entity(entity_id)
         if entity_class is None:
             return

@@ -180,9 +180,13 @@ Target behavior for AE:
 - Configured `manual_hold_entity` maps to an explicit helper-backed hold for that scope.
 - External state changes on `privacy_entity` activate an implicit hold for that entity unless
   matched by a pending Heima apply.
-- The default release policy for implicit camera privacy holds is `manual_clear` unless configured
-  otherwise. Heima must not automatically resume changing camera privacy after a user manually
-  changes it without an explicit release rule.
+- The default release policy for implicit camera privacy holds is context-reset:
+  - a manual privacy switch change still blocks immediate re-application by Heima;
+  - the implicit hold is released when the configured alarm state entity transitions from
+    `disarmed` to any armed state (`armed_home`, `armed_away`, `armed_night`,
+    `armed_vacation`);
+  - explicit `manual_hold_entity` holds are not released by alarm transitions and remain tied to
+    the helper state.
 
 ### Heating Policy
 
