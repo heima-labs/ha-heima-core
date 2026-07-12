@@ -36,6 +36,7 @@ Related practical guides live outside this tree:
 - `core/events_and_notifications_spec.md` — event model + routing model (consolidated)
 - `core/event_catalog_spec.md` — stable canonical event taxonomy and payload envelope
 - `core/notification_recipients_spec.md` — logical notification recipients, groups, and routing rules
+- `core/resident_runtime_confirmation_spec.md` — draft vNext contract for resident approval of runtime actions and promotion to auto-apply
 - `core/security_mismatch_generalization_spec.md` — canonical `security.mismatch` taxonomy and compatibility contract
 - `core/runtime_scheduler_spec.md` — runtime timer scheduler
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
