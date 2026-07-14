@@ -199,6 +199,9 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
       `context_conditioned_lighting_scene`.
     - The descriptor provides occurrence identity and resident-facing text for mixed lighting
       scenes without adding lighting-specific branches to the runtime confirmation controller.
+    - Added configured-reaction edit support for `context_conditioned_lighting_scene`
+      `execution_policy.mode`, confirmation timeout, target recipients/groups, default route target
+      usage, and timeout behavior.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3738,12 +3741,12 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - setting brightness
      - mixed light-scene changes
    - Add reaction configuration support for `execution_policy.mode`, confirmation timeout, targets,
-     and timeout behavior. `TODO`
+     and timeout behavior. `DONE`
    - Acceptance:
      - [x] A learned/context-conditioned lighting scene in `ask_residents` creates a runtime
        request instead of applying immediately.
      - [x] Approving applies the stored lighting steps.
-     - [ ] Dismissing applies nothing.
+     - [x] Dismissing applies nothing.
 
 6. **AH6 — Confirmation statistics and promotion state**
    - Persist confirmation stats per reaction:

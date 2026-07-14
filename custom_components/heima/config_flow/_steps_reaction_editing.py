@@ -135,6 +135,16 @@ class _ReactionEditingStepsMixin:
                 user_input=user_input,
             )
 
+        if reaction_type == "context_conditioned_lighting_scene":
+            return await self._async_step_reactions_edit_context_conditioned_lighting_scene(
+                pid=pid,
+                reactions_cfg=reactions_cfg,
+                configured=configured,
+                labels_map=labels_map,
+                cfg=cfg,
+                user_input=user_input,
+            )
+
         if reaction_type == "scheduled_routine":
             return await self._async_step_reactions_edit_scheduled_routine(
                 pid=pid,
@@ -597,6 +607,57 @@ class _ReactionEditingStepsMixin:
         self._editing_reaction_id = None
         return await self.async_step_init()
 
+    async def _async_step_reactions_edit_context_conditioned_lighting_scene(
+        self,
+        *,
+        pid: str,
+        reactions_cfg: dict[str, Any],
+        configured: dict[str, Any],
+        labels_map: dict[str, str],
+        cfg: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> "FlowResult":
+        """Edit runtime execution policy for a contextual learned lighting scene."""
+        label = self._reaction_label_from_config(pid, cfg, labels_map)
+        defaults = self._runtime_confirmation_defaults_from_cfg(cfg)
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._runtime_confirmation_editor_schema(
+                    defaults,
+                    include_delete=True,
+                ),
+                description_placeholders={"reaction_description": label},
+            )
+
+        if bool(user_input.get("delete_reaction", False)):
+            self._deleting_reaction_id = pid
+            return await self.async_step_reactions_delete_confirm()
+
+        current_input, execution_policy, errors = self._normalize_runtime_confirmation_submission(
+            user_input=user_input,
+            defaults=defaults,
+        )
+        if errors:
+            return self.async_show_form(
+                step_id="reactions_edit_form",
+                data_schema=self._runtime_confirmation_editor_schema(
+                    current_input,
+                    include_delete=True,
+                ),
+                errors=errors,
+                description_placeholders={"reaction_description": label},
+            )
+
+        cfg["enabled"] = bool(current_input.get("enabled", True))
+        cfg["execution_policy"] = execution_policy
+        configured[pid] = cfg
+        reactions_cfg["configured"] = configured
+        self._store_reactions_options(reactions_cfg)
+        self._editing_reaction_id = None
+        return await self.async_step_init()
+
     async def _async_step_reactions_edit_room_contextual_lighting_assist(
         self,
         *,
@@ -867,3 +928,111 @@ class _ReactionEditingStepsMixin:
         self._deleting_reaction_id = None
         self._editing_reaction_id = None
         return await self.async_step_init()
+
+    def _runtime_confirmation_defaults_from_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        policy = cfg.get("execution_policy")
+        policy = dict(policy) if isinstance(policy, dict) else {}
+        confirmation = policy.get("confirmation")
+        confirmation = dict(confirmation) if isinstance(confirmation, dict) else {}
+        return {
+            "enabled": bool(cfg.get("enabled", True)),
+            "execution_mode": str(policy.get("mode") or "auto_apply"),
+            "confirmation_expires_in_minutes": int(confirmation.get("expires_in_minutes") or 10),
+            "confirmation_on_timeout": str(confirmation.get("on_timeout") or "skip"),
+            "confirmation_target_recipients": ", ".join(
+                self._runtime_confirmation_string_list(confirmation.get("target_recipients"))
+            ),
+            "confirmation_target_groups": ", ".join(
+                self._runtime_confirmation_string_list(confirmation.get("target_groups"))
+            ),
+            "confirmation_use_default_route_targets": bool(
+                confirmation.get("use_default_route_targets", True)
+            ),
+            "delete_reaction": False,
+        }
+
+    def _normalize_runtime_confirmation_submission(
+        self,
+        *,
+        user_input: dict[str, Any],
+        defaults: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        errors: dict[str, str] = {}
+        mode = str(user_input.get("execution_mode") or defaults.get("execution_mode") or "").strip()
+        if mode not in self._runtime_confirmation_mode_options():
+            errors["execution_mode"] = "invalid_option"
+            mode = str(defaults.get("execution_mode") or "auto_apply")
+
+        on_timeout = str(
+            user_input.get("confirmation_on_timeout")
+            or defaults.get("confirmation_on_timeout")
+            or ""
+        ).strip()
+        if on_timeout not in self._runtime_confirmation_timeout_options():
+            errors["confirmation_on_timeout"] = "invalid_option"
+            on_timeout = str(defaults.get("confirmation_on_timeout") or "skip")
+
+        try:
+            expires_in = int(
+                user_input.get("confirmation_expires_in_minutes")
+                or defaults.get("confirmation_expires_in_minutes")
+                or 10
+            )
+            if expires_in < 1 or expires_in > 240:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["confirmation_expires_in_minutes"] = "invalid_number"
+            expires_in = int(defaults.get("confirmation_expires_in_minutes") or 10)
+
+        target_recipients = self._runtime_confirmation_string_list(
+            user_input.get("confirmation_target_recipients", "")
+        )
+        target_groups = self._runtime_confirmation_string_list(
+            user_input.get("confirmation_target_groups", "")
+        )
+        use_default_route_targets = bool(
+            user_input.get(
+                "confirmation_use_default_route_targets",
+                defaults.get("confirmation_use_default_route_targets", True),
+            )
+        )
+
+        current_input = {
+            "enabled": bool(user_input.get("enabled", defaults.get("enabled", True))),
+            "execution_mode": mode,
+            "confirmation_expires_in_minutes": expires_in,
+            "confirmation_on_timeout": on_timeout,
+            "confirmation_target_recipients": ", ".join(target_recipients),
+            "confirmation_target_groups": ", ".join(target_groups),
+            "confirmation_use_default_route_targets": use_default_route_targets,
+            "delete_reaction": False,
+        }
+        execution_policy = {
+            "mode": mode,
+            "confirmation": {
+                "expires_in_minutes": expires_in,
+                "on_timeout": on_timeout,
+                "target_recipients": target_recipients,
+                "target_groups": target_groups,
+                "use_default_route_targets": use_default_route_targets,
+            },
+        }
+        return current_input, execution_policy, errors
+
+    @staticmethod
+    def _runtime_confirmation_string_list(value: Any) -> list[str]:
+        if isinstance(value, str):
+            raw_items = value.replace("\n", ",").split(",")
+        elif isinstance(value, list | tuple | set):
+            raw_items = list(value)
+        else:
+            raw_items = []
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in raw_items:
+            normalized = str(item or "").strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+        return result

@@ -55,6 +55,58 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
             return {"on": "Accendi", "off": "Spegni"}
         return {"on": "Turn on", "off": "Turn off"}
 
+    @staticmethod
+    def _runtime_confirmation_mode_options() -> dict[str, str]:
+        return {
+            "auto_apply": "Apply automatically",
+            "ask_residents": "Ask residents",
+        }
+
+    @staticmethod
+    def _runtime_confirmation_timeout_options() -> dict[str, str]:
+        return {
+            "skip": "Skip",
+            "apply": "Apply",
+        }
+
+    def _runtime_confirmation_editor_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        include_delete: bool,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        schema_fields: dict[Any, Any] = {
+            vol.Optional("enabled", default=bool(defaults.get("enabled", True))): bool,
+            vol.Required(
+                "execution_mode",
+                default=str(defaults.get("execution_mode") or "auto_apply"),
+            ): vol.In(self._runtime_confirmation_mode_options()),
+            vol.Optional(
+                "confirmation_expires_in_minutes",
+                default=int(defaults.get("confirmation_expires_in_minutes", 10)),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=240)),
+            vol.Required(
+                "confirmation_on_timeout",
+                default=str(defaults.get("confirmation_on_timeout") or "skip"),
+            ): vol.In(self._runtime_confirmation_timeout_options()),
+            vol.Optional(
+                "confirmation_target_recipients",
+                default=str(defaults.get("confirmation_target_recipients") or ""),
+            ): str,
+            vol.Optional(
+                "confirmation_target_groups",
+                default=str(defaults.get("confirmation_target_groups") or ""),
+            ): str,
+            vol.Optional(
+                "confirmation_use_default_route_targets",
+                default=bool(defaults.get("confirmation_use_default_route_targets", True)),
+            ): bool,
+        }
+        if include_delete:
+            schema_fields[vol.Optional("delete_reaction", default=False)] = bool
+        return self._with_suggested(vol.Schema(schema_fields), defaults)
+
     def _signal_threshold_mode_options(self) -> dict[str, str]:
         language = self._flow_language()
         if language.startswith("it"):

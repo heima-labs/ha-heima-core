@@ -4883,6 +4883,96 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
 
 
 @pytest.mark.asyncio
+async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtime_policy_fields():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    schema_keys = {str(key.schema) for key in result["data_schema"].schema}
+    assert "execution_mode" in schema_keys
+    assert "confirmation_expires_in_minutes" in schema_keys
+    assert "confirmation_on_timeout" in schema_keys
+    assert "confirmation_target_recipients" in schema_keys
+    assert "confirmation_target_groups" in schema_keys
+    assert "confirmation_use_default_route_targets" in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 7,
+            "confirmation_on_timeout": "apply",
+            "confirmation_target_recipients": "stefano, laura, stefano",
+            "confirmation_target_groups": "family",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy"] == {
+        "mode": "ask_residents",
+        "confirmation": {
+            "expires_in_minutes": 7,
+            "on_timeout": "apply",
+            "target_recipients": ["stefano", "laura"],
+            "target_groups": ["family"],
+            "use_default_route_targets": False,
+        },
+    }
+    assert cfg["reaction_type"] == "context_conditioned_lighting_scene"
+    assert cfg["entity_steps"] == [{"entity_id": "light.studio_main", "action": "off"}]
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_returns_init_when_reaction_missing():
     flow = _flow({"reactions": {"configured": {}, "labels": {}}})
     flow._editing_reaction_id = "missing"
