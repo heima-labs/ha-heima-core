@@ -219,6 +219,8 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
     - Added HA-admin-gated coordinator action boundary for promotion decisions:
       approve auto-apply, dismiss "not now", and disable future prompts.
     - Revoked/non-pending promotion reviews cannot be approved at this boundary.
+    - Added options-flow promotion review step that lists pending reviews and invokes the
+      coordinator boundary for the three admin decisions.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3794,17 +3796,17 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - viewing/editing `execution_policy.mode`
      - configuring runtime confirmation targets and timeout behavior
      - viewing confirmation stats
-     - viewing pending promotion reviews
-     - approving auto-apply. `DONE` at coordinator boundary; UI wiring still pending.
-     - dismissing "not now". `DONE` at coordinator boundary; UI wiring still pending.
-     - disabling future promotion prompts. `DONE` at coordinator boundary; UI wiring still pending.
+     - viewing pending promotion reviews. `DONE`
+     - approving auto-apply. `DONE`
+     - dismissing "not now". `DONE`
+     - disabling future promotion prompts. `DONE`
      - resetting stats/cooldown
      - reverting promoted `auto_apply` back to `ask_residents`
    - Promotion notifications remain informational only and must not contain a direct approve action.
    - Acceptance:
-     - [x] Only HA-admin-gated coordinator boundary can approve promotion; options-flow UI wiring
-       remains pending.
-     - [ ] Sending a promotion notification to a non-admin route grants no approval authority.
+     - [x] Only HA-admin-gated options-flow UI/coordinator boundary can approve promotion.
+     - [x] Sending a promotion notification to a non-admin route grants no approval authority
+       because notifications remain informational and expose no action.
      - [x] Admin "not now" starts/increments cooldown.
      - [x] Admin "do not ask again" disables future promotion prompts only for that reaction.
 

@@ -14,6 +14,10 @@ from custom_components.heima.const import (
     SIGNAL_DISCOVERY_ANALYZER_ID,
     SIGNAL_DISCOVERY_REACTION_TYPE,
 )
+from custom_components.heima.coordinator import (
+    PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    PROMOTION_ACTION_DISMISS_NOT_NOW,
+)
 from custom_components.heima.runtime.analyzers.base import (
     PROPOSAL_LIFECYCLE_SUGGESTION_TYPE,
     ReactionProposal,
@@ -4880,6 +4884,115 @@ async def test_reactions_edit_form_for_room_lighting_assist_uses_lux_and_light_f
     assert "primary_signal_entities" not in schema_keys
     assert "pre_condition_min" not in schema_keys
     assert "action_entities" not in schema_keys
+
+
+@pytest.mark.asyncio
+async def test_runtime_promotion_reviews_calls_admin_boundary():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {"mode": "ask_residents"},
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "pending_admin_review",
+                        "target_mode": "auto_apply",
+                    }
+                },
+            }
+        }
+    )
+    coordinator = SimpleNamespace(async_review_runtime_promotion=AsyncMock(return_value=True))
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    form = await flow.async_step_runtime_promotion_reviews()
+    result = await flow.async_step_runtime_promotion_reviews(
+        {
+            "reaction": "r1",
+            "action": PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+        }
+    )
+
+    assert form["type"] == "form"
+    assert form["step_id"] == "runtime_promotion_reviews"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    coordinator.async_review_runtime_promotion.assert_awaited_once_with(
+        "r1",
+        PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_promotion_reviews_ignores_revoked_reviews():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {"mode": "ask_residents"},
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "revoked",
+                        "target_mode": "auto_apply",
+                    }
+                },
+            }
+        }
+    )
+    coordinator = SimpleNamespace(async_review_runtime_promotion=AsyncMock(return_value=True))
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_runtime_promotion_reviews()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    coordinator.async_review_runtime_promotion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_runtime_promotion_reviews_surfaces_rejected_boundary_result():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {"mode": "ask_residents"},
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "pending_admin_review",
+                        "target_mode": "auto_apply",
+                    }
+                },
+            }
+        }
+    )
+    coordinator = SimpleNamespace(async_review_runtime_promotion=AsyncMock(return_value=False))
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    result = await flow.async_step_runtime_promotion_reviews(
+        {
+            "reaction": "r1",
+            "action": PROMOTION_ACTION_DISMISS_NOT_NOW,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"]["base"] == "promotion_review_not_available"
 
 
 @pytest.mark.asyncio

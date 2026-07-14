@@ -10,6 +10,11 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
+from ..coordinator import (
+    PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
+    PROMOTION_ACTION_DISMISS_NOT_NOW,
+)
 from ..runtime.reactions import validate_contextual_lighting_contract
 from ._common import _entity_selector, _number_box_selector
 from ._reaction_builders import _lux_on_buckets_from_primary_bucket
@@ -53,6 +58,82 @@ class _ReactionEditingStepsMixin:
         # Only persist IDs that are actually registered
         muted = [rid for rid in muted if rid in reaction_labels]
         self._store_reactions_options({"muted": muted})
+        return await self.async_step_init()
+
+    async def async_step_runtime_promotion_reviews(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Review pending resident-confirmation promotion decisions."""
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        labels_map: dict[str, str] = reactions_cfg.get("labels", {})
+        reviews = {
+            reaction_id: dict(review)
+            for reaction_id, review in dict(reactions_cfg.get("promotion_reviews", {})).items()
+            if isinstance(review, dict)
+            and str(review.get("status") or "") == "pending_admin_review"
+            and reaction_id in configured
+        }
+        if not reviews:
+            return await self.async_step_init()
+
+        review_options = {
+            reaction_id: self._reaction_label_from_config(
+                reaction_id,
+                dict(configured.get(reaction_id, {})),
+                labels_map,
+            )
+            for reaction_id in reviews
+        }
+        action_options = {
+            PROMOTION_ACTION_APPROVE_AUTO_APPLY: "Yes, make it automatic",
+            PROMOTION_ACTION_DISMISS_NOT_NOW: "No, not now",
+            PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS: "Do not ask again",
+        }
+        if user_input is None:
+            schema = vol.Schema(
+                {
+                    vol.Required("reaction"): vol.In(review_options),
+                    vol.Required("action"): vol.In(action_options),
+                }
+            )
+            return self.async_show_form(
+                step_id="runtime_promotion_reviews",
+                data_schema=schema,
+                description_placeholders={
+                    "pending_count": str(len(reviews)),
+                },
+            )
+
+        reaction_id = str(user_input.get("reaction") or "").strip()
+        action = str(user_input.get("action") or "").strip()
+        coordinator = self._get_coordinator()
+        reviewer = getattr(coordinator, "async_review_runtime_promotion", None)
+        if reaction_id not in reviews or action not in action_options or not callable(reviewer):
+            return self.async_show_form(
+                step_id="runtime_promotion_reviews",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("reaction"): vol.In(review_options),
+                        vol.Required("action"): vol.In(action_options),
+                    }
+                ),
+                errors={"base": "invalid_selection"},
+                description_placeholders={"pending_count": str(len(reviews))},
+            )
+        accepted = await reviewer(reaction_id, action)
+        if not accepted:
+            return self.async_show_form(
+                step_id="runtime_promotion_reviews",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("reaction"): vol.In(review_options),
+                        vol.Required("action"): vol.In(action_options),
+                    }
+                ),
+                errors={"base": "promotion_review_not_available"},
+                description_placeholders={"pending_count": str(len(reviews))},
+            )
         return await self.async_step_init()
 
     # ---- Edit configured reaction ----
