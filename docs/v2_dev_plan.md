@@ -215,6 +215,10 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
     - Pending promotion reviews now persist `next_reminder_after` and `reminder_due` according to
       `reminder_interval_days`; AH7 will consume these fields when sending/admin-surfacing
       reminders.
+  - AH7 started:
+    - Added HA-admin-gated coordinator action boundary for promotion decisions:
+      approve auto-apply, dismiss "not now", and disable future prompts.
+    - Revoked/non-pending promotion reviews cannot be approved at this boundary.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3783,7 +3787,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [x] Repeated explicit approvals can create `pending_admin_review`.
      - [x] Explicit dismissals count as negative promotion evidence.
      - [x] Timeout outcomes never count as promotion evidence.
-     - [ ] Revoked promotion reviews cannot be approved by the AH7 admin action boundary.
+     - [x] Revoked promotion reviews cannot be approved by the AH7 admin action boundary.
 
 7. **AH7 — HA-admin-gated promotion and configuration UI**
    - Add admin UI/options-flow support for:
@@ -3791,17 +3795,18 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - configuring runtime confirmation targets and timeout behavior
      - viewing confirmation stats
      - viewing pending promotion reviews
-     - approving auto-apply
-     - dismissing "not now"
-     - disabling future promotion prompts
+     - approving auto-apply. `DONE` at coordinator boundary; UI wiring still pending.
+     - dismissing "not now". `DONE` at coordinator boundary; UI wiring still pending.
+     - disabling future promotion prompts. `DONE` at coordinator boundary; UI wiring still pending.
      - resetting stats/cooldown
      - reverting promoted `auto_apply` back to `ask_residents`
    - Promotion notifications remain informational only and must not contain a direct approve action.
    - Acceptance:
-     - [ ] Only HA-admin-gated UI can approve promotion.
+     - [x] Only HA-admin-gated coordinator boundary can approve promotion; options-flow UI wiring
+       remains pending.
      - [ ] Sending a promotion notification to a non-admin route grants no approval authority.
-     - [ ] Admin "not now" starts/increments cooldown.
-     - [ ] Admin "do not ask again" disables future promotion prompts only for that reaction.
+     - [x] Admin "not now" starts/increments cooldown.
+     - [x] Admin "do not ask again" disables future promotion prompts only for that reaction.
 
 8. **AH8 — Diagnostics, services, and observability**
    - Extend diagnostics with:

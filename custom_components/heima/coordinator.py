@@ -111,6 +111,10 @@ _DEBOUNCE_BY_CLASS: dict[str, float] = {
     "weather": 10.0,
     "outdoor_lux": 60.0,
 }
+
+PROMOTION_ACTION_APPROVE_AUTO_APPLY = "heima.promotion.approve_auto_apply"
+PROMOTION_ACTION_DISMISS_NOT_NOW = "heima.promotion.dismiss_not_now"
+PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS = "heima.promotion.disable_future_prompts"
 _ENVIRONMENTAL_ENTITY_TOKENS = (
     "lux",
     "illuminance",
@@ -876,6 +880,73 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         reactions["labels"] = labels
         options["reactions"] = reactions
         self.hass.config_entries.async_update_entry(self.entry, options=options)
+
+    async def async_review_runtime_promotion(
+        self,
+        reaction_id: str,
+        action: str,
+    ) -> bool:
+        """Apply an HA-admin-gated runtime promotion decision."""
+        target_id = str(reaction_id or "").strip()
+        action_id = str(action or "").strip()
+        if action_id not in {
+            PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+            PROMOTION_ACTION_DISMISS_NOT_NOW,
+            PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
+        }:
+            return False
+
+        options = deepcopy(dict(self.entry.options))
+        reactions = dict(options.get("reactions", {}))
+        configured = dict(reactions.get("configured", {}))
+        cfg = dict(configured.get(target_id, {}))
+        if not cfg:
+            return False
+        reviews = dict(reactions.get("promotion_reviews", {}))
+        review = dict(reviews.get(target_id, {}))
+        if str(review.get("status") or "") != "pending_admin_review":
+            return False
+
+        now = datetime.now(UTC).isoformat()
+        if action_id == PROMOTION_ACTION_APPROVE_AUTO_APPLY:
+            execution_policy = cfg.get("execution_policy")
+            execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+            execution_policy["mode"] = "auto_apply"
+            execution_policy["promoted_from_confirmation"] = True
+            execution_policy["promoted_at"] = now
+            cfg["execution_policy"] = execution_policy
+            configured[target_id] = cfg
+            review["status"] = "approved"
+            review["approved_at"] = now
+            review["target_mode"] = "auto_apply"
+        elif action_id == PROMOTION_ACTION_DISMISS_NOT_NOW:
+            dismiss_count = int(review.get("promotion_dismiss_count") or 0) + 1
+            review["status"] = "dismissed_not_now"
+            review["promotion_dismiss_count"] = dismiss_count
+            review["last_promotion_dismissed_at"] = now
+            review["reminder_due"] = False
+            review.pop("next_reminder_after", None)
+        else:
+            execution_policy = cfg.get("execution_policy")
+            execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+            promotion = execution_policy.get("promotion")
+            promotion = dict(promotion) if isinstance(promotion, dict) else {}
+            promotion["enabled"] = False
+            promotion["disabled_reason"] = "admin_declined_permanently"
+            promotion["disabled_at"] = now
+            execution_policy["promotion"] = promotion
+            cfg["execution_policy"] = execution_policy
+            configured[target_id] = cfg
+            review["status"] = "disabled_future_prompts"
+            review["disabled_at"] = now
+            review["target_mode"] = "auto_apply"
+
+        reviews[target_id] = review
+        reactions["configured"] = configured
+        reactions["promotion_reviews"] = reviews
+        options["reactions"] = reactions
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        return True
 
     def _record_runtime_confirmation_outcome(
         self,

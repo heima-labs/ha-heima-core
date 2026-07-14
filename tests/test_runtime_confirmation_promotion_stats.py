@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from custom_components.heima.coordinator import HeimaCoordinator
+import pytest
+
+from custom_components.heima.coordinator import (
+    PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
+    PROMOTION_ACTION_DISMISS_NOT_NOW,
+    HeimaCoordinator,
+)
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.runtime_confirmation import RuntimeActionRequest
 
@@ -32,6 +39,29 @@ def _request(reaction_id: str = "r1") -> RuntimeActionRequest:
         created_at=now,
         expires_at=now + timedelta(minutes=10),
     )
+
+
+def _promotion_options(status: str = "pending_admin_review") -> dict:
+    return {
+        "reactions": {
+            "configured": {
+                "r1": {
+                    "reaction_type": "context_conditioned_lighting_scene",
+                    "execution_policy": {
+                        "mode": "ask_residents",
+                        "promotion": {"enabled": True},
+                    },
+                }
+            },
+            "promotion_reviews": {
+                "r1": {
+                    "reaction_id": "r1",
+                    "status": status,
+                    "target_mode": "auto_apply",
+                }
+            },
+        }
+    }
 
 
 def test_runtime_confirmation_outcomes_persist_stats() -> None:
@@ -313,3 +343,72 @@ def test_pending_promotion_review_marks_admin_reminder_due_after_interval() -> N
     assert review["status"] == "pending_admin_review"
     assert review["reminder_due"] is True
     assert review["next_reminder_after"].startswith("2000-01-02")
+
+
+@pytest.mark.asyncio
+async def test_admin_promotion_approve_switches_reaction_to_auto_apply() -> None:
+    coordinator = _coordinator(_promotion_options())
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    )
+
+    assert result is True
+    cfg = coordinator.entry.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy"]["mode"] == "auto_apply"
+    assert cfg["execution_policy"]["promoted_from_confirmation"] is True
+    assert cfg["execution_policy"]["promoted_at"]
+    review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
+    assert review["status"] == "approved"
+    assert review["approved_at"]
+
+
+@pytest.mark.asyncio
+async def test_admin_promotion_rejects_revoked_review() -> None:
+    coordinator = _coordinator(_promotion_options(status="revoked"))
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    )
+
+    assert result is False
+    cfg = coordinator.entry.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy"]["mode"] == "ask_residents"
+    assert coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_admin_promotion_not_now_increments_cooldown_counter() -> None:
+    coordinator = _coordinator(_promotion_options())
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_DISMISS_NOT_NOW,
+    )
+
+    assert result is True
+    review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
+    assert review["status"] == "dismissed_not_now"
+    assert review["promotion_dismiss_count"] == 1
+    assert review["last_promotion_dismissed_at"]
+
+
+@pytest.mark.asyncio
+async def test_admin_promotion_disable_future_prompts_only_changes_promotion_policy() -> None:
+    coordinator = _coordinator(_promotion_options())
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
+    )
+
+    assert result is True
+    cfg = coordinator.entry.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy"]["mode"] == "ask_residents"
+    promotion = cfg["execution_policy"]["promotion"]
+    assert promotion["enabled"] is False
+    assert promotion["disabled_reason"] == "admin_declined_permanently"
+    review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
+    assert review["status"] == "disabled_future_prompts"
