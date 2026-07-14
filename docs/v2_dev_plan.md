@@ -3800,8 +3800,8 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - approving auto-apply. `DONE`
      - dismissing "not now". `DONE`
      - disabling future promotion prompts. `DONE`
-     - resetting stats/cooldown
-     - reverting promoted `auto_apply` back to `ask_residents`
+     - resetting stats/cooldown. `DONE`
+     - reverting promoted `auto_apply` back to `ask_residents`. `DONE`
    - Promotion notifications remain informational only and must not contain a direct approve action.
    - Acceptance:
      - [x] Only HA-admin-gated options-flow UI/coordinator boundary can approve promotion.

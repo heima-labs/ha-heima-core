@@ -192,6 +192,83 @@ class _ReactionEditingStepsMixin:
             )
         return await self.async_step_init()
 
+    async def async_step_runtime_confirmation_maintenance(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        """Reset runtime confirmation stats and promotion cooldown state."""
+        reactions_cfg = dict(self._reactions_options())
+        configured = dict(reactions_cfg.get("configured", {}))
+        labels_map: dict[str, str] = reactions_cfg.get("labels", {})
+        stats_by_reaction = dict(reactions_cfg.get("confirmation_stats", {}))
+        reviews = dict(reactions_cfg.get("promotion_reviews", {}))
+        reaction_ids = sorted(
+            {
+                str(reaction_id)
+                for reaction_id in [*stats_by_reaction.keys(), *reviews.keys()]
+                if str(reaction_id).strip()
+            }
+        )
+        if not reaction_ids:
+            return await self.async_step_init()
+
+        reaction_options = {
+            reaction_id: self._reaction_label_from_config(
+                reaction_id,
+                dict(configured.get(reaction_id, {})),
+                labels_map,
+            )
+            for reaction_id in reaction_ids
+        }
+        description_placeholders = {
+            "reaction_count": str(len(reaction_options)),
+        }
+        schema = vol.Schema(
+            {
+                vol.Required("reaction"): vol.In(reaction_options),
+                vol.Required("confirm_reset", default=False): bool,
+            }
+        )
+        if user_input is None:
+            return self.async_show_form(
+                step_id="runtime_confirmation_maintenance",
+                data_schema=schema,
+                description_placeholders=description_placeholders,
+            )
+
+        reaction_id = str(user_input.get("reaction") or "").strip()
+        if reaction_id not in reaction_options:
+            return self.async_show_form(
+                step_id="runtime_confirmation_maintenance",
+                data_schema=schema,
+                errors={"base": "invalid_selection"},
+                description_placeholders=description_placeholders,
+            )
+        if not bool(user_input.get("confirm_reset", False)):
+            return await self.async_step_init()
+
+        coordinator = self._get_coordinator()
+        resetter = getattr(
+            coordinator,
+            "async_reset_runtime_confirmation_promotion_state",
+            None,
+        )
+        if not callable(resetter):
+            return self.async_show_form(
+                step_id="runtime_confirmation_maintenance",
+                data_schema=schema,
+                errors={"base": "runtime_state_not_available"},
+                description_placeholders=description_placeholders,
+            )
+        accepted = await resetter(reaction_id)
+        if not accepted:
+            return self.async_show_form(
+                step_id="runtime_confirmation_maintenance",
+                data_schema=schema,
+                errors={"base": "runtime_state_not_available"},
+                description_placeholders=description_placeholders,
+            )
+        return await self.async_step_init()
+
     # ---- Edit configured reaction ----
 
     async def async_step_reactions_edit(
@@ -788,7 +865,11 @@ class _ReactionEditingStepsMixin:
             )
 
         cfg["enabled"] = bool(current_input.get("enabled", True))
-        cfg["execution_policy"] = execution_policy
+        existing_policy = cfg.get("execution_policy")
+        cfg["execution_policy"] = self._merge_runtime_confirmation_execution_policy(
+            existing_policy=dict(existing_policy) if isinstance(existing_policy, dict) else {},
+            submitted_policy=execution_policy,
+        )
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         self._store_reactions_options(reactions_cfg)
@@ -1155,6 +1236,23 @@ class _ReactionEditingStepsMixin:
             },
         }
         return current_input, execution_policy, errors
+
+    @staticmethod
+    def _merge_runtime_confirmation_execution_policy(
+        *,
+        existing_policy: dict[str, Any],
+        submitted_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Preserve promotion settings while applying runtime confirmation edits."""
+        merged = dict(submitted_policy)
+        existing_promotion = existing_policy.get("promotion")
+        if isinstance(existing_promotion, dict):
+            merged["promotion"] = dict(existing_promotion)
+        if str(merged.get("mode") or "") == "auto_apply":
+            for key in ("promoted_from_confirmation", "promoted_at"):
+                if key in existing_policy:
+                    merged[key] = existing_policy[key]
+        return merged
 
     @staticmethod
     def _runtime_confirmation_string_list(value: Any) -> list[str]:

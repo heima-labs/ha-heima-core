@@ -412,3 +412,41 @@ async def test_admin_promotion_disable_future_prompts_only_changes_promotion_pol
     assert promotion["disabled_reason"] == "admin_declined_permanently"
     review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
     assert review["status"] == "disabled_future_prompts"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_reset_runtime_confirmation_stats_and_promotion_state() -> None:
+    coordinator = _coordinator(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {"mode": "ask_residents"},
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "dismissed_not_now",
+                        "promotion_dismiss_count": 2,
+                    }
+                },
+                "confirmation_stats": {
+                    "r1": {
+                        "requested": 5,
+                        "approved": 4,
+                        "dismissed": 1,
+                    }
+                },
+            }
+        }
+    )
+
+    result = await coordinator.async_reset_runtime_confirmation_promotion_state("r1")
+
+    assert result is True
+    reactions = coordinator.entry.options["reactions"]
+    assert reactions["confirmation_stats"] == {}
+    assert reactions["promotion_reviews"] == {}
+    assert reactions["configured"]["r1"]["execution_policy"]["mode"] == "ask_residents"

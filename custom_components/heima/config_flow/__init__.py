@@ -155,6 +155,7 @@ class HeimaOptionsFlowHandler(
                 "reactions",
                 "reactions_edit",
                 "runtime_promotion_reviews",
+                "runtime_confirmation_maintenance",
                 "admin_authored_create",
                 "proposals",
                 "accepted_proposals",

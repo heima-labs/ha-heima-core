@@ -948,6 +948,35 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.hass.config_entries.async_update_entry(self.entry, options=options)
         return True
 
+    async def async_reset_runtime_confirmation_promotion_state(self, reaction_id: str) -> bool:
+        """Clear persisted runtime confirmation stats and promotion review state."""
+        target_id = str(reaction_id or "").strip()
+        if not target_id:
+            return False
+
+        options = deepcopy(dict(self.entry.options))
+        reactions = dict(options.get("reactions", {}))
+        changed = False
+
+        stats_by_reaction = dict(reactions.get("confirmation_stats", {}))
+        if target_id in stats_by_reaction:
+            stats_by_reaction.pop(target_id, None)
+            reactions["confirmation_stats"] = stats_by_reaction
+            changed = True
+
+        reviews = dict(reactions.get("promotion_reviews", {}))
+        if target_id in reviews:
+            reviews.pop(target_id, None)
+            reactions["promotion_reviews"] = reviews
+            changed = True
+
+        if not changed:
+            return False
+
+        options["reactions"] = reactions
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        return True
+
     def _record_runtime_confirmation_outcome(
         self,
         request: RuntimeActionRequest,

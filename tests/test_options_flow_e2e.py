@@ -5012,6 +5012,54 @@ async def test_runtime_promotion_reviews_surfaces_rejected_boundary_result():
 
 
 @pytest.mark.asyncio
+async def test_runtime_confirmation_maintenance_calls_reset_boundary():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {"mode": "ask_residents"},
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "dismissed_not_now",
+                    }
+                },
+                "confirmation_stats": {
+                    "r1": {
+                        "requested": 5,
+                        "approved": 4,
+                    }
+                },
+            }
+        }
+    )
+    coordinator = SimpleNamespace(
+        async_reset_runtime_confirmation_promotion_state=AsyncMock(return_value=True)
+    )
+    flow.hass.data = {DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+
+    form = await flow.async_step_runtime_confirmation_maintenance()
+    result = await flow.async_step_runtime_confirmation_maintenance(
+        {
+            "reaction": "r1",
+            "confirm_reset": True,
+        }
+    )
+
+    assert form["type"] == "form"
+    assert form["step_id"] == "runtime_confirmation_maintenance"
+    assert form["description_placeholders"]["reaction_count"] == "1"
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    coordinator.async_reset_runtime_confirmation_promotion_state.assert_awaited_once_with("r1")
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtime_policy_fields():
     flow = _flow(
         {
@@ -5099,6 +5147,60 @@ async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
     }
     assert cfg["reaction_type"] == "context_conditioned_lighting_scene"
     assert cfg["entity_steps"] == [{"entity_id": "light.studio_main", "action": "off"}]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residents():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy": {
+                            "mode": "auto_apply",
+                            "promoted_from_confirmation": True,
+                            "promoted_at": "2026-07-14T10:00:00+00:00",
+                            "promotion": {
+                                "enabled": True,
+                                "min_samples": 3,
+                            },
+                        },
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 7,
+            "confirmation_on_timeout": "skip",
+            "confirmation_target_recipients": "",
+            "confirmation_target_groups": "family",
+            "confirmation_use_default_route_targets": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    policy = cfg["execution_policy"]
+    assert policy["mode"] == "ask_residents"
+    assert policy["promotion"] == {"enabled": True, "min_samples": 3}
+    assert "promoted_from_confirmation" not in policy
+    assert "promoted_at" not in policy
 
 
 @pytest.mark.asyncio
