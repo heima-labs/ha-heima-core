@@ -3795,7 +3795,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
    - Add admin UI/options-flow support for:
      - viewing/editing `execution_policy.mode`
      - configuring runtime confirmation targets and timeout behavior
-     - viewing confirmation stats
+     - viewing confirmation stats in pending promotion reviews. `DONE`
      - viewing pending promotion reviews. `DONE`
      - approving auto-apply. `DONE`
      - dismissing "not now". `DONE`

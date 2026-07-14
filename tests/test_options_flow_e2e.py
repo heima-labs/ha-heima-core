@@ -4903,6 +4903,16 @@ async def test_runtime_promotion_reviews_calls_admin_boundary():
                         "reaction_id": "r1",
                         "status": "pending_admin_review",
                         "target_mode": "auto_apply",
+                        "reminder_due": True,
+                    }
+                },
+                "confirmation_stats": {
+                    "r1": {
+                        "requested": 5,
+                        "approved": 4,
+                        "dismissed": 1,
+                        "timeout_applied": 2,
+                        "failed": 1,
                     }
                 },
             }
@@ -4921,6 +4931,12 @@ async def test_runtime_promotion_reviews_calls_admin_boundary():
 
     assert form["type"] == "form"
     assert form["step_id"] == "runtime_promotion_reviews"
+    placeholders = form["description_placeholders"]
+    assert placeholders["pending_count"] == "1"
+    assert "Studio contextual lighting" in placeholders["review_summary"]
+    assert "explicit yes/no 4/1" in placeholders["review_summary"]
+    assert "approval rate 80%" in placeholders["review_summary"]
+    assert "reminder due" in placeholders["review_summary"]
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
     coordinator.async_review_runtime_promotion.assert_awaited_once_with(

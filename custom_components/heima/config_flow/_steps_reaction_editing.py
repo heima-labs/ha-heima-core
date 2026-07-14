@@ -29,6 +29,55 @@ def _last_lux_on_bucket(value: Any) -> str:
     return buckets[-1] if buckets else ""
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _runtime_promotion_review_summary(
+    *,
+    reviews: dict[str, dict[str, Any]],
+    stats_by_reaction: dict[str, Any],
+    review_options: dict[str, str],
+    limit: int = 5,
+) -> str:
+    """Build a compact admin-facing summary for pending runtime promotions."""
+    lines: list[str] = []
+    for reaction_id, review in list(reviews.items())[:limit]:
+        stats = stats_by_reaction.get(reaction_id, {})
+        stats = dict(stats) if isinstance(stats, dict) else {}
+        approved = _safe_int(stats.get("approved"))
+        dismissed = _safe_int(stats.get("dismissed"))
+        explicit_total = approved + dismissed
+        approval_rate = round((approved / explicit_total) * 100) if explicit_total else 0
+        requested = _safe_int(stats.get("requested"))
+        timeout_applied = _safe_int(stats.get("timeout_applied"))
+        timeout_skipped = _safe_int(stats.get("timeout_skipped"))
+        failed = _safe_int(stats.get("failed"))
+        review_bits = [
+            f"explicit yes/no {approved}/{dismissed}",
+            f"approval rate {approval_rate}%",
+            f"requests {requested}",
+        ]
+        if timeout_applied or timeout_skipped:
+            review_bits.append(f"timeouts apply/skip {timeout_applied}/{timeout_skipped}")
+        if failed:
+            review_bits.append(f"failed {failed}")
+        if review.get("reminder_due") is True:
+            review_bits.append("reminder due")
+        elif review.get("next_reminder_after"):
+            review_bits.append(f"next reminder after {review['next_reminder_after']}")
+        label = review_options.get(reaction_id, reaction_id)
+        lines.append(f"{label}: " + "; ".join(review_bits))
+
+    remaining = max(0, len(reviews) - limit)
+    if remaining:
+        lines.append(f"...and {remaining} more pending review(s).")
+    return "\n".join(lines)
+
+
 class _ReactionEditingStepsMixin:
     """Mixin for configured reaction mute, edit, and delete flows."""
 
@@ -90,6 +139,15 @@ class _ReactionEditingStepsMixin:
             PROMOTION_ACTION_DISMISS_NOT_NOW: "No, not now",
             PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS: "Do not ask again",
         }
+        stats_by_reaction = dict(reactions_cfg.get("confirmation_stats", {}))
+        description_placeholders = {
+            "pending_count": str(len(reviews)),
+            "review_summary": _runtime_promotion_review_summary(
+                reviews=reviews,
+                stats_by_reaction=stats_by_reaction,
+                review_options=review_options,
+            ),
+        }
         if user_input is None:
             schema = vol.Schema(
                 {
@@ -100,9 +158,7 @@ class _ReactionEditingStepsMixin:
             return self.async_show_form(
                 step_id="runtime_promotion_reviews",
                 data_schema=schema,
-                description_placeholders={
-                    "pending_count": str(len(reviews)),
-                },
+                description_placeholders=description_placeholders,
             )
 
         reaction_id = str(user_input.get("reaction") or "").strip()
@@ -119,7 +175,7 @@ class _ReactionEditingStepsMixin:
                     }
                 ),
                 errors={"base": "invalid_selection"},
-                description_placeholders={"pending_count": str(len(reviews))},
+                description_placeholders=description_placeholders,
             )
         accepted = await reviewer(reaction_id, action)
         if not accepted:
@@ -132,7 +188,7 @@ class _ReactionEditingStepsMixin:
                     }
                 ),
                 errors={"base": "promotion_review_not_available"},
-                description_placeholders={"pending_count": str(len(reviews))},
+                description_placeholders=description_placeholders,
             )
         return await self.async_step_init()
 
