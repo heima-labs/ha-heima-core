@@ -3842,8 +3842,13 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - disabled reaction while pending cancels the request
      - repeated approvals create admin promotion review
      - admin-approved promotion makes later occurrences auto-apply
+   - Added read-only diagnostic live coverage:
+     - `scripts/live_tests/077_runtime_confirmation_diag_live.py` validates runtime confirmation
+       request counters, recent request rows, step result counts, failure reasons, stale responses,
+       and persisted confirmation/promotion diagnostics. `DONE`
    - Acceptance:
      - [ ] Focused unit/integration tests pass.
+     - [x] Runtime confirmation diagnostics have live diagnostic coverage.
      - [ ] `scripts/ci_local.sh` passes.
      - [ ] Relevant live diagnostic/e2e tiers pass outside the sandbox.
 

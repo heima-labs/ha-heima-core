@@ -59,6 +59,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/074_camera_privacy_manual_hold_live.py"
   "scripts/live_tests/075_camera_privacy_policy_editor_live.py"
   "scripts/live_tests/076_camera_privacy_policy_runtime_live.py"
+  "scripts/live_tests/077_runtime_confirmation_diag_live.py"
 )
 
 usage() {
