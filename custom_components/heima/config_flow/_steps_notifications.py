@@ -70,6 +70,7 @@ class _NotificationsStepsMixin:
                 vol.Optional("recipients"): _object_selector(),
                 vol.Optional("recipient_groups"): _object_selector(),
                 vol.Optional("route_targets"): _object_selector(),
+                vol.Optional("notification_service_capabilities"): _object_selector(),
                 vol.Optional("enabled_event_categories"): cv.multi_select(
                     EVENT_CATEGORIES_TOGGLEABLE
                 ),
@@ -151,6 +152,9 @@ class _NotificationsStepsMixin:
         data["recipients"] = _parse_multiline_mapping(data.get("recipients"))
         data["recipient_groups"] = _parse_multiline_mapping(data.get("recipient_groups"))
         data["route_targets"] = _parse_multiline_items(data.get("route_targets"))
+        data["notification_service_capabilities"] = _normalize_notification_service_capabilities(
+            data.get("notification_service_capabilities")
+        )
         recipient_ids = set(data["recipients"])
         normalized_groups: dict[str, list[str]] = {}
         for group_id, members in data["recipient_groups"].items():
@@ -196,3 +200,28 @@ class _NotificationsStepsMixin:
             data.get("security_mismatch_persist_s", DEFAULT_SECURITY_MISMATCH_PERSIST_S)
         )
         return data
+
+
+def _normalize_notification_service_capabilities(value: Any) -> dict[str, dict[str, bool]]:
+    """Normalize transport capability metadata for concrete notify services."""
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, dict[str, bool]] = {}
+    for raw_service, raw_capabilities in value.items():
+        service = _normalize_notify_service_name(raw_service)
+        if not service:
+            continue
+        supports_actions = False
+        if isinstance(raw_capabilities, dict):
+            supports_actions = bool(raw_capabilities.get("supports_actions", False))
+        elif isinstance(raw_capabilities, bool):
+            supports_actions = raw_capabilities
+        normalized[service] = {"supports_actions": supports_actions}
+    return normalized
+
+
+def _normalize_notify_service_name(value: Any) -> str:
+    service = str(value or "").strip()
+    if service.startswith("notify."):
+        service = service.split(".", 1)[1]
+    return service

@@ -190,6 +190,28 @@ def test_notifications_payload_strips_routes_field():
     assert normalized["route_targets"] == ["stefano"]
 
 
+def test_notifications_payload_normalizes_service_capabilities():
+    flow = _flow()
+    normalized = flow._normalize_notifications_payload(
+        {
+            "recipients": {"stefano": ["mobile_app_phone_stefano"]},
+            "route_targets": ["stefano"],
+            "notification_service_capabilities": {
+                "notify.mobile_app_phone_stefano": {"supports_actions": True},
+                "mobile_app_mac_stefano": True,
+                "": {"supports_actions": True},
+            },
+            "dedup_window_s": 60,
+            "rate_limit_per_key_s": 300,
+        }
+    )
+
+    assert normalized["notification_service_capabilities"] == {
+        "mobile_app_phone_stefano": {"supports_actions": True},
+        "mobile_app_mac_stefano": {"supports_actions": True},
+    }
+
+
 def test_people_payload_parses_weighted_quorum_group_fields():
     flow = _flow()
     normalized = flow._normalize_people_payload(

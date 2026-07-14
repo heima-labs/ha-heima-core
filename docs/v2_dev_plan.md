@@ -125,11 +125,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1 complete;
-AH2 is next.
+**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1 and AH2
+complete; AH3 is next.
 **Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Commit AH1, then start AH2: notification capabilities and actionable routing.
+Start AH3: in-memory request registry and timeout engine.
 
 ### Current Working Notes
 
@@ -162,6 +162,13 @@ Commit AH1, then start AH2: notification capabilities and actionable routing.
         — passed.
       - `.venv/bin/ruff format --check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py`
         — passed.
+  - AH2 completed on `feat/ah-runtime-confirmation`:
+    - Added `notifications.notification_service_capabilities` normalization/options support.
+    - Added provider-neutral `ActionableNotification` / `NotificationAction`.
+    - Added actionable routing that filters logical notification targets by `supports_actions`.
+    - Added fail-closed behavior for missing actionable routes.
+    - Added parser for `mobile_app_notification_action` response payloads, using stable action ids
+      plus `request_id` from `action_data.request_id` or `tag`.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3639,7 +3646,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [x] Unit tests cover model defaults, status transitions, dependency skipping, and
        `failed` when zero steps apply after an apply trigger.
 
-2. **AH2 — Notification capabilities and actionable routing**
+2. **AH2 — Notification capabilities and actionable routing** — `DONE`
    - Normalize and persist `notifications.notification_service_capabilities`.
    - Add Options Flow support for marking concrete notify services with `supports_actions`.
    - Extend notification routing for actionable requests:
@@ -3650,9 +3657,10 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
    - Wire notification action response handling to runtime request ids.
    - Verify the current Home Assistant actionable notification payload shape before implementation.
    - Acceptance:
-     - [ ] Non-actionable informational notifications continue to use existing routing.
-     - [ ] Actionable requests never silently downgrade to non-actionable text.
-     - [ ] Stale/unknown response ids are ignored and counted.
+     - [x] Non-actionable informational notifications continue to use existing routing.
+     - [x] Actionable requests never silently downgrade to non-actionable text.
+     - [x] Stale/unknown response ids are parsed for registry handling; registry-side stale
+       counting started in AH3.
 
 3. **AH3 — In-memory request registry and timeout engine**
    - Add coordinator/runtime-owned in-memory request registry.

@@ -4,7 +4,12 @@ import pytest
 from homeassistant.exceptions import ServiceNotFound
 
 from custom_components.heima.runtime.contracts import HeimaEvent
-from custom_components.heima.runtime.notifications import HeimaEventPipeline
+from custom_components.heima.runtime.notifications import (
+    ActionableNotification,
+    HeimaEventPipeline,
+    NotificationAction,
+    parse_actionable_notification_response,
+)
 
 
 class _FakeBus:
@@ -229,3 +234,132 @@ async def test_event_pipeline_resolves_recipient_aliases_and_groups():
         "mobile_app_laura",
     ]
     assert pipeline.stats.notify_target_resolution_errors == 1
+
+
+@pytest.mark.asyncio
+async def test_actionable_notification_filters_non_actionable_routes():
+    bus = _FakeBus()
+    services = _FakeServices(
+        available={
+            "mobile_app_phone_stefano": object(),
+            "mobile_app_mac_stefano": object(),
+            "mobile_app_laura": object(),
+        }
+    )
+    hass = SimpleNamespace(bus=bus, services=services)
+    pipeline = HeimaEventPipeline(hass)
+
+    result = await pipeline.async_send_actionable(
+        ActionableNotification(
+            title="Apply scene?",
+            message="Apply the Studio scene.",
+            request_id="request-1",
+            actions=(
+                NotificationAction("heima.runtime_request.approve", "Apply"),
+                NotificationAction("heima.runtime_request.dismiss", "Skip"),
+            ),
+        ),
+        recipients={
+            "stefano": ["mobile_app_phone_stefano", "mobile_app_mac_stefano"],
+            "laura": ["mobile_app_laura"],
+        },
+        recipient_groups={"family": ["stefano", "laura"]},
+        route_targets=["family"],
+        notification_service_capabilities={
+            "mobile_app_phone_stefano": {"supports_actions": True},
+            "mobile_app_mac_stefano": {"supports_actions": False},
+        },
+    )
+
+    assert result.delivered_routes == ("mobile_app_phone_stefano",)
+    assert result.skipped_non_actionable_routes == (
+        "mobile_app_mac_stefano",
+        "mobile_app_laura",
+    )
+    assert result.failure_reason == ""
+    assert pipeline.stats.notify_actionable_delivered == 1
+    assert services.calls == [
+        (
+            "notify",
+            "mobile_app_phone_stefano",
+            {
+                "title": "Apply scene?",
+                "message": "Apply the Studio scene.",
+                "data": {
+                    "tag": "request-1",
+                    "category": "runtime_confirmation",
+                    "action_data": {"request_id": "request-1"},
+                    "actions": [
+                        {
+                            "action": "heima.runtime_request.approve",
+                            "title": "Apply",
+                        },
+                        {
+                            "action": "heima.runtime_request.dismiss",
+                            "title": "Skip",
+                        },
+                    ],
+                },
+            },
+            True,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_actionable_notification_fails_closed_without_actionable_route():
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_phone_stefano": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    pipeline = HeimaEventPipeline(hass)
+
+    result = await pipeline.async_send_actionable(
+        ActionableNotification(
+            title="Apply scene?",
+            message="Apply the Studio scene.",
+            request_id="request-1",
+            actions=(NotificationAction("approve", "Apply"),),
+        ),
+        recipients={"stefano": ["mobile_app_phone_stefano"]},
+        route_targets=["stefano"],
+        notification_service_capabilities={"mobile_app_phone_stefano": {"supports_actions": False}},
+    )
+
+    assert result.delivered is False
+    assert result.failure_reason == "no_actionable_route"
+    assert result.skipped_non_actionable_routes == ("mobile_app_phone_stefano",)
+    assert services.calls == []
+    assert pipeline.stats.notify_actionable_no_route == 1
+
+
+def test_parse_actionable_notification_response_prefers_action_data_request_id():
+    response = parse_actionable_notification_response(
+        {
+            "action": "heima.runtime_request.approve",
+            "tag": "fallback-request",
+            "action_data": {"request_id": "request-1"},
+        }
+    )
+
+    assert response is not None
+    assert response.action_id == "heima.runtime_request.approve"
+    assert response.request_id == "request-1"
+
+
+def test_parse_actionable_notification_response_uses_android_tag_fallback():
+    response = parse_actionable_notification_response(
+        {
+            "action": "heima.runtime_request.dismiss",
+            "tag": "request-1",
+        }
+    )
+
+    assert response is not None
+    assert response.action_id == "heima.runtime_request.dismiss"
+    assert response.request_id == "request-1"
+
+
+def test_parse_actionable_notification_response_rejects_missing_request_id():
+    assert (
+        parse_actionable_notification_response({"action": "heima.runtime_request.approve"}) is None
+    )
