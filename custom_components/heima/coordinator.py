@@ -965,20 +965,28 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         )
         if eligible:
             if status not in {"approved", "disabled_future_prompts", "pending_admin_review"}:
-                reviews[reaction_id] = {
-                    "reaction_id": reaction_id,
-                    "status": "pending_admin_review",
-                    "first_prompted_at": now,
-                    "last_prompted_at": now,
-                    "notification_count": 0,
-                    "target_mode": "auto_apply",
-                    "failure_reason": None,
-                }
+                reviews[reaction_id] = self._runtime_promotion_review_with_reminder_state(
+                    {
+                        "reaction_id": reaction_id,
+                        "status": "pending_admin_review",
+                        "first_prompted_at": now,
+                        "last_prompted_at": now,
+                        "notification_count": 0,
+                        "target_mode": "auto_apply",
+                        "failure_reason": None,
+                    },
+                    reaction_cfg=reaction_cfg,
+                    now=now,
+                )
             elif status == "pending_admin_review":
                 current.setdefault("first_prompted_at", now)
                 current["target_mode"] = "auto_apply"
                 current["failure_reason"] = None
-                reviews[reaction_id] = current
+                reviews[reaction_id] = self._runtime_promotion_review_with_reminder_state(
+                    current,
+                    reaction_cfg=reaction_cfg,
+                    now=now,
+                )
             return reviews
 
         if status == "pending_admin_review":
@@ -987,6 +995,28 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             current["failure_reason"] = reason
             reviews[reaction_id] = current
         return reviews
+
+    def _runtime_promotion_review_with_reminder_state(
+        self,
+        review: dict[str, Any],
+        *,
+        reaction_cfg: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        execution_policy = reaction_cfg.get("execution_policy")
+        execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+        promotion = execution_policy.get("promotion")
+        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        reminder_interval_days = max(1, int(promotion.get("reminder_interval_days", 7)))
+        current_time = self._parse_runtime_confirmation_ts(now) or datetime.now(UTC)
+        last_prompted = self._parse_runtime_confirmation_ts(review.get("last_prompted_at"))
+        if last_prompted is None:
+            last_prompted = current_time
+            review["last_prompted_at"] = last_prompted.isoformat()
+        next_reminder = last_prompted + timedelta(days=reminder_interval_days)
+        review["next_reminder_after"] = next_reminder.isoformat()
+        review["reminder_due"] = current_time >= next_reminder
+        return review
 
     def _runtime_promotion_eligible(
         self,

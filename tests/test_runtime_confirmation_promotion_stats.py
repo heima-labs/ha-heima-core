@@ -89,6 +89,8 @@ def test_runtime_confirmation_promotion_review_created_from_explicit_evidence() 
     review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
     assert review["status"] == "pending_admin_review"
     assert review["target_mode"] == "auto_apply"
+    assert review["next_reminder_after"]
+    assert review["reminder_due"] is False
 
 
 def test_timeout_outcomes_do_not_create_promotion_review() -> None:
@@ -264,3 +266,50 @@ def test_not_now_requires_new_approval_after_cooldown() -> None:
 
     review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
     assert review["status"] == "pending_admin_review"
+
+
+def test_pending_promotion_review_marks_admin_reminder_due_after_interval() -> None:
+    old = datetime(2000, 1, 1, tzinfo=timezone.utc).isoformat()
+    coordinator = _coordinator(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {
+                            "mode": "ask_residents",
+                            "promotion": {
+                                "min_samples": 1,
+                                "min_approval_rate": 0.8,
+                                "min_distinct_days": 1,
+                                "reminder_interval_days": 1,
+                            },
+                        },
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "pending_admin_review",
+                        "first_prompted_at": old,
+                        "last_prompted_at": old,
+                        "target_mode": "auto_apply",
+                    }
+                },
+                "confirmation_stats": {
+                    "r1": {
+                        "approved": 1,
+                        "dismissed": 0,
+                        "approved_dates": ["2026-07-14"],
+                    }
+                },
+            }
+        }
+    )
+
+    coordinator._record_runtime_confirmation_outcome(_request(), "approved")
+
+    review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
+    assert review["status"] == "pending_admin_review"
+    assert review["reminder_due"] is True
+    assert review["next_reminder_after"].startswith("2000-01-02")

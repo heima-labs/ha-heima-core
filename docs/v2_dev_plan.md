@@ -212,6 +212,9 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
       explicit approvals after the latest promotion dismissal.
     - Pending promotion reviews are revoked when new explicit evidence no longer satisfies
       thresholds.
+    - Pending promotion reviews now persist `next_reminder_after` and `reminder_due` according to
+      `reminder_interval_days`; AH7 will consume these fields when sending/admin-surfacing
+      reminders.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3773,7 +3776,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - `min_distinct_days`. `DONE`
      - `min_new_approvals_after_dismissal`. `DONE`
      - `cooldown_schedule_days`. `DONE`
-     - `reminder_interval_days`
+     - `reminder_interval_days`. `DONE`
    - Exclude timeout outcomes from promotion evidence in all cases. `DONE`
    - Revoke `pending_admin_review` when new evidence no longer satisfies thresholds. `DONE`
    - Acceptance:
