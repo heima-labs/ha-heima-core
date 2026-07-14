@@ -125,11 +125,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1 and AH2
-complete; AH3 started.
+**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1-AH3
+complete; AH4 is next.
 **Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Finish AH3 by wiring timeout scheduling to HA async scheduling.
+Start AH4: engine apply-path integration and pre-apply validation.
 
 ### Current Working Notes
 
@@ -173,7 +173,16 @@ Finish AH3 by wiring timeout scheduling to HA async scheduling.
     - Added in-memory `RuntimeActionRequestRegistry`.
     - Added occurrence deduplication, terminal resolution, stale response counting, recent
       completed diagnostics, and due-timeout extraction.
-    - HA async timeout scheduling is still pending.
+  - AH3 completed:
+    - Added `RuntimeConfirmationController` as the Home Assistant integration layer for runtime
+      requests.
+    - Controller subscribes to `mobile_app_notification_action` and dispatches stable
+      approve/dismiss action ids.
+    - Controller schedules request timeouts with HA `async_call_later`.
+    - `on_timeout: skip` resolves the request as `timeout_skipped` and applies nothing.
+    - `on_timeout: apply` dispatches to an injected apply handler; AH4 owns the concrete
+      pre-apply validation and stored-step execution.
+    - Coordinator owns the controller lifecycle and exposes diagnostics.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3667,7 +3676,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [x] Stale/unknown response ids are parsed for registry handling; registry-side stale
        counting started in AH3.
 
-3. **AH3 — In-memory request registry and timeout engine** — `IN PROGRESS`
+3. **AH3 — In-memory request registry and timeout engine** — `DONE`
    - Add coordinator/runtime-owned in-memory request registry.
    - Deduplicate pending requests by `(reaction_id, occurrence_key)`.
    - Schedule expirations with HA async scheduling.
@@ -3676,8 +3685,9 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
    - Ignore stale responses after restart or completion.
    - Acceptance:
      - [x] Duplicate occurrences do not create duplicate pending requests.
-     - [ ] Timeout skip applies nothing.
-     - [ ] Timeout apply runs pre-apply validation and processes stored steps.
+     - [x] Timeout skip applies nothing.
+     - [x] Timeout apply dispatches to the injected apply handler; AH4 implements the concrete
+       pre-apply validation and stored-step processing.
      - [x] Restart behavior foundation is safe: stale/unknown responses are ignored and counted by
        the in-memory registry.
 

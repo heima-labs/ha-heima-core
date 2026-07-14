@@ -84,6 +84,7 @@ from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalBatchActionResult, ProposalEngine
 from .runtime.proposal_lifecycle_store import ProposalLifecycleStore
 from .runtime.room_context import RoomDeviceContextBuilder
+from .runtime.runtime_confirmation_controller import RuntimeConfirmationController
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
 from .runtime.signal_discovery import (
@@ -362,6 +363,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             entry_id=entry.entry_id,
             on_job_due=self._async_handle_scheduled_job,
         )
+        self._runtime_confirmation = RuntimeConfirmationController(hass)
         self._ha_backed_reconciliation_summary: dict[str, object] = {}
         self.data = HeimaRuntimeState(
             health_ok=True,
@@ -405,6 +407,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._sync_activity_approval_state()
         await self._proposal_engine.async_initialize()
         await self.engine.async_initialize()
+        await self._runtime_confirmation.async_initialize()
         if changed:
             await self.engine.async_reload_options(
                 self.entry, changed_keys={"people_named", "rooms"}
@@ -1194,6 +1197,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._cancel_periodic_fallback()
         self._cancel_proposal_tick()
         self._cancel_analyze_tick()
+        await self._runtime_confirmation.async_shutdown()
         await self._proposal_engine.async_shutdown()
         await self._scheduler.async_shutdown()
         await self._event_store.async_flush()
@@ -1995,6 +1999,11 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             "approval_store": self._approval_store.diagnostics(),
             "snapshot_store": self._house_snapshot_store.diagnostics(),
             "outcome_tracker": self._outcome_tracker.diagnostics(),
+            "runtime_confirmation": (
+                self._runtime_confirmation.diagnostics()
+                if hasattr(self, "_runtime_confirmation")
+                else {}
+            ),
             "ha_backed_reconciliation": dict(self._ha_backed_reconciliation_summary),
             "installation_validation": self._validation_report().as_dict(),
         }

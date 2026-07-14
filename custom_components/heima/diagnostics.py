@@ -40,6 +40,7 @@ async def async_get_config_entry_diagnostics(
             "data": getattr(coordinator, "data", None),
             "engine": coordinator.engine.diagnostics() if coordinator else {},
             "scheduler": coordinator.scheduler.diagnostics() if coordinator else {},
+            "runtime_confirmation": _runtime_confirmation_diagnostics(coordinator),
             "event_store": coordinator._event_store.diagnostics() if coordinator else {},
             "proposals": proposal_diagnostics,
             "plugins": {
@@ -110,6 +111,16 @@ def _learning_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
         }
         for descriptor in builtin_learning_pattern_plugin_descriptors()
     ]
+
+
+def _runtime_confirmation_diagnostics(coordinator: Any) -> dict[str, Any]:
+    if coordinator is None:
+        return {}
+    controller = getattr(coordinator, "_runtime_confirmation", None)
+    if controller is None or not hasattr(controller, "diagnostics"):
+        return {}
+    diagnostics = controller.diagnostics()
+    return dict(diagnostics) if isinstance(diagnostics, dict) else {}
 
 
 def _reaction_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:
