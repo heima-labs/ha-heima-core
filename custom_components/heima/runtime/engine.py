@@ -91,6 +91,7 @@ from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .proposal_engine import ProposalEngine
 from .reactions import (
     create_builtin_reaction_plugin_registry,
+    create_context_conditioned_lighting_runtime_confirmation_descriptor,
     normalize_reaction_options_payload,
     resolve_reaction_type,
 )
@@ -228,6 +229,9 @@ class HeimaEngine:
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
+        self.register_runtime_confirmation_descriptor(
+            create_context_conditioned_lighting_runtime_confirmation_descriptor()
+        )
         self._signal_router = SignalRouter()
         self._learning_modules: list[ILearningModule] = []
         self._last_signal_buckets: dict[type, list[InferenceSignal]] = {}

@@ -6,6 +6,7 @@ from typing import Any
 
 from ..analyzers.context_conditions import normalize_context_conditions
 from ..contracts import ApplyStep
+from ..runtime_confirmation import RenderedRuntimeRequest, RuntimeConfirmationDescriptor
 from ..snapshot import DecisionSnapshot
 from .lighting_schedule import (
     _ScheduledLightingBase,
@@ -91,6 +92,82 @@ def build_context_conditioned_lighting_reaction(
         context_conditions=context_conditions,
         reaction_id=proposal_id,
     )
+
+
+def create_context_conditioned_lighting_runtime_confirmation_descriptor() -> (
+    RuntimeConfirmationDescriptor
+):
+    """Return the runtime-confirmation descriptor for contextual lighting scenes."""
+    return RuntimeConfirmationDescriptor(
+        reaction_type="context_conditioned_lighting_scene",
+        occurrence_key=_runtime_confirmation_occurrence_key,
+        render_request=_render_runtime_confirmation_request,
+    )
+
+
+def _runtime_confirmation_occurrence_key(
+    reaction: Any,
+    snapshot: DecisionSnapshot,
+    steps: list[ApplyStep],
+) -> str:
+    diagnostics = reaction.diagnostics() if hasattr(reaction, "diagnostics") else {}
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    room_id = str(diagnostics.get("room_id") or "").strip() or "unknown_room"
+    weekday = str(diagnostics.get("weekday") or "").strip() or "unknown_weekday"
+    scheduled_min = str(diagnostics.get("scheduled_min") or "").strip() or "unknown_time"
+    occurrence_date = str(diagnostics.get("last_fired_date") or "").strip()
+    if not occurrence_date:
+        occurrence_date = str(snapshot.ts or "").split("T", 1)[0] or "unknown_date"
+    step_fingerprint = ",".join(
+        sorted(
+            str(step.params.get("entity_id") or step.target or step.action)
+            for step in steps
+            if str(step.params.get("entity_id") or step.target or step.action)
+        )
+    )
+    return (
+        f"context_conditioned_lighting_scene:{reaction.reaction_id}:"
+        f"{room_id}:{weekday}:{scheduled_min}:{occurrence_date}:{step_fingerprint}"
+    )
+
+
+def _render_runtime_confirmation_request(
+    reaction: Any,
+    steps: list[ApplyStep],
+    language: str,
+) -> RenderedRuntimeRequest:
+    _ = language
+    diagnostics = reaction.diagnostics() if hasattr(reaction, "diagnostics") else {}
+    room_id = ""
+    if isinstance(diagnostics, dict):
+        room_id = str(diagnostics.get("room_id") or "").strip()
+    title = f"Apply contextual lighting in {room_id}?" if room_id else "Apply contextual lighting?"
+    descriptions = [_describe_runtime_lighting_step(step) for step in steps]
+    descriptions = [item for item in descriptions if item]
+    if not descriptions:
+        return RenderedRuntimeRequest(title=title, message="Apply the suggested lighting scene?")
+    visible = descriptions[:3]
+    suffix = (
+        f" and {len(descriptions) - len(visible)} more" if len(descriptions) > len(visible) else ""
+    )
+    return RenderedRuntimeRequest(
+        title=title,
+        message=f"Heima suggests: {', '.join(visible)}{suffix}.",
+    )
+
+
+def _describe_runtime_lighting_step(step: ApplyStep) -> str:
+    entity_id = str(step.params.get("entity_id") or step.target or "").strip()
+    subject = entity_id or "a light"
+    if step.action == "light.turn_off":
+        return f"turn off {subject}"
+    if step.action == "light.turn_on":
+        brightness = step.params.get("brightness")
+        if isinstance(brightness, (int, float)):
+            return f"set {subject} to brightness {int(brightness)}"
+        return f"turn on {subject}"
+    return f"apply {step.action} to {subject}"
 
 
 def present_context_conditioned_lighting_label(

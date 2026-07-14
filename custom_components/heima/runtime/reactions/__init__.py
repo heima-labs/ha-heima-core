@@ -23,6 +23,7 @@ from .builtin import ConsecutiveStateReaction
 from .context_conditioned_lighting import (
     ContextConditionedLightingReaction,
     build_context_conditioned_lighting_reaction,
+    create_context_conditioned_lighting_runtime_confirmation_descriptor,
     present_context_conditioned_lighting_label,
     present_context_conditioned_lighting_proposal_label,
     present_context_conditioned_lighting_review_title,

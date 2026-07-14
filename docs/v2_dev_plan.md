@@ -126,10 +126,11 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
 **Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1-AH3
-complete; AH4 is in progress.
+complete; AH4 is in progress; AH5 descriptor work has started.
 **Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Continue AH4 with descriptor-specific validation and the first concrete descriptor in AH5.
+Continue AH4/AH5 with descriptor-specific validation and configuration support for
+`context_conditioned_lighting_scene`.
 
 ### Current Working Notes
 
@@ -193,6 +194,11 @@ Continue AH4 with descriptor-specific validation and the first concrete descript
       `supports_actions` routes, and fail closed when no actionable route is available.
     - Approved and timeout-applied requests now re-run generic apply filters, manual hold filtering,
       and dependency evaluation before executing stored steps.
+  - AH5 started:
+    - Added the first concrete `RuntimeConfirmationDescriptor` for
+      `context_conditioned_lighting_scene`.
+    - The descriptor provides occurrence identity and resident-facing text for mixed lighting
+      scenes without adding lighting-specific branches to the runtime confirmation controller.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3725,18 +3731,18 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [ ] Descriptor validators can veto request creation or approved/timeout-applied execution.
 
 5. **AH5 — First descriptor: context-conditioned lighting scene**
-   - Register a `RuntimeConfirmationDescriptor` for `context_conditioned_lighting_scene`.
-   - Define occurrence key semantics for lighting scene occurrences.
-   - Render concise resident-facing text for:
+   - Register a `RuntimeConfirmationDescriptor` for `context_conditioned_lighting_scene`. `DONE`
+   - Define occurrence key semantics for lighting scene occurrences. `DONE`
+   - Render concise resident-facing text for: `DONE`
      - turning lights off
      - setting brightness
      - mixed light-scene changes
    - Add reaction configuration support for `execution_policy.mode`, confirmation timeout, targets,
-     and timeout behavior.
+     and timeout behavior. `TODO`
    - Acceptance:
-     - [ ] A learned/context-conditioned lighting scene in `ask_residents` creates a runtime
+     - [x] A learned/context-conditioned lighting scene in `ask_residents` creates a runtime
        request instead of applying immediately.
-     - [ ] Approving applies the stored lighting steps.
+     - [x] Approving applies the stored lighting steps.
      - [ ] Dismissing applies nothing.
 
 6. **AH6 — Confirmation statistics and promotion state**
