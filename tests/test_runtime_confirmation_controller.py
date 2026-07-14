@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 
 from custom_components.heima.runtime.contracts import ApplyStep
-from custom_components.heima.runtime.notifications import ActionableNotificationResponse
+from custom_components.heima.runtime.notifications import (
+    ActionableNotificationResponse,
+    HeimaEventPipeline,
+)
 from custom_components.heima.runtime.runtime_confirmation import (
     RuntimeActionRequest,
     RuntimeApplyResult,
@@ -40,12 +43,25 @@ class _FakeBus:
 class _FakeHass:
     def __init__(self) -> None:
         self.bus = _FakeBus()
+        self.services = _FakeServices()
         self.tasks: list[asyncio.Task] = []
 
     def async_create_task(self, coro):
         task = asyncio.create_task(coro)
         self.tasks.append(task)
         return task
+
+
+class _FakeServices:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict, bool]] = []
+        self.available: dict[str, object] = {}
+
+    async def async_call(self, domain, service, data, blocking=False):
+        self.calls.append((domain, service, dict(data), blocking))
+
+    def async_services(self):
+        return {"notify": dict(self.available)}
 
 
 @pytest.mark.asyncio
@@ -178,6 +194,62 @@ async def test_controller_action_event_dispatches_parsed_approve(monkeypatch) ->
     assert calls == ["approved"]
 
 
+@pytest.mark.asyncio
+async def test_controller_create_request_sends_actionable_notification(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+    hass = _FakeHass()
+    hass.services.available["mobile_app_phone"] = object()
+    controller = RuntimeConfirmationController(
+        hass,
+        event_pipeline=HeimaEventPipeline(hass),
+        notifications_config_provider=lambda: {
+            "recipients": {"resident": ["mobile_app_phone"]},
+            "route_targets": ["resident"],
+            "notification_service_capabilities": {"mobile_app_phone": {"supports_actions": True}},
+        },
+    )
+    request = _request()
+
+    resolved = await controller.async_create_request(request)
+
+    assert resolved.status == "pending"
+    assert hass.services.calls
+    payload = hass.services.calls[-1][2]
+    assert payload["data"]["tag"] == request.request_id
+    assert payload["data"]["actions"] == [
+        {"action": ACTION_RUNTIME_REQUEST_APPROVE, "title": "Yes"},
+        {"action": ACTION_RUNTIME_REQUEST_DISMISS, "title": "No"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_controller_create_request_fails_without_actionable_route(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+    hass = _FakeHass()
+    hass.services.available["mobile_app_phone"] = object()
+    controller = RuntimeConfirmationController(
+        hass,
+        event_pipeline=HeimaEventPipeline(hass),
+        notifications_config_provider=lambda: {
+            "recipients": {"resident": ["mobile_app_phone"]},
+            "route_targets": ["resident"],
+            "notification_service_capabilities": {"mobile_app_phone": {"supports_actions": False}},
+        },
+    )
+
+    resolved = await controller.async_create_request(_request())
+
+    assert resolved.status == "failed"
+    assert resolved.failure_reason == "no_actionable_route"
+    assert hass.services.calls == []
+
+
 def _request(*, on_timeout: str = "skip") -> RuntimeActionRequest:
     now = datetime.now(timezone.utc)
     return RuntimeActionRequest(
@@ -190,4 +262,5 @@ def _request(*, on_timeout: str = "skip") -> RuntimeActionRequest:
         created_at=now,
         expires_at=now + timedelta(minutes=10),
         on_timeout=on_timeout,  # type: ignore[arg-type]
+        confirmation_targets=("resident",),
     )

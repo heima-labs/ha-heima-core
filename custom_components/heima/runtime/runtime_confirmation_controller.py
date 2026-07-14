@@ -10,10 +10,15 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 
 from .notifications import (
+    ActionableDeliveryResult,
+    ActionableNotification,
     ActionableNotificationResponse,
+    HeimaEventPipeline,
+    NotificationAction,
     parse_actionable_notification_response,
 )
 from .runtime_confirmation import (
+    FAILURE_NO_ACTIONABLE_ROUTE,
     FAILURE_VALIDATION_FAILED,
     RuntimeActionRequest,
     RuntimeActionRequestRegistry,
@@ -29,6 +34,7 @@ SKIP_TIMEOUT_SKIPPED = "timeout_skipped"
 RuntimeApplyHandler = Callable[
     [RuntimeActionRequest, RuntimeRequestStatus], Awaitable[RuntimeActionRequest]
 ]
+NotificationsConfigProvider = Callable[[], dict[str, Any]]
 
 
 class RuntimeConfirmationController:
@@ -39,10 +45,14 @@ class RuntimeConfirmationController:
         hass: HomeAssistant,
         *,
         apply_handler: RuntimeApplyHandler | None = None,
+        event_pipeline: HeimaEventPipeline | None = None,
+        notifications_config_provider: NotificationsConfigProvider | None = None,
         registry: RuntimeActionRequestRegistry | None = None,
     ) -> None:
         self._hass = hass
         self._apply_handler = apply_handler
+        self._event_pipeline = event_pipeline
+        self._notifications_config_provider = notifications_config_provider
         self._registry = registry or RuntimeActionRequestRegistry()
         self._timeout_handles: dict[str, Callable[[], None]] = {}
         self._unsub_action_events: Callable[[], None] | None = None
@@ -77,6 +87,26 @@ class RuntimeConfirmationController:
         if registered.request_id == request.request_id:
             self._schedule_timeout(registered)
         return registered
+
+    async def async_create_request(self, request: RuntimeActionRequest) -> RuntimeActionRequest:
+        """Register a runtime request and send its actionable notification."""
+        registered = self.add_request(request)
+        if registered.request_id != request.request_id:
+            return registered
+
+        delivery = await self._async_send_actionable_request(registered)
+        if delivery.delivered:
+            return registered
+
+        self._cancel_timeout(registered.request_id)
+        return (
+            self._registry.resolve(
+                registered.request_id,
+                status="failed",
+                failure_reason=delivery.failure_reason or FAILURE_NO_ACTIONABLE_ROUTE,
+            )
+            or registered
+        )
 
     async def async_handle_action_event(self, event: Event) -> RuntimeActionRequest | None:
         """Handle a Home Assistant mobile app notification action event."""
@@ -122,6 +152,32 @@ class RuntimeConfirmationController:
         data["scheduled_timeouts"] = sorted(self._timeout_handles)
         data["action_event_subscription_active"] = self._unsub_action_events is not None
         return data
+
+    async def _async_send_actionable_request(
+        self,
+        request: RuntimeActionRequest,
+    ) -> ActionableDeliveryResult:
+        if self._event_pipeline is None or self._notifications_config_provider is None:
+            return ActionableDeliveryResult(failure_reason=FAILURE_NO_ACTIONABLE_ROUTE)
+
+        notifications_config = dict(self._notifications_config_provider())
+        return await self._event_pipeline.async_send_actionable(
+            ActionableNotification(
+                title=request.title,
+                message=request.message,
+                request_id=request.request_id,
+                actions=(
+                    NotificationAction(ACTION_RUNTIME_REQUEST_APPROVE, "Yes"),
+                    NotificationAction(ACTION_RUNTIME_REQUEST_DISMISS, "No"),
+                ),
+            ),
+            recipients=dict(notifications_config.get("recipients", {})),
+            recipient_groups=dict(notifications_config.get("recipient_groups", {})),
+            route_targets=list(request.confirmation_targets),
+            notification_service_capabilities=dict(
+                notifications_config.get("notification_service_capabilities", {})
+            ),
+        )
 
     async def _async_process_apply_trigger(
         self,

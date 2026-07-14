@@ -363,7 +363,15 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             entry_id=entry.entry_id,
             on_job_due=self._async_handle_scheduled_job,
         )
-        self._runtime_confirmation = RuntimeConfirmationController(hass)
+        self._runtime_confirmation = RuntimeConfirmationController(
+            hass,
+            apply_handler=self.engine.async_apply_runtime_confirmation_request,
+            event_pipeline=self.engine.event_pipeline,
+            notifications_config_provider=self.engine.notifications_config,
+        )
+        self.engine.set_runtime_confirmation_request_handler(
+            self._runtime_confirmation.async_create_request
+        )
         self._ha_backed_reconciliation_summary: dict[str, object] = {}
         self.data = HeimaRuntimeState(
             health_ok=True,

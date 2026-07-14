@@ -126,10 +126,10 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
 **Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1-AH3
-complete; AH4 is next.
+complete; AH4 is in progress.
 **Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Start AH4: engine apply-path integration and pre-apply validation.
+Continue AH4 with descriptor-specific validation and the first concrete descriptor in AH5.
 
 ### Current Working Notes
 
@@ -183,6 +183,16 @@ Start AH4: engine apply-path integration and pre-apply validation.
     - `on_timeout: apply` dispatches to an injected apply handler; AH4 owns the concrete
       pre-apply validation and stored-step execution.
     - Coordinator owns the controller lifecycle and exposes diagnostics.
+  - AH4 in progress:
+    - Coordinator now wires the runtime confirmation controller to the engine apply handler and the
+      existing event pipeline.
+    - Engine exposes a generic runtime-confirmation request sink and descriptor registry.
+    - `execution_policy.mode: ask_residents` diverts descriptor-supported reaction steps into a
+      `RuntimeActionRequest` instead of merging them into the immediate apply plan.
+    - Controller can register a request, schedule timeout, send actionable notifications through
+      `supports_actions` routes, and fail closed when no actionable route is available.
+    - Approved and timeout-applied requests now re-run generic apply filters, manual hold filtering,
+      and dependency evaluation before executing stored steps.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3692,26 +3702,27 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
        the in-memory registry.
 
 4. **AH4 — Engine apply-path integration**
-   - Integrate `execution_policy.mode` into the reaction apply path.
-   - Keep `auto_apply` behavior unchanged.
+   - Integrate `execution_policy.mode` into the reaction apply path. `IN PROGRESS`
+   - Keep `auto_apply` behavior unchanged. `DONE`
    - For `ask_residents`:
-     - store the concrete `ApplyStep` plan
-     - send an actionable request
-     - do not apply steps immediately
+     - store the concrete `ApplyStep` plan. `DONE`
+     - send an actionable request. `DONE`
+     - do not apply steps immediately. `DONE`
    - Add pre-apply validation:
-     - request is still pending and not expired
-     - source reaction still exists and is compatible
-     - entities/services still exist
-     - manual hold and apply filters are evaluated per step
-     - dependencies are evaluated after per-step blocking
-     - descriptor validators pass
+     - request is still pending and not expired. `DONE`
+     - source reaction still exists and is compatible. `PARTIAL`
+     - entities/services still exist. `TODO`
+     - manual hold and apply filters are evaluated per step. `DONE`
+     - dependencies are evaluated after per-step blocking. `DONE`
+     - descriptor validators pass. `TODO`
    - Register pending applies only immediately before approved/timeout-applied execution.
    - Acceptance:
-     - [ ] Manual hold blocks affected steps without blocking unrelated surviving steps.
-     - [ ] Dependent steps are skipped when prerequisites did not run.
-     - [ ] If no step applies after an apply trigger, status is `failed`.
-     - [ ] If the source reaction is disabled or structurally changed while pending, status is
-       `cancelled`.
+     - [x] Manual hold blocks affected steps without blocking unrelated surviving steps.
+     - [x] Dependent steps are skipped when prerequisites did not run.
+     - [x] If no step applies after an apply trigger, status is `failed`.
+     - [x] If the source reaction is disabled while pending, status is `cancelled`.
+     - [ ] If the source reaction is structurally changed while pending, status is `cancelled`.
+     - [ ] Descriptor validators can veto request creation or approved/timeout-applied execution.
 
 5. **AH5 — First descriptor: context-conditioned lighting scene**
    - Register a `RuntimeConfirmationDescriptor` for `context_conditioned_lighting_scene`.

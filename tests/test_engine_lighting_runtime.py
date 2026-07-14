@@ -8,6 +8,8 @@ from homeassistant.exceptions import ServiceNotFound
 
 from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
+from custom_components.heima.runtime.runtime_confirmation import RuntimeActionRequest
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
@@ -77,6 +79,28 @@ class _RegistryEntry:
     def __init__(self, entity_id: str, area_id: str | None) -> None:
         self.entity_id = entity_id
         self.area_id = area_id
+
+
+def _runtime_request(*, steps: tuple[ApplyStep, ...]) -> RuntimeActionRequest:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    return RuntimeActionRequest(
+        reaction_id="reaction-1",
+        reaction_type="test_reaction",
+        occurrence_key="occurrence-1",
+        title="Apply?",
+        message="Apply test steps.",
+        apply_steps=steps,
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+
+
+class _Reaction:
+    @property
+    def reaction_id(self) -> str:
+        return "reaction-1"
 
 
 def test_room_with_occupancy_mode_none_is_off_and_does_not_contribute():
@@ -236,6 +260,141 @@ async def test_apply_plan_ignores_light_turn_off_service_race():
 
     await engine._execute_apply_plan(plan)
 
+    assert engine._hass.services.calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_confirmation_apply_executes_stored_steps() -> None:
+    engine = _build_engine({}, {"light.studio": "off"})
+    engine._reactions = [_Reaction()]
+    request = _runtime_request(
+        steps=(
+            ApplyStep(
+                domain="light",
+                target="light.studio",
+                action="light.turn_on",
+                params={"entity_id": "light.studio", "brightness": 10},
+                source="reaction:reaction-1",
+            ),
+        )
+    )
+
+    resolved = await engine.async_apply_runtime_confirmation_request(request, "approved")
+
+    assert resolved.status == "approved"
+    assert resolved.apply_result is not None
+    assert resolved.apply_result.applied_steps == 1
+    assert engine._hass.services.calls[-1] == (
+        "light",
+        "turn_on",
+        {"entity_id": "light.studio", "brightness": 10},
+        False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_confirmation_manual_hold_zero_apply_fails() -> None:
+    engine = _build_engine({}, {"switch.front_privacy": "on"})
+    engine._reactions = [_Reaction()]
+    engine._manual_hold_manager.activate_hold(
+        ManualHoldScope("switch", "entity", "switch.front_privacy"),
+        ManualHoldReason("helper_on", "Manual hold active"),
+    )
+    request = _runtime_request(
+        steps=(
+            ApplyStep(
+                domain="switch",
+                target="switch.front_privacy",
+                action="switch.turn_off",
+                params={"entity_id": "switch.front_privacy"},
+                source="reaction:reaction-1",
+            ),
+        )
+    )
+
+    resolved = await engine.async_apply_runtime_confirmation_request(request, "approved")
+
+    assert resolved.status == "failed"
+    assert resolved.failure_reason == "all_steps_blocked"
+    assert resolved.apply_result is not None
+    assert resolved.apply_result.applied_steps == 0
+    assert resolved.apply_result.blocked_steps == 1
+    assert engine._hass.services.calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_confirmation_dependency_skip_allows_unrelated_step() -> None:
+    engine = _build_engine({}, {"switch.front_privacy": "on", "light.studio": "off"})
+    engine._reactions = [_Reaction()]
+    engine._manual_hold_manager.activate_hold(
+        ManualHoldScope("switch", "entity", "switch.front_privacy"),
+        ManualHoldReason("helper_on", "Manual hold active"),
+    )
+    request = _runtime_request(
+        steps=(
+            ApplyStep(
+                domain="switch",
+                target="switch.front_privacy",
+                action="switch.turn_off",
+                params={"entity_id": "switch.front_privacy"},
+                source="reaction:reaction-1",
+                step_id="privacy",
+            ),
+            ApplyStep(
+                domain="light",
+                target="light.studio",
+                action="light.turn_on",
+                params={"entity_id": "light.studio"},
+                source="reaction:reaction-1",
+                step_id="light",
+                depends_on=("privacy",),
+            ),
+            ApplyStep(
+                domain="light",
+                target="light.studio",
+                action="light.turn_on",
+                params={"entity_id": "light.studio", "brightness": 20},
+                source="reaction:reaction-1",
+                step_id="unrelated",
+            ),
+        )
+    )
+
+    resolved = await engine.async_apply_runtime_confirmation_request(request, "approved")
+
+    assert resolved.status == "approved"
+    assert resolved.apply_result is not None
+    assert resolved.apply_result.applied_steps == 1
+    assert resolved.apply_result.blocked_steps == 1
+    assert resolved.apply_result.skipped_steps == 1
+    assert engine._hass.services.calls == [
+        (
+            "light",
+            "turn_on",
+            {"entity_id": "light.studio", "brightness": 20},
+            False,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_confirmation_apply_cancelled_when_reaction_missing() -> None:
+    engine = _build_engine({}, {"light.studio": "off"})
+    request = _runtime_request(
+        steps=(
+            ApplyStep(
+                domain="light",
+                target="light.studio",
+                action="light.turn_on",
+                params={"entity_id": "light.studio"},
+                source="reaction:reaction-1",
+            ),
+        )
+    )
+
+    resolved = await engine.async_apply_runtime_confirmation_request(request, "approved")
+
+    assert resolved.status == "cancelled"
     assert engine._hass.services.calls == []
 
 

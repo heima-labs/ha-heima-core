@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -84,6 +85,7 @@ from .invariants import (
 from .manual_hold import ManualHoldManager, ManualHoldReason, ManualHoldScope
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
+from .notifications import HeimaEventPipeline
 from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .proposal_engine import ProposalEngine
@@ -98,12 +100,27 @@ from .room_context import (
     RoomDeviceContextBuilder,
     serialize_room_device_context,
 )
+from .runtime_confirmation import (
+    FAILURE_ALL_STEPS_BLOCKED,
+    ExecutionPolicy,
+    RuntimeActionRequest,
+    RuntimeApplyResult,
+    RuntimeConfirmationDescriptor,
+    RuntimeRequestStatus,
+    evaluate_step_dependencies,
+    fail_if_zero_applied,
+    resolve_runtime_request,
+)
 from .scheduler import ScheduledRuntimeJob
 from .snapshot import DecisionSnapshot
 from .snapshot_buffer import SnapshotBuffer
 from .state_store import CanonicalState
 
 _LOGGER = logging.getLogger(__name__)
+
+RuntimeConfirmationRequestHandler = Callable[
+    [RuntimeActionRequest], Awaitable[RuntimeActionRequest]
+]
 
 _REMOVED_REACTION_TYPES = {
     "room_darkness_lighting_assist",
@@ -205,6 +222,8 @@ class HeimaEngine:
         self._reactions: list[HeimaReaction] = []
         self._muted_reactions: set[str] = set()
         self._configured_reaction_ids: set[str] = set()
+        self._runtime_confirmation_request_handler: RuntimeConfirmationRequestHandler | None = None
+        self._runtime_confirmation_descriptors: dict[str, RuntimeConfirmationDescriptor] = {}
         self._snapshot_buffer = SnapshotBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
@@ -237,6 +256,16 @@ class HeimaEngine:
     @property
     def state(self) -> CanonicalState:
         return self._state
+
+    @property
+    def event_pipeline(self) -> HeimaEventPipeline:
+        """Expose the event pipeline for integration-owned runtime controllers."""
+        return self._events_domain.pipeline
+
+    @property
+    def notifications_config(self) -> dict[str, Any]:
+        """Return the current notifications configuration."""
+        return self._notifications_config()
 
     def set_room_context_builder(self, builder: RoomDeviceContextBuilder) -> None:
         """Bind the room context builder used by the runtime cycle."""
@@ -802,6 +831,23 @@ class HeimaEngine:
             ),
             reason="service:clear_manual_hold",
         )
+
+    def set_runtime_confirmation_request_handler(
+        self,
+        handler: RuntimeConfirmationRequestHandler | None,
+    ) -> None:
+        """Set the integration-owned sink for runtime confirmation requests."""
+        self._runtime_confirmation_request_handler = handler
+
+    def register_runtime_confirmation_descriptor(
+        self,
+        descriptor: RuntimeConfirmationDescriptor,
+    ) -> None:
+        """Register a reaction-family descriptor for resident runtime confirmation."""
+        reaction_type = str(descriptor.reaction_type or "").strip()
+        if not reaction_type:
+            return
+        self._runtime_confirmation_descriptors[reaction_type] = descriptor
 
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
@@ -1589,8 +1635,14 @@ class HeimaEngine:
             try:
                 steps = reaction.evaluate(history)
                 tagged = [dataclass_replace(step, source=f"reaction:{rid}") for step in steps]
-                result.extend(tagged)
                 if tagged:
+                    handled = self._maybe_create_runtime_confirmation_request(
+                        reaction,
+                        tagged,
+                        history[-1] if history else self._snapshot,
+                    )
+                    if not handled:
+                        result.extend(tagged)
                     self._register_reaction_outcome(reaction, rid)
                     self._events_domain.queue_event(
                         HeimaEvent(
@@ -1611,6 +1663,116 @@ class HeimaEngine:
                     error="exception_raised",
                 )
         return result
+
+    def _maybe_create_runtime_confirmation_request(
+        self,
+        reaction: HeimaReaction,
+        steps: list[ApplyStep],
+        snapshot: DecisionSnapshot,
+    ) -> bool:
+        """Divert ask-residents reaction steps into a runtime confirmation request."""
+        reaction_id = reaction.reaction_id
+        cfg = self._configured_reaction_config(reaction_id)
+        policy = ExecutionPolicy.from_mapping(cfg.get("execution_policy"))
+        if policy.mode != "ask_residents":
+            return False
+        if not self._options.engine_enabled:
+            return False
+
+        reaction_type = self._reaction_type_from_config(cfg)
+        descriptor = self._runtime_confirmation_descriptors.get(reaction_type)
+        if descriptor is None or self._runtime_confirmation_request_handler is None:
+            self._events_domain.queue_event(
+                HeimaEvent(
+                    type="system.config_error",
+                    key=f"system.config_error.runtime_confirmation_unsupported.{reaction_id}",
+                    severity="error",
+                    title="Unsupported runtime confirmation",
+                    message=(
+                        f"Reaction '{reaction_id}' is configured for resident confirmation, "
+                        "but its reaction family does not currently support it."
+                    ),
+                    context={
+                        "reaction_id": reaction_id,
+                        "reaction_type": reaction_type,
+                    },
+                )
+            )
+            return True
+
+        confirmation = policy.confirmation
+        now = datetime.now(timezone.utc)
+        rendered = descriptor.render_request(
+            reaction,
+            steps,
+            self._runtime_confirmation_language(),
+        )
+        request = RuntimeActionRequest(
+            reaction_id=reaction_id,
+            reaction_type=reaction_type,
+            occurrence_key=descriptor.occurrence_key(reaction, snapshot, steps),
+            title=rendered.title,
+            message=rendered.message,
+            apply_steps=tuple(steps),
+            created_at=now,
+            expires_at=now + timedelta(minutes=confirmation.expires_in_minutes),
+            on_timeout=confirmation.on_timeout,
+            confirmation_targets=self._runtime_confirmation_targets(policy),
+            context_snapshot=snapshot.as_dict(),
+        )
+        async_create_task = getattr(self._hass, "async_create_task", None)
+        if not callable(async_create_task):
+            self._events_domain.queue_event(
+                HeimaEvent(
+                    type="system.config_error",
+                    key=f"system.config_error.runtime_confirmation_no_task_runner.{reaction_id}",
+                    severity="error",
+                    title="Runtime confirmation unavailable",
+                    message=(
+                        f"Reaction '{reaction_id}' could not create a resident confirmation "
+                        "request because no Home Assistant task runner is available."
+                    ),
+                    context={
+                        "reaction_id": reaction_id,
+                        "reaction_type": reaction_type,
+                    },
+                )
+            )
+            return True
+        async_create_task(self._runtime_confirmation_request_handler(request))
+        return True
+
+    def _configured_reaction_config(self, reaction_id: str) -> dict[str, Any]:
+        configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))
+        cfg = configured.get(reaction_id)
+        return dict(cfg) if isinstance(cfg, dict) else {}
+
+    def _runtime_confirmation_targets(self, policy: ExecutionPolicy) -> tuple[str, ...]:
+        confirmation = policy.confirmation
+        targets: list[str] = []
+        seen: set[str] = set()
+
+        def add(target: str) -> None:
+            normalized = str(target or "").strip()
+            if not normalized or normalized in seen:
+                return
+            seen.add(normalized)
+            targets.append(normalized)
+
+        for target in confirmation.target_recipients:
+            add(target)
+        for target in confirmation.target_groups:
+            add(target)
+        if confirmation.use_default_route_targets:
+            for target in self._notifications_config().get("route_targets", []) or []:
+                add(str(target))
+        return tuple(targets)
+
+    def _runtime_confirmation_language(self) -> str:
+        language = str(dict(self._entry.options).get("language") or "").strip().lower()
+        if language:
+            return language
+        return str(getattr(getattr(self._hass, "config", None), "language", "en") or "en").lower()
 
     def _register_reaction_outcome(self, reaction: HeimaReaction, reaction_id: str) -> None:
         outcome_tracker = getattr(self, "_outcome_tracker", None)
@@ -2101,6 +2263,62 @@ class HeimaEngine:
                 )
             except Exception:
                 _LOGGER.exception("Input_boolean apply failed for '%s'", helper_entity)
+
+    async def async_apply_runtime_confirmation_request(
+        self,
+        request: RuntimeActionRequest,
+        status: RuntimeRequestStatus,
+    ) -> RuntimeActionRequest:
+        """Validate and apply a stored runtime-confirmation plan."""
+        if status not in {"approved", "timeout_applied"}:
+            return request
+        if request.status != "pending":
+            return request
+
+        source_state = self._runtime_confirmation_source_state(request)
+        if source_state != "":
+            return resolve_runtime_request(
+                request,
+                status="cancelled",
+            )
+
+        plan = self._dispatch_apply_filter(
+            ApplyPlan(steps=list(request.apply_steps)),
+            self._snapshot,
+        )
+        dependency_result = evaluate_step_dependencies(plan.steps)
+        executable_steps = [step for step in dependency_result.steps if not step.blocked_by]
+        blocked_reasons: dict[str, int] = {}
+        for step in dependency_result.steps:
+            if step.blocked_by:
+                blocked_reasons[step.blocked_by] = blocked_reasons.get(step.blocked_by, 0) + 1
+
+        apply_result = RuntimeApplyResult(
+            applied_steps=len(executable_steps),
+            blocked_steps=sum(blocked_reasons.values()),
+            skipped_steps=dependency_result.skipped_steps,
+            blocked_reasons=blocked_reasons,
+            skipped_reasons=dict(dependency_result.skipped_reasons),
+        )
+        if executable_steps:
+            await self._execute_apply_plan(ApplyPlan(steps=executable_steps))
+
+        return fail_if_zero_applied(
+            request,
+            status=status,
+            apply_result=apply_result,
+            failure_reason=FAILURE_ALL_STEPS_BLOCKED,
+        )
+
+    def _runtime_confirmation_source_state(self, request: RuntimeActionRequest) -> str:
+        """Return an empty string when the source reaction still exists and is enabled."""
+        if not request.reaction_id:
+            return ""
+        if request.reaction_id in self._muted_reactions:
+            return "reaction_disabled"
+        if not any(reaction.reaction_id == request.reaction_id for reaction in self._reactions):
+            return "reaction_disabled"
+        return ""
 
     def _lighting_room_maps(self) -> dict[str, dict[str, Any]]:
         options = dict(self._entry.options)

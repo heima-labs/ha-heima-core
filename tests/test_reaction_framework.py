@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
 
 from custom_components.heima.runtime.contracts import ApplyStep
 from custom_components.heima.runtime.reactions.base import HeimaReaction
+from custom_components.heima.runtime.runtime_confirmation import (
+    RenderedRuntimeRequest,
+    RuntimeActionRequest,
+    RuntimeConfirmationDescriptor,
+)
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 # ---------------------------------------------------------------------------
@@ -50,7 +56,7 @@ def test_diagnostics_returns_empty_dict():
 # ---------------------------------------------------------------------------
 
 
-def _make_engine():
+def _make_engine(options: dict | None = None):
     from custom_components.heima.runtime.engine import HeimaEngine
 
     hass = MagicMock()
@@ -58,7 +64,7 @@ def _make_engine():
     hass.services.async_services.return_value = {}
     entry = MagicMock()
     entry.entry_id = "test"
-    entry.options = {}
+    entry.options = dict(options or {})
     return HeimaEngine(hass, entry)
 
 
@@ -116,6 +122,57 @@ def test_dispatch_reactions_tags_source():
     engine.register_reaction(TaggedReaction())
     result = engine._dispatch_reactions([])
     assert result[0].source == "reaction:TaggedReaction"
+
+
+def test_dispatch_reactions_diverts_ask_residents_to_runtime_confirmation():
+    options = {
+        "reactions": {
+            "configured": {
+                "_StepCapture": {
+                    "reaction_type": "test_confirmable",
+                    "execution_policy": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_recipients": ["resident"],
+                            "use_default_route_targets": False,
+                        },
+                    },
+                }
+            }
+        }
+    }
+    engine = _make_engine(options)
+    step = ApplyStep(domain="light", target="light.studio", action="light.turn_on")
+    engine.register_reaction(_StepCapture(step))
+    captured: list[RuntimeActionRequest] = []
+    scheduled: list[object] = []
+
+    async def _handler(request: RuntimeActionRequest) -> RuntimeActionRequest:
+        captured.append(request)
+        return request
+
+    engine._hass.async_create_task.side_effect = lambda coro: scheduled.append(coro) or coro
+    engine.set_runtime_confirmation_request_handler(_handler)
+    engine.register_runtime_confirmation_descriptor(
+        RuntimeConfirmationDescriptor(
+            reaction_type="test_confirmable",
+            occurrence_key=lambda _reaction, _snapshot, _steps: "occurrence-1",
+            render_request=lambda _reaction, _steps, _language: RenderedRuntimeRequest(
+                title="Apply?",
+                message="Apply the requested change?",
+            ),
+        )
+    )
+
+    result = engine._dispatch_reactions([DecisionSnapshot.empty()])
+    asyncio.run(scheduled[0])
+
+    assert result == []
+    assert len(captured) == 1
+    assert captured[0].reaction_id == "_StepCapture"
+    assert captured[0].reaction_type == "test_confirmable"
+    assert captured[0].confirmation_targets == ("resident",)
+    assert captured[0].apply_steps[0].source == "reaction:_StepCapture"
 
 
 def test_dispatch_reactions_passes_history():
