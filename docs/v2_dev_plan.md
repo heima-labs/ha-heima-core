@@ -3847,10 +3847,15 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
        request counters, recent request rows, step result counts, failure reasons, stale responses,
        and persisted confirmation/promotion diagnostics. `DONE`
    - Acceptance:
-     - [ ] Focused unit/integration tests pass.
+     - [x] Focused unit/integration tests pass.
      - [x] Runtime confirmation diagnostics have live diagnostic coverage.
-     - [ ] `scripts/ci_local.sh` passes.
+     - [x] `scripts/ci_local.sh` passes.
      - [ ] Relevant live diagnostic/e2e tiers pass outside the sandbox.
+   - Validation:
+     - `PATH=".venv/bin:$PATH" bash scripts/ci_local.sh` — passed: 1651 tests,
+       coverage 84.34%, ruff check and ruff format check passed; mypy remains informative.
+     - `scripts/live_tests/077_runtime_confirmation_diag_live.py` was attempted outside the
+       sandbox, but the configured HA URL did not accept connections (`127.0.0.1:8823`).
 
 ### Expected File Areas
 
