@@ -242,7 +242,7 @@ def _seed_presence_history(client: HAClient) -> None:
     now = datetime.now().astimezone()
     weekday = now.weekday()
     first_minute = (now.hour * 60 + now.minute + 1) % 1440
-    second_minute = (first_minute + 60) % 1440
+    second_minute = first_minute + 10 if first_minute <= 1429 else first_minute - 10
     for minute in (first_minute, second_minute):
         client.call_service(
             "heima",
