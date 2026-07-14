@@ -5078,6 +5078,23 @@ async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtim
                     }
                 },
                 "labels": {"r1": "Studio contextual lighting"},
+                "confirmation_stats": {
+                    "r1": {
+                        "approved": 3,
+                        "approved_dates": [
+                            "2026-07-12",
+                            "2026-07-13",
+                            "2026-07-14",
+                        ],
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "approved",
+                        "approved_at": "2026-07-14T10:00:00+00:00",
+                    }
+                },
             }
         }
     )
@@ -5201,6 +5218,8 @@ async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residen
     assert policy["promotion"] == {"enabled": True, "min_samples": 3}
     assert "promoted_from_confirmation" not in policy
     assert "promoted_at" not in policy
+    assert flow.options["reactions"]["confirmation_stats"] == {}
+    assert flow.options["reactions"]["promotion_reviews"] == {}
 
 
 @pytest.mark.asyncio

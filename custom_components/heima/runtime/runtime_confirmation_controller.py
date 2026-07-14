@@ -229,7 +229,7 @@ class RuntimeConfirmationController:
         delay = max(0.0, (request.expires_at - datetime.now(UTC)).total_seconds())
 
         @callback
-        def _handle(_now) -> None:  # type: ignore[no-untyped-def]
+        def _handle(_now) -> None:
             self._hass.async_create_task(self.async_handle_timeout(request.request_id))
 
         self._timeout_handles[request.request_id] = async_call_later(

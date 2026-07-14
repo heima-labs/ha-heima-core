@@ -1,7 +1,7 @@
 # Resident Runtime Confirmation Spec
 
-**Status:** Draft vNext  
-**Date:** 2026-07-12  
+**Status:** Draft vNext
+**Date:** 2026-07-12
 **Related specs:** `core/events_and_notifications_spec.md`,
 `core/notification_recipients_spec.md`, `core/apply_step_contract.md`,
 `core/manual_hold_framework_spec.md`, `learning/context_conditioned_lighting_learning_spec.md`

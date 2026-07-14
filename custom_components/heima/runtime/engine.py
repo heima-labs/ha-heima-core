@@ -103,6 +103,7 @@ from .room_context import (
 )
 from .runtime_confirmation import (
     FAILURE_ALL_STEPS_BLOCKED,
+    FAILURE_MANUAL_HOLD_ACTIVE,
     ExecutionPolicy,
     RuntimeActionRequest,
     RuntimeApplyResult,
@@ -1704,13 +1705,31 @@ class HeimaEngine:
             )
             return True
 
-        confirmation = policy.confirmation
         now = datetime.now(timezone.utc)
         rendered = descriptor.render_request(
             reaction,
             steps,
             self._runtime_confirmation_language(),
         )
+        if policy.confirmation is None:
+            self._events_domain.queue_event(
+                HeimaEvent(
+                    type="system.config_error",
+                    key=f"system.config_error.runtime_confirmation_missing_policy.{reaction_id}",
+                    severity="error",
+                    title="Runtime confirmation unavailable",
+                    message=(
+                        f"Reaction '{reaction_id}' requested resident confirmation but has "
+                        "no confirmation policy."
+                    ),
+                    context={
+                        "reaction_id": reaction_id,
+                        "reaction_type": reaction_type,
+                    },
+                )
+            )
+            return True
+        confirmation = policy.confirmation
         request = RuntimeActionRequest(
             reaction_id=reaction_id,
             reaction_type=reaction_type,
@@ -1752,6 +1771,8 @@ class HeimaEngine:
         return dict(cfg) if isinstance(cfg, dict) else {}
 
     def _runtime_confirmation_targets(self, policy: ExecutionPolicy) -> tuple[str, ...]:
+        if policy.confirmation is None:
+            return ()
         confirmation = policy.confirmation
         targets: list[str] = []
         seen: set[str] = set()
@@ -2295,7 +2316,8 @@ class HeimaEngine:
         blocked_reasons: dict[str, int] = {}
         for step in dependency_result.steps:
             if step.blocked_by:
-                blocked_reasons[step.blocked_by] = blocked_reasons.get(step.blocked_by, 0) + 1
+                blocked_reason = self._runtime_confirmation_blocked_reason(step.blocked_by)
+                blocked_reasons[blocked_reason] = blocked_reasons.get(blocked_reason, 0) + 1
 
         apply_result = RuntimeApplyResult(
             applied_steps=len(executable_steps),
@@ -2313,6 +2335,14 @@ class HeimaEngine:
             apply_result=apply_result,
             failure_reason=FAILURE_ALL_STEPS_BLOCKED,
         )
+
+    @staticmethod
+    def _runtime_confirmation_blocked_reason(blocked_by: str) -> str:
+        """Normalize apply blockers into runtime-confirmation result reasons."""
+        reason = str(blocked_by or "").strip()
+        if reason.startswith("manual_hold:"):
+            return FAILURE_MANUAL_HOLD_ACTIVE
+        return reason
 
     def _runtime_confirmation_source_state(self, request: RuntimeActionRequest) -> str:
         """Return an empty string when the source reaction still exists and is enabled."""

@@ -864,14 +864,27 @@ class _ReactionEditingStepsMixin:
                 description_placeholders={"reaction_description": label},
             )
 
-        cfg["enabled"] = bool(current_input.get("enabled", True))
         existing_policy = cfg.get("execution_policy")
+        existing_policy = dict(existing_policy) if isinstance(existing_policy, dict) else {}
+        reset_promotion_state = self._runtime_confirmation_edit_resets_promotion_state(
+            existing_policy=existing_policy,
+            submitted_policy=execution_policy,
+        )
+
+        cfg["enabled"] = bool(current_input.get("enabled", True))
         cfg["execution_policy"] = self._merge_runtime_confirmation_execution_policy(
-            existing_policy=dict(existing_policy) if isinstance(existing_policy, dict) else {},
+            existing_policy=existing_policy,
             submitted_policy=execution_policy,
         )
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
+        if reset_promotion_state:
+            stats_by_reaction = dict(reactions_cfg.get("confirmation_stats", {}))
+            reviews = dict(reactions_cfg.get("promotion_reviews", {}))
+            stats_by_reaction.pop(pid, None)
+            reviews.pop(pid, None)
+            reactions_cfg["confirmation_stats"] = stats_by_reaction
+            reactions_cfg["promotion_reviews"] = reviews
         self._store_reactions_options(reactions_cfg)
         self._editing_reaction_id = None
         return await self.async_step_init()
@@ -1253,6 +1266,19 @@ class _ReactionEditingStepsMixin:
                 if key in existing_policy:
                     merged[key] = existing_policy[key]
         return merged
+
+    @staticmethod
+    def _runtime_confirmation_edit_resets_promotion_state(
+        *,
+        existing_policy: dict[str, Any],
+        submitted_policy: dict[str, Any],
+    ) -> bool:
+        """Return whether an admin edit invalidates old promotion evidence."""
+        return (
+            str(existing_policy.get("mode") or "") == "auto_apply"
+            and bool(existing_policy.get("promoted_from_confirmation"))
+            and str(submitted_policy.get("mode") or "") == "ask_residents"
+        )
 
     @staticmethod
     def _runtime_confirmation_string_list(value: Any) -> list[str]:

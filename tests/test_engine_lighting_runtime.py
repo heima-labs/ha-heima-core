@@ -319,6 +319,7 @@ async def test_runtime_confirmation_manual_hold_zero_apply_fails() -> None:
     assert resolved.apply_result is not None
     assert resolved.apply_result.applied_steps == 0
     assert resolved.apply_result.blocked_steps == 1
+    assert resolved.apply_result.blocked_reasons == {"manual_hold_active": 1}
     assert engine._hass.services.calls == []
 
 
@@ -366,6 +367,7 @@ async def test_runtime_confirmation_dependency_skip_allows_unrelated_step() -> N
     assert resolved.apply_result is not None
     assert resolved.apply_result.applied_steps == 1
     assert resolved.apply_result.blocked_steps == 1
+    assert resolved.apply_result.blocked_reasons == {"manual_hold_active": 1}
     assert resolved.apply_result.skipped_steps == 1
     assert engine._hass.services.calls == [
         (
