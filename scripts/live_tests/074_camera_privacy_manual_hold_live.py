@@ -382,18 +382,15 @@ def main() -> int:
         _wait_no_hold_for_scope(client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s)
         print("PASS scenario B")
 
-        print("Scenario C: external privacy switch change activates hold and blocks next apply...")
+        print("Scenario C: external privacy switch hold releases on the next arm cycle...")
         client.call_service("switch", "turn_off", {"entity_id": PRIVACY_SWITCH})
-        _wait_switch(client, "off", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _wait_hold_reason(
             client, entry_id, "external_off", timeout_s=args.timeout_s, poll_s=args.poll_s
         )
         _set_alarm_state(client, "disarmed", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _set_alarm_state(client, "armed_night", timeout_s=args.timeout_s, poll_s=args.poll_s)
-        time.sleep(2)
-        _call_recompute(client)
-        _wait_switch(client, "off", timeout_s=args.timeout_s, poll_s=args.poll_s)
-        _assert_no_pending_apply(client, entry_id)
+        _wait_no_hold_for_scope(client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s)
+        _wait_switch(client, "on", timeout_s=args.timeout_s, poll_s=args.poll_s)
         print("PASS scenario C")
     finally:
         print("Restoring original security config...")
