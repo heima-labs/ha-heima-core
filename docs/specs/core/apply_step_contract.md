@@ -22,6 +22,38 @@ ApplyStep(
 | `action` | Fully-qualified action, usually `<domain>.<service>`. |
 | `params` | Concrete service parameters. For HA entity actions, this must include the HA `entity_id` that will be passed to the service call. |
 
+## Step Dependencies (vNext)
+
+Most `ApplyStep` lists are unordered independent plans: if one step is blocked by manual hold or an
+apply filter, unrelated surviving steps may still run.
+
+Reaction families that need ordered semantics must declare dependencies explicitly instead of
+relying on list order.
+
+Conceptual optional metadata:
+
+```python
+ApplyStep(
+    domain="light",
+    target="studio",
+    action="light.turn_on",
+    params={"entity_id": "light.studio_desk", "brightness_pct": 10},
+    step_id="studio_desk_dim",
+    depends_on=["studio_scene_prepare"],
+)
+```
+
+Rules:
+
+- `step_id` is unique inside the emitted plan.
+- `depends_on` contains `step_id` values from the same plan.
+- The runtime must not infer dependencies from list order.
+- If a dependency is blocked, skipped, or failed, the dependent step must be skipped.
+- Dependency skipping is reported separately from manual hold blocking so diagnostics can explain
+  that the step was not attempted because a prerequisite did not run.
+- Domains that require all-or-nothing behavior must declare that separately; dependencies only skip
+  downstream steps whose prerequisites did not run.
+
 ## `target` vs `params.entity_id`
 
 `target` and `params.entity_id` are intentionally separate.

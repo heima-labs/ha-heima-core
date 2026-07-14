@@ -118,19 +118,50 @@ These constraints must never be violated. See spec §16 for rationale.
 | MH | Manual Hold Framework | `DONE` | AB, AE |
 | AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
 | AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
+| AH | Resident Runtime Confirmation & Auto-Apply Promotion | `IN PROGRESS` | AD, MH, AF |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** none — Phase AG complete, merged onto `feat/remove-hardcoded-italian`, not yet merged into `feat/v2`/`main`.
-**Branch:** `feat/remove-hardcoded-italian`.
+**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1 complete;
+AH2 is next.
+**Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Merge `feat/remove-hardcoded-italian` into `feat/v2` (or wherever the developer wants it), then
-pick the next planned slice (e.g. Phase AB — Smart Lighting Automation, still `PLANNED`).
+Commit AH1, then start AH2: notification capabilities and actionable routing.
 
 ### Current Working Notes
+
+- Current planned slice: **Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion**.
+  - Spec source: `docs/specs/core/resident_runtime_confirmation_spec.md`, plus supporting
+    notification/options/apply-step specs.
+  - Goal: allow an already configured reaction to ask residents before applying one runtime
+    occurrence, then let a Home Assistant admin promote frequently approved reactions to
+    `auto_apply`.
+  - Architectural rule: AH may start with one supported reaction family, but the framework must be
+    generic. No AH runtime component may be hardcoded to lighting. Every reaction family that wants
+    runtime confirmation must opt in through a `RuntimeConfirmationDescriptor`.
+  - First supported family: `context_conditioned_lighting_scene`.
+  - Long-term product decision: this notification-confirmation model is intended to become
+    available to all domains/reaction families, without domain exclusions, once each family
+    provides the required descriptor and review/rendering contract.
+  - Runtime confirmation is separate from proposal review:
+    - resident approval applies or skips one occurrence only
+    - promotion is HA-admin-gated and changes stable execution policy
+    - notification responses must never create, accept, or edit learning proposals
+  - AH1 completed on `feat/ah-runtime-confirmation`:
+    - Added optional `ApplyStep.step_id` and `ApplyStep.depends_on`.
+    - Added pure runtime confirmation contracts and helpers in
+      `custom_components/heima/runtime/runtime_confirmation.py`.
+    - Added tests in `tests/test_runtime_confirmation.py`.
+    - Verification:
+      - `.venv/bin/python -m pytest tests/test_runtime_confirmation.py tests/test_behavior_framework.py tests/test_manual_hold_manager.py -q`
+        — 40 passed.
+      - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py`
+        — passed.
+      - `.venv/bin/ruff format --check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py`
+        — passed.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3557,6 +3588,239 @@ AG3–AG5, renumbered below). No runtime/UI/config-flow code is touched by this 
 - **Resolved (2026-07-03):** AG1/AG2 were dropped after finding their premise was wrong — see the
   "Spec revision note" at the top of this phase. The `is_it` runtime IT/EN localization mechanism
   is intentional and out of scope for AG.
+
+---
+
+## Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion
+
+**Status:** `PLANNED`
+**Depends on:** AD, MH, AF
+**Spec source:** `docs/specs/core/resident_runtime_confirmation_spec.md`
+
+### Goal
+
+Add a generic runtime-confirmation layer between configured reactions and apply execution.
+
+For selected reaction families, Heima can ask residents whether to apply a concrete runtime
+occurrence. If residents repeatedly approve the same reaction, Heima may create an HA-admin-gated
+promotion review that switches that reaction from `ask_residents` to `auto_apply`.
+
+### Scope Guardrails
+
+- Runtime confirmation is not proposal review.
+- Runtime approval applies or skips one occurrence only.
+- Promotion changes stable execution policy and must be approved in an HA-admin-gated Heima surface.
+- Runtime action requests are in-memory only in the first implementation.
+- Confirmation statistics and promotion state are persistent.
+- The first supported reaction family is `context_conditioned_lighting_scene`.
+- The framework must be domain-generic from the first slice:
+  - no runtime confirmation component may be lighting-specific
+  - every supported family must register a `RuntimeConfirmationDescriptor`
+  - future domains must be able to opt in through descriptors, renderers, validators, and
+    configuration schema, not through new hardcoded runtime branches
+- The intended end state is support for every Heima domain/reaction family that can provide the
+  required descriptor and safe resident-facing rendering. No domain is excluded by product policy.
+
+### Development Plan
+
+1. **AH1 — Core runtime confirmation contracts** — `DONE`
+   - Add optional `ApplyStep` metadata for `step_id` and `depends_on`.
+   - Add runtime models:
+     - `ExecutionPolicy`
+     - `ConfirmationPolicy`
+     - `RuntimeActionRequest`
+     - `RuntimeApplyResult`
+     - `RuntimeConfirmationDescriptor`
+   - Add status transition helpers and first-writer-wins resolution semantics.
+   - Add dependency evaluation rules:
+     - blocked/failed/skipped dependency skips dependent step
+     - list order must not imply dependency
+   - Acceptance:
+     - [x] Unit tests cover model defaults, status transitions, dependency skipping, and
+       `failed` when zero steps apply after an apply trigger.
+
+2. **AH2 — Notification capabilities and actionable routing**
+   - Normalize and persist `notifications.notification_service_capabilities`.
+   - Add Options Flow support for marking concrete notify services with `supports_actions`.
+   - Extend notification routing for actionable requests:
+     - resolve recipients/groups through the existing logical model
+     - filter services by `supports_actions: true`
+     - fail closed with `failure_reason: no_actionable_route` when no actionable service remains
+   - Implement provider-neutral actionable notification payload objects.
+   - Wire notification action response handling to runtime request ids.
+   - Verify the current Home Assistant actionable notification payload shape before implementation.
+   - Acceptance:
+     - [ ] Non-actionable informational notifications continue to use existing routing.
+     - [ ] Actionable requests never silently downgrade to non-actionable text.
+     - [ ] Stale/unknown response ids are ignored and counted.
+
+3. **AH3 — In-memory request registry and timeout engine**
+   - Add coordinator/runtime-owned in-memory request registry.
+   - Deduplicate pending requests by `(reaction_id, occurrence_key)`.
+   - Schedule expirations with HA async scheduling.
+   - Implement `on_timeout: skip`.
+   - Implement `on_timeout: apply`.
+   - Ignore stale responses after restart or completion.
+   - Acceptance:
+     - [ ] Duplicate occurrences do not create duplicate pending requests.
+     - [ ] Timeout skip applies nothing.
+     - [ ] Timeout apply runs pre-apply validation and processes stored steps.
+     - [ ] Restart behavior is safe: old responses do not apply anything.
+
+4. **AH4 — Engine apply-path integration**
+   - Integrate `execution_policy.mode` into the reaction apply path.
+   - Keep `auto_apply` behavior unchanged.
+   - For `ask_residents`:
+     - store the concrete `ApplyStep` plan
+     - send an actionable request
+     - do not apply steps immediately
+   - Add pre-apply validation:
+     - request is still pending and not expired
+     - source reaction still exists and is compatible
+     - entities/services still exist
+     - manual hold and apply filters are evaluated per step
+     - dependencies are evaluated after per-step blocking
+     - descriptor validators pass
+   - Register pending applies only immediately before approved/timeout-applied execution.
+   - Acceptance:
+     - [ ] Manual hold blocks affected steps without blocking unrelated surviving steps.
+     - [ ] Dependent steps are skipped when prerequisites did not run.
+     - [ ] If no step applies after an apply trigger, status is `failed`.
+     - [ ] If the source reaction is disabled or structurally changed while pending, status is
+       `cancelled`.
+
+5. **AH5 — First descriptor: context-conditioned lighting scene**
+   - Register a `RuntimeConfirmationDescriptor` for `context_conditioned_lighting_scene`.
+   - Define occurrence key semantics for lighting scene occurrences.
+   - Render concise resident-facing text for:
+     - turning lights off
+     - setting brightness
+     - mixed light-scene changes
+   - Add reaction configuration support for `execution_policy.mode`, confirmation timeout, targets,
+     and timeout behavior.
+   - Acceptance:
+     - [ ] A learned/context-conditioned lighting scene in `ask_residents` creates a runtime
+       request instead of applying immediately.
+     - [ ] Approving applies the stored lighting steps.
+     - [ ] Dismissing applies nothing.
+
+6. **AH6 — Confirmation statistics and promotion state**
+   - Persist confirmation stats per reaction:
+     - `requested`
+     - `approved`
+     - `dismissed`
+     - `timeout_skipped`
+     - `timeout_applied`
+     - `failed`
+   - Persist promotion review state per reaction.
+   - Implement promotion eligibility:
+     - `min_samples`
+     - `min_approval_rate`
+     - `min_distinct_days`
+     - `min_new_approvals_after_dismissal`
+     - `cooldown_schedule_days`
+     - `reminder_interval_days`
+   - Exclude timeout outcomes from promotion evidence in all cases.
+   - Revoke `pending_admin_review` when new evidence no longer satisfies thresholds.
+   - Acceptance:
+     - [ ] Repeated explicit approvals can create `pending_admin_review`.
+     - [ ] Explicit dismissals count as negative promotion evidence.
+     - [ ] Timeout outcomes never count as promotion evidence.
+     - [ ] Revoked promotion reviews cannot be approved.
+
+7. **AH7 — HA-admin-gated promotion and configuration UI**
+   - Add admin UI/options-flow support for:
+     - viewing/editing `execution_policy.mode`
+     - configuring runtime confirmation targets and timeout behavior
+     - viewing confirmation stats
+     - viewing pending promotion reviews
+     - approving auto-apply
+     - dismissing "not now"
+     - disabling future promotion prompts
+     - resetting stats/cooldown
+     - reverting promoted `auto_apply` back to `ask_residents`
+   - Promotion notifications remain informational only and must not contain a direct approve action.
+   - Acceptance:
+     - [ ] Only HA-admin-gated UI can approve promotion.
+     - [ ] Sending a promotion notification to a non-admin route grants no approval authority.
+     - [ ] Admin "not now" starts/increments cooldown.
+     - [ ] Admin "do not ask again" disables future promotion prompts only for that reaction.
+
+8. **AH8 — Diagnostics, services, and observability**
+   - Extend diagnostics with:
+     - pending runtime requests
+     - recent completed requests
+     - counts by status
+     - applied/blocked/skipped/failed step counts
+     - no-actionable-route failures
+     - stale response counts
+     - confirmation stats
+     - promotion eligibility, cooldowns, and disabled prompts
+   - Add debug/service helpers only where needed for tests or live diagnostics.
+   - Acceptance:
+     - [ ] Production debug can explain why an action was not applied.
+     - [ ] Diagnostics distinguish manual-hold blocking from dependency skipping.
+     - [ ] Diagnostics distinguish runtime request state from proposal review state.
+
+9. **AH9 — Verification and live coverage**
+   - Add unit tests for all AH1-AH8 contracts.
+   - Add integration tests for options flow, notification routing, engine interception, timeout,
+     promotion, diagnostics, and stale responses.
+   - Add live tests:
+     - ask-residents lighting request
+     - approve applies stored steps
+     - dismiss applies nothing
+     - timeout skip
+     - timeout apply
+     - no actionable route fails closed
+     - duplicate response from multiple devices: first valid response wins
+     - manual hold blocks a step and skips dependent steps
+     - disabled reaction while pending cancels the request
+     - repeated approvals create admin promotion review
+     - admin-approved promotion makes later occurrences auto-apply
+   - Acceptance:
+     - [ ] Focused unit/integration tests pass.
+     - [ ] `scripts/ci_local.sh` passes.
+     - [ ] Relevant live diagnostic/e2e tiers pass outside the sandbox.
+
+### Expected File Areas
+
+- `custom_components/heima/runtime/contracts.py`
+- `custom_components/heima/runtime/engine.py`
+- `custom_components/heima/runtime/notifications.py`
+- `custom_components/heima/runtime/manual_hold.py`
+- `custom_components/heima/runtime/reactions/base.py`
+- `custom_components/heima/runtime/reactions/context_conditioned_lighting.py`
+- `custom_components/heima/coordinator.py`
+- `custom_components/heima/config_flow/`
+- `custom_components/heima/options_migration.py`
+- `custom_components/heima/diagnostics.py`
+- `custom_components/heima/translations/en.json`
+- `custom_components/heima/translations/it.json`
+- `tests/`
+- `scripts/live_tests/`
+
+### Acceptance Criteria
+
+- [ ] Existing reactions without `execution_policy` keep current `auto_apply` behavior.
+- [ ] `ask_residents` is supported through descriptors, not per-domain runtime branches.
+- [ ] First supported family is `context_conditioned_lighting_scene`.
+- [ ] The architecture is ready for every domain/reaction family to opt in later.
+- [ ] Runtime confirmation requests never enter the proposal backlog.
+- [ ] Promotion review is HA-admin-gated and persistent.
+- [ ] Runtime requests are in-memory only and restart-safe by ignoring stale responses.
+- [ ] Manual hold, apply filters, and step dependencies are enforced before execution.
+- [ ] No actionable route fails closed.
+- [ ] Timeout outcomes never count toward promotion.
+- [ ] Diagnostics explain pending, completed, failed, cancelled, blocked, skipped, and promoted
+  states.
+
+### Current open items
+
+- Confirm the exact Home Assistant actionable notification payload shape for supported notify
+  providers before AH2 implementation.
+- Decide whether restart-safe persisted runtime requests are still out of scope after the first AH
+  implementation is validated in production.
 
 ---
 

@@ -508,6 +508,8 @@ Fields:
 - `recipients` (object mapping, `recipient_id -> list[notify.*]`)
 - `recipient_groups` (object mapping, `group_id -> list[recipient_id]`)
 - `route_targets` (list/object of logical notification targets: recipient ids or group ids)
+- `notification_service_capabilities` (object mapping, `notify service -> capabilities`; first
+  capability is `supports_actions`)
 - `enabled_event_categories` (multi-select: `people`, `occupancy`, `house_state`, `lighting`, `heating`, `security`; `system` always enabled)
 - `dedup_window_s` (int, default 60)
 - `rate_limit_per_key_s` (int, default 300)
@@ -520,6 +522,8 @@ Fields:
 Runtime Effect:
 - affects notification policy and orchestrator
 - route delivery resolves legacy `routes` plus logical `route_targets` through configured recipients/groups
+- actionable runtime requests filter resolved routes to services with `supports_actions: true`
+- if an actionable request has no actionable route, runtime fails closed and reports diagnostics
 - category toggles gate event emission before routing/dedup pipeline
 - occupancy mismatch policy reduces false positives in partial-room-sensing homes
 - security mismatch policy delays/suppresses `armed_away_but_home` false positives caused by stale trackers

@@ -733,6 +733,31 @@ Note:
 ["family", "admins"]
 ```
 
+### `notification_service_capabilities`
+- Type: object editor
+- Optional
+- Meaning: capability metadata for concrete `notify.*` services referenced by recipients.
+- Service names are stored without the `notify.` prefix.
+- Initial supported capability:
+  - `supports_actions`: whether the service can deliver actionable notification buttons.
+- Example:
+```json
+{
+  "mobile_app_phone_stefano": {
+    "supports_actions": true
+  },
+  "mobile_app_mac_stefano": {
+    "supports_actions": false
+  }
+}
+```
+
+Notes:
+- actionable runtime confirmation requests only use services with `supports_actions: true`.
+- if no resolved notification service supports actions, Heima fails closed and records diagnostics.
+- this capability is transport metadata; it does not grant user permissions.
+- non-actionable informational notifications may still use services without `supports_actions`.
+
 ### `enabled_event_categories`
 - Type: multi-select
 - Allowed values:

@@ -38,6 +38,8 @@ This spec uses the following terms:
   window.
 - **Logical routing**: target resolution through recipients and recipient groups, independent from
   concrete HA notify service names.
+- **Notification service capability**: transport metadata for a concrete `notify.*` service, such
+  as whether it can carry actionable notification buttons.
 
 Normative rule:
 - event production and event delivery are separate stages
@@ -50,7 +52,9 @@ Normative rule:
 2. Category gating is applied.
 3. Dedup and per-key rate limits are applied.
 4. Targets are resolved through recipients/groups (logical routing).
-5. Delivery is attempted through HA notify services.
+5. Delivery constraints are applied, including actionable capability filtering when the message
+   requires a resident/admin action.
+6. Delivery is attempted through HA notify services.
 
 ### Pipeline semantics
 
@@ -58,6 +62,10 @@ The pipeline has these required properties:
 
 - emission must use stable event types and keys defined by the catalog/spec set
 - routing must operate on logical recipients/groups, not on legacy ad hoc route payloads
+- actionable notification delivery must only use services explicitly marked with
+  `supports_actions`
+- if a message requires an action and no resolved service supports actions, delivery must fail
+  closed and record diagnostics instead of silently downgrading to a non-actionable message
 - dedup and rate limiting must be keyed, deterministic, and explainable in diagnostics
 - compatibility modes such as security mismatch dual emission must operate at emission time, before
   category gating and delivery
@@ -68,6 +76,7 @@ Defined in options flow (`core/options_flow_spec.md`):
 - `recipients`
 - `recipient_groups`
 - `route_targets`
+- `notification_service_capabilities`
 - `enabled_event_categories`
 - dedup/rate-limit controls
 - mismatch policy controls

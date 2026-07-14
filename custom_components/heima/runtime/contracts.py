@@ -37,6 +37,8 @@ class ApplyStep:
     blocked_by: str = ""  # set by apply_filter; non-empty means step is skipped
     source: str = ""  # e.g. "reaction:MyReaction"; empty = domain pipeline
     context_id: str | None = None  # HA Context id to use when executing this step
+    step_id: str = ""  # optional id for dependency-aware runtime plans
+    depends_on: tuple[str, ...] = ()  # step_id values from the same runtime plan
 
 
 @dataclass(frozen=True)

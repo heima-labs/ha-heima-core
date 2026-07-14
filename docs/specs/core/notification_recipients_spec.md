@@ -49,6 +49,27 @@ Groups are one-level only in v1:
   - a `recipient_id`, or
   - a `group_id`
 
+### 5. Notification service capabilities
+
+- `notification_service_capabilities` is a mapping:
+  - `notify_service_name -> capability object`
+- The service name is stored without the `notify.` prefix, matching the names used in
+  `recipients`.
+- Initial capability:
+  - `supports_actions: bool`
+
+Example:
+
+```yaml
+notification_service_capabilities:
+  mobile_app_phone_stefano:
+    supports_actions: true
+  mobile_app_mac_stefano:
+    supports_actions: false
+```
+
+Capability records describe transport behavior, not user identity or authorization.
+
 ## Routing Resolution
 
 For each emitted event:
@@ -63,6 +84,15 @@ If a `route_target` does not resolve:
 - it is ignored
 - a runtime diagnostics/error counter is incremented
 
+For actionable notification requests:
+
+- resolution starts from the same logical recipient/group model
+- resolved services are filtered to services with
+  `notification_service_capabilities.<service>.supports_actions == true`
+- if no actionable service remains, delivery must fail closed and diagnostics must explain the
+  missing actionable route
+- non-actionable informational notifications may still use services without `supports_actions`
+
 ## Options Flow Shape (v1)
 
 In `Notifications`:
@@ -70,6 +100,8 @@ In `Notifications`:
 - `recipients` (textarea; one line per alias: `alias=notify_a,notify_b`)
 - `recipient_groups` (textarea; one line per group: `group=recipient_a,recipient_b`)
 - `route_targets` (textarea; one alias/group id per line, commas also accepted)
+- `notification_service_capabilities` (admin-editable service capability map; first supported
+  capability is `supports_actions`)
 
 ## Compatibility
 
