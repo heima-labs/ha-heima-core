@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -922,6 +922,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             if approved_date not in approved_dates:
                 approved_dates.append(approved_date)
             stats["approved_dates"] = approved_dates
+        if outcome in {"approved", "dismissed"}:
+            explicit_events = [
+                item for item in list(stats.get("explicit_events") or []) if isinstance(item, dict)
+            ]
+            explicit_events.append({"outcome": outcome, "ts": now})
+            stats["explicit_events"] = explicit_events[-200:]
 
         stats_by_reaction[reaction_id] = stats
         reactions["confirmation_stats"] = stats_by_reaction
@@ -954,6 +960,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
         eligible, reason = self._runtime_promotion_eligible(
             reaction_cfg=reaction_cfg,
+            review=current,
             stats=stats,
         )
         if eligible:
@@ -985,6 +992,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self,
         *,
         reaction_cfg: dict[str, Any],
+        review: dict[str, Any] | None = None,
         stats: dict[str, Any],
     ) -> tuple[bool, str]:
         execution_policy = reaction_cfg.get("execution_policy")
@@ -1015,7 +1023,100 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if len(approved_dates) < min_distinct_days:
             return False, "insufficient_distinct_days"
 
+        cooldown_ok, cooldown_reason = self._runtime_promotion_cooldown_satisfied(
+            promotion=promotion,
+            review=dict(review or {}),
+            stats=stats,
+        )
+        if not cooldown_ok:
+            return False, cooldown_reason
+
         return True, ""
+
+    def _runtime_promotion_cooldown_satisfied(
+        self,
+        *,
+        promotion: dict[str, Any],
+        review: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> tuple[bool, str]:
+        if str(review.get("status") or "") != "dismissed_not_now":
+            return True, ""
+
+        dismissed_at = self._parse_runtime_confirmation_ts(
+            review.get("last_promotion_dismissed_at") or review.get("last_dismissed_at")
+        )
+        if dismissed_at is None:
+            return False, "missing_promotion_dismissal_timestamp"
+
+        dismiss_count = max(
+            1,
+            int(
+                review.get("promotion_dismiss_count")
+                or review.get("dismiss_count")
+                or review.get("dismissal_count")
+                or 1
+            ),
+        )
+        schedule = self._runtime_promotion_cooldown_schedule(promotion)
+        cooldown_days = schedule[min(dismiss_count - 1, len(schedule) - 1)]
+        now = datetime.now(UTC)
+        if now < dismissed_at + timedelta(days=cooldown_days):
+            return False, "promotion_cooldown_active"
+
+        explicit_events = [
+            item for item in list(stats.get("explicit_events") or []) if isinstance(item, dict)
+        ]
+        after_dismissal = [
+            item
+            for item in explicit_events
+            if self._runtime_confirmation_event_after(item, dismissed_at)
+        ]
+        approvals = sum(1 for item in after_dismissal if item.get("outcome") == "approved")
+        dismissals = sum(1 for item in after_dismissal if item.get("outcome") == "dismissed")
+        min_new_approvals = int(promotion.get("min_new_approvals_after_dismissal", 3))
+        if approvals < min_new_approvals:
+            return False, "insufficient_new_approvals_after_dismissal"
+        explicit_after = approvals + dismissals
+        approval_rate = approvals / explicit_after if explicit_after else 0.0
+        min_approval_rate = float(promotion.get("min_approval_rate", 0.8))
+        if approval_rate < min_approval_rate:
+            return False, "post_dismissal_approval_rate_below_threshold"
+        return True, ""
+
+    @staticmethod
+    def _runtime_promotion_cooldown_schedule(promotion: dict[str, Any]) -> list[int]:
+        raw = promotion.get("cooldown_schedule_days")
+        if isinstance(raw, list | tuple):
+            values = []
+            for item in raw:
+                try:
+                    days = int(item)
+                except (TypeError, ValueError):
+                    continue
+                if days > 0:
+                    values.append(days)
+            if values:
+                return values
+        return [14, 30, 60, 90, 180]
+
+    @staticmethod
+    def _runtime_confirmation_event_after(item: dict[str, Any], threshold: datetime) -> bool:
+        parsed = HeimaCoordinator._parse_runtime_confirmation_ts(item.get("ts"))
+        return parsed is not None and parsed > threshold
+
+    @staticmethod
+    def _parse_runtime_confirmation_ts(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
     async def async_configure_anomaly_rule(
         self,

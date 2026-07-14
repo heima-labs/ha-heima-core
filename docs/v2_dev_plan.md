@@ -208,6 +208,10 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
     - Explicit approval/dismissal evidence can create a persisted
       `pending_admin_review` promotion review.
     - Timeout outcomes are recorded but excluded from promotion evidence.
+    - `dismissed_not_now` promotion state now enforces progressive cooldown and requires fresh
+      explicit approvals after the latest promotion dismissal.
+    - Pending promotion reviews are revoked when new explicit evidence no longer satisfies
+      thresholds.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3767,16 +3771,16 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - `min_samples`. `DONE`
      - `min_approval_rate`. `DONE`
      - `min_distinct_days`. `DONE`
-     - `min_new_approvals_after_dismissal`
-     - `cooldown_schedule_days`
+     - `min_new_approvals_after_dismissal`. `DONE`
+     - `cooldown_schedule_days`. `DONE`
      - `reminder_interval_days`
    - Exclude timeout outcomes from promotion evidence in all cases. `DONE`
-   - Revoke `pending_admin_review` when new evidence no longer satisfies thresholds.
+   - Revoke `pending_admin_review` when new evidence no longer satisfies thresholds. `DONE`
    - Acceptance:
      - [x] Repeated explicit approvals can create `pending_admin_review`.
      - [x] Explicit dismissals count as negative promotion evidence.
      - [x] Timeout outcomes never count as promotion evidence.
-     - [ ] Revoked promotion reviews cannot be approved.
+     - [ ] Revoked promotion reviews cannot be approved by the AH7 admin action boundary.
 
 7. **AH7 — HA-admin-gated promotion and configuration UI**
    - Add admin UI/options-flow support for:
