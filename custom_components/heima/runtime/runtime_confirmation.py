@@ -151,6 +151,121 @@ class RuntimeActionRequest:
 
 
 @dataclass(frozen=True)
+class RuntimeRequestRegistryDiagnostics:
+    """Serializable counters for the in-memory request registry."""
+
+    pending: int = 0
+    recent_completed: int = 0
+    stale_responses: int = 0
+    duplicate_occurrences: int = 0
+    completed_by_status: dict[str, int] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "pending": self.pending,
+            "recent_completed": self.recent_completed,
+            "stale_responses": self.stale_responses,
+            "duplicate_occurrences": self.duplicate_occurrences,
+            "completed_by_status": dict(self.completed_by_status),
+        }
+
+
+class RuntimeActionRequestRegistry:
+    """In-memory registry for pending runtime confirmation requests."""
+
+    def __init__(self, *, recent_limit: int = 50) -> None:
+        self._pending_by_id: dict[str, RuntimeActionRequest] = {}
+        self._pending_by_occurrence: dict[tuple[str, str], str] = {}
+        self._recent_completed: list[RuntimeActionRequest] = []
+        self._recent_limit = max(1, recent_limit)
+        self._stale_responses = 0
+        self._duplicate_occurrences = 0
+
+    def add(self, request: RuntimeActionRequest) -> RuntimeActionRequest:
+        """Add a pending request, reusing an existing pending occurrence."""
+        occurrence = (request.reaction_id, request.occurrence_key)
+        existing_id = self._pending_by_occurrence.get(occurrence)
+        if existing_id:
+            existing = self._pending_by_id.get(existing_id)
+            if existing is not None:
+                self._duplicate_occurrences += 1
+                return existing
+
+        self._pending_by_id[request.request_id] = request
+        self._pending_by_occurrence[occurrence] = request.request_id
+        return request
+
+    def get(self, request_id: str) -> RuntimeActionRequest | None:
+        return self._pending_by_id.get(request_id)
+
+    def resolve(
+        self,
+        request_id: str,
+        *,
+        status: RuntimeRequestStatus,
+        apply_result: RuntimeApplyResult | None = None,
+        failure_reason: str | None = None,
+    ) -> RuntimeActionRequest | None:
+        request = self._pending_by_id.get(request_id)
+        if request is None:
+            self._stale_responses += 1
+            return None
+
+        resolved = resolve_runtime_request(
+            request,
+            status=status,
+            apply_result=apply_result,
+            failure_reason=failure_reason,
+        )
+        if not resolved.is_terminal:
+            self._pending_by_id[request_id] = resolved
+            return resolved
+
+        self._remove_pending(request)
+        self._append_completed(resolved)
+        return resolved
+
+    def expire_due(self, now: datetime) -> tuple[RuntimeActionRequest, ...]:
+        """Return and remove pending requests whose timeout has elapsed."""
+        due: list[RuntimeActionRequest] = []
+        for request in list(self._pending_by_id.values()):
+            if request.expires_at > now:
+                continue
+            due.append(request)
+            self._remove_pending(request)
+        return tuple(due)
+
+    def mark_completed(self, request: RuntimeActionRequest) -> RuntimeActionRequest:
+        """Store an externally processed terminal request in recent history."""
+        if not request.is_terminal:
+            return request
+        self._remove_pending(request)
+        self._append_completed(request)
+        return request
+
+    def diagnostics(self) -> RuntimeRequestRegistryDiagnostics:
+        completed_by_status: dict[str, int] = {}
+        for request in self._recent_completed:
+            completed_by_status[request.status] = completed_by_status.get(request.status, 0) + 1
+        return RuntimeRequestRegistryDiagnostics(
+            pending=len(self._pending_by_id),
+            recent_completed=len(self._recent_completed),
+            stale_responses=self._stale_responses,
+            duplicate_occurrences=self._duplicate_occurrences,
+            completed_by_status=completed_by_status,
+        )
+
+    def _remove_pending(self, request: RuntimeActionRequest) -> None:
+        self._pending_by_id.pop(request.request_id, None)
+        self._pending_by_occurrence.pop((request.reaction_id, request.occurrence_key), None)
+
+    def _append_completed(self, request: RuntimeActionRequest) -> None:
+        self._recent_completed.append(request)
+        if len(self._recent_completed) > self._recent_limit:
+            del self._recent_completed[: len(self._recent_completed) - self._recent_limit]
+
+
+@dataclass(frozen=True)
 class RuntimePlanValidationResult:
     """Descriptor or generic validation result."""
 

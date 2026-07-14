@@ -126,10 +126,10 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
 **Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1 and AH2
-complete; AH3 is next.
+complete; AH3 started.
 **Branch:** `feat/ah-runtime-confirmation`.
 **Next action:**
-Start AH3: in-memory request registry and timeout engine.
+Finish AH3 by wiring timeout scheduling to HA async scheduling.
 
 ### Current Working Notes
 
@@ -169,6 +169,11 @@ Start AH3: in-memory request registry and timeout engine.
     - Added fail-closed behavior for missing actionable routes.
     - Added parser for `mobile_app_notification_action` response payloads, using stable action ids
       plus `request_id` from `action_data.request_id` or `tag`.
+  - AH3 started:
+    - Added in-memory `RuntimeActionRequestRegistry`.
+    - Added occurrence deduplication, terminal resolution, stale response counting, recent
+      completed diagnostics, and due-timeout extraction.
+    - HA async timeout scheduling is still pending.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3662,7 +3667,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [x] Stale/unknown response ids are parsed for registry handling; registry-side stale
        counting started in AH3.
 
-3. **AH3 — In-memory request registry and timeout engine**
+3. **AH3 — In-memory request registry and timeout engine** — `IN PROGRESS`
    - Add coordinator/runtime-owned in-memory request registry.
    - Deduplicate pending requests by `(reaction_id, occurrence_key)`.
    - Schedule expirations with HA async scheduling.
@@ -3670,10 +3675,11 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
    - Implement `on_timeout: apply`.
    - Ignore stale responses after restart or completion.
    - Acceptance:
-     - [ ] Duplicate occurrences do not create duplicate pending requests.
+     - [x] Duplicate occurrences do not create duplicate pending requests.
      - [ ] Timeout skip applies nothing.
      - [ ] Timeout apply runs pre-apply validation and processes stored steps.
-     - [ ] Restart behavior is safe: old responses do not apply anything.
+     - [x] Restart behavior foundation is safe: stale/unknown responses are ignored and counted by
+       the in-memory registry.
 
 4. **AH4 — Engine apply-path integration**
    - Integrate `execution_policy.mode` into the reaction apply path.

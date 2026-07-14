@@ -11,6 +11,7 @@ from custom_components.heima.runtime.runtime_confirmation import (
     ConfirmationPolicy,
     ExecutionPolicy,
     RuntimeActionRequest,
+    RuntimeActionRequestRegistry,
     RuntimeApplyResult,
     evaluate_step_dependencies,
     fail_if_zero_applied,
@@ -62,6 +63,57 @@ def test_resolve_runtime_request_is_first_writer_wins() -> None:
 
     assert approved.status == "approved"
     assert dismissed_late is approved
+
+
+def test_runtime_request_registry_deduplicates_pending_occurrence() -> None:
+    registry = RuntimeActionRequestRegistry()
+    first = _request(request_id="request-1")
+    duplicate = _request(request_id="request-2")
+
+    assert registry.add(first) == first
+    assert registry.add(duplicate) == first
+
+    diagnostics = registry.diagnostics()
+    assert diagnostics.pending == 1
+    assert diagnostics.duplicate_occurrences == 1
+
+
+def test_runtime_request_registry_resolves_and_counts_stale_responses() -> None:
+    registry = RuntimeActionRequestRegistry()
+    request = registry.add(_request(request_id="request-1"))
+
+    resolved = registry.resolve(request.request_id, status="dismissed")
+    stale = registry.resolve(request.request_id, status="approved")
+
+    assert resolved is not None
+    assert resolved.status == "dismissed"
+    assert stale is None
+    diagnostics = registry.diagnostics()
+    assert diagnostics.pending == 0
+    assert diagnostics.recent_completed == 1
+    assert diagnostics.stale_responses == 1
+    assert diagnostics.completed_by_status == {"dismissed": 1}
+
+
+def test_runtime_request_registry_expires_due_requests() -> None:
+    registry = RuntimeActionRequestRegistry()
+    now = datetime.now(timezone.utc)
+    due = _request(request_id="due", created_at=now, expires_at=now)
+    later = _request(
+        request_id="later",
+        occurrence_key="occurrence-2",
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    registry.add(due)
+    registry.add(later)
+
+    expired = registry.expire_due(now)
+
+    assert expired == (due,)
+    assert registry.get("due") is None
+    assert registry.get("later") == later
+    assert registry.diagnostics().pending == 1
 
 
 def test_failed_resolution_gets_default_failure_reason() -> None:
@@ -159,15 +211,22 @@ def test_dependency_evaluation_detects_cycle() -> None:
     assert result.skipped_reasons == {SKIP_DEPENDENCY_CYCLE: 2}
 
 
-def _request() -> RuntimeActionRequest:
-    now = datetime.now(timezone.utc)
+def _request(
+    *,
+    request_id: str = "request-1",
+    occurrence_key: str = "occurrence-1",
+    created_at: datetime | None = None,
+    expires_at: datetime | None = None,
+) -> RuntimeActionRequest:
+    now = created_at or datetime.now(timezone.utc)
     return RuntimeActionRequest(
         reaction_id="reaction-1",
         reaction_type="context_conditioned_lighting_scene",
-        occurrence_key="occurrence-1",
+        occurrence_key=occurrence_key,
         title="Apply scene?",
         message="Apply the stored scene.",
         apply_steps=(ApplyStep(domain="light", target="light.studio", action="light.turn_on"),),
         created_at=now,
-        expires_at=now + timedelta(minutes=10),
+        expires_at=expires_at or now + timedelta(minutes=10),
+        request_id=request_id,
     )
