@@ -84,6 +84,7 @@ from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalBatchActionResult, ProposalEngine
 from .runtime.proposal_lifecycle_store import ProposalLifecycleStore
 from .runtime.room_context import RoomDeviceContextBuilder
+from .runtime.runtime_confirmation import RuntimeActionRequest, RuntimeRequestStatus
 from .runtime.runtime_confirmation_controller import RuntimeConfirmationController
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
@@ -368,6 +369,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             apply_handler=self.engine.async_apply_runtime_confirmation_request,
             event_pipeline=self.engine.event_pipeline,
             notifications_config_provider=self.engine.notifications_config,
+            outcome_handler=self._record_runtime_confirmation_outcome,
         )
         self.engine.set_runtime_confirmation_request_handler(
             self._runtime_confirmation.async_create_request
@@ -874,6 +876,146 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         reactions["labels"] = labels
         options["reactions"] = reactions
         self.hass.config_entries.async_update_entry(self.entry, options=options)
+
+    def _record_runtime_confirmation_outcome(
+        self,
+        request: RuntimeActionRequest,
+        status: RuntimeRequestStatus,
+    ) -> None:
+        """Persist runtime confirmation counters and promotion review state."""
+        reaction_id = str(request.reaction_id or "").strip()
+        if not reaction_id:
+            return
+
+        options = deepcopy(dict(self.entry.options))
+        reactions = dict(options.get("reactions", {}))
+        configured = dict(reactions.get("configured", {}))
+        reaction_cfg = dict(configured.get(reaction_id, {}))
+        if not reaction_cfg:
+            return
+
+        stats_by_reaction = dict(reactions.get("confirmation_stats", {}))
+        stats = dict(stats_by_reaction.get(reaction_id, {}))
+        now = datetime.now(UTC).isoformat()
+        outcome = "requested" if status == "pending" else str(status)
+        if outcome not in {
+            "requested",
+            "approved",
+            "dismissed",
+            "timeout_skipped",
+            "timeout_applied",
+            "failed",
+        }:
+            return
+
+        stats[outcome] = int(stats.get(outcome, 0)) + 1
+        if outcome == "requested":
+            stats.setdefault("first_requested_at", now)
+            stats["last_requested_at"] = now
+        else:
+            stats[f"last_{outcome}_at"] = now
+        if outcome == "approved":
+            approved_dates = [
+                str(item) for item in list(stats.get("approved_dates") or []) if str(item).strip()
+            ]
+            approved_date = now.split("T", 1)[0]
+            if approved_date not in approved_dates:
+                approved_dates.append(approved_date)
+            stats["approved_dates"] = approved_dates
+
+        stats_by_reaction[reaction_id] = stats
+        reactions["confirmation_stats"] = stats_by_reaction
+        reactions["promotion_reviews"] = self._updated_runtime_promotion_reviews(
+            reactions=dict(reactions),
+            reaction_id=reaction_id,
+            reaction_cfg=reaction_cfg,
+            stats=stats,
+            outcome=outcome,
+            now=now,
+        )
+        options["reactions"] = reactions
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+
+    def _updated_runtime_promotion_reviews(
+        self,
+        *,
+        reactions: dict[str, Any],
+        reaction_id: str,
+        reaction_cfg: dict[str, Any],
+        stats: dict[str, Any],
+        outcome: str,
+        now: str,
+    ) -> dict[str, Any]:
+        reviews = dict(reactions.get("promotion_reviews", {}))
+        current = dict(reviews.get(reaction_id, {}))
+        status = str(current.get("status") or "none")
+        if outcome not in {"approved", "dismissed"}:
+            return reviews
+
+        eligible, reason = self._runtime_promotion_eligible(
+            reaction_cfg=reaction_cfg,
+            stats=stats,
+        )
+        if eligible:
+            if status not in {"approved", "disabled_future_prompts", "pending_admin_review"}:
+                reviews[reaction_id] = {
+                    "reaction_id": reaction_id,
+                    "status": "pending_admin_review",
+                    "first_prompted_at": now,
+                    "last_prompted_at": now,
+                    "notification_count": 0,
+                    "target_mode": "auto_apply",
+                    "failure_reason": None,
+                }
+            elif status == "pending_admin_review":
+                current.setdefault("first_prompted_at", now)
+                current["target_mode"] = "auto_apply"
+                current["failure_reason"] = None
+                reviews[reaction_id] = current
+            return reviews
+
+        if status == "pending_admin_review":
+            current["status"] = "revoked"
+            current["revoked_at"] = now
+            current["failure_reason"] = reason
+            reviews[reaction_id] = current
+        return reviews
+
+    def _runtime_promotion_eligible(
+        self,
+        *,
+        reaction_cfg: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> tuple[bool, str]:
+        execution_policy = reaction_cfg.get("execution_policy")
+        execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+        if str(execution_policy.get("mode") or "auto_apply") != "ask_residents":
+            return False, "not_ask_residents"
+        promotion = execution_policy.get("promotion")
+        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        if promotion.get("enabled", True) is False:
+            return False, "promotion_disabled"
+
+        approved = int(stats.get("approved", 0))
+        dismissed = int(stats.get("dismissed", 0))
+        samples = approved + dismissed
+        min_samples = int(promotion.get("min_samples", 5))
+        if samples < min_samples:
+            return False, "insufficient_samples"
+
+        min_approval_rate = float(promotion.get("min_approval_rate", 0.8))
+        approval_rate = approved / samples if samples else 0.0
+        if approval_rate < min_approval_rate:
+            return False, "approval_rate_below_threshold"
+
+        approved_dates = {
+            str(item).strip() for item in list(stats.get("approved_dates") or []) if str(item)
+        }
+        min_distinct_days = int(promotion.get("min_distinct_days", 3))
+        if len(approved_dates) < min_distinct_days:
+            return False, "insufficient_distinct_days"
+
+        return True, ""
 
     async def async_configure_anomaly_rule(
         self,

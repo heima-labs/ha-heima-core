@@ -35,6 +35,7 @@ RuntimeApplyHandler = Callable[
     [RuntimeActionRequest, RuntimeRequestStatus], Awaitable[RuntimeActionRequest]
 ]
 NotificationsConfigProvider = Callable[[], dict[str, Any]]
+ConfirmationOutcomeHandler = Callable[[RuntimeActionRequest, RuntimeRequestStatus], None]
 
 
 class RuntimeConfirmationController:
@@ -47,12 +48,14 @@ class RuntimeConfirmationController:
         apply_handler: RuntimeApplyHandler | None = None,
         event_pipeline: HeimaEventPipeline | None = None,
         notifications_config_provider: NotificationsConfigProvider | None = None,
+        outcome_handler: ConfirmationOutcomeHandler | None = None,
         registry: RuntimeActionRequestRegistry | None = None,
     ) -> None:
         self._hass = hass
         self._apply_handler = apply_handler
         self._event_pipeline = event_pipeline
         self._notifications_config_provider = notifications_config_provider
+        self._outcome_handler = outcome_handler
         self._registry = registry or RuntimeActionRequestRegistry()
         self._timeout_handles: dict[str, Callable[[], None]] = {}
         self._unsub_action_events: Callable[[], None] | None = None
@@ -94,19 +97,20 @@ class RuntimeConfirmationController:
         if registered.request_id != request.request_id:
             return registered
 
+        self._record_outcome(registered, "pending")
         delivery = await self._async_send_actionable_request(registered)
         if delivery.delivered:
             return registered
 
         self._cancel_timeout(registered.request_id)
-        return (
-            self._registry.resolve(
-                registered.request_id,
-                status="failed",
-                failure_reason=delivery.failure_reason or FAILURE_NO_ACTIONABLE_ROUTE,
-            )
-            or registered
+        resolved = self._registry.resolve(
+            registered.request_id,
+            status="failed",
+            failure_reason=delivery.failure_reason or FAILURE_NO_ACTIONABLE_ROUTE,
         )
+        if resolved is not None:
+            self._record_outcome(resolved, resolved.status)
+        return resolved or registered
 
     async def async_handle_action_event(self, event: Event) -> RuntimeActionRequest | None:
         """Handle a Home Assistant mobile app notification action event."""
@@ -121,7 +125,10 @@ class RuntimeConfirmationController:
         """Resolve a parsed actionable notification response."""
         if response.action_id == ACTION_RUNTIME_REQUEST_DISMISS:
             self._cancel_timeout(response.request_id)
-            return self._registry.resolve(response.request_id, status="dismissed")
+            resolved = self._registry.resolve(response.request_id, status="dismissed")
+            if resolved is not None:
+                self._record_outcome(resolved, resolved.status)
+            return resolved
         if response.action_id == ACTION_RUNTIME_REQUEST_APPROVE:
             return await self._async_process_apply_trigger(
                 response.request_id,
@@ -136,7 +143,7 @@ class RuntimeConfirmationController:
         if request is None:
             return None
         if request.on_timeout == "skip":
-            return self._registry.resolve(
+            resolved = self._registry.resolve(
                 request_id,
                 status="timeout_skipped",
                 apply_result=RuntimeApplyResult(
@@ -144,6 +151,9 @@ class RuntimeConfirmationController:
                     skipped_reasons={SKIP_TIMEOUT_SKIPPED: len(request.apply_steps)},
                 ),
             )
+            if resolved is not None:
+                self._record_outcome(resolved, resolved.status)
+            return resolved
         return await self._async_process_apply_trigger(request_id, status="timeout_applied")
 
     def diagnostics(self) -> dict[str, Any]:
@@ -191,14 +201,28 @@ class RuntimeConfirmationController:
             return self._registry.resolve(request_id, status=status)
 
         if self._apply_handler is None:
-            return self._registry.resolve(
+            resolved = self._registry.resolve(
                 request_id,
                 status="failed",
                 failure_reason=FAILURE_VALIDATION_FAILED,
             )
+            if resolved is not None:
+                self._record_outcome(resolved, resolved.status)
+            return resolved
 
         completed = await self._apply_handler(request, status)
-        return self._registry.mark_completed(completed)
+        recorded = self._registry.mark_completed(completed)
+        self._record_outcome(recorded, recorded.status)
+        return recorded
+
+    def _record_outcome(
+        self,
+        request: RuntimeActionRequest,
+        status: RuntimeRequestStatus,
+    ) -> None:
+        if self._outcome_handler is None:
+            return
+        self._outcome_handler(request, status)
 
     def _schedule_timeout(self, request: RuntimeActionRequest) -> None:
         self._cancel_timeout(request.request_id)

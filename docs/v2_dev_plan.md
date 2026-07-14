@@ -202,6 +202,12 @@ Continue AH4/AH5 with descriptor-specific validation and configuration support f
     - Added configured-reaction edit support for `context_conditioned_lighting_scene`
       `execution_policy.mode`, confirmation timeout, target recipients/groups, default route target
       usage, and timeout behavior.
+  - AH6 started:
+    - Runtime confirmation outcomes are persisted per reaction under
+      `reactions.confirmation_stats`.
+    - Explicit approval/dismissal evidence can create a persisted
+      `pending_admin_review` promotion review.
+    - Timeout outcomes are recorded but excluded from promotion evidence.
 
 - Current slice: **Phase AG — Translate Developer Scripts, Docs, and Specs to English** on
   `feat/remove-hardcoded-italian` (2026-07-03).
@@ -3748,28 +3754,28 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
      - [x] Approving applies the stored lighting steps.
      - [x] Dismissing applies nothing.
 
-6. **AH6 — Confirmation statistics and promotion state**
+6. **AH6 — Confirmation statistics and promotion state** — `IN PROGRESS`
    - Persist confirmation stats per reaction:
-     - `requested`
-     - `approved`
-     - `dismissed`
-     - `timeout_skipped`
-     - `timeout_applied`
-     - `failed`
-   - Persist promotion review state per reaction.
+     - `requested`. `DONE`
+     - `approved`. `DONE`
+     - `dismissed`. `DONE`
+     - `timeout_skipped`. `DONE`
+     - `timeout_applied`. `DONE`
+     - `failed`. `DONE`
+   - Persist promotion review state per reaction. `PARTIAL`
    - Implement promotion eligibility:
-     - `min_samples`
-     - `min_approval_rate`
-     - `min_distinct_days`
+     - `min_samples`. `DONE`
+     - `min_approval_rate`. `DONE`
+     - `min_distinct_days`. `DONE`
      - `min_new_approvals_after_dismissal`
      - `cooldown_schedule_days`
      - `reminder_interval_days`
-   - Exclude timeout outcomes from promotion evidence in all cases.
+   - Exclude timeout outcomes from promotion evidence in all cases. `DONE`
    - Revoke `pending_admin_review` when new evidence no longer satisfies thresholds.
    - Acceptance:
-     - [ ] Repeated explicit approvals can create `pending_admin_review`.
-     - [ ] Explicit dismissals count as negative promotion evidence.
-     - [ ] Timeout outcomes never count as promotion evidence.
+     - [x] Repeated explicit approvals can create `pending_admin_review`.
+     - [x] Explicit dismissals count as negative promotion evidence.
+     - [x] Timeout outcomes never count as promotion evidence.
      - [ ] Revoked promotion reviews cannot be approved.
 
 7. **AH7 — HA-admin-gated promotion and configuration UI**

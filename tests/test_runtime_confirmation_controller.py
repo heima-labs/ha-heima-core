@@ -250,6 +250,29 @@ async def test_controller_create_request_fails_without_actionable_route(monkeypa
     assert hass.services.calls == []
 
 
+@pytest.mark.asyncio
+async def test_controller_records_requested_then_failed_for_missing_actionable_route(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+    outcomes: list[str] = []
+    hass = _FakeHass()
+    controller = RuntimeConfirmationController(
+        hass,
+        event_pipeline=HeimaEventPipeline(hass),
+        notifications_config_provider=lambda: {},
+        outcome_handler=lambda _request, status: outcomes.append(status),
+    )
+
+    resolved = await controller.async_create_request(_request())
+
+    assert resolved.status == "failed"
+    assert outcomes == ["pending", "failed"]
+
+
 def _request(*, on_timeout: str = "skip") -> RuntimeActionRequest:
     now = datetime.now(timezone.utc)
     return RuntimeActionRequest(
