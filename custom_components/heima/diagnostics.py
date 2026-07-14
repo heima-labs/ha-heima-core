@@ -118,9 +118,98 @@ def _runtime_confirmation_diagnostics(coordinator: Any) -> dict[str, Any]:
         return {}
     controller = getattr(coordinator, "_runtime_confirmation", None)
     if controller is None or not hasattr(controller, "diagnostics"):
-        return {}
-    diagnostics = controller.diagnostics()
-    return dict(diagnostics) if isinstance(diagnostics, dict) else {}
+        diagnostics: dict[str, Any] = {}
+    else:
+        raw = controller.diagnostics()
+        diagnostics = dict(raw) if isinstance(raw, dict) else {}
+    diagnostics["persisted"] = _runtime_confirmation_persisted_diagnostics(coordinator)
+    return diagnostics
+
+
+def _runtime_confirmation_persisted_diagnostics(coordinator: Any) -> dict[str, Any]:
+    entry = getattr(coordinator, "entry", None)
+    options = dict(getattr(entry, "options", {}) or {})
+    reactions = dict(options.get("reactions", {}))
+    configured = {
+        str(reaction_id): dict(cfg)
+        for reaction_id, cfg in dict(reactions.get("configured", {})).items()
+        if isinstance(cfg, dict)
+    }
+    stats_by_reaction = {
+        str(reaction_id): dict(stats)
+        for reaction_id, stats in dict(reactions.get("confirmation_stats", {})).items()
+        if isinstance(stats, dict)
+    }
+    reviews = {
+        str(reaction_id): dict(review)
+        for reaction_id, review in dict(reactions.get("promotion_reviews", {})).items()
+        if isinstance(review, dict)
+    }
+    reaction_ids = sorted(set(configured) | set(stats_by_reaction) | set(reviews))
+    by_reaction: dict[str, dict[str, Any]] = {}
+    status_counts: dict[str, int] = {}
+    for reaction_id in reaction_ids:
+        cfg = configured.get(reaction_id, {})
+        policy = cfg.get("execution_policy")
+        policy = dict(policy) if isinstance(policy, dict) else {}
+        promotion = policy.get("promotion")
+        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        review = reviews.get(reaction_id, {})
+        review_status = str(review.get("status") or "none")
+        status_counts[review_status] = status_counts.get(review_status, 0) + 1
+        eligibility = _runtime_promotion_eligibility_diagnostics(
+            coordinator=coordinator,
+            reaction_cfg=cfg,
+            review=review,
+            stats=stats_by_reaction.get(reaction_id, {}),
+        )
+        by_reaction[reaction_id] = {
+            "reaction_configured": reaction_id in configured,
+            "execution_mode": str(policy.get("mode") or "auto_apply"),
+            "confirmation_stats": stats_by_reaction.get(reaction_id, {}),
+            "promotion_review": review,
+            "promotion": {
+                "enabled": promotion.get("enabled", True) is not False,
+                "disabled_reason": promotion.get("disabled_reason"),
+                "disabled_at": promotion.get("disabled_at"),
+                "min_samples": promotion.get("min_samples"),
+                "min_approval_rate": promotion.get("min_approval_rate"),
+                "min_distinct_days": promotion.get("min_distinct_days"),
+                "min_new_approvals_after_dismissal": promotion.get(
+                    "min_new_approvals_after_dismissal"
+                ),
+                "cooldown_schedule_days": promotion.get("cooldown_schedule_days"),
+                "reminder_interval_days": promotion.get("reminder_interval_days"),
+            },
+            "promotion_eligibility": eligibility,
+        }
+    return {
+        "confirmation_stats_total": len(stats_by_reaction),
+        "promotion_reviews_total": len(reviews),
+        "promotion_review_status_counts": status_counts,
+        "by_reaction": by_reaction,
+    }
+
+
+def _runtime_promotion_eligibility_diagnostics(
+    *,
+    coordinator: Any,
+    reaction_cfg: dict[str, Any],
+    review: dict[str, Any],
+    stats: dict[str, Any],
+) -> dict[str, Any]:
+    checker = getattr(coordinator, "_runtime_promotion_eligible", None)
+    if not callable(checker) or not reaction_cfg:
+        return {"eligible": False, "reason": "not_available"}
+    try:
+        eligible, reason = checker(
+            reaction_cfg=reaction_cfg,
+            review=review,
+            stats=stats,
+        )
+    except Exception as err:  # noqa: BLE001
+        return {"eligible": False, "reason": f"error:{type(err).__name__}"}
+    return {"eligible": bool(eligible), "reason": str(reason or "")}
 
 
 def _reaction_plugin_diagnostics(coordinator: Any) -> list[dict[str, Any]]:

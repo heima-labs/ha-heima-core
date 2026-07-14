@@ -3812,19 +3812,19 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
 
 8. **AH8 — Diagnostics, services, and observability**
    - Extend diagnostics with:
-     - pending runtime requests
-     - recent completed requests
-     - counts by status
-     - applied/blocked/skipped/failed step counts
-     - no-actionable-route failures
-     - stale response counts
-     - confirmation stats
-     - promotion eligibility, cooldowns, and disabled prompts
-   - Add debug/service helpers only where needed for tests or live diagnostics.
+     - pending runtime requests. `DONE`
+     - recent completed requests. `DONE`
+     - counts by status. `DONE`
+     - applied/blocked/skipped/failed step counts. `DONE`
+     - no-actionable-route failures. `DONE`
+     - stale response counts. `DONE`
+     - confirmation stats. `DONE`
+     - promotion eligibility, cooldowns, and disabled prompts. `DONE`
+   - Add debug/service helpers only where needed for tests or live diagnostics. `DONE`
    - Acceptance:
-     - [ ] Production debug can explain why an action was not applied.
-     - [ ] Diagnostics distinguish manual-hold blocking from dependency skipping.
-     - [ ] Diagnostics distinguish runtime request state from proposal review state.
+     - [x] Production debug can explain why an action was not applied.
+     - [x] Diagnostics distinguish manual-hold blocking from dependency skipping.
+     - [x] Diagnostics distinguish runtime request state from proposal review state.
 
 9. **AH9 — Verification and live coverage**
    - Add unit tests for all AH1-AH8 contracts.

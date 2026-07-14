@@ -19,6 +19,9 @@ class _CoordinatorStub:
         self._proposal_engine = SimpleNamespace(diagnostics=lambda: {"total": 0})
         self.learning_plugin_registry = create_builtin_learning_plugin_registry()
 
+    def _runtime_promotion_eligible(self, *, reaction_cfg, review, stats):
+        return True, "eligible"
+
 
 def _reaction_state(payload: dict[str, object]) -> SimpleNamespace:
     return SimpleNamespace(
@@ -65,6 +68,73 @@ async def test_config_entry_diagnostics_includes_learning_and_reaction_plugins()
     assert any(item["reaction_type"] == "room_signal_assist" for item in reactions)
     assert any(item["reaction_type"] == "room_smart_lighting_assist" for item in reactions)
     assert any(item["reaction_type"] == "scheduled_routine" for item in reactions)
+
+
+async def test_config_entry_diagnostics_exposes_runtime_confirmation_persisted_state():
+    coordinator = _CoordinatorStub()
+    coordinator._runtime_confirmation = SimpleNamespace(
+        diagnostics=lambda: {
+            "pending": 1,
+            "recent_completed": 1,
+            "completed_step_counts": {"applied": 1, "blocked": 0, "failed": 0, "skipped": 0},
+            "failed_request_reasons": {"no_actionable_route": 1},
+        }
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": coordinator}}})
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        title="Heima",
+        version=1,
+        minor_version=0,
+        options={
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy": {
+                            "mode": "ask_residents",
+                            "promotion": {
+                                "enabled": False,
+                                "disabled_reason": "admin_declined_permanently",
+                            },
+                        },
+                    }
+                },
+                "confirmation_stats": {
+                    "r1": {
+                        "requested": 5,
+                        "approved": 4,
+                        "dismissed": 1,
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "disabled_future_prompts",
+                        "promotion_dismiss_count": 1,
+                    }
+                },
+            }
+        },
+    )
+    coordinator.entry = entry
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)  # type: ignore[arg-type]
+    runtime = diagnostics["runtime"]["runtime_confirmation"]
+
+    assert runtime["pending"] == 1
+    assert runtime["completed_step_counts"]["applied"] == 1
+    assert runtime["failed_request_reasons"] == {"no_actionable_route": 1}
+    persisted = runtime["persisted"]
+    assert persisted["confirmation_stats_total"] == 1
+    assert persisted["promotion_reviews_total"] == 1
+    assert persisted["promotion_review_status_counts"] == {"disabled_future_prompts": 1}
+    assert persisted["by_reaction"]["r1"]["execution_mode"] == "ask_residents"
+    assert persisted["by_reaction"]["r1"]["promotion"]["enabled"] is False
+    assert persisted["by_reaction"]["r1"]["promotion_eligibility"] == {
+        "eligible": True,
+        "reason": "eligible",
+    }
 
 
 async def test_config_entry_diagnostics_exposes_canonical_signals_summary():

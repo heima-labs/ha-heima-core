@@ -13,6 +13,7 @@ from custom_components.heima.runtime.notifications import (
     HeimaEventPipeline,
 )
 from custom_components.heima.runtime.runtime_confirmation import (
+    FAILURE_NO_ACTIONABLE_ROUTE,
     RuntimeActionRequest,
     RuntimeApplyResult,
     resolve_runtime_request,
@@ -97,6 +98,61 @@ async def test_controller_timeout_skip_marks_request_timeout_skipped(monkeypatch
         skipped_reasons={"timeout_skipped": 1},
     )
     assert controller.diagnostics()["completed_by_status"] == {"timeout_skipped": 1}
+
+
+@pytest.mark.asyncio
+async def test_controller_diagnostics_include_requests_step_counts_and_failure_reasons(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+    controller = RuntimeConfirmationController(_FakeHass())
+    pending = _request(reaction_id="reaction-pending", occurrence_key="occurrence-pending")
+    failed = _request(reaction_id="reaction-failed", occurrence_key="occurrence-failed")
+    applied = _request(reaction_id="reaction-applied", occurrence_key="occurrence-applied")
+
+    controller.add_request(pending)
+    controller.add_request(failed)
+    controller.registry.resolve(
+        failed.request_id,
+        status="failed",
+        failure_reason=FAILURE_NO_ACTIONABLE_ROUTE,
+    )
+    controller.registry.mark_completed(
+        resolve_runtime_request(
+            applied,
+            status="approved",
+            apply_result=RuntimeApplyResult(
+                applied_steps=1,
+                blocked_steps=1,
+                failed_steps=1,
+                skipped_steps=1,
+                blocked_reasons={"manual_hold_active": 1},
+                failed_reasons={"apply_error": 1},
+                skipped_reasons={"dependency_blocked": 1},
+            ),
+        )
+    )
+
+    diagnostics = controller.diagnostics()
+
+    assert diagnostics["pending"] == 1
+    assert diagnostics["pending_requests"][0]["request_id"] == pending.request_id
+    assert diagnostics["recent_completed"] == 2
+    assert diagnostics["completed_by_status"] == {"failed": 1, "approved": 1}
+    assert diagnostics["failed_request_reasons"] == {FAILURE_NO_ACTIONABLE_ROUTE: 1}
+    assert diagnostics["completed_step_counts"] == {
+        "applied": 1,
+        "blocked": 1,
+        "failed": 1,
+        "skipped": 1,
+    }
+    assert diagnostics["completed_blocked_reasons"] == {"manual_hold_active": 1}
+    assert diagnostics["completed_failed_reasons"] == {"apply_error": 1}
+    assert diagnostics["completed_skipped_reasons"] == {"dependency_blocked": 1}
+    assert diagnostics["recent_completed_requests"][1]["apply_result"]["blocked_steps"] == 1
 
 
 @pytest.mark.asyncio
@@ -273,12 +329,17 @@ async def test_controller_records_requested_then_failed_for_missing_actionable_r
     assert outcomes == ["pending", "failed"]
 
 
-def _request(*, on_timeout: str = "skip") -> RuntimeActionRequest:
+def _request(
+    *,
+    on_timeout: str = "skip",
+    reaction_id: str = "reaction-1",
+    occurrence_key: str = "occurrence-1",
+) -> RuntimeActionRequest:
     now = datetime.now(timezone.utc)
     return RuntimeActionRequest(
-        reaction_id="reaction-1",
+        reaction_id=reaction_id,
         reaction_type="context_conditioned_lighting_scene",
-        occurrence_key="occurrence-1",
+        occurrence_key=occurrence_key,
         title="Apply scene?",
         message="Apply the stored scene.",
         apply_steps=(ApplyStep(domain="light", target="light.studio", action="light.turn_on"),),

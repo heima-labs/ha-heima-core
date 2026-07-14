@@ -159,6 +159,13 @@ class RuntimeRequestRegistryDiagnostics:
     stale_responses: int = 0
     duplicate_occurrences: int = 0
     completed_by_status: dict[str, int] = field(default_factory=dict)
+    pending_requests: list[dict[str, Any]] = field(default_factory=list)
+    recent_completed_requests: list[dict[str, Any]] = field(default_factory=list)
+    completed_step_counts: dict[str, int] = field(default_factory=dict)
+    completed_blocked_reasons: dict[str, int] = field(default_factory=dict)
+    completed_failed_reasons: dict[str, int] = field(default_factory=dict)
+    completed_skipped_reasons: dict[str, int] = field(default_factory=dict)
+    failed_request_reasons: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +174,13 @@ class RuntimeRequestRegistryDiagnostics:
             "stale_responses": self.stale_responses,
             "duplicate_occurrences": self.duplicate_occurrences,
             "completed_by_status": dict(self.completed_by_status),
+            "pending_requests": list(self.pending_requests),
+            "recent_completed_requests": list(self.recent_completed_requests),
+            "completed_step_counts": dict(self.completed_step_counts),
+            "completed_blocked_reasons": dict(self.completed_blocked_reasons),
+            "completed_failed_reasons": dict(self.completed_failed_reasons),
+            "completed_skipped_reasons": dict(self.completed_skipped_reasons),
+            "failed_request_reasons": dict(self.failed_request_reasons),
         }
 
 
@@ -245,14 +259,48 @@ class RuntimeActionRequestRegistry:
 
     def diagnostics(self) -> RuntimeRequestRegistryDiagnostics:
         completed_by_status: dict[str, int] = {}
+        completed_step_counts = {
+            "applied": 0,
+            "blocked": 0,
+            "failed": 0,
+            "skipped": 0,
+        }
+        blocked_reasons: dict[str, int] = {}
+        failed_reasons: dict[str, int] = {}
+        skipped_reasons: dict[str, int] = {}
+        failed_request_reasons: dict[str, int] = {}
         for request in self._recent_completed:
             completed_by_status[request.status] = completed_by_status.get(request.status, 0) + 1
+            if request.failure_reason:
+                failed_request_reasons[request.failure_reason] = (
+                    failed_request_reasons.get(request.failure_reason, 0) + 1
+                )
+            if request.apply_result is None:
+                continue
+            completed_step_counts["applied"] += request.apply_result.applied_steps
+            completed_step_counts["blocked"] += request.apply_result.blocked_steps
+            completed_step_counts["failed"] += request.apply_result.failed_steps
+            completed_step_counts["skipped"] += request.apply_result.skipped_steps
+            _merge_reason_counts(blocked_reasons, request.apply_result.blocked_reasons)
+            _merge_reason_counts(failed_reasons, request.apply_result.failed_reasons)
+            _merge_reason_counts(skipped_reasons, request.apply_result.skipped_reasons)
         return RuntimeRequestRegistryDiagnostics(
             pending=len(self._pending_by_id),
             recent_completed=len(self._recent_completed),
             stale_responses=self._stale_responses,
             duplicate_occurrences=self._duplicate_occurrences,
             completed_by_status=completed_by_status,
+            pending_requests=[
+                _request_diagnostics(request) for request in self._pending_by_id.values()
+            ],
+            recent_completed_requests=[
+                _request_diagnostics(request) for request in self._recent_completed
+            ],
+            completed_step_counts=completed_step_counts,
+            completed_blocked_reasons=blocked_reasons,
+            completed_failed_reasons=failed_reasons,
+            completed_skipped_reasons=skipped_reasons,
+            failed_request_reasons=failed_request_reasons,
         )
 
     def _remove_pending(self, request: RuntimeActionRequest) -> None:
@@ -263,6 +311,57 @@ class RuntimeActionRequestRegistry:
         self._recent_completed.append(request)
         if len(self._recent_completed) > self._recent_limit:
             del self._recent_completed[: len(self._recent_completed) - self._recent_limit]
+
+
+def _request_diagnostics(request: RuntimeActionRequest) -> dict[str, Any]:
+    apply_result = request.apply_result
+    return {
+        "request_id": request.request_id,
+        "reaction_id": request.reaction_id,
+        "reaction_type": request.reaction_type,
+        "occurrence_key": request.occurrence_key,
+        "status": request.status,
+        "created_at": request.created_at.isoformat(),
+        "expires_at": request.expires_at.isoformat(),
+        "on_timeout": request.on_timeout,
+        "confirmation_targets": list(request.confirmation_targets),
+        "failure_reason": request.failure_reason,
+        "apply_steps": [_apply_step_diagnostics(step) for step in request.apply_steps],
+        "apply_result": (
+            {
+                "applied_steps": apply_result.applied_steps,
+                "blocked_steps": apply_result.blocked_steps,
+                "failed_steps": apply_result.failed_steps,
+                "skipped_steps": apply_result.skipped_steps,
+                "blocked_reasons": dict(apply_result.blocked_reasons),
+                "failed_reasons": dict(apply_result.failed_reasons),
+                "skipped_reasons": dict(apply_result.skipped_reasons),
+            }
+            if apply_result is not None
+            else None
+        ),
+    }
+
+
+def _apply_step_diagnostics(step: ApplyStep) -> dict[str, Any]:
+    return {
+        "domain": step.domain,
+        "target": step.target,
+        "action": step.action,
+        "step_id": step.step_id,
+        "depends_on": list(step.depends_on),
+        "blocked_by": step.blocked_by,
+        "reason": step.reason,
+        "source": step.source,
+    }
+
+
+def _merge_reason_counts(target: dict[str, int], source: dict[str, int]) -> None:
+    for reason, count in dict(source or {}).items():
+        key = str(reason or "").strip()
+        if not key:
+            continue
+        target[key] = target.get(key, 0) + int(count or 0)
 
 
 @dataclass(frozen=True)
