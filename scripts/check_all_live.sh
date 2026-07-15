@@ -61,6 +61,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/076_camera_privacy_policy_runtime_live.py"
   "scripts/live_tests/077_runtime_confirmation_diag_live.py"
   "scripts/live_tests/078_runtime_confirmation_promotion_revert_live.py"
+  "scripts/live_tests/079_runtime_confirmation_profile_policy_live.py"
 )
 
 usage() {

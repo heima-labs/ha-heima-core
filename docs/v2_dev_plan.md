@@ -127,11 +127,11 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
 **Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles. AN1-AN7 complete;
-AN8 is next.
+AN8 is in progress.
 **Branch:** `feat/an-notification-admin-ui`.
 **Next action:**
-Start AN8 by adding live/end-to-end coverage for profile-backed runtime confirmation and effective
-policy diagnostics.
+Continue AN8 by deciding whether to add separate live coverage for invalid profile references and
+group-membership changes, or keep those covered by unit/options-flow diagnostics tests.
 
 ### Current Working Notes
 
@@ -4078,16 +4078,21 @@ groups, service capabilities, and execution policy profile model.
        — passed.
      - `.venv/bin/python -m json.tool custom_components/heima/translations/en.json` — passed.
 
-8. **AN8 — Live and end-to-end coverage** — `NEXT`
+8. **AN8 — Live and end-to-end coverage** — `IN PROGRESS`
    - Add live coverage for profile-backed runtime confirmation using the first supported descriptor.
+     `DONE`
    - Add live coverage proving group membership changes affect future notifications without editing
      the reaction.
    - Add live coverage for invalid profile reference fail-closed behavior.
-   - Add live coverage proving inline legacy execution policies still work.
+   - Add live coverage proving inline legacy execution policies still work. `DONE` via
+     `078_runtime_confirmation_promotion_revert_live.py`.
    - Tests:
-     - new live script for profile-backed `ask_residents`
-     - new live script or diagnostic assertion for effective-policy diagnostics
+     - [x] new live script for profile-backed `ask_residents`
+     - [x] new live script or diagnostic assertion for effective-policy diagnostics
      - `check_all_live.sh --tier diagnostic` includes read-only coverage where possible.
+   - Verification:
+     - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic --skip 030,031,062,063,064,065,070,071,072,074,075,076,077,078`
+       — passed, running `079_runtime_confirmation_profile_policy_live.py`.
 
 9. **AN9 — Documentation and migration notes**
    - Update admin guide with guided UI workflow.
