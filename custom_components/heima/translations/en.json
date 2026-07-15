@@ -34,6 +34,8 @@
           "notifications": "Notifications",
           "notification_recipients": "Notification recipients",
           "notification_groups": "Notification recipient groups",
+          "notification_routes": "Notification default routes",
+          "notification_services": "Notification services",
           "calendar": "Calendar",
           "learning": "Learning context",
           "external_context": "External context",
@@ -479,6 +481,61 @@
       "notification_group_delete_confirm": {
         "title": "Delete Notification Recipient Group",
         "description": "Group: {group_id}\nReferences: {references}",
+        "data": {
+          "confirm": "Confirm deletion"
+        },
+        "submit": "OK"
+      },
+      "notification_routes": {
+        "title": "Notification Default Routes",
+        "data": {
+          "route_targets": "Default route targets"
+        },
+        "submit": "OK"
+      },
+      "notification_services": {
+        "title": "Notification Services",
+        "description": "{summary}",
+        "menu_options": {
+          "notification_service_add": "Add service",
+          "notification_service_edit": "Edit service",
+          "notification_service_delete": "Delete service",
+          "notification_services_done": "Done"
+        }
+      },
+      "notification_service_add": {
+        "title": "Add Notification Service",
+        "data": {
+          "service_name": "Notify service",
+          "supports_actions": "Supports actions"
+        },
+        "submit": "OK"
+      },
+      "notification_service_edit": {
+        "title": "Edit Notification Service",
+        "data": {
+          "service_name": "Notify service"
+        },
+        "submit": "OK"
+      },
+      "notification_service_edit_form": {
+        "title": "Edit Notification Service",
+        "data": {
+          "service_name": "Notify service",
+          "supports_actions": "Supports actions"
+        },
+        "submit": "OK"
+      },
+      "notification_service_delete": {
+        "title": "Delete Notification Service",
+        "data": {
+          "service_name": "Notify service"
+        },
+        "submit": "OK"
+      },
+      "notification_service_delete_confirm": {
+        "title": "Delete Notification Service",
+        "description": "Service: notify.{service_name}",
         "data": {
           "confirm": "Confirm deletion"
         },

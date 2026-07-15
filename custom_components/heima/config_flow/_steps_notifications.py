@@ -402,6 +402,202 @@ class _NotificationsStepsMixin:
     ) -> "FlowResult":
         return await self.async_step_init()
 
+    async def async_step_notification_routes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        notifications = self._notifications_config()
+        choices = self._notification_route_target_choice_map()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="notification_routes",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional(
+                            "route_targets",
+                            default=list(notifications.get("route_targets", [])),
+                        ): cv.multi_select(choices)
+                    }
+                ),
+            )
+
+        targets = _parse_multiline_items(user_input.get("route_targets"))
+        errors = self._validate_notification_route_targets(targets)
+        if errors:
+            return self.async_show_form(
+                step_id="notification_routes",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional(
+                            "route_targets",
+                            default=targets,
+                        ): cv.multi_select(choices)
+                    }
+                ),
+                errors=errors,
+            )
+
+        notifications["route_targets"] = targets
+        self._update_options({OPT_NOTIFICATIONS: notifications})
+        return await self.async_step_init()
+
+    async def async_step_notification_services(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        capabilities = self._notification_service_capabilities()
+        menu_options = ["notification_service_add"]
+        if capabilities:
+            menu_options.extend(["notification_service_edit", "notification_service_delete"])
+        menu_options.append("notification_services_done")
+        return self.async_show_menu(
+            step_id="notification_services",
+            menu_options=menu_options,
+            description_placeholders={
+                "summary": self._notification_services_summary(capabilities),
+            },
+        )
+
+    async def async_step_notification_service_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        if user_input is None:
+            return self.async_show_form(
+                step_id="notification_service_add",
+                data_schema=self._notification_service_schema(),
+            )
+
+        payload = self._normalize_notification_service_payload(user_input)
+        errors = self._validate_notification_service_payload(payload, is_edit=False)
+        if errors:
+            return self.async_show_form(
+                step_id="notification_service_add",
+                data_schema=self._notification_service_schema(payload),
+                errors=errors,
+            )
+
+        notifications = self._notifications_config()
+        capabilities = self._notification_service_capabilities()
+        capabilities[payload["service_name"]] = {
+            "supports_actions": bool(payload["supports_actions"])
+        }
+        notifications["notification_service_capabilities"] = capabilities
+        self._update_options({OPT_NOTIFICATIONS: notifications})
+        return await self.async_step_notification_services()
+
+    async def async_step_notification_service_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        capabilities = self._notification_service_capabilities()
+        if not capabilities:
+            return await self.async_step_notification_services()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="notification_service_edit",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("service_name"): vol.In(
+                            self._notification_service_choice_map(capabilities)
+                        )
+                    }
+                ),
+            )
+
+        self._editing_notification_service_id = self._resolve_choice_value(
+            self._notification_service_choice_map(capabilities),
+            user_input.get("service_name"),
+        )
+        return await self.async_step_notification_service_edit_form()
+
+    async def async_step_notification_service_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        service_name = str(getattr(self, "_editing_notification_service_id", "") or "").strip()
+        capabilities = self._notification_service_capabilities()
+        if not service_name or service_name not in capabilities:
+            self._editing_notification_service_id = None
+            return await self.async_step_notification_services()
+
+        if user_input is None:
+            current = dict(capabilities.get(service_name, {}))
+            return self.async_show_form(
+                step_id="notification_service_edit_form",
+                data_schema=self._notification_service_schema(
+                    {
+                        "service_name": service_name,
+                        "supports_actions": bool(current.get("supports_actions", False)),
+                    },
+                    is_edit=True,
+                ),
+            )
+
+        payload = self._normalize_notification_service_payload(user_input)
+        errors = self._validate_notification_service_payload(payload, is_edit=True)
+        if errors:
+            return self.async_show_form(
+                step_id="notification_service_edit_form",
+                data_schema=self._notification_service_schema(payload, is_edit=True),
+                errors=errors,
+            )
+
+        notifications = self._notifications_config()
+        updated = self._notification_service_capabilities()
+        updated[service_name] = {"supports_actions": bool(payload["supports_actions"])}
+        notifications["notification_service_capabilities"] = updated
+        self._update_options({OPT_NOTIFICATIONS: notifications})
+        self._editing_notification_service_id = None
+        return await self.async_step_notification_services()
+
+    async def async_step_notification_service_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        capabilities = self._notification_service_capabilities()
+        if not capabilities:
+            return await self.async_step_notification_services()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="notification_service_delete",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("service_name"): vol.In(
+                            self._notification_service_choice_map(capabilities)
+                        )
+                    }
+                ),
+            )
+
+        self._editing_notification_service_id = self._resolve_choice_value(
+            self._notification_service_choice_map(capabilities),
+            user_input.get("service_name"),
+        )
+        return await self.async_step_notification_service_delete_confirm()
+
+    async def async_step_notification_service_delete_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        service_name = str(getattr(self, "_editing_notification_service_id", "") or "").strip()
+        capabilities = self._notification_service_capabilities()
+        if not service_name or service_name not in capabilities:
+            self._editing_notification_service_id = None
+            return await self.async_step_notification_services()
+        if user_input is None or not bool(user_input.get("confirm", False)):
+            return self.async_show_form(
+                step_id="notification_service_delete_confirm",
+                data_schema=vol.Schema({vol.Optional("confirm", default=False): bool}),
+                description_placeholders={"service_name": service_name},
+            )
+
+        notifications = self._notifications_config()
+        updated = self._notification_service_capabilities()
+        updated.pop(service_name, None)
+        notifications["notification_service_capabilities"] = updated
+        self._update_options({OPT_NOTIFICATIONS: notifications})
+        self._editing_notification_service_id = None
+        return await self.async_step_notification_services()
+
+    async def async_step_notification_services_done(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        return await self.async_step_init()
+
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
@@ -570,6 +766,11 @@ class _NotificationsStepsMixin:
 
     def _notification_groups(self) -> dict[str, list[str]]:
         return _parse_multiline_mapping(self._notifications_config().get("recipient_groups"))
+
+    def _notification_service_capabilities(self) -> dict[str, dict[str, bool]]:
+        return _normalize_notification_service_capabilities(
+            self._notifications_config().get("notification_service_capabilities")
+        )
 
     def _notification_recipient_schema(
         self,
@@ -756,6 +957,80 @@ class _NotificationsStepsMixin:
                     if _execution_policy_references_group(profile, group_id):
                         references.append(f"execution_policy_profile:{profile_id}")
         return references
+
+    def _notification_route_target_choice_map(self) -> dict[str, str]:
+        choices: dict[str, str] = {}
+        for recipient_id in sorted(self._notification_recipients()):
+            choices[f"Recipient: {recipient_id}"] = recipient_id
+        for group_id in sorted(self._notification_groups()):
+            choices[f"Group: {group_id}"] = group_id
+        return choices
+
+    def _validate_notification_route_targets(self, targets: list[str]) -> dict[str, str]:
+        available = set(self._notification_recipients()) | set(self._notification_groups())
+        if any(target not in available for target in targets):
+            return {"route_targets": "unknown_target"}
+        return {}
+
+    def _notification_service_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        is_edit: bool = False,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        return vol.Schema(
+            {
+                vol.Required(
+                    "service_name",
+                    default=str(defaults.get("service_name") or ""),
+                ): str,
+                vol.Optional(
+                    "supports_actions",
+                    default=bool(defaults.get("supports_actions", False)),
+                ): bool,
+            }
+        )
+
+    def _normalize_notification_service_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "service_name": _normalize_notify_service_name(payload.get("service_name")),
+            "supports_actions": bool(payload.get("supports_actions", False)),
+        }
+
+    def _validate_notification_service_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        is_edit: bool,
+    ) -> dict[str, str]:
+        service_name = str(payload.get("service_name") or "").strip()
+        if not service_name:
+            return {"service_name": "required"}
+        if is_edit and service_name != getattr(self, "_editing_notification_service_id", None):
+            return {"service_name": "immutable_field"}
+        capabilities = self._notification_service_capabilities()
+        if not is_edit and service_name in capabilities:
+            return {"service_name": "already_exists"}
+        return {}
+
+    def _notification_service_choice_map(
+        self, capabilities: dict[str, dict[str, bool]]
+    ) -> dict[str, str]:
+        choices: dict[str, str] = {}
+        for service_name, capability in sorted(capabilities.items()):
+            suffix = "actions" if capability.get("supports_actions", False) else "text only"
+            choices[f"notify.{service_name} ({suffix})"] = service_name
+        return choices
+
+    def _notification_services_summary(self, capabilities: dict[str, dict[str, bool]]) -> str:
+        if not capabilities:
+            return "No notification service capabilities configured."
+        lines: list[str] = []
+        for service_name, capability in sorted(capabilities.items()):
+            supports = "supports actions" if capability.get("supports_actions") else "text only"
+            lines.append(f"notify.{service_name}: {supports}")
+        return "\n".join(lines)
 
 
 def _normalize_notification_service_capabilities(value: Any) -> dict[str, dict[str, bool]]:

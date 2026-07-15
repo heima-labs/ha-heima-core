@@ -1577,6 +1577,126 @@ async def test_notification_group_delete_removes_unreferenced_group():
 
 
 @pytest.mark.asyncio
+async def test_notification_routes_persists_known_targets():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_routes(
+        {"route_targets": {"stefano": True, "residents": True}}
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["route_targets"] == ["stefano", "residents"]
+
+
+@pytest.mark.asyncio
+async def test_notification_routes_rejects_unknown_target():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+
+    result = await flow.async_step_notification_routes({"route_targets": ["missing"]})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_routes"
+    assert result["errors"]["route_targets"] == "unknown_target"
+
+
+@pytest.mark.asyncio
+async def test_notification_service_add_persists_supports_actions():
+    flow = _flow()
+
+    result = await flow.async_step_notification_service_add(
+        {
+            "service_name": "notify.mobile_app_stefano",
+            "supports_actions": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["notification_service_capabilities"] == {
+        "mobile_app_stefano": {"supports_actions": True}
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_service_edit_keeps_service_id_immutable():
+    flow = _flow(
+        {
+            "notifications": {
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                }
+            }
+        }
+    )
+    flow._editing_notification_service_id = "mobile_app_stefano"
+
+    result = await flow.async_step_notification_service_edit_form(
+        {
+            "service_name": "mobile_app_antonia",
+            "supports_actions": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_service_edit_form"
+    assert result["errors"]["service_name"] == "immutable_field"
+
+
+@pytest.mark.asyncio
+async def test_notification_service_edit_updates_supports_actions():
+    flow = _flow(
+        {
+            "notifications": {
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": False}
+                }
+            }
+        }
+    )
+    flow._editing_notification_service_id = "mobile_app_stefano"
+
+    result = await flow.async_step_notification_service_edit_form(
+        {
+            "service_name": "notify.mobile_app_stefano",
+            "supports_actions": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["notification_service_capabilities"] == {
+        "mobile_app_stefano": {"supports_actions": True}
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_service_delete_removes_capability():
+    flow = _flow(
+        {
+            "notifications": {
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True},
+                    "mobile_app_antonia": {"supports_actions": False},
+                }
+            }
+        }
+    )
+    flow._editing_notification_service_id = "mobile_app_antonia"
+
+    result = await flow.async_step_notification_service_delete_confirm({"confirm": True})
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["notification_service_capabilities"] == {
+        "mobile_app_stefano": {"supports_actions": True}
+    }
+
+
+@pytest.mark.asyncio
 async def test_lighting_rooms_edit_redirects_to_zones_when_no_rooms():
     flow = _flow({"rooms": []})
 

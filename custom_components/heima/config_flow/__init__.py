@@ -128,6 +128,7 @@ class HeimaOptionsFlowHandler(
         self._editing_heating_branch = None
         self._editing_notification_recipient_id: str | None = None
         self._editing_notification_group_id: str | None = None
+        self._editing_notification_service_id: str | None = None
 
     # ---- Toplevel menu (CF2) ----
 
@@ -153,6 +154,8 @@ class HeimaOptionsFlowHandler(
                 "notifications",
                 "notification_recipients",
                 "notification_groups",
+                "notification_routes",
+                "notification_services",
                 "calendar",
                 "learning",
                 "external_context",
