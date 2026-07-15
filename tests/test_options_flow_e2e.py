@@ -5688,6 +5688,8 @@ async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtim
     assert result["step_id"] == "reactions_edit_form"
     schema_keys = {str(key.schema) for key in result["data_schema"].schema}
     assert "execution_mode" in schema_keys
+    assert "execution_policy_profile_ref" in schema_keys
+    assert "use_execution_policy_override" in schema_keys
     assert "confirmation_expires_in_minutes" in schema_keys
     assert "confirmation_on_timeout" in schema_keys
     assert "confirmation_target_recipients" in schema_keys
@@ -5746,6 +5748,131 @@ async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
     }
     assert cfg["reaction_type"] == "context_conditioned_lighting_scene"
     assert cfg["entity_steps"] == [{"entity_id": "light.studio_main", "action": "off"}]
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_saves_execution_policy_profile_ref():
+    flow = _flow(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy": {
+                            "mode": "ask_residents",
+                            "confirmation": {
+                                "expires_in_minutes": 7,
+                                "on_timeout": "apply",
+                                "target_recipients": ["old"],
+                                "target_groups": [],
+                                "use_default_route_targets": False,
+                            },
+                        },
+                    }
+                },
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_policy_profile_ref": "ask_residents_default",
+            "use_execution_policy_override": False,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 7,
+            "confirmation_on_timeout": "apply",
+            "confirmation_target_recipients": "ignored",
+            "confirmation_target_groups": "",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy_ref"] == "ask_residents_default"
+    assert "execution_policy" not in cfg
+    assert "execution_policy_override" not in cfg
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_saves_execution_policy_profile_override():
+    flow = _flow(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                    }
+                },
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_policy_profile_ref": "ask_residents_default",
+            "use_execution_policy_override": True,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 4,
+            "confirmation_on_timeout": "skip",
+            "confirmation_target_recipients": "stefano",
+            "confirmation_target_groups": "residents",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy_ref"] == "ask_residents_default"
+    assert cfg["execution_policy_override"] == {
+        "mode": "ask_residents",
+        "confirmation": {
+            "expires_in_minutes": 4,
+            "on_timeout": "skip",
+            "target_recipients": ["stefano"],
+            "target_groups": ["residents"],
+            "use_default_route_targets": False,
+        },
+    }
+    assert "execution_policy" not in cfg
 
 
 @pytest.mark.asyncio

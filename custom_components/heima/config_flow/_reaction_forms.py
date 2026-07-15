@@ -78,6 +78,14 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
         defaults = defaults or {}
         schema_fields: dict[Any, Any] = {
             vol.Optional("enabled", default=bool(defaults.get("enabled", True))): bool,
+            vol.Optional(
+                "execution_policy_profile_ref",
+                default=str(defaults.get("execution_policy_profile_ref") or ""),
+            ): vol.In(self._execution_policy_profile_ref_options()),
+            vol.Optional(
+                "use_execution_policy_override",
+                default=bool(defaults.get("use_execution_policy_override", False)),
+            ): bool,
             vol.Required(
                 "execution_mode",
                 default=str(defaults.get("execution_mode") or "auto_apply"),
@@ -106,6 +114,18 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
         if include_delete:
             schema_fields[vol.Optional("delete_reaction", default=False)] = bool
         return self._with_suggested(vol.Schema(schema_fields), defaults)
+
+    def _execution_policy_profile_ref_options(self) -> dict[str, str]:
+        reactions = self.options.get("reactions")
+        profiles = dict(reactions).get("execution_policy_profiles") if isinstance(reactions, dict) else {}
+        options = {"": "Inline execution policy"}
+        if isinstance(profiles, dict):
+            for profile_id, profile in sorted(profiles.items()):
+                mode = "auto_apply"
+                if isinstance(profile, dict):
+                    mode = str(profile.get("mode") or "auto_apply")
+                options[str(profile_id)] = f"{profile_id} ({mode})"
+        return options
 
     def _signal_threshold_mode_options(self) -> dict[str, str]:
         language = self._flow_language()

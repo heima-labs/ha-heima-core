@@ -862,6 +862,8 @@
         "description": "{reaction_description}",
         "data": {
           "enabled": "Enabled",
+          "execution_policy_profile_ref": "Execution policy profile",
+          "use_execution_policy_override": "Use reaction-level override",
           "execution_mode": "Execution mode",
           "confirmation_expires_in_minutes": "Response timeout (minutes)",
           "confirmation_on_timeout": "When nobody responds",

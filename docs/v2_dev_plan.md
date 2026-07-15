@@ -126,11 +126,12 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles. AN1-AN6 complete;
-AN7 is next.
+**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles. AN1-AN7 complete;
+AN8 is next.
 **Branch:** `feat/an-notification-admin-ui`.
 **Next action:**
-Start AN7 by integrating profile selection into supported reaction editing surfaces.
+Start AN8 by adding live/end-to-end coverage for profile-backed runtime confirmation and effective
+policy diagnostics.
 
 ### Current Working Notes
 
@@ -4058,20 +4059,26 @@ groups, service capabilities, and execution policy profile model.
        — passed.
      - `.venv/bin/python -m json.tool custom_components/heima/translations/en.json` — passed.
 
-7. **AN7 — Reaction editing integration** — `NEXT`
-   - Update supported reaction editor surfaces to prefer `execution_policy_ref`.
-   - Keep inline `execution_policy` rendering/editing available for legacy data.
+7. **AN7 — Reaction editing integration** — `DONE`
+   - Update supported reaction editor surfaces to prefer `execution_policy_ref`. `DONE`
+   - Keep inline `execution_policy` rendering/editing available for legacy data. `DONE`
    - Add focused override editing for allowed per-reaction deviations, such as timeout minutes or
-     target groups.
-   - Surface unresolved references as blocking validation errors before saving.
+     target groups. `DONE`
+   - Surface unresolved references as blocking validation errors before saving. `DONE`
    - Tests:
-     - select profile for a reaction
-     - save reaction with profile reference
-     - save reaction with profile reference plus override
-     - load legacy inline reaction without data loss
-     - reject unresolved profile reference.
+     - [x] select profile for a reaction
+     - [x] save reaction with profile reference
+     - [x] save reaction with profile reference plus override
+     - [x] load legacy inline reaction without data loss
+     - [x] reject unresolved profile reference.
+   - Verification:
+     - `.venv/bin/python -m pytest tests/test_options_flow_e2e.py -q -k "execution_policy_profile or context_conditioned_runtime_policy or saves_execution_policy_profile"`
+       — 9 passed, 190 deselected.
+     - `.venv/bin/ruff check custom_components/heima/config_flow/_reaction_forms.py custom_components/heima/config_flow/_steps_reaction_editing.py custom_components/heima/config_flow/_steps_notifications.py tests/test_options_flow_e2e.py`
+       — passed.
+     - `.venv/bin/python -m json.tool custom_components/heima/translations/en.json` — passed.
 
-8. **AN8 — Live and end-to-end coverage**
+8. **AN8 — Live and end-to-end coverage** — `NEXT`
    - Add live coverage for profile-backed runtime confirmation using the first supported descriptor.
    - Add live coverage proving group membership changes affect future notifications without editing
      the reaction.

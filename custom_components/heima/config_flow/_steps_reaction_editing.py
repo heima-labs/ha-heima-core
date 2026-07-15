@@ -849,7 +849,12 @@ class _ReactionEditingStepsMixin:
             self._deleting_reaction_id = pid
             return await self.async_step_reactions_delete_confirm()
 
-        current_input, execution_policy, errors = self._normalize_runtime_confirmation_submission(
+        (
+            current_input,
+            execution_policy,
+            execution_policy_ref,
+            errors,
+        ) = self._normalize_runtime_confirmation_submission(
             user_input=user_input,
             defaults=defaults,
         )
@@ -872,10 +877,20 @@ class _ReactionEditingStepsMixin:
         )
 
         cfg["enabled"] = bool(current_input.get("enabled", True))
-        cfg["execution_policy"] = self._merge_runtime_confirmation_execution_policy(
-            existing_policy=existing_policy,
-            submitted_policy=execution_policy,
-        )
+        if execution_policy_ref:
+            cfg["execution_policy_ref"] = execution_policy_ref
+            cfg.pop("execution_policy", None)
+            if bool(current_input.get("use_execution_policy_override", False)):
+                cfg["execution_policy_override"] = execution_policy
+            else:
+                cfg.pop("execution_policy_override", None)
+        else:
+            cfg.pop("execution_policy_ref", None)
+            cfg.pop("execution_policy_override", None)
+            cfg["execution_policy"] = self._merge_runtime_confirmation_execution_policy(
+                existing_policy=existing_policy,
+                submitted_policy=execution_policy,
+            )
         configured[pid] = cfg
         reactions_cfg["configured"] = configured
         if reset_promotion_state:
@@ -1161,12 +1176,16 @@ class _ReactionEditingStepsMixin:
         return await self.async_step_init()
 
     def _runtime_confirmation_defaults_from_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
-        policy = cfg.get("execution_policy")
+        override = cfg.get("execution_policy_override")
+        has_override = isinstance(override, dict)
+        policy = override if has_override else cfg.get("execution_policy")
         policy = dict(policy) if isinstance(policy, dict) else {}
         confirmation = policy.get("confirmation")
         confirmation = dict(confirmation) if isinstance(confirmation, dict) else {}
         return {
             "enabled": bool(cfg.get("enabled", True)),
+            "execution_policy_profile_ref": str(cfg.get("execution_policy_ref") or ""),
+            "use_execution_policy_override": has_override,
             "execution_mode": str(policy.get("mode") or "auto_apply"),
             "confirmation_expires_in_minutes": int(confirmation.get("expires_in_minutes") or 10),
             "confirmation_on_timeout": str(confirmation.get("on_timeout") or "skip"),
@@ -1187,8 +1206,13 @@ class _ReactionEditingStepsMixin:
         *,
         user_input: dict[str, Any],
         defaults: dict[str, Any],
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+    ) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, str]]:
         errors: dict[str, str] = {}
+        profile_ref = str(user_input.get("execution_policy_profile_ref") or "").strip()
+        if profile_ref and profile_ref not in self._execution_policy_profile_ref_options():
+            errors["execution_policy_profile_ref"] = "unknown_target"
+            profile_ref = str(defaults.get("execution_policy_profile_ref") or "")
+
         mode = str(user_input.get("execution_mode") or defaults.get("execution_mode") or "").strip()
         if mode not in self._runtime_confirmation_mode_options():
             errors["execution_mode"] = "invalid_option"
@@ -1230,6 +1254,13 @@ class _ReactionEditingStepsMixin:
 
         current_input = {
             "enabled": bool(user_input.get("enabled", defaults.get("enabled", True))),
+            "execution_policy_profile_ref": profile_ref,
+            "use_execution_policy_override": bool(
+                user_input.get(
+                    "use_execution_policy_override",
+                    defaults.get("use_execution_policy_override", False),
+                )
+            ),
             "execution_mode": mode,
             "confirmation_expires_in_minutes": expires_in,
             "confirmation_on_timeout": on_timeout,
@@ -1248,7 +1279,7 @@ class _ReactionEditingStepsMixin:
                 "use_default_route_targets": use_default_route_targets,
             },
         }
-        return current_input, execution_policy, errors
+        return current_input, execution_policy, profile_ref, errors
 
     @staticmethod
     def _merge_runtime_confirmation_execution_policy(
