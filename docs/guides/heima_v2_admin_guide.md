@@ -817,6 +817,9 @@ First-run recommendation:
 Purpose:
 
 - Configure notification recipients, groups, routing, event categories, deduplication, and mismatch reporting.
+- The current implementation may expose structured object fields. The intended v2 admin surface is
+  a guided recipient/group editor so administrators do not need to write JSON/YAML for normal
+  notification setup.
 
 Fields:
 

@@ -15,6 +15,7 @@ from custom_components.heima.runtime.runtime_confirmation import (
     RuntimeApplyResult,
     evaluate_step_dependencies,
     fail_if_zero_applied,
+    resolve_execution_policy_config,
     resolve_runtime_request,
 )
 
@@ -53,6 +54,144 @@ def test_execution_policy_parses_ask_residents_confirmation() -> None:
         require_context_revalidation=True,
     )
     assert policy.promotion == {"enabled": True}
+
+
+def test_resolve_execution_policy_config_defaults_to_auto_apply() -> None:
+    resolved = resolve_execution_policy_config({}, {})
+
+    assert resolved.valid
+    assert resolved.source == "default_auto_apply"
+    assert resolved.profile_id is None
+    assert resolved.policy == ExecutionPolicy()
+
+
+def test_resolve_execution_policy_config_uses_inline_legacy_policy() -> None:
+    resolved = resolve_execution_policy_config(
+        {
+            "execution_policy": {
+                "mode": "ask_residents",
+                "confirmation": {"target_groups": ["residents"]},
+            }
+        },
+        {},
+    )
+
+    assert resolved.valid
+    assert resolved.source == "inline"
+    assert resolved.policy.mode == "ask_residents"
+    assert resolved.policy.confirmation is not None
+    assert resolved.policy.confirmation.target_groups == ("residents",)
+
+
+def test_resolve_execution_policy_config_uses_profile_policy() -> None:
+    resolved = resolve_execution_policy_config(
+        {"execution_policy_ref": "ask_residents_default"},
+        {
+            "ask_residents_default": {
+                "mode": "ask_residents",
+                "confirmation": {
+                    "target_groups": ["residents"],
+                    "expires_in_minutes": 7,
+                },
+                "promotion": {"enabled": True},
+            }
+        },
+    )
+
+    assert resolved.valid
+    assert resolved.source == "profile"
+    assert resolved.profile_id == "ask_residents_default"
+    assert resolved.policy.mode == "ask_residents"
+    assert resolved.policy.confirmation is not None
+    assert resolved.policy.confirmation.target_groups == ("residents",)
+    assert resolved.policy.confirmation.expires_in_minutes == 7
+    assert resolved.policy.promotion == {"enabled": True}
+
+
+def test_resolve_execution_policy_config_applies_profile_override() -> None:
+    resolved = resolve_execution_policy_config(
+        {
+            "execution_policy_ref": "ask_residents_default",
+            "execution_policy_override": {
+                "confirmation": {
+                    "target_groups": ["night_residents"],
+                    "expires_in_minutes": 3,
+                },
+                "promotion": {"min_samples": 8},
+            },
+        },
+        {
+            "ask_residents_default": {
+                "mode": "ask_residents",
+                "confirmation": {
+                    "target_groups": ["residents"],
+                    "target_recipients": ["stefano"],
+                    "expires_in_minutes": 10,
+                    "on_timeout": "skip",
+                },
+                "promotion": {"enabled": True, "min_samples": 5},
+            }
+        },
+    )
+
+    assert resolved.valid
+    assert resolved.source == "profile_with_override"
+    assert resolved.profile_id == "ask_residents_default"
+    assert resolved.policy.confirmation is not None
+    assert resolved.policy.confirmation.target_groups == ("night_residents",)
+    assert resolved.policy.confirmation.target_recipients == ("stefano",)
+    assert resolved.policy.confirmation.expires_in_minutes == 3
+    assert resolved.policy.confirmation.on_timeout == "skip"
+    assert resolved.policy.promotion == {"enabled": True, "min_samples": 8}
+
+
+def test_resolve_execution_policy_config_ignores_empty_override_values() -> None:
+    resolved = resolve_execution_policy_config(
+        {
+            "execution_policy_ref": "ask_residents_default",
+            "execution_policy_override": {
+                "mode": "",
+                "confirmation": {
+                    "target_groups": [],
+                    "expires_in_minutes": None,
+                },
+            },
+        },
+        {
+            "ask_residents_default": {
+                "mode": "ask_residents",
+                "confirmation": {
+                    "target_groups": ["residents"],
+                    "expires_in_minutes": 10,
+                },
+            }
+        },
+    )
+
+    assert resolved.policy.mode == "ask_residents"
+    assert resolved.policy.confirmation is not None
+    assert resolved.policy.confirmation.target_groups == ()
+    assert resolved.policy.confirmation.expires_in_minutes == 10
+
+
+def test_resolve_execution_policy_config_invalid_ref_fails_closed() -> None:
+    resolved = resolve_execution_policy_config(
+        {
+            "execution_policy_ref": "missing_profile",
+            "execution_policy": {
+                "mode": "ask_residents",
+                "confirmation": {"target_groups": ["residents"]},
+            },
+        },
+        {},
+    )
+
+    assert not resolved.valid
+    assert resolved.source == "unresolved_reference"
+    assert resolved.profile_id == "missing_profile"
+    assert resolved.unresolved_profile_ref == "missing_profile"
+    assert resolved.config_error == "unresolved_execution_policy_ref"
+    assert resolved.policy == ExecutionPolicy()
 
 
 def test_resolve_runtime_request_is_first_writer_wins() -> None:

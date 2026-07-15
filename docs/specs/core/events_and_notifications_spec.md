@@ -120,4 +120,5 @@ The codebase is therefore a reference implementation, not the source of truth.
 Supporting detail remains available in:
 - `core/event_catalog_spec.md`
 - `core/notification_recipients_spec.md`
+- `core/notification_admin_ui_spec.md`
 - `core/resident_runtime_confirmation_spec.md`

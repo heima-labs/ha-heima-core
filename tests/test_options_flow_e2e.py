@@ -1272,6 +1272,311 @@ async def test_notifications_step_rejects_unknown_route_target():
 
 
 @pytest.mark.asyncio
+async def test_notification_recipients_menu_lists_guided_recipient_actions():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+
+    result = await flow.async_step_notification_recipients()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "notification_recipients"
+    assert result["menu_options"] == [
+        "notification_recipient_add",
+        "notification_recipient_edit",
+        "notification_recipient_delete",
+        "notification_recipients_done",
+    ]
+    assert "stefano: mobile_app_stefano" in result["description_placeholders"]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_add_persists_normalized_services():
+    flow = _flow()
+
+    result = await flow.async_step_notification_recipient_add(
+        {
+            "recipient_id": "stefano",
+            "notify_services": "notify.mobile_app_stefano\nmobile_app_tablet",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["recipients"] == {
+        "stefano": ["mobile_app_stefano", "mobile_app_tablet"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_add_rejects_duplicate_id():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+
+    result = await flow.async_step_notification_recipient_add(
+        {
+            "recipient_id": "stefano",
+            "notify_services": "mobile_app_tablet",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_recipient_add"
+    assert result["errors"]["recipient_id"] == "already_exists"
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_edit_keeps_id_immutable():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+    flow._editing_notification_recipient_id = "stefano"
+
+    result = await flow.async_step_notification_recipient_edit_form(
+        {
+            "recipient_id": "antonio",
+            "notify_services": "mobile_app_stefano",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_recipient_edit_form"
+    assert result["errors"]["recipient_id"] == "immutable_field"
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_edit_updates_services():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+    flow._editing_notification_recipient_id = "stefano"
+
+    result = await flow.async_step_notification_recipient_edit_form(
+        {
+            "recipient_id": "stefano",
+            "notify_services": "mobile_app_stefano\nnotify.mobile_app_tablet",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["recipients"]["stefano"] == [
+        "mobile_app_stefano",
+        "mobile_app_tablet",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_delete_blocks_referenced_recipient():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+                "route_targets": ["stefano"],
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {"target_recipients": ["stefano"]},
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "execution_policy": {
+                            "mode": "ask_residents",
+                            "promotion": {"target_recipients": ["stefano"]},
+                        }
+                    }
+                },
+            },
+        }
+    )
+    flow._editing_notification_recipient_id = "stefano"
+
+    result = await flow.async_step_notification_recipient_delete_confirm({"confirm": True})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_recipient_delete_confirm"
+    assert result["errors"]["base"] == "recipient_in_use"
+    references = result["description_placeholders"]["references"]
+    assert "group:admins" in references
+    assert "route_targets" in references
+    assert "reaction:r1" in references
+    assert "execution_policy_profile:ask_residents_default" in references
+    assert "stefano" in flow.options["notifications"]["recipients"]
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_delete_removes_unreferenced_recipient():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "antonia": ["mobile_app_antonia"],
+                }
+            }
+        }
+    )
+    flow._editing_notification_recipient_id = "antonia"
+
+    result = await flow.async_step_notification_recipient_delete_confirm({"confirm": True})
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["recipients"] == {
+        "stefano": ["mobile_app_stefano"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_groups_menu_lists_guided_group_actions():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_groups()
+
+    assert result["type"] == "menu"
+    assert result["step_id"] == "notification_groups"
+    assert result["menu_options"] == [
+        "notification_group_add",
+        "notification_group_edit",
+        "notification_group_delete",
+        "notification_groups_done",
+    ]
+    assert "admins: stefano" in result["description_placeholders"]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_notification_group_add_persists_known_members():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "antonia": ["mobile_app_antonia"],
+                }
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_group_add(
+        {
+            "group_id": "residents",
+            "members": "stefano\nantonia",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["recipient_groups"] == {
+        "residents": ["stefano", "antonia"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_group_add_rejects_unknown_member():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+
+    result = await flow.async_step_notification_group_add(
+        {
+            "group_id": "residents",
+            "members": "stefano\nmissing",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_group_add"
+    assert result["errors"]["members"] == "unknown_recipient"
+
+
+@pytest.mark.asyncio
+async def test_notification_group_edit_keeps_id_immutable():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+            }
+        }
+    )
+    flow._editing_notification_group_id = "admins"
+
+    result = await flow.async_step_notification_group_edit_form(
+        {
+            "group_id": "residents",
+            "members": "stefano",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_group_edit_form"
+    assert result["errors"]["group_id"] == "immutable_field"
+
+
+@pytest.mark.asyncio
+async def test_notification_group_delete_blocks_referenced_group():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+                "route_targets": ["admins"],
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {"target_groups": ["admins"]},
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "execution_policy": {
+                            "mode": "ask_residents",
+                            "promotion": {"target_groups": ["admins"]},
+                        }
+                    }
+                },
+            },
+        }
+    )
+    flow._editing_notification_group_id = "admins"
+
+    result = await flow.async_step_notification_group_delete_confirm({"confirm": True})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_group_delete_confirm"
+    assert result["errors"]["base"] == "group_in_use"
+    references = result["description_placeholders"]["references"]
+    assert "route_targets" in references
+    assert "reaction:r1" in references
+    assert "execution_policy_profile:ask_residents_default" in references
+    assert "admins" in flow.options["notifications"]["recipient_groups"]
+
+
+@pytest.mark.asyncio
+async def test_notification_group_delete_removes_unreferenced_group():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "antonia": ["mobile_app_antonia"],
+                },
+                "recipient_groups": {
+                    "admins": ["stefano"],
+                    "residents": ["stefano", "antonia"],
+                },
+            }
+        }
+    )
+    flow._editing_notification_group_id = "residents"
+
+    result = await flow.async_step_notification_group_delete_confirm({"confirm": True})
+
+    assert result["type"] == "menu"
+    assert flow.options["notifications"]["recipient_groups"] == {"admins": ["stefano"]}
+
+
+@pytest.mark.asyncio
 async def test_lighting_rooms_edit_redirects_to_zones_when_no_rooms():
     flow = _flow({"rooms": []})
 

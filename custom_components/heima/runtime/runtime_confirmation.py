@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Callable, Literal
@@ -11,6 +12,13 @@ from .contracts import ApplyStep
 from .snapshot import DecisionSnapshot
 
 ExecutionPolicyMode = Literal["auto_apply", "ask_residents"]
+ExecutionPolicySource = Literal[
+    "inline",
+    "profile",
+    "profile_with_override",
+    "default_auto_apply",
+    "unresolved_reference",
+]
 TimeoutBehavior = Literal["skip", "apply"]
 RuntimeRequestStatus = Literal[
     "pending",
@@ -78,6 +86,22 @@ class ExecutionPolicy:
 
 
 @dataclass(frozen=True)
+class ResolvedExecutionPolicy:
+    """Effective execution policy for one configured reaction."""
+
+    policy: ExecutionPolicy
+    source: ExecutionPolicySource
+    profile_id: str | None = None
+    unresolved_profile_ref: str | None = None
+    config_error: str | None = None
+
+    @property
+    def valid(self) -> bool:
+        """Return whether the policy can be used for runtime execution."""
+        return self.unresolved_profile_ref is None and self.config_error is None
+
+
+@dataclass(frozen=True)
 class ConfirmationPolicy:
     """Resident confirmation settings for one reaction."""
 
@@ -104,6 +128,49 @@ class ConfirmationPolicy:
             on_timeout=on_timeout,  # type: ignore[arg-type]
             require_context_revalidation=bool(value.get("require_context_revalidation", False)),
         )
+
+
+def resolve_execution_policy_config(
+    reaction_config: Any,
+    execution_policy_profiles: Any,
+) -> ResolvedExecutionPolicy:
+    """Resolve inline/profile execution policy configuration for a reaction."""
+    cfg = reaction_config if isinstance(reaction_config, dict) else {}
+    profile_ref = _clean_string(cfg.get("execution_policy_ref"))
+    if profile_ref:
+        profiles = execution_policy_profiles if isinstance(execution_policy_profiles, dict) else {}
+        profile = profiles.get(profile_ref)
+        if not isinstance(profile, dict):
+            return ResolvedExecutionPolicy(
+                policy=ExecutionPolicy(),
+                source="unresolved_reference",
+                profile_id=profile_ref,
+                unresolved_profile_ref=profile_ref,
+                config_error="unresolved_execution_policy_ref",
+            )
+
+        effective = deepcopy(profile)
+        override = cfg.get("execution_policy_override")
+        has_override = isinstance(override, dict) and bool(override)
+        if has_override:
+            effective = _deep_merge_policy_mapping(effective, override)
+        return ResolvedExecutionPolicy(
+            policy=ExecutionPolicy.from_mapping(effective),
+            source="profile_with_override" if has_override else "profile",
+            profile_id=profile_ref,
+        )
+
+    inline_policy = cfg.get("execution_policy")
+    if isinstance(inline_policy, dict):
+        return ResolvedExecutionPolicy(
+            policy=ExecutionPolicy.from_mapping(inline_policy),
+            source="inline",
+        )
+
+    return ResolvedExecutionPolicy(
+        policy=ExecutionPolicy(),
+        source="default_auto_apply",
+    )
 
 
 @dataclass(frozen=True)
@@ -364,6 +431,26 @@ def _merge_reason_counts(target: dict[str, int], source: dict[str, int]) -> None
         target[key] = target.get(key, 0) + int(count or 0)
 
 
+def _deep_merge_policy_mapping(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge a reaction-level execution policy override over a profile mapping."""
+    merged = deepcopy(base)
+    for raw_key, value in override.items():
+        key = _clean_string(raw_key)
+        if not key or _is_empty_override_value(value):
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_policy_mapping(merged[key], value)
+            continue
+        merged[key] = deepcopy(value)
+    return merged
+
+
+def _is_empty_override_value(value: Any) -> bool:
+    if value is None:
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
 @dataclass(frozen=True)
 class RuntimePlanValidationResult:
     """Descriptor or generic validation result."""
@@ -575,6 +662,10 @@ def _string_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, list | tuple | set):
         return tuple(str(item).strip() for item in value if str(item).strip())
     return ()
+
+
+def _clean_string(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _int_value(value: Any, default: int) -> int:

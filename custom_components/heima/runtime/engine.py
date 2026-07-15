@@ -111,6 +111,7 @@ from .runtime_confirmation import (
     RuntimeRequestStatus,
     evaluate_step_dependencies,
     fail_if_zero_applied,
+    resolve_execution_policy_config,
     resolve_runtime_request,
 )
 from .scheduler import ScheduledRuntimeJob
@@ -1678,7 +1679,32 @@ class HeimaEngine:
         """Divert ask-residents reaction steps into a runtime confirmation request."""
         reaction_id = reaction.reaction_id
         cfg = self._configured_reaction_config(reaction_id)
-        policy = ExecutionPolicy.from_mapping(cfg.get("execution_policy"))
+        resolved_policy = resolve_execution_policy_config(
+            cfg,
+            self._execution_policy_profiles(),
+        )
+        if not resolved_policy.valid:
+            self._events_domain.queue_event(
+                HeimaEvent(
+                    type="system.config_error",
+                    key=f"system.config_error.execution_policy_ref_unresolved.{reaction_id}",
+                    severity="error",
+                    title="Execution policy profile not found",
+                    message=(
+                        f"Reaction '{reaction_id}' references execution policy profile "
+                        f"'{resolved_policy.unresolved_profile_ref}', but that profile does "
+                        "not exist."
+                    ),
+                    context={
+                        "reaction_id": reaction_id,
+                        "profile_id": resolved_policy.unresolved_profile_ref,
+                        "config_error": resolved_policy.config_error,
+                    },
+                )
+            )
+            return True
+
+        policy = resolved_policy.policy
         if policy.mode != "ask_residents":
             return False
         if not self._options.engine_enabled:
@@ -1769,6 +1795,51 @@ class HeimaEngine:
         configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))
         cfg = configured.get(reaction_id)
         return dict(cfg) if isinstance(cfg, dict) else {}
+
+    def _execution_policy_profiles(self) -> dict[str, Any]:
+        reactions = dict(dict(self._entry.options).get(OPT_REACTIONS, {}))
+        profiles = reactions.get("execution_policy_profiles")
+        return dict(profiles) if isinstance(profiles, dict) else {}
+
+    def _reaction_execution_policy_diagnostics(self) -> dict[str, Any]:
+        reactions = dict(dict(self._entry.options).get(OPT_REACTIONS, {}))
+        configured = reactions.get("configured")
+        if not isinstance(configured, dict):
+            return {}
+        profiles = self._execution_policy_profiles()
+        diagnostics: dict[str, Any] = {}
+        for reaction_id, raw_cfg in configured.items():
+            if not isinstance(raw_cfg, dict):
+                continue
+            resolved = resolve_execution_policy_config(raw_cfg, profiles)
+            policy = resolved.policy
+            item: dict[str, Any] = {
+                "source": resolved.source,
+                "mode": policy.mode,
+                "profile_id": resolved.profile_id,
+                "unresolved_profile_ref": resolved.unresolved_profile_ref,
+                "config_error": resolved.config_error,
+            }
+            if policy.confirmation is not None:
+                item["confirmation"] = {
+                    "target_recipients": list(policy.confirmation.target_recipients),
+                    "target_groups": list(policy.confirmation.target_groups),
+                    "use_default_route_targets": policy.confirmation.use_default_route_targets,
+                    "effective_targets": list(self._runtime_confirmation_targets(policy)),
+                    "expires_in_minutes": policy.confirmation.expires_in_minutes,
+                    "on_timeout": policy.confirmation.on_timeout,
+                }
+            if policy.promotion:
+                promotion = dict(policy.promotion)
+                item["promotion"] = promotion
+                item["promotion_targets"] = {
+                    "target_recipients": list(
+                        _string_list(promotion.get("target_recipients"))
+                    ),
+                    "target_groups": list(_string_list(promotion.get("target_groups"))),
+                }
+            diagnostics[str(reaction_id)] = item
+        return diagnostics
 
     def _runtime_confirmation_targets(self, policy: ExecutionPolicy) -> tuple[str, ...]:
         if policy.confirmation is None:
@@ -2714,6 +2785,7 @@ class HeimaEngine:
             ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},
             "reactions": {r.reaction_id: r.diagnostics() for r in self._reactions},
+            "reaction_execution_policies": self._reaction_execution_policy_diagnostics(),
             "muted_reactions": sorted(self._muted_reactions),
         }
 
@@ -2726,3 +2798,11 @@ class HeimaEngine:
                 "sources": sorted({signal.source_id for signal in signals}),
             }
         return diagnostics
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, list | tuple | set):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []

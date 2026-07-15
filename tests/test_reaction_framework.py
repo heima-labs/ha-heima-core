@@ -175,6 +175,142 @@ def test_dispatch_reactions_diverts_ask_residents_to_runtime_confirmation():
     assert captured[0].apply_steps[0].source == "reaction:_StepCapture"
 
 
+def test_dispatch_reactions_uses_execution_policy_profile():
+    options = {
+        "reactions": {
+            "execution_policy_profiles": {
+                "ask_residents_default": {
+                    "mode": "ask_residents",
+                    "confirmation": {
+                        "target_groups": ["residents"],
+                        "use_default_route_targets": False,
+                        "expires_in_minutes": 3,
+                    },
+                }
+            },
+            "configured": {
+                "_StepCapture": {
+                    "reaction_type": "test_confirmable",
+                    "execution_policy_ref": "ask_residents_default",
+                }
+            },
+        }
+    }
+    engine = _make_engine(options)
+    step = ApplyStep(domain="light", target="light.studio", action="light.turn_on")
+    engine.register_reaction(_StepCapture(step))
+    captured: list[RuntimeActionRequest] = []
+    scheduled: list[object] = []
+
+    async def _handler(request: RuntimeActionRequest) -> RuntimeActionRequest:
+        captured.append(request)
+        return request
+
+    engine._hass.async_create_task.side_effect = lambda coro: scheduled.append(coro) or coro
+    engine.set_runtime_confirmation_request_handler(_handler)
+    engine.register_runtime_confirmation_descriptor(
+        RuntimeConfirmationDescriptor(
+            reaction_type="test_confirmable",
+            occurrence_key=lambda _reaction, _snapshot, _steps: "occurrence-1",
+            render_request=lambda _reaction, _steps, _language: RenderedRuntimeRequest(
+                title="Apply?",
+                message="Apply the requested change?",
+            ),
+        )
+    )
+
+    result = engine._dispatch_reactions([DecisionSnapshot.empty()])
+    asyncio.run(scheduled[0])
+
+    assert result == []
+    assert len(captured) == 1
+    assert captured[0].confirmation_targets == ("residents",)
+    assert captured[0].on_timeout == "skip"
+
+
+def test_dispatch_reactions_with_unresolved_execution_policy_ref_fails_closed():
+    options = {
+        "reactions": {
+            "configured": {
+                "_StepCapture": {
+                    "reaction_type": "test_confirmable",
+                    "execution_policy_ref": "missing_profile",
+                }
+            }
+        }
+    }
+    engine = _make_engine(options)
+    engine._events_domain = MagicMock()
+    engine.register_reaction(
+        _StepCapture(ApplyStep(domain="light", target="light.studio", action="light.turn_on"))
+    )
+
+    result = engine._dispatch_reactions([DecisionSnapshot.empty()])
+
+    assert result == []
+    queued_events = [call.args[0] for call in engine._events_domain.queue_event.call_args_list]
+    config_errors = [
+        event
+        for event in queued_events
+        if event.key == "system.config_error.execution_policy_ref_unresolved._StepCapture"
+    ]
+    assert len(config_errors) == 1
+    assert config_errors[0].context["profile_id"] == "missing_profile"
+    engine._hass.async_create_task.assert_not_called()
+
+
+def test_diagnostics_expose_effective_execution_policy_source():
+    options = {
+        "notifications": {"route_targets": ["default_route"]},
+        "reactions": {
+            "execution_policy_profiles": {
+                "ask_residents_default": {
+                    "mode": "ask_residents",
+                    "confirmation": {
+                        "target_groups": ["residents"],
+                        "use_default_route_targets": True,
+                    },
+                    "promotion": {
+                        "enabled": True,
+                        "target_groups": ["admins"],
+                    },
+                }
+            },
+            "configured": {
+                "profiled": {
+                    "reaction_type": "test_confirmable",
+                    "execution_policy_ref": "ask_residents_default",
+                    "execution_policy_override": {
+                        "confirmation": {"target_recipients": ["stefano"]}
+                    },
+                },
+                "missing": {
+                    "reaction_type": "test_confirmable",
+                    "execution_policy_ref": "missing_profile",
+                },
+            },
+        },
+    }
+    engine = _make_engine(options)
+
+    policies = engine.diagnostics()["reaction_execution_policies"]
+
+    assert policies["profiled"]["source"] == "profile_with_override"
+    assert policies["profiled"]["mode"] == "ask_residents"
+    assert policies["profiled"]["profile_id"] == "ask_residents_default"
+    assert policies["profiled"]["confirmation"]["target_recipients"] == ["stefano"]
+    assert policies["profiled"]["confirmation"]["target_groups"] == ["residents"]
+    assert policies["profiled"]["confirmation"]["effective_targets"] == [
+        "stefano",
+        "residents",
+        "default_route",
+    ]
+    assert policies["profiled"]["promotion_targets"]["target_groups"] == ["admins"]
+    assert policies["missing"]["source"] == "unresolved_reference"
+    assert policies["missing"]["unresolved_profile_ref"] == "missing_profile"
+    assert policies["missing"]["config_error"] == "unresolved_execution_policy_ref"
+
+
 def test_dispatch_reactions_passes_history():
     engine = _make_engine()
     snap = DecisionSnapshot.empty()

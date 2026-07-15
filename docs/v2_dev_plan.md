@@ -119,18 +119,19 @@ These constraints must never be violated. See spec §16 for rationale.
 | AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
 | AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
 | AH | Resident Runtime Confirmation & Auto-Apply Promotion | `IN PROGRESS` | AD, MH, AF |
+| AN | Notification Admin UI & Execution Policy Profiles | `IN PROGRESS` | AH |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion. AH1-AH3
-complete; AH4 is in progress; AH5 descriptor work has started.
-**Branch:** `feat/ah-runtime-confirmation`.
+**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles. AN1-AN4 complete;
+AN5 is next.
+**Branch:** `feat/an-notification-admin-ui`.
 **Next action:**
-Continue AH4/AH5 with descriptor-specific validation and configuration support for
-`context_conditioned_lighting_scene`.
+Start AN5 by adding guided options-flow screens for default route targets and notification service
+capabilities.
 
 ### Current Working Notes
 
@@ -3896,6 +3897,214 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
   providers before AH2 implementation.
 - Decide whether restart-safe persisted runtime requests are still out of scope after the first AH
   implementation is validated in production.
+
+---
+
+## Phase AN — Notification Admin UI & Execution Policy Profiles
+
+**Status:** `PLANNED`
+**Depends on:** AH
+**Spec source:** `docs/specs/core/notification_admin_ui_spec.md`
+
+### Goal
+
+Replace raw object/JSON editing for notification routing with a guided admin UI, and add reusable
+execution policy profiles that reactions can reference by stable id.
+
+The implementation must keep notification routing domain-generic. Runtime confirmation, promotion
+reviews, and future reaction families must all consume the same notification recipients, recipient
+groups, service capabilities, and execution policy profile model.
+
+### Scope Guardrails
+
+- Do not add domain-specific notification configuration for lighting, camera privacy, security, or
+  any other single reaction family.
+- Keep inline `execution_policy` valid for compatibility.
+- Prefer `execution_policy_ref` for newly edited reactions so group membership and profile changes
+  affect future executions without rewriting every reaction.
+- Invalid `execution_policy_ref` must fail closed and surface a configuration error. It must not
+  silently fall back to `auto_apply`.
+- `recipient_id`, `group_id`, and `profile_id` are immutable in the first implementation.
+- Recipient labels are derived from `people_named.display_name` when available; otherwise the
+  immutable id is shown. Do not introduce a separate recipient display-name field.
+- `supports_actions` defaults to false and must be explicitly persisted before a service can receive
+  actionable runtime confirmation notifications.
+
+### Development Plan
+
+1. **AN1 — Execution policy profile model and resolver** — `DONE`
+   - Add canonical support for `reactions.execution_policy_profiles`. `DONE`
+   - Add pure resolution logic for: `DONE`
+     - valid `execution_policy_ref`
+     - `execution_policy_ref` plus `execution_policy_override`
+     - legacy inline `execution_policy`
+     - no policy, which keeps current `auto_apply` behavior
+   - Implement override merge semantics: `DONE`
+     - objects merge recursively
+     - scalars replace
+     - lists replace
+     - null/empty values cannot delete required fields unless that field explicitly supports
+       clearing
+   - Add fail-closed unresolved-reference handling. `DONE`
+   - Tests:
+     - [x] resolver unit tests for profile-only, profile-plus-override, inline-only, default
+       `auto_apply`, unresolved reference, list replacement, scalar replacement, nested object merge,
+       and invalid override attempts.
+   - Verification:
+     - `.venv/bin/python -m pytest tests/test_runtime_confirmation.py -q` — 18 passed.
+     - `.venv/bin/ruff check custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py`
+       — passed.
+
+2. **AN2 — Runtime integration and diagnostics** — `DONE`
+   - Route runtime confirmation and promotion logic through the resolved effective execution policy.
+     `DONE`
+   - Preserve current inline-policy behavior. `DONE`
+   - Extend diagnostics to expose: `DONE`
+     - policy source: `inline`, `profile`, `profile_with_override`, or `default_auto_apply`
+     - referenced profile id
+     - unresolved reference errors
+     - effective mode
+     - effective confirmation targets and timeout behavior
+     - effective promotion review targets and thresholds
+   - Tests:
+     - [x] engine/runtime tests proving profile-backed `ask_residents` creates requests
+     - [x] profile-backed `auto_apply` applies immediately through resolved policy defaults
+     - [x] invalid profile reference fails closed
+     - [x] inline legacy reactions still work
+     - [x] overrides affect only the edited fields
+     - [x] diagnostics report the effective policy source correctly.
+     - [x] promotion eligibility and admin promotion decisions honor profile-backed policies.
+   - Verification:
+     - `.venv/bin/python -m pytest tests/test_runtime_confirmation.py tests/test_reaction_framework.py tests/test_runtime_confirmation_promotion_stats.py -q`
+       — 53 passed.
+     - `.venv/bin/ruff check custom_components/heima/runtime/runtime_confirmation.py custom_components/heima/runtime/engine.py custom_components/heima/coordinator.py tests/test_runtime_confirmation.py tests/test_reaction_framework.py tests/test_runtime_confirmation_promotion_stats.py`
+       — passed.
+
+3. **AN3 — Recipient editor UI** — `DONE`
+   - Add guided options-flow screens for notification recipients. `DONE`
+   - Support creating and deleting recipients. `DONE`
+   - Block deletion while a recipient is referenced by a group, route target, or execution policy.
+     `DONE`
+   - Show labels from `people_named.display_name` when available. `DONE`
+   - Tests:
+     - [x] create recipient
+     - [x] delete unreferenced recipient
+     - [x] block referenced recipient deletion
+     - [x] derived label display
+     - [x] config validation rejects malformed recipient ids.
+   - Verification:
+     - `.venv/bin/python -m pytest tests/test_options_flow_e2e.py -q -k "notification_recipient or notifications_step"`
+       — 9 passed, 170 deselected.
+     - `.venv/bin/ruff check custom_components/heima/config_flow/__init__.py custom_components/heima/config_flow/_steps_notifications.py tests/test_options_flow_e2e.py`
+       — passed.
+     - `.venv/bin/python -m json.tool custom_components/heima/translations/en.json` — passed.
+
+4. **AN4 — Recipient group editor UI** — `DONE`
+   - Add guided options-flow screens for recipient groups. `DONE`
+   - Support group membership editing through existing recipients. `DONE`
+   - Block deletion while a group is referenced by default routing or execution policy profiles.
+     `DONE`
+   - Tests:
+     - [x] create group
+     - [x] edit group members
+     - [x] block unknown members
+     - [x] block referenced group deletion
+     - [x] persist stable group ids without rename side effects.
+   - Verification:
+     - `.venv/bin/python -m pytest tests/test_options_flow_e2e.py -q -k "notification_recipient or notification_group or notifications_step"`
+       — 15 passed, 170 deselected.
+     - `.venv/bin/ruff check custom_components/heima/config_flow/__init__.py custom_components/heima/config_flow/_steps_notifications.py tests/test_options_flow_e2e.py`
+       — passed.
+     - `.venv/bin/python -m json.tool custom_components/heima/translations/en.json` — passed.
+
+5. **AN5 — Default routing and service capability editor** — `NEXT`
+   - Add guided screens for default `notifications.route_targets`.
+   - Add guided screens for `notification_service_capabilities`.
+   - Require explicit `supports_actions: true` before a notify service can receive actionable
+     requests.
+   - Tests:
+     - configure default route targets
+     - configure action-capable services
+     - non-actionable services are excluded from runtime confirmation routes
+     - informational notifications can still use non-actionable services when appropriate.
+
+6. **AN6 — Execution policy profile UI**
+   - Add guided screens for creating and editing reusable execution policy profiles.
+   - Support at least:
+     - `auto_apply`
+     - `ask_residents`
+     - confirmation target groups
+     - timeout minutes
+     - timeout behavior
+     - promotion review target groups
+     - promotion thresholds and reminder interval
+   - Block deletion while a profile is referenced by any configured reaction.
+   - Tests:
+     - create `ask_residents` profile
+     - edit timeout and routing fields
+     - create `auto_apply` profile
+     - block invalid target groups
+     - block referenced profile deletion
+     - persist only canonical profile data, not UI-only derived labels.
+
+7. **AN7 — Reaction editing integration**
+   - Update supported reaction editor surfaces to prefer `execution_policy_ref`.
+   - Keep inline `execution_policy` rendering/editing available for legacy data.
+   - Add focused override editing for allowed per-reaction deviations, such as timeout minutes or
+     target groups.
+   - Surface unresolved references as blocking validation errors before saving.
+   - Tests:
+     - select profile for a reaction
+     - save reaction with profile reference
+     - save reaction with profile reference plus override
+     - load legacy inline reaction without data loss
+     - reject unresolved profile reference.
+
+8. **AN8 — Live and end-to-end coverage**
+   - Add live coverage for profile-backed runtime confirmation using the first supported descriptor.
+   - Add live coverage proving group membership changes affect future notifications without editing
+     the reaction.
+   - Add live coverage for invalid profile reference fail-closed behavior.
+   - Add live coverage proving inline legacy execution policies still work.
+   - Tests:
+     - new live script for profile-backed `ask_residents`
+     - new live script or diagnostic assertion for effective-policy diagnostics
+     - `check_all_live.sh --tier diagnostic` includes read-only coverage where possible.
+
+9. **AN9 — Documentation and migration notes**
+   - Update admin guide with guided UI workflow.
+   - Document immutable ids and manual migration steps for id changes:
+     - create the new recipient/group/profile
+     - update references
+     - verify diagnostics
+     - delete the old unreferenced id
+   - Document compatibility rules for inline execution policies.
+   - Document fail-closed unresolved-reference behavior.
+   - Tests:
+     - `git diff --check`
+     - schema/config examples covered by existing parser tests where applicable.
+
+### Acceptance Criteria
+
+- [ ] Admins can configure recipients, groups, default route targets, service capabilities, and
+  execution policy profiles without editing raw JSON/YAML objects directly.
+- [ ] Reactions can reference an execution policy profile by stable id.
+- [ ] Profile changes affect future reaction executions without rewriting every referencing
+  reaction.
+- [ ] Inline `execution_policy` remains supported for existing reactions.
+- [ ] Invalid profile references fail closed and are visible in diagnostics/config validation.
+- [ ] Actionable runtime notifications are sent only through services with persisted
+  `supports_actions: true`.
+- [ ] Recipient/group/profile ids are immutable in the first implementation, with documented manual
+  migration steps.
+- [ ] Tests cover the resolver, options-flow UI, runtime integration, diagnostics, and live
+  profile-backed runtime confirmation.
+
+### Current open items
+
+- Decide the exact options-flow navigation shape before implementation.
+- Decide whether profile deletion should offer a guided "show references" screen in the first
+  implementation or only block deletion with a concise error.
 
 ---
 

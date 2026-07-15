@@ -32,6 +32,8 @@
           "security": "Security",
           "camera_privacy_policies": "Camera privacy policies",
           "notifications": "Notifications",
+          "notification_recipients": "Notification recipients",
+          "notification_groups": "Notification recipient groups",
           "calendar": "Calendar",
           "learning": "Learning context",
           "external_context": "External context",
@@ -39,6 +41,8 @@
           "admin_authored_create": "Create automation",
           "proposals": "Review proposals",
           "accepted_proposals": "Manage accepted proposals",
+          "runtime_promotion_reviews": "Review automation promotions",
+          "runtime_confirmation_maintenance": "Runtime confirmation maintenance",
           "save": "Save and close",
           "reactions_edit": "Edit reaction"
         }
@@ -384,6 +388,102 @@
         },
         "submit": "OK"
       },
+      "notification_recipients": {
+        "title": "Notification Recipients",
+        "description": "{summary}",
+        "menu_options": {
+          "notification_recipient_add": "Add recipient",
+          "notification_recipient_edit": "Edit recipient",
+          "notification_recipient_delete": "Delete recipient",
+          "notification_recipients_done": "Done"
+        }
+      },
+      "notification_recipient_add": {
+        "title": "Add Notification Recipient",
+        "data": {
+          "recipient_id": "Recipient ID",
+          "notify_services": "Notify services"
+        },
+        "submit": "OK"
+      },
+      "notification_recipient_edit": {
+        "title": "Edit Notification Recipient",
+        "data": {
+          "recipient_id": "Recipient"
+        },
+        "submit": "OK"
+      },
+      "notification_recipient_edit_form": {
+        "title": "Edit Notification Recipient",
+        "data": {
+          "recipient_id": "Recipient ID",
+          "notify_services": "Notify services"
+        },
+        "submit": "OK"
+      },
+      "notification_recipient_delete": {
+        "title": "Delete Notification Recipient",
+        "data": {
+          "recipient_id": "Recipient"
+        },
+        "submit": "OK"
+      },
+      "notification_recipient_delete_confirm": {
+        "title": "Delete Notification Recipient",
+        "description": "Recipient: {recipient_id}\nReferences: {references}",
+        "data": {
+          "confirm": "Confirm deletion"
+        },
+        "submit": "OK"
+      },
+      "notification_groups": {
+        "title": "Notification Recipient Groups",
+        "description": "{summary}",
+        "menu_options": {
+          "notification_group_add": "Add group",
+          "notification_group_edit": "Edit group",
+          "notification_group_delete": "Delete group",
+          "notification_groups_done": "Done"
+        }
+      },
+      "notification_group_add": {
+        "title": "Add Notification Recipient Group",
+        "data": {
+          "group_id": "Group ID",
+          "members": "Recipients"
+        },
+        "submit": "OK"
+      },
+      "notification_group_edit": {
+        "title": "Edit Notification Recipient Group",
+        "data": {
+          "group_id": "Group"
+        },
+        "submit": "OK"
+      },
+      "notification_group_edit_form": {
+        "title": "Edit Notification Recipient Group",
+        "data": {
+          "group_id": "Group ID",
+          "members": "Recipients"
+        },
+        "submit": "OK"
+      },
+      "notification_group_delete": {
+        "title": "Delete Notification Recipient Group",
+        "data": {
+          "group_id": "Group"
+        },
+        "submit": "OK"
+      },
+      "notification_group_delete_confirm": {
+        "title": "Delete Notification Recipient Group",
+        "description": "Group: {group_id}\nReferences: {references}",
+        "data": {
+          "confirm": "Confirm deletion"
+        },
+        "submit": "OK"
+      },
       "discovery": {
         "title": "Discovery",
         "description": "Summary: {summary}\n\nSuggestions:\n{suggestions}",
@@ -632,6 +732,12 @@
         "description": "{reaction_description}",
         "data": {
           "enabled": "Enabled",
+          "execution_mode": "Execution mode",
+          "confirmation_expires_in_minutes": "Response timeout (minutes)",
+          "confirmation_on_timeout": "When nobody responds",
+          "confirmation_target_recipients": "Notification recipients",
+          "confirmation_target_groups": "Notification recipient groups",
+          "confirmation_use_default_route_targets": "Also use default notification route targets",
           "primary_signal_name": "Signal name",
           "primary_trigger_mode": "Trigger mode",
           "primary_bucket": "Bucket",
@@ -665,9 +771,39 @@
           "delete_reaction": "Delete this reaction"
         },
         "data_description": {
+          "execution_mode": "Apply automatically runs the reaction immediately. Ask residents sends an actionable notification before applying the stored steps.",
+          "confirmation_expires_in_minutes": "How long residents have to answer before the timeout behavior is used.",
+          "confirmation_on_timeout": "Skip leaves the stored steps unapplied. Apply executes the stored steps after rechecking current constraints.",
+          "confirmation_target_recipients": "Comma-separated recipient IDs. Leave empty to rely on groups or default route targets.",
+          "confirmation_target_groups": "Comma-separated recipient group IDs configured in notification settings.",
+          "confirmation_use_default_route_targets": "When enabled, Heima also sends the confirmation to the notification route targets configured globally.",
           "primary_signal_name": "Available signals and buckets: {available_signals}",
           "primary_trigger_mode": "Bucket: fire while signal is in the given bucket. Burst: fire when signal changes rapidly (requires burst_threshold in room signal config).",
           "primary_bucket": "Required for Bucket mode. Valid buckets per signal: {available_signals}"
+        }
+      },
+      "runtime_promotion_reviews": {
+        "title": "Review automation promotions",
+        "description": "{pending_count} automation promotion request(s) are waiting for admin review.\n\n{review_summary}",
+        "data": {
+          "reaction": "Reaction",
+          "action": "Decision"
+        },
+        "data_description": {
+          "reaction": "The reaction that residents have repeatedly approved.",
+          "action": "Choose whether Heima should run this reaction automatically from now on, postpone the decision, or stop asking for this reaction."
+        }
+      },
+      "runtime_confirmation_maintenance": {
+        "title": "Runtime confirmation maintenance",
+        "description": "{reaction_count} reaction(s) have runtime confirmation stats or promotion state that can be reset.",
+        "data": {
+          "reaction": "Reaction",
+          "confirm_reset": "Reset confirmation stats and promotion state"
+        },
+        "data_description": {
+          "reaction": "The reaction whose confirmation counters and promotion review state should be cleared.",
+          "confirm_reset": "When enabled, Heima removes stored resident confirmation counters and pending or completed promotion review state for this reaction."
         }
       },
       "reactions_edit_contextual_lighting_assist": {
@@ -724,7 +860,13 @@
       "no_accepted_proposals": "There are no accepted proposals to manage",
       "proposal_not_found": "Selected proposal was not found",
       "unsupported_management_action": "This proposal management action is not supported yet",
-      "remove_failed": "Heima could not remove the accepted proposal"
+      "remove_failed": "Heima could not remove the accepted proposal",
+      "promotion_review_not_available": "This promotion review is no longer available",
+      "runtime_state_not_available": "Runtime confirmation state is not available",
+      "already_exists": "Already exists",
+      "immutable_field": "This field cannot be changed",
+      "recipient_in_use": "This recipient is still referenced",
+      "group_in_use": "This group is still referenced"
+        }
     }
-  }
 }

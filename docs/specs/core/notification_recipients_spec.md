@@ -3,6 +3,10 @@
 **Status:** Implemented (v1.x) — legacy routes closed runtime-side and removed from UI
 **Last Verified Against Code:** 2026-03-12
 
+Related UI spec:
+- `core/notification_admin_ui_spec.md` defines the planned guided admin editor that should sit on
+  top of this persisted model.
+
 ## Goal
 
 Decouple notification routing from physical `notify.*` service ids so user/device changes do not require reconfiguring all Heima notification behavior.
@@ -102,6 +106,11 @@ In `Notifications`:
 - `route_targets` (textarea; one alias/group id per line, commas also accepted)
 - `notification_service_capabilities` (admin-editable service capability map; first supported
   capability is `supports_actions`)
+
+Future v2 UI:
+- normal administration should move to the guided editor defined in
+  `core/notification_admin_ui_spec.md`
+- raw object editing may remain available as an advanced escape hatch
 
 ## Compatibility
 

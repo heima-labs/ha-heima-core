@@ -123,6 +123,39 @@ def test_runtime_confirmation_promotion_review_created_from_explicit_evidence() 
     assert review["reminder_due"] is False
 
 
+def test_runtime_confirmation_promotion_review_created_from_profile_policy() -> None:
+    coordinator = _coordinator(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "promotion": {
+                            "min_samples": 2,
+                            "min_approval_rate": 0.5,
+                            "min_distinct_days": 1,
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy_ref": "ask_residents_default",
+                    }
+                },
+            }
+        }
+    )
+    request = _request()
+
+    coordinator._record_runtime_confirmation_outcome(request, "approved")
+    coordinator._record_runtime_confirmation_outcome(request, "dismissed")
+
+    review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
+    assert review["status"] == "pending_admin_review"
+    assert review["target_mode"] == "auto_apply"
+
+
 def test_timeout_outcomes_do_not_create_promotion_review() -> None:
     coordinator = _coordinator(
         {
@@ -365,6 +398,47 @@ async def test_admin_promotion_approve_switches_reaction_to_auto_apply() -> None
 
 
 @pytest.mark.asyncio
+async def test_admin_promotion_approve_profile_policy_writes_local_override() -> None:
+    coordinator = _coordinator(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "promotion": {"enabled": True},
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy_ref": "ask_residents_default",
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "pending_admin_review",
+                        "target_mode": "auto_apply",
+                    }
+                },
+            }
+        }
+    )
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_APPROVE_AUTO_APPLY,
+    )
+
+    assert result is True
+    cfg = coordinator.entry.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy_ref"] == "ask_residents_default"
+    assert cfg["execution_policy_override"]["mode"] == "auto_apply"
+    assert cfg["execution_policy_override"]["promoted_from_confirmation"] is True
+    assert cfg["execution_policy_override"]["promoted_at"]
+
+
+@pytest.mark.asyncio
 async def test_admin_promotion_rejects_revoked_review() -> None:
     coordinator = _coordinator(_promotion_options(status="revoked"))
 
@@ -412,6 +486,47 @@ async def test_admin_promotion_disable_future_prompts_only_changes_promotion_pol
     assert promotion["disabled_reason"] == "admin_declined_permanently"
     review = coordinator.entry.options["reactions"]["promotion_reviews"]["r1"]
     assert review["status"] == "disabled_future_prompts"
+
+
+@pytest.mark.asyncio
+async def test_admin_promotion_disable_future_prompts_profile_policy_writes_override() -> None:
+    coordinator = _coordinator(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "promotion": {"enabled": True},
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "execution_policy_ref": "ask_residents_default",
+                    }
+                },
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "pending_admin_review",
+                        "target_mode": "auto_apply",
+                    }
+                },
+            }
+        }
+    )
+
+    result = await coordinator.async_review_runtime_promotion(
+        "r1",
+        PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
+    )
+
+    assert result is True
+    cfg = coordinator.entry.options["reactions"]["configured"]["r1"]
+    promotion = cfg["execution_policy_override"]["promotion"]
+    assert promotion["enabled"] is False
+    assert promotion["disabled_reason"] == "admin_declined_permanently"
+    assert promotion["disabled_at"]
 
 
 @pytest.mark.asyncio

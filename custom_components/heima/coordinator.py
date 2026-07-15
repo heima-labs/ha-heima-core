@@ -84,7 +84,11 @@ from .runtime.plugin_contracts import AnomalySignal
 from .runtime.proposal_engine import ActivityProposal, ProposalBatchActionResult, ProposalEngine
 from .runtime.proposal_lifecycle_store import ProposalLifecycleStore
 from .runtime.room_context import RoomDeviceContextBuilder
-from .runtime.runtime_confirmation import RuntimeActionRequest, RuntimeRequestStatus
+from .runtime.runtime_confirmation import (
+    RuntimeActionRequest,
+    RuntimeRequestStatus,
+    resolve_execution_policy_config,
+)
 from .runtime.runtime_confirmation_controller import RuntimeConfirmationController
 from .runtime.scheduler import RuntimeScheduler
 from .runtime.semantic_policies import BUILTIN_SEMANTIC_RULES
@@ -125,6 +129,53 @@ _ENVIRONMENTAL_ENTITY_TOKENS = (
     "co_2",
     "carbon_dioxide",
 )
+
+
+def _execution_policy_profiles_from_reactions(reactions: dict[str, Any] | None) -> dict[str, Any]:
+    profiles = dict(reactions or {}).get("execution_policy_profiles")
+    return dict(profiles) if isinstance(profiles, dict) else {}
+
+
+def _set_reaction_execution_policy_mode(
+    cfg: dict[str, Any],
+    *,
+    mode: str,
+    now: str,
+) -> dict[str, Any]:
+    if str(cfg.get("execution_policy_ref") or "").strip():
+        override = cfg.get("execution_policy_override")
+        override = dict(override) if isinstance(override, dict) else {}
+        override["mode"] = mode
+        override["promoted_from_confirmation"] = True
+        override["promoted_at"] = now
+        cfg["execution_policy_override"] = override
+        return cfg
+
+    execution_policy = cfg.get("execution_policy")
+    execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+    execution_policy["mode"] = mode
+    execution_policy["promoted_from_confirmation"] = True
+    execution_policy["promoted_at"] = now
+    cfg["execution_policy"] = execution_policy
+    return cfg
+
+
+def _set_reaction_promotion_disabled(cfg: dict[str, Any], *, now: str) -> dict[str, Any]:
+    target_key = (
+        "execution_policy_override"
+        if str(cfg.get("execution_policy_ref") or "").strip()
+        else "execution_policy"
+    )
+    execution_policy = cfg.get(target_key)
+    execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
+    promotion = execution_policy.get("promotion")
+    promotion = dict(promotion) if isinstance(promotion, dict) else {}
+    promotion["enabled"] = False
+    promotion["disabled_reason"] = "admin_declined_permanently"
+    promotion["disabled_at"] = now
+    execution_policy["promotion"] = promotion
+    cfg[target_key] = execution_policy
+    return cfg
 
 
 def _learning_module_threshold_kwargs(
@@ -372,7 +423,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             hass,
             apply_handler=self.engine.async_apply_runtime_confirmation_request,
             event_pipeline=self.engine.event_pipeline,
-            notifications_config_provider=self.engine.notifications_config,
+            notifications_config_provider=lambda: self.engine.notifications_config,
             outcome_handler=self._record_runtime_confirmation_outcome,
         )
         self.engine.set_runtime_confirmation_request_handler(
@@ -909,12 +960,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
 
         now = datetime.now(UTC).isoformat()
         if action_id == PROMOTION_ACTION_APPROVE_AUTO_APPLY:
-            execution_policy = cfg.get("execution_policy")
-            execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
-            execution_policy["mode"] = "auto_apply"
-            execution_policy["promoted_from_confirmation"] = True
-            execution_policy["promoted_at"] = now
-            cfg["execution_policy"] = execution_policy
+            cfg = _set_reaction_execution_policy_mode(cfg, mode="auto_apply", now=now)
             configured[target_id] = cfg
             review["status"] = "approved"
             review["approved_at"] = now
@@ -927,15 +973,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             review["reminder_due"] = False
             review.pop("next_reminder_after", None)
         else:
-            execution_policy = cfg.get("execution_policy")
-            execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
-            promotion = execution_policy.get("promotion")
-            promotion = dict(promotion) if isinstance(promotion, dict) else {}
-            promotion["enabled"] = False
-            promotion["disabled_reason"] = "admin_declined_permanently"
-            promotion["disabled_at"] = now
-            execution_policy["promotion"] = promotion
-            cfg["execution_policy"] = execution_policy
+            cfg = _set_reaction_promotion_disabled(cfg, now=now)
             configured[target_id] = cfg
             review["status"] = "disabled_future_prompts"
             review["disabled_at"] = now
@@ -1061,6 +1099,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         eligible, reason = self._runtime_promotion_eligible(
             reaction_cfg=reaction_cfg,
             review=current,
+            reactions=reactions,
             stats=stats,
         )
         if eligible:
@@ -1076,6 +1115,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                         "failure_reason": None,
                     },
                     reaction_cfg=reaction_cfg,
+                    reactions=reactions,
                     now=now,
                 )
             elif status == "pending_admin_review":
@@ -1085,6 +1125,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
                 reviews[reaction_id] = self._runtime_promotion_review_with_reminder_state(
                     current,
                     reaction_cfg=reaction_cfg,
+                    reactions=reactions,
                     now=now,
                 )
             return reviews
@@ -1101,12 +1142,14 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         review: dict[str, Any],
         *,
         reaction_cfg: dict[str, Any],
+        reactions: dict[str, Any] | None = None,
         now: str,
     ) -> dict[str, Any]:
-        execution_policy = reaction_cfg.get("execution_policy")
-        execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
-        promotion = execution_policy.get("promotion")
-        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        resolved = resolve_execution_policy_config(
+            reaction_cfg,
+            _execution_policy_profiles_from_reactions(reactions),
+        )
+        promotion = dict(resolved.policy.promotion)
         reminder_interval_days = max(1, int(promotion.get("reminder_interval_days", 7)))
         current_time = self._parse_runtime_confirmation_ts(now) or datetime.now(UTC)
         last_prompted = self._parse_runtime_confirmation_ts(review.get("last_prompted_at"))
@@ -1123,14 +1166,18 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         *,
         reaction_cfg: dict[str, Any],
         review: dict[str, Any] | None = None,
+        reactions: dict[str, Any] | None = None,
         stats: dict[str, Any],
     ) -> tuple[bool, str]:
-        execution_policy = reaction_cfg.get("execution_policy")
-        execution_policy = dict(execution_policy) if isinstance(execution_policy, dict) else {}
-        if str(execution_policy.get("mode") or "auto_apply") != "ask_residents":
+        resolved = resolve_execution_policy_config(
+            reaction_cfg,
+            _execution_policy_profiles_from_reactions(reactions),
+        )
+        if not resolved.valid:
+            return False, "unresolved_execution_policy_ref"
+        if resolved.policy.mode != "ask_residents":
             return False, "not_ask_residents"
-        promotion = execution_policy.get("promotion")
-        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        promotion = dict(resolved.policy.promotion)
         if promotion.get("enabled", True) is False:
             return False, "promotion_disabled"
 
