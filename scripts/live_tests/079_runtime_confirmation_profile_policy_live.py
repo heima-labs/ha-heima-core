@@ -18,8 +18,10 @@ from lib.ha_client import HAApiError, HAClient
 
 
 REACTION_ID = "live_runtime_confirmation_profile_policy"
+INVALID_REF_REACTION_ID = "live_runtime_confirmation_invalid_profile"
 REACTION_LABEL = "Live runtime confirmation profile policy"
 PROFILE_ID = "live_ask_residents_profile"
+MISSING_PROFILE_ID = "live_missing_execution_policy_profile"
 NOTIFY_ROUTE = "persistent_notification"
 
 
@@ -301,6 +303,21 @@ def _build_due_profile_reaction(
     }
 
 
+def _build_due_invalid_ref_reaction(
+    *,
+    light_entity: str,
+    context_condition: dict[str, Any],
+) -> dict[str, Any]:
+    cfg = _build_due_profile_reaction(
+        light_entity=light_entity,
+        context_condition=context_condition,
+    )
+    cfg["source_request"] = "live_test:runtime_confirmation_invalid_profile"
+    cfg["source_template_id"] = "live_test.runtime_confirmation_invalid_profile"
+    cfg["execution_policy_ref"] = MISSING_PROFILE_ID
+    return cfg
+
+
 def _upsert_reaction(
     client: HAClient,
     entry_id: str,
@@ -322,16 +339,17 @@ def _upsert_reaction(
 
 
 def _cleanup_reaction(client: HAClient, entry_id: str) -> None:
-    _upsert_reaction(
-        client,
-        entry_id,
-        REACTION_ID,
-        {
-            "reaction_type": "context_conditioned_lighting_scene",
-            "enabled": False,
-            "execution_policy": {"mode": "auto_apply"},
-        },
-    )
+    for reaction_id in (REACTION_ID, INVALID_REF_REACTION_ID):
+        _upsert_reaction(
+            client,
+            entry_id,
+            reaction_id,
+            {
+                "reaction_type": "context_conditioned_lighting_scene",
+                "enabled": False,
+                "execution_policy": {"mode": "auto_apply"},
+            },
+        )
 
 
 def _reload_entry(client: HAClient, entry_id: str, settle_s: float) -> None:
@@ -379,6 +397,37 @@ def _assert_effective_policy_diagnostics(client: HAClient, entry_id: str) -> Non
     )
 
 
+def _assert_invalid_ref_fails_closed(client: HAClient, entry_id: str) -> None:
+    client.call_service(
+        "heima",
+        "command",
+        {"command": "recompute_now", "target": {"entry_id": entry_id}},
+    )
+    rows = _runtime_confirmation(client, entry_id).get("pending_requests", [])
+    pending_ids = {
+        str(row.get("reaction_id") or "")
+        for row in rows
+        if isinstance(row, dict)
+    }
+    _assert(
+        INVALID_REF_REACTION_ID not in pending_ids,
+        f"invalid profile ref created a pending request unexpectedly: {rows}",
+    )
+    policies = _engine_diagnostics(client, entry_id).get("reaction_execution_policies", {})
+    _assert(isinstance(policies, dict), "reaction_execution_policies must be a dict")
+    policy = policies.get(INVALID_REF_REACTION_ID)
+    _assert(
+        isinstance(policy, dict),
+        f"missing invalid-ref diagnostics for {INVALID_REF_REACTION_ID}: {policies}",
+    )
+    _assert(policy.get("source") == "unresolved_reference", f"unexpected source: {policy}")
+    _assert(policy.get("profile_id") == MISSING_PROFILE_ID, f"unexpected profile id: {policy}")
+    _assert(
+        policy.get("config_error") == "unresolved_execution_policy_ref",
+        f"unexpected config error: {policy}",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Heima profile-backed runtime confirmation live E2E"
@@ -417,6 +466,14 @@ def main() -> int:
         )
         _assert(str(pending.get("request_id") or ""), f"pending request missing id: {pending}")
         _assert_effective_policy_diagnostics(client, entry_id)
+
+        invalid_cfg = _build_due_invalid_ref_reaction(
+            light_entity=light_entity,
+            context_condition=condition,
+        )
+        _upsert_reaction(client, entry_id, INVALID_REF_REACTION_ID, invalid_cfg)
+        _reload_entry(client, entry_id, args.settle_s)
+        _assert_invalid_ref_fails_closed(client, entry_id)
 
         print("PASS: profile-backed runtime confirmation is live-valid")
         return 0
