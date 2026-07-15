@@ -119,23 +119,21 @@ These constraints must never be violated. See spec §16 for rationale.
 | AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
 | AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
 | AH | Resident Runtime Confirmation & Auto-Apply Promotion | `IN PROGRESS` | AD, MH, AF |
-| AN | Notification Admin UI & Execution Policy Profiles | `IN PROGRESS` | AH |
+| AN | Notification Admin UI & Execution Policy Profiles | `DONE` | AH |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English.
-**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles. AN1-AN8 complete;
-AN9 is next.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AN — Notification Admin UI & Execution Policy Profiles.
+**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles complete.
 **Branch:** `feat/an-notification-admin-ui`.
 **Next action:**
-Start AN9 by updating admin documentation and migration notes for guided notification routing and
-execution policy profiles.
+Run a final focused review/CI pass for AN before merge or move to the next v2 slice.
 
-### Current Working Notes
+### Recent Working Notes
 
-- Current planned slice: **Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion**.
+- Recent implementation slice: **Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion**.
   - Spec source: `docs/specs/core/resident_runtime_confirmation_spec.md`, plus supporting
     notification/options/apply-step specs.
   - Goal: allow an already configured reaction to ask residents before applying one runtime
@@ -3902,7 +3900,7 @@ promotion review that switches that reaction from `ask_residents` to `auto_apply
 
 ## Phase AN — Notification Admin UI & Execution Policy Profiles
 
-**Status:** `PLANNED`
+**Status:** `DONE`
 **Depends on:** AH
 **Spec source:** `docs/specs/core/notification_admin_ui_spec.md`
 
@@ -4097,40 +4095,38 @@ groups, service capabilities, and execution policy profile model.
      - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic --skip 030,031,062,063,064,065,070,071,072,074,075,076,077,078`
        — passed, running `079_runtime_confirmation_profile_policy_live.py`.
 
-9. **AN9 — Documentation and migration notes** — `NEXT`
-   - Update admin guide with guided UI workflow.
-   - Document immutable ids and manual migration steps for id changes:
+9. **AN9 — Documentation and migration notes** — `DONE`
+   - Update admin guide with guided UI workflow. `DONE`
+   - Document immutable ids and manual migration steps for id changes: `DONE`
      - create the new recipient/group/profile
      - update references
      - verify diagnostics
      - delete the old unreferenced id
-   - Document compatibility rules for inline execution policies.
-   - Document fail-closed unresolved-reference behavior.
+   - Document compatibility rules for inline execution policies. `DONE`
+   - Document fail-closed unresolved-reference behavior. `DONE`
    - Tests:
      - `git diff --check`
      - schema/config examples covered by existing parser tests where applicable.
 
 ### Acceptance Criteria
 
-- [ ] Admins can configure recipients, groups, default route targets, service capabilities, and
+- [x] Admins can configure recipients, groups, default route targets, service capabilities, and
   execution policy profiles without editing raw JSON/YAML objects directly.
-- [ ] Reactions can reference an execution policy profile by stable id.
-- [ ] Profile changes affect future reaction executions without rewriting every referencing
+- [x] Reactions can reference an execution policy profile by stable id.
+- [x] Profile changes affect future reaction executions without rewriting every referencing
   reaction.
-- [ ] Inline `execution_policy` remains supported for existing reactions.
-- [ ] Invalid profile references fail closed and are visible in diagnostics/config validation.
-- [ ] Actionable runtime notifications are sent only through services with persisted
+- [x] Inline `execution_policy` remains supported for existing reactions.
+- [x] Invalid profile references fail closed and are visible in diagnostics/config validation.
+- [x] Actionable runtime notifications are sent only through services with persisted
   `supports_actions: true`.
-- [ ] Recipient/group/profile ids are immutable in the first implementation, with documented manual
+- [x] Recipient/group/profile ids are immutable in the first implementation, with documented manual
   migration steps.
-- [ ] Tests cover the resolver, options-flow UI, runtime integration, diagnostics, and live
+- [x] Tests cover the resolver, options-flow UI, runtime integration, diagnostics, and live
   profile-backed runtime confirmation.
 
 ### Current open items
 
-- Decide the exact options-flow navigation shape before implementation.
-- Decide whether profile deletion should offer a guided "show references" screen in the first
-  implementation or only block deletion with a concise error.
+- Final focused review/CI before merge.
 
 ---
 

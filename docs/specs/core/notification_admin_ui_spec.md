@@ -1,6 +1,6 @@
 # Heima Notification Admin UI Spec
 
-**Status:** Planned v2 UI layer over the existing notification recipient model  
+**Status:** Implemented v2 UI layer over the existing notification recipient model
 **Last Updated:** 2026-07-15
 
 ## Purpose
@@ -605,6 +605,63 @@ Rules:
 - raw editor saves must pass through the same normalization and validation rules as the guided UI
 - raw editor saves involving profile references must validate references and affected reaction
   safety rules
+
+## Admin Workflow And Migration
+
+Normal notification administration should use the guided options-flow entries:
+
+- notification recipients
+- notification recipient groups
+- notification default routes
+- notification service capabilities
+- execution policy profiles
+- reaction editing with `execution_policy_ref`
+
+Raw object editing is an advanced compatibility path. It exists to preserve existing deployments and
+to unblock unusual cases, but product documentation must not present raw JSON/YAML editing as the
+normal setup path.
+
+Recommended setup sequence:
+
+1. Create recipients with stable ids.
+2. Attach concrete notify services to each recipient.
+3. Persist `supports_actions: true` only for services that can deliver actionable notification
+   buttons.
+4. Create recipient groups such as `residents` and `admins`.
+5. Select default route targets for generic notifications.
+6. Create execution policy profiles for reusable reaction execution behavior.
+7. Edit supported reactions to reference an execution policy profile.
+
+ID migration is manual because recipient, group, and profile ids are immutable keys in the first
+implementation.
+
+Migration procedure:
+
+1. Create the replacement id.
+2. Update all references:
+   - recipient references inside groups
+   - recipient or group references inside `route_targets`
+   - recipient or group references inside execution policy profiles
+   - recipient or group references inside inline reaction execution policies
+   - profile references inside configured reactions
+3. Verify diagnostics:
+   - no unresolved notification route targets
+   - no unresolved execution policy profile references
+   - expected effective confirmation targets
+   - expected effective promotion targets
+4. Delete the old id only after the guided UI no longer reports references.
+
+Profile reference migration:
+
+- Existing inline `execution_policy` values should remain untouched unless the admin explicitly
+  converts them.
+- Conversion from inline policy to profile reference must be explicit.
+- After conversion, reactions should persist `execution_policy_ref` and should not receive copied
+  profile contents.
+- Profile edits affect future executions for all referencing reactions without rewriting those
+  reactions.
+- If a profile reference becomes unresolved, the effective policy must fail closed and diagnostics
+  must expose the missing profile id.
 
 ## Non-Goals
 

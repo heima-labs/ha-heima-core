@@ -817,9 +817,10 @@ First-run recommendation:
 Purpose:
 
 - Configure notification recipients, groups, routing, event categories, deduplication, and mismatch reporting.
-- The current implementation may expose structured object fields. The intended v2 admin surface is
-  a guided recipient/group editor so administrators do not need to write JSON/YAML for normal
-  notification setup.
+- Configure reusable execution policy profiles for reactions that should ask residents before
+  applying, or that should later be promoted to automatic execution.
+- Use the guided notification editors for normal administration. Raw object editing is an advanced
+  compatibility path only.
 
 Fields:
 
@@ -835,20 +836,117 @@ Fields:
 - `security_mismatch_policy`
 - `security_mismatch_event_mode`
 - `security_mismatch_persist_s`
+- `notification_service_capabilities`
 
 `recipients`:
 
 - Mapping of recipient ID to service/target configuration.
+- Recipient IDs are stable immutable keys.
+- If a recipient ID matches a configured `people_named` slug, the UI displays that person's
+  `display_name`; otherwise it displays the raw recipient ID.
 
 `recipient_groups`:
 
 - Mapping of group ID to recipient IDs.
 - Every group member must exist in `recipients`.
+- Group IDs are stable immutable keys.
 
 `route_targets`:
 
 - List of recipient IDs or group IDs.
 - Every route target must exist.
+- Used by generic notification delivery and by runtime confirmation only when an execution policy
+  explicitly enables default route targets.
+
+`notification_service_capabilities`:
+
+- Mapping of concrete notify service names to capability flags.
+- Store service names without the `notify.` prefix.
+- `supports_actions: true` is required before a service can receive actionable runtime
+  confirmation notifications.
+- Non-actionable informational notifications may still use services without `supports_actions`.
+
+Guided setup workflow:
+
+1. Create notification recipients.
+2. Assign one or more concrete notify services to each recipient.
+3. Mark only services that really support actionable notification buttons as `supports_actions`.
+4. Create recipient groups, such as `residents` and `admins`.
+5. Select default route targets for generic Heima notifications.
+6. Create execution policy profiles under the reaction settings when reactions should reuse the
+   same notification behavior.
+
+Example production routing:
+
+```yaml
+notifications:
+  recipients:
+    stefano:
+      - mobile_app_iphone_stefano
+    antonia:
+      - mobile_app_iphone_antonia
+  recipient_groups:
+    admins:
+      - stefano
+    residents:
+      - stefano
+      - antonia
+  route_targets:
+    - residents
+  notification_service_capabilities:
+    mobile_app_iphone_stefano:
+      supports_actions: true
+    mobile_app_iphone_antonia:
+      supports_actions: true
+```
+
+Reusable execution policy profile:
+
+```yaml
+reactions:
+  execution_policy_profiles:
+    ask_residents_default:
+      mode: ask_residents
+      confirmation:
+        target_groups:
+          - residents
+        expires_in_minutes: 10
+        on_timeout: skip
+        use_default_route_targets: false
+      promotion:
+        enabled: true
+        target_groups:
+          - admins
+```
+
+Reaction reference:
+
+```yaml
+reactions:
+  configured:
+    evening_studio_scene:
+      reaction_type: context_conditioned_lighting_scene
+      execution_policy_ref: ask_residents_default
+```
+
+Compatibility:
+
+- Existing reactions with inline `execution_policy` continue to work.
+- Newly edited reactions should prefer `execution_policy_ref` when the behavior is reusable.
+- A reaction may use `execution_policy_ref` plus `execution_policy_override` for specific
+  deviations, such as a shorter timeout.
+- If `execution_policy_ref` points to a missing profile, Heima fails closed for that reaction and
+  exposes the unresolved reference in diagnostics instead of falling back to `auto_apply`.
+
+Manual ID migration:
+
+1. Create the new recipient, group, or execution policy profile ID.
+2. Update all references that still point to the old ID.
+3. Check diagnostics for unresolved notification targets or unresolved execution policy profiles.
+4. Delete the old ID only after it has no remaining references.
+
+Do not rename IDs by editing persisted keys directly. The guided UI treats recipient, group, and
+profile IDs as immutable in this implementation.
 
 Recommended first-run settings:
 
