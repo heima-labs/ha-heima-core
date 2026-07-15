@@ -598,6 +598,173 @@ class _NotificationsStepsMixin:
     ) -> "FlowResult":
         return await self.async_step_init()
 
+    async def async_step_execution_policy_profiles(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        profiles = self._execution_policy_profiles()
+        menu_options = ["execution_policy_profile_add"]
+        if profiles:
+            menu_options.extend(
+                ["execution_policy_profile_edit", "execution_policy_profile_delete"]
+            )
+        menu_options.append("execution_policy_profiles_done")
+        return self.async_show_menu(
+            step_id="execution_policy_profiles",
+            menu_options=menu_options,
+            description_placeholders={
+                "summary": self._execution_policy_profiles_summary(profiles),
+            },
+        )
+
+    async def async_step_execution_policy_profile_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        if user_input is None:
+            return self.async_show_form(
+                step_id="execution_policy_profile_add",
+                data_schema=self._execution_policy_profile_schema(),
+            )
+
+        payload = self._normalize_execution_policy_profile_payload(user_input)
+        errors = self._validate_execution_policy_profile_payload(payload, is_edit=False)
+        if errors:
+            return self.async_show_form(
+                step_id="execution_policy_profile_add",
+                data_schema=self._execution_policy_profile_schema(payload),
+                errors=errors,
+            )
+
+        reactions = self._reactions_config()
+        profiles = dict(reactions.get("execution_policy_profiles", {}))
+        profiles[payload["profile_id"]] = self._execution_policy_profile_from_payload(payload)
+        reactions["execution_policy_profiles"] = profiles
+        self._update_options({"reactions": reactions})
+        return await self.async_step_execution_policy_profiles()
+
+    async def async_step_execution_policy_profile_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        profiles = self._execution_policy_profiles()
+        if not profiles:
+            return await self.async_step_execution_policy_profiles()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="execution_policy_profile_edit",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("profile_id"): vol.In(
+                            self._execution_policy_profile_choice_map(profiles)
+                        )
+                    }
+                ),
+            )
+
+        self._editing_execution_policy_profile_id = self._resolve_choice_value(
+            self._execution_policy_profile_choice_map(profiles),
+            user_input.get("profile_id"),
+        )
+        return await self.async_step_execution_policy_profile_edit_form()
+
+    async def async_step_execution_policy_profile_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        profile_id = str(getattr(self, "_editing_execution_policy_profile_id", "") or "").strip()
+        profiles = self._execution_policy_profiles()
+        if not profile_id or profile_id not in profiles:
+            self._editing_execution_policy_profile_id = None
+            return await self.async_step_execution_policy_profiles()
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="execution_policy_profile_edit_form",
+                data_schema=self._execution_policy_profile_schema(
+                    self._execution_policy_profile_defaults(profile_id, profiles[profile_id]),
+                    is_edit=True,
+                ),
+            )
+
+        payload = self._normalize_execution_policy_profile_payload(user_input)
+        errors = self._validate_execution_policy_profile_payload(payload, is_edit=True)
+        if errors:
+            return self.async_show_form(
+                step_id="execution_policy_profile_edit_form",
+                data_schema=self._execution_policy_profile_schema(payload, is_edit=True),
+                errors=errors,
+            )
+
+        reactions = self._reactions_config()
+        updated = dict(reactions.get("execution_policy_profiles", {}))
+        updated[profile_id] = self._execution_policy_profile_from_payload(payload)
+        reactions["execution_policy_profiles"] = updated
+        self._update_options({"reactions": reactions})
+        self._editing_execution_policy_profile_id = None
+        return await self.async_step_execution_policy_profiles()
+
+    async def async_step_execution_policy_profile_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        profiles = self._execution_policy_profiles()
+        if not profiles:
+            return await self.async_step_execution_policy_profiles()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="execution_policy_profile_delete",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("profile_id"): vol.In(
+                            self._execution_policy_profile_choice_map(profiles)
+                        )
+                    }
+                ),
+            )
+
+        self._editing_execution_policy_profile_id = self._resolve_choice_value(
+            self._execution_policy_profile_choice_map(profiles),
+            user_input.get("profile_id"),
+        )
+        return await self.async_step_execution_policy_profile_delete_confirm()
+
+    async def async_step_execution_policy_profile_delete_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        profile_id = str(getattr(self, "_editing_execution_policy_profile_id", "") or "").strip()
+        profiles = self._execution_policy_profiles()
+        if not profile_id or profile_id not in profiles:
+            self._editing_execution_policy_profile_id = None
+            return await self.async_step_execution_policy_profiles()
+
+        references = self._execution_policy_profile_references(profile_id)
+        if references:
+            return self.async_show_form(
+                step_id="execution_policy_profile_delete_confirm",
+                data_schema=vol.Schema({vol.Optional("confirm", default=False): bool}),
+                errors={"base": "execution_policy_profile_in_use"},
+                description_placeholders={
+                    "profile_id": profile_id,
+                    "references": ", ".join(references),
+                },
+            )
+
+        if user_input is None or not bool(user_input.get("confirm", False)):
+            return self.async_show_form(
+                step_id="execution_policy_profile_delete_confirm",
+                data_schema=vol.Schema({vol.Optional("confirm", default=False): bool}),
+                description_placeholders={"profile_id": profile_id, "references": ""},
+            )
+
+        reactions = self._reactions_config()
+        updated = dict(reactions.get("execution_policy_profiles", {}))
+        updated.pop(profile_id, None)
+        reactions["execution_policy_profiles"] = updated
+        self._update_options({"reactions": reactions})
+        self._editing_execution_policy_profile_id = None
+        return await self.async_step_execution_policy_profiles()
+
+    async def async_step_execution_policy_profiles_done(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        return await self.async_step_init()
+
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> "FlowResult":
@@ -760,6 +927,10 @@ class _NotificationsStepsMixin:
 
     def _notifications_config(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_NOTIFICATIONS, {}))
+
+    def _reactions_config(self) -> dict[str, Any]:
+        reactions = self.options.get("reactions")
+        return dict(reactions) if isinstance(reactions, dict) else {}
 
     def _notification_recipients(self) -> dict[str, list[str]]:
         return _parse_multiline_mapping(self._notifications_config().get("recipients"))
@@ -1031,6 +1202,231 @@ class _NotificationsStepsMixin:
             supports = "supports actions" if capability.get("supports_actions") else "text only"
             lines.append(f"notify.{service_name}: {supports}")
         return "\n".join(lines)
+
+    def _execution_policy_profiles(self) -> dict[str, dict[str, Any]]:
+        profiles = self._reactions_config().get("execution_policy_profiles")
+        if not isinstance(profiles, dict):
+            return {}
+        return {str(key): dict(value) for key, value in profiles.items() if isinstance(value, dict)}
+
+    def _execution_policy_profile_schema(
+        self,
+        defaults: dict[str, Any] | None = None,
+        *,
+        is_edit: bool = False,
+    ) -> vol.Schema:
+        defaults = defaults or {}
+        return vol.Schema(
+            {
+                vol.Required("profile_id", default=str(defaults.get("profile_id") or "")): str,
+                vol.Required("mode", default=str(defaults.get("mode") or "ask_residents")): vol.In(
+                    {"auto_apply": "Apply automatically", "ask_residents": "Ask residents"}
+                ),
+                vol.Optional(
+                    "confirmation_target_recipients",
+                    default=str(defaults.get("confirmation_target_recipients") or ""),
+                ): str,
+                vol.Optional(
+                    "confirmation_target_groups",
+                    default=str(defaults.get("confirmation_target_groups") or ""),
+                ): str,
+                vol.Optional(
+                    "confirmation_use_default_route_targets",
+                    default=bool(defaults.get("confirmation_use_default_route_targets", True)),
+                ): bool,
+                vol.Optional(
+                    "confirmation_expires_in_minutes",
+                    default=int(defaults.get("confirmation_expires_in_minutes") or 10),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                vol.Optional(
+                    "confirmation_on_timeout",
+                    default=str(defaults.get("confirmation_on_timeout") or "skip"),
+                ): vol.In({"skip": "Skip", "apply": "Apply"}),
+                vol.Optional(
+                    "promotion_enabled",
+                    default=bool(defaults.get("promotion_enabled", True)),
+                ): bool,
+                vol.Optional(
+                    "promotion_target_recipients",
+                    default=str(defaults.get("promotion_target_recipients") or ""),
+                ): str,
+                vol.Optional(
+                    "promotion_target_groups",
+                    default=str(defaults.get("promotion_target_groups") or ""),
+                ): str,
+                vol.Optional(
+                    "promotion_min_samples",
+                    default=int(defaults.get("promotion_min_samples") or 5),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                vol.Optional(
+                    "promotion_min_approval_rate",
+                    default=float(defaults.get("promotion_min_approval_rate") or 0.8),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+                vol.Optional(
+                    "promotion_min_distinct_days",
+                    default=int(defaults.get("promotion_min_distinct_days") or 3),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                vol.Optional(
+                    "promotion_reminder_interval_days",
+                    default=int(defaults.get("promotion_reminder_interval_days") or 7),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            }
+        )
+
+    def _normalize_execution_policy_profile_payload(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "profile_id": str(payload.get("profile_id") or "").strip(),
+            "mode": str(payload.get("mode") or "auto_apply").strip(),
+            "confirmation_target_recipients": _parse_multiline_items(
+                payload.get("confirmation_target_recipients")
+            ),
+            "confirmation_target_groups": _parse_multiline_items(
+                payload.get("confirmation_target_groups")
+            ),
+            "confirmation_use_default_route_targets": bool(
+                payload.get("confirmation_use_default_route_targets", True)
+            ),
+            "confirmation_expires_in_minutes": int(
+                payload.get("confirmation_expires_in_minutes") or 10
+            ),
+            "confirmation_on_timeout": str(payload.get("confirmation_on_timeout") or "skip"),
+            "promotion_enabled": bool(payload.get("promotion_enabled", True)),
+            "promotion_target_recipients": _parse_multiline_items(
+                payload.get("promotion_target_recipients")
+            ),
+            "promotion_target_groups": _parse_multiline_items(
+                payload.get("promotion_target_groups")
+            ),
+            "promotion_min_samples": int(payload.get("promotion_min_samples") or 5),
+            "promotion_min_approval_rate": float(
+                payload.get("promotion_min_approval_rate") or 0.8
+            ),
+            "promotion_min_distinct_days": int(
+                payload.get("promotion_min_distinct_days") or 3
+            ),
+            "promotion_reminder_interval_days": int(
+                payload.get("promotion_reminder_interval_days") or 7
+            ),
+        }
+
+    def _validate_execution_policy_profile_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        is_edit: bool,
+    ) -> dict[str, str]:
+        profile_id = str(payload.get("profile_id") or "").strip()
+        if not profile_id or not _is_valid_slug(profile_id):
+            return {"profile_id": "invalid_slug"}
+        if is_edit and profile_id != getattr(self, "_editing_execution_policy_profile_id", None):
+            return {"profile_id": "immutable_field"}
+        profiles = self._execution_policy_profiles()
+        if not is_edit and profile_id in profiles:
+            return {"profile_id": "already_exists"}
+        if payload.get("mode") not in {"auto_apply", "ask_residents"}:
+            return {"mode": "invalid_option"}
+
+        recipients = set(self._notification_recipients())
+        groups = set(self._notification_groups())
+        for field in ("confirmation_target_recipients", "promotion_target_recipients"):
+            if any(item not in recipients for item in payload.get(field, [])):
+                return {field: "unknown_recipient"}
+        for field in ("confirmation_target_groups", "promotion_target_groups"):
+            if any(item not in groups for item in payload.get(field, [])):
+                return {field: "unknown_target"}
+        return {}
+
+    def _execution_policy_profile_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        mode = str(payload.get("mode") or "auto_apply")
+        policy: dict[str, Any] = {"mode": mode}
+        if mode == "ask_residents":
+            policy["confirmation"] = {
+                "target_recipients": list(payload.get("confirmation_target_recipients", [])),
+                "target_groups": list(payload.get("confirmation_target_groups", [])),
+                "use_default_route_targets": bool(
+                    payload.get("confirmation_use_default_route_targets", True)
+                ),
+                "expires_in_minutes": int(payload.get("confirmation_expires_in_minutes") or 10),
+                "on_timeout": str(payload.get("confirmation_on_timeout") or "skip"),
+            }
+            policy["promotion"] = {
+                "enabled": bool(payload.get("promotion_enabled", True)),
+                "target_recipients": list(payload.get("promotion_target_recipients", [])),
+                "target_groups": list(payload.get("promotion_target_groups", [])),
+                "min_samples": int(payload.get("promotion_min_samples") or 5),
+                "min_approval_rate": float(payload.get("promotion_min_approval_rate") or 0.8),
+                "min_distinct_days": int(payload.get("promotion_min_distinct_days") or 3),
+                "reminder_interval_days": int(
+                    payload.get("promotion_reminder_interval_days") or 7
+                ),
+            }
+        return policy
+
+    def _execution_policy_profile_defaults(
+        self, profile_id: str, profile: dict[str, Any]
+    ) -> dict[str, Any]:
+        confirmation = profile.get("confirmation")
+        confirmation = dict(confirmation) if isinstance(confirmation, dict) else {}
+        promotion = profile.get("promotion")
+        promotion = dict(promotion) if isinstance(promotion, dict) else {}
+        return {
+            "profile_id": profile_id,
+            "mode": str(profile.get("mode") or "auto_apply"),
+            "confirmation_target_recipients": ", ".join(
+                _parse_multiline_items(confirmation.get("target_recipients"))
+            ),
+            "confirmation_target_groups": ", ".join(
+                _parse_multiline_items(confirmation.get("target_groups"))
+            ),
+            "confirmation_use_default_route_targets": bool(
+                confirmation.get("use_default_route_targets", True)
+            ),
+            "confirmation_expires_in_minutes": int(
+                confirmation.get("expires_in_minutes") or 10
+            ),
+            "confirmation_on_timeout": str(confirmation.get("on_timeout") or "skip"),
+            "promotion_enabled": bool(promotion.get("enabled", True)),
+            "promotion_target_recipients": ", ".join(
+                _parse_multiline_items(promotion.get("target_recipients"))
+            ),
+            "promotion_target_groups": ", ".join(
+                _parse_multiline_items(promotion.get("target_groups"))
+            ),
+            "promotion_min_samples": int(promotion.get("min_samples") or 5),
+            "promotion_min_approval_rate": float(promotion.get("min_approval_rate") or 0.8),
+            "promotion_min_distinct_days": int(promotion.get("min_distinct_days") or 3),
+            "promotion_reminder_interval_days": int(
+                promotion.get("reminder_interval_days") or 7
+            ),
+        }
+
+    def _execution_policy_profile_choice_map(
+        self, profiles: dict[str, dict[str, Any]]
+    ) -> dict[str, str]:
+        return {
+            f"{profile_id} ({str(profile.get('mode') or 'auto_apply')})": profile_id
+            for profile_id, profile in sorted(profiles.items())
+        }
+
+    def _execution_policy_profiles_summary(self, profiles: dict[str, dict[str, Any]]) -> str:
+        if not profiles:
+            return "No execution policy profiles configured."
+        return "\n".join(
+            f"{profile_id}: {str(profile.get('mode') or 'auto_apply')}"
+            for profile_id, profile in sorted(profiles.items())
+        )
+
+    def _execution_policy_profile_references(self, profile_id: str) -> list[str]:
+        configured = self._reactions_config().get("configured")
+        if not isinstance(configured, dict):
+            return []
+        return [
+            f"reaction:{reaction_id}"
+            for reaction_id, cfg in sorted(configured.items())
+            if isinstance(cfg, dict) and str(cfg.get("execution_policy_ref") or "") == profile_id
+        ]
 
 
 def _normalize_notification_service_capabilities(value: Any) -> dict[str, dict[str, bool]]:

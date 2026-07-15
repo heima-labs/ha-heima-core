@@ -1697,6 +1697,163 @@ async def test_notification_service_delete_removes_capability():
 
 
 @pytest.mark.asyncio
+async def test_execution_policy_profile_add_persists_ask_residents_profile():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"], "admins": ["stefano"]},
+            }
+        }
+    )
+
+    result = await flow.async_step_execution_policy_profile_add(
+        {
+            "profile_id": "ask_residents_default",
+            "mode": "ask_residents",
+            "confirmation_target_recipients": "stefano",
+            "confirmation_target_groups": "residents",
+            "confirmation_use_default_route_targets": False,
+            "confirmation_expires_in_minutes": 5,
+            "confirmation_on_timeout": "apply",
+            "promotion_enabled": True,
+            "promotion_target_groups": "admins",
+            "promotion_min_samples": 3,
+            "promotion_min_approval_rate": 0.75,
+            "promotion_min_distinct_days": 2,
+            "promotion_reminder_interval_days": 4,
+        }
+    )
+
+    assert result["type"] == "menu"
+    profile = flow.options["reactions"]["execution_policy_profiles"]["ask_residents_default"]
+    assert profile == {
+        "mode": "ask_residents",
+        "confirmation": {
+            "target_recipients": ["stefano"],
+            "target_groups": ["residents"],
+            "use_default_route_targets": False,
+            "expires_in_minutes": 5,
+            "on_timeout": "apply",
+        },
+        "promotion": {
+            "enabled": True,
+            "target_recipients": [],
+            "target_groups": ["admins"],
+            "min_samples": 3,
+            "min_approval_rate": 0.75,
+            "min_distinct_days": 2,
+            "reminder_interval_days": 4,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_add_persists_auto_apply_profile():
+    flow = _flow()
+
+    result = await flow.async_step_execution_policy_profile_add(
+        {
+            "profile_id": "auto_apply_default",
+            "mode": "auto_apply",
+        }
+    )
+
+    assert result["type"] == "menu"
+    assert flow.options["reactions"]["execution_policy_profiles"]["auto_apply_default"] == {
+        "mode": "auto_apply"
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_add_rejects_unknown_targets():
+    flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
+
+    result = await flow.async_step_execution_policy_profile_add(
+        {
+            "profile_id": "ask_residents_default",
+            "mode": "ask_residents",
+            "confirmation_target_recipients": "missing",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "execution_policy_profile_add"
+    assert result["errors"]["confirmation_target_recipients"] == "unknown_recipient"
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_edit_keeps_id_immutable():
+    flow = _flow(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {"mode": "ask_residents"}
+                }
+            }
+        }
+    )
+    flow._editing_execution_policy_profile_id = "ask_residents_default"
+
+    result = await flow.async_step_execution_policy_profile_edit_form(
+        {
+            "profile_id": "renamed",
+            "mode": "auto_apply",
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "execution_policy_profile_edit_form"
+    assert result["errors"]["profile_id"] == "immutable_field"
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_delete_blocks_referenced_profile():
+    flow = _flow(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {"mode": "ask_residents"}
+                },
+                "configured": {
+                    "r1": {"execution_policy_ref": "ask_residents_default"},
+                },
+            }
+        }
+    )
+    flow._editing_execution_policy_profile_id = "ask_residents_default"
+
+    result = await flow.async_step_execution_policy_profile_delete_confirm({"confirm": True})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "execution_policy_profile_delete_confirm"
+    assert result["errors"]["base"] == "execution_policy_profile_in_use"
+    assert "reaction:r1" in result["description_placeholders"]["references"]
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_delete_removes_unreferenced_profile():
+    flow = _flow(
+        {
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {"mode": "ask_residents"},
+                    "auto_apply_default": {"mode": "auto_apply"},
+                }
+            }
+        }
+    )
+    flow._editing_execution_policy_profile_id = "auto_apply_default"
+
+    result = await flow.async_step_execution_policy_profile_delete_confirm({"confirm": True})
+
+    assert result["type"] == "menu"
+    assert flow.options["reactions"]["execution_policy_profiles"] == {
+        "ask_residents_default": {"mode": "ask_residents"}
+    }
+
+
+@pytest.mark.asyncio
 async def test_lighting_rooms_edit_redirects_to_zones_when_no_rooms():
     flow = _flow({"rooms": []})
 

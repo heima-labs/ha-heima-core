@@ -36,6 +36,7 @@
           "notification_groups": "Notification recipient groups",
           "notification_routes": "Notification default routes",
           "notification_services": "Notification services",
+          "execution_policy_profiles": "Execution policy profiles",
           "calendar": "Calendar",
           "learning": "Learning context",
           "external_context": "External context",
@@ -541,6 +542,78 @@
         },
         "submit": "OK"
       },
+      "execution_policy_profiles": {
+        "title": "Execution Policy Profiles",
+        "description": "{summary}",
+        "menu_options": {
+          "execution_policy_profile_add": "Add profile",
+          "execution_policy_profile_edit": "Edit profile",
+          "execution_policy_profile_delete": "Delete profile",
+          "execution_policy_profiles_done": "Done"
+        }
+      },
+      "execution_policy_profile_add": {
+        "title": "Add Execution Policy Profile",
+        "data": {
+          "profile_id": "Profile ID",
+          "mode": "Execution mode",
+          "confirmation_target_recipients": "Confirmation recipients",
+          "confirmation_target_groups": "Confirmation groups",
+          "confirmation_use_default_route_targets": "Use default route targets",
+          "confirmation_expires_in_minutes": "Response timeout (minutes)",
+          "confirmation_on_timeout": "When nobody responds",
+          "promotion_enabled": "Enable promotion suggestions",
+          "promotion_target_recipients": "Promotion recipients",
+          "promotion_target_groups": "Promotion groups",
+          "promotion_min_samples": "Promotion minimum samples",
+          "promotion_min_approval_rate": "Promotion minimum approval rate",
+          "promotion_min_distinct_days": "Promotion minimum distinct days",
+          "promotion_reminder_interval_days": "Promotion reminder interval days"
+        },
+        "submit": "OK"
+      },
+      "execution_policy_profile_edit": {
+        "title": "Edit Execution Policy Profile",
+        "data": {
+          "profile_id": "Profile"
+        },
+        "submit": "OK"
+      },
+      "execution_policy_profile_edit_form": {
+        "title": "Edit Execution Policy Profile",
+        "data": {
+          "profile_id": "Profile ID",
+          "mode": "Execution mode",
+          "confirmation_target_recipients": "Confirmation recipients",
+          "confirmation_target_groups": "Confirmation groups",
+          "confirmation_use_default_route_targets": "Use default route targets",
+          "confirmation_expires_in_minutes": "Response timeout (minutes)",
+          "confirmation_on_timeout": "When nobody responds",
+          "promotion_enabled": "Enable promotion suggestions",
+          "promotion_target_recipients": "Promotion recipients",
+          "promotion_target_groups": "Promotion groups",
+          "promotion_min_samples": "Promotion minimum samples",
+          "promotion_min_approval_rate": "Promotion minimum approval rate",
+          "promotion_min_distinct_days": "Promotion minimum distinct days",
+          "promotion_reminder_interval_days": "Promotion reminder interval days"
+        },
+        "submit": "OK"
+      },
+      "execution_policy_profile_delete": {
+        "title": "Delete Execution Policy Profile",
+        "data": {
+          "profile_id": "Profile"
+        },
+        "submit": "OK"
+      },
+      "execution_policy_profile_delete_confirm": {
+        "title": "Delete Execution Policy Profile",
+        "description": "Profile: {profile_id}\nReferences: {references}",
+        "data": {
+          "confirm": "Confirm deletion"
+        },
+        "submit": "OK"
+      },
       "discovery": {
         "title": "Discovery",
         "description": "Summary: {summary}\n\nSuggestions:\n{suggestions}",
@@ -923,7 +996,8 @@
       "already_exists": "Already exists",
       "immutable_field": "This field cannot be changed",
       "recipient_in_use": "This recipient is still referenced",
-      "group_in_use": "This group is still referenced"
+      "group_in_use": "This group is still referenced",
+      "execution_policy_profile_in_use": "This execution policy profile is still referenced"
         }
     }
 }
