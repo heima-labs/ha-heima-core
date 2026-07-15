@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -18,18 +19,22 @@ from .notifications import (
     parse_actionable_notification_response,
 )
 from .runtime_confirmation import (
+    FAILURE_APPLY_ERROR,
     FAILURE_NO_ACTIONABLE_ROUTE,
     FAILURE_VALIDATION_FAILED,
     RuntimeActionRequest,
     RuntimeActionRequestRegistry,
     RuntimeApplyResult,
     RuntimeRequestStatus,
+    resolve_runtime_request,
 )
 
 ACTION_RUNTIME_REQUEST_APPROVE = "heima.runtime_request.approve"
 ACTION_RUNTIME_REQUEST_DISMISS = "heima.runtime_request.dismiss"
 EVENT_MOBILE_APP_NOTIFICATION_ACTION = "mobile_app_notification_action"
 SKIP_TIMEOUT_SKIPPED = "timeout_skipped"
+
+_LOGGER = logging.getLogger(__name__)
 
 RuntimeApplyHandler = Callable[
     [RuntimeActionRequest, RuntimeRequestStatus], Awaitable[RuntimeActionRequest]
@@ -196,21 +201,38 @@ class RuntimeConfirmationController:
         status: RuntimeRequestStatus,
     ) -> RuntimeActionRequest | None:
         self._cancel_timeout(request_id)
-        request = self._registry.get(request_id)
+        request = self._registry.claim_for_processing(request_id)
         if request is None:
-            return self._registry.resolve(request_id, status=status)
+            return None
 
         if self._apply_handler is None:
-            resolved = self._registry.resolve(
-                request_id,
+            resolved = resolve_runtime_request(
+                request,
                 status="failed",
                 failure_reason=FAILURE_VALIDATION_FAILED,
             )
-            if resolved is not None:
-                self._record_outcome(resolved, resolved.status)
+            self._registry.mark_completed(resolved)
+            self._record_outcome(resolved, resolved.status)
             return resolved
 
-        completed = await self._apply_handler(request, status)
+        try:
+            completed = await self._apply_handler(request, status)
+        except Exception:
+            _LOGGER.exception(
+                "Runtime confirmation apply handler failed for request %s",
+                request.request_id,
+            )
+            completed = resolve_runtime_request(
+                request,
+                status="failed",
+                apply_result=RuntimeApplyResult(
+                    failed_steps=len(request.apply_steps),
+                    failed_reasons={FAILURE_APPLY_ERROR: len(request.apply_steps)}
+                    if request.apply_steps
+                    else {},
+                ),
+                failure_reason=FAILURE_APPLY_ERROR,
+            )
         recorded = self._registry.mark_completed(completed)
         self._record_outcome(recorded, recorded.status)
         return recorded

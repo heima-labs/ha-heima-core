@@ -13,6 +13,7 @@ from custom_components.heima.runtime.notifications import (
     HeimaEventPipeline,
 )
 from custom_components.heima.runtime.runtime_confirmation import (
+    FAILURE_APPLY_ERROR,
     FAILURE_NO_ACTIONABLE_ROUTE,
     RuntimeActionRequest,
     RuntimeApplyResult,
@@ -183,6 +184,36 @@ async def test_controller_timeout_apply_uses_apply_handler(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_controller_apply_handler_exception_marks_request_failed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+
+    async def _apply(_request: RuntimeActionRequest, _status: str) -> RuntimeActionRequest:
+        raise RuntimeError("boom")
+
+    controller = RuntimeConfirmationController(_FakeHass(), apply_handler=_apply)
+    request = _request()
+
+    controller.add_request(request)
+    resolved = await controller.async_handle_action_response(
+        ActionableNotificationResponse(
+            action_id=ACTION_RUNTIME_REQUEST_APPROVE,
+            request_id=request.request_id,
+        )
+    )
+
+    assert resolved is not None
+    assert resolved.status == "failed"
+    assert resolved.failure_reason == FAILURE_APPLY_ERROR
+    diagnostics = controller.diagnostics()
+    assert diagnostics["pending"] == 0
+    assert diagnostics["completed_by_status"] == {"failed": 1}
+    assert diagnostics["failed_request_reasons"] == {FAILURE_APPLY_ERROR: 1}
+
+
+@pytest.mark.asyncio
 async def test_controller_dismiss_response_cancels_timeout_and_records_stale_duplicate(
     monkeypatch,
 ) -> None:
@@ -248,6 +279,55 @@ async def test_controller_action_event_dispatches_parsed_approve(monkeypatch) ->
     assert resolved is not None
     assert resolved.status == "approved"
     assert calls == ["approved"]
+
+
+@pytest.mark.asyncio
+async def test_controller_concurrent_approve_is_first_writer_wins(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.runtime_confirmation_controller.async_call_later",
+        lambda _hass, _delay, _callback: lambda: None,
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[str] = []
+
+    async def _apply(request: RuntimeActionRequest, status: str) -> RuntimeActionRequest:
+        calls.append(status)
+        started.set()
+        await release.wait()
+        return resolve_runtime_request(
+            request,
+            status=status,  # type: ignore[arg-type]
+            apply_result=RuntimeApplyResult(applied_steps=1),
+        )
+
+    controller = RuntimeConfirmationController(_FakeHass(), apply_handler=_apply)
+    request = _request()
+    controller.add_request(request)
+
+    first_task = asyncio.create_task(
+        controller.async_handle_action_response(
+            ActionableNotificationResponse(
+                action_id=ACTION_RUNTIME_REQUEST_APPROVE,
+                request_id=request.request_id,
+            )
+        )
+    )
+    await started.wait()
+    second = await controller.async_handle_action_response(
+        ActionableNotificationResponse(
+            action_id=ACTION_RUNTIME_REQUEST_APPROVE,
+            request_id=request.request_id,
+        )
+    )
+    release.set()
+    first = await first_task
+
+    assert first is not None
+    assert first.status == "approved"
+    assert second is None
+    assert calls == ["approved"]
+    assert controller.diagnostics()["stale_responses"] == 1
 
 
 @pytest.mark.asyncio

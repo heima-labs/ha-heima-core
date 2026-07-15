@@ -279,6 +279,20 @@ class RuntimeActionRequestRegistry:
     def get(self, request_id: str) -> RuntimeActionRequest | None:
         return self._pending_by_id.get(request_id)
 
+    def claim_for_processing(self, request_id: str) -> RuntimeActionRequest | None:
+        """Atomically remove a pending request before applying it.
+
+        Removing before the await boundary gives actionable notifications
+        first-writer-wins behavior even when two devices answer at nearly the
+        same time.
+        """
+        request = self._pending_by_id.get(request_id)
+        if request is None:
+            self._stale_responses += 1
+            return None
+        self._remove_pending(request)
+        return request
+
     def resolve(
         self,
         request_id: str,

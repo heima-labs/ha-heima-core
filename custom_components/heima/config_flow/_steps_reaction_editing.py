@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
@@ -869,8 +870,7 @@ class _ReactionEditingStepsMixin:
                 description_placeholders={"reaction_description": label},
             )
 
-        existing_policy = cfg.get("execution_policy")
-        existing_policy = dict(existing_policy) if isinstance(existing_policy, dict) else {}
+        existing_policy = self._runtime_confirmation_effective_policy_from_cfg(cfg)
         reset_promotion_state = self._runtime_confirmation_edit_resets_promotion_state(
             existing_policy=existing_policy,
             submitted_policy=execution_policy,
@@ -881,7 +881,25 @@ class _ReactionEditingStepsMixin:
             cfg["execution_policy_ref"] = execution_policy_ref
             cfg.pop("execution_policy", None)
             if bool(current_input.get("use_execution_policy_override", False)):
-                cfg["execution_policy_override"] = execution_policy
+                profiles = reactions_cfg.get("execution_policy_profiles")
+                profile = dict(profiles.get(execution_policy_ref, {})) if isinstance(profiles, dict) else {}
+                override = self._runtime_confirmation_profile_override_delta(
+                    profile_policy=profile,
+                    submitted_policy=execution_policy,
+                )
+                existing_override = cfg.get("execution_policy_override")
+                existing_override = (
+                    dict(existing_override) if isinstance(existing_override, dict) else {}
+                )
+                override = self._merge_runtime_confirmation_profile_override(
+                    existing_override=existing_override,
+                    submitted_delta=override,
+                    submitted_policy=execution_policy,
+                )
+                if override:
+                    cfg["execution_policy_override"] = override
+                else:
+                    cfg.pop("execution_policy_override", None)
             else:
                 cfg.pop("execution_policy_override", None)
         else:
@@ -1178,13 +1196,13 @@ class _ReactionEditingStepsMixin:
     def _runtime_confirmation_defaults_from_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
         override = cfg.get("execution_policy_override")
         has_override = isinstance(override, dict)
-        policy = override if has_override else cfg.get("execution_policy")
-        policy = dict(policy) if isinstance(policy, dict) else {}
+        profile_ref = str(cfg.get("execution_policy_ref") or "").strip()
+        policy = self._runtime_confirmation_effective_policy_from_cfg(cfg)
         confirmation = policy.get("confirmation")
         confirmation = dict(confirmation) if isinstance(confirmation, dict) else {}
         return {
             "enabled": bool(cfg.get("enabled", True)),
-            "execution_policy_profile_ref": str(cfg.get("execution_policy_ref") or ""),
+            "execution_policy_profile_ref": profile_ref,
             "use_execution_policy_override": has_override,
             "execution_mode": str(policy.get("mode") or "auto_apply"),
             "confirmation_expires_in_minutes": int(confirmation.get("expires_in_minutes") or 10),
@@ -1251,16 +1269,36 @@ class _ReactionEditingStepsMixin:
                 defaults.get("confirmation_use_default_route_targets", True),
             )
         )
+        use_override = bool(
+            user_input.get(
+                "use_execution_policy_override",
+                defaults.get("use_execution_policy_override", False),
+            )
+        )
+        should_validate_targets = mode == "ask_residents" and (
+            not profile_ref
+            or (
+                use_override
+                and (
+                    bool(target_recipients)
+                    or bool(target_groups)
+                    or bool(use_default_route_targets)
+                )
+            )
+        )
+        if should_validate_targets:
+            errors.update(
+                self._validate_runtime_confirmation_targets(
+                    target_recipients=target_recipients,
+                    target_groups=target_groups,
+                    use_default_route_targets=use_default_route_targets,
+                )
+            )
 
         current_input = {
             "enabled": bool(user_input.get("enabled", defaults.get("enabled", True))),
             "execution_policy_profile_ref": profile_ref,
-            "use_execution_policy_override": bool(
-                user_input.get(
-                    "use_execution_policy_override",
-                    defaults.get("use_execution_policy_override", False),
-                )
-            ),
+            "use_execution_policy_override": use_override,
             "execution_mode": mode,
             "confirmation_expires_in_minutes": expires_in,
             "confirmation_on_timeout": on_timeout,
@@ -1280,6 +1318,115 @@ class _ReactionEditingStepsMixin:
             },
         }
         return current_input, execution_policy, profile_ref, errors
+
+    @classmethod
+    def _runtime_confirmation_profile_override_delta(
+        cls,
+        *,
+        profile_policy: dict[str, Any],
+        submitted_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist only profile-backed fields that actually differ."""
+        override: dict[str, Any] = {}
+        submitted_mode = str(submitted_policy.get("mode") or "auto_apply")
+        profile_mode = str(profile_policy.get("mode") or "auto_apply")
+        if submitted_mode != profile_mode:
+            override["mode"] = submitted_mode
+
+        submitted_confirmation = submitted_policy.get("confirmation")
+        profile_confirmation = profile_policy.get("confirmation")
+        if isinstance(submitted_confirmation, dict):
+            profile_confirmation = (
+                dict(profile_confirmation) if isinstance(profile_confirmation, dict) else {}
+            )
+            confirmation_delta: dict[str, Any] = {}
+            for key, value in submitted_confirmation.items():
+                normalized_value = cls._runtime_confirmation_normalized_policy_value(
+                    value,
+                    list_field=key in {"target_recipients", "target_groups"},
+                )
+                normalized_profile_value = cls._runtime_confirmation_normalized_policy_value(
+                    profile_confirmation.get(key),
+                    list_field=key in {"target_recipients", "target_groups"},
+                )
+                if normalized_value != normalized_profile_value:
+                    confirmation_delta[key] = normalized_value
+            if confirmation_delta:
+                override["confirmation"] = confirmation_delta
+
+        return override
+
+    def _runtime_confirmation_effective_policy_from_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        """Return the policy the runtime will use for this reaction config."""
+        profile_ref = str(cfg.get("execution_policy_ref") or "").strip()
+        if profile_ref:
+            profiles = self._reactions_options().get("execution_policy_profiles")
+            profiles = profiles if isinstance(profiles, dict) else {}
+            profile = profiles.get(profile_ref)
+            effective = dict(profile) if isinstance(profile, dict) else {}
+            override = cfg.get("execution_policy_override")
+            if isinstance(override, dict) and override:
+                effective = self._deep_merge_runtime_confirmation_policy(effective, override)
+            return effective
+
+        policy = cfg.get("execution_policy")
+        return dict(policy) if isinstance(policy, dict) else {}
+
+    @classmethod
+    def _merge_runtime_confirmation_profile_override(
+        cls,
+        *,
+        existing_override: dict[str, Any],
+        submitted_delta: dict[str, Any],
+        submitted_policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Preserve hidden profile override metadata while saving editable fields."""
+        merged = dict(submitted_delta)
+        existing_promotion = existing_override.get("promotion")
+        if isinstance(existing_promotion, dict):
+            merged["promotion"] = dict(existing_promotion)
+        if str(submitted_policy.get("mode") or "") == "auto_apply":
+            for key in ("promoted_from_confirmation", "promoted_at"):
+                if key in existing_override:
+                    merged[key] = existing_override[key]
+        return merged
+
+    @classmethod
+    def _deep_merge_runtime_confirmation_policy(
+        cls,
+        base: dict[str, Any],
+        override: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = deepcopy(base)
+        for raw_key, value in override.items():
+            key = str(raw_key or "").strip()
+            if not key or cls._runtime_confirmation_is_empty_override_value(value):
+                continue
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = cls._deep_merge_runtime_confirmation_policy(merged[key], value)
+                continue
+            merged[key] = deepcopy(value)
+        return merged
+
+    @staticmethod
+    def _runtime_confirmation_is_empty_override_value(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, list | tuple | set | dict):
+            return len(value) == 0
+        return False
+
+    @staticmethod
+    def _runtime_confirmation_normalized_policy_value(value: Any, *, list_field: bool) -> Any:
+        if list_field and value is None:
+            return []
+        if isinstance(value, list | tuple | set):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     @staticmethod
     def _merge_runtime_confirmation_execution_policy(

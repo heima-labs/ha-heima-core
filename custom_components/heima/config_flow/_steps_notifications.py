@@ -1336,6 +1336,16 @@ class _NotificationsStepsMixin:
         for field in ("confirmation_target_groups", "promotion_target_groups"):
             if any(item not in groups for item in payload.get(field, [])):
                 return {field: "unknown_target"}
+        if payload.get("mode") == "ask_residents":
+            target_errors = self._validate_runtime_confirmation_targets(
+                target_recipients=list(payload.get("confirmation_target_recipients", [])),
+                target_groups=list(payload.get("confirmation_target_groups", [])),
+                use_default_route_targets=bool(
+                    payload.get("confirmation_use_default_route_targets", True)
+                ),
+            )
+            if target_errors:
+                return target_errors
         return {}
 
     def _execution_policy_profile_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1427,6 +1437,64 @@ class _NotificationsStepsMixin:
             for reaction_id, cfg in sorted(configured.items())
             if isinstance(cfg, dict) and str(cfg.get("execution_policy_ref") or "") == profile_id
         ]
+
+    def _validate_runtime_confirmation_targets(
+        self,
+        *,
+        target_recipients: list[str],
+        target_groups: list[str],
+        use_default_route_targets: bool,
+    ) -> dict[str, str]:
+        """Validate ask-residents routing can reach at least one actionable service."""
+        recipients = self._notification_recipients()
+        groups = self._notification_groups()
+        if any(recipient_id not in recipients for recipient_id in target_recipients):
+            return {"confirmation_target_recipients": "unknown_recipient"}
+        if any(group_id not in groups for group_id in target_groups):
+            return {"confirmation_target_groups": "unknown_target"}
+
+        targets: list[str] = []
+        seen_targets: set[str] = set()
+
+        def add_target(target: str) -> None:
+            normalized = str(target or "").strip()
+            if not normalized or normalized in seen_targets:
+                return
+            seen_targets.add(normalized)
+            targets.append(normalized)
+
+        for recipient_id in target_recipients:
+            add_target(recipient_id)
+        for group_id in target_groups:
+            add_target(group_id)
+        if use_default_route_targets:
+            for target in _parse_multiline_items(self._notifications_config().get("route_targets")):
+                add_target(target)
+
+        capabilities = self._notification_service_capabilities()
+        actionable_routes = 0
+        unresolved_default_target = False
+        for target in targets:
+            services: list[str] = []
+            if target in recipients:
+                services.extend(recipients.get(target, []))
+            elif target in groups:
+                for recipient_id in groups.get(target, []):
+                    services.extend(recipients.get(recipient_id, []))
+            else:
+                unresolved_default_target = True
+                continue
+            for service in services:
+                service_name = _normalize_notify_service_name(service)
+                capability = capabilities.get(service_name, {})
+                if bool(capability.get("supports_actions", False)):
+                    actionable_routes += 1
+
+        if unresolved_default_target:
+            return {"base": "unknown_target"}
+        if actionable_routes <= 0:
+            return {"base": "no_actionable_route"}
+        return {}
 
 
 def _normalize_notification_service_capabilities(value: Any) -> dict[str, dict[str, bool]]:

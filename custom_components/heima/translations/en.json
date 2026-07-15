@@ -999,7 +999,8 @@
       "immutable_field": "This field cannot be changed",
       "recipient_in_use": "This recipient is still referenced",
       "group_in_use": "This group is still referenced",
-      "execution_policy_profile_in_use": "This execution policy profile is still referenced"
+      "execution_policy_profile_in_use": "This execution policy profile is still referenced",
+      "no_actionable_route": "Runtime confirmation needs at least one notification service with actions enabled"
         }
     }
 }

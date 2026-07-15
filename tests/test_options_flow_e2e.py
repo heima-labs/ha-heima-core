@@ -78,6 +78,14 @@ def _state(entity_id: str, friendly_name: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(entity_id=entity_id, attributes=attrs, name=friendly_name or entity_id)
 
 
+def _schema_defaults(schema) -> dict[str, object]:
+    defaults: dict[str, object] = {}
+    for key in schema.schema:
+        default = getattr(key, "default", None)
+        defaults[str(key.schema)] = default() if callable(default) else default
+    return defaults
+
+
 def _fake_hass(*, is_admin: bool = True, states: list[SimpleNamespace] | None = None):
     async def _async_get_user(user_id: str):
         return SimpleNamespace(id=user_id, is_admin=is_admin)
@@ -1703,6 +1711,9 @@ async def test_execution_policy_profile_add_persists_ask_residents_profile():
             "notifications": {
                 "recipients": {"stefano": ["mobile_app_stefano"]},
                 "recipient_groups": {"residents": ["stefano"], "admins": ["stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
             }
         }
     )
@@ -1780,6 +1791,33 @@ async def test_execution_policy_profile_add_rejects_unknown_targets():
     assert result["type"] == "form"
     assert result["step_id"] == "execution_policy_profile_add"
     assert result["errors"]["confirmation_target_recipients"] == "unknown_recipient"
+
+
+@pytest.mark.asyncio
+async def test_execution_policy_profile_add_rejects_missing_actionable_route():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": False}
+                },
+            }
+        }
+    )
+
+    result = await flow.async_step_execution_policy_profile_add(
+        {
+            "profile_id": "ask_residents_default",
+            "mode": "ask_residents",
+            "confirmation_target_recipients": "stefano",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "execution_policy_profile_add"
+    assert result["errors"]["base"] == "no_actionable_route"
 
 
 @pytest.mark.asyncio
@@ -5701,6 +5739,17 @@ async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtim
 async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
     flow = _flow(
         {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "laura": ["mobile_app_laura"],
+                },
+                "recipient_groups": {"family": ["stefano", "laura"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True},
+                    "mobile_app_laura": {"supports_actions": True},
+                },
+            },
             "reactions": {
                 "configured": {
                     "r1": {
@@ -5754,6 +5803,13 @@ async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
 async def test_reactions_edit_form_saves_execution_policy_profile_ref():
     flow = _flow(
         {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
             "reactions": {
                 "execution_policy_profiles": {
                     "ask_residents_default": {
@@ -5817,6 +5873,13 @@ async def test_reactions_edit_form_saves_execution_policy_profile_ref():
 async def test_reactions_edit_form_saves_execution_policy_profile_override():
     flow = _flow(
         {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
             "reactions": {
                 "execution_policy_profiles": {
                     "ask_residents_default": {
@@ -5863,22 +5926,190 @@ async def test_reactions_edit_form_saves_execution_policy_profile_override():
     cfg = flow.options["reactions"]["configured"]["r1"]
     assert cfg["execution_policy_ref"] == "ask_residents_default"
     assert cfg["execution_policy_override"] == {
-        "mode": "ask_residents",
         "confirmation": {
             "expires_in_minutes": 4,
             "on_timeout": "skip",
             "target_recipients": ["stefano"],
-            "target_groups": ["residents"],
-            "use_default_route_targets": False,
         },
     }
     assert "execution_policy" not in cfg
 
 
 @pytest.mark.asyncio
+async def test_reactions_edit_form_profile_override_persists_only_delta():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                            "expires_in_minutes": 10,
+                            "on_timeout": "skip",
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy_ref": "ask_residents_default",
+                    }
+                },
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_policy_profile_ref": "ask_residents_default",
+            "use_execution_policy_override": True,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 4,
+            "confirmation_on_timeout": "skip",
+            "confirmation_target_recipients": "",
+            "confirmation_target_groups": "residents",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy_ref"] == "ask_residents_default"
+    assert cfg["execution_policy_override"] == {
+        "confirmation": {"expires_in_minutes": 4}
+    }
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_profile_override_defaults_use_effective_policy():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                            "expires_in_minutes": 10,
+                            "on_timeout": "skip",
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy_ref": "ask_residents_default",
+                        "execution_policy_override": {
+                            "confirmation": {"expires_in_minutes": 4}
+                        },
+                    }
+                },
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    defaults = _schema_defaults(result["data_schema"])
+    assert defaults["execution_policy_profile_ref"] == "ask_residents_default"
+    assert defaults["use_execution_policy_override"] is True
+    assert defaults["execution_mode"] == "ask_residents"
+    assert defaults["confirmation_expires_in_minutes"] == 4
+    assert defaults["confirmation_target_groups"] == "residents"
+    assert defaults["confirmation_use_default_route_targets"] is False
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_rejects_unknown_runtime_confirmation_target():
+    flow = _flow(
+        {
+            "reactions": {
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                    }
+                }
+            }
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_policy_profile_ref": "",
+            "use_execution_policy_override": False,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 10,
+            "confirmation_on_timeout": "skip",
+            "confirmation_target_recipients": "missing",
+            "confirmation_target_groups": "",
+            "confirmation_use_default_route_targets": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    assert result["errors"]["confirmation_target_recipients"] == "unknown_recipient"
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residents():
     flow = _flow(
         {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"family": ["stefano"]},
+                "route_targets": ["family"],
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
             "reactions": {
                 "configured": {
                     "r1": {
@@ -5927,6 +6158,90 @@ async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residen
     assert policy["promotion"] == {"enabled": True, "min_samples": 3}
     assert "promoted_from_confirmation" not in policy
     assert "promoted_at" not in policy
+    assert flow.options["reactions"]["confirmation_stats"] == {}
+    assert flow.options["reactions"]["promotion_reviews"] == {}
+
+
+@pytest.mark.asyncio
+async def test_reactions_edit_form_reverts_profile_promoted_auto_apply_to_ask_residents():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"family": ["stefano"]},
+                "route_targets": ["family"],
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["family"],
+                            "use_default_route_targets": True,
+                            "expires_in_minutes": 10,
+                            "on_timeout": "skip",
+                        },
+                        "promotion": {
+                            "enabled": True,
+                            "min_samples": 3,
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy_ref": "ask_residents_default",
+                        "execution_policy_override": {
+                            "mode": "auto_apply",
+                            "promoted_from_confirmation": True,
+                            "promoted_at": "2026-07-14T10:00:00+00:00",
+                        },
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+                "confirmation_stats": {"r1": {"approved": 3}},
+                "promotion_reviews": {
+                    "r1": {
+                        "reaction_id": "r1",
+                        "status": "approved",
+                    }
+                },
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form(
+        {
+            "enabled": True,
+            "execution_policy_profile_ref": "ask_residents_default",
+            "use_execution_policy_override": True,
+            "execution_mode": "ask_residents",
+            "confirmation_expires_in_minutes": 7,
+            "confirmation_on_timeout": "skip",
+            "confirmation_target_recipients": "",
+            "confirmation_target_groups": "family",
+            "confirmation_use_default_route_targets": True,
+        }
+    )
+
+    assert result["type"] == "menu"
+    cfg = flow.options["reactions"]["configured"]["r1"]
+    assert cfg["execution_policy_ref"] == "ask_residents_default"
+    assert cfg["execution_policy_override"] == {
+        "confirmation": {"expires_in_minutes": 7}
+    }
     assert flow.options["reactions"]["confirmation_stats"] == {}
     assert flow.options["reactions"]["promotion_reviews"] == {}
 
