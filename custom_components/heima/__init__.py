@@ -20,6 +20,7 @@ from .room_sources import (
 )
 from .runtime.reactions import normalize_reaction_options_payload
 from .services import async_register_services
+from .websocket_api import async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +32,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if not hass.data[DOMAIN].get("services_registered"):
         await async_register_services(hass)
         hass.data[DOMAIN]["services_registered"] = True
+
+    if not hass.data[DOMAIN].get("websocket_api_registered"):
+        async_register_websocket_api(hass)
+        hass.data[DOMAIN]["websocket_api_registered"] = True
 
     return True
 
