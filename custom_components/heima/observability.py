@@ -51,6 +51,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         lambda: coordinator._runtime_confirmation.diagnostics(),  # noqa: SLF001
         {},
     )
+    runtime_observability = _runtime_observability(engine_diag)
     validation = _safe_section(
         "installation_validation",
         partial_reasons,
@@ -66,16 +67,19 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
             "engine_version": _engine_version(coordinator),
             "is_partial": bool(partial_reasons),
             "partial_reasons": partial_reasons,
-            "retention": {
-                "mode": "in_memory",
-                "description": "history_since_last_restart",
-            },
+            "retention": runtime_observability.get(
+                "retention",
+                {
+                    "mode": "in_memory",
+                    "description": "history_since_last_restart",
+                },
+            ),
         },
         "health": _health_summary(coordinator, validation),
         "runtime": _runtime_summary(coordinator, engine_diag),
         "health_findings": _health_findings(coordinator, validation, generated_at),
-        "recent_events": [],
-        "decision_traces": [],
+        "recent_events": list(runtime_observability.get("recent_events") or []),
+        "decision_traces": list(runtime_observability.get("decision_traces") or []),
         "reactions": _reaction_summaries(engine_diag),
         "manual_holds": _manual_hold_summary(engine_diag),
         "runtime_confirmations": _runtime_confirmation_summary(runtime_confirmation),
@@ -150,6 +154,11 @@ def _runtime_summary(coordinator: Any, engine_diag: Mapping[str, Any]) -> dict[s
         "last_action": getattr(data, "last_action", ""),
         "snapshot": snapshot,
     }
+
+
+def _runtime_observability(engine_diag: Mapping[str, Any]) -> dict[str, Any]:
+    raw = engine_diag.get("observability") if isinstance(engine_diag, Mapping) else {}
+    return dict(raw) if isinstance(raw, Mapping) else {}
 
 
 def _health_findings(

@@ -63,6 +63,40 @@ class _FakeEngine:
                 ],
                 "pending_applies": {"total": 0, "by_domain": {}, "items": []},
             },
+            "observability": {
+                "retention": {
+                    "mode": "in_memory",
+                    "description": "history_since_last_restart",
+                    "event_limit": 500,
+                    "trace_limit": 100,
+                },
+                "recent_events": [
+                    {
+                        "event_id": "event.one",
+                        "timestamp": "2026-07-17T10:00:00+00:00",
+                        "category": "reaction",
+                        "severity": "info",
+                        "summary": "Reaction applied.",
+                        "reason_code": "applied",
+                        "object_links": [{"kind": "reaction", "id": "reaction.one"}],
+                    }
+                ],
+                "decision_traces": [
+                    {
+                        "trace_id": "trace.one",
+                        "reaction_id": "reaction.one",
+                        "occurrence_key": "occurrence.one",
+                        "timestamp": "2026-07-17T10:00:00+00:00",
+                        "outcome": "applied",
+                        "reason_codes": ["matched", "apply_plan_ready"],
+                        "input_summary": {},
+                        "condition_results": [],
+                        "guard_results": [],
+                        "apply_steps": [],
+                        "links": [{"kind": "reaction", "id": "reaction.one"}],
+                    }
+                ],
+            },
             "learning_modules": [{"module_id": "house_state_inference"}],
         }
 
@@ -150,6 +184,9 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["manual_holds"]["active_holds"][0]["scope"] == "light:entity:light.studio"
     assert snapshot["runtime_confirmations"]["pending"][0]["request_id"] == "request.one"
     assert snapshot["proposals"]["review_row_count"] == 3
+    assert snapshot["recent_events"][0]["event_id"] == "event.one"
+    assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"
+    assert snapshot["meta"]["retention"]["description"] == "history_since_last_restart"
 
 
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:

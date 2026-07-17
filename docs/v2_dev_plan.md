@@ -130,7 +130,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active slice:** Phase AO — Admin Observability Panel in progress.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Review AO1, then continue with AO2 runtime activity and decision trace foundation.
+Review AO2, then continue with AO3 custom admin panel shell.
 
 ### Phase AO — Admin Observability Panel
 
@@ -159,6 +159,22 @@ Review AO1, then continue with AO2 runtime activity and decision trace foundatio
   - Verification:
     - `.venv/bin/python -m pytest tests/test_observability.py -q` — 6 passed.
     - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/websocket_api.py custom_components/heima/__init__.py tests/test_observability.py`
+      — passed.
+- AO2 initial implementation completed:
+  - Added `custom_components/heima/runtime/observability.py` with bounded in-memory runtime
+    activity and decision trace buffers.
+  - Runtime traces are exposed through the AO snapshot under `recent_events` and
+    `decision_traces`; retention metadata is marked as `history_since_last_restart`.
+  - The engine records filtered apply-plan outcomes for applied, skipped, and blocked steps.
+  - Runtime confirmation occurrences record a `waiting` trace when a request is created and an
+    apply/block/skip trace when approved or timeout-applied execution is processed.
+  - Added unit coverage in `tests/test_runtime_observability.py` for applied/blocked/skipped
+    traces, runtime confirmation waiting/apply traces, and bounded retention.
+  - Extended AO snapshot tests to verify propagation of runtime events/traces.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_reaction_framework.py tests/test_manual_hold_manager.py tests/test_runtime_confirmation.py -q`
+      — 68 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_runtime_observability.py`
       — passed.
 
 #### AO1 — Backend Observability Snapshot Contract
