@@ -160,14 +160,14 @@ def _upsert_profile(client: HAFlowClient, entry_id: str) -> None:
     payload = {
         "profile_id": PROFILE_ID,
         "mode": "ask_residents",
-        "confirmation_target_recipients": "",
-        "confirmation_target_groups": "",
+        "confirmation_target_recipients": [],
+        "confirmation_target_groups": [],
         "confirmation_use_default_route_targets": True,
         "confirmation_expires_in_minutes": 10,
         "confirmation_on_timeout": "skip",
         "promotion_enabled": True,
-        "promotion_target_recipients": "",
-        "promotion_target_groups": "",
+        "promotion_target_recipients": [],
+        "promotion_target_groups": [],
         "promotion_min_samples": 5,
         "promotion_min_approval_rate": 0.8,
         "promotion_min_distinct_days": 3,
@@ -404,11 +404,7 @@ def _assert_invalid_ref_fails_closed(client: HAClient, entry_id: str) -> None:
         {"command": "recompute_now", "target": {"entry_id": entry_id}},
     )
     rows = _runtime_confirmation(client, entry_id).get("pending_requests", [])
-    pending_ids = {
-        str(row.get("reaction_id") or "")
-        for row in rows
-        if isinstance(row, dict)
-    }
+    pending_ids = {str(row.get("reaction_id") or "") for row in rows if isinstance(row, dict)}
     _assert(
         INVALID_REF_REACTION_ID not in pending_ids,
         f"invalid profile ref created a pending request unexpectedly: {rows}",
@@ -446,7 +442,9 @@ def main() -> int:
     try:
         _cleanup_reaction(client, entry_id)
         _delete_profile_if_present(client, entry_id)
-        _configure_notifications(client, entry_id, _live_notification_payload(original_notifications))
+        _configure_notifications(
+            client, entry_id, _live_notification_payload(original_notifications)
+        )
         _upsert_profile(client, entry_id)
 
         light_entity = _find_light_entity(client)

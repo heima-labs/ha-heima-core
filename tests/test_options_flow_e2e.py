@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import voluptuous_serialize
+from homeassistant.helpers import config_validation as cv
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
 from custom_components.heima.config_flow._steps_reactions import _ReactionsStepsMixin
@@ -86,12 +88,32 @@ def _schema_defaults(schema) -> dict[str, object]:
     return defaults
 
 
-def _fake_hass(*, is_admin: bool = True, states: list[SimpleNamespace] | None = None):
+def _assert_schema_serializes(schema) -> None:
+    voluptuous_serialize.convert(schema, custom_serializer=cv.custom_serializer)
+
+
+def _serialized_schema(schema) -> list[dict]:
+    return voluptuous_serialize.convert(schema, custom_serializer=cv.custom_serializer)
+
+
+def _serialized_field(schema, name: str) -> dict:
+    for field in _serialized_schema(schema):
+        if field.get("name") == name:
+            return field
+    raise AssertionError(f"Missing serialized schema field: {name}")
+
+
+def _fake_hass(
+    *,
+    is_admin: bool = True,
+    states: list[SimpleNamespace] | None = None,
+    services: dict | None = None,
+):
     async def _async_get_user(user_id: str):
         return SimpleNamespace(id=user_id, is_admin=is_admin)
 
     return SimpleNamespace(
-        services=SimpleNamespace(async_services=lambda: {"notify": {}}),
+        services=SimpleNamespace(async_services=lambda: services or {"notify": {}}),
         config=SimpleNamespace(time_zone="Europe/Rome", language="it"),
         data={},
         auth=SimpleNamespace(async_get_user=_async_get_user),
@@ -104,9 +126,10 @@ def _flow(
     *,
     is_admin: bool = True,
     states: list[SimpleNamespace] | None = None,
+    services: dict | None = None,
 ) -> HeimaOptionsFlowHandler:
     flow = HeimaOptionsFlowHandler(SimpleNamespace(options=options or {}, entry_id="entry-1"))
-    flow.hass = _fake_hass(is_admin=is_admin, states=states)
+    flow.hass = _fake_hass(is_admin=is_admin, states=states, services=services)
     flow.context = {"user_id": "user-1"}
     return flow
 
@@ -1280,6 +1303,17 @@ async def test_notifications_step_rejects_unknown_route_target():
 
 
 @pytest.mark.asyncio
+async def test_notifications_schema_serializes_for_ha_api():
+    flow = _flow()
+
+    result = await flow.async_step_notifications()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notifications"
+    _assert_schema_serializes(result["data_schema"])
+
+
+@pytest.mark.asyncio
 async def test_notification_recipients_menu_lists_guided_recipient_actions():
     flow = _flow({"notifications": {"recipients": {"stefano": ["mobile_app_stefano"]}}})
 
@@ -1294,6 +1328,30 @@ async def test_notification_recipients_menu_lists_guided_recipient_actions():
         "notification_recipients_done",
     ]
     assert "stefano: mobile_app_stefano" in result["description_placeholders"]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_notification_recipient_add_schema_serializes_for_ha_api():
+    flow = _flow(
+        services={
+            "notify": {
+                "mobile_app_iphone_stefano": {},
+                "persistent_notification": {},
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_recipient_add()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_recipient_add"
+    _assert_schema_serializes(result["data_schema"])
+    notify_services = _serialized_field(result["data_schema"], "notify_services")
+    assert notify_services["type"] == "multi_select"
+    assert notify_services["options"] == {
+        "mobile_app_iphone_stefano": "notify.mobile_app_iphone_stefano",
+        "persistent_notification": "notify.persistent_notification",
+    }
 
 
 @pytest.mark.asyncio
@@ -1366,6 +1424,122 @@ async def test_notification_recipient_edit_updates_services():
 
 
 @pytest.mark.asyncio
+async def test_notification_guided_add_schemas_serialize_for_ha_api():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "route_targets": ["residents"],
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            }
+        },
+        services={"notify": {"mobile_app_stefano": {}, "mobile_app_antonia": {}}},
+    )
+
+    for step in (
+        flow.async_step_notification_group_add,
+        flow.async_step_notification_service_add,
+        flow.async_step_execution_policy_profile_add,
+    ):
+        result = await step()
+        assert result["type"] == "form"
+        _assert_schema_serializes(result["data_schema"])
+
+    group_form = await flow.async_step_notification_group_add()
+    assert _serialized_field(group_form["data_schema"], "members")["type"] == "multi_select"
+
+    service_form = await flow.async_step_notification_service_add()
+    service_name = _serialized_field(service_form["data_schema"], "service_name")
+    assert service_name["type"] == "select"
+    assert ("mobile_app_antonia", "notify.mobile_app_antonia") in service_name["options"]
+
+    profile_form = await flow.async_step_execution_policy_profile_add()
+    assert (
+        _serialized_field(profile_form["data_schema"], "confirmation_target_recipients")["type"]
+        == "multi_select"
+    )
+    assert (
+        _serialized_field(profile_form["data_schema"], "confirmation_target_groups")["type"]
+        == "multi_select"
+    )
+
+
+@pytest.mark.asyncio
+async def test_notification_guided_edit_delete_and_route_schemas_serialize_for_ha_api():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "antonia": ["mobile_app_antonia"],
+                },
+                "recipient_groups": {"residents": ["stefano", "antonia"]},
+                "route_targets": ["residents"],
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                        },
+                    }
+                }
+            },
+        }
+    )
+
+    select_steps = [
+        flow.async_step_notification_recipient_edit,
+        flow.async_step_notification_recipient_delete,
+        flow.async_step_notification_group_edit,
+        flow.async_step_notification_group_delete,
+        flow.async_step_notification_service_edit,
+        flow.async_step_notification_service_delete,
+        flow.async_step_execution_policy_profile_edit,
+        flow.async_step_execution_policy_profile_delete,
+        flow.async_step_notification_routes,
+    ]
+    for step in select_steps:
+        result = await step()
+        assert result["type"] == "form"
+        _assert_schema_serializes(result["data_schema"])
+    route_form = await flow.async_step_notification_routes()
+    assert _serialized_field(route_form["data_schema"], "route_targets")["options"] == {
+        "antonia": "Recipient: antonia",
+        "residents": "Group: residents",
+        "stefano": "Recipient: stefano",
+    }
+
+    flow._editing_notification_recipient_id = "stefano"
+    flow._editing_notification_group_id = "residents"
+    flow._editing_notification_service_id = "mobile_app_stefano"
+    flow._editing_execution_policy_profile_id = "ask_residents_default"
+
+    edit_steps = [
+        flow.async_step_notification_recipient_edit_form,
+        flow.async_step_notification_recipient_delete_confirm,
+        flow.async_step_notification_group_edit_form,
+        flow.async_step_notification_group_delete_confirm,
+        flow.async_step_notification_service_edit_form,
+        flow.async_step_notification_service_delete_confirm,
+        flow.async_step_execution_policy_profile_edit_form,
+        flow.async_step_execution_policy_profile_delete_confirm,
+    ]
+    for step in edit_steps:
+        result = await step()
+        assert result["type"] == "form"
+        _assert_schema_serializes(result["data_schema"])
+
+
+@pytest.mark.asyncio
 async def test_notification_recipient_delete_blocks_referenced_recipient():
     flow = _flow(
         {
@@ -1424,9 +1598,7 @@ async def test_notification_recipient_delete_removes_unreferenced_recipient():
     result = await flow.async_step_notification_recipient_delete_confirm({"confirm": True})
 
     assert result["type"] == "menu"
-    assert flow.options["notifications"]["recipients"] == {
-        "stefano": ["mobile_app_stefano"]
-    }
+    assert flow.options["notifications"]["recipients"] == {"stefano": ["mobile_app_stefano"]}
 
 
 @pytest.mark.asyncio
@@ -1825,9 +1997,7 @@ async def test_execution_policy_profile_edit_keeps_id_immutable():
     flow = _flow(
         {
             "reactions": {
-                "execution_policy_profiles": {
-                    "ask_residents_default": {"mode": "ask_residents"}
-                }
+                "execution_policy_profiles": {"ask_residents_default": {"mode": "ask_residents"}}
             }
         }
     )
@@ -1850,9 +2020,7 @@ async def test_execution_policy_profile_delete_blocks_referenced_profile():
     flow = _flow(
         {
             "reactions": {
-                "execution_policy_profiles": {
-                    "ask_residents_default": {"mode": "ask_residents"}
-                },
+                "execution_policy_profiles": {"ask_residents_default": {"mode": "ask_residents"}},
                 "configured": {
                     "r1": {"execution_policy_ref": "ask_residents_default"},
                 },
@@ -5551,6 +5719,7 @@ async def test_runtime_promotion_reviews_calls_admin_boundary():
 
     assert form["type"] == "form"
     assert form["step_id"] == "runtime_promotion_reviews"
+    _assert_schema_serializes(form["data_schema"])
     placeholders = form["description_placeholders"]
     assert placeholders["pending_count"] == "1"
     assert "Studio contextual lighting" in placeholders["review_summary"]
@@ -5673,6 +5842,7 @@ async def test_runtime_confirmation_maintenance_calls_reset_boundary():
 
     assert form["type"] == "form"
     assert form["step_id"] == "runtime_confirmation_maintenance"
+    _assert_schema_serializes(form["data_schema"])
     assert form["description_placeholders"]["reaction_count"] == "1"
     assert result["type"] == "menu"
     assert result["step_id"] == "init"
@@ -5736,6 +5906,65 @@ async def test_reactions_edit_form_for_context_conditioned_lighting_shows_runtim
 
 
 @pytest.mark.asyncio
+async def test_reactions_edit_runtime_policy_schema_serializes_for_ha_api():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+                "route_targets": ["residents"],
+                "notification_service_capabilities": {
+                    "mobile_app_stefano": {"supports_actions": True}
+                },
+            },
+            "reactions": {
+                "execution_policy_profiles": {
+                    "ask_residents_default": {
+                        "mode": "ask_residents",
+                        "confirmation": {
+                            "target_groups": ["residents"],
+                            "use_default_route_targets": False,
+                            "expires_in_minutes": 10,
+                            "on_timeout": "skip",
+                        },
+                    }
+                },
+                "configured": {
+                    "r1": {
+                        "reaction_type": "context_conditioned_lighting_scene",
+                        "enabled": True,
+                        "room_id": "studio",
+                        "weekday": 6,
+                        "scheduled_min": 1320,
+                        "context_conditions": [
+                            {"signal_name": "activity", "state_in": ["reading"]}
+                        ],
+                        "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
+                        "execution_policy_ref": "ask_residents_default",
+                    }
+                },
+                "labels": {"r1": "Studio contextual lighting"},
+            },
+        }
+    )
+    flow._editing_reaction_id = "r1"
+
+    result = await flow.async_step_reactions_edit_form()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reactions_edit_form"
+    _assert_schema_serializes(result["data_schema"])
+    assert (
+        _serialized_field(result["data_schema"], "confirmation_target_recipients")["type"]
+        == "multi_select"
+    )
+    assert (
+        _serialized_field(result["data_schema"], "confirmation_target_groups")["type"]
+        == "multi_select"
+    )
+
+
+@pytest.mark.asyncio
 async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
     flow = _flow(
         {
@@ -5765,7 +5994,7 @@ async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
                     }
                 },
                 "labels": {"r1": "Studio contextual lighting"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5843,7 +6072,7 @@ async def test_reactions_edit_form_saves_execution_policy_profile_ref():
                         },
                     }
                 },
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5903,7 +6132,7 @@ async def test_reactions_edit_form_saves_execution_policy_profile_override():
                         "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
                     }
                 },
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5994,9 +6223,7 @@ async def test_reactions_edit_form_profile_override_persists_only_delta():
     assert result["type"] == "menu"
     cfg = flow.options["reactions"]["configured"]["r1"]
     assert cfg["execution_policy_ref"] == "ask_residents_default"
-    assert cfg["execution_policy_override"] == {
-        "confirmation": {"expires_in_minutes": 4}
-    }
+    assert cfg["execution_policy_override"] == {"confirmation": {"expires_in_minutes": 4}}
 
 
 @pytest.mark.asyncio
@@ -6034,9 +6261,7 @@ async def test_reactions_edit_form_profile_override_defaults_use_effective_polic
                         ],
                         "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
                         "execution_policy_ref": "ask_residents_default",
-                        "execution_policy_override": {
-                            "confirmation": {"expires_in_minutes": 4}
-                        },
+                        "execution_policy_override": {"confirmation": {"expires_in_minutes": 4}},
                     }
                 },
             },
@@ -6052,7 +6277,7 @@ async def test_reactions_edit_form_profile_override_defaults_use_effective_polic
     assert defaults["use_execution_policy_override"] is True
     assert defaults["execution_mode"] == "ask_residents"
     assert defaults["confirmation_expires_in_minutes"] == 4
-    assert defaults["confirmation_target_groups"] == "residents"
+    assert defaults["confirmation_target_groups"] == ["residents"]
     assert defaults["confirmation_use_default_route_targets"] is False
 
 
@@ -6134,7 +6359,7 @@ async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residen
                     }
                 },
                 "labels": {"r1": "Studio contextual lighting"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -6239,9 +6464,7 @@ async def test_reactions_edit_form_reverts_profile_promoted_auto_apply_to_ask_re
     assert result["type"] == "menu"
     cfg = flow.options["reactions"]["configured"]["r1"]
     assert cfg["execution_policy_ref"] == "ask_residents_default"
-    assert cfg["execution_policy_override"] == {
-        "confirmation": {"expires_in_minutes": 7}
-    }
+    assert cfg["execution_policy_override"] == {"confirmation": {"expires_in_minutes": 7}}
     assert flow.options["reactions"]["confirmation_stats"] == {}
     assert flow.options["reactions"]["promotion_reviews"] == {}
 
