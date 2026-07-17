@@ -218,6 +218,8 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("activity", "Runtime")}
             ${this._navButton("reactions", "Reactions")}
             ${this._navButton("holds", "Holds")}
+            ${this._navButton("confirmations", "Confirmations")}
+            ${this._navButton("notifications", "Notifications")}
             ${this._navButton("health", "Health")}
           </div>
         </nav>
@@ -251,6 +253,8 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "activity") return "Runtime Activity";
     if (this._route === "reactions") return "Reaction Inspector";
     if (this._route === "holds") return "Manual Hold Center";
+    if (this._route === "confirmations") return "Runtime Confirmation Center";
+    if (this._route === "notifications") return "Notification Routing Inspector";
     if (this._route === "health") return "Health";
     return "Overview";
   }
@@ -268,6 +272,8 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "activity") return this._activity(snapshot);
     if (this._route === "reactions") return this._reactions(snapshot);
     if (this._route === "holds") return this._manualHolds(snapshot);
+    if (this._route === "confirmations") return this._confirmations(snapshot);
+    if (this._route === "notifications") return this._notifications(snapshot);
     if (this._route === "health") return this._health(snapshot);
     return this._overview(snapshot);
   }
@@ -407,6 +413,154 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
+  _confirmations(snapshot) {
+    const confirmations = snapshot.runtime_confirmations || {};
+    const pending = confirmations.pending || [];
+    const completed = confirmations.recent_completed || [];
+    const reviews = confirmations.promotion_reviews || [];
+    return `
+      <section class="grid">
+        ${this._metric("Pending", pending.length)}
+        ${this._metric("Recent Completed", completed.length)}
+        ${this._metric("Stale Responses", confirmations.stale_responses || 0)}
+        ${this._metric("Promotion Reviews", reviews.length)}
+      </section>
+      ${pending.length ? this._confirmationTable("Pending Requests", pending) : `<div class="empty">No pending runtime confirmations.</div>`}
+      ${completed.length ? this._confirmationTable("Recent Completed", completed) : ""}
+      ${reviews.length ? this._promotionReviewTable(reviews) : ""}
+    `;
+  }
+
+  _confirmationTable(title, requests) {
+    return `
+      <h2>${this._escape(title)}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Reaction</th>
+            <th>Status</th>
+            <th>Timeout</th>
+            <th>Targets</th>
+            <th>Apply Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${requests.map((request) => `
+            <tr>
+              <td>${this._escape(request.request_id || "")}</td>
+              <td>${this._escape(request.reaction_id || "")}</td>
+              <td><span class="status">${this._escape(request.status || "")}</span></td>
+              <td>${this._escape(request.on_timeout || "")}</td>
+              <td>${this._list(request.confirmation_targets || [])}</td>
+              <td>${this._applyResult(request.apply_result)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _promotionReviewTable(reviews) {
+    return `
+      <h2>Promotion Reviews</h2>
+      <table>
+        <thead>
+          <tr><th>Reaction</th><th>Status</th><th>Review</th></tr>
+        </thead>
+        <tbody>
+          ${reviews.map((review) => `
+            <tr>
+              <td>${this._escape(review.reaction_id || "")}</td>
+              <td><span class="status">${this._escape(review.status || "")}</span></td>
+              <td>${this._escape(review.review_id || review.created_at || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _notifications(snapshot) {
+    const notifications = snapshot.notifications || {};
+    return `
+      <section class="grid">
+        ${this._metric("Recipients", notifications.recipient_count || 0)}
+        ${this._metric("Groups", notifications.group_count || 0)}
+        ${this._metric("Route Targets", notifications.route_count || 0)}
+        ${this._metric("Actionable Routes", (notifications.actionable_routes || []).length)}
+      </section>
+      ${this._notificationRoutesTable(notifications)}
+      ${this._notificationRecipientsTable(notifications)}
+    `;
+  }
+
+  _notificationRoutesTable(notifications) {
+    const routes = notifications.resolved_routes || [];
+    const unresolved = notifications.unresolved_targets || [];
+    const actionable = new Set(notifications.actionable_routes || []);
+    const skipped = new Set(notifications.skipped_non_actionable_routes || []);
+    if (!routes.length && !unresolved.length) {
+      return `<div class="empty">No notification routes configured.</div>`;
+    }
+    return `
+      <h2>Resolved Routes</h2>
+      <table>
+        <thead>
+          <tr><th>Route</th><th>Capability</th></tr>
+        </thead>
+        <tbody>
+          ${routes.map((route) => `
+            <tr>
+              <td>${this._escape(`notify.${route}`)}</td>
+              <td>
+                ${actionable.has(route) ? `<span class="status">supports actions</span>` : ""}
+                ${skipped.has(route) ? `<span class="status">text only</span>` : ""}
+              </td>
+            </tr>
+          `).join("")}
+          ${unresolved.map((target) => `
+            <tr>
+              <td>${this._escape(target)}</td>
+              <td><span class="status">unresolved target</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _notificationRecipientsTable(notifications) {
+    const recipients = notifications.recipients || {};
+    const groups = notifications.groups || {};
+    const recipientRows = Object.entries(recipients);
+    const groupRows = Object.entries(groups);
+    return `
+      <h2>Recipients</h2>
+      ${recipientRows.length ? `
+        <table>
+          <thead><tr><th>Recipient</th><th>Services</th></tr></thead>
+          <tbody>
+            ${recipientRows.map(([id, value]) => `
+              <tr><td>${this._escape(id)}</td><td>${this._list(this._recipientServices(value))}</td></tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">No recipients configured.</div>`}
+      <h2>Groups</h2>
+      ${groupRows.length ? `
+        <table>
+          <thead><tr><th>Group</th><th>Members</th></tr></thead>
+          <tbody>
+            ${groupRows.map(([id, members]) => `
+              <tr><td>${this._escape(id)}</td><td>${this._list(Array.isArray(members) ? members : [])}</td></tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">No groups configured.</div>`}
+    `;
+  }
+
   _findingsTable(findings) {
     return `
       <table>
@@ -442,6 +596,23 @@ class HeimaAdminPanel extends HTMLElement {
     const profile = policy.profile_id ? ` / ${policy.profile_id}` : "";
     const error = policy.config_error ? ` / ${policy.config_error}` : "";
     return this._escape(`${source}${mode ? `: ${mode}` : ""}${profile}${error}`);
+  }
+
+  _applyResult(result) {
+    if (!result || typeof result !== "object") return "";
+    const applied = result.applied_steps || 0;
+    const blocked = result.blocked_steps || 0;
+    const failed = result.failed_steps || 0;
+    const skipped = result.skipped_steps || 0;
+    return this._escape(`applied ${applied}, blocked ${blocked}, failed ${failed}, skipped ${skipped}`);
+  }
+
+  _recipientServices(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object" && Array.isArray(value.notify_services)) {
+      return value.notify_services;
+    }
+    return [];
   }
 
   _list(items) {

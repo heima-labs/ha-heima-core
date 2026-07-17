@@ -130,7 +130,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active slice:** Phase AO — Admin Observability Panel in progress.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Review AO4, then continue with AO5 runtime confirmation and notification inspectors.
+Review AO5, then continue with AO6 learning and proposal transparency.
 
 ### Phase AO — Admin Observability Panel
 
@@ -206,6 +206,23 @@ Review AO4, then continue with AO5 runtime confirmation and notification inspect
     - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
       — 15 passed.
     - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/__init__.py custom_components/heima/panel.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO5 initial implementation completed:
+  - Runtime confirmation snapshot now exposes pending, recent completed, stale response,
+    duplicate occurrence, completed status, completed step count, blocked/failed/skipped reason,
+    scheduled timeout, action subscription, and promotion review state.
+  - Notification snapshot now resolves `route_targets` through recipients and recipient groups,
+    distinguishes actionable routes from text-only routes, and reports unresolved targets.
+  - The custom admin panel now includes read-only `Confirmations` and `Notifications` sections.
+  - Runtime Confirmation Center shows pending/completed requests, timeout behavior, targets, apply
+    result counts, stale responses, and promotion reviews.
+  - Notification Routing Inspector shows recipients, groups, resolved `notify.*` services,
+    actionable capability, text-only skipped routes, and unresolved targets.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
       — passed.
 
 #### AO1 — Backend Observability Snapshot Contract

@@ -139,8 +139,17 @@ class _FakeRuntimeConfirmation:
     def diagnostics(self) -> dict[str, Any]:
         return {
             "pending": [{"request_id": "request.one"}],
-            "recent_completed": [],
+            "recent_completed": [{"request_id": "request.done", "status": "approved"}],
             "stale_responses": 1,
+            "duplicate_occurrences": 2,
+            "completed_by_status": {"approved": 1},
+            "completed_step_counts": {"applied": 1, "blocked": 0, "failed": 0, "skipped": 0},
+            "completed_blocked_reasons": {},
+            "completed_failed_reasons": {},
+            "completed_skipped_reasons": {},
+            "failed_request_reasons": {},
+            "scheduled_timeouts": ["request.one"],
+            "action_event_subscription_active": True,
             "persisted": {
                 "by_reaction": {
                     "reaction.one": {
@@ -164,12 +173,16 @@ class _FakeCoordinator:
                         "stefano": {
                             "notify_services": ["notify.mobile_app_iphone_stefano"],
                             "token": "secret-token",
-                        }
+                        },
+                        "tablet": ["persistent_notification"],
                     },
                     "groups": {"residents": {"members": ["stefano"]}},
+                    "recipient_groups": {"residents": ["stefano", "tablet"]},
+                    "route_targets": ["residents", "missing"],
                     "routes": {"runtime_confirmation": {"target_groups": ["residents"]}},
                     "notification_service_capabilities": {
-                        "notify.mobile_app_iphone_stefano": {"supports_actions": True}
+                        "mobile_app_iphone_stefano": {"supports_actions": True},
+                        "persistent_notification": {"supports_actions": False},
                     },
                 }
             },
@@ -213,6 +226,17 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
         {"kind": "entity", "id": "light.studio"},
     ]
     assert snapshot["runtime_confirmations"]["pending"][0]["request_id"] == "request.one"
+    assert snapshot["runtime_confirmations"]["recent_completed"][0]["request_id"] == "request.done"
+    assert snapshot["runtime_confirmations"]["completed_by_status"] == {"approved": 1}
+    assert snapshot["runtime_confirmations"]["scheduled_timeouts"] == ["request.one"]
+    assert snapshot["runtime_confirmations"]["action_event_subscription_active"] is True
+    assert snapshot["notifications"]["resolved_routes"] == [
+        "mobile_app_iphone_stefano",
+        "persistent_notification",
+    ]
+    assert snapshot["notifications"]["unresolved_targets"] == ["missing"]
+    assert snapshot["notifications"]["actionable_routes"] == ["mobile_app_iphone_stefano"]
+    assert snapshot["notifications"]["skipped_non_actionable_routes"] == ["persistent_notification"]
     assert snapshot["proposals"]["review_row_count"] == 3
     assert snapshot["recent_events"][0]["event_id"] == "event.one"
     assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"

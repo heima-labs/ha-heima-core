@@ -151,3 +151,5 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "callWS" in text
     assert "Reaction Inspector" in text
     assert "Manual Hold Center" in text
+    assert "Runtime Confirmation Center" in text
+    assert "Notification Routing Inspector" in text

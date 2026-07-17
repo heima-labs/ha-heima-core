@@ -275,6 +275,17 @@ def _runtime_confirmation_summary(runtime_confirmation: Mapping[str, Any]) -> di
         "pending": list(data.get("pending") or []),
         "recent_completed": list(data.get("recent_completed") or []),
         "stale_responses": int(data.get("stale_responses") or 0),
+        "duplicate_occurrences": int(data.get("duplicate_occurrences") or 0),
+        "completed_by_status": dict(data.get("completed_by_status") or {}),
+        "completed_step_counts": dict(data.get("completed_step_counts") or {}),
+        "completed_blocked_reasons": dict(data.get("completed_blocked_reasons") or {}),
+        "completed_failed_reasons": dict(data.get("completed_failed_reasons") or {}),
+        "completed_skipped_reasons": dict(data.get("completed_skipped_reasons") or {}),
+        "failed_request_reasons": dict(data.get("failed_request_reasons") or {}),
+        "scheduled_timeouts": list(data.get("scheduled_timeouts") or []),
+        "action_event_subscription_active": bool(
+            data.get("action_event_subscription_active", False)
+        ),
         "promotion_reviews": _promotion_reviews(data),
         "raw": data,
     }
@@ -388,20 +399,39 @@ def _notification_summary(entry: Any) -> dict[str, Any]:
     notifications = options.get("notifications")
     notifications = dict(notifications) if isinstance(notifications, Mapping) else {}
     recipients = notifications.get("recipients")
-    groups = notifications.get("groups")
-    routes = notifications.get("routes")
+    groups = notifications.get("recipient_groups") or notifications.get("groups")
+    route_targets = notifications.get("route_targets")
     services = notifications.get("notification_service_capabilities")
+    recipients = dict(recipients) if isinstance(recipients, Mapping) else {}
+    groups = dict(groups) if isinstance(groups, Mapping) else {}
+    services = dict(services) if isinstance(services, Mapping) else {}
+    route_targets = _string_list(route_targets)
+    resolved_routes = _resolve_notification_targets(
+        recipients=recipients,
+        groups=groups,
+        route_targets=route_targets,
+    )
+    actionable_routes = [
+        route
+        for route in resolved_routes["routes"]
+        if _notification_route_supports_actions(route, services)
+    ]
+    skipped_non_actionable = [
+        route for route in resolved_routes["routes"] if route not in set(actionable_routes)
+    ]
     return {
-        "recipient_count": len(recipients) if isinstance(recipients, Mapping) else 0,
-        "group_count": len(groups) if isinstance(groups, Mapping) else 0,
-        "route_count": len(routes) if isinstance(routes, Mapping) else 0,
-        "service_count": len(services) if isinstance(services, Mapping) else 0,
-        "recipients": dict(recipients) if isinstance(recipients, Mapping) else {},
-        "groups": dict(groups) if isinstance(groups, Mapping) else {},
-        "routes": dict(routes) if isinstance(routes, Mapping) else {},
-        "notification_service_capabilities": (
-            dict(services) if isinstance(services, Mapping) else {}
-        ),
+        "recipient_count": len(recipients),
+        "group_count": len(groups),
+        "route_count": len(route_targets),
+        "service_count": len(services),
+        "recipients": recipients,
+        "groups": groups,
+        "route_targets": route_targets,
+        "resolved_routes": resolved_routes["routes"],
+        "unresolved_targets": resolved_routes["unresolved_targets"],
+        "actionable_routes": actionable_routes,
+        "skipped_non_actionable_routes": skipped_non_actionable,
+        "notification_service_capabilities": services,
     }
 
 
@@ -431,11 +461,67 @@ def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _resolve_notification_targets(
+    *,
+    recipients: Mapping[str, Any],
+    groups: Mapping[str, Any],
+    route_targets: list[str],
+) -> dict[str, list[str]]:
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+
+    def add_route(route: Any) -> None:
+        normalized = _normalize_notify_service_name(route)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        resolved.append(normalized)
+
+    for target in route_targets:
+        if target in recipients:
+            for route in _recipient_routes(recipients.get(target)):
+                add_route(route)
+            continue
+        if target in groups:
+            for recipient_id in _string_list(groups.get(target)):
+                for route in _recipient_routes(recipients.get(recipient_id)):
+                    add_route(route)
+            continue
+        unresolved.append(target)
+
+    return {
+        "routes": resolved,
+        "unresolved_targets": unresolved,
+    }
+
+
+def _notification_route_supports_actions(
+    route: str,
+    capabilities: Mapping[str, Any],
+) -> bool:
+    raw = capabilities.get(_normalize_notify_service_name(route))
+    return isinstance(raw, Mapping) and bool(raw.get("supports_actions", False))
+
+
+def _recipient_routes(value: Any) -> list[str]:
+    if isinstance(value, Mapping):
+        return _string_list(value.get("notify_services"))
+    return _string_list(value)
+
+
+def _normalize_notify_service_name(route: Any) -> str:
+    normalized = str(route or "").strip()
+    if normalized.startswith("notify."):
+        normalized = normalized.split(".", 1)[1]
+    return normalized
+
+
 def _string_list(value: Any) -> list[str]:
     if isinstance(value, str):
-        return [value]
+        return [item.strip() for item in value.split(",") if item.strip()]
     if isinstance(value, list):
-        return [str(item) for item in value]
+        return [str(item).strip() for item in value if str(item).strip()]
     return []
 
 
