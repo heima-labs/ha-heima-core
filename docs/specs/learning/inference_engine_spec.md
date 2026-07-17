@@ -1,6 +1,6 @@
 # Heima Inference Engine — Specification v2
 
-**Status:** Draft/RFC — v2 target contract
+**Status:** SUPERSEDED by `heima_v2_spec.md` §10 (Inference Engine v2, implemented Phase D). Kept for historical reference only.
 **Date:** 2026-03-11
 **Last Verified Against Code:** 2026-03-20
 **Scope:** v2 — predict when/how known behaviors will occur, from all domain inputs/outputs

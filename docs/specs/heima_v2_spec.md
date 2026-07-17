@@ -1,6 +1,6 @@
 # Heima v2 — Formal Specification
 
-**Status:** RFC — implementation on branch `feat/v2`
+**Status:** Active — canonical specification for the architecture on `main`
 **Date:** 2026-04-30
 **Version:** 2.1.0-draft
 **Supersedes:** 2.0.0-draft (2026-03-12). Incorporates Activity Layer (§7), Event-Driven Trigger
@@ -1009,6 +1009,20 @@ eligible and may become the visible representative, because it is more specific 
 context. Suppressed sibling candidates may remain visible in diagnostics, but MUST NOT become
 separate resident-review rows.
 
+**Suggestion silence is per-outcome, not permanent per slot.** Because `predicted_state` is part
+of the approval identity, the dedup rule above only silences re-proposal for the *exact*
+`(context_key_hash, predicted_state)` pair that was already accepted or rejected.
+`HouseStateInferenceModule` recomputes the full model from snapshot history on every `analyze()`
+cycle — it does not persist a "slot done" state. If the household's real behavior for a slot later
+shifts and a different state becomes dominant, the module computes a different `predicted_state`
+for that slot, which produces a different `context_key` — one that was never approved or
+rejected — and the slot becomes eligible for a new proposal again. Heima therefore never reaches a
+point where it has "finished learning": suggestions resume automatically wherever behavior
+changes. See `docs/specs/learning/proposal_lifecycle_spec.md` for the complementary
+post-acceptance mechanism (house-state lifecycle tracking), which can independently open a new
+replacement/retirement/maintenance proposal against an *already accepted* rule if observed
+outcomes start contradicting it, without reverting the original accepted record.
+
 Review UIs SHOULD prefer temporal bundles for house-state learned contexts when several visible
 representatives share weekday, anyone-home state, and predicted house state across adjacent hour
 buckets. The UI MUST allow expansion to individual representatives.
@@ -1524,7 +1538,7 @@ Semantic proposals are installer-facing: the installer configured the entities, 
 
 ### Phase O — HouseSnapshot Alignment + Proposal Revocation
 
-**Unlocks:** `security_state` granulare nello storico snapshot (prerequisito per regole security in Phase Q); temperatura attuale riscaldamento nello storico (prerequisito per `heating_unresponsive`); revoca proposal per semantic policies.
+**Unlocks:** granular `security_state` in snapshot history (prerequisite for security rules in Phase Q); current heating temperature in history (prerequisite for `heating_unresponsive`); proposal revocation for semantic policies.
 **Dependencies:** Phase N (async_withdraw called from `_async_evaluate_semantic_policies()`).
 
 #### HouseSnapshot: new fields

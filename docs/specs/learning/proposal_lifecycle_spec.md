@@ -101,7 +101,7 @@ class ProposalLifecycleHooks:
 
 These invariants hold regardless of what plugin hooks return:
 
-1. **No accepted-proposal reopening**: an `accepted` proposal is never automatically reverted to `pending`, regardless of new evidence.
+1. **No accepted-proposal reopening**: an `accepted` proposal is never automatically reverted to `pending`, regardless of new evidence. This does not mean an accepted rule is never revisited: house-state rules are separately monitored for contradicting real-world outcomes and can trigger a *new*, independent replacement/retirement/maintenance proposal — see §2e.
 2. **No identity collision across plugin families**: each `LearningPatternPluginDescriptor` has an isolated proposal namespace. Identity keys are scoped per plugin — two plugins returning the same string cannot collide.
 3. **Dedup is identity-based, not reaction_type-based**: `ProposalEngine` uses `identity_key()` result for dedup/refresh, never hardcodes on `reaction_type`.
 4. **Missing `identity_key` is a registration error**: a `ProposalLifecycleHooks` without `identity_key` MUST NOT be registered. Registration fails at startup.
@@ -463,6 +463,67 @@ Temporal bundles belong in the review/read model, not in analyzers:
   accept/reject visible representatives, expand, or dismiss similar siblings
 
 This keeps the learning model precise while making review manageable.
+
+---
+
+## 2e. House-State Post-Acceptance Lifecycle Reopening
+
+### Motivation
+
+Invariant 1 in §2b ("no accepted-proposal reopening") guarantees that an accepted
+`house_state_learned_context` record is never silently reverted to `pending`. It does not mean
+Heima stops watching an accepted slot: `ProposalEngine.async_evaluate_house_state_lifecycle_opportunities()`
+independently monitors real outcomes against every accepted house-state rule and, when evidence
+contradicts it, opens a **new**, separate proposal rather than mutating the original accepted
+record.
+
+### Evidence classification
+
+Each cycle, for every accepted house-state rule the method replays real events since acceptance
+and classifies the outcome for the rule's `(weekday, hour_bucket, anyone_home, rooms, predicted_state)`
+baseline as one of:
+
+- `confirmed` — the dominant observed house_state matches the accepted `predicted_state`
+- `outcome_contradicted` — a different house_state dominates instead
+- `context_missed` — `anyone_home` or the occupied-room set no longer matches the baseline context
+- `unknown_transient` — no dominant state could be resolved for the window
+- `dependency_unavailable` — an input the rule depends on is missing/unavailable
+
+### Thresholds (`AcceptedRuleLifecyclePolicy`, `runtime/proposal_engine.py`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `required_observations` | `3` | Also the `replacement_threshold`: `replacement_candidate_count` needed to suggest a replacement |
+| `retirement_multiplier` | `2` | `retirement_threshold = required_observations × retirement_multiplier` = `6` |
+| `maintenance_threshold` | `2` | `dependency_unavailable` count needed to suggest maintenance |
+| `rolling_window_limit` | `12` | Rolling window size for the evidence counts above |
+
+### Decision order (`_lifecycle_review_kind`)
+
+1. `dependency_unavailable ≥ maintenance_threshold` → `maintenance_suggestion`
+2. `replacement_candidate_count ≥ replacement_threshold` → `replacement_suggestion`
+3. `context_missed ≥ retirement_threshold` → `retirement_suggestion`
+4. `outcome_contradicted ≥ retirement_threshold` (and replacement threshold not yet met) →
+   `retirement_suggestion`
+5. otherwise: no lifecycle proposal is opened this cycle
+
+### Resulting proposal
+
+A triggered suggestion is submitted as a new proposal with
+`reaction_type=PROPOSAL_LIFECYCLE_SUGGESTION_TYPE` and `followup_kind` set to
+`replacement_suggestion`, `retirement_suggestion`, or `maintenance_suggestion`. It has its own
+`identity_key` (`f"{PROPOSAL_LIFECYCLE_SUGGESTION_TYPE}:{rejection_key}"`) distinct from the
+original accepted proposal's identity, so it goes through the normal review queue as a new item —
+the original accepted record is untouched, consistent with invariant 1.
+
+### Relationship to pre-acceptance re-proposal (§heima_v2_spec.md)
+
+This is a different, complementary mechanism from the pre-acceptance dedup-by-`predicted_state`
+behavior described in `heima_v2_spec.md` (house-state tiered model section): that mechanism makes
+an *unaccepted* slot eligible for a brand-new discovery proposal once the learned majority state
+changes. This section's mechanism instead watches *already-accepted* rules and proposes
+replacing/retiring/maintaining them based on directly observed contradicting outcomes, which can
+surface faster than waiting for the underlying statistical model to shift.
 
 ---
 

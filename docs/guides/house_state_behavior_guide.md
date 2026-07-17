@@ -315,3 +315,28 @@ It resolves a small set of operational contexts that other domains can safely co
 - reactions can gate on house state
 
 If a signal is ambiguous, Heima should either wait, fall back to `home`, or expose diagnostics that explain why the candidate did not win.
+
+## Will Heima Ever Stop Suggesting House States?
+
+No — and that's by design, not a bug. There is no "fully covered, done learning" state to reach.
+
+Heima re-evaluates every weekday/hour slot on every learning cycle. It never checks how many of
+the week's slots already have a learned rule; it just keeps recomputing what your data shows.
+
+What actually goes quiet is narrower than "the whole slot": once you accept or reject a suggestion
+for a specific slot *and* the specific state it predicted, Heima stops re-suggesting that exact
+combination. It does not stop watching the slot.
+
+Two things bring suggestions back for a slot you thought was settled:
+
+- **Your routine changes.** If a different house state becomes the norm for that slot, Heima
+  notices the new pattern and proposes it — because it's a different predicted outcome than the
+  one you already accepted or rejected, not a repeat of the same suggestion.
+- **An accepted rule stops matching reality.** Separately from new suggestions, Heima keeps
+  checking whether already-accepted rules still hold up against what actually happens. If a rule
+  starts being contradicted often enough, Heima can surface its own "replace this" or "retire
+  this" suggestion — you don't have to notice the drift yourself and go looking for it.
+
+So: seeing fewer house-state proposals over time means Heima has caught up with your recurring
+patterns, not that it has finished. If your routine changes, expect new proposals or lifecycle
+suggestions to follow — that's the system working as intended, not restarting from scratch.

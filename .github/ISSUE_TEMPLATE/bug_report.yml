@@ -1,0 +1,61 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. For general "how do I configure X" questions,
+        please use the Heima thread on the Home Assistant Community forum instead — this form is
+        for concrete, reproducible bugs.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, in order, to trigger this?
+    validations:
+      required: true
+
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      placeholder: e.g. 2025.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: heima-version
+    attributes:
+      label: Heima version
+      description: See `custom_components/heima/manifest.json`, or Settings -> Devices & services -> Heima.
+      placeholder: e.g. 0.10.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics dump
+      description: |
+        If possible, attach the output of `python3 scripts/diagnostics.py --section all` (with any
+        secrets/tokens removed), or the Home Assistant integration diagnostics download
+        (Settings -> Devices & services -> Heima -> ... -> Download diagnostics). This is usually
+        the fastest way to get a bug understood.
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Home Assistant logs related to Heima, if any (`custom_components.heima`).
+      render: text
