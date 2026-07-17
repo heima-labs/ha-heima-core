@@ -59,6 +59,7 @@ class _FakeEngine:
                     {
                         "scope": "light:entity:light.studio",
                         "reason": "external_off",
+                        "source_entity": "light.studio",
                     }
                 ],
                 "pending_applies": {"total": 0, "by_domain": {}, "items": []},
@@ -91,8 +92,29 @@ class _FakeEngine:
                         "reason_codes": ["matched", "apply_plan_ready"],
                         "input_summary": {},
                         "condition_results": [],
-                        "guard_results": [],
-                        "apply_steps": [],
+                        "guard_results": [
+                            {
+                                "result": "blocked",
+                                "reason_code": "manual_hold_active",
+                                "blocked_by": (
+                                    "manual_hold:light:entity:light.studio:external_off"
+                                ),
+                            }
+                        ],
+                        "apply_steps": [
+                            {
+                                "step_id": "main",
+                                "domain": "light",
+                                "target": "light.studio",
+                                "action": "light.turn_on",
+                                "reason": "test",
+                                "source": "reaction:reaction.one",
+                                "blocked_by": (
+                                    "manual_hold:light:entity:light.studio:external_off"
+                                ),
+                                "depends_on": [],
+                            }
+                        ],
                         "links": [{"kind": "reaction", "id": "reaction.one"}],
                     }
                 ],
@@ -181,7 +203,15 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["meta"]["is_partial"] is False
     assert snapshot["runtime"]["house_state"] == "home"
     assert snapshot["reactions"][0]["reaction_id"] == "reaction.one"
+    assert snapshot["reactions"][0]["latest_trace_id"] == "trace.one"
+    assert snapshot["reactions"][0]["last_outcome"] == "applied"
+    assert snapshot["reactions"][0]["linked_manual_hold_scopes"] == ["light:entity:light.studio"]
     assert snapshot["manual_holds"]["active_holds"][0]["scope"] == "light:entity:light.studio"
+    assert snapshot["manual_holds"]["active_holds"][0]["affected_reaction_ids"] == ["reaction.one"]
+    assert snapshot["manual_holds"]["active_holds"][0]["links"] == [
+        {"kind": "reaction", "id": "reaction.one"},
+        {"kind": "entity", "id": "light.studio"},
+    ]
     assert snapshot["runtime_confirmations"]["pending"][0]["request_id"] == "request.one"
     assert snapshot["proposals"]["review_row_count"] == 3
     assert snapshot["recent_events"][0]["event_id"] == "event.one"

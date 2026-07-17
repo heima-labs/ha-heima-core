@@ -130,7 +130,7 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active slice:** Phase AO — Admin Observability Panel in progress.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Review AO2, then continue with AO3 custom admin panel shell.
+Review AO4, then continue with AO5 runtime confirmation and notification inspectors.
 
 ### Phase AO — Admin Observability Panel
 
@@ -175,6 +175,37 @@ Review AO2, then continue with AO3 custom admin panel shell.
     - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_reaction_framework.py tests/test_manual_hold_manager.py tests/test_runtime_confirmation.py -q`
       — 68 passed.
     - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_runtime_observability.py`
+      — passed.
+- AO3 initial implementation completed:
+  - Added `custom_components/heima/panel.py` to register/unregister the custom HA admin panel.
+  - The panel serves local integration-owned frontend assets from `/heima_static`.
+  - Added `custom_components/heima/frontend/heima-admin-panel.js` as a read-only web component
+    shell with Overview, Runtime Activity, and Health routes.
+  - The frontend consumes only the AO websocket snapshot command and handles loading, error,
+    empty, partial, and refresh states.
+  - Integration setup registers services, websocket API, and admin panel only once; unloading the
+    last entry unregisters the panel.
+  - Added unit coverage in `tests/test_admin_panel.py` for panel registration, unload, setup
+    idempotency, and asset contract.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/__init__.py custom_components/heima/panel.py tests/test_admin_panel.py`
+      — passed.
+- AO4 initial implementation completed:
+  - Reaction snapshot rows now include latest trace outcome/id and linked active manual hold scopes.
+  - Manual hold snapshot rows now include affected reaction IDs and structured links back to
+    reactions/source entities when trace data supports that relationship.
+  - The custom admin panel now includes read-only `Reactions` and `Holds` sections.
+  - The Reaction Inspector shows ID, type, origin, enabled/muted status, effective execution policy,
+    latest outcome, latest trace, and linked holds.
+  - The Manual Hold Center shows active hold count, pending apply count, scope, reason, release
+    policy, age, source entity, and affected reactions.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/__init__.py custom_components/heima/panel.py tests/test_admin_panel.py tests/test_observability.py`
       — passed.
 
 #### AO1 — Backend Observability Snapshot Contract

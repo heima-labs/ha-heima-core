@@ -80,8 +80,11 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "health_findings": _health_findings(coordinator, validation, generated_at),
         "recent_events": list(runtime_observability.get("recent_events") or []),
         "decision_traces": list(runtime_observability.get("decision_traces") or []),
-        "reactions": _reaction_summaries(engine_diag),
-        "manual_holds": _manual_hold_summary(engine_diag),
+        "reactions": _reaction_summaries(
+            engine_diag,
+            decision_traces=list(runtime_observability.get("decision_traces") or []),
+        ),
+        "manual_holds": _manual_hold_summary(engine_diag, runtime_observability),
         "runtime_confirmations": _runtime_confirmation_summary(runtime_confirmation),
         "notifications": _notification_summary(entry),
         "learning": _learning_summary(engine_diag, proposal_diag),
@@ -213,17 +216,24 @@ def _validation_issues(validation: Mapping[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def _reaction_summaries(engine_diag: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _reaction_summaries(
+    engine_diag: Mapping[str, Any],
+    *,
+    decision_traces: list[Any],
+) -> list[dict[str, Any]]:
     raw_reactions = engine_diag.get("reactions") if isinstance(engine_diag, Mapping) else {}
     reactions = raw_reactions if isinstance(raw_reactions, Mapping) else {}
     policies = engine_diag.get("reaction_execution_policies")
     policies = policies if isinstance(policies, Mapping) else {}
     muted = set(engine_diag.get("muted_reactions") or [])
+    latest_trace_by_reaction = _latest_trace_by_reaction(decision_traces)
+    manual_hold_scopes = _manual_hold_scopes_by_reaction(engine_diag, decision_traces)
     rows: list[dict[str, Any]] = []
     for reaction_id, diagnostics in sorted(reactions.items(), key=lambda item: str(item[0])):
         diag = dict(diagnostics) if isinstance(diagnostics, Mapping) else {}
         policy = policies.get(reaction_id)
         policy = dict(policy) if isinstance(policy, Mapping) else {}
+        latest_trace = latest_trace_by_reaction.get(str(reaction_id))
         rows.append(
             {
                 "reaction_id": str(reaction_id),
@@ -233,17 +243,30 @@ def _reaction_summaries(engine_diag: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "muted": reaction_id in muted,
                 "origin": str(diag.get("origin") or diag.get("author_kind") or "unspecified"),
                 "execution_policy": policy,
-                "last_outcome": str(diag.get("last_outcome") or "unknown"),
-                "latest_trace_id": None,
+                "last_outcome": str(
+                    latest_trace.get("outcome")
+                    if latest_trace
+                    else diag.get("last_outcome") or "unknown"
+                ),
+                "latest_trace_id": latest_trace.get("trace_id") if latest_trace else None,
+                "linked_manual_hold_scopes": manual_hold_scopes.get(str(reaction_id), []),
                 "diagnostics": diag,
             }
         )
     return rows
 
 
-def _manual_hold_summary(engine_diag: Mapping[str, Any]) -> dict[str, Any]:
+def _manual_hold_summary(
+    engine_diag: Mapping[str, Any],
+    runtime_observability: Mapping[str, Any],
+) -> dict[str, Any]:
     raw = engine_diag.get("manual_hold") if isinstance(engine_diag, Mapping) else {}
-    return dict(raw) if isinstance(raw, Mapping) else {}
+    data = dict(raw) if isinstance(raw, Mapping) else {}
+    data["active_holds"] = _manual_hold_rows_with_links(
+        data.get("active_holds"),
+        runtime_observability,
+    )
+    return data
 
 
 def _runtime_confirmation_summary(runtime_confirmation: Mapping[str, Any]) -> dict[str, Any]:
@@ -255,6 +278,93 @@ def _runtime_confirmation_summary(runtime_confirmation: Mapping[str, Any]) -> di
         "promotion_reviews": _promotion_reviews(data),
         "raw": data,
     }
+
+
+def _latest_trace_by_reaction(decision_traces: list[Any]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for item in decision_traces:
+        if not isinstance(item, Mapping):
+            continue
+        reaction_id = str(item.get("reaction_id") or "").strip()
+        if not reaction_id or reaction_id.startswith("domain:"):
+            continue
+        latest[reaction_id] = dict(item)
+    return latest
+
+
+def _manual_hold_scopes_by_reaction(
+    engine_diag: Mapping[str, Any],
+    decision_traces: list[Any],
+) -> dict[str, list[str]]:
+    active_scopes = {
+        str(item.get("scope") or "")
+        for item in _manual_hold_active_rows(engine_diag)
+        if str(item.get("scope") or "")
+    }
+    by_reaction: dict[str, set[str]] = {}
+    for item in decision_traces:
+        if not isinstance(item, Mapping):
+            continue
+        reaction_id = str(item.get("reaction_id") or "").strip()
+        if not reaction_id or reaction_id.startswith("domain:"):
+            continue
+        for step in item.get("apply_steps") or []:
+            if not isinstance(step, Mapping):
+                continue
+            blocked_by = str(step.get("blocked_by") or "")
+            scope = _manual_hold_scope_from_blocked_by(blocked_by)
+            if scope and (not active_scopes or scope in active_scopes):
+                by_reaction.setdefault(reaction_id, set()).add(scope)
+    return {reaction_id: sorted(scopes) for reaction_id, scopes in by_reaction.items()}
+
+
+def _manual_hold_rows_with_links(
+    rows: Any,
+    runtime_observability: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    active_rows = [dict(item) for item in rows or [] if isinstance(item, Mapping)]
+    reactions_by_scope: dict[str, set[str]] = {}
+    for trace in runtime_observability.get("decision_traces") or []:
+        if not isinstance(trace, Mapping):
+            continue
+        reaction_id = str(trace.get("reaction_id") or "").strip()
+        if not reaction_id or reaction_id.startswith("domain:"):
+            continue
+        for step in trace.get("apply_steps") or []:
+            if not isinstance(step, Mapping):
+                continue
+            scope = _manual_hold_scope_from_blocked_by(str(step.get("blocked_by") or ""))
+            if scope:
+                reactions_by_scope.setdefault(scope, set()).add(reaction_id)
+
+    for row in active_rows:
+        scope = str(row.get("scope") or "").strip()
+        row["affected_reaction_ids"] = sorted(reactions_by_scope.get(scope, set()))
+        row["links"] = [
+            {"kind": "reaction", "id": reaction_id} for reaction_id in row["affected_reaction_ids"]
+        ]
+        source_entity = str(row.get("source_entity") or "").strip()
+        if source_entity:
+            row["links"].append({"kind": "entity", "id": source_entity})
+    return active_rows
+
+
+def _manual_hold_active_rows(engine_diag: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = engine_diag.get("manual_hold") if isinstance(engine_diag, Mapping) else {}
+    if not isinstance(raw, Mapping):
+        return []
+    return [dict(item) for item in raw.get("active_holds") or [] if isinstance(item, Mapping)]
+
+
+def _manual_hold_scope_from_blocked_by(blocked_by: str) -> str:
+    token = str(blocked_by or "").strip()
+    if not token.startswith("manual_hold:"):
+        return ""
+    remainder = token.removeprefix("manual_hold:")
+    parts = remainder.split(":")
+    if len(parts) < 4:
+        return ""
+    return ":".join(parts[:3]) if "." not in parts[2] else ":".join(parts[:3])
 
 
 def _promotion_reviews(runtime_confirmation: Mapping[str, Any]) -> list[dict[str, Any]]:

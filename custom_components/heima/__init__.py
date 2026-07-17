@@ -13,6 +13,7 @@ from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
 from .entities.registry import build_registry
 from .options_migration import migrate_learning_external_context_options
+from .panel import async_register_admin_panel, async_unregister_admin_panel
 from .room_sources import (
     autopopulate_room_signals,
     migrate_burst_signal_configs_and_reactions,
@@ -36,6 +37,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if not hass.data[DOMAIN].get("websocket_api_registered"):
         async_register_websocket_api(hass)
         hass.data[DOMAIN]["websocket_api_registered"] = True
+
+    if not hass.data[DOMAIN].get("admin_panel_registered"):
+        await async_register_admin_panel(hass)
+        hass.data[DOMAIN]["admin_panel_registered"] = True
 
     return True
 
@@ -150,6 +155,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if data and "coordinator" in data:
             coordinator: HeimaCoordinator = data["coordinator"]
             await coordinator.async_shutdown()
+        if not any(
+            isinstance(value, dict) and "coordinator" in value
+            for value in hass.data.get(DOMAIN, {}).values()
+        ):
+            async_unregister_admin_panel(hass)
+            hass.data[DOMAIN].pop("admin_panel_registered", None)
     return unload_ok
 
 
