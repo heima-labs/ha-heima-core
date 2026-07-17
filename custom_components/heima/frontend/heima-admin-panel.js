@@ -220,6 +220,8 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("holds", "Holds")}
             ${this._navButton("confirmations", "Confirmations")}
             ${this._navButton("notifications", "Notifications")}
+            ${this._navButton("learning", "Learning")}
+            ${this._navButton("proposals", "Proposals")}
             ${this._navButton("health", "Health")}
           </div>
         </nav>
@@ -255,6 +257,8 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "holds") return "Manual Hold Center";
     if (this._route === "confirmations") return "Runtime Confirmation Center";
     if (this._route === "notifications") return "Notification Routing Inspector";
+    if (this._route === "learning") return "Learning Monitor";
+    if (this._route === "proposals") return "Proposal Backlog Inspector";
     if (this._route === "health") return "Health";
     return "Overview";
   }
@@ -274,6 +278,8 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "holds") return this._manualHolds(snapshot);
     if (this._route === "confirmations") return this._confirmations(snapshot);
     if (this._route === "notifications") return this._notifications(snapshot);
+    if (this._route === "learning") return this._learning(snapshot);
+    if (this._route === "proposals") return this._proposals(snapshot);
     if (this._route === "health") return this._health(snapshot);
     return this._overview(snapshot);
   }
@@ -495,6 +501,112 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
+  _learning(snapshot) {
+    const learning = snapshot.learning || {};
+    const modules = learning.learning_modules || [];
+    return `
+      <section class="grid">
+        ${this._metric("Modules", learning.module_count || modules.length)}
+        ${this._metric("Ready Modules", learning.ready_module_count || 0)}
+        ${this._metric("Pending Proposals", learning.proposal_pending_count || 0)}
+        ${this._metric("Total Proposals", learning.proposal_total_count || 0)}
+      </section>
+      ${this._objectSummary("Analyzer Failures", learning.analyzer_failures || {})}
+      ${modules.length ? this._learningModulesTable(modules) : `<div class="empty">No learning modules reported.</div>`}
+    `;
+  }
+
+  _learningModulesTable(modules) {
+    return `
+      <table>
+        <thead><tr><th>Module</th><th>Status</th><th>Patterns</th><th>Diagnostics</th></tr></thead>
+        <tbody>
+          ${modules.map((module) => `
+            <tr>
+              <td>${this._escape(module.module_id || module.id || "unknown")}</td>
+              <td><span class="status">${module.ready === true ? "ready" : "not ready"}</span></td>
+              <td>${this._escape(module.pattern_count ?? module.slot_count ?? module.approved_patterns ?? "")}</td>
+              <td>${this._rawDetails(module)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _proposals(snapshot) {
+    const proposals = snapshot.proposals || {};
+    return `
+      <section class="grid">
+        ${this._metric("Visible Rows", proposals.review_row_count ?? proposals.visible_pending_count ?? 0)}
+        ${this._metric("Real Pending", proposals.real_pending_count ?? 0)}
+        ${this._metric("Visible Pending", proposals.visible_pending_count ?? 0)}
+        ${this._metric("Suppressed", proposals.suppressed_pending_count ?? 0)}
+        ${this._metric("Temporal Bundles", proposals.temporal_bundle_count ?? 0)}
+        ${this._metric("Stale Pending", proposals.pending_stale ?? 0)}
+      </section>
+      ${this._proposalCounters(proposals)}
+      ${this._reviewRowsTable(proposals.review_rows || [])}
+      ${this._temporalBundlesTable(proposals.temporal_bundles || [])}
+    `;
+  }
+
+  _proposalCounters(proposals) {
+    return `
+      <section class="grid">
+        ${this._objectCard("Pending By Type", proposals.pending_by_type || {})}
+        ${this._objectCard("Visible By Type", proposals.visible_pending_by_type || {})}
+        ${this._objectCard("Suppressed By Type", proposals.suppressed_pending_by_type || {})}
+        ${this._objectCard("Followups", proposals.pending_by_followup_kind || {})}
+      </section>
+    `;
+  }
+
+  _reviewRowsTable(rows) {
+    if (!rows.length) return `<div class="empty">No proposal review rows in the snapshot.</div>`;
+    return `
+      <h2>Review Rows</h2>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>ID</th><th>Summary</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><span class="status">${this._escape(row.row_type || "")}</span></td>
+              <td>${this._escape(row.bundle_id || row.proposal_id || "")}</td>
+              <td>${this._proposalRowSummary(row)}</td>
+              <td>${this._escape(row.confidence_avg ?? row.confidence ?? "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _temporalBundlesTable(bundles) {
+    if (!bundles.length) return "";
+    return `
+      <h2>Temporal Bundles</h2>
+      <table>
+        <thead>
+          <tr><th>Bundle</th><th>Members</th><th>State</th><th>Hours</th><th>Evidence</th></tr>
+        </thead>
+        <tbody>
+          ${bundles.map((bundle) => `
+            <tr>
+              <td>${this._escape(bundle.bundle_id || "")}</td>
+              <td>${this._escape(bundle.member_count ?? "")}</td>
+              <td>${this._escape(bundle.predicted_state || "")}</td>
+              <td>${this._escape(`${bundle.start_hour_bucket ?? ""}-${bundle.end_hour_bucket ?? ""}`)}</td>
+              <td>${this._escape(`${bundle.support_total ?? ""}/${bundle.total_observations ?? ""}`)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   _notificationRoutesTable(notifications) {
     const routes = notifications.resolved_routes || [];
     const unresolved = notifications.unresolved_targets || [];
@@ -589,6 +701,21 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
+  _objectSummary(title, value) {
+    if (!value || !Object.keys(value).length) return "";
+    return this._objectCard(title, value);
+  }
+
+  _objectCard(title, value) {
+    const entries = Object.entries(value || {});
+    return `
+      <div class="card">
+        <div class="label">${this._escape(title)}</div>
+        <div>${entries.length ? entries.map(([key, count]) => `${this._escape(key)}: ${this._escape(count)}`).join("<br>") : "none"}</div>
+      </div>
+    `;
+  }
+
   _executionPolicy(policy) {
     if (!policy || typeof policy !== "object") return "";
     const source = policy.source || "";
@@ -605,6 +732,24 @@ class HeimaAdminPanel extends HTMLElement {
     const failed = result.failed_steps || 0;
     const skipped = result.skipped_steps || 0;
     return this._escape(`applied ${applied}, blocked ${blocked}, failed ${failed}, skipped ${skipped}`);
+  }
+
+  _proposalRowSummary(row) {
+    if (row.row_type === "temporal_bundle") {
+      return this._escape(
+        `${row.member_count || 0} proposals, ${row.predicted_state || "unknown"}, hour ${row.start_hour_bucket ?? ""}-${row.end_hour_bucket ?? ""}`
+      );
+    }
+    return this._escape(row.type || row.identity_key || "");
+  }
+
+  _rawDetails(value) {
+    return `
+      <details>
+        <summary>raw</summary>
+        <pre>${this._escape(JSON.stringify(value, null, 2))}</pre>
+      </details>
+    `;
   }
 
   _recipientServices(value) {

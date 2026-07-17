@@ -440,25 +440,67 @@ def _learning_summary(
     proposal_diag: Mapping[str, Any],
 ) -> dict[str, Any]:
     modules = engine_diag.get("learning_modules") if isinstance(engine_diag, Mapping) else []
+    if not isinstance(modules, list):
+        modules = []
+    module_rows = [dict(item) for item in modules if isinstance(item, Mapping)]
     return {
-        "learning_modules": list(modules) if isinstance(modules, list) else [],
+        "learning_modules": module_rows,
+        "module_count": len(module_rows),
+        "ready_module_count": sum(1 for item in module_rows if item.get("ready") is True),
         "proposal_pending_count": int(proposal_diag.get("pending") or 0),
         "proposal_total_count": int(proposal_diag.get("total") or 0),
+        "analyzer_failures": dict(proposal_diag.get("analyzer_failures") or {}),
+        "analyzer_output_errors": dict(proposal_diag.get("analyzer_output_errors") or {}),
+        "lifecycle_monitoring": dict(proposal_diag.get("lifecycle_monitoring") or {}),
     }
 
 
 def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
     data = dict(proposal_diag) if isinstance(proposal_diag, Mapping) else {}
+    proposals = [dict(item) for item in data.get("proposals") or [] if isinstance(item, Mapping)]
+    pending_all = [item for item in proposals if item.get("status") == "pending"]
+    pending_visible = [item for item in pending_all if not item.get("suppressed_by_review_group")]
+    pending_suppressed = [item for item in pending_all if item.get("suppressed_by_review_group")]
     return {
         "total": data.get("total"),
         "pending": data.get("pending"),
         "accepted": data.get("accepted"),
         "rejected": data.get("rejected"),
+        "real_pending_count": len(pending_all),
+        "visible_pending_count": len(pending_visible),
+        "suppressed_pending_count": len(pending_suppressed),
+        "suppressed_in_review_count": data.get("suppressed_in_review_count"),
+        "pending_stale": data.get("pending_stale"),
         "review_row_count": data.get("review_row_count"),
+        "review_rows": list(data.get("review_rows") or []),
+        "review_groups": dict(data.get("review_groups") or {}),
         "temporal_bundle_count": data.get("temporal_bundle_count"),
+        "temporal_bundle_member_count": data.get("temporal_bundle_member_count"),
+        "temporal_bundles": list(data.get("temporal_bundles") or []),
+        "pending_by_type": _counter_by(proposals, "type", status="pending"),
+        "visible_pending_by_type": _counter_by(pending_visible, "type"),
+        "suppressed_pending_by_type": _counter_by(pending_suppressed, "type"),
+        "pending_by_followup_kind": _counter_by(pending_all, "followup_kind"),
+        "visible_examples": pending_visible[:10],
+        "suppressed_examples": pending_suppressed[:10],
         "suppressed_by_review_group": data.get("suppressed_by_review_group"),
         "raw": data,
     }
+
+
+def _counter_by(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    status: str | None = None,
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        if status is not None and row.get("status") != status:
+            continue
+        value = str(row.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _resolve_notification_targets(

@@ -119,7 +119,10 @@ class _FakeEngine:
                     }
                 ],
             },
-            "learning_modules": [{"module_id": "house_state_inference"}],
+            "learning_modules": [
+                {"module_id": "house_state_inference", "ready": True},
+                {"module_id": "lighting_pattern", "ready": False},
+            ],
         }
 
 
@@ -132,6 +135,60 @@ class _FakeProposalEngine:
             "rejected": 1,
             "review_row_count": 3,
             "suppressed_by_review_group": 4,
+            "suppressed_in_review_count": 1,
+            "pending_stale": 1,
+            "review_rows": [
+                {
+                    "row_type": "temporal_bundle",
+                    "bundle_id": "bundle.one",
+                    "member_count": 2,
+                    "predicted_state": "home",
+                },
+                {
+                    "row_type": "proposal",
+                    "proposal_id": "proposal.visible",
+                    "type": "house_state_learned_context",
+                },
+            ],
+            "review_groups": {"group.one": {"visible": "proposal.visible"}},
+            "temporal_bundle_count": 1,
+            "temporal_bundle_member_count": 2,
+            "temporal_bundles": [
+                {
+                    "bundle_id": "bundle.one",
+                    "member_count": 2,
+                    "predicted_state": "home",
+                }
+            ],
+            "proposals": [
+                {
+                    "id": "proposal.visible",
+                    "type": "house_state_learned_context",
+                    "status": "pending",
+                    "followup_kind": "discovery",
+                    "suppressed_by_review_group": False,
+                    "is_stale": False,
+                },
+                {
+                    "id": "proposal.hidden",
+                    "type": "house_state_learned_context",
+                    "status": "pending",
+                    "followup_kind": "discovery",
+                    "suppressed_by_review_group": True,
+                    "is_stale": True,
+                },
+                {
+                    "id": "proposal.accepted",
+                    "type": "activity_discovered",
+                    "status": "accepted",
+                    "followup_kind": "discovery",
+                    "suppressed_by_review_group": False,
+                    "is_stale": False,
+                },
+            ],
+            "analyzer_failures": {"house_state_inference": 1},
+            "analyzer_output_errors": {},
+            "lifecycle_monitoring": {"record_count": 2},
         }
 
 
@@ -238,6 +295,15 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["notifications"]["actionable_routes"] == ["mobile_app_iphone_stefano"]
     assert snapshot["notifications"]["skipped_non_actionable_routes"] == ["persistent_notification"]
     assert snapshot["proposals"]["review_row_count"] == 3
+    assert snapshot["proposals"]["real_pending_count"] == 2
+    assert snapshot["proposals"]["visible_pending_count"] == 1
+    assert snapshot["proposals"]["suppressed_pending_count"] == 1
+    assert snapshot["proposals"]["pending_by_type"] == {"house_state_learned_context": 2}
+    assert snapshot["proposals"]["review_rows"][0]["row_type"] == "temporal_bundle"
+    assert snapshot["proposals"]["temporal_bundles"][0]["bundle_id"] == "bundle.one"
+    assert snapshot["learning"]["module_count"] == 2
+    assert snapshot["learning"]["ready_module_count"] == 1
+    assert snapshot["learning"]["analyzer_failures"] == {"house_state_inference": 1}
     assert snapshot["recent_events"][0]["event_id"] == "event.one"
     assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"
     assert snapshot["meta"]["retention"]["description"] == "history_since_last_restart"

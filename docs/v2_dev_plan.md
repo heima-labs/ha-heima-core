@@ -130,7 +130,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active slice:** Phase AO — Admin Observability Panel in progress.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Review AO5, then continue with AO6 learning and proposal transparency.
+Review AO6, then decide whether AO7 safe admin actions are in scope for this branch or should wait
+until the read-only AO panel MVP has been validated in a live Home Assistant instance.
 
 ### Phase AO — Admin Observability Panel
 
@@ -223,6 +224,23 @@ Review AO5, then continue with AO6 learning and proposal transparency.
     - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
       — 15 passed.
     - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO6 initial implementation completed:
+  - Learning snapshot now exposes module rows, module readiness counts, proposal totals, analyzer
+    failures, analyzer output errors, and lifecycle monitoring data.
+  - Proposal snapshot now exposes backend-source-of-truth review rows, temporal bundles, real
+    pending count, visible pending count, suppressed pending count, stale count, type counters,
+    follow-up counters, visible examples, and suppressed examples.
+  - The custom admin panel now includes read-only `Learning` and `Proposals` sections.
+  - Proposal grouping and temporal bundle rendering use backend diagnostics as the source of truth;
+    the frontend does not recompute grouping or visibility.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
       — passed.
 
 #### AO1 — Backend Observability Snapshot Contract
