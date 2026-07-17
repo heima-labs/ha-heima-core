@@ -155,3 +155,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "Notification Routing Inspector" in text
     assert "Learning Monitor" in text
     assert "Proposal Backlog Inspector" in text
+    assert "heima/observability/action" in text
+    assert "clear_manual_hold" in text
+    assert "review_runtime_promotion" in text
+    assert "reset_runtime_confirmation_promotion_state" in text
+    assert "review_proposal" in text
+    assert "review_proposal_batch" in text

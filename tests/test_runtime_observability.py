@@ -138,3 +138,19 @@ def test_observability_buffer_is_bounded() -> None:
     assert len(diagnostics["recent_events"]) == 1
     assert len(diagnostics["decision_traces"]) == 1
     assert diagnostics["decision_traces"][0]["reaction_id"] == "second"
+
+
+def test_observability_buffer_records_admin_action_events() -> None:
+    buffer = RuntimeObservabilityBuffer(event_limit=10, trace_limit=10)
+
+    buffer.record_admin_action(
+        summary="Admin cleared manual hold 'light:entity:light.studio'.",
+        reason_code="clear_manual_hold",
+        object_links=({"kind": "manual_hold", "id": "light:entity:light.studio"},),
+    )
+
+    event = buffer.diagnostics()["recent_events"][0]
+    assert event["category"] == "admin_action"
+    assert event["severity"] == "info"
+    assert event["reason_code"] == "clear_manual_hold"
+    assert event["object_links"] == [{"kind": "manual_hold", "id": "light:entity:light.studio"}]

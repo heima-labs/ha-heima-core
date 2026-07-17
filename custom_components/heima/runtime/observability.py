@@ -236,6 +236,24 @@ class RuntimeObservabilityBuffer:
             )
         )
 
+    def record_admin_action(
+        self,
+        *,
+        summary: str,
+        reason_code: str,
+        object_links: tuple[dict[str, str], ...] = (),
+    ) -> None:
+        """Record an explicit HA-admin action."""
+        self.record_event(
+            RuntimeActivityEvent(
+                category="admin_action",
+                severity="info",
+                summary=summary,
+                reason_code=reason_code,
+                object_links=object_links,
+            )
+        )
+
     def diagnostics(self) -> dict[str, Any]:
         """Return serializable observability diagnostics."""
         return {

@@ -130,8 +130,8 @@ These constraints must never be violated. See spec §16 for rationale.
 **Active slice:** Phase AO — Admin Observability Panel in progress.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Review AO6, then decide whether AO7 safe admin actions are in scope for this branch or should wait
-until the read-only AO panel MVP has been validated in a live Home Assistant instance.
+Continue AO7 with safe admin action review, then validate the AO panel MVP in a live Home Assistant
+instance before expanding mutations beyond the first allowlisted action.
 
 ### Phase AO — Admin Observability Panel
 
@@ -241,6 +241,33 @@ until the read-only AO panel MVP has been validated in a live Home Assistant ins
     - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
       — passed.
     - `.venv/bin/ruff format --check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO7 initial implementation started:
+  - Added an HA-admin-only `heima/observability/action` websocket command.
+  - Added the first allowlisted mutation, `clear_manual_hold`, implemented through the existing
+    engine manual-hold boundary.
+  - Added allowlisted runtime promotion review actions through the existing coordinator
+    `async_review_runtime_promotion` boundary.
+  - Added runtime confirmation promotion-state reset through the existing coordinator
+    `async_reset_runtime_confirmation_promotion_state` boundary.
+  - Added proposal review actions through the existing coordinator `async_review_proposal` boundary.
+  - Added house-state proposal bundle review through the existing coordinator
+    `async_review_house_state_proposal_batch` boundary, including dismiss-similar semantics.
+  - Actions validate payload shape, return an updated observability snapshot, await the existing
+    backend boundary, and record `admin_action` events in the runtime observability buffer.
+  - The custom admin panel now shows an explicit confirmed `Clear` action for parseable manual hold
+    scopes, confirmed promotion review/reset actions for pending promotion reviews, and confirmed
+    proposal accept/reject/bundle actions for proposal review rows.
+  - AO7 remains intentionally narrow: health finding acknowledgements are not implemented because
+    the spec excludes acknowledgement from the MVP and no persisted acknowledgement boundary exists.
+  - Added/extended unit coverage in `tests/test_observability.py`,
+    `tests/test_runtime_observability.py`, and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py -q`
+      — 26 passed.
+    - `.venv/bin/ruff check custom_components/heima/websocket_api.py custom_components/heima/runtime/observability.py tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/websocket_api.py custom_components/heima/runtime/observability.py tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py`
       — passed.
 
 #### AO1 — Backend Observability Snapshot Contract

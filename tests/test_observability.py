@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -14,8 +15,11 @@ from custom_components.heima.observability import (
     build_observability_snapshot,
     redact_observability_data,
 )
+from custom_components.heima.runtime.observability import RuntimeObservabilityBuffer
 from custom_components.heima.websocket_api import (
+    WS_TYPE_OBSERVABILITY_ACTION,
     WS_TYPE_OBSERVABILITY_SNAPSHOT,
+    websocket_observability_action,
     websocket_observability_snapshot,
 )
 
@@ -33,10 +37,79 @@ class _FakeConnection:
         self.errors.append((msg_id, code, message))
 
 
+class _FakeHass:
+    def __init__(self, coordinator: Any | None = None) -> None:
+        self.tasks: list[asyncio.Task[Any]] = []
+        self.data = (
+            {DOMAIN: {"entry-1": {"coordinator": coordinator}}} if coordinator else {DOMAIN: {}}
+        )
+
+    def async_create_task(self, task: Any) -> asyncio.Task[Any]:
+        created = asyncio.create_task(task)
+        self.tasks.append(created)
+        return created
+
+    async def drain(self) -> None:
+        if self.tasks:
+            await asyncio.gather(*self.tasks)
+
+
 class _FakeEngine:
     health = SimpleNamespace(ok=True, reason="ok")
 
+    def __init__(self) -> None:
+        self._observability = RuntimeObservabilityBuffer()
+        self.cleared_manual_holds: list[tuple[str, str, str]] = []
+
+    def clear_manual_hold(self, *, domain: str, subject_type: str, subject_id: str) -> None:
+        self.cleared_manual_holds.append((domain, subject_type, subject_id))
+
     def diagnostics(self) -> dict[str, Any]:
+        observability = self._observability.diagnostics()
+        if not observability["recent_events"]:
+            observability["recent_events"] = [
+                {
+                    "event_id": "event.one",
+                    "timestamp": "2026-07-17T10:00:00+00:00",
+                    "category": "reaction",
+                    "severity": "info",
+                    "summary": "Reaction applied.",
+                    "reason_code": "applied",
+                    "object_links": [{"kind": "reaction", "id": "reaction.one"}],
+                }
+            ]
+        observability["decision_traces"] = [
+            {
+                "trace_id": "trace.one",
+                "reaction_id": "reaction.one",
+                "occurrence_key": "occurrence.one",
+                "timestamp": "2026-07-17T10:00:00+00:00",
+                "outcome": "applied",
+                "reason_codes": ["matched", "apply_plan_ready"],
+                "input_summary": {},
+                "condition_results": [],
+                "guard_results": [
+                    {
+                        "result": "blocked",
+                        "reason_code": "manual_hold_active",
+                        "blocked_by": "manual_hold:light:entity:light.studio:external_off",
+                    }
+                ],
+                "apply_steps": [
+                    {
+                        "step_id": "main",
+                        "domain": "light",
+                        "target": "light.studio",
+                        "action": "light.turn_on",
+                        "reason": "test",
+                        "source": "reaction:reaction.one",
+                        "blocked_by": "manual_hold:light:entity:light.studio:external_off",
+                        "depends_on": [],
+                    }
+                ],
+                "links": [{"kind": "reaction", "id": "reaction.one"}],
+            }
+        ]
         return {
             "snapshot": {"house_state": "home"},
             "reactions": {
@@ -64,61 +137,7 @@ class _FakeEngine:
                 ],
                 "pending_applies": {"total": 0, "by_domain": {}, "items": []},
             },
-            "observability": {
-                "retention": {
-                    "mode": "in_memory",
-                    "description": "history_since_last_restart",
-                    "event_limit": 500,
-                    "trace_limit": 100,
-                },
-                "recent_events": [
-                    {
-                        "event_id": "event.one",
-                        "timestamp": "2026-07-17T10:00:00+00:00",
-                        "category": "reaction",
-                        "severity": "info",
-                        "summary": "Reaction applied.",
-                        "reason_code": "applied",
-                        "object_links": [{"kind": "reaction", "id": "reaction.one"}],
-                    }
-                ],
-                "decision_traces": [
-                    {
-                        "trace_id": "trace.one",
-                        "reaction_id": "reaction.one",
-                        "occurrence_key": "occurrence.one",
-                        "timestamp": "2026-07-17T10:00:00+00:00",
-                        "outcome": "applied",
-                        "reason_codes": ["matched", "apply_plan_ready"],
-                        "input_summary": {},
-                        "condition_results": [],
-                        "guard_results": [
-                            {
-                                "result": "blocked",
-                                "reason_code": "manual_hold_active",
-                                "blocked_by": (
-                                    "manual_hold:light:entity:light.studio:external_off"
-                                ),
-                            }
-                        ],
-                        "apply_steps": [
-                            {
-                                "step_id": "main",
-                                "domain": "light",
-                                "target": "light.studio",
-                                "action": "light.turn_on",
-                                "reason": "test",
-                                "source": "reaction:reaction.one",
-                                "blocked_by": (
-                                    "manual_hold:light:entity:light.studio:external_off"
-                                ),
-                                "depends_on": [],
-                            }
-                        ],
-                        "links": [{"kind": "reaction", "id": "reaction.one"}],
-                    }
-                ],
-            },
+            "observability": observability,
             "learning_modules": [
                 {"module_id": "house_state_inference", "ready": True},
                 {"module_id": "lighting_pattern", "ready": False},
@@ -141,6 +160,7 @@ class _FakeProposalEngine:
                 {
                     "row_type": "temporal_bundle",
                     "bundle_id": "bundle.one",
+                    "proposal_ids": ["proposal.visible", "proposal.hidden"],
                     "member_count": 2,
                     "predicted_state": "home",
                 },
@@ -244,8 +264,13 @@ class _FakeCoordinator:
                 }
             },
         )
-        self.hass = SimpleNamespace(data={})
+        self.evaluation_reasons: list[str] = []
+        self.hass = SimpleNamespace(data={}, async_create_task=self._create_task)
         self.engine = _FakeEngine()
+        self.reviewed_promotions: list[tuple[str, str]] = []
+        self.reset_promotions: list[str] = []
+        self.reviewed_proposals: list[tuple[str, str, str]] = []
+        self.reviewed_proposal_batches: list[tuple[tuple[str, ...], str, str, bool]] = []
         self.proposal_engine = _FakeProposalEngine()
         self._runtime_confirmation = _FakeRuntimeConfirmation()
         self.data = SimpleNamespace(
@@ -263,6 +288,46 @@ class _FakeCoordinator:
 
     def _validation_report(self) -> SimpleNamespace:
         return SimpleNamespace(as_dict=lambda: {"ok": True, "issues": []})
+
+    def _create_task(self, task: Any) -> None:
+        if hasattr(task, "close"):
+            task.close()
+
+    async def async_request_evaluation(self, *, reason: str) -> None:
+        self.evaluation_reasons.append(reason)
+
+    async def async_review_runtime_promotion(self, reaction_id: str, action: str) -> bool:
+        self.reviewed_promotions.append((reaction_id, action))
+        return reaction_id == "reaction.one"
+
+    async def async_reset_runtime_confirmation_promotion_state(self, reaction_id: str) -> bool:
+        self.reset_promotions.append(reaction_id)
+        return reaction_id == "reaction.one"
+
+    async def async_review_proposal(
+        self,
+        proposal_id: str,
+        *,
+        decision: str,
+        approved_by: str,
+    ) -> bool:
+        self.reviewed_proposals.append((proposal_id, decision, approved_by))
+        return proposal_id == "proposal.visible"
+
+    async def async_review_house_state_proposal_batch(
+        self,
+        proposal_ids: list[str] | tuple[str, ...],
+        *,
+        decision: str,
+        approved_by: str,
+        dismiss_similar: bool = False,
+    ) -> SimpleNamespace:
+        self.reviewed_proposal_batches.append(
+            (tuple(proposal_ids), decision, approved_by, dismiss_similar)
+        )
+        if "stale" in proposal_ids:
+            return SimpleNamespace(ok=False, applied_ids=())
+        return SimpleNamespace(ok=True, applied_ids=tuple(proposal_ids), ineligible_ids=())
 
 
 def test_observability_snapshot_has_versioned_minimal_sections() -> None:
@@ -377,3 +442,282 @@ def test_observability_websocket_reports_missing_entry_for_admin() -> None:
 
     assert connection.results == []
     assert connection.errors[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_requires_admin() -> None:
+    hass = _FakeHass(_FakeCoordinator())
+    connection = _FakeConnection(is_admin=False)
+
+    with pytest.raises(Unauthorized):
+        websocket_observability_action(
+            hass,
+            connection,
+            {
+                "id": 1,
+                "type": WS_TYPE_OBSERVABILITY_ACTION,
+                "entry_id": "entry-1",
+                "action": "clear_manual_hold",
+                "payload": {
+                    "domain": "light",
+                    "subject_type": "entity",
+                    "subject_id": "light.studio",
+                },
+            },
+        )
+
+    assert connection.results == []
+    assert connection.errors == []
+
+
+@pytest.mark.asyncio
+async def test_observability_action_rejects_invalid_clear_manual_hold_payload() -> None:
+    hass = _FakeHass(_FakeCoordinator())
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "clear_manual_hold",
+            "payload": {"domain": "light"},
+        },
+    )
+    await hass.drain()
+
+    assert connection.results == []
+    assert connection.errors[0][1] == "invalid_payload"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_clears_manual_hold_and_returns_audited_snapshot() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "clear_manual_hold",
+            "payload": {
+                "domain": "light",
+                "subject_type": "entity",
+                "subject_id": "light.studio",
+            },
+        },
+    )
+    await hass.drain()
+
+    assert connection.errors == []
+    assert coordinator.engine.cleared_manual_holds == [("light", "entity", "light.studio")]
+    result = connection.results[0][1]
+    assert result["ok"] is True
+    assert result["action"] == "clear_manual_hold"
+    assert result["snapshot"]["recent_events"][0]["category"] == "admin_action"
+    assert result["snapshot"]["recent_events"][0]["reason_code"] == "clear_manual_hold"
+    assert coordinator.evaluation_reasons == [
+        "admin_observability:clear_manual_hold:light:entity:light.studio"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_observability_action_reviews_runtime_promotion() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_runtime_promotion",
+            "payload": {
+                "reaction_id": "reaction.one",
+                "promotion_action": "heima.promotion.approve_auto_apply",
+            },
+        },
+    )
+    await hass.drain()
+
+    assert connection.errors == []
+    assert coordinator.reviewed_promotions == [
+        ("reaction.one", "heima.promotion.approve_auto_apply")
+    ]
+    result = connection.results[0][1]
+    assert result["ok"] is True
+    assert result["snapshot"]["recent_events"][0]["reason_code"] == "review_runtime_promotion"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_reports_unavailable_runtime_promotion() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_runtime_promotion",
+            "payload": {
+                "reaction_id": "missing",
+                "promotion_action": "heima.promotion.approve_auto_apply",
+            },
+        },
+    )
+    await hass.drain()
+
+    assert connection.results == []
+    assert connection.errors[0][1] == "not_available"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_resets_runtime_confirmation_promotion_state() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "reset_runtime_confirmation_promotion_state",
+            "payload": {"reaction_id": "reaction.one"},
+        },
+    )
+    await hass.drain()
+
+    assert connection.errors == []
+    assert coordinator.reset_promotions == ["reaction.one"]
+    result = connection.results[0][1]
+    assert result["ok"] is True
+    assert (
+        result["snapshot"]["recent_events"][0]["reason_code"]
+        == "reset_runtime_confirmation_promotion_state"
+    )
+
+
+@pytest.mark.asyncio
+async def test_observability_action_reviews_single_proposal() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_proposal",
+            "payload": {"proposal_id": "proposal.visible", "decision": "approved"},
+        },
+    )
+    await hass.drain()
+
+    assert connection.errors == []
+    assert coordinator.reviewed_proposals == [("proposal.visible", "approved", "installer")]
+    result = connection.results[0][1]
+    assert result["ok"] is True
+    assert result["snapshot"]["recent_events"][0]["reason_code"] == "review_proposal"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_reviews_proposal_batch() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_proposal_batch",
+            "payload": {
+                "proposal_ids": ["proposal.visible", "proposal.hidden"],
+                "decision": "rejected",
+                "dismiss_similar": True,
+            },
+        },
+    )
+    await hass.drain()
+
+    assert connection.errors == []
+    assert coordinator.reviewed_proposal_batches == [
+        (
+            ("proposal.visible", "proposal.hidden"),
+            "rejected",
+            "installer",
+            True,
+        )
+    ]
+    result = connection.results[0][1]
+    assert result["ok"] is True
+    assert result["snapshot"]["recent_events"][0]["reason_code"] == "review_proposal_batch"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_reports_stale_proposal_batch() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_proposal_batch",
+            "payload": {"proposal_ids": ["stale"], "decision": "approved"},
+        },
+    )
+    await hass.drain()
+
+    assert connection.results == []
+    assert connection.errors[0][1] == "not_available"
+
+
+@pytest.mark.asyncio
+async def test_observability_action_rejects_non_list_proposal_batch_payload() -> None:
+    coordinator = _FakeCoordinator()
+    hass = _FakeHass(coordinator)
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_action(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_ACTION,
+            "entry_id": "entry-1",
+            "action": "review_proposal_batch",
+            "payload": {"proposal_ids": "proposal.visible", "decision": "approved"},
+        },
+    )
+    await hass.drain()
+
+    assert connection.results == []
+    assert connection.errors[0][1] == "not_available"
+    assert coordinator.reviewed_proposal_batches == []

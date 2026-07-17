@@ -4,6 +4,7 @@ class HeimaAdminPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._snapshot = null;
     this._error = "";
+    this._actionError = "";
     this._loading = true;
     this._route = "overview";
     this._refreshTimer = null;
@@ -41,6 +42,7 @@ class HeimaAdminPanel extends HTMLElement {
     }
     this._loading = true;
     this._error = "";
+    this._actionError = "";
     this._render();
     try {
       const command =
@@ -122,6 +124,21 @@ class HeimaAdminPanel extends HTMLElement {
           width: auto;
           border: 1px solid var(--divider-color);
           background: var(--card-background-color);
+        }
+        button.inline {
+          display: inline-block;
+          width: auto;
+          margin: 0;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          text-align: center;
+        }
+        button.danger {
+          color: var(--error-color);
+        }
+        button:disabled {
+          opacity: 0.55;
+          cursor: progress;
         }
         .grid {
           display: grid;
@@ -244,6 +261,9 @@ class HeimaAdminPanel extends HTMLElement {
         }
       });
     });
+    this.shadowRoot.querySelectorAll("button[data-action]").forEach((button) => {
+      button.addEventListener("click", () => this._runAction(button));
+    });
   }
 
   _navButton(route, label) {
@@ -273,6 +293,14 @@ class HeimaAdminPanel extends HTMLElement {
     if (!snapshot.meta) {
       return `<div class="empty">No observability snapshot available.</div>`;
     }
+    const actionError = this._actionError
+      ? `<div class="card error">${this._escape(this._actionError)}</div>`
+      : "";
+    const body = this._bodyContent(snapshot);
+    return `${actionError}${body}`;
+  }
+
+  _bodyContent(snapshot) {
     if (this._route === "activity") return this._activity(snapshot);
     if (this._route === "reactions") return this._reactions(snapshot);
     if (this._route === "holds") return this._manualHolds(snapshot);
@@ -401,10 +429,13 @@ class HeimaAdminPanel extends HTMLElement {
             <th>Age</th>
             <th>Source</th>
             <th>Affected Reactions</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${holds.map((hold) => `
+          ${holds.map((hold) => {
+            const scope = this._manualHoldScopeParts(hold.scope || "");
+            return `
             <tr>
               <td>${this._escape(hold.scope || "")}</td>
               <td>${this._escape(hold.reason || "")}</td>
@@ -412,8 +443,10 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._duration(hold.age_s)}</td>
               <td>${this._escape(hold.source_entity || "")}</td>
               <td>${this._list(hold.affected_reaction_ids || [])}</td>
+              <td>${scope ? this._clearHoldButton(scope, hold.scope || "") : ""}</td>
             </tr>
-          `).join("")}
+          `;
+          }).join("")}
         </tbody>
       </table>
     `;
@@ -472,7 +505,7 @@ class HeimaAdminPanel extends HTMLElement {
       <h2>Promotion Reviews</h2>
       <table>
         <thead>
-          <tr><th>Reaction</th><th>Status</th><th>Review</th></tr>
+          <tr><th>Reaction</th><th>Status</th><th>Review</th><th>Actions</th></tr>
         </thead>
         <tbody>
           ${reviews.map((review) => `
@@ -480,6 +513,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(review.reaction_id || "")}</td>
               <td><span class="status">${this._escape(review.status || "")}</span></td>
               <td>${this._escape(review.review_id || review.created_at || "")}</td>
+              <td>${this._promotionReviewButtons(review)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -568,7 +602,7 @@ class HeimaAdminPanel extends HTMLElement {
       <h2>Review Rows</h2>
       <table>
         <thead>
-          <tr><th>Type</th><th>ID</th><th>Summary</th><th>Confidence</th></tr>
+          <tr><th>Type</th><th>ID</th><th>Summary</th><th>Confidence</th><th>Actions</th></tr>
         </thead>
         <tbody>
           ${rows.map((row) => `
@@ -577,6 +611,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(row.bundle_id || row.proposal_id || "")}</td>
               <td>${this._proposalRowSummary(row)}</td>
               <td>${this._escape(row.confidence_avg ?? row.confidence ?? "")}</td>
+              <td>${this._proposalReviewButtons(row)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -750,6 +785,218 @@ class HeimaAdminPanel extends HTMLElement {
         <pre>${this._escape(JSON.stringify(value, null, 2))}</pre>
       </details>
     `;
+  }
+
+  _clearHoldButton(scope, label) {
+    return `
+      <button
+        class="inline danger"
+        data-action="clear_manual_hold"
+        data-domain="${this._escape(scope.domain)}"
+        data-subject-type="${this._escape(scope.subject_type)}"
+        data-subject-id="${this._escape(scope.subject_id)}"
+        data-label="${this._escape(label)}"
+      >Clear</button>
+    `;
+  }
+
+  _promotionReviewButtons(review) {
+    const reactionId = String(review.reaction_id || "");
+    if (!reactionId || review.status !== "pending_admin_review") {
+      return "";
+    }
+    return `
+      <button
+        class="inline"
+        data-action="review_runtime_promotion"
+        data-reaction-id="${this._escape(reactionId)}"
+        data-promotion-action="heima.promotion.approve_auto_apply"
+      >Auto apply</button>
+      <button
+        class="inline"
+        data-action="review_runtime_promotion"
+        data-reaction-id="${this._escape(reactionId)}"
+        data-promotion-action="heima.promotion.dismiss_not_now"
+      >Not now</button>
+      <button
+        class="inline danger"
+        data-action="review_runtime_promotion"
+        data-reaction-id="${this._escape(reactionId)}"
+        data-promotion-action="heima.promotion.disable_future_prompts"
+      >Disable prompts</button>
+      <button
+        class="inline danger"
+        data-action="reset_runtime_confirmation_promotion_state"
+        data-reaction-id="${this._escape(reactionId)}"
+      >Reset</button>
+    `;
+  }
+
+  _proposalReviewButtons(row) {
+    if (row.row_type === "temporal_bundle") {
+      const proposalIds = Array.isArray(row.proposal_ids) ? row.proposal_ids : [];
+      if (!proposalIds.length) return "";
+      const encodedIds = this._escape(JSON.stringify(proposalIds));
+      return `
+        <button
+          class="inline"
+          data-action="review_proposal_batch"
+          data-proposal-ids="${encodedIds}"
+          data-decision="approved"
+        >Accept bundle</button>
+        <button
+          class="inline danger"
+          data-action="review_proposal_batch"
+          data-proposal-ids="${encodedIds}"
+          data-decision="rejected"
+        >Reject bundle</button>
+        <button
+          class="inline danger"
+          data-action="review_proposal_batch"
+          data-proposal-ids="${encodedIds}"
+          data-decision="rejected"
+          data-dismiss-similar="true"
+        >Dismiss similar</button>
+      `;
+    }
+    const proposalId = String(row.proposal_id || "");
+    if (!proposalId) return "";
+    return `
+      <button
+        class="inline"
+        data-action="review_proposal"
+        data-proposal-id="${this._escape(proposalId)}"
+        data-decision="approved"
+      >Accept</button>
+      <button
+        class="inline danger"
+        data-action="review_proposal"
+        data-proposal-id="${this._escape(proposalId)}"
+        data-decision="rejected"
+      >Reject</button>
+    `;
+  }
+
+  _manualHoldScopeParts(scope) {
+    const parts = String(scope || "").split(":");
+    if (parts.length < 3) return null;
+    const [domain, subject_type, ...subjectParts] = parts;
+    const subject_id = subjectParts.join(":");
+    if (!domain || !subject_type || !subject_id) return null;
+    return { domain, subject_type, subject_id };
+  }
+
+  async _runAction(button) {
+    const action = button.getAttribute("data-action");
+    if (
+      ![
+        "clear_manual_hold",
+        "review_runtime_promotion",
+        "reset_runtime_confirmation_promotion_state",
+        "review_proposal",
+        "review_proposal_batch",
+      ].includes(action)
+    ) {
+      return;
+    }
+    const payload = this._actionPayload(button, action);
+    if (!payload) return;
+    const message = this._actionConfirmation(button, action);
+    if (!window.confirm(message)) return;
+    this._actionError = "";
+    button.disabled = true;
+    try {
+      const command =
+        this._panel?.config?.actionCommand || "heima/observability/action";
+      const result = await this._hass.callWS({
+        type: command,
+        action,
+        payload,
+      });
+      if (result?.snapshot) {
+        this._snapshot = result.snapshot;
+      } else {
+        await this._loadSnapshot();
+      }
+    } catch (err) {
+      this._actionError = err?.message || "Unable to complete Heima admin action.";
+    } finally {
+      button.disabled = false;
+      this._render();
+    }
+  }
+
+  _actionPayload(button, action) {
+    if (action === "clear_manual_hold") {
+      return {
+        domain: button.getAttribute("data-domain") || "",
+        subject_type: button.getAttribute("data-subject-type") || "",
+        subject_id: button.getAttribute("data-subject-id") || "",
+      };
+    }
+    if (action === "review_proposal") {
+      return {
+        proposal_id: button.getAttribute("data-proposal-id") || "",
+        decision: button.getAttribute("data-decision") || "",
+      };
+    }
+    if (action === "review_proposal_batch") {
+      return {
+        proposal_ids: this._jsonAttribute(button, "data-proposal-ids"),
+        decision: button.getAttribute("data-decision") || "",
+        dismiss_similar: button.getAttribute("data-dismiss-similar") === "true",
+      };
+    }
+    const reactionId = button.getAttribute("data-reaction-id") || "";
+    if (!reactionId) return null;
+    if (action === "review_runtime_promotion") {
+      return {
+        reaction_id: reactionId,
+        promotion_action: button.getAttribute("data-promotion-action") || "",
+      };
+    }
+    return { reaction_id: reactionId };
+  }
+
+  _actionConfirmation(button, action) {
+    if (action === "clear_manual_hold") {
+      return `Clear manual hold ${button.getAttribute("data-label") || ""}?`;
+    }
+    const reactionId = button.getAttribute("data-reaction-id") || "";
+    if (action === "reset_runtime_confirmation_promotion_state") {
+      return `Reset runtime confirmation promotion state for ${reactionId}?`;
+    }
+    if (action === "review_proposal") {
+      return `${this._decisionLabel(button.getAttribute("data-decision"))} proposal ${button.getAttribute("data-proposal-id") || ""}?`;
+    }
+    if (action === "review_proposal_batch") {
+      const count = this._jsonAttribute(button, "data-proposal-ids").length;
+      if (button.getAttribute("data-dismiss-similar") === "true") {
+        return `Dismiss this bundle and similar hidden proposals (${count} visible proposal IDs)?`;
+      }
+      return `${this._decisionLabel(button.getAttribute("data-decision"))} proposal bundle with ${count} proposal IDs?`;
+    }
+    const promotionAction = button.getAttribute("data-promotion-action") || "";
+    if (promotionAction === "heima.promotion.approve_auto_apply") {
+      return `Promote ${reactionId} to auto apply?`;
+    }
+    if (promotionAction === "heima.promotion.disable_future_prompts") {
+      return `Disable future promotion prompts for ${reactionId}?`;
+    }
+    return `Dismiss promotion prompt for ${reactionId} for now?`;
+  }
+
+  _decisionLabel(decision) {
+    return decision === "approved" ? "Accept" : "Reject";
+  }
+
+  _jsonAttribute(button, attribute) {
+    try {
+      const value = JSON.parse(button.getAttribute(attribute) || "[]");
+      return Array.isArray(value) ? value : [];
+    } catch (_err) {
+      return [];
+    }
   }
 
   _recipientServices(value) {
