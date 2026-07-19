@@ -62,6 +62,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/077_runtime_confirmation_diag_live.py"
   "scripts/live_tests/078_runtime_confirmation_promotion_revert_live.py"
   "scripts/live_tests/079_runtime_confirmation_profile_policy_live.py"
+  "scripts/live_tests/080_admin_observability_panel_live.py"
 )
 
 usage() {
@@ -158,6 +159,9 @@ for file in "${files[@]}"; do
     *.py)
       args=(--ha-url "$HA_URL" --ha-token "$HA_TOKEN")
       if [[ "$base" == 016_* && -n "$HA_NON_ADMIN_TOKEN" ]]; then
+        args+=(--ha-non-admin-token "$HA_NON_ADMIN_TOKEN")
+      fi
+      if [[ "$base" == 080_* && -n "$HA_NON_ADMIN_TOKEN" ]]; then
         args+=(--ha-non-admin-token "$HA_NON_ADMIN_TOKEN")
       fi
       if [[ "$base" == 020_* ]]; then

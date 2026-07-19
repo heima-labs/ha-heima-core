@@ -215,8 +215,10 @@ class _FakeProposalEngine:
 class _FakeRuntimeConfirmation:
     def diagnostics(self) -> dict[str, Any]:
         return {
-            "pending": [{"request_id": "request.one"}],
-            "recent_completed": [{"request_id": "request.done", "status": "approved"}],
+            "pending": 1,
+            "recent_completed": 1,
+            "pending_requests": [{"request_id": "request.one"}],
+            "recent_completed_requests": [{"request_id": "request.done", "status": "approved"}],
             "stale_responses": 1,
             "duplicate_occurrences": 2,
             "completed_by_status": {"approved": 1},
@@ -348,7 +350,9 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
         {"kind": "entity", "id": "light.studio"},
     ]
     assert snapshot["runtime_confirmations"]["pending"][0]["request_id"] == "request.one"
+    assert snapshot["runtime_confirmations"]["pending_count"] == 1
     assert snapshot["runtime_confirmations"]["recent_completed"][0]["request_id"] == "request.done"
+    assert snapshot["runtime_confirmations"]["recent_completed_count"] == 1
     assert snapshot["runtime_confirmations"]["completed_by_status"] == {"approved": 1}
     assert snapshot["runtime_confirmations"]["scheduled_timeouts"] == ["request.one"]
     assert snapshot["runtime_confirmations"]["action_event_subscription_active"] is True

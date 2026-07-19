@@ -271,9 +271,22 @@ def _manual_hold_summary(
 
 def _runtime_confirmation_summary(runtime_confirmation: Mapping[str, Any]) -> dict[str, Any]:
     data = dict(runtime_confirmation) if isinstance(runtime_confirmation, Mapping) else {}
+    pending_rows = _request_rows(
+        data.get("pending_requests"),
+        fallback=data.get("pending"),
+    )
+    recent_completed_rows = _request_rows(
+        data.get("recent_completed_requests"),
+        fallback=data.get("recent_completed"),
+    )
     return {
-        "pending": list(data.get("pending") or []),
-        "recent_completed": list(data.get("recent_completed") or []),
+        "pending": pending_rows,
+        "pending_count": _count_value(data.get("pending"), fallback=len(pending_rows)),
+        "recent_completed": recent_completed_rows,
+        "recent_completed_count": _count_value(
+            data.get("recent_completed"),
+            fallback=len(recent_completed_rows),
+        ),
         "stale_responses": int(data.get("stale_responses") or 0),
         "duplicate_occurrences": int(data.get("duplicate_occurrences") or 0),
         "completed_by_status": dict(data.get("completed_by_status") or {}),
@@ -289,6 +302,23 @@ def _runtime_confirmation_summary(runtime_confirmation: Mapping[str, Any]) -> di
         "promotion_reviews": _promotion_reviews(data),
         "raw": data,
     }
+
+
+def _request_rows(value: Any, *, fallback: Any) -> list[Any]:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(fallback, list):
+        return list(fallback)
+    return []
+
+
+def _count_value(value: Any, *, fallback: int) -> int:
+    if isinstance(value, bool):
+        return int(fallback)
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return max(0, int(fallback))
 
 
 def _latest_trace_by_reaction(decision_traces: list[Any]) -> dict[str, dict[str, Any]]:

@@ -120,22 +120,23 @@ These constraints must never be violated. See spec §16 for rationale.
 | AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
 | AH | Resident Runtime Confirmation & Auto-Apply Promotion | `DONE` | AD, MH, AF |
 | AN | Notification Admin UI & Execution Policy Profiles | `DONE` | AH |
-| AO | Admin Observability Panel | `IN PROGRESS` | AH, AN, MH, AC, AD |
+| AO | Admin Observability Panel | `DONE` | AH, AN, MH, AC, AD |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles.
-**Active slice:** Phase AO — Admin Observability Panel in progress.
+**Active slice:** Phase AO — Admin Observability Panel completed; pending user MVP verification
+before merge into `feat/an-notification-admin-ui`.
 **Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Continue AO7 with safe admin action review, then validate the AO panel MVP in a live Home Assistant
-instance before expanding mutations beyond the first allowlisted action.
+Hold AO on its feature branch for hands-on MVP verification. After verification, merge
+`feat/ao-admin-observability-panel` into `feat/an-notification-admin-ui`.
 
 ### Phase AO — Admin Observability Panel
 
-- Status: `IN PROGRESS`.
+- Status: `DONE`.
 - Spec source: `docs/specs/core/admin_observability_panel_spec.md`.
 - Goal: provide a real Home Assistant admin panel that explains what Heima is doing, why runtime
   decisions apply/skip/block/wait, what is being learned, and which manual holds, runtime
@@ -242,7 +243,7 @@ instance before expanding mutations beyond the first allowlisted action.
       — passed.
     - `.venv/bin/ruff format --check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
       — passed.
-- AO7 initial implementation started:
+- AO7 completed:
   - Added an HA-admin-only `heima/observability/action` websocket command.
   - Added the first allowlisted mutation, `clear_manual_hold`, implemented through the existing
     engine manual-hold boundary.
@@ -269,6 +270,26 @@ instance before expanding mutations beyond the first allowlisted action.
       — passed.
     - `.venv/bin/ruff format --check custom_components/heima/websocket_api.py custom_components/heima/runtime/observability.py tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py`
       — passed.
+- AO live validation completed:
+  - Added `scripts/live_tests/080_admin_observability_panel_live.py` to validate the AO websocket
+    snapshot/action contract against a real Home Assistant instance.
+  - Added `080_admin_observability_panel_live.py` to the diagnostic live tier.
+  - Fixed `scripts/lib/ha_websocket.py` to support fragmented websocket messages emitted by large
+    AO snapshots.
+  - Fixed AO runtime-confirmation snapshot normalization so real diagnostics counts
+    (`pending`/`recent_completed`) are kept separate from request rows
+    (`pending_requests`/`recent_completed_requests`).
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py -q`
+      — 26 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py scripts/lib/ha_websocket.py scripts/live_tests/080_admin_observability_panel_live.py tests/test_observability.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/observability.py scripts/lib/ha_websocket.py scripts/live_tests/080_admin_observability_panel_live.py tests/test_observability.py`
+      — passed.
+    - `scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" ${HA_NON_ADMIN_TOKEN:+--ha-non-admin-token "$HA_NON_ADMIN_TOKEN"}`
+      — passed against the local Docker Home Assistant instance.
+    - `./scripts/check_all_live.sh --tier diagnostic`
+      — passed against the local Docker Home Assistant instance.
 
 #### AO1 — Backend Observability Snapshot Contract
 
@@ -432,6 +453,8 @@ instance before expanding mutations beyond the first allowlisted action.
     when touching notifications/runtime confirmation projections
   - full local CI before merging AO MVP
   - live diagnostic tier before merging AO MVP
+- Status: completed for AO MVP on `feat/ao-admin-observability-panel`; full CI remains required
+  before merging the branch after user MVP verification.
 
 ### Recent Working Notes
 
