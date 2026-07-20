@@ -186,6 +186,7 @@ class _FakeProposalEngine:
                     "followup_kind": "discovery",
                     "suppressed_by_review_group": False,
                     "is_stale": False,
+                    "target_reaction_id": "reaction.one",
                 },
                 {
                     "id": "proposal.hidden",
@@ -215,8 +216,10 @@ class _FakeRuntimeConfirmation:
         return {
             "pending": 1,
             "recent_completed": 1,
-            "pending_requests": [{"request_id": "request.one"}],
-            "recent_completed_requests": [{"request_id": "request.done", "status": "approved"}],
+            "pending_requests": [{"request_id": "request.one", "reaction_id": "reaction.one"}],
+            "recent_completed_requests": [
+                {"request_id": "request.done", "reaction_id": "reaction.one", "status": "approved"}
+            ],
             "stale_responses": 1,
             "duplicate_occurrences": 2,
             "completed_by_status": {"approved": 1},
@@ -269,6 +272,7 @@ class _FakeCoordinator:
                             "origin": "learning_accepted",
                             "author_kind": "admin",
                             "source_template_id": "lighting.context_conditioned",
+                            "api_token": "super-secret-token",
                         }
                     },
                     "labels": {"reaction.one": "Evening scene"},
@@ -391,6 +395,27 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["recent_events"][0]["event_id"] == "event.one"
     assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"
     assert snapshot["meta"]["retention"]["description"] == "history_since_last_restart"
+    reaction_detail = snapshot["details"]["reactions"]["by_id"]["reaction.one"]
+    assert reaction_detail["summary"]["reaction_id"] == "reaction.one"
+    assert reaction_detail["configured_metadata"]["reaction_type"] == (
+        "context_conditioned_lighting_scene"
+    )
+    assert reaction_detail["configured_metadata"]["api_token"] == "**REDACTED**"
+    assert reaction_detail["runtime_diagnostics"] == {"fire_count": 1}
+    assert reaction_detail["execution_policy"]["mode"] == "ask_residents"
+    assert reaction_detail["latest_trace"]["trace_id"] == "trace.one"
+    assert reaction_detail["linked_manual_holds"][0]["scope"] == "light:entity:light.studio"
+    assert reaction_detail["linked_runtime_confirmations"][0]["request_id"] == "request.one"
+    assert reaction_detail["linked_promotion_reviews"][0]["review_id"] == "review.one"
+    assert reaction_detail["linked_proposals"][0]["id"] == "proposal.visible"
+    hold_detail = snapshot["details"]["manual_holds"]["by_scope"]["light:entity:light.studio"]
+    assert hold_detail["affected_reaction_ids"] == ["reaction.one"]
+    request_detail = snapshot["details"]["runtime_confirmations"]["by_request_id"]["request.one"]
+    assert request_detail["status_bucket"] == "pending"
+    proposal_detail = snapshot["details"]["proposals"]["by_id"]["proposal.visible"]
+    assert proposal_detail["linked_reaction_ids"] == ["reaction.one"]
+    review_detail = snapshot["details"]["proposals"]["review_rows_by_id"]["bundle.one"]
+    assert review_detail["proposal_ids"] == ["proposal.visible", "proposal.hidden"]
 
 
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:

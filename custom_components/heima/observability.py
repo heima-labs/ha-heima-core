@@ -54,12 +54,24 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         {},
     )
     runtime_observability = _runtime_observability(engine_diag)
+    recent_events = list(runtime_observability.get("recent_events") or [])
+    decision_traces = list(runtime_observability.get("decision_traces") or [])
     validation = _safe_section(
         "installation_validation",
         partial_reasons,
         lambda: coordinator._validation_report().as_dict(),  # noqa: SLF001
         {},
     )
+    reactions = _reaction_summaries(
+        engine_diag,
+        entry=entry,
+        decision_traces=decision_traces,
+    )
+    manual_holds = _manual_hold_summary(engine_diag, runtime_observability)
+    runtime_confirmations = _runtime_confirmation_summary(runtime_confirmation)
+    notifications = _notification_summary(entry)
+    learning = _learning_summary(engine_diag, proposal_diag)
+    proposals = _proposal_summary(proposal_diag)
 
     snapshot = {
         "meta": {
@@ -80,18 +92,23 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "health": _health_summary(coordinator, validation),
         "runtime": _runtime_summary(coordinator, engine_diag),
         "health_findings": _health_findings(coordinator, validation, generated_at),
-        "recent_events": list(runtime_observability.get("recent_events") or []),
-        "decision_traces": list(runtime_observability.get("decision_traces") or []),
-        "reactions": _reaction_summaries(
-            engine_diag,
+        "recent_events": recent_events,
+        "decision_traces": decision_traces,
+        "reactions": reactions,
+        "manual_holds": manual_holds,
+        "runtime_confirmations": runtime_confirmations,
+        "notifications": notifications,
+        "learning": learning,
+        "proposals": proposals,
+        "details": _detail_projections(
+            engine_diag=engine_diag,
             entry=entry,
-            decision_traces=list(runtime_observability.get("decision_traces") or []),
+            reactions=reactions,
+            manual_holds=manual_holds,
+            runtime_confirmations=runtime_confirmations,
+            proposals=proposals,
+            decision_traces=decision_traces,
         ),
-        "manual_holds": _manual_hold_summary(engine_diag, runtime_observability),
-        "runtime_confirmations": _runtime_confirmation_summary(runtime_confirmation),
-        "notifications": _notification_summary(entry),
-        "learning": _learning_summary(engine_diag, proposal_diag),
-        "proposals": _proposal_summary(proposal_diag),
     }
     return redact_observability_data(snapshot)
 
@@ -576,6 +593,199 @@ def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
         "suppressed_by_review_group": data.get("suppressed_by_review_group"),
         "raw": data,
     }
+
+
+def _detail_projections(
+    *,
+    engine_diag: Mapping[str, Any],
+    entry: Any,
+    reactions: list[dict[str, Any]],
+    manual_holds: Mapping[str, Any],
+    runtime_confirmations: Mapping[str, Any],
+    proposals: Mapping[str, Any],
+    decision_traces: list[Any],
+) -> dict[str, Any]:
+    configured, labels = _configured_reaction_metadata(entry)
+    raw_reactions = engine_diag.get("reactions") if isinstance(engine_diag, Mapping) else {}
+    raw_reactions = raw_reactions if isinstance(raw_reactions, Mapping) else {}
+    policies = engine_diag.get("reaction_execution_policies")
+    policies = policies if isinstance(policies, Mapping) else {}
+    active_holds = [dict(item) for item in manual_holds.get("active_holds") or []]
+    pending_requests = [dict(item) for item in runtime_confirmations.get("pending") or []]
+    completed_requests = [
+        dict(item) for item in runtime_confirmations.get("recent_completed") or []
+    ]
+    promotion_reviews = [
+        dict(item) for item in runtime_confirmations.get("promotion_reviews") or []
+    ]
+    proposal_rows = [dict(item) for item in proposals.get("raw", {}).get("proposals") or []]
+    review_rows = [dict(item) for item in proposals.get("review_rows") or []]
+
+    traces_by_reaction = _traces_by_reaction(decision_traces)
+    holds_by_scope = {str(item.get("scope") or ""): item for item in active_holds}
+    requests_by_reaction = _requests_by_reaction(pending_requests + completed_requests)
+    promotion_reviews_by_reaction = _rows_by_key(promotion_reviews, "reaction_id")
+    proposals_by_reaction = _proposals_by_reaction(proposal_rows)
+
+    reaction_details: dict[str, dict[str, Any]] = {}
+    for row in reactions:
+        reaction_id = str(row.get("reaction_id") or "").strip()
+        if not reaction_id:
+            continue
+        cfg = configured.get(reaction_id, {})
+        diag = raw_reactions.get(reaction_id)
+        diag = dict(diag) if isinstance(diag, Mapping) else {}
+        linked_hold_scopes = _string_list(row.get("linked_manual_hold_scopes"))
+        traces = traces_by_reaction.get(reaction_id, [])
+        reaction_details[reaction_id] = {
+            "summary": dict(row),
+            "configured_metadata": cfg,
+            "runtime_diagnostics": diag,
+            "label_metadata": {"label": labels.get(reaction_id, "")},
+            "execution_policy": dict(policies.get(reaction_id) or {}),
+            "latest_trace": traces[-1] if traces else None,
+            "recent_traces": traces[-10:],
+            "linked_manual_holds": [
+                holds_by_scope[scope] for scope in linked_hold_scopes if scope in holds_by_scope
+            ],
+            "linked_runtime_confirmations": requests_by_reaction.get(reaction_id, []),
+            "linked_promotion_reviews": promotion_reviews_by_reaction.get(reaction_id, []),
+            "linked_proposals": proposals_by_reaction.get(reaction_id, []),
+        }
+
+    return {
+        "reactions": {"by_id": reaction_details},
+        "manual_holds": {"by_scope": _manual_hold_details_by_scope(active_holds)},
+        "runtime_confirmations": {
+            "by_request_id": _runtime_confirmation_details_by_request_id(
+                pending_requests=pending_requests,
+                completed_requests=completed_requests,
+            )
+        },
+        "proposals": {
+            "by_id": _proposal_details_by_id(proposal_rows),
+            "review_rows_by_id": _review_row_details_by_id(review_rows),
+        },
+    }
+
+
+def _traces_by_reaction(decision_traces: list[Any]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in decision_traces:
+        if not isinstance(item, Mapping):
+            continue
+        reaction_id = str(item.get("reaction_id") or "").strip()
+        if not reaction_id or reaction_id.startswith("domain:"):
+            continue
+        grouped.setdefault(reaction_id, []).append(dict(item))
+    return grouped
+
+
+def _requests_by_reaction(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        reaction_id = str(row.get("reaction_id") or "").strip()
+        if reaction_id:
+            grouped.setdefault(reaction_id, []).append(row)
+    return grouped
+
+
+def _rows_by_key(rows: list[dict[str, Any]], key: str) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        value = str(row.get(key) or "").strip()
+        if value:
+            grouped.setdefault(value, []).append(row)
+    return grouped
+
+
+def _proposals_by_reaction(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        reaction_ids = _proposal_linked_reaction_ids(row)
+        for reaction_id in reaction_ids:
+            grouped.setdefault(reaction_id, []).append(row)
+    return grouped
+
+
+def _proposal_linked_reaction_ids(row: Mapping[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in (
+        "reaction_id",
+        "target_reaction_id",
+        "source_reaction_id",
+        "accepted_reaction_id",
+    ):
+        value = str(row.get(key) or "").strip()
+        if value:
+            candidates.append(value)
+    return sorted(set(candidates))
+
+
+def _manual_hold_details_by_scope(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        scope = str(row.get("scope") or "").strip()
+        if not scope:
+            continue
+        details[scope] = {
+            "summary": row,
+            "affected_reaction_ids": _string_list(row.get("affected_reaction_ids")),
+            "links": list(row.get("links") or []),
+        }
+    return details
+
+
+def _runtime_confirmation_details_by_request_id(
+    *,
+    pending_requests: list[dict[str, Any]],
+    completed_requests: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for status, rows in (
+        ("pending", pending_requests),
+        ("completed", completed_requests),
+    ):
+        for row in rows:
+            request_id = str(row.get("request_id") or "").strip()
+            if not request_id:
+                continue
+            details[request_id] = {
+                "summary": row,
+                "status_bucket": status,
+                "reaction_id": str(row.get("reaction_id") or ""),
+            }
+    return details
+
+
+def _proposal_details_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        proposal_id = str(row.get("id") or row.get("proposal_id") or "").strip()
+        if not proposal_id:
+            continue
+        details[proposal_id] = {
+            "summary": row,
+            "linked_reaction_ids": _proposal_linked_reaction_ids(row),
+        }
+    return details
+
+
+def _review_row_details_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(rows):
+        row_id = str(
+            row.get("review_row_id")
+            or row.get("bundle_id")
+            or row.get("proposal_id")
+            or f"row:{index}"
+        )
+        details[row_id] = {
+            "summary": row,
+            "proposal_ids": _string_list(row.get("proposal_ids"))
+            or _string_list(row.get("proposal_id")),
+        }
+    return details
 
 
 def _mapping_or_count(value: Any, *, count_key: str) -> dict[str, Any]:
