@@ -92,16 +92,14 @@ The panel is admin-only, but it must still follow the same redaction rules as di
 - entity IDs may be shown because they are required for local administration
 - resident names and notification recipient IDs may be shown to HA admins
 
-## Required Architecture
-
 ## Delivery Scope
 
 This spec describes the target admin panel. Implementation must be phased so the first production
 slice is useful and bounded.
 
-### Read-Only MVP
+### Read-Only Foundation
 
-The MVP is read-only and includes:
+The first foundation slice is read-only and includes:
 
 - backend observability snapshot contract
 - redacted snapshot API for HA admins
@@ -114,31 +112,66 @@ The MVP is read-only and includes:
 - basic Runtime Confirmation Center
 - Notification Routing Inspector
 
-The MVP must not include write actions beyond links to existing Home Assistant/integration
-configuration surfaces.
+This foundation must not include write actions beyond links to existing Home Assistant/integration
+configuration surfaces. Safe admin actions may be added only after this foundation is stable and
+only through allowlisted backend boundaries.
 
-### Panel v1
+### Production Inspector Scope
 
-Panel v1 adds:
+The production inspector scope adds:
 
 - complete Decision Trace
 - complete Reaction Inspector
+- reaction detail routes/drawers
+- production-grade filtering and search
 - Learning Monitor
 - Proposal Backlog Inspector
 - proposal grouping/bundling transparency
 - richer filtering and deep links
+- exportable redacted observability snapshot for support/debugging
 
-### Later Extensions
+This scope maps to AO8 in the development plan.
 
-Later extensions may add safe admin actions:
+### Advanced Debugging Scope
+
+The advanced debugging scope adds entity-centric debugging and focused negative reasoning:
+
+- Entity Impact Inspector
+- "Why not now?" focused evaluation for one reaction
+- trace timeline views grouped by reaction or entity
+
+This scope maps to AO9 and AO10 in the development plan.
+
+### Safe Admin Actions
+
+Safe admin actions may include:
 
 - clear admin-clearable holds
 - reset runtime confirmation stats
 - review promotion
-- acknowledge findings
-- open/edit specific policies
+- review proposal or proposal group
 
-These actions must not be implemented before the read-only panel is stable.
+Future safe admin actions may include:
+
+- acknowledge non-critical findings
+- open/edit specific policies or reactions through stable Home Assistant/config-flow entry points
+
+These actions must not be implemented before the read-only foundation is stable. Every action must
+remain explicit, HA-admin-only, confirmed when behavior-changing, and audited through the runtime
+observability event buffer.
+
+Implemented AO7 actions:
+
+- clear admin-clearable manual holds
+- review runtime-confirmation promotion prompts
+- reset runtime-confirmation promotion state
+- review individual proposals
+- review house-state proposal batches, including dismiss-similar semantics
+
+Future candidate actions:
+
+- acknowledge non-critical findings
+- open/edit specific policies or reactions through stable Home Assistant/config-flow entry points
 
 ### Custom HA Admin Panel
 
@@ -167,8 +200,8 @@ HeimaObservabilitySnapshot = {
     "meta": {...},
     "health": {...},
     "runtime": {...},
-    "decision_traces": {...},
-    "reactions": {...},
+    "decision_traces": [...],
+    "reactions": [...],
     "manual_holds": {...},
     "runtime_confirmations": {...},
     "notifications": {...},
@@ -193,6 +226,11 @@ The first implementation must define these fields at minimum.
     "engine_version": "0.x.y",
     "is_partial": False,
     "partial_reasons": [],
+    "retention": {
+        "mode": "in_memory",
+        "description": "history_since_last_restart",
+        "started_at": "...",
+    },
 }
 ```
 
@@ -213,13 +251,16 @@ The first implementation must define these fields at minimum.
 }
 ```
 
+`acknowledged` is reserved for forward compatibility and must remain `False` until a persisted
+health-finding acknowledgement model is implemented.
+
 #### `recent_events[]`
 
 ```python
 {
     "event_id": "stable-or-buffer-id",
     "timestamp": "...",
-    "category": "reaction|manual_hold|notification|proposal|learning|health",
+    "category": "reaction|manual_hold|notification|proposal|learning|health|admin_action",
     "severity": "debug|info|warning|error",
     "summary": "...",
     "reason_code": "manual_hold_active",
@@ -235,7 +276,7 @@ The first implementation must define these fields at minimum.
     "reaction_id": "r1",
     "occurrence_key": "...",
     "timestamp": "...",
-    "outcome": "matched|applied|skipped|blocked|waiting|failed|not_matched",
+    "outcome": "applied|skipped|blocked|waiting|failed|not_matched",
     "reason_codes": ["matched", "manual_hold_active"],
     "input_summary": {...},
     "condition_results": [...],
@@ -271,8 +312,14 @@ The first implementation must define these fields at minimum.
 ```python
 {
     "pending": [...],
+    "pending_count": 0,
     "recent_completed": [...],
+    "recent_completed_count": 0,
     "stale_responses": 0,
+    "duplicate_occurrences": 0,
+    "completed_by_status": {...},
+    "scheduled_timeouts": [...],
+    "action_event_subscription_active": False,
     "promotion_reviews": [...],
 }
 ```
@@ -301,6 +348,9 @@ The backend may expose query endpoints in addition to the full snapshot:
 - `learning/family/{family_id}`
 
 These projections must be derived from the same canonical observability data model.
+
+These endpoints are optional projections, not separate sources of truth. AO8 may reuse the full
+snapshot directly when it already contains enough data for detail views.
 
 ### HA Frontend Integration Contract
 
@@ -516,7 +566,9 @@ Required navigation and explanations:
 - link to source entity in Home Assistant when possible
 - explain whether the hold is admin-clearable when future actions are enabled
 
-Clearing an admin-clearable hold is a future OP7 action. It must not be part of the read-only MVP.
+Clearing an admin-clearable hold is implemented in AO7. It must use the same manual-hold backend
+boundary as the service layer, require explicit admin confirmation, and record an admin action
+event.
 
 The panel must show default lifecycle rules, for example:
 
@@ -786,6 +838,10 @@ Required filters:
 - proposal type
 - visible/suppressed/stale
 
+Filtering must be implemented against fields already present in the observability snapshot or
+explicit backend projections. The frontend may filter local table rows for display, but it must not
+derive authoritative backend counts or grouping semantics locally.
+
 ### Refresh Model
 
 The panel must support:
@@ -869,7 +925,7 @@ If MVP retention is in-memory:
 - runtime confirmations remain governed by `resident_runtime_confirmation_spec.md`; pending
   runtime requests are not made restart-safe by this panel spec
 
-Panel v1 should persist a compact event/trace ring buffer if production debugging shows that
+Future production hardening may persist a compact event/trace ring buffer if production debugging shows that
 restart volatility prevents useful investigation.
 
 Persisted traces, if introduced, must be:
@@ -881,22 +937,31 @@ Persisted traces, if introduced, must be:
 
 ## Admin Actions
 
-The first implementation may be read-only except for navigation to existing config flows.
+The read-only foundation may include navigation to existing config flows. Mutations are allowed
+only in the safe-admin-action slice and only through existing backend boundaries.
 
-Allowed future admin actions:
+Allowed admin actions:
+
+- clear admin-clearable manual hold
+- reset runtime confirmation stats
+- review promotion
+- review individual proposal
+- review proposal group
+
+Allowed navigation-only actions:
 
 - open reaction editor
 - open policy editor
 - open proposal review
-- clear admin-clearable manual hold
-- reset runtime confirmation stats
-- review promotion
-- mark finding acknowledged
+
+Future candidate mutation actions:
+
+- mark non-critical finding acknowledged
 
 Rules:
 
-- OP1-OP6 are read-only except for navigation/deep links
-- OP7 is the first phase allowed to introduce mutations
+- AO1-AO6 are read-only except for navigation/deep links
+- AO7 is the first phase allowed to introduce mutations
 - destructive actions require confirmation
 - actions must use existing backend boundaries, not mutate internal state directly from frontend
 - all actions must record a runtime/admin event
@@ -988,7 +1053,7 @@ Live tests should verify at least:
 
 ## Phased Implementation
 
-### OP1 — Backend Snapshot Contract
+### AO1 — Backend Snapshot Contract
 
 - Define snapshot schema and version.
 - Build read-only snapshot aggregator from existing diagnostics.
@@ -996,47 +1061,267 @@ Live tests should verify at least:
 - Add unit tests.
 - MVP phase.
 
-### OP2 — Runtime Activity and Decision Trace
+### AO2 — Runtime Activity and Decision Trace
 
 - Add bounded trace buffer.
 - Emit structured decision traces for reactions and apply steps.
 - Expose manual hold and runtime confirmation links.
-- MVP must include match/apply/skip/block/wait/fail traces; full non-match tracing may remain a
-  focused query.
+- The foundation must include match/apply/skip/block/wait/fail traces; full non-match tracing may
+  remain a focused query.
 
-### OP3 — Custom Admin Panel Shell
+### AO3 — Custom Admin Panel Shell
 
 - Register HA custom panel.
 - Implement Overview, Runtime Activity, and Health routes.
 - Use snapshot API.
 - MVP phase.
 
-### OP4 — Reaction and Manual Hold Inspectors
+### AO4 — Reaction and Manual Hold Inspectors
 
 - Implement reaction list/detail.
 - Implement manual hold center.
 - Add links from runtime events to inspectors.
-- MVP may implement basic inspectors; complete inspector detail belongs to Panel v1.
+- MVP may implement basic inspectors; complete inspector detail belongs to AO8.
 
-### OP5 — Runtime Confirmation and Notification Inspectors
+### AO5 — Runtime Confirmation and Notification Inspectors
 
 - Implement pending/completed request views.
 - Implement notification route inspector.
 - Show actionable capability decisions.
-- MVP may implement basic read-only inspectors; complete delivery history belongs to Panel v1.
+- MVP may implement basic read-only inspectors; complete delivery history belongs to a future
+  notification-delivery-history slice.
 
-### OP6 — Learning and Proposal Transparency
+### AO6 — Learning and Proposal Transparency
 
 - Implement learning monitor.
 - Implement proposal backlog inspector.
 - Show representative vs real proposal counts and suppression reasons.
-- Panel v1 phase.
+- MVP/production-inspector phase.
 
-### OP7 — Admin Actions
+### AO7 — Admin Actions
 
 - Add safe actions through existing backend boundaries.
 - Add audit events for admin actions.
 - Post-read-only phase only.
+
+### AO8 — Usability, Filtering, and Detail Views
+
+AO8 turns the MVP table-oriented panel into a usable production inspector without expanding its
+mutation surface.
+
+Deliverables:
+
+- Add reaction detail view or side drawer.
+- Add manual hold detail view or side drawer.
+- Add runtime confirmation detail view or side drawer.
+- Add proposal/review-row detail view or side drawer.
+- Add table filters and search for high-volume sections.
+- Improve table layout so long IDs, badges, and execution-policy labels do not wrap into unreadable
+  fragments.
+- Add copy buttons for IDs, trace IDs, entity IDs, and request IDs.
+- Add stable deep links for route + object ID within the custom panel.
+- Add "Export snapshot" actions for the already-redacted observability snapshot without exposing
+  secrets:
+  - download JSON file
+  - copy JSON to clipboard
+
+Backend requirements:
+
+- The existing snapshot may be reused if it already contains enough data.
+- If a detail view needs additional derived data, add it to the backend projection rather than
+  reconstructing it from raw diagnostics in the frontend.
+- Snapshot export must use the same redaction path as the panel data.
+- Download and clipboard export must serialize the exact same redacted snapshot object currently
+  available to the panel.
+- No new write actions are introduced in AO8.
+
+AO8 implementation slices:
+
+- AO8.1: backend detail projections for reactions, holds, confirmations, and proposal/review rows
+- AO8.2: frontend detail drawer/routes and readable table layout
+- AO8.3: filters, search, copy buttons, and stable deep links
+- AO8.4: redacted snapshot export
+
+Reaction detail must show:
+
+- reaction ID, label, type, origin, author kind, template/source metadata
+- enabled/muted state
+- configured metadata and runtime diagnostics, separated clearly
+- effective execution policy
+- generated/applicable apply-step summaries when available
+- latest decision trace and recent linked traces
+- linked manual holds
+- linked runtime confirmations or promotion reviews when available
+- linked proposal/source proposal when available
+
+Filtering/search minimum:
+
+- reactions: text, reaction type, origin, enabled/muted, last outcome, has linked hold
+- traces/events: text, outcome/severity, reason code, reaction ID, entity ID
+- holds: domain, scope, release policy, source entity
+- confirmations: pending/completed, status, reaction ID
+- proposals: visible/suppressed/stale, type, follow-up kind
+
+Tests:
+
+- unit tests for reaction detail projection completeness
+- unit tests for snapshot export redaction
+- frontend/static smoke tests proving detail routes and filters are wired
+- live `080` extension checking at least one reaction has real metadata, not only `unknown`
+
+Acceptance criteria:
+
+- an admin can open one reaction and understand its configured identity, current status, recent
+  traces, linked holds, and execution policy without reading raw JSON
+- long IDs and badges remain readable on desktop/tablet widths
+- high-volume tables can be searched/filtered without changing backend semantics
+- snapshot export is redacted and safe to share for support through both download and clipboard
+  flows
+
+### AO9 — Entity Impact Inspector
+
+AO9 adds an entity-centric view: "what is affecting this HA entity?"
+
+Motivation:
+
+Admins often debug symptoms through the entity they observe in HA, not through Heima reaction IDs.
+For example, a camera privacy switch may remain on/off unexpectedly, or a light may not follow an
+expected scene. The panel must let the admin start from the entity and see every Heima object that
+can affect it.
+
+Deliverables:
+
+- Add an `Entities` or `Entity Impact` section.
+- Build an entity index from apply steps, reaction configs, manual holds, decision traces, runtime
+  confirmations, and security camera privacy sources.
+- Add entity detail view.
+- Add search by entity ID.
+- Link entity rows back to reactions, traces, holds, requests, and policies.
+
+Entity detail must show:
+
+- entity ID and domain
+- reactions that target or reference the entity
+- latest Heima decision trace involving the entity
+- recent apply steps involving the entity
+- active manual holds involving the entity
+- pending applies involving the entity
+- runtime confirmations involving the entity
+- source policies/config entries that reference the entity when known
+- last known outcome from Heima's perspective
+
+Rules:
+
+- The entity inspector is not a replacement for HA logbook/history.
+- The panel may show links to HA entity pages/logbook when feasible, but it must not scrape HA
+  history.
+- Notification routes enter the entity index only when they can be linked to an entity-bearing
+  request, apply step, trace, or policy. A generic notification recipient/group is not a Home
+  Assistant entity and must not be indexed as one.
+- The entity index must be backend-derived so UI counts and links are consistent.
+- Domain-specific relationships are allowed only as structured backend metadata. For example,
+  camera privacy policy may expose that `switch.interna_privacy` is the privacy entity for source
+  `interna`; the frontend must not infer this from naming conventions.
+
+Tests:
+
+- entity index projection tests for light apply steps
+- entity index projection tests for camera privacy policy entities
+- manual hold entity-link tests
+- runtime confirmation entity-link tests
+- live smoke test for a camera privacy entity or known test-light entity
+
+Acceptance criteria:
+
+- an admin can search for an entity and see what Heima reactions/holds/traces currently affect it
+- camera privacy and lighting cases are explained through the same generic entity-impact model
+- no entity relationship is inferred from hardcoded Italian labels, room names, or entity-name
+  substrings
+
+### AO10 — Focused "Why Not Now?"
+
+AO10 adds focused negative reasoning for one reaction at a time.
+
+Motivation:
+
+The runtime trace buffer explains what happened recently. It does not necessarily explain why a
+specific reaction did not run if it was not part of the filtered apply plan. Admins need an
+explicit, bounded query that answers: "if Heima evaluated this reaction now, why would it apply,
+skip, wait, or block?"
+
+Deliverables:
+
+- Add an HA-admin-only websocket query, separate from mutation actions.
+- Add a reaction detail button/section: `Why not now?`.
+- Return a focused evaluation result for one reaction ID.
+- Include condition results, guard results, policy decision, manual-hold blockers, runtime
+  confirmation decision, and candidate apply-step summaries when available.
+- Record an observability event that the admin ran a focused inspection, without changing runtime
+  state.
+
+Backend contract:
+
+```python
+WhyNotNowResult = {
+    "reaction_id": "...",
+    "generated_at": "...",
+    "outcome": "would_apply|would_wait|would_block|would_skip|not_evaluable|not_found",
+    "reason_codes": [...],
+    "input_summary": {...},
+    "condition_results": [...],
+    "guard_results": [...],
+    "policy_result": {...},
+    "apply_steps": [...],
+    "links": [...],
+}
+```
+
+Rules:
+
+- The query must be read-only.
+- The query evaluates against the engine's current canonical/runtime state as seen by the latest
+  coordinator cycle. It must not refresh the global snapshot, rebuild all reactions, or recompute
+  unrelated domains as a side effect.
+- It must not enqueue apply steps.
+- It must not create runtime confirmation requests.
+- It must not mutate manual holds.
+- It must not update proposal lifecycle state.
+- It must be rate-limited so the UI cannot trigger expensive focused evaluations on every render.
+- The default limit is 2 focused evaluations per minute per config entry.
+- If it does not materially complicate the first implementation, this limit should be configurable
+  from admin configuration without requiring a Home Assistant restart. Runtime configurability must
+  use the normal config entry/options update path and must not introduce a separate ad-hoc state
+  store.
+- If runtime configurability would add meaningful complexity to the first AO10 slice, ship the
+  fixed 2/minute default first and track runtime-configurable rate limits as a follow-up AO10
+  sub-slice.
+- If a reaction type cannot support focused evaluation yet, return `not_evaluable` with an explicit
+  reason instead of guessing.
+
+Implementation guidance:
+
+- Prefer extending reaction/plugin contracts with an optional focused-evaluation hook.
+- Do not implement a one-off lighting-only evaluator.
+- If the first implementation supports only a subset of reaction types, the API must make the
+  unsupported state explicit and the UI must display it clearly.
+- Use existing condition/guard/apply-step validation helpers wherever possible.
+
+Tests:
+
+- authorization tests for the focused query
+- not-found and not-evaluable tests
+- rate-limit tests for the default 2/minute behavior
+- read-only tests proving no apply plan, manual hold, runtime request, or options state mutates
+- supported-reaction focused evaluation tests
+- frontend smoke test for the reaction detail `Why not now?` affordance
+
+Acceptance criteria:
+
+- an admin can ask why one reaction would not run now
+- unsupported reaction types fail explicitly, not as `unknown`
+- the query is safe to run repeatedly and cannot apply actions
+- repeated UI calls are bounded by the configured/default rate limit
+- the result links back to traces, holds, entities, and policies when available
 
 ## Acceptance Criteria
 

@@ -121,6 +121,9 @@ These constraints must never be violated. See spec §16 for rationale.
 | AH | Resident Runtime Confirmation & Auto-Apply Promotion | `DONE` | AD, MH, AF |
 | AN | Notification Admin UI & Execution Policy Profiles | `DONE` | AH |
 | AO | Admin Observability Panel | `DONE` | AH, AN, MH, AC, AD |
+| AO8 | Observability Usability & Detail Views | `PLANNED` | AO |
+| AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
+| AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 
 ---
 
@@ -133,6 +136,8 @@ before merge into `feat/an-notification-admin-ui`.
 **Next action:**
 Hold AO on its feature branch for hands-on MVP verification. After verification, merge
 `feat/ao-admin-observability-panel` into `feat/an-notification-admin-ui`.
+Next observability work should start only after deciding whether to extend the current AO branch
+with AO8-AO10 before merge, or merge the MVP first and develop AO8-AO10 on follow-up branches.
 
 ### Phase AO — Admin Observability Panel
 
@@ -455,6 +460,180 @@ Hold AO on its feature branch for hands-on MVP verification. After verification,
   - live diagnostic tier before merging AO MVP
 - Status: completed for AO MVP on `feat/ao-admin-observability-panel`; full CI remains required
   before merging the branch after user MVP verification.
+
+### Planned AO Extensions
+
+These extensions are specified in `docs/specs/core/admin_observability_panel_spec.md` and should be
+implemented only if we choose to extend the MVP before merging, or as follow-up branches after AO
+MVP merge.
+
+#### AO8 — Observability Usability & Detail Views
+
+- Status: `PLANNED`.
+- Goal: make the MVP panel production-usable without adding new mutation types.
+- Product boundary:
+  - AO8 must not add new mutation types.
+  - AO8 must improve the existing AO panel using the existing redacted snapshot, or backend
+    projections derived from the same canonical observability data.
+  - The frontend may filter local table rows for display, but it must not recompute authoritative
+    proposal grouping, entity relationships, or runtime semantics.
+- AO8.1 backend detail projections:
+  - Add projection helpers for reaction, manual-hold, runtime-confirmation, and proposal/review
+    detail rows when the existing snapshot is insufficient.
+  - Keep configured metadata, runtime diagnostics, traces, linked holds, linked requests, proposal
+    source metadata, and execution-policy data clearly separated.
+  - Preserve the existing redaction path for every projection.
+  - Tests:
+    - unit tests for reaction detail projection completeness
+    - unit tests for manual-hold and runtime-confirmation link projection
+    - unit tests proving missing diagnostics degrade to explicit unavailable/empty fields
+    - redaction regression tests for projection payloads
+- AO8.2 frontend detail views and readable layout:
+  - Add detail drawer or route for reactions, manual holds, runtime confirmations, and
+    proposal/review rows.
+  - Improve table layout so long IDs, badges, execution-policy labels, trace IDs, and source
+    metadata remain readable on desktop/tablet widths.
+  - Show raw redacted JSON only as secondary advanced-debugging material.
+  - Tests:
+    - frontend/static smoke tests for each detail affordance
+    - layout smoke tests covering long reaction IDs and execution-policy labels
+    - unit/static tests for graceful empty/unavailable states
+- AO8.3 filters, search, copy buttons, and deep links:
+  - Add filters/search for reactions, traces/events, holds, confirmations, and proposals.
+  - Add copy buttons for reaction IDs, trace IDs, entity IDs, request IDs, hold scopes, and review
+    IDs where present.
+  - Add stable custom-panel deep links for route plus object ID.
+  - Tests:
+    - frontend/static tests for filter controls and local row filtering
+    - tests proving filters do not change backend counts or grouping semantics
+    - smoke tests for copy-button wiring and deep-link route parsing
+- AO8.4 redacted snapshot export:
+  - Add both download JSON and copy-to-clipboard export actions.
+  - Both actions must serialize the exact same redacted snapshot object currently available to the
+    panel.
+  - Do not expose secrets, tokens, credentials, raw auth headers, or sensitive free-form values.
+  - Tests:
+    - snapshot export redaction tests for download payloads
+    - snapshot export redaction tests for clipboard payloads
+    - test proving both export paths use the same serialized redacted object
+- Live validation:
+  - Extend live `080` so at least one real reaction has label/type/origin/source metadata, latest
+    trace info where available, linked holds where available, and no unreadable `unknown`-only row.
+  - Verify filters/search and at least one detail route against the running HA test instance.
+- Acceptance:
+  - an admin can inspect one reaction without reading raw JSON
+  - an admin can inspect one hold, confirmation, and proposal/review row from the panel
+  - high-volume tables can be filtered/searched without changing backend semantics
+  - long IDs and badges remain readable
+  - download and clipboard export use the same redacted snapshot payload as the panel
+
+#### AO9 — Entity Impact Inspector
+
+- Status: `PLANNED`.
+- Goal: let an admin start from an HA entity and see what Heima is doing to or because of it.
+- Product boundary:
+  - AO9 must be entity-centric, not domain-specific.
+  - Lighting and camera privacy must be explained through the same generic entity-impact model.
+  - Entity relationships must be backend-derived. The frontend must not infer relationships from
+    naming conventions, room labels, localized text, or entity-ID substrings.
+- AO9.1 backend entity-impact index:
+  - Build an index from apply steps, reaction configs, manual holds, decision traces, runtime
+    confirmations, and structured domain metadata.
+  - Include security camera privacy sources as structured metadata, for example privacy entity to
+    camera source links.
+  - Include notification routes only when linked to an entity-bearing request, apply step, trace, or
+    policy. Generic notification recipients/groups are not Home Assistant entities.
+  - Tests:
+    - entity index projection tests for light apply steps
+    - entity index projection tests for camera privacy policy entities
+    - tests proving notification recipient/group IDs are not indexed as HA entities by themselves
+    - redaction tests for entity-impact rows
+- AO9.2 entity list/search:
+  - Add an `Entities` or `Entity Impact` section.
+  - Support search by entity ID and domain.
+  - Show concise counts for linked reactions, traces, holds, requests, policies, and pending applies.
+  - Tests:
+    - frontend/static tests for entity search and empty state
+    - unit/static tests for count rendering from backend-provided fields
+- AO9.3 entity detail view:
+  - Show entity ID, domain, reactions that target or reference the entity, latest Heima trace,
+    recent apply steps, active manual holds, pending applies, runtime confirmations, source
+    policies/config entries, and last known Heima outcome.
+  - Link entity detail rows back to reaction, trace, hold, request, and policy views when available.
+  - Tests:
+    - detail projection tests for linked reactions/traces/holds/requests/policies
+    - frontend/static smoke tests for entity detail navigation
+- AO9.4 live validation:
+  - Add `081_entity_impact_live.py`.
+  - Validate a known camera privacy entity or test-light entity against the running HA test
+    instance.
+  - Verify that camera privacy and lighting examples are represented through the same generic
+    entity-impact shape.
+- Acceptance:
+  - an admin can search an entity and see linked Heima reactions, holds, traces, requests, and
+    policies
+  - camera privacy and lighting cases are explained through the same generic model
+  - no frontend inference from naming conventions or hardcoded room/domain strings
+
+#### AO10 — Focused Why-Not-Now Evaluation
+
+- Status: `PLANNED`.
+- Goal: answer why one selected reaction would apply, wait, block, skip, or be non-evaluable now.
+- Product boundary:
+  - AO10 is a read-only focused evaluation tool, not a runtime execution path.
+  - It must not enqueue apply steps, create runtime confirmation requests, mutate manual holds,
+    update proposal lifecycle state, or rebuild unrelated domains as a side effect.
+  - Unsupported reaction types must return `not_evaluable` with explicit reasons.
+- AO10.1 websocket/API contract and authorization:
+  - Add an HA-admin-only read-only websocket query for one reaction ID.
+  - Return `reaction_id`, `generated_at`, `outcome`, `reason_codes`, `input_summary`,
+    `condition_results`, `guard_results`, `policy_result`, `apply_steps`, and `links`.
+  - Return `not_found` for unknown reaction IDs.
+  - Tests:
+    - authorization tests for admin/non-admin callers
+    - not-found and malformed-request tests
+    - schema/version compatibility tests for focused results
+- AO10.2 focused evaluation hook:
+  - Prefer an optional reaction/plugin focused-evaluation hook over a one-off lighting-only
+    evaluator.
+  - Reuse existing condition, guard, execution-policy, manual-hold, and apply-step validation
+    helpers where possible.
+  - If only a subset of reaction types is supported in the first slice, unsupported reactions must
+    be explicit in API and UI.
+  - Tests:
+    - supported-reaction focused evaluation tests
+    - unsupported-reaction `not_evaluable` tests
+    - tests proving reason codes and links point to relevant holds/entities/policies when available
+- AO10.3 no-mutation and rate limiting:
+  - Enforce default 2 focused evaluations per minute per config entry.
+  - If it does not materially complicate implementation, make the limit runtime-configurable
+    through normal config entry/options updates without requiring a Home Assistant restart.
+  - If runtime configurability adds meaningful complexity, ship the fixed default first and track
+    runtime configurability as an AO10 follow-up sub-slice.
+  - Record an observability event that an admin ran a focused inspection, without changing runtime
+    state.
+  - Tests:
+    - default rate-limit tests
+    - optional runtime-configurable-rate tests if the option is implemented in this slice
+    - no-mutation tests proving no apply plan, runtime request, manual hold, proposal lifecycle, or
+      options state changes unexpectedly
+- AO10.4 frontend integration and live validation:
+  - Add a `Why not now?` affordance in reaction detail.
+  - Display `would_apply`, `would_wait`, `would_block`, `would_skip`, `not_evaluable`, and
+    `not_found` distinctly.
+  - Show condition, guard, policy, apply-step, and link sections without raw JSON as the primary
+    explanation.
+  - Add `082_why_not_now_live.py` for the first supported focused-evaluation path.
+  - Tests:
+    - frontend/static smoke test for the reaction detail affordance
+    - frontend/static tests for `not_evaluable` and rate-limit display states
+    - live `082` test against the running HA test instance once at least one supported reaction
+      type is wired
+- Acceptance:
+  - focused query never applies actions or creates runtime confirmation requests
+  - unsupported reaction types fail explicitly
+  - repeated UI calls are bounded by the configured/default rate limit
+  - result links to relevant traces, holds, entities, and policies where available
 
 ### Recent Working Notes
 
