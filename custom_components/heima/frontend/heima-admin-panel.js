@@ -5,6 +5,8 @@ class HeimaAdminPanel extends HTMLElement {
     this._snapshot = null;
     this._error = "";
     this._actionError = "";
+    this._inspectionError = "";
+    this._inspectionResult = null;
     this._loading = true;
     this._route = "overview";
     this._detail = null;
@@ -50,6 +52,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._loading = true;
     this._error = "";
     this._actionError = "";
+    this._inspectionError = "";
     this._render();
     try {
       const command =
@@ -433,6 +436,9 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-export]").forEach((button) => {
       button.addEventListener("click", () => this._exportSnapshot(button));
     });
+    this.shadowRoot.querySelectorAll("button[data-inspect-why-not-now]").forEach((button) => {
+      button.addEventListener("click", () => this._runWhyNotNow(button));
+    });
     this._restoreFilterFocus();
   }
 
@@ -467,8 +473,11 @@ class HeimaAdminPanel extends HTMLElement {
     const actionError = this._actionError
       ? `<div class="card error">${this._escape(this._actionError)}</div>`
       : "";
+    const inspectionError = this._inspectionError
+      ? `<div class="card error">${this._escape(this._inspectionError)}</div>`
+      : "";
     const body = this._bodyContent(snapshot);
-    return `${actionError}${body}${this._detailPanel(snapshot)}`;
+    return `${actionError}${inspectionError}${body}${this._detailPanel(snapshot)}`;
   }
 
   _bodyContent(snapshot) {
@@ -1036,6 +1045,13 @@ class HeimaAdminPanel extends HTMLElement {
         })}
         ${this._detailSection("Execution Policy", detail.execution_policy || {})}
       </section>
+      <div class="detail-section">
+        <button
+          class="inline"
+          data-inspect-why-not-now="${this._escape(reactionId)}"
+        >Why not now?</button>
+      </div>
+      ${this._whyNotNowResult(reactionId)}
       ${this._linkedRows("Manual Holds", detail.linked_manual_holds || [], "scope")}
       ${this._linkedRows("Runtime Confirmations", detail.linked_runtime_confirmations || [], "request_id")}
       ${this._linkedRows("Promotion Reviews", detail.linked_promotion_reviews || [], "review_id")}
@@ -1199,6 +1215,28 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
+  _whyNotNowResult(reactionId) {
+    const result = this._inspectionResult;
+    if (!result || result.reaction_id !== reactionId) return "";
+    return `
+      <div class="detail-section">
+        <h3>Why Not Now</h3>
+        <section class="detail-grid">
+          ${this._detailSection("Focused Result", {
+            outcome: result.outcome,
+            reason_codes: (result.reason_codes || []).join(", "),
+            generated_at: result.generated_at,
+          })}
+          ${this._detailSection("Input", result.input_summary || {})}
+          ${this._detailSection("Policy", result.policy_result || {})}
+        </section>
+        ${this._linkedRows("Candidate Apply Steps", result.apply_steps || [], "step_id")}
+        ${this._linkedRows("Guard Results", result.guard_results || [], "reason_code")}
+        ${this._rawDetails(result)}
+      </div>
+    `;
+  }
+
   _detailButton(kind, id) {
     if (!id) return "";
     return `
@@ -1284,6 +1322,26 @@ class HeimaAdminPanel extends HTMLElement {
     }
     if (mode === "download") {
       this._downloadText(payload, this._snapshotFilename());
+    }
+  }
+
+  async _runWhyNotNow(button) {
+    const reactionId = button.getAttribute("data-inspect-why-not-now") || "";
+    if (!reactionId || !this._hass?.callWS) return;
+    this._inspectionError = "";
+    button.disabled = true;
+    try {
+      const command =
+        this._panel?.config?.whyNotNowCommand || "heima/observability/why_not_now";
+      this._inspectionResult = await this._hass.callWS({
+        type: command,
+        reaction_id: reactionId,
+      });
+    } catch (err) {
+      this._inspectionError = err?.message || "Unable to complete focused inspection.";
+    } finally {
+      button.disabled = false;
+      this._render();
     }
   }
 
