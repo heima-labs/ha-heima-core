@@ -17,10 +17,13 @@ from custom_components.heima.observability import (
 )
 from custom_components.heima.runtime.observability import RuntimeObservabilityBuffer
 from custom_components.heima.websocket_api import (
+    _WHY_NOT_NOW_CALLS,
     WS_TYPE_OBSERVABILITY_ACTION,
     WS_TYPE_OBSERVABILITY_SNAPSHOT,
+    WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
     websocket_observability_action,
     websocket_observability_snapshot,
+    websocket_observability_why_not_now,
 )
 
 
@@ -518,6 +521,96 @@ def test_observability_websocket_reports_missing_entry_for_admin() -> None:
 
     assert connection.results == []
     assert connection.errors[0][1] == "not_found"
+
+
+def test_observability_why_not_now_requires_admin() -> None:
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": _FakeCoordinator()}}})
+    connection = _FakeConnection(is_admin=False)
+
+    with pytest.raises(Unauthorized):
+        websocket_observability_why_not_now(
+            hass,
+            connection,
+            {
+                "id": 1,
+                "type": WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
+                "entry_id": "entry-1",
+                "reaction_id": "reaction.one",
+            },
+        )
+
+    assert connection.results == []
+    assert connection.errors == []
+
+
+def test_observability_why_not_now_returns_not_evaluable_for_supported_contract() -> None:
+    _WHY_NOT_NOW_CALLS.clear()
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": _FakeCoordinator()}}})
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_why_not_now(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
+            "entry_id": "entry-1",
+            "reaction_id": "reaction.one",
+        },
+    )
+
+    assert connection.errors == []
+    result = connection.results[0][1]
+    assert result["reaction_id"] == "reaction.one"
+    assert result["outcome"] == "not_evaluable"
+    assert result["reason_codes"] == ["focused_evaluation_not_supported"]
+    assert result["input_summary"]["reaction_type"] == "context_conditioned_lighting_scene"
+    assert result["guard_results"][0]["reason_code"] == "manual_hold_active"
+    assert result["apply_steps"][0]["target"] == "light.studio"
+    assert {"kind": "reaction", "id": "reaction.one"} in result["links"]
+
+
+def test_observability_why_not_now_returns_not_found_for_unknown_reaction() -> None:
+    _WHY_NOT_NOW_CALLS.clear()
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": _FakeCoordinator()}}})
+    connection = _FakeConnection(is_admin=True)
+
+    websocket_observability_why_not_now(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
+            "entry_id": "entry-1",
+            "reaction_id": "missing",
+        },
+    )
+
+    assert connection.errors == []
+    assert connection.results[0][1]["outcome"] == "not_found"
+    assert connection.results[0][1]["reason_codes"] == ["reaction_not_found"]
+
+
+def test_observability_why_not_now_rate_limits_per_entry() -> None:
+    _WHY_NOT_NOW_CALLS.clear()
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {"coordinator": _FakeCoordinator()}}})
+    connection = _FakeConnection(is_admin=True)
+
+    for msg_id in (1, 2, 3):
+        websocket_observability_why_not_now(
+            hass,
+            connection,
+            {
+                "id": msg_id,
+                "type": WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
+                "entry_id": "entry-1",
+                "reaction_id": "reaction.one",
+            },
+        )
+
+    assert [result[0] for result in connection.results] == [1, 2]
+    assert connection.errors[0][0] == 3
+    assert connection.errors[0][1] == "rate_limited"
 
 
 @pytest.mark.asyncio

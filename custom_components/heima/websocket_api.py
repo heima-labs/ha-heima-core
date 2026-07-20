@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import voluptuous as vol
@@ -14,6 +15,9 @@ from .observability import build_observability_snapshot
 
 WS_TYPE_OBSERVABILITY_SNAPSHOT = "heima/observability/snapshot"
 WS_TYPE_OBSERVABILITY_ACTION = "heima/observability/action"
+WS_TYPE_OBSERVABILITY_WHY_NOT_NOW = "heima/observability/why_not_now"
+WHY_NOT_NOW_RATE_LIMIT = 2
+WHY_NOT_NOW_RATE_WINDOW_S = 60.0
 ACTION_CLEAR_MANUAL_HOLD = "clear_manual_hold"
 ACTION_REVIEW_RUNTIME_PROMOTION = "review_runtime_promotion"
 ACTION_RESET_RUNTIME_CONFIRMATION_PROMOTION_STATE = "reset_runtime_confirmation_promotion_state"
@@ -27,6 +31,7 @@ PROMOTION_ACTIONS = {
     PROMOTION_ACTION_DISMISS_NOT_NOW,
     PROMOTION_ACTION_DISABLE_FUTURE_PROMPTS,
 }
+_WHY_NOT_NOW_CALLS: dict[str, list[float]] = {}
 
 
 @callback
@@ -34,6 +39,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register Heima websocket commands."""
     websocket_api.async_register_command(hass, websocket_observability_snapshot)
     websocket_api.async_register_command(hass, websocket_observability_action)
+    websocket_api.async_register_command(hass, websocket_observability_why_not_now)
 
 
 @websocket_api.websocket_command(
@@ -59,6 +65,48 @@ def websocket_observability_snapshot(
         )
         return
     connection.send_result(msg["id"], build_observability_snapshot(coordinator))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_OBSERVABILITY_WHY_NOT_NOW,
+        vol.Optional("entry_id"): str,
+        vol.Required("reaction_id"): str,
+    }
+)
+@websocket_api.require_admin
+@callback
+def websocket_observability_why_not_now(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return focused read-only reasoning for one reaction."""
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested focused inspection.",
+        )
+        return
+    entry_id = _coordinator_entry_id(coordinator)
+    if not _why_not_now_rate_allowed(entry_id):
+        connection.send_error(
+            msg["id"],
+            "rate_limited",
+            "Focused observability inspection is rate limited.",
+        )
+        return
+    result = _why_not_now_result(coordinator, str(msg.get("reaction_id") or ""))
+    if result.get("outcome") != "not_found":
+        _record_admin_action(
+            coordinator,
+            summary=f"Admin ran focused inspection for reaction '{result['reaction_id']}'.",
+            reason_code="why_not_now_inspection",
+            object_links=({"kind": "reaction", "id": str(result["reaction_id"])},),
+        )
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -331,6 +379,69 @@ def _record_admin_action(
             reason_code=reason_code,
             object_links=object_links,
         )
+
+
+def _why_not_now_result(coordinator: Any, reaction_id: str) -> dict[str, Any]:
+    normalized = str(reaction_id or "").strip()
+    generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    snapshot = build_observability_snapshot(coordinator)
+    reactions = snapshot.get("details", {}).get("reactions", {}).get("by_id", {})
+    if normalized not in reactions:
+        return {
+            "reaction_id": normalized,
+            "generated_at": generated_at,
+            "outcome": "not_found",
+            "reason_codes": ["reaction_not_found"],
+            "input_summary": {},
+            "condition_results": [],
+            "guard_results": [],
+            "policy_result": {},
+            "apply_steps": [],
+            "links": [],
+        }
+    detail = dict(reactions.get(normalized) or {})
+    latest_trace = detail.get("latest_trace") if isinstance(detail.get("latest_trace"), dict) else {}
+    summary = dict(detail.get("summary") or {})
+    return {
+        "reaction_id": normalized,
+        "generated_at": generated_at,
+        "outcome": "not_evaluable",
+        "reason_codes": ["focused_evaluation_not_supported"],
+        "input_summary": {
+            "reaction_type": summary.get("reaction_type"),
+            "last_outcome": summary.get("last_outcome"),
+            "latest_trace_id": summary.get("latest_trace_id"),
+        },
+        "condition_results": [],
+        "guard_results": list(latest_trace.get("guard_results") or []),
+        "policy_result": dict(detail.get("execution_policy") or {}),
+        "apply_steps": list(latest_trace.get("apply_steps") or []),
+        "links": [
+            {"kind": "reaction", "id": normalized},
+            *list(latest_trace.get("links") or []),
+        ],
+    }
+
+
+def _why_not_now_rate_allowed(entry_id: str) -> bool:
+    now = time.monotonic()
+    key = entry_id or "default"
+    recent = [
+        timestamp
+        for timestamp in _WHY_NOT_NOW_CALLS.get(key, [])
+        if now - timestamp < WHY_NOT_NOW_RATE_WINDOW_S
+    ]
+    if len(recent) >= WHY_NOT_NOW_RATE_LIMIT:
+        _WHY_NOT_NOW_CALLS[key] = recent
+        return False
+    recent.append(now)
+    _WHY_NOT_NOW_CALLS[key] = recent
+    return True
+
+
+def _coordinator_entry_id(coordinator: Any) -> str:
+    entry = getattr(coordinator, "entry", None)
+    return str(getattr(entry, "entry_id", "") or "")
 
 
 def _coordinator_for_message(hass: HomeAssistant, msg: dict[str, Any]) -> Any | None:
