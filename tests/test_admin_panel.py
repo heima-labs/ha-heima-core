@@ -168,3 +168,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "Runtime Confirmation Detail" in text
     assert "Proposal Review Detail" in text
     assert "object-id" in text
+    assert "data-filter-section" in text
+    assert "Search reactions" in text
+    assert "data-copy-value" in text
+    assert "navigator.clipboard.writeText" in text
+    assert "URLSearchParams" in text
+    assert "replaceState" in text

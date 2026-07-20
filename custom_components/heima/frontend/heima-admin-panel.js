@@ -8,16 +8,22 @@ class HeimaAdminPanel extends HTMLElement {
     this._loading = true;
     this._route = "overview";
     this._detail = null;
+    this._filters = {};
+    this._focusFilter = null;
+    this._onHashChange = () => this._restoreRouteFromHash();
     this._refreshTimer = null;
   }
 
   connectedCallback() {
+    this._restoreRouteFromHash();
+    window.addEventListener("hashchange", this._onHashChange);
     this._render();
     this._loadSnapshot();
     this._refreshTimer = window.setInterval(() => this._loadSnapshot(), 15000);
   }
 
   disconnectedCallback() {
+    window.removeEventListener("hashchange", this._onHashChange);
     if (this._refreshTimer) {
       window.clearInterval(this._refreshTimer);
       this._refreshTimer = null;
@@ -60,12 +66,52 @@ class HeimaAdminPanel extends HTMLElement {
   _setRoute(route) {
     this._route = route;
     this._detail = null;
+    this._syncHash();
     this._render();
   }
 
   _setDetail(kind, id) {
     this._detail = kind && id ? { kind, id } : null;
+    this._syncHash();
     this._render();
+  }
+
+  _setFilter(section, key, value) {
+    const current = this._filters[section] || {};
+    this._filters = {
+      ...this._filters,
+      [section]: {
+        ...current,
+        [key]: value,
+      },
+    };
+    this._focusFilter = { section, key };
+    this._render();
+  }
+
+  _restoreRouteFromHash() {
+    const raw = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const params = new URLSearchParams(raw);
+    const route = params.get("route");
+    if (route) this._route = route;
+    const detailKind = params.get("detail");
+    const detailId = params.get("id");
+    this._detail = detailKind && detailId ? { kind: detailKind, id: detailId } : null;
+  }
+
+  _syncHash() {
+    const params = new URLSearchParams();
+    params.set("route", this._route);
+    if (this._detail) {
+      params.set("detail", this._detail.kind);
+      params.set("id", this._detail.id);
+    }
+    const nextHash = `#${params.toString()}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
+    }
   }
 
   _render() {
@@ -151,6 +197,34 @@ class HeimaAdminPanel extends HTMLElement {
           display: flex;
           flex-wrap: wrap;
           gap: 6px;
+        }
+        .toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          align-items: center;
+          margin: 0 0 12px;
+        }
+        .toolbar input,
+        .toolbar select {
+          min-width: 220px;
+          max-width: 100%;
+          border: 1px solid var(--divider-color);
+          border-radius: 6px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          padding: 8px 10px;
+          font: inherit;
+        }
+        button.copy {
+          display: inline-block;
+          width: auto;
+          margin: 0 0 0 4px;
+          padding: 2px 6px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          font-size: 11px;
+          text-align: center;
         }
         .object-id {
           font-family: var(--code-font-family, monospace);
@@ -332,6 +406,26 @@ class HeimaAdminPanel extends HTMLElement {
         );
       });
     });
+    this.shadowRoot.querySelectorAll("[data-filter-section]").forEach((input) => {
+      input.addEventListener("input", () => {
+        this._setFilter(
+          input.getAttribute("data-filter-section") || "",
+          input.getAttribute("data-filter-key") || "text",
+          input.value || "",
+        );
+      });
+      input.addEventListener("change", () => {
+        this._setFilter(
+          input.getAttribute("data-filter-section") || "",
+          input.getAttribute("data-filter-key") || "text",
+          input.value || "",
+        );
+      });
+    });
+    this.shadowRoot.querySelectorAll("button[data-copy-value]").forEach((button) => {
+      button.addEventListener("click", () => this._copyValue(button));
+    });
+    this._restoreFilterFocus();
   }
 
   _navButton(route, label) {
@@ -400,9 +494,12 @@ class HeimaAdminPanel extends HTMLElement {
   }
 
   _activity(snapshot) {
-    const events = snapshot.recent_events || [];
-    if (!events.length) return `<div class="empty">No runtime activity in the retained window.</div>`;
+    const allEvents = snapshot.recent_events || [];
+    const events = this._filterRows("activity", allEvents);
+    if (!allEvents.length) return `<div class="empty">No runtime activity in the retained window.</div>`;
     return `
+      ${this._filterToolbar("activity", "Search runtime events")}
+      ${this._filteredCount(events.length, allEvents.length)}
       <table>
         <thead>
           <tr><th>Time</th><th>Category</th><th>Reason</th><th>Summary</th></tr>
@@ -435,9 +532,12 @@ class HeimaAdminPanel extends HTMLElement {
   }
 
   _reactions(snapshot) {
-    const reactions = snapshot.reactions || [];
-    if (!reactions.length) return `<div class="empty">No configured reactions in the snapshot.</div>`;
+    const allReactions = snapshot.reactions || [];
+    const reactions = this._filterRows("reactions", allReactions);
+    if (!allReactions.length) return `<div class="empty">No configured reactions in the snapshot.</div>`;
     return `
+      ${this._filterToolbar("reactions", "Search reactions")}
+      ${this._filteredCount(reactions.length, allReactions.length)}
       <table>
         <thead>
           <tr>
@@ -456,8 +556,8 @@ class HeimaAdminPanel extends HTMLElement {
             <tr>
               <td>
                 <strong>${this._escape(reaction.label || reaction.reaction_id || "")}</strong>
-                <div class="object-id">${this._escape(reaction.reaction_id || "")}</div>
-                ${reaction.latest_trace_id ? `<div class="object-id">trace: ${this._escape(reaction.latest_trace_id)}</div>` : ""}
+                ${this._copyableId(reaction.reaction_id || "")}
+                ${reaction.latest_trace_id ? `<div class="object-id">trace: ${this._escape(reaction.latest_trace_id)} ${this._copyButton(reaction.latest_trace_id)}</div>` : ""}
               </td>
               <td>${this._escape(reaction.reaction_type || "")}</td>
               <td>${this._escape(reaction.origin || "")}</td>
@@ -477,14 +577,15 @@ class HeimaAdminPanel extends HTMLElement {
   }
 
   _manualHolds(snapshot) {
-    const holds = snapshot.manual_holds?.active_holds || [];
+    const allHolds = snapshot.manual_holds?.active_holds || [];
+    const holds = this._filterRows("holds", allHolds);
     const pending = snapshot.manual_holds?.pending_applies || {};
     return `
       <section class="grid">
-        ${this._metric("Active Holds", holds.length)}
+        ${this._metric("Active Holds", allHolds.length)}
         ${this._metric("Pending Applies", pending.total || 0)}
       </section>
-      ${holds.length ? this._manualHoldTable(holds) : `<div class="empty">No active manual holds.</div>`}
+      ${allHolds.length ? `${this._filterToolbar("holds", "Search holds")}${this._filteredCount(holds.length, allHolds.length)}${this._manualHoldTable(holds)}` : `<div class="empty">No active manual holds.</div>`}
     `;
   }
 
@@ -507,7 +608,7 @@ class HeimaAdminPanel extends HTMLElement {
             const scope = this._manualHoldScopeParts(hold.scope || "");
             return `
             <tr>
-              <td><span class="object-id">${this._escape(hold.scope || "")}</span></td>
+              <td>${this._copyableId(hold.scope || "")}</td>
               <td>${this._escape(hold.reason || "")}</td>
               <td>${this._escape(hold.release_policy || "")}</td>
               <td>${this._duration(hold.age_s)}</td>
@@ -529,16 +630,20 @@ class HeimaAdminPanel extends HTMLElement {
 
   _confirmations(snapshot) {
     const confirmations = snapshot.runtime_confirmations || {};
-    const pending = confirmations.pending || [];
-    const completed = confirmations.recent_completed || [];
+    const pendingAll = confirmations.pending || [];
+    const completedAll = confirmations.recent_completed || [];
+    const pending = this._filterRows("confirmations", pendingAll);
+    const completed = this._filterRows("confirmations", completedAll);
     const reviews = confirmations.promotion_reviews || [];
     return `
       <section class="grid">
-        ${this._metric("Pending", pending.length)}
-        ${this._metric("Recent Completed", completed.length)}
+        ${this._metric("Pending", pendingAll.length)}
+        ${this._metric("Recent Completed", completedAll.length)}
         ${this._metric("Stale Responses", confirmations.stale_responses || 0)}
         ${this._metric("Promotion Reviews", reviews.length)}
       </section>
+      ${this._filterToolbar("confirmations", "Search confirmations")}
+      ${this._filteredCount(pending.length + completed.length, pendingAll.length + completedAll.length)}
       ${pending.length ? this._confirmationTable("Pending Requests", pending) : `<div class="empty">No pending runtime confirmations.</div>`}
       ${completed.length ? this._confirmationTable("Recent Completed", completed) : ""}
       ${reviews.length ? this._promotionReviewTable(reviews) : ""}
@@ -563,8 +668,8 @@ class HeimaAdminPanel extends HTMLElement {
         <tbody>
           ${requests.map((request) => `
             <tr>
-              <td><span class="object-id">${this._escape(request.request_id || "")}</span></td>
-              <td><span class="object-id">${this._escape(request.reaction_id || "")}</span></td>
+              <td>${this._copyableId(request.request_id || "")}</td>
+              <td>${this._copyableId(request.reaction_id || "")}</td>
               <td><span class="status">${this._escape(request.status || "")}</span></td>
               <td>${this._escape(request.on_timeout || "")}</td>
               <td>${this._list(request.confirmation_targets || [])}</td>
@@ -647,6 +752,10 @@ class HeimaAdminPanel extends HTMLElement {
 
   _proposals(snapshot) {
     const proposals = snapshot.proposals || {};
+    const reviewRows = proposals.review_rows || [];
+    const filteredReviewRows = this._filterRows("proposals", reviewRows);
+    const temporalBundles = proposals.temporal_bundles || [];
+    const filteredBundles = this._filterRows("proposals", temporalBundles);
     return `
       <section class="grid">
         ${this._metric("Visible Rows", proposals.review_row_count ?? proposals.visible_pending_count ?? 0)}
@@ -657,8 +766,10 @@ class HeimaAdminPanel extends HTMLElement {
         ${this._metric("Stale Pending", proposals.pending_stale ?? 0)}
       </section>
       ${this._proposalCounters(proposals)}
-      ${this._reviewRowsTable(proposals.review_rows || [])}
-      ${this._temporalBundlesTable(proposals.temporal_bundles || [])}
+      ${this._filterToolbar("proposals", "Search proposals")}
+      ${this._filteredCount(filteredReviewRows.length + filteredBundles.length, reviewRows.length + temporalBundles.length)}
+      ${this._reviewRowsTable(filteredReviewRows)}
+      ${this._temporalBundlesTable(filteredBundles)}
     `;
   }
 
@@ -685,7 +796,7 @@ class HeimaAdminPanel extends HTMLElement {
           ${rows.map((row) => `
             <tr>
               <td><span class="status">${this._escape(row.row_type || "")}</span></td>
-              <td><span class="object-id">${this._escape(row.bundle_id || row.proposal_id || "")}</span></td>
+              <td>${this._copyableId(row.bundle_id || row.proposal_id || "")}</td>
               <td>${this._proposalRowSummary(row)}</td>
               <td>${this._escape(row.confidence_avg ?? row.confidence ?? "")}</td>
               <td>
@@ -712,7 +823,7 @@ class HeimaAdminPanel extends HTMLElement {
         <tbody>
           ${bundles.map((bundle) => `
             <tr>
-              <td>${this._escape(bundle.bundle_id || "")}</td>
+              <td>${this._copyableId(bundle.bundle_id || "")}</td>
               <td>${this._escape(bundle.member_count ?? "")}</td>
               <td>${this._escape(bundle.predicted_state || "")}</td>
               <td>${this._escape(`${bundle.start_hour_bucket ?? ""}-${bundle.end_hour_bucket ?? ""}`)}</td>
@@ -1010,6 +1121,93 @@ class HeimaAdminPanel extends HTMLElement {
         data-detail-id="${this._escape(id)}"
       >Inspect</button>
     `;
+  }
+
+  _filterToolbar(section, placeholder) {
+    const value = this._filters[section]?.text || "";
+    return `
+      <div class="toolbar">
+        <input
+          type="search"
+          data-filter-section="${this._escape(section)}"
+          data-filter-key="text"
+          placeholder="${this._escape(placeholder)}"
+          value="${this._escape(value)}"
+        >
+      </div>
+    `;
+  }
+
+  _filterRows(section, rows) {
+    const query = String(this._filters[section]?.text || "").trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => this._rowSearchText(row).includes(query));
+  }
+
+  _rowSearchText(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value).toLowerCase();
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => this._rowSearchText(item)).join(" ");
+    }
+    if (typeof value === "object") {
+      return Object.entries(value)
+        .map(([key, item]) => `${key} ${this._rowSearchText(item)}`)
+        .join(" ")
+        .toLowerCase();
+    }
+    return "";
+  }
+
+  _filteredCount(filtered, total) {
+    if (filtered === total) return "";
+    return `<div class="empty">Showing ${this._escape(filtered)} of ${this._escape(total)} rows.</div>`;
+  }
+
+  _copyableId(value) {
+    if (!value) return "";
+    return `<span class="object-id">${this._escape(value)} ${this._copyButton(value)}</span>`;
+  }
+
+  _copyButton(value) {
+    if (!value) return "";
+    return `
+      <button
+        class="copy"
+        data-copy-value="${this._escape(value)}"
+        title="Copy value"
+      >Copy</button>
+    `;
+  }
+
+  async _copyValue(button) {
+    const value = button.getAttribute("data-copy-value") || "";
+    if (!value || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (_err) {
+      // Clipboard availability depends on the browser context.
+    }
+  }
+
+  _restoreFilterFocus() {
+    if (!this._focusFilter) return;
+    const { section, key } = this._focusFilter;
+    const input = Array.from(this.shadowRoot.querySelectorAll("[data-filter-section]")).find(
+      (candidate) =>
+        candidate.getAttribute("data-filter-section") === section &&
+        candidate.getAttribute("data-filter-key") === key,
+    );
+    if (input && typeof input.focus === "function") {
+      input.focus();
+      const length = input.value.length;
+      if (typeof input.setSelectionRange === "function") {
+        input.setSelectionRange(length, length);
+      }
+    }
+    this._focusFilter = null;
   }
 
   _formatDetailValue(value) {
