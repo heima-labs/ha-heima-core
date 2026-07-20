@@ -174,3 +174,8 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "navigator.clipboard.writeText" in text
     assert "URLSearchParams" in text
     assert "replaceState" in text
+    assert 'data-export="copy"' in text
+    assert 'data-export="download"' in text
+    assert "_serializedSnapshot" in text
+    assert "URL.createObjectURL" in text
+    assert "heima-observability-" in text

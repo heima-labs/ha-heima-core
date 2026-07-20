@@ -379,7 +379,11 @@ class HeimaAdminPanel extends HTMLElement {
         <main>
           <header>
             <h1>${this._title()}</h1>
-            <button class="refresh" data-route="refresh">Refresh</button>
+            <div class="row-actions">
+              <button class="inline" data-export="copy">Copy JSON</button>
+              <button class="inline" data-export="download">Download JSON</button>
+              <button class="refresh" data-route="refresh">Refresh</button>
+            </div>
           </header>
           ${this._body(snapshot)}
         </main>
@@ -424,6 +428,9 @@ class HeimaAdminPanel extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll("button[data-copy-value]").forEach((button) => {
       button.addEventListener("click", () => this._copyValue(button));
+    });
+    this.shadowRoot.querySelectorAll("button[data-export]").forEach((button) => {
+      button.addEventListener("click", () => this._exportSnapshot(button));
     });
     this._restoreFilterFocus();
   }
@@ -1184,12 +1191,55 @@ class HeimaAdminPanel extends HTMLElement {
 
   async _copyValue(button) {
     const value = button.getAttribute("data-copy-value") || "";
+    await this._copyText(value);
+  }
+
+  async _exportSnapshot(button) {
+    const mode = button.getAttribute("data-export") || "";
+    const payload = this._serializedSnapshot();
+    if (!payload) return;
+    if (mode === "copy") {
+      await this._copyText(payload);
+      return;
+    }
+    if (mode === "download") {
+      this._downloadText(payload, this._snapshotFilename());
+    }
+  }
+
+  _serializedSnapshot() {
+    if (!this._snapshot) return "";
+    return JSON.stringify(this._snapshot, null, 2);
+  }
+
+  async _copyText(value) {
     if (!value || !navigator.clipboard?.writeText) return;
     try {
       await navigator.clipboard.writeText(value);
     } catch (_err) {
       // Clipboard availability depends on the browser context.
     }
+  }
+
+  _downloadText(value, filename) {
+    const blob = new Blob([value], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  _snapshotFilename() {
+    const generatedAt = String(this._snapshot?.meta?.generated_at || "snapshot")
+      .replaceAll(":", "")
+      .replaceAll(".", "")
+      .replaceAll("+", "Z");
+    return `heima-observability-${generatedAt}.json`;
   }
 
   _restoreFilterFocus() {
