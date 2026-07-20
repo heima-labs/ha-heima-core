@@ -7,6 +7,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._actionError = "";
     this._loading = true;
     this._route = "overview";
+    this._detail = null;
     this._refreshTimer = null;
   }
 
@@ -58,6 +59,12 @@ class HeimaAdminPanel extends HTMLElement {
 
   _setRoute(route) {
     this._route = route;
+    this._detail = null;
+    this._render();
+  }
+
+  _setDetail(kind, id) {
+    this._detail = kind && id ? { kind, id } : null;
     this._render();
   }
 
@@ -139,6 +146,59 @@ class HeimaAdminPanel extends HTMLElement {
         button:disabled {
           opacity: 0.55;
           cursor: progress;
+        }
+        .row-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .object-id {
+          font-family: var(--code-font-family, monospace);
+          font-size: 12px;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          color: var(--secondary-text-color);
+        }
+        .detail-panel {
+          margin-top: 16px;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          background: var(--card-background-color);
+          padding: 14px;
+        }
+        .detail-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .detail-header h2 {
+          margin: 0;
+        }
+        .detail-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 12px;
+        }
+        .detail-section {
+          border-top: 1px solid var(--divider-color);
+          padding-top: 12px;
+          margin-top: 12px;
+        }
+        .kv {
+          width: 100%;
+          border: 0;
+          background: transparent;
+        }
+        .kv th,
+        .kv td {
+          border-bottom: 1px solid var(--divider-color);
+        }
+        pre {
+          white-space: pre-wrap;
+          overflow-wrap: anywhere;
+          max-width: 100%;
         }
         .grid {
           display: grid;
@@ -264,6 +324,14 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-action]").forEach((button) => {
       button.addEventListener("click", () => this._runAction(button));
     });
+    this.shadowRoot.querySelectorAll("button[data-detail-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        this._setDetail(
+          button.getAttribute("data-detail-kind") || "",
+          button.getAttribute("data-detail-id") || "",
+        );
+      });
+    });
   }
 
   _navButton(route, label) {
@@ -297,7 +365,7 @@ class HeimaAdminPanel extends HTMLElement {
       ? `<div class="card error">${this._escape(this._actionError)}</div>`
       : "";
     const body = this._bodyContent(snapshot);
-    return `${actionError}${body}`;
+    return `${actionError}${body}${this._detailPanel(snapshot)}`;
   }
 
   _bodyContent(snapshot) {
@@ -380,6 +448,7 @@ class HeimaAdminPanel extends HTMLElement {
             <th>Execution Policy</th>
             <th>Last Outcome</th>
             <th>Linked Holds</th>
+            <th>Inspect</th>
           </tr>
         </thead>
         <tbody>
@@ -387,8 +456,8 @@ class HeimaAdminPanel extends HTMLElement {
             <tr>
               <td>
                 <strong>${this._escape(reaction.label || reaction.reaction_id || "")}</strong>
-                <div>${this._escape(reaction.reaction_id || "")}</div>
-                ${reaction.latest_trace_id ? `<div>trace: ${this._escape(reaction.latest_trace_id)}</div>` : ""}
+                <div class="object-id">${this._escape(reaction.reaction_id || "")}</div>
+                ${reaction.latest_trace_id ? `<div class="object-id">trace: ${this._escape(reaction.latest_trace_id)}</div>` : ""}
               </td>
               <td>${this._escape(reaction.reaction_type || "")}</td>
               <td>${this._escape(reaction.origin || "")}</td>
@@ -399,6 +468,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._executionPolicy(reaction.execution_policy)}</td>
               <td>${this._escape(reaction.last_outcome || "unknown")}</td>
               <td>${this._list(reaction.linked_manual_hold_scopes || [])}</td>
+              <td>${this._detailButton("reaction", reaction.reaction_id || "")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -437,13 +507,18 @@ class HeimaAdminPanel extends HTMLElement {
             const scope = this._manualHoldScopeParts(hold.scope || "");
             return `
             <tr>
-              <td>${this._escape(hold.scope || "")}</td>
+              <td><span class="object-id">${this._escape(hold.scope || "")}</span></td>
               <td>${this._escape(hold.reason || "")}</td>
               <td>${this._escape(hold.release_policy || "")}</td>
               <td>${this._duration(hold.age_s)}</td>
               <td>${this._escape(hold.source_entity || "")}</td>
               <td>${this._list(hold.affected_reaction_ids || [])}</td>
-              <td>${scope ? this._clearHoldButton(scope, hold.scope || "") : ""}</td>
+              <td>
+                <div class="row-actions">
+                  ${this._detailButton("manual_hold", hold.scope || "")}
+                  ${scope ? this._clearHoldButton(scope, hold.scope || "") : ""}
+                </div>
+              </td>
             </tr>
           `;
           }).join("")}
@@ -482,17 +557,19 @@ class HeimaAdminPanel extends HTMLElement {
             <th>Timeout</th>
             <th>Targets</th>
             <th>Apply Result</th>
+            <th>Inspect</th>
           </tr>
         </thead>
         <tbody>
           ${requests.map((request) => `
             <tr>
-              <td>${this._escape(request.request_id || "")}</td>
-              <td>${this._escape(request.reaction_id || "")}</td>
+              <td><span class="object-id">${this._escape(request.request_id || "")}</span></td>
+              <td><span class="object-id">${this._escape(request.reaction_id || "")}</span></td>
               <td><span class="status">${this._escape(request.status || "")}</span></td>
               <td>${this._escape(request.on_timeout || "")}</td>
               <td>${this._list(request.confirmation_targets || [])}</td>
               <td>${this._applyResult(request.apply_result)}</td>
+              <td>${this._detailButton("runtime_confirmation", request.request_id || "")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -608,10 +685,15 @@ class HeimaAdminPanel extends HTMLElement {
           ${rows.map((row) => `
             <tr>
               <td><span class="status">${this._escape(row.row_type || "")}</span></td>
-              <td>${this._escape(row.bundle_id || row.proposal_id || "")}</td>
+              <td><span class="object-id">${this._escape(row.bundle_id || row.proposal_id || "")}</span></td>
               <td>${this._proposalRowSummary(row)}</td>
               <td>${this._escape(row.confidence_avg ?? row.confidence ?? "")}</td>
-              <td>${this._proposalReviewButtons(row)}</td>
+              <td>
+                <div class="row-actions">
+                  ${this._detailButton("proposal_review_row", row.bundle_id || row.proposal_id || "")}
+                  ${this._proposalReviewButtons(row)}
+                </div>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -725,6 +807,216 @@ class HeimaAdminPanel extends HTMLElement {
         </tbody>
       </table>
     `;
+  }
+
+  _detailPanel(snapshot) {
+    if (!this._detail) return "";
+    const { kind, id } = this._detail;
+    const content = this._detailContent(snapshot, kind, id);
+    return `
+      <section class="detail-panel">
+        <div class="detail-header">
+          <div>
+            <h2>${this._escape(this._detailTitle(kind))}</h2>
+            <div class="object-id">${this._escape(id)}</div>
+          </div>
+          <button class="inline" data-detail-kind="" data-detail-id="">Close</button>
+        </div>
+        ${content}
+      </section>
+    `;
+  }
+
+  _detailContent(snapshot, kind, id) {
+    if (kind === "reaction") return this._reactionDetail(snapshot, id);
+    if (kind === "manual_hold") return this._manualHoldDetail(snapshot, id);
+    if (kind === "runtime_confirmation") return this._runtimeConfirmationDetail(snapshot, id);
+    if (kind === "proposal_review_row") return this._proposalReviewRowDetail(snapshot, id);
+    return `<div class="empty">Unknown detail type.</div>`;
+  }
+
+  _detailTitle(kind) {
+    if (kind === "reaction") return "Reaction Detail";
+    if (kind === "manual_hold") return "Manual Hold Detail";
+    if (kind === "runtime_confirmation") return "Runtime Confirmation Detail";
+    if (kind === "proposal_review_row") return "Proposal Review Detail";
+    return "Detail";
+  }
+
+  _reactionDetail(snapshot, reactionId) {
+    const detail = snapshot.details?.reactions?.by_id?.[reactionId];
+    if (!detail) return `<div class="empty">Reaction detail is unavailable.</div>`;
+    const summary = detail.summary || {};
+    return `
+      <section class="detail-grid">
+        ${this._detailSection("Identity", {
+          label: summary.label,
+          reaction_id: summary.reaction_id,
+          reaction_type: summary.reaction_type,
+          origin: summary.origin,
+          author_kind: summary.author_kind,
+          source_template_id: summary.source_template_id,
+        })}
+        ${this._detailSection("Status", {
+          enabled: summary.enabled === false ? "false" : "true",
+          muted: summary.muted === true ? "true" : "false",
+          last_outcome: summary.last_outcome,
+          latest_trace_id: summary.latest_trace_id,
+        })}
+        ${this._detailSection("Execution Policy", detail.execution_policy || {})}
+      </section>
+      ${this._linkedRows("Manual Holds", detail.linked_manual_holds || [], "scope")}
+      ${this._linkedRows("Runtime Confirmations", detail.linked_runtime_confirmations || [], "request_id")}
+      ${this._linkedRows("Promotion Reviews", detail.linked_promotion_reviews || [], "review_id")}
+      ${this._linkedRows("Linked Proposals", detail.linked_proposals || [], "id")}
+      ${this._traceSummary(detail.latest_trace)}
+      ${this._rawDetails({
+        configured_metadata: detail.configured_metadata || {},
+        runtime_diagnostics: detail.runtime_diagnostics || {},
+      })}
+    `;
+  }
+
+  _manualHoldDetail(snapshot, scope) {
+    const detail = snapshot.details?.manual_holds?.by_scope?.[scope];
+    if (!detail) return `<div class="empty">Manual hold detail is unavailable.</div>`;
+    const summary = detail.summary || {};
+    return `
+      <section class="detail-grid">
+        ${this._detailSection("Hold", {
+          scope: summary.scope,
+          reason: summary.reason,
+          release_policy: summary.release_policy,
+          source_entity: summary.source_entity,
+          age: this._duration(summary.age_s),
+          expires_in: this._duration(summary.expires_in_s),
+        })}
+        ${this._detailSection("Links", {
+          affected_reactions: (detail.affected_reaction_ids || []).join(", "),
+          link_count: (detail.links || []).length,
+        })}
+      </section>
+      ${this._rawDetails(summary)}
+    `;
+  }
+
+  _runtimeConfirmationDetail(snapshot, requestId) {
+    const detail = snapshot.details?.runtime_confirmations?.by_request_id?.[requestId];
+    if (!detail) return `<div class="empty">Runtime confirmation detail is unavailable.</div>`;
+    const summary = detail.summary || {};
+    return `
+      <section class="detail-grid">
+        ${this._detailSection("Request", {
+          request_id: summary.request_id,
+          reaction_id: detail.reaction_id || summary.reaction_id,
+          status_bucket: detail.status_bucket,
+          status: summary.status,
+          on_timeout: summary.on_timeout,
+        })}
+        ${this._detailSection("Delivery", {
+          targets: (summary.confirmation_targets || []).join(", "),
+          created_at: summary.created_at,
+          expires_at: summary.expires_at,
+        })}
+        ${this._detailSection("Apply Result", summary.apply_result || {})}
+      </section>
+      ${this._rawDetails(summary)}
+    `;
+  }
+
+  _proposalReviewRowDetail(snapshot, rowId) {
+    const detail = snapshot.details?.proposals?.review_rows_by_id?.[rowId];
+    if (!detail) return `<div class="empty">Proposal review detail is unavailable.</div>`;
+    const summary = detail.summary || {};
+    return `
+      <section class="detail-grid">
+        ${this._detailSection("Review Row", {
+          row_type: summary.row_type,
+          id: rowId,
+          proposal_ids: (detail.proposal_ids || []).join(", "),
+          predicted_state: summary.predicted_state,
+          confidence: summary.confidence_avg ?? summary.confidence,
+        })}
+        ${this._detailSection("Evidence", {
+          member_count: summary.member_count,
+          support: `${summary.support_total ?? ""}/${summary.total_observations ?? ""}`,
+          hour_range: `${summary.start_hour_bucket ?? ""}-${summary.end_hour_bucket ?? ""}`,
+        })}
+      </section>
+      ${this._rawDetails(summary)}
+    `;
+  }
+
+  _detailSection(title, value) {
+    const entries = Object.entries(value || {}).filter(([, item]) => item !== undefined);
+    return `
+      <div class="card">
+        <div class="label">${this._escape(title)}</div>
+        <table class="kv">
+          <tbody>
+            ${entries.length ? entries.map(([key, item]) => `
+              <tr>
+                <th>${this._escape(key)}</th>
+                <td>${this._escape(this._formatDetailValue(item))}</td>
+              </tr>
+            `).join("") : `<tr><td>unavailable</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  _linkedRows(title, rows, primaryKey) {
+    if (!rows.length) return "";
+    return `
+      <div class="detail-section">
+        <h3>${this._escape(title)}</h3>
+        <table>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td><span class="object-id">${this._escape(row[primaryKey] || "")}</span></td>
+                <td>${this._escape(row.status || row.reason || row.type || row.row_type || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  _traceSummary(trace) {
+    if (!trace) return "";
+    return `
+      <div class="detail-section">
+        <h3>Latest Trace</h3>
+        ${this._detailSection("Trace", {
+          trace_id: trace.trace_id,
+          outcome: trace.outcome,
+          reason_codes: (trace.reason_codes || []).join(", "),
+          occurrence_key: trace.occurrence_key,
+          timestamp: trace.timestamp,
+        })}
+      </div>
+    `;
+  }
+
+  _detailButton(kind, id) {
+    if (!id) return "";
+    return `
+      <button
+        class="inline"
+        data-detail-kind="${this._escape(kind)}"
+        data-detail-id="${this._escape(id)}"
+      >Inspect</button>
+    `;
+  }
+
+  _formatDetailValue(value) {
+    if (value === null) return "";
+    if (Array.isArray(value)) return value.join(", ");
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value ?? "");
   }
 
   _metric(label, value) {

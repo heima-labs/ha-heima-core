@@ -161,3 +161,10 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "reset_runtime_confirmation_promotion_state" in text
     assert "review_proposal" in text
     assert "review_proposal_batch" in text
+    assert "detail-panel" in text
+    assert "data-detail-kind" in text
+    assert "Reaction Detail" in text
+    assert "Manual Hold Detail" in text
+    assert "Runtime Confirmation Detail" in text
+    assert "Proposal Review Detail" in text
+    assert "object-id" in text
