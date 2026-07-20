@@ -75,6 +75,25 @@ def _assert_snapshot_contract(snapshot: dict[str, Any], entry_id: str) -> None:
     _assert(isinstance(snapshot.get("notifications"), dict), "notifications must be a dict")
     _assert(isinstance(snapshot.get("learning"), dict), "learning must be a dict")
     _assert(isinstance(snapshot.get("proposals"), dict), "proposals must be a dict")
+    _assert_reaction_metadata(snapshot.get("reactions"))
+
+
+def _assert_reaction_metadata(rows: Any) -> None:
+    _assert(isinstance(rows, list), "reactions must be a list")
+    if not rows:
+        return
+    typed = [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("reaction_type") or "") != "unknown"
+    ]
+    originated = [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("origin") or "") != "unspecified"
+    ]
+    _assert(typed, "observability reactions all have unknown reaction_type")
+    _assert(originated, "observability reactions all have unspecified origin")
 
 
 def _assert_invalid_action_is_rejected(ws: HAWebSocketClient, entry_id: str) -> None:

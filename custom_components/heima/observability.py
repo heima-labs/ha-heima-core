@@ -7,6 +7,8 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
+from .const import OPT_REACTIONS
+
 OBSERVABILITY_SCHEMA_VERSION = 1
 
 _SENSITIVE_KEYS = {
@@ -82,6 +84,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "decision_traces": list(runtime_observability.get("decision_traces") or []),
         "reactions": _reaction_summaries(
             engine_diag,
+            entry=entry,
             decision_traces=list(runtime_observability.get("decision_traces") or []),
         ),
         "manual_holds": _manual_hold_summary(engine_diag, runtime_observability),
@@ -219,6 +222,7 @@ def _validation_issues(validation: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _reaction_summaries(
     engine_diag: Mapping[str, Any],
     *,
+    entry: Any,
     decision_traces: list[Any],
 ) -> list[dict[str, Any]]:
     raw_reactions = engine_diag.get("reactions") if isinstance(engine_diag, Mapping) else {}
@@ -226,22 +230,49 @@ def _reaction_summaries(
     policies = engine_diag.get("reaction_execution_policies")
     policies = policies if isinstance(policies, Mapping) else {}
     muted = set(engine_diag.get("muted_reactions") or [])
+    configured, labels = _configured_reaction_metadata(entry)
     latest_trace_by_reaction = _latest_trace_by_reaction(decision_traces)
     manual_hold_scopes = _manual_hold_scopes_by_reaction(engine_diag, decision_traces)
     rows: list[dict[str, Any]] = []
     for reaction_id, diagnostics in sorted(reactions.items(), key=lambda item: str(item[0])):
         diag = dict(diagnostics) if isinstance(diagnostics, Mapping) else {}
+        cfg = configured.get(str(reaction_id), {})
         policy = policies.get(reaction_id)
         policy = dict(policy) if isinstance(policy, Mapping) else {}
         latest_trace = latest_trace_by_reaction.get(str(reaction_id))
         rows.append(
             {
                 "reaction_id": str(reaction_id),
-                "reaction_type": str(diag.get("reaction_type") or diag.get("type") or "unknown"),
-                "label": str(diag.get("label") or diag.get("title") or reaction_id),
+                "reaction_type": str(
+                    diag.get("reaction_type")
+                    or cfg.get("reaction_type")
+                    or diag.get("type")
+                    or "unknown"
+                ),
+                "label": str(
+                    diag.get("label")
+                    or labels.get(str(reaction_id))
+                    or cfg.get("label")
+                    or cfg.get("title")
+                    or diag.get("title")
+                    or reaction_id
+                ),
                 "enabled": diag.get("enabled", True) is not False,
                 "muted": reaction_id in muted,
-                "origin": str(diag.get("origin") or diag.get("author_kind") or "unspecified"),
+                "origin": str(
+                    diag.get("origin")
+                    or cfg.get("origin")
+                    or cfg.get("author_kind")
+                    or diag.get("author_kind")
+                    or "unspecified"
+                ),
+                "author_kind": str(
+                    diag.get("author_kind") or cfg.get("author_kind") or "unspecified"
+                ),
+                "source_template_id": str(
+                    cfg.get("source_template_id") or cfg.get("admin_authored_template_id") or ""
+                ),
+                "source_request": str(cfg.get("source_request") or ""),
                 "execution_policy": policy,
                 "last_outcome": str(
                     latest_trace.get("outcome")
@@ -250,10 +281,30 @@ def _reaction_summaries(
                 ),
                 "latest_trace_id": latest_trace.get("trace_id") if latest_trace else None,
                 "linked_manual_hold_scopes": manual_hold_scopes.get(str(reaction_id), []),
-                "diagnostics": diag,
+                "diagnostics": {**cfg, **diag},
             }
         )
     return rows
+
+
+def _configured_reaction_metadata(entry: Any) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    options = getattr(entry, "options", {})
+    options = dict(options) if isinstance(options, Mapping) else {}
+    reactions = options.get(OPT_REACTIONS)
+    reactions = dict(reactions) if isinstance(reactions, Mapping) else {}
+    configured = reactions.get("configured")
+    labels = reactions.get("labels")
+    configured_rows = {
+        str(reaction_id): dict(cfg)
+        for reaction_id, cfg in dict(configured or {}).items()
+        if isinstance(cfg, Mapping)
+    }
+    label_rows = {
+        str(reaction_id): str(label)
+        for reaction_id, label in dict(labels or {}).items()
+        if str(label or "").strip()
+    }
+    return configured_rows, label_rows
 
 
 def _manual_hold_summary(

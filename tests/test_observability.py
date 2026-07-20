@@ -114,9 +114,7 @@ class _FakeEngine:
             "snapshot": {"house_state": "home"},
             "reactions": {
                 "reaction.one": {
-                    "reaction_type": "context_conditioned_lighting_scene",
-                    "label": "Evening scene",
-                    "origin": "learning_accepted",
+                    "fire_count": 1,
                 }
             },
             "reaction_execution_policies": {
@@ -263,7 +261,18 @@ class _FakeCoordinator:
                         "mobile_app_iphone_stefano": {"supports_actions": True},
                         "persistent_notification": {"supports_actions": False},
                     },
-                }
+                },
+                "reactions": {
+                    "configured": {
+                        "reaction.one": {
+                            "reaction_type": "context_conditioned_lighting_scene",
+                            "origin": "learning_accepted",
+                            "author_kind": "admin",
+                            "source_template_id": "lighting.context_conditioned",
+                        }
+                    },
+                    "labels": {"reaction.one": "Evening scene"},
+                },
             },
         )
         self.evaluation_reasons: list[str] = []
@@ -340,6 +349,11 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["meta"]["is_partial"] is False
     assert snapshot["runtime"]["house_state"] == "home"
     assert snapshot["reactions"][0]["reaction_id"] == "reaction.one"
+    assert snapshot["reactions"][0]["reaction_type"] == "context_conditioned_lighting_scene"
+    assert snapshot["reactions"][0]["label"] == "Evening scene"
+    assert snapshot["reactions"][0]["origin"] == "learning_accepted"
+    assert snapshot["reactions"][0]["author_kind"] == "admin"
+    assert snapshot["reactions"][0]["source_template_id"] == "lighting.context_conditioned"
     assert snapshot["reactions"][0]["latest_trace_id"] == "trace.one"
     assert snapshot["reactions"][0]["last_outcome"] == "applied"
     assert snapshot["reactions"][0]["linked_manual_hold_scopes"] == ["light:entity:light.studio"]
