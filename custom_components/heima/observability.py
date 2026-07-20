@@ -479,9 +479,18 @@ def _learning_summary(
         "ready_module_count": sum(1 for item in module_rows if item.get("ready") is True),
         "proposal_pending_count": int(proposal_diag.get("pending") or 0),
         "proposal_total_count": int(proposal_diag.get("total") or 0),
-        "analyzer_failures": dict(proposal_diag.get("analyzer_failures") or {}),
-        "analyzer_output_errors": dict(proposal_diag.get("analyzer_output_errors") or {}),
-        "lifecycle_monitoring": dict(proposal_diag.get("lifecycle_monitoring") or {}),
+        "analyzer_failures": _mapping_or_count(
+            proposal_diag.get("analyzer_failures"),
+            count_key="total",
+        ),
+        "analyzer_output_errors": _mapping_or_count(
+            proposal_diag.get("analyzer_output_errors"),
+            count_key="total",
+        ),
+        "lifecycle_monitoring": _mapping_or_count(
+            proposal_diag.get("lifecycle_monitoring"),
+            count_key="record_count",
+        ),
     }
 
 
@@ -502,11 +511,11 @@ def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
         "suppressed_in_review_count": data.get("suppressed_in_review_count"),
         "pending_stale": data.get("pending_stale"),
         "review_row_count": data.get("review_row_count"),
-        "review_rows": list(data.get("review_rows") or []),
-        "review_groups": dict(data.get("review_groups") or {}),
+        "review_rows": _list_or_empty(data.get("review_rows")),
+        "review_groups": _mapping_or_count(data.get("review_groups"), count_key="total"),
         "temporal_bundle_count": data.get("temporal_bundle_count"),
         "temporal_bundle_member_count": data.get("temporal_bundle_member_count"),
-        "temporal_bundles": list(data.get("temporal_bundles") or []),
+        "temporal_bundles": _list_or_empty(data.get("temporal_bundles")),
         "pending_by_type": _counter_by(proposals, "type", status="pending"),
         "visible_pending_by_type": _counter_by(pending_visible, "type"),
         "suppressed_pending_by_type": _counter_by(pending_suppressed, "type"),
@@ -516,6 +525,21 @@ def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
         "suppressed_by_review_group": data.get("suppressed_by_review_group"),
         "raw": data,
     }
+
+
+def _mapping_or_count(value: Any, *, count_key: str) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, bool) or value is None:
+        return {}
+    try:
+        return {count_key: max(0, int(value))}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
 
 
 def _counter_by(

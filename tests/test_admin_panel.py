@@ -50,7 +50,7 @@ async def test_register_admin_panel_serves_local_asset_and_requires_admin(monkey
             "hass": hass,
             "frontend_url_path": PANEL_URL_PATH,
             "webcomponent_name": PANEL_WEBCOMPONENT,
-            "sidebar_title": "Heima",
+            "sidebar_title": "Heima Monitor",
             "sidebar_icon": "mdi:home-analytics",
             "module_url": PANEL_MODULE,
             "embed_iframe": False,

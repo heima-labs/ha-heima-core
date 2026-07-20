@@ -207,7 +207,7 @@ class _FakeProposalEngine:
                 },
             ],
             "analyzer_failures": {"house_state_inference": 1},
-            "analyzer_output_errors": {},
+            "analyzer_output_errors": 2,
             "lifecycle_monitoring": {"record_count": 2},
         }
 
@@ -373,6 +373,7 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["learning"]["module_count"] == 2
     assert snapshot["learning"]["ready_module_count"] == 1
     assert snapshot["learning"]["analyzer_failures"] == {"house_state_inference": 1}
+    assert snapshot["learning"]["analyzer_output_errors"] == {"total": 2}
     assert snapshot["recent_events"][0]["event_id"] == "event.one"
     assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"
     assert snapshot["meta"]["retention"]["description"] == "history_since_last_restart"

@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
-PANEL_URL_PATH = "heima"
+PANEL_URL_PATH = "heima-observability"
 PANEL_WEBCOMPONENT = "heima-admin-panel"
 PANEL_STATIC_URL = "/heima_static"
 PANEL_MODULE = f"{PANEL_STATIC_URL}/heima-admin-panel.js"
@@ -27,7 +27,7 @@ async def async_register_admin_panel(hass: HomeAssistant) -> None:
         hass=hass,
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=PANEL_WEBCOMPONENT,
-        sidebar_title="Heima",
+        sidebar_title="Heima Monitor",
         sidebar_icon="mdi:home-analytics",
         module_url=PANEL_MODULE,
         embed_iframe=False,
