@@ -516,6 +516,18 @@ MVP merge.
     - snapshot export redaction tests for download payloads
     - snapshot export redaction tests for clipboard payloads
     - test proving both export paths use the same serialized redacted object
+- AO8.5 house-state resolver diagnostics:
+  - Add a top-level `house_state` AO snapshot projection sourced from the existing house-state
+    runtime domain diagnostics.
+  - Expose `candidate_trace`, `candidate_summary`, and `resolution_trace` without making the
+    frontend infer resolver semantics from unrelated runtime fields.
+  - Add a House State panel section showing current state/reason, decision action, target state,
+    winning reason, active candidates, pending candidate, resolution path, timers, override state,
+    and a searchable candidate table.
+  - Tests:
+    - unit snapshot contract coverage for the projected house-state fields
+    - frontend/static smoke coverage for the House State route and candidate search
+    - live `080` contract coverage requiring the house-state diagnostics dictionaries
 - Live validation:
   - Extend live `080` so at least one real reaction has label/type/origin/source metadata, latest
     trace info where available, linked holds where available, and no unreadable `unknown`-only row.

@@ -72,6 +72,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
     notifications = _notification_summary(entry)
     learning = _learning_summary(engine_diag, proposal_diag)
     proposals = _proposal_summary(proposal_diag)
+    house_state = _house_state_diagnostics(engine_diag)
     entity_impact = _entity_impact_index(
         entry=entry,
         reactions=reactions,
@@ -107,6 +108,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "notifications": notifications,
         "learning": learning,
         "proposals": proposals,
+        "house_state": house_state,
         "entity_impact": entity_impact,
         "details": _detail_projections(
             engine_diag=engine_diag,
@@ -115,6 +117,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
             manual_holds=manual_holds,
             runtime_confirmations=runtime_confirmations,
             proposals=proposals,
+            house_state=house_state,
             decision_traces=decision_traces,
             entity_impact=entity_impact,
         ),
@@ -604,6 +607,52 @@ def _proposal_summary(proposal_diag: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _house_state_diagnostics(engine_diag: Mapping[str, Any]) -> dict[str, Any]:
+    raw = engine_diag.get("house_state") if isinstance(engine_diag, Mapping) else {}
+    data = dict(raw) if isinstance(raw, Mapping) else {}
+    resolution_trace = _mapping_or_empty(data.get("resolution_trace"))
+    candidate_summary = _mapping_or_empty(data.get("candidate_summary"))
+    candidate_trace = _mapping_or_empty(data.get("candidate_trace"))
+    decision = _mapping_or_empty(resolution_trace.get("decision"))
+    active_candidates = _string_list(resolution_trace.get("active_candidates"))
+    pending_candidate = ""
+    pending_remaining_s = None
+    if str(decision.get("action") or "") == "pending":
+        pending_candidate = str(decision.get("source_candidate") or "")
+        pending_remaining_s = decision.get("pending_remaining_s")
+    return {
+        "winning_reason": str(
+            resolution_trace.get("winning_reason")
+            or resolution_trace.get("reason")
+            or decision.get("reason")
+            or ""
+        ),
+        "resolution_path": str(
+            resolution_trace.get("resolution_path")
+            or resolution_trace.get("path")
+            or ""
+        ),
+        "decision_action": str(decision.get("action") or ""),
+        "decision_target_state": str(
+            decision.get("target_state")
+            or decision.get("entered_state")
+            or decision.get("state")
+            or ""
+        ),
+        "pending_candidate": pending_candidate,
+        "pending_remaining_s": pending_remaining_s,
+        "active_candidates": active_candidates,
+        "candidate_summary": candidate_summary,
+        "candidate_trace": candidate_trace,
+        "resolution_trace": resolution_trace,
+        "house_signals_trace": _mapping_or_empty(data.get("house_signals_trace")),
+        "timers": _mapping_or_empty(data.get("timers")),
+        "config": _mapping_or_empty(data.get("config")),
+        "override": _mapping_or_empty(data.get("override")),
+        "raw": data,
+    }
+
+
 def _detail_projections(
     *,
     engine_diag: Mapping[str, Any],
@@ -612,6 +661,7 @@ def _detail_projections(
     manual_holds: Mapping[str, Any],
     runtime_confirmations: Mapping[str, Any],
     proposals: Mapping[str, Any],
+    house_state: Mapping[str, Any],
     decision_traces: list[Any],
     entity_impact: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -676,6 +726,7 @@ def _detail_projections(
             "by_id": _proposal_details_by_id(proposal_rows),
             "review_rows_by_id": _review_row_details_by_id(review_rows),
         },
+        "house_state": dict(house_state),
         "entities": {
             "by_id": {
                 str(row.get("entity_id")): row
@@ -1051,6 +1102,10 @@ def _mapping_or_count(value: Any, *, count_key: str) -> dict[str, Any]:
         return {count_key: max(0, int(value))}
     except (TypeError, ValueError):
         return {}
+
+
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _list_or_empty(value: Any) -> list[Any]:

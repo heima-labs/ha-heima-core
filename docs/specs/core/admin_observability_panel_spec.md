@@ -207,6 +207,7 @@ HeimaObservabilitySnapshot = {
     "notifications": {...},
     "learning": {...},
     "proposals": {...},
+    "house_state": {...},
     "health_findings": [...],
     "recent_events": [...],
 }
@@ -1124,6 +1125,8 @@ Deliverables:
   secrets:
   - download JSON file
   - copy JSON to clipboard
+- Add a House State section that explains the current resolver outcome without requiring admins to
+  inspect raw JSON.
 
 Backend requirements:
 
@@ -1133,6 +1136,9 @@ Backend requirements:
 - Snapshot export must use the same redaction path as the panel data.
 - Download and clipboard export must serialize the exact same redacted snapshot object currently
   available to the panel.
+- House-state diagnostics must be derived from the existing `house_state` runtime domain
+  diagnostics. AO must not reimplement the house-state resolver or infer a different result in the
+  frontend.
 - No new write actions are introduced in AO8.
 
 AO8 implementation slices:
@@ -1141,6 +1147,7 @@ AO8 implementation slices:
 - AO8.2: frontend detail drawer/routes and readable table layout
 - AO8.3: filters, search, copy buttons, and stable deep links
 - AO8.4: redacted snapshot export
+- AO8.5: house-state resolver diagnostics
 
 Reaction detail must show:
 
@@ -1161,6 +1168,7 @@ Filtering/search minimum:
 - holds: domain, scope, release policy, source entity
 - confirmations: pending/completed, status, reaction ID
 - proposals: visible/suppressed/stale, type, follow-up kind
+- house state: candidate name, candidate status, reason, input signal
 
 Tests:
 
@@ -1168,6 +1176,8 @@ Tests:
 - unit tests for snapshot export redaction
 - frontend/static smoke tests proving detail routes and filters are wired
 - live `080` extension checking at least one reaction has real metadata, not only `unknown`
+- snapshot contract tests proving `house_state.candidate_trace`,
+  `house_state.candidate_summary`, and `house_state.resolution_trace` are exposed as dictionaries
 
 Acceptance criteria:
 
@@ -1177,6 +1187,8 @@ Acceptance criteria:
 - high-volume tables can be searched/filtered without changing backend semantics
 - snapshot export is redacted and safe to share for support through both download and clipboard
   flows
+- an admin can understand why the current house state was selected, which candidates were active,
+  and which resolver path/reason won without downloading the snapshot
 
 ### AO9 — Entity Impact Inspector
 

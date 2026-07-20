@@ -370,6 +370,7 @@ class HeimaAdminPanel extends HTMLElement {
           <div class="items">
             ${this._navButton("overview", "Overview")}
             ${this._navButton("activity", "Runtime")}
+            ${this._navButton("house_state", "House State")}
             ${this._navButton("reactions", "Reactions")}
             ${this._navButton("holds", "Holds")}
             ${this._navButton("confirmations", "Confirmations")}
@@ -449,6 +450,7 @@ class HeimaAdminPanel extends HTMLElement {
 
   _title() {
     if (this._route === "activity") return "Runtime Activity";
+    if (this._route === "house_state") return "House State";
     if (this._route === "reactions") return "Reaction Inspector";
     if (this._route === "holds") return "Manual Hold Center";
     if (this._route === "confirmations") return "Runtime Confirmation Center";
@@ -482,6 +484,7 @@ class HeimaAdminPanel extends HTMLElement {
 
   _bodyContent(snapshot) {
     if (this._route === "activity") return this._activity(snapshot);
+    if (this._route === "house_state") return this._houseState(snapshot);
     if (this._route === "reactions") return this._reactions(snapshot);
     if (this._route === "holds") return this._manualHolds(snapshot);
     if (this._route === "confirmations") return this._confirmations(snapshot);
@@ -548,6 +551,98 @@ class HeimaAdminPanel extends HTMLElement {
       </section>
       ${findings.length ? this._findingsTable(findings) : `<div class="empty">No active health findings.</div>`}
     `;
+  }
+
+  _houseState(snapshot) {
+    const runtime = snapshot.runtime || {};
+    const house = snapshot.house_state || {};
+    const resolution = house.resolution_trace || {};
+    const decision = resolution.decision || {};
+    const activeCandidates = house.active_candidates || [];
+    const candidateRows = this._houseStateCandidateRows(house);
+    const filteredRows = this._filterRows("house_state", candidateRows);
+    return `
+      <section class="grid">
+        ${this._metric("Current State", runtime.house_state || "unknown")}
+        ${this._metric("Current Reason", runtime.house_state_reason || house.winning_reason || "")}
+        ${this._metric("Decision", house.decision_action || decision.action || "")}
+        ${this._metric("Target State", house.decision_target_state || "")}
+        ${this._metric("Winning Reason", house.winning_reason || "")}
+        ${this._metric("Active Candidates", activeCandidates.length ? activeCandidates.join(", ") : "none")}
+        ${this._metric("Pending Candidate", house.pending_candidate || "none")}
+        ${this._metric("Resolution Path", house.resolution_path || "")}
+      </section>
+      ${this._filterToolbar("house_state", "Search house-state candidates")}
+      ${this._filteredCount(filteredRows.length, candidateRows.length)}
+      ${filteredRows.length ? this._houseStateCandidateTable(filteredRows) : `<div class="empty">No house-state candidate diagnostics in the snapshot.</div>`}
+      <section class="detail-grid">
+        ${this._detailSection("Resolution Decision", decision)}
+        ${this._detailSection("Timers", house.timers || {})}
+        ${this._detailSection("Override", house.override || {})}
+      </section>
+      ${this._rawDetails(house)}
+    `;
+  }
+
+  _houseStateCandidateRows(house) {
+    const summary = house.candidate_summary || {};
+    const traces = house.candidate_trace || {};
+    const names = Array.from(new Set([
+      ...Object.keys(summary),
+      ...Object.keys(traces),
+      ...(house.active_candidates || []),
+    ])).sort();
+    return names.map((name) => {
+      const candidateSummary = summary[name] || {};
+      const trace = traces[name] || {};
+      return {
+        candidate: name,
+        status: candidateSummary.status || candidateSummary.result || "",
+        state: trace.state ?? candidateSummary.state ?? "",
+        reason: trace.reason || candidateSummary.reason || "",
+        since: candidateSummary.since || candidateSummary.first_seen_at || "",
+        remaining_s: candidateSummary.remaining_s ?? trace.remaining_s ?? "",
+        inputs: trace.inputs || candidateSummary.inputs || {},
+        summary: candidateSummary,
+        trace,
+      };
+    });
+  }
+
+  _houseStateCandidateTable(rows) {
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th>Candidate</th>
+            <th>Status</th>
+            <th>State</th>
+            <th>Reason</th>
+            <th>Timing</th>
+            <th>Inputs</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${this._escape(row.candidate || "")}</strong></td>
+              <td><span class="status">${this._escape(row.status || "")}</span></td>
+              <td>${this._escape(this._formatDetailValue(row.state))}</td>
+              <td>${this._escape(row.reason || "")}</td>
+              <td>${this._escape(this._houseStateTiming(row))}</td>
+              <td>${this._rawDetails(row.inputs || {})}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _houseStateTiming(row) {
+    const parts = [];
+    if (row.since) parts.push(`since ${row.since}`);
+    if (row.remaining_s !== "") parts.push(`remaining ${this._duration(row.remaining_s)}`);
+    return parts.join(", ");
   }
 
   _reactions(snapshot) {

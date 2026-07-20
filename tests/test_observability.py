@@ -138,6 +138,41 @@ class _FakeEngine:
                 ],
                 "pending_applies": {"total": 0, "by_domain": {}, "items": []},
             },
+            "house_state": {
+                "candidate_trace": {
+                    "work_candidate": {
+                        "state": True,
+                        "reason": "anyone_home+work_window+work_activity",
+                        "inputs": {
+                            "anyone_home": True,
+                            "work_window": True,
+                            "work_activity_active": True,
+                        },
+                    }
+                },
+                "candidate_summary": {
+                    "work_candidate": {
+                        "status": "confirmed",
+                        "since": "2026-07-17T09:55:00+00:00",
+                    }
+                },
+                "resolution_trace": {
+                    "active_candidates": ["work_candidate"],
+                    "resolution_path": "home_substate",
+                    "winning_reason": "work_candidate_confirmed",
+                    "decision": {
+                        "action": "enter",
+                        "entered_state": "working",
+                        "source_candidate": "work_candidate",
+                    },
+                },
+                "house_signals_trace": {
+                    "work_window": {"state": True},
+                },
+                "timers": {"work_enter_min": 5},
+                "config": {"work_enter_min": 5},
+                "override": {"house_state_override_active": False},
+            },
             "observability": observability,
             "learning_modules": [
                 {"module_id": "house_state_inference", "ready": True},
@@ -405,6 +440,14 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["learning"]["ready_module_count"] == 1
     assert snapshot["learning"]["analyzer_failures"] == {"house_state_inference": 1}
     assert snapshot["learning"]["analyzer_output_errors"] == {"total": 2}
+    assert snapshot["house_state"]["winning_reason"] == "work_candidate_confirmed"
+    assert snapshot["house_state"]["resolution_path"] == "home_substate"
+    assert snapshot["house_state"]["decision_action"] == "enter"
+    assert snapshot["house_state"]["decision_target_state"] == "working"
+    assert snapshot["house_state"]["active_candidates"] == ["work_candidate"]
+    assert snapshot["house_state"]["candidate_trace"]["work_candidate"]["state"] is True
+    assert snapshot["house_state"]["candidate_summary"]["work_candidate"]["status"] == "confirmed"
+    assert snapshot["details"]["house_state"]["resolution_trace"]["decision"]["action"] == "enter"
     assert snapshot["recent_events"][0]["event_id"] == "event.one"
     assert snapshot["decision_traces"][0]["trace_id"] == "trace.one"
     assert snapshot["meta"]["retention"]["description"] == "history_since_last_restart"

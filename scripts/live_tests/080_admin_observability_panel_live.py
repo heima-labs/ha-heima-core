@@ -27,6 +27,7 @@ REQUIRED_SNAPSHOT_SECTIONS = {
     "notifications",
     "learning",
     "proposals",
+    "house_state",
 }
 
 
@@ -75,6 +76,20 @@ def _assert_snapshot_contract(snapshot: dict[str, Any], entry_id: str) -> None:
     _assert(isinstance(snapshot.get("notifications"), dict), "notifications must be a dict")
     _assert(isinstance(snapshot.get("learning"), dict), "learning must be a dict")
     _assert(isinstance(snapshot.get("proposals"), dict), "proposals must be a dict")
+    house_state = snapshot.get("house_state")
+    _assert(isinstance(house_state, dict), "house_state must be a dict")
+    _assert(
+        isinstance(house_state.get("candidate_trace"), dict),
+        "house_state.candidate_trace must be a dict",
+    )
+    _assert(
+        isinstance(house_state.get("candidate_summary"), dict),
+        "house_state.candidate_summary must be a dict",
+    )
+    _assert(
+        isinstance(house_state.get("resolution_trace"), dict),
+        "house_state.resolution_trace must be a dict",
+    )
     _assert_reaction_metadata(snapshot.get("reactions"))
 
 
