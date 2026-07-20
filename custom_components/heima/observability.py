@@ -7,7 +7,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from .const import OPT_REACTIONS
+from .const import OPT_REACTIONS, OPT_SECURITY
 
 OBSERVABILITY_SCHEMA_VERSION = 1
 
@@ -72,6 +72,13 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
     notifications = _notification_summary(entry)
     learning = _learning_summary(engine_diag, proposal_diag)
     proposals = _proposal_summary(proposal_diag)
+    entity_impact = _entity_impact_index(
+        entry=entry,
+        reactions=reactions,
+        manual_holds=manual_holds,
+        runtime_confirmations=runtime_confirmations,
+        decision_traces=decision_traces,
+    )
 
     snapshot = {
         "meta": {
@@ -100,6 +107,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "notifications": notifications,
         "learning": learning,
         "proposals": proposals,
+        "entity_impact": entity_impact,
         "details": _detail_projections(
             engine_diag=engine_diag,
             entry=entry,
@@ -108,6 +116,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
             runtime_confirmations=runtime_confirmations,
             proposals=proposals,
             decision_traces=decision_traces,
+            entity_impact=entity_impact,
         ),
     }
     return redact_observability_data(snapshot)
@@ -604,6 +613,7 @@ def _detail_projections(
     runtime_confirmations: Mapping[str, Any],
     proposals: Mapping[str, Any],
     decision_traces: list[Any],
+    entity_impact: Mapping[str, Any],
 ) -> dict[str, Any]:
     configured, labels = _configured_reaction_metadata(entry)
     raw_reactions = engine_diag.get("reactions") if isinstance(engine_diag, Mapping) else {}
@@ -665,6 +675,13 @@ def _detail_projections(
         "proposals": {
             "by_id": _proposal_details_by_id(proposal_rows),
             "review_rows_by_id": _review_row_details_by_id(review_rows),
+        },
+        "entities": {
+            "by_id": {
+                str(row.get("entity_id")): row
+                for row in entity_impact.get("entities", [])
+                if str(row.get("entity_id") or "")
+            }
         },
     }
 
@@ -786,6 +803,243 @@ def _review_row_details_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str,
             or _string_list(row.get("proposal_id")),
         }
     return details
+
+
+_ENTITY_DOMAINS = {
+    "alarm_control_panel",
+    "automation",
+    "binary_sensor",
+    "button",
+    "calendar",
+    "camera",
+    "climate",
+    "cover",
+    "device_tracker",
+    "fan",
+    "group",
+    "humidifier",
+    "input_boolean",
+    "input_number",
+    "input_select",
+    "light",
+    "lock",
+    "media_player",
+    "number",
+    "person",
+    "scene",
+    "script",
+    "select",
+    "sensor",
+    "switch",
+    "vacuum",
+    "weather",
+}
+
+
+def _entity_impact_index(
+    *,
+    entry: Any,
+    reactions: list[dict[str, Any]],
+    manual_holds: Mapping[str, Any],
+    runtime_confirmations: Mapping[str, Any],
+    decision_traces: list[Any],
+) -> dict[str, Any]:
+    builder: dict[str, dict[str, Any]] = {}
+    configured, _labels = _configured_reaction_metadata(entry)
+
+    for reaction in reactions:
+        reaction_id = str(reaction.get("reaction_id") or "").strip()
+        cfg = configured.get(reaction_id, {})
+        for entity_id in _entity_ids_from_value(cfg):
+            _entity_link(builder, entity_id, "reaction_ids", reaction_id)
+            _entity_link(builder, entity_id, "policy_ids", str(reaction.get("source_template_id") or ""))
+
+    for trace in decision_traces:
+        if not isinstance(trace, Mapping):
+            continue
+        reaction_id = str(trace.get("reaction_id") or "").strip()
+        trace_id = str(trace.get("trace_id") or "").strip()
+        for step in trace.get("apply_steps") or []:
+            if not isinstance(step, Mapping):
+                continue
+            for entity_id in _entity_ids_from_apply_step(step):
+                _entity_link(builder, entity_id, "reaction_ids", reaction_id)
+                _entity_link(builder, entity_id, "trace_ids", trace_id)
+                _entity_append(builder, entity_id, "apply_steps", dict(step))
+        for link in trace.get("links") or []:
+            if isinstance(link, Mapping) and link.get("kind") == "entity":
+                entity_id = str(link.get("id") or "").strip()
+                if _is_entity_id(entity_id):
+                    _entity_link(builder, entity_id, "reaction_ids", reaction_id)
+                    _entity_link(builder, entity_id, "trace_ids", trace_id)
+
+    for hold in manual_holds.get("active_holds") or []:
+        if not isinstance(hold, Mapping):
+            continue
+        scope = str(hold.get("scope") or "").strip()
+        for entity_id in _entity_ids_from_manual_hold(hold):
+            _entity_link(builder, entity_id, "hold_scopes", scope)
+            for reaction_id in _string_list(hold.get("affected_reaction_ids")):
+                _entity_link(builder, entity_id, "reaction_ids", reaction_id)
+
+    pending_applies = manual_holds.get("pending_applies")
+    if isinstance(pending_applies, Mapping):
+        for item in pending_applies.get("items") or []:
+            if not isinstance(item, Mapping):
+                continue
+            for entity_id in _entity_ids_from_value(item):
+                _entity_append(builder, entity_id, "pending_applies", dict(item))
+
+    request_rows = [
+        *[dict(item) for item in runtime_confirmations.get("pending") or [] if isinstance(item, Mapping)],
+        *[
+            dict(item)
+            for item in runtime_confirmations.get("recent_completed") or []
+            if isinstance(item, Mapping)
+        ],
+    ]
+    for request in request_rows:
+        request_id = str(request.get("request_id") or "").strip()
+        reaction_id = str(request.get("reaction_id") or "").strip()
+        for entity_id in _entity_ids_from_value(request):
+            _entity_link(builder, entity_id, "request_ids", request_id)
+            _entity_link(builder, entity_id, "reaction_ids", reaction_id)
+
+    for source in _camera_privacy_sources(entry):
+        privacy_entity = str(source.get("privacy_entity") or "").strip()
+        if not _is_entity_id(privacy_entity):
+            continue
+        _entity_append(
+            builder,
+            privacy_entity,
+            "source_metadata",
+            {
+                "kind": "security_camera_privacy_source",
+                "camera_source_id": str(source.get("id") or ""),
+                "role": str(source.get("role") or ""),
+            },
+        )
+        for key, value in source.items():
+            if key.endswith("_entity") and _is_entity_id(str(value or "")):
+                _entity_append(
+                    builder,
+                    str(value),
+                    "source_metadata",
+                    {
+                        "kind": "security_camera_evidence_source",
+                        "camera_source_id": str(source.get("id") or ""),
+                        "field": key,
+                    },
+                )
+
+    rows = [_finalize_entity_row(entity_id, data) for entity_id, data in sorted(builder.items())]
+    return {
+        "entity_count": len(rows),
+        "entities": rows,
+        "by_domain": _counter_by_entity_domain(rows),
+    }
+
+
+def _entity_ids_from_apply_step(step: Mapping[str, Any]) -> list[str]:
+    candidates = []
+    target = str(step.get("target") or "").strip()
+    if _is_entity_id(target):
+        candidates.append(target)
+    params = step.get("params")
+    if isinstance(params, Mapping):
+        candidates.extend(_entity_ids_from_value(params.get("entity_id")))
+    candidates.extend(_entity_ids_from_value(step.get("entity_id")))
+    return sorted(set(candidates))
+
+
+def _entity_ids_from_manual_hold(hold: Mapping[str, Any]) -> list[str]:
+    candidates = _entity_ids_from_value(hold.get("source_entity"))
+    scope = str(hold.get("scope") or "")
+    parts = scope.split(":")
+    if len(parts) >= 3 and _is_entity_id(parts[2]):
+        candidates.append(parts[2])
+    return sorted(set(candidates))
+
+
+def _entity_ids_from_value(value: Any) -> list[str]:
+    found: set[str] = set()
+    if isinstance(value, str):
+        for token in value.replace(",", " ").split():
+            cleaned = token.strip("[](){}'\"")
+            if _is_entity_id(cleaned):
+                found.add(cleaned)
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            found.update(_entity_ids_from_value(item))
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            found.update(_entity_ids_from_value(item))
+    return sorted(found)
+
+
+def _is_entity_id(value: str) -> bool:
+    if "." not in value or " " in value:
+        return False
+    domain, object_id = value.split(".", 1)
+    return bool(domain in _ENTITY_DOMAINS and object_id)
+
+
+def _camera_privacy_sources(entry: Any) -> list[dict[str, Any]]:
+    options = dict(getattr(entry, "options", {}) or {})
+    security = options.get(OPT_SECURITY)
+    security = dict(security) if isinstance(security, Mapping) else {}
+    return [
+        dict(item)
+        for item in security.get("camera_evidence_sources") or []
+        if isinstance(item, Mapping)
+    ]
+
+
+def _entity_link(
+    builder: dict[str, dict[str, Any]],
+    entity_id: str,
+    key: str,
+    value: str,
+) -> None:
+    if not _is_entity_id(entity_id) or not value:
+        return
+    row = builder.setdefault(entity_id, {})
+    row.setdefault(key, set()).add(value)
+
+
+def _entity_append(
+    builder: dict[str, dict[str, Any]],
+    entity_id: str,
+    key: str,
+    value: dict[str, Any],
+) -> None:
+    if not _is_entity_id(entity_id):
+        return
+    row = builder.setdefault(entity_id, {})
+    row.setdefault(key, []).append(value)
+
+
+def _finalize_entity_row(entity_id: str, data: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "entity_id": entity_id,
+        "domain": entity_id.split(".", 1)[0],
+        "reaction_ids": sorted(data.get("reaction_ids") or []),
+        "trace_ids": sorted(data.get("trace_ids") or []),
+        "hold_scopes": sorted(data.get("hold_scopes") or []),
+        "request_ids": sorted(data.get("request_ids") or []),
+        "policy_ids": sorted(data.get("policy_ids") or []),
+        "apply_steps": list(data.get("apply_steps") or []),
+        "pending_applies": list(data.get("pending_applies") or []),
+        "source_metadata": list(data.get("source_metadata") or []),
+    }
+
+
+def _counter_by_entity_domain(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        domain = str(row.get("domain") or "unknown")
+        counts[domain] = counts.get(domain, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _mapping_or_count(value: Any, *, count_key: str) -> dict[str, Any]:

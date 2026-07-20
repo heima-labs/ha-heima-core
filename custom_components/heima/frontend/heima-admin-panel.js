@@ -373,6 +373,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("notifications", "Notifications")}
             ${this._navButton("learning", "Learning")}
             ${this._navButton("proposals", "Proposals")}
+            ${this._navButton("entities", "Entities")}
             ${this._navButton("health", "Health")}
           </div>
         </nav>
@@ -448,6 +449,7 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "notifications") return "Notification Routing Inspector";
     if (this._route === "learning") return "Learning Monitor";
     if (this._route === "proposals") return "Proposal Backlog Inspector";
+    if (this._route === "entities") return "Entity Impact";
     if (this._route === "health") return "Health";
     return "Overview";
   }
@@ -477,6 +479,7 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "notifications") return this._notifications(snapshot);
     if (this._route === "learning") return this._learning(snapshot);
     if (this._route === "proposals") return this._proposals(snapshot);
+    if (this._route === "entities") return this._entities(snapshot);
     if (this._route === "health") return this._health(snapshot);
     return this._overview(snapshot);
   }
@@ -842,6 +845,54 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
+  _entities(snapshot) {
+    const impact = snapshot.entity_impact || {};
+    const allEntities = impact.entities || [];
+    const entities = this._filterRows("entities", allEntities);
+    return `
+      <section class="grid">
+        ${this._metric("Entities", impact.entity_count ?? allEntities.length)}
+        ${this._objectCard("By Domain", impact.by_domain || {})}
+      </section>
+      ${this._filterToolbar("entities", "Search entities")}
+      ${this._filteredCount(entities.length, allEntities.length)}
+      ${entities.length ? this._entityTable(entities) : `<div class="empty">No entity impact rows in the snapshot.</div>`}
+    `;
+  }
+
+  _entityTable(entities) {
+    return `
+      <table>
+        <thead>
+          <tr>
+            <th>Entity</th>
+            <th>Domain</th>
+            <th>Reactions</th>
+            <th>Traces</th>
+            <th>Holds</th>
+            <th>Requests</th>
+            <th>Policies</th>
+            <th>Inspect</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entities.map((entity) => `
+            <tr>
+              <td>${this._copyableId(entity.entity_id || "")}</td>
+              <td><span class="status">${this._escape(entity.domain || "")}</span></td>
+              <td>${this._escape((entity.reaction_ids || []).length)}</td>
+              <td>${this._escape((entity.trace_ids || []).length)}</td>
+              <td>${this._escape((entity.hold_scopes || []).length)}</td>
+              <td>${this._escape((entity.request_ids || []).length)}</td>
+              <td>${this._escape((entity.policy_ids || []).length)}</td>
+              <td>${this._detailButton("entity", entity.entity_id || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   _notificationRoutesTable(notifications) {
     const routes = notifications.resolved_routes || [];
     const unresolved = notifications.unresolved_targets || [];
@@ -950,6 +1001,7 @@ class HeimaAdminPanel extends HTMLElement {
     if (kind === "manual_hold") return this._manualHoldDetail(snapshot, id);
     if (kind === "runtime_confirmation") return this._runtimeConfirmationDetail(snapshot, id);
     if (kind === "proposal_review_row") return this._proposalReviewRowDetail(snapshot, id);
+    if (kind === "entity") return this._entityDetail(snapshot, id);
     return `<div class="empty">Unknown detail type.</div>`;
   }
 
@@ -958,6 +1010,7 @@ class HeimaAdminPanel extends HTMLElement {
     if (kind === "manual_hold") return "Manual Hold Detail";
     if (kind === "runtime_confirmation") return "Runtime Confirmation Detail";
     if (kind === "proposal_review_row") return "Proposal Review Detail";
+    if (kind === "entity") return "Entity Detail";
     return "Detail";
   }
 
@@ -1062,6 +1115,33 @@ class HeimaAdminPanel extends HTMLElement {
         })}
       </section>
       ${this._rawDetails(summary)}
+    `;
+  }
+
+  _entityDetail(snapshot, entityId) {
+    const detail = snapshot.details?.entities?.by_id?.[entityId];
+    if (!detail) return `<div class="empty">Entity detail is unavailable.</div>`;
+    return `
+      <section class="detail-grid">
+        ${this._detailSection("Entity", {
+          entity_id: detail.entity_id,
+          domain: detail.domain,
+          reactions: (detail.reaction_ids || []).join(", "),
+          traces: (detail.trace_ids || []).join(", "),
+          holds: (detail.hold_scopes || []).join(", "),
+          requests: (detail.request_ids || []).join(", "),
+          policies: (detail.policy_ids || []).join(", "),
+        })}
+        ${this._detailSection("Counts", {
+          apply_steps: (detail.apply_steps || []).length,
+          pending_applies: (detail.pending_applies || []).length,
+          source_metadata: (detail.source_metadata || []).length,
+        })}
+      </section>
+      ${this._linkedRows("Apply Steps", detail.apply_steps || [], "step_id")}
+      ${this._linkedRows("Pending Applies", detail.pending_applies || [], "step_id")}
+      ${this._linkedRows("Source Metadata", detail.source_metadata || [], "kind")}
+      ${this._rawDetails(detail)}
     `;
   }
 

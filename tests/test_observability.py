@@ -265,6 +265,16 @@ class _FakeCoordinator:
                         "persistent_notification": {"supports_actions": False},
                     },
                 },
+                "security": {
+                    "camera_evidence_sources": [
+                        {
+                            "id": "interna",
+                            "role": "entry",
+                            "privacy_entity": "switch.interna_privacy",
+                            "motion_entity": "binary_sensor.interna_motion",
+                        }
+                    ]
+                },
                 "reactions": {
                     "configured": {
                         "reaction.one": {
@@ -416,6 +426,28 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert proposal_detail["linked_reaction_ids"] == ["reaction.one"]
     review_detail = snapshot["details"]["proposals"]["review_rows_by_id"]["bundle.one"]
     assert review_detail["proposal_ids"] == ["proposal.visible", "proposal.hidden"]
+    assert snapshot["entity_impact"]["by_domain"] == {
+        "binary_sensor": 1,
+        "light": 1,
+        "switch": 1,
+    }
+    entities = snapshot["details"]["entities"]["by_id"]
+    assert entities["light.studio"]["reaction_ids"] == ["reaction.one"]
+    assert entities["light.studio"]["hold_scopes"] == ["light:entity:light.studio"]
+    assert entities["light.studio"]["trace_ids"] == ["trace.one"]
+    assert entities["switch.interna_privacy"]["source_metadata"] == [
+        {
+            "camera_source_id": "interna",
+            "kind": "security_camera_privacy_source",
+            "role": "entry",
+        },
+        {
+            "camera_source_id": "interna",
+            "field": "privacy_entity",
+            "kind": "security_camera_evidence_source",
+        },
+    ]
+    assert "notify.mobile_app_iphone_stefano" not in entities
 
 
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:
