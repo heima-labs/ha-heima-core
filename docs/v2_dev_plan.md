@@ -186,6 +186,8 @@ with AO8-AO10 before merge, or merge the MVP first and develop AO8-AO10 on follo
 - AO3 initial implementation completed:
   - Added `custom_components/heima/panel.py` to register/unregister the custom HA admin panel.
   - The panel serves local integration-owned frontend assets from `/heima_static`.
+  - The panel module URL includes a content-hash query parameter so browser caches refresh when the
+    JavaScript asset changes.
   - Added `custom_components/heima/frontend/heima-admin-panel.js` as a read-only web component
     shell with Overview, Runtime Activity, and Health routes.
   - The frontend consumes only the AO websocket snapshot command and handles loading, error,
@@ -919,6 +921,13 @@ MVP merge.
     correctly (`23:00` vs `01:00` is a 2-hour difference).
   - Arrival, departure, and alarm-disarm unusual-hour baselines are scoped to the same weekday,
     avoiding false positives caused by mixing workday and weekend distributions.
+  - Follow-up fix: `alarm_disarm_unusual_hour` is conservative and cluster/local-support based.
+    It no longer treats one median hour as the only normal disarm time; morning and evening disarm
+    windows may both be valid when each has local support.
+  - Follow-up fix: warning-level statistical anomalies remain visible as events, notifications, and
+    `sensor.heima_health.last_anomaly`, but they do not put the whole integration into
+    `degraded`. `degraded` is reserved for invariant violations, critical anomalies, and engine
+    errors.
   - Presence reaction learning and analyzer calendar boundaries now use HA local time. Activity
     distinct-day counts and analyzer week-span checks use the same local calendar contract.
     Elapsed-time comparisons remain UTC-based.
@@ -1049,6 +1058,8 @@ MVP merge.
   - `alarm_disarm_unusual_hour` scans consecutive snapshot pairs for transitions from
     `armed_*` to `disarmed`; the latest transition is the candidate and is excluded from the
     baseline.
+  - It requires conservative baseline support and compares the current transition against every
+    supported per-weekday disarm window, not against a single median hour.
   - `alarm_expected_not_armed` is statistical only: no calendar/work-window context. It filters
     history by the current `(weekday, hour_bucket)` slot, then checks the latest configured number
     of snapshots within that slot are all `disarmed`.

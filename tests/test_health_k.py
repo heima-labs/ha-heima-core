@@ -113,6 +113,49 @@ def test_resolved_invariant_clears_degraded_health() -> None:
     assert coordinator.engine.state.get_sensor("heima_health") == "ok"
 
 
+def test_warning_anomaly_does_not_degrade_health() -> None:
+    coordinator = _coordinator()
+    event = {
+        "type": "anomaly.alarm_disarm_unusual_hour",
+        "key": "anomaly.alarm_disarm_unusual_hour",
+        "severity": "warning",
+        "title": "Learning anomaly",
+        "message": "Alarm was disarmed at an unusual hour.",
+        "context": {"anomaly_type": "alarm_disarm_unusual_hour"},
+        "event_id": "evt-1",
+        "ts": "2026-07-20T10:00:00+00:00",
+    }
+
+    coordinator._record_installer_alert(event)  # noqa: SLF001
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "ok"
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert attrs["health_reason"] == "initialized"
+    assert attrs["last_anomaly"]["type"] == "anomaly.alarm_disarm_unusual_hour"
+
+
+def test_critical_anomaly_degrades_health() -> None:
+    coordinator = _coordinator()
+    event = {
+        "type": "anomaly.stove_on_unattended",
+        "key": "anomaly.stove_on_unattended",
+        "severity": "critical",
+        "title": "Learning anomaly",
+        "message": "Stove appears unattended.",
+        "context": {"anomaly_type": "stove_on_unattended"},
+        "event_id": "evt-1",
+        "ts": "2026-07-20T10:00:00+00:00",
+    }
+
+    coordinator._record_installer_alert(event)  # noqa: SLF001
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "degraded"
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert attrs["health_reason"] == "anomaly"
+
+
 @pytest.mark.asyncio
 async def test_installer_alert_notification_degrades_health() -> None:
     coordinator = _coordinator()

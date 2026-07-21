@@ -812,8 +812,10 @@ class AnomalyAnalyzer:
         rule = rules["alarm_disarm_unusual_hour"]
         if not rule.enabled:
             return []
-        min_observations = _threshold_int(rule, "min_observations", 5)
+        min_observations = _threshold_int(rule, "min_observations", 12)
         delta_hours = _threshold_float(rule, "delta_hours", 3.0)
+        local_window_hours = _threshold_float(rule, "local_window_hours", 2.0)
+        local_min_observations = _threshold_int(rule, "local_min_observations", 3)
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
         snapshots = snapshot_store.snapshots(limit=window)
         transitions = _disarm_transitions(snapshots)
@@ -827,8 +829,27 @@ class AnomalyAnalyzer:
             return []
 
         baseline = [transition.hour_bucket for transition in same_weekday[:-1]]
-        baseline_hour = _clock_median_hour([float(hour) for hour in baseline])
-        distance = _clock_distance_hours(float(current.hour_bucket), baseline_hour)
+        local_count = _clock_local_count(
+            baseline,
+            current.hour_bucket,
+            window_hours=local_window_hours,
+        )
+        if local_count >= local_min_observations:
+            return []
+
+        supported_windows = _supported_clock_windows(
+            baseline,
+            window_hours=local_window_hours,
+            min_observations=local_min_observations,
+        )
+        if not supported_windows:
+            return []
+
+        nearest_window = min(
+            supported_windows,
+            key=lambda hour: (_clock_distance_hours(float(current.hour_bucket), hour), hour),
+        )
+        distance = _clock_distance_hours(float(current.hour_bucket), nearest_window)
         if distance < delta_hours:
             return []
 
@@ -838,8 +859,9 @@ class AnomalyAnalyzer:
             severity=_severity(rule.severity),
             description=(
                 "Alarm was disarmed at an unusual hour: "
-                f"{_hour_bucket_label(current.hour_bucket)} differs from historical median "
-                f"{_hour_bucket_label(baseline_hour)}."
+                f"{_hour_bucket_label(current.hour_bucket)} is not near any supported "
+                f"historical disarm window; nearest supported window is "
+                f"{_hour_bucket_label(nearest_window)}."
             ),
             confidence=round(confidence, 3),
             context={
@@ -848,7 +870,11 @@ class AnomalyAnalyzer:
                 "transition_count": len(same_weekday),
                 "baseline_transition_count": len(baseline),
                 "current_hour_bucket": current.hour_bucket,
-                "baseline_hour_bucket": round(baseline_hour, 3),
+                "nearest_supported_hour_bucket": round(nearest_window, 3),
+                "supported_hour_buckets": [round(hour, 3) for hour in supported_windows],
+                "local_transition_count": local_count,
+                "local_window_hours": local_window_hours,
+                "local_min_observations": local_min_observations,
                 "distance_hours": round(distance, 3),
                 "delta_hours": delta_hours,
                 "window": window,
@@ -1211,8 +1237,10 @@ def _default_rule(rule_id: str) -> AnomalyRule:
     elif rule_id == "alarm_disarm_unusual_hour":
         thresholds = {
             "window": 1000,
-            "min_observations": 5,
+            "min_observations": 12,
             "delta_hours": 3.0,
+            "local_window_hours": 2.0,
+            "local_min_observations": 3,
         }
     elif rule_id == "alarm_expected_not_armed":
         thresholds = {
@@ -1333,6 +1361,36 @@ def _clock_median_hour(values: list[float]) -> float:
             candidate,
         ),
     )
+
+
+def _clock_local_count(
+    values: list[int | float],
+    hour: int | float,
+    *,
+    window_hours: float,
+) -> int:
+    return sum(
+        1 for value in values if _clock_distance_hours(float(value), float(hour)) <= window_hours
+    )
+
+
+def _supported_clock_windows(
+    values: list[int | float],
+    *,
+    window_hours: float,
+    min_observations: int,
+) -> list[float]:
+    windows: list[float] = []
+    for candidate in sorted({float(value) for value in values}):
+        if _clock_local_count(values, candidate, window_hours=window_hours) < min_observations:
+            continue
+        if any(
+            _clock_distance_hours(candidate, existing) <= window_hours
+            for existing in windows
+        ):
+            continue
+        windows.append(candidate)
+    return windows
 
 
 @dataclass(frozen=True)

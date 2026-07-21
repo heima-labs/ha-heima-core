@@ -1334,8 +1334,11 @@ target. A future iteration may add optional installer push routing.
 | State | Meaning |
 |---|---|
 | `ok` | Engine health is OK and no active degraded/error condition is recorded. |
-| `degraded` | The engine is still running but an anomaly or invariant violation needs installer attention. |
+| `degraded` | The engine is still running but a critical anomaly or invariant violation needs installer attention. |
 | `error` | Engine health is not OK or diagnostics collection failed. |
+
+Warning-level statistical anomalies MUST be surfaced as events/notifications and retained in
+`last_anomaly`, but they MUST NOT put the whole integration into `degraded`.
 
 The health sensor attributes MUST include at least `health_reason`, `last_anomaly`,
 `last_invariant_violation`, `last_diagnostics`, and `last_updated`. Diagnostics must be readable
@@ -1671,7 +1674,7 @@ records Heima scene decisions, not reliable physical light state.
 
 | Rule ID | Trigger | Default thresholds | Severity |
 |---|---|---|---|
-| `alarm_disarm_unusual_hour` | Alarm disarmed in an hour_bucket > N·σ from the per-weekday distribution | `sigma_factor=2.0`, `min_support=7` | `warning` |
+| `alarm_disarm_unusual_hour` | Alarm disarmed outside every supported per-weekday disarm window | `min_observations=12`, `local_window_hours=2`, `local_min_observations=3`, `delta_hours=3` | `warning` |
 | `alarm_expected_not_armed` | Historically armed in this hour_bucket/weekday in ≥ X% of cases; currently not armed | `armed_pct=85`, `min_support=10` | `info` |
 
 **Sensor health** (complementary to `IInvariantCheck.SensorStuck`)

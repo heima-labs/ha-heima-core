@@ -2461,7 +2461,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
     def _health_status(self) -> str:
         if not self.engine.health.ok:
             return "error"
-        if self._last_anomaly is not None or self._last_invariant_violation is not None:
+        if self._last_invariant_violation is not None or self._last_anomaly_is_critical():
             return "degraded"
         return "ok"
 
@@ -2470,9 +2470,13 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             return self.engine.health.reason
         if self._last_invariant_violation is not None:
             return "invariant_violation"
-        if self._last_anomaly is not None:
+        if self._last_anomaly_is_critical():
             return "anomaly"
         return self.engine.health.reason
+
+    def _last_anomaly_is_critical(self) -> bool:
+        anomaly = self._last_anomaly or {}
+        return str(anomaly.get("severity") or "").strip().lower() == "critical"
 
     def _health_attributes(self) -> dict[str, Any]:
         return {
