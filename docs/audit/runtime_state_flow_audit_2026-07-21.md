@@ -71,3 +71,23 @@ would require a stronger restart-safe execution contract.
 .venv/bin/python -m pytest tests/test_engine_lighting_runtime.py tests/test_reaction_framework.py tests/test_camera_privacy_policy_materializer.py tests/test_runtime_confirmation.py tests/test_runtime_confirmation_promotion_stats.py tests/test_observability.py tests/test_event_category_gating.py -q
 .venv/bin/ruff check custom_components/heima/coordinator.py custom_components/heima/runtime/engine.py tests/test_health_k.py tests/test_invariant_checks.py
 ```
+
+## Verification Infrastructure
+
+Added after the audit:
+
+- `tests/test_runtime_state_transitions.py` covers explicit transition sequences for health
+  reconciliation, manual hold ownership/release, and runtime confirmation first-writer-wins.
+- `scripts/runtime_state_replay.py` replays exported diagnostics or observability JSON files and
+  flags stale runtime state.
+- `tests/test_runtime_state_replay.py` covers replay rules with minimized fixtures.
+- `scripts/live_tests/082_runtime_state_replay_live.py` runs the same replay checks against the
+  live HA diagnostics payload and `sensor.heima_health`.
+
+Additional commands:
+
+```bash
+.venv/bin/python -m pytest tests/test_runtime_state_replay.py tests/test_runtime_state_transitions.py -q
+scripts/runtime_state_replay.py heima-observability-2026-07-21T074752043927Z0000.json
+./scripts/check_all_live.sh --tier diagnostic
+```
