@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -409,9 +410,36 @@ def _validate_runtime_confirmations(
     return findings
 
 
+def load_payload_file(path: Path) -> Any:
+    if path.suffix.lower() == ".txt":
+        return load_sectioned_text_file(path)
+    return load_json_file(path)
+
+
 def load_json_file(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_sectioned_text_file(path: Path) -> dict[str, Any]:
+    sections = _parse_sectioned_json(path.read_text(encoding="utf-8"))
+    engine = _dict_first(sections.get("ENGINE"))
+    runtime: dict[str, Any] = {}
+    if engine:
+        runtime["engine"] = engine
+    runtime_confirmation = _dict_first(
+        sections.get("RUNTIME_CONFIRMATION"),
+        sections.get("RUNTIME_CONFIRMATIONS"),
+    )
+    if runtime_confirmation:
+        runtime["runtime_confirmation"] = runtime_confirmation
+    return {
+        "source_format": "sectioned_text",
+        "sections": sections,
+        "runtime": runtime,
+        "health": _dict_first(sections.get("HEALTH")),
+        "generated_at": _str_first(_path(sections, ("OPS_SNAPSHOT", "generated_at"))),
+    }
 
 
 def main() -> int:
@@ -427,7 +455,7 @@ def main() -> int:
     findings: list[ReplayFinding] = []
     paths = _expand_paths(args.paths)
     for path in paths:
-        payload = load_json_file(path)
+        payload = load_payload_file(path)
         if not isinstance(payload, dict):
             findings.append(
                 ReplayFinding("error", "invalid_payload", f"{path}: root JSON value is not an object")
@@ -440,6 +468,10 @@ def main() -> int:
         warnings = sum(1 for item in findings if item.severity == "warning")
         print(f"Checked files: {len(paths)}")
         print(f"Findings: errors={errors} warnings={warnings}")
+
+    if not paths:
+        print("ERROR no_input_files: no diagnostics files matched the requested paths")
+        return 1
 
     if not findings:
         print("PASS: no stale runtime-state findings")
@@ -458,10 +490,43 @@ def _expand_paths(raw_paths: list[str]) -> list[Path]:
         for candidate in candidates:
             path = Path(candidate)
             if path.is_dir():
-                paths.extend(sorted(item for item in path.glob("*.json") if item.is_file()))
+                paths.extend(sorted(_diagnostics_files(path)))
             else:
                 paths.append(path)
     return paths
+
+
+def _diagnostics_files(path: Path) -> list[Path]:
+    return [
+        item
+        for item in path.rglob("*")
+        if item.is_file()
+        and (item.suffix.lower() == ".json" or item.name == "diagnostics_all.txt")
+    ]
+
+
+def _parse_sectioned_json(text: str) -> dict[str, Any]:
+    sections: dict[str, Any] = {}
+    matches = list(re.finditer(r"^===\s+([A-Z0-9_]+)\s+===$", text, flags=re.MULTILINE))
+    for index, match in enumerate(matches):
+        name = match.group(1)
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        value = _extract_first_json_value(text[start:end])
+        if value is not None:
+            sections[name] = value
+    return sections
+
+
+def _extract_first_json_value(text: str) -> Any:
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"[\[{]", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        return value
+    return None
 
 
 def _health(payload: dict[str, Any]) -> dict[str, Any]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from scripts.runtime_state_replay import _expand_paths, validate_payload
+from scripts.runtime_state_replay import _expand_paths, load_sectioned_text_file, validate_payload
 
 
 def test_replay_flags_stale_security_presence_mismatch() -> None:
@@ -80,13 +80,43 @@ def test_replay_warns_for_critical_non_invariant_anomaly() -> None:
 def test_replay_expands_directories_and_globs(tmp_path) -> None:
     first = tmp_path / "one.json"
     second = tmp_path / "two.json"
+    nested_dir = tmp_path / "snapshot"
+    nested_dir.mkdir()
+    nested = nested_dir / "ops_snapshot.json"
     ignored = tmp_path / "ignored.txt"
     first.write_text("{}", encoding="utf-8")
     second.write_text("{}", encoding="utf-8")
+    nested.write_text("{}", encoding="utf-8")
     ignored.write_text("{}", encoding="utf-8")
 
-    assert _expand_paths([str(tmp_path)]) == [first, second]
+    assert _expand_paths([str(tmp_path)]) == [first, nested, second]
     assert _expand_paths([str(tmp_path / "*.json")]) == [first, second]
+
+
+def test_replay_loads_sectioned_diagnostics_text(tmp_path) -> None:
+    diagnostics = tmp_path / "diagnostics_all.txt"
+    diagnostics.write_text(
+        """
+=== EVENT_STORE ===
+{"total_events": 1}
+
+=== ENGINE ===
+{
+  "snapshot": {"security_state": "disarmed"},
+  "invariants": {"unresolved_check_ids": []},
+  "manual_hold": {
+    "active_holds": [],
+    "pending_applies": {"total": 0, "by_domain": {}, "items": []}
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    payload = load_sectioned_text_file(diagnostics)
+
+    assert payload["runtime"]["engine"]["snapshot"]["security_state"] == "disarmed"
+    assert validate_payload(payload) == []
 
 
 def test_live_replay_combines_health_sensor_with_runtime_diagnostics() -> None:
