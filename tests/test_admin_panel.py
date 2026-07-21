@@ -12,6 +12,7 @@ from custom_components.heima import async_setup, async_unload_entry
 from custom_components.heima.const import DOMAIN
 from custom_components.heima.panel import (
     PANEL_MODULE,
+    PANEL_MODULE_BASE,
     PANEL_STATIC_URL,
     PANEL_URL_PATH,
     PANEL_WEBCOMPONENT,
@@ -55,10 +56,11 @@ async def test_register_admin_panel_serves_local_asset_and_requires_admin(monkey
             "module_url": PANEL_MODULE,
             "embed_iframe": False,
             "require_admin": True,
-            "config_panel_domain": DOMAIN,
             "config": {"snapshotCommand": "heima/observability/snapshot"},
         }
     ]
+    assert PANEL_MODULE.startswith(f"{PANEL_MODULE_BASE}?v=")
+    assert len(PANEL_MODULE.rsplit("?v=", 1)[1]) == 12
 
 
 def test_unregister_admin_panel_removes_frontend_panel(monkeypatch) -> None:

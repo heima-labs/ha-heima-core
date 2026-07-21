@@ -186,6 +186,8 @@ with AO8-AO10 before merge, or merge the MVP first and develop AO8-AO10 on follo
 - AO3 initial implementation completed:
   - Added `custom_components/heima/panel.py` to register/unregister the custom HA admin panel.
   - The panel serves local integration-owned frontend assets from `/heima_static`.
+  - The panel module URL includes a content-hash query parameter so browser caches refresh when the
+    JavaScript asset changes.
   - Added `custom_components/heima/frontend/heima-admin-panel.js` as a read-only web component
     shell with Overview, Runtime Activity, and Health routes.
   - The frontend consumes only the AO websocket snapshot command and handles loading, error,
