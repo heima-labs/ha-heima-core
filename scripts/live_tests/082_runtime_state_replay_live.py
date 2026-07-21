@@ -43,7 +43,8 @@ def run(ha_url: str, ha_token: str) -> None:
     entry_id = client.find_heima_entry_id()
     diagnostics = _diagnostics_data(client, entry_id)
     health = _health_state_payload(client)
-    combined = _combined_health_runtime_payload(health, diagnostics)
+    entity_states = _entity_states_payload(client)
+    combined = _combined_health_runtime_payload(health, diagnostics, entity_states)
 
     findings = [
         *validate_payload(diagnostics, source=f"diagnostics:{entry_id}"),
@@ -62,6 +63,7 @@ def run(ha_url: str, ha_token: str) -> None:
 def _combined_health_runtime_payload(
     health_state: dict[str, Any],
     diagnostics: dict[str, Any],
+    entity_states: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     attrs = health_state.get("attributes")
     health = dict(attrs) if isinstance(attrs, dict) else {}
@@ -70,9 +72,20 @@ def _combined_health_runtime_payload(
         health["reason"] = str(health.get("health_reason") or "")
     runtime = diagnostics.get("runtime")
     return {
+        "entry": dict(diagnostics.get("entry")) if isinstance(diagnostics.get("entry"), dict) else {},
         "health": health,
         "runtime": dict(runtime) if isinstance(runtime, dict) else {},
+        "entity_states": dict(entity_states or {}),
     }
+
+
+def _entity_states_payload(client: HAClient) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for state in client.all_states():
+        entity_id = str(state.get("entity_id") or "").strip()
+        if entity_id:
+            rows[entity_id] = state
+    return rows
 
 
 def main() -> int:

@@ -80,10 +80,14 @@ Added after the audit:
   reconciliation, manual hold ownership/release, and runtime confirmation first-writer-wins.
 - `scripts/runtime_state_replay.py` replays exported diagnostics or observability JSON files and
   flags stale runtime state. It accepts direct files, directories, and glob patterns for batch
-  replay.
+  replay. Replay rules currently cover health invariant staleness, manual hold bookkeeping,
+  camera privacy policy/runtime consistency, and runtime confirmation registry/timeout
+  consistency.
 - `tests/test_runtime_state_replay.py` covers replay rules with minimized fixtures.
 - `scripts/live_tests/082_runtime_state_replay_live.py` runs the same replay checks against live HA
-  diagnostics, `sensor.heima_health`, and a combined health+runtime payload.
+  diagnostics, `sensor.heima_health`, and a combined health+runtime+entity-state payload. Entity
+  states let replay verify that a fired camera privacy policy matches the current privacy switch
+  state when no manual hold is active.
 - `scripts/live_tests/083_health_invariant_clear_active_live.py` actively forces
   `security_presence_mismatch`, waits for health to become `degraded`, clears the condition, and
   verifies health returns to `ok`.

@@ -109,12 +109,272 @@ def test_live_replay_combines_health_sensor_with_runtime_diagnostics() -> None:
     }
 
     replay_live = _load_live_replay_module()
-    payload = replay_live._combined_health_runtime_payload(health, diagnostics)  # noqa: SLF001
+    payload = replay_live._combined_health_runtime_payload(health, diagnostics, {})  # noqa: SLF001
 
     assert [item.code for item in validate_payload(payload)] == [
         "stale_security_presence_mismatch",
         "resolved_invariant_still_degrades_health",
     ]
+
+
+def test_replay_flags_manual_hold_inconsistencies() -> None:
+    payload = {
+        "runtime": {
+            "engine": {
+                "manual_hold": {
+                    "active_holds": [
+                        {
+                            "scope": "light:entity:light.desk",
+                            "reason": "helper_on",
+                            "source_entity": "input_boolean.desk_hold",
+                            "expires_in_s": -1,
+                        }
+                    ],
+                    "pending_applies": {
+                        "total": 3,
+                        "by_domain": {"light": 2},
+                        "items": [
+                            {
+                                "entity_id": "light.desk",
+                                "expires_in_s": -5,
+                            }
+                        ],
+                    },
+                }
+            }
+        },
+        "entity_states": {
+            "input_boolean.desk_hold": {"state": "off"},
+        },
+    }
+
+    assert [item.code for item in validate_payload(payload)] == [
+        "manual_hold_pending_total_mismatch",
+        "manual_hold_pending_domain_total_mismatch",
+        "expired_manual_hold_active",
+        "manual_hold_helper_off_still_active",
+        "expired_manual_hold_pending_apply",
+    ]
+
+
+def test_replay_accepts_consistent_manual_hold_state() -> None:
+    payload = {
+        "runtime": {
+            "engine": {
+                "manual_hold": {
+                    "active_holds": [
+                        {
+                            "scope": "light:entity:light.desk",
+                            "reason": "helper_on",
+                            "source_entity": "input_boolean.desk_hold",
+                            "expires_in_s": 120,
+                        }
+                    ],
+                    "pending_applies": {
+                        "total": 1,
+                        "by_domain": {"light": 1},
+                        "items": [
+                            {
+                                "entity_id": "light.desk",
+                                "expires_in_s": 10,
+                            }
+                        ],
+                    },
+                }
+            }
+        },
+        "entity_states": {
+            "input_boolean.desk_hold": {"state": "on"},
+        },
+    }
+
+    assert validate_payload(payload) == []
+
+
+def test_replay_flags_camera_privacy_policy_runtime_inconsistencies() -> None:
+    payload = {
+        "entry": {
+            "options": {
+                "reactions": {
+                    "configured": {
+                        "camera_policy": {
+                            "enabled": True,
+                            "source_template_id": "security.camera_privacy_policy",
+                            "alarm_states": ["armed_night"],
+                            "camera_privacy_policy": {
+                                "privacy_entity": "switch.camera_privacy",
+                                "privacy_action": "turn_off",
+                            },
+                            "steps": [
+                                {
+                                    "action": "switch.turn_on",
+                                    "target": "switch.other_privacy",
+                                    "params": {"entity_id": "switch.wrong_privacy"},
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        "runtime": {
+            "engine": {
+                "snapshot": {"security_state": "armed_night"},
+                "manual_hold": {"active_holds": []},
+                "reactions": {},
+            }
+        },
+        "entity_states": {
+            "switch.camera_privacy": {"state": "on"},
+        },
+    }
+
+    assert [item.code for item in validate_payload(payload)] == [
+        "camera_privacy_policy_missing_runtime_reaction",
+        "camera_privacy_policy_step_target_mismatch",
+        "camera_privacy_policy_step_entity_mismatch",
+        "camera_privacy_policy_step_action_mismatch",
+    ]
+
+
+def test_replay_flags_camera_privacy_switch_mismatch_after_fire() -> None:
+    payload = {
+        "entry": {
+            "options": {
+                "reactions": {
+                    "configured": {
+                        "camera_policy": {
+                            "enabled": True,
+                            "source_template_id": "security.camera_privacy_policy",
+                            "alarm_states": ["armed_night"],
+                            "camera_privacy_policy": {
+                                "privacy_entity": "switch.camera_privacy",
+                                "privacy_action": "turn_off",
+                            },
+                            "steps": [
+                                {
+                                    "action": "switch.turn_off",
+                                    "target": "switch.camera_privacy",
+                                    "params": {"entity_id": "switch.camera_privacy"},
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        "runtime": {
+            "engine": {
+                "snapshot": {"security_state": "armed_night"},
+                "manual_hold": {"active_holds": []},
+                "reactions": {"camera_policy": {"last_fired_state": "armed_night"}},
+            }
+        },
+        "entity_states": {
+            "switch.camera_privacy": {"state": "on"},
+        },
+    }
+
+    assert [item.code for item in validate_payload(payload)] == [
+        "camera_privacy_runtime_switch_state_mismatch"
+    ]
+
+
+def test_replay_accepts_camera_privacy_switch_mismatch_when_held() -> None:
+    payload = {
+        "entry": {
+            "options": {
+                "reactions": {
+                    "configured": {
+                        "camera_policy": {
+                            "enabled": True,
+                            "source_template_id": "security.camera_privacy_policy",
+                            "alarm_states": ["armed_night"],
+                            "camera_privacy_policy": {
+                                "privacy_entity": "switch.camera_privacy",
+                                "privacy_action": "turn_off",
+                            },
+                            "steps": [
+                                {
+                                    "action": "switch.turn_off",
+                                    "target": "switch.camera_privacy",
+                                    "params": {"entity_id": "switch.camera_privacy"},
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        "runtime": {
+            "engine": {
+                "snapshot": {"security_state": "armed_night"},
+                "manual_hold": {
+                    "active_holds": [
+                        {"scope": "switch:entity:switch.camera_privacy", "reason": "external_on"}
+                    ]
+                },
+                "reactions": {"camera_policy": {"last_fired_state": "armed_night"}},
+            }
+        },
+        "entity_states": {
+            "switch.camera_privacy": {"state": "on"},
+        },
+    }
+
+    assert validate_payload(payload) == []
+
+
+def test_replay_flags_runtime_confirmation_inconsistencies() -> None:
+    payload = {
+        "generated_at": "2026-07-21T10:00:00+00:00",
+        "runtime": {
+            "runtime_confirmation": {
+                "pending": 2,
+                "pending_requests": [
+                    {
+                        "request_id": "request-a",
+                        "status": "pending",
+                        "expires_at": "2026-07-21T09:59:00+00:00",
+                    }
+                ],
+                "scheduled_timeouts": ["request-b"],
+                "recent_completed": 3,
+                "completed_by_status": {"approved": 1, "cancelled": 1},
+            }
+        },
+    }
+
+    assert [item.code for item in validate_payload(payload)] == [
+        "runtime_confirmation_pending_count_mismatch",
+        "runtime_confirmation_pending_timeout_not_scheduled",
+        "runtime_confirmation_orphan_timeout_handle",
+        "runtime_confirmation_expired_pending_request",
+        "runtime_confirmation_completed_count_mismatch",
+    ]
+
+
+def test_replay_accepts_consistent_runtime_confirmation_state() -> None:
+    payload = {
+        "generated_at": "2026-07-21T10:00:00+00:00",
+        "runtime": {
+            "runtime_confirmation": {
+                "pending": 1,
+                "pending_requests": [
+                    {
+                        "request_id": "request-a",
+                        "status": "pending",
+                        "expires_at": "2026-07-21T10:05:00+00:00",
+                    }
+                ],
+                "scheduled_timeouts": ["request-a"],
+                "recent_completed": 2,
+                "completed_by_status": {"approved": 1, "cancelled": 1},
+            }
+        },
+    }
+
+    assert validate_payload(payload) == []
 
 
 def _load_live_replay_module():
