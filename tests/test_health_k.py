@@ -113,6 +113,97 @@ def test_resolved_invariant_clears_degraded_health() -> None:
     assert coordinator.engine.state.get_sensor("heima_health") == "ok"
 
 
+def test_inactive_invariant_state_reconciles_degraded_health() -> None:
+    coordinator = _coordinator()
+    coordinator.engine.unresolved_invariant_check_ids = lambda: set()
+    event = {
+        "type": "anomaly.security_presence_mismatch",
+        "key": "anomaly.security_presence_mismatch",
+        "severity": "critical",
+        "title": "Invariant violation",
+        "message": "Security is armed away while someone is home.",
+        "context": {
+            "check_id": "security_presence_mismatch",
+            "anomaly_type": "security_presence_mismatch",
+            "security_state": "armed_away",
+        },
+        "event_id": "evt-1",
+        "ts": "2026-07-20T19:33:20+00:00",
+    }
+    coordinator._record_installer_alert(event)  # noqa: SLF001
+
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "ok"
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert attrs["last_invariant_violation"] == {}
+    assert attrs["last_anomaly"] == {}
+
+
+def test_active_invariant_state_keeps_degraded_health() -> None:
+    coordinator = _coordinator()
+    coordinator.engine.unresolved_invariant_check_ids = lambda: {"security_presence_mismatch"}
+    event = {
+        "type": "anomaly.security_presence_mismatch",
+        "key": "anomaly.security_presence_mismatch",
+        "severity": "critical",
+        "title": "Invariant violation",
+        "message": "Security is armed away while someone is home.",
+        "context": {
+            "check_id": "security_presence_mismatch",
+            "anomaly_type": "security_presence_mismatch",
+            "security_state": "armed_away",
+        },
+        "event_id": "evt-1",
+        "ts": "2026-07-20T19:33:20+00:00",
+    }
+    coordinator._record_installer_alert(event)  # noqa: SLF001
+
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "degraded"
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert (
+        attrs["last_invariant_violation"]["context"]["check_id"]
+        == "security_presence_mismatch"
+    )
+
+
+@pytest.mark.asyncio
+async def test_last_event_invariant_alert_clears_when_engine_condition_resolves() -> None:
+    coordinator = _coordinator()
+    coordinator.engine.unresolved_invariant_check_ids = lambda: {"security_presence_mismatch"}
+    coordinator.engine.state.set_sensor_attributes(
+        "heima_last_event",
+        {
+            "type": "anomaly.security_presence_mismatch",
+            "key": "anomaly.security_presence_mismatch",
+            "severity": "critical",
+            "title": "Invariant violation",
+            "message": "Security is armed away while someone is home.",
+            "context": {
+                "check_id": "security_presence_mismatch",
+                "anomaly_type": "security_presence_mismatch",
+                "security_state": "armed_away",
+            },
+            "event_id": "evt-1",
+            "ts": "2026-07-20T19:33:20+00:00",
+        },
+    )
+
+    await coordinator._async_handle_last_installer_alert()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "degraded"
+
+    coordinator.engine.unresolved_invariant_check_ids = lambda: set()
+    coordinator._sync_health_sensor()  # noqa: SLF001
+
+    assert coordinator.engine.state.get_sensor("heima_health") == "ok"
+    attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
+    assert attrs["last_invariant_violation"] == {}
+    assert attrs["last_anomaly"] == {}
+
+
 def test_warning_anomaly_does_not_degrade_health() -> None:
     coordinator = _coordinator()
     event = {

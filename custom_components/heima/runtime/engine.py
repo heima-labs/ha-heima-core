@@ -1418,6 +1418,22 @@ class HeimaEngine:
             elif outcome.resolved:
                 self._queue_invariant_resolved_event(check.check_id)
 
+    def active_invariant_check_ids(self) -> set[str]:
+        """Return invariant checks that are currently active after debounce."""
+        return {
+            check_id
+            for check_id, state in getattr(self, "_invariant_states", {}).items()
+            if bool(state.is_active)
+        }
+
+    def unresolved_invariant_check_ids(self) -> set[str]:
+        """Return invariant checks whose current condition has not cleared yet."""
+        return {
+            check_id
+            for check_id, state in getattr(self, "_invariant_states", {}).items()
+            if bool(state.is_active) or state.first_seen_ts is not None
+        }
+
     def _invariant_config(self) -> dict[str, Any]:
         options = dict(self._entry.options)
         anomaly_cfg = options.get("anomaly", {})
@@ -2800,6 +2816,10 @@ class HeimaEngine:
                 if (outcome_tracker := getattr(self, "_outcome_tracker", None)) is not None
                 else {}
             ),
+            "invariants": {
+                "active_check_ids": sorted(self.active_invariant_check_ids()),
+                "unresolved_check_ids": sorted(self.unresolved_invariant_check_ids()),
+            },
             "manual_hold": (
                 manual_hold_manager.diagnostics()
                 if (manual_hold_manager := getattr(self, "_manual_hold_manager", None)) is not None
