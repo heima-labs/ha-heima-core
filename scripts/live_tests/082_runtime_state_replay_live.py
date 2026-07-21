@@ -43,10 +43,12 @@ def run(ha_url: str, ha_token: str) -> None:
     entry_id = client.find_heima_entry_id()
     diagnostics = _diagnostics_data(client, entry_id)
     health = _health_state_payload(client)
+    combined = _combined_health_runtime_payload(health, diagnostics)
 
     findings = [
         *validate_payload(diagnostics, source=f"diagnostics:{entry_id}"),
         *validate_payload(health, source="sensor.heima_health"),
+        *validate_payload(combined, source="combined:sensor.heima_health+diagnostics"),
     ]
     _print_findings(findings)
 
@@ -55,6 +57,22 @@ def run(ha_url: str, ha_token: str) -> None:
         raise AssertionError(f"stale runtime state replay found {len(errors)} error(s)")
 
     print("PASS: live runtime-state replay found no stale-state errors")
+
+
+def _combined_health_runtime_payload(
+    health_state: dict[str, Any],
+    diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    attrs = health_state.get("attributes")
+    health = dict(attrs) if isinstance(attrs, dict) else {}
+    health["status"] = str(health_state.get("state") or "")
+    if "health_reason" in health:
+        health["reason"] = str(health.get("health_reason") or "")
+    runtime = diagnostics.get("runtime")
+    return {
+        "health": health,
+        "runtime": dict(runtime) if isinstance(runtime, dict) else {},
+    }
 
 
 def main() -> int:

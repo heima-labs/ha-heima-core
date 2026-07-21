@@ -79,15 +79,23 @@ Added after the audit:
 - `tests/test_runtime_state_transitions.py` covers explicit transition sequences for health
   reconciliation, manual hold ownership/release, and runtime confirmation first-writer-wins.
 - `scripts/runtime_state_replay.py` replays exported diagnostics or observability JSON files and
-  flags stale runtime state.
+  flags stale runtime state. It accepts direct files, directories, and glob patterns for batch
+  replay.
 - `tests/test_runtime_state_replay.py` covers replay rules with minimized fixtures.
-- `scripts/live_tests/082_runtime_state_replay_live.py` runs the same replay checks against the
-  live HA diagnostics payload and `sensor.heima_health`.
+- `scripts/live_tests/082_runtime_state_replay_live.py` runs the same replay checks against live HA
+  diagnostics, `sensor.heima_health`, and a combined health+runtime payload.
+- `scripts/live_tests/083_health_invariant_clear_active_live.py` actively forces
+  `security_presence_mismatch`, waits for health to become `degraded`, clears the condition, and
+  verifies health returns to `ok`.
 
 Additional commands:
 
 ```bash
 .venv/bin/python -m pytest tests/test_runtime_state_replay.py tests/test_runtime_state_transitions.py -q
-scripts/runtime_state_replay.py heima-observability-2026-07-21T074752043927Z0000.json
+scripts/runtime_state_replay.py --summary 'heima-observability*.json'
 ./scripts/check_all_live.sh --tier diagnostic
 ```
+
+The active live test requires HA to have loaded the current Python modules. Updating files on a
+mounted volume is not enough for code changes in already imported modules; restart HA before using
+`083_health_invariant_clear_active_live.py` to validate a new runtime fix.

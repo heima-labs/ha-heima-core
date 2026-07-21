@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,11 +104,16 @@ def load_json_file(path: Path) -> Any:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", help="Diagnostics or observability JSON files")
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print checked file and finding counts.",
+    )
     args = parser.parse_args()
 
     findings: list[ReplayFinding] = []
-    for raw_path in args.paths:
-        path = Path(raw_path)
+    paths = _expand_paths(args.paths)
+    for path in paths:
         payload = load_json_file(path)
         if not isinstance(payload, dict):
             findings.append(
@@ -116,6 +122,12 @@ def main() -> int:
             continue
         findings.extend(validate_payload(payload, source=str(path)))
 
+    if args.summary:
+        errors = sum(1 for item in findings if item.severity == "error")
+        warnings = sum(1 for item in findings if item.severity == "warning")
+        print(f"Checked files: {len(paths)}")
+        print(f"Findings: errors={errors} warnings={warnings}")
+
     if not findings:
         print("PASS: no stale runtime-state findings")
         return 0
@@ -123,6 +135,20 @@ def main() -> int:
     for finding in findings:
         print(f"{finding.severity.upper()} {finding.code}: {finding.message}")
     return 1 if any(item.severity == "error" for item in findings) else 0
+
+
+def _expand_paths(raw_paths: list[str]) -> list[Path]:
+    paths: list[Path] = []
+    for raw in raw_paths:
+        expanded = sorted(glob.glob(raw))
+        candidates = expanded if expanded else [raw]
+        for candidate in candidates:
+            path = Path(candidate)
+            if path.is_dir():
+                paths.extend(sorted(item for item in path.glob("*.json") if item.is_file()))
+            else:
+                paths.append(path)
+    return paths
 
 
 def _health(payload: dict[str, Any]) -> dict[str, Any]:
