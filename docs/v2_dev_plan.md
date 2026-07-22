@@ -124,20 +124,19 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO8 | Observability Usability & Detail Views | `PLANNED` | AO |
 | AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
-| AP | Notification Delivery Policy | `PLANNED` | AH, AN, AO |
+| AP | Notification Delivery Policy | `IN_PROGRESS` | AH, AN, AO |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel.
-**Active slice:** Phase AP — Notification Delivery Policy, starting with AP1 policy model and
-normalization.
-**Branch:** `feat/an-notification-admin-ui`.
+**Active slice:** Phase AP — Notification Delivery Policy, AP1-AP2 complete; next AP3 pipeline
+integration.
+**Branch:** `feat/ap-notification-delivery-policy`.
 **Next action:**
-Implement AP1: normalized notification policy defaults, validation, and tests for
-`audience_targets`, `audience_policy`, `persistence_thresholds`, `aggregation`, and
-`startup_notification_grace_s`.
+Implement AP3: integrate Notification Delivery Policy into `EventsDomain` / notification pipeline
+while preserving event-bus and diagnostics behavior for push-suppressed events.
 
 ### Phase AO — Admin Observability Panel
 
@@ -471,7 +470,7 @@ MVP merge.
 
 #### AO8 — Observability Usability & Detail Views
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Goal: make the MVP panel production-usable without adding new mutation types.
 - Product boundary:
   - AO8 must not add new mutation types.
@@ -719,7 +718,7 @@ MVP merge.
 
 #### AP2 — NotificationDeliveryPolicy Core
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Add a runtime policy component that accepts an event plus effective notification config and
   returns a structured delivery decision without sending notifications directly.
 - Decision outcomes:

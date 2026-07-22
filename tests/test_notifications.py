@@ -6,8 +6,15 @@ from homeassistant.exceptions import ServiceNotFound
 from custom_components.heima.runtime.contracts import HeimaEvent
 from custom_components.heima.runtime.notifications import (
     ActionableNotification,
+    AUDIENCE_POLICY_ADMINS,
+    AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE,
+    AUDIENCE_POLICY_OBSERVABILITY,
+    AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
+    AUDIENCE_POLICY_RESIDENTS_AND_ADMINS,
     HeimaEventPipeline,
     NotificationAction,
+    NotificationDeliveryPolicy,
+    normalize_notification_policy_config,
     parse_actionable_notification_response,
 )
 
@@ -36,6 +43,214 @@ class _FakeServices:
 
     def async_services(self):
         return {"notify": dict(self.available)}
+
+
+def test_notification_policy_defaults_are_materialized():
+    config = normalize_notification_policy_config({})
+
+    assert config["audience_targets"] == {
+        "admins": ["admins"],
+        "residents": ["residents"],
+    }
+    assert config["audience_policy"]["people"]["push"] == AUDIENCE_POLICY_OBSERVABILITY
+    assert config["audience_policy"]["reaction"]["push"] == AUDIENCE_POLICY_OBSERVABILITY
+    assert (
+        config["audience_policy"]["occupancy_mismatch"]["push"]
+        == AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE
+    )
+    assert (
+        config["audience_policy"]["security_presence_mismatch"]["push"]
+        == AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE
+    )
+    assert config["startup_notification_grace_s"] == 300
+    assert config["persistence_thresholds"]["occupancy_mismatch"] == 600
+    assert config["aggregation"]["global_burst_limit"] == {
+        "max_notifications": 2,
+        "window_s": 60,
+    }
+
+
+def test_notification_policy_preserves_partial_explicit_values():
+    config = normalize_notification_policy_config(
+        {
+            "audience_targets": {"admins": ["stefano"]},
+            "audience_policy": {"system_config_issue": {"push": AUDIENCE_POLICY_ADMINS}},
+            "startup_notification_grace_s": 42,
+            "persistence_thresholds": {"occupancy_mismatch": 123},
+            "aggregation": {"global_burst_limit": {"max_notifications": 4}},
+        }
+    )
+
+    assert config["audience_targets"]["admins"] == ["stefano"]
+    assert config["audience_targets"]["residents"] == ["residents"]
+    assert config["audience_policy"]["system_config_issue"]["push"] == AUDIENCE_POLICY_ADMINS
+    assert config["audience_policy"]["people"]["push"] == AUDIENCE_POLICY_OBSERVABILITY
+    assert config["startup_notification_grace_s"] == 42
+    assert config["persistence_thresholds"]["occupancy_mismatch"] == 123
+    assert config["persistence_thresholds"]["security_presence_mismatch"] == 300
+    assert config["aggregation"]["global_burst_limit"] == {
+        "max_notifications": 4,
+        "window_s": 60,
+    }
+
+
+def test_notification_policy_sanitizes_invalid_values_deterministically():
+    config = normalize_notification_policy_config(
+        {
+            "recipients": {"stefano": ["mobile_app_stefano"]},
+            "recipient_groups": {"admins": ["stefano"]},
+            "audience_targets": {
+                "admins": ["admins", "observability", "missing"],
+                "residents": ["missing"],
+            },
+            "audience_policy": {
+                "people": {"push": "notify.mobile_app_stefano"},
+                "system_config_issue": {"push": AUDIENCE_POLICY_ADMINS},
+            },
+            "startup_notification_grace_s": -1,
+            "persistence_thresholds": {"occupancy_mismatch": "bad"},
+            "aggregation": {"global_burst_limit": {"window_s": -10}},
+        },
+        sanitize_unresolved_targets=True,
+    )
+
+    assert config["audience_targets"] == {"admins": ["admins"], "residents": []}
+    assert config["audience_policy"]["people"]["push"] == AUDIENCE_POLICY_OBSERVABILITY
+    assert config["startup_notification_grace_s"] == 0
+    assert config["persistence_thresholds"]["occupancy_mismatch"] == 600
+    assert config["aggregation"]["global_burst_limit"]["window_s"] == 0
+
+
+def test_notification_delivery_policy_people_arrive_is_observability_only_by_default():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="people.arrive",
+            key="people.arrive.stefano",
+            severity="info",
+            title="Person arrived",
+            message="Person 'stefano' arrived.",
+        ),
+        {},
+    )
+
+    assert decision.outcome == "observability_only"
+    assert decision.event_family == "people"
+    assert decision.push_policy == AUDIENCE_POLICY_OBSERVABILITY
+    assert decision.route_targets == ()
+
+
+def test_notification_delivery_policy_reaction_fired_is_observability_only_by_default():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="reaction.fired",
+            key="reaction.fired.scene",
+            severity="info",
+            title="Reaction fired",
+            message="Reaction produced steps.",
+        ),
+        {},
+    )
+
+    assert decision.outcome == "observability_only"
+    assert decision.event_family == "reaction"
+    assert decision.push_policy == AUDIENCE_POLICY_OBSERVABILITY
+
+
+def test_notification_delivery_policy_system_config_issue_targets_admins_by_default():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="Configuration issue detected.",
+        ),
+        {
+            "audience_targets": {
+                "admins": ["stefano_admins"],
+                "residents": ["residents"],
+            }
+        },
+    )
+
+    assert decision.outcome == "deliver"
+    assert decision.event_family == "system_config_issue"
+    assert decision.push_policy == AUDIENCE_POLICY_ADMINS
+    assert decision.target_roles == ("admins",)
+    assert decision.route_targets == ("stefano_admins",)
+
+
+def test_notification_delivery_policy_alarm_triggered_targets_residents_and_admins():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="security.alarm_triggered",
+            key="security.alarm_triggered",
+            severity="critical",
+            title="Alarm triggered",
+            message="Alarm triggered.",
+        ),
+        {
+            "audience_targets": {
+                "admins": ["admins"],
+                "residents": ["residents"],
+            }
+        },
+    )
+
+    assert decision.outcome == "deliver"
+    assert decision.event_family == "security_critical"
+    assert decision.push_policy == AUDIENCE_POLICY_RESIDENTS_AND_ADMINS
+    assert decision.target_roles == ("residents", "admins")
+    assert decision.route_targets == ("residents", "admins")
+    assert decision.security_critical is True
+
+
+def test_notification_delivery_policy_armed_away_home_targets_residents_and_admins():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="security.armed_away_but_home",
+            key="security.armed_away_but_home",
+            severity="warn",
+            title="Security inconsistency",
+            message="Security is armed away while someone is home.",
+            context={"security_state": "armed_away", "people_home_list": ["stefano"]},
+        ),
+        {
+            "audience_targets": {
+                "admins": ["admins"],
+                "residents": ["residents"],
+            }
+        },
+    )
+
+    assert decision.outcome == "deliver"
+    assert decision.push_policy == AUDIENCE_POLICY_RESIDENTS_AND_ADMINS
+    assert decision.route_targets == ("residents", "admins")
+    assert decision.security_critical is True
+
+
+def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallback():
+    decision = NotificationDeliveryPolicy().decide(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="Configuration issue detected.",
+        ),
+        {
+            "audience_targets": {
+                "admins": [],
+                "residents": ["residents"],
+            }
+        },
+    )
+
+    assert decision.outcome == "missing_audience_target"
+    assert decision.push_policy == AUDIENCE_POLICY_ADMINS
+    assert decision.target_roles == ("admins",)
+    assert decision.route_targets == ()
+    assert decision.reason == "missing_audience_target"
 
 
 @pytest.mark.asyncio

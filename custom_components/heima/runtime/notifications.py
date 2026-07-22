@@ -18,6 +18,68 @@ from .contracts import HeimaEvent
 _LOGGER = logging.getLogger(__name__)
 _MAX_DEFERRED_ROUTE_DELIVERIES = 128
 
+AUDIENCE_TARGET_ADMINS = "admins"
+AUDIENCE_TARGET_RESIDENTS = "residents"
+AUDIENCE_TARGET_ROLES = (AUDIENCE_TARGET_ADMINS, AUDIENCE_TARGET_RESIDENTS)
+
+AUDIENCE_POLICY_DISABLED = "disabled"
+AUDIENCE_POLICY_OBSERVABILITY = "observability"
+AUDIENCE_POLICY_ADMINS = "admins"
+AUDIENCE_POLICY_RESIDENTS = "residents"
+AUDIENCE_POLICY_RESIDENTS_AND_ADMINS = "residents_and_admins"
+AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE = "admins_after_persistence"
+AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE = (
+    "residents_and_admins_after_persistence"
+)
+AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE = (
+    "residents_and_admins_when_critical_else_admins_after_persistence"
+)
+
+AUDIENCE_POLICY_VALUES = frozenset(
+    {
+        AUDIENCE_POLICY_DISABLED,
+        AUDIENCE_POLICY_OBSERVABILITY,
+        AUDIENCE_POLICY_ADMINS,
+        AUDIENCE_POLICY_RESIDENTS,
+        AUDIENCE_POLICY_RESIDENTS_AND_ADMINS,
+        AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE,
+        AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE,
+        AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
+    }
+)
+
+DEFAULT_AUDIENCE_TARGETS = {
+    AUDIENCE_TARGET_ADMINS: [AUDIENCE_TARGET_ADMINS],
+    AUDIENCE_TARGET_RESIDENTS: [AUDIENCE_TARGET_RESIDENTS],
+}
+
+DEFAULT_AUDIENCE_POLICY = {
+    "people": {"push": AUDIENCE_POLICY_OBSERVABILITY},
+    "house_state": {"push": AUDIENCE_POLICY_OBSERVABILITY},
+    "reaction": {"push": AUDIENCE_POLICY_OBSERVABILITY},
+    "occupancy_mismatch": {"push": AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE},
+    "security_critical": {"push": AUDIENCE_POLICY_RESIDENTS_AND_ADMINS},
+    "security_presence_mismatch": {
+        "push": AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE
+    },
+    "system_config_issue": {"push": AUDIENCE_POLICY_ADMINS},
+}
+
+DEFAULT_STARTUP_NOTIFICATION_GRACE_S = 300
+DEFAULT_PERSISTENCE_THRESHOLDS = {
+    "occupancy_mismatch": 600,
+    "security_presence_mismatch": 300,
+    "installation_config_issue": 300,
+}
+DEFAULT_AGGREGATION = {
+    "presence_transition_window_s": 120,
+    "mismatch_window_s": 300,
+    "global_burst_limit": {
+        "max_notifications": 2,
+        "window_s": 60,
+    },
+}
+
 
 @dataclass
 class EventPipelineStats:
@@ -97,6 +159,213 @@ class ActionableNotificationResponse:
     action_id: str
     request_id: str
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class NotificationDeliveryDecision:
+    """Structured Notification Delivery Policy decision for an informational event."""
+
+    outcome: str
+    event_family: str
+    push_policy: str
+    target_roles: tuple[str, ...] = ()
+    route_targets: tuple[str, ...] = ()
+    security_critical: bool = False
+    reason: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def should_deliver(self) -> bool:
+        return self.outcome == "deliver" and bool(self.route_targets)
+
+
+class NotificationDeliveryPolicy:
+    """Pure decision engine for informational event push delivery.
+
+    AP2 intentionally does not send notifications and does not mutate runtime
+    state. Stateful controls such as persistence, aggregation, deduplication,
+    rate limiting, and burst limits are integrated in later AP phases.
+    """
+
+    OUTCOME_DELIVER = "deliver"
+    OUTCOME_OBSERVABILITY_ONLY = "observability_only"
+    OUTCOME_DISABLED = "disabled"
+    OUTCOME_STARTUP_GRACE = "startup_grace"
+    OUTCOME_WAITING_PERSISTENCE = "waiting_persistence"
+    OUTCOME_SUPPRESSED_AGGREGATION = "suppressed_aggregation"
+    OUTCOME_SUPPRESSED_CATEGORY = "suppressed_category"
+    OUTCOME_SUPPRESSED_DEDUP = "suppressed_dedup"
+    OUTCOME_SUPPRESSED_RATE_LIMIT = "suppressed_rate_limit"
+    OUTCOME_SUPPRESSED_BURST = "suppressed_burst"
+    OUTCOME_MISSING_AUDIENCE_TARGET = "missing_audience_target"
+
+    def decide(
+        self,
+        event: HeimaEvent,
+        notifications_config: dict[str, Any] | None,
+        *,
+        category_enabled: bool = True,
+    ) -> NotificationDeliveryDecision:
+        config = normalize_notification_policy_config(notifications_config)
+        family = classify_notification_event_family(event)
+        security_critical = is_security_critical_event(event)
+        policy = _policy_for_event(
+            family=family,
+            security_critical=security_critical,
+            audience_policy=config["audience_policy"],
+        )
+        diagnostics = {
+            "event_type": event.type,
+            "event_key": event.key,
+            "event_severity": event.severity,
+            "event_family": family,
+            "push_policy": policy,
+            "security_critical": security_critical,
+        }
+
+        if not category_enabled:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_SUPPRESSED_CATEGORY,
+                event_family=family,
+                push_policy=policy,
+                security_critical=security_critical,
+                reason="event_category_disabled",
+                diagnostics=diagnostics,
+            )
+
+        if policy == AUDIENCE_POLICY_DISABLED:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_DISABLED,
+                event_family=family,
+                push_policy=policy,
+                security_critical=security_critical,
+                reason="policy_disabled",
+                diagnostics=diagnostics,
+            )
+        if policy == AUDIENCE_POLICY_OBSERVABILITY:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_OBSERVABILITY_ONLY,
+                event_family=family,
+                push_policy=policy,
+                security_critical=security_critical,
+                reason="policy_observability_only",
+                diagnostics=diagnostics,
+            )
+
+        target_roles = _target_roles_for_policy(policy)
+        if _policy_requires_persistence(policy) and not security_critical:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_WAITING_PERSISTENCE,
+                event_family=family,
+                push_policy=policy,
+                target_roles=target_roles,
+                security_critical=security_critical,
+                reason="persistence_required",
+                diagnostics=diagnostics,
+            )
+
+        route_targets = _route_targets_for_roles(
+            config["audience_targets"],
+            target_roles=target_roles,
+        )
+        if not route_targets:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_MISSING_AUDIENCE_TARGET,
+                event_family=family,
+                push_policy=policy,
+                target_roles=target_roles,
+                security_critical=security_critical,
+                reason="missing_audience_target",
+                diagnostics=diagnostics,
+            )
+
+        return NotificationDeliveryDecision(
+            outcome=self.OUTCOME_DELIVER,
+            event_family=family,
+            push_policy=policy,
+            target_roles=target_roles,
+            route_targets=route_targets,
+            security_critical=security_critical,
+            reason="policy_deliver",
+            diagnostics=diagnostics,
+        )
+
+
+def normalize_notification_policy_config(
+    notifications_config: dict[str, Any] | None,
+    *,
+    sanitize_unresolved_targets: bool = False,
+) -> dict[str, Any]:
+    """Return notification config with normalized AP policy fields.
+
+    This function is intentionally side-effect free. AP1 only materializes and
+    sanitizes the Notification Delivery Policy model; delivery decisions are
+    introduced by later AP phases.
+    """
+    config = dict(notifications_config or {})
+    recipients = _normalize_recipient_mapping(config.get("recipients"))
+    recipient_groups = _normalize_recipient_mapping(config.get("recipient_groups"))
+    valid_targets = set(recipients) | set(recipient_groups)
+
+    config["audience_targets"] = _normalize_audience_targets(
+        config.get("audience_targets"),
+        valid_targets=valid_targets,
+        sanitize_unresolved_targets=sanitize_unresolved_targets,
+    )
+    config["audience_policy"] = _normalize_audience_policy(config.get("audience_policy"))
+    config["startup_notification_grace_s"] = _non_negative_int(
+        config.get("startup_notification_grace_s"),
+        DEFAULT_STARTUP_NOTIFICATION_GRACE_S,
+    )
+    config["persistence_thresholds"] = _normalize_int_mapping(
+        config.get("persistence_thresholds"),
+        defaults=DEFAULT_PERSISTENCE_THRESHOLDS,
+    )
+    config["aggregation"] = _normalize_aggregation(config.get("aggregation"))
+    return config
+
+
+def classify_notification_event_family(event: HeimaEvent) -> str:
+    """Classify a Heima event into the AP audience-policy family vocabulary."""
+    event_type = str(event.type or "").strip()
+    category = event_type.split(".", 1)[0] or "system"
+    context = event.context if isinstance(event.context, dict) else {}
+    subtype = str(context.get("subtype") or "").strip()
+
+    if is_security_critical_event(event):
+        return "security_critical"
+    if event_type in {"security.armed_away_but_home", "security_presence_mismatch"}:
+        return "security_presence_mismatch"
+    if category == "security" and subtype == "armed_away_but_home":
+        return "security_presence_mismatch"
+    if category == "occupancy" or event_type.startswith("invariant.presence_without_occupancy"):
+        return "occupancy_mismatch"
+    if category == "system" and (
+        "config" in event_type or "installation" in event_type or "health" in event_type
+    ):
+        return "system_config_issue"
+    if category in {"people", "house_state", "reaction"}:
+        return category
+    return category or "system_config_issue"
+
+
+def is_security_critical_event(event: HeimaEvent) -> bool:
+    """Return whether an event is a bounded security-critical condition."""
+    event_type = str(event.type or "").strip()
+    context = event.context if isinstance(event.context, dict) else {}
+    subtype = str(context.get("subtype") or "").strip()
+    security_state = str(context.get("security_state") or "").strip()
+    if event_type in {"security.alarm_triggered", "security.triggered"}:
+        return True
+    if event_type.endswith(".triggered") and event_type.startswith("security."):
+        return True
+    if security_state == "triggered":
+        return True
+    if event_type == "security.armed_away_but_home":
+        return True
+    if subtype == "armed_away_but_home":
+        return True
+    return security_state == "armed_away" and bool(context.get("people_home_list"))
 
 
 class HeimaEventPipeline:
@@ -455,6 +724,173 @@ class HeimaEventPipeline:
 class _RouteResolution:
     routes: tuple[str, ...]
     unresolved_targets: tuple[str, ...] = ()
+
+
+def _normalize_audience_targets(
+    raw: Any,
+    *,
+    valid_targets: set[str],
+    sanitize_unresolved_targets: bool,
+) -> dict[str, list[str]]:
+    source = raw if isinstance(raw, dict) else {}
+    normalized: dict[str, list[str]] = {}
+    for role in AUDIENCE_TARGET_ROLES:
+        values = _string_list(source.get(role, DEFAULT_AUDIENCE_TARGETS[role]))
+        clean: list[str] = []
+        seen: set[str] = set()
+        for target in values:
+            if target == AUDIENCE_POLICY_OBSERVABILITY:
+                continue
+            if sanitize_unresolved_targets and target not in valid_targets:
+                continue
+            if target in seen:
+                continue
+            seen.add(target)
+            clean.append(target)
+        normalized[role] = clean
+    return normalized
+
+
+def _policy_for_event(
+    *,
+    family: str,
+    security_critical: bool,
+    audience_policy: dict[str, dict[str, str]],
+) -> str:
+    if security_critical:
+        if family == "security_presence_mismatch":
+            policy = audience_policy.get("security_presence_mismatch", {}).get("push")
+            if policy == AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE:
+                return AUDIENCE_POLICY_RESIDENTS_AND_ADMINS
+        return audience_policy.get("security_critical", {}).get(
+            "push", AUDIENCE_POLICY_RESIDENTS_AND_ADMINS
+        )
+    return audience_policy.get(family, {"push": AUDIENCE_POLICY_OBSERVABILITY})["push"]
+
+
+def _target_roles_for_policy(policy: str) -> tuple[str, ...]:
+    if policy in {
+        AUDIENCE_POLICY_ADMINS,
+        AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE,
+    }:
+        return (AUDIENCE_TARGET_ADMINS,)
+    if policy == AUDIENCE_POLICY_RESIDENTS:
+        return (AUDIENCE_TARGET_RESIDENTS,)
+    if policy in {
+        AUDIENCE_POLICY_RESIDENTS_AND_ADMINS,
+        AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE,
+        AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
+    }:
+        return (AUDIENCE_TARGET_RESIDENTS, AUDIENCE_TARGET_ADMINS)
+    return ()
+
+
+def _policy_requires_persistence(policy: str) -> bool:
+    return policy in {
+        AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE,
+        AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE,
+        AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
+    }
+
+
+def _route_targets_for_roles(
+    audience_targets: dict[str, list[str]],
+    *,
+    target_roles: tuple[str, ...],
+) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for role in target_roles:
+        for target in audience_targets.get(role, []):
+            if target and target not in seen:
+                seen.add(target)
+                result.append(target)
+    return tuple(result)
+
+
+def _normalize_audience_policy(raw: Any) -> dict[str, dict[str, str]]:
+    source = raw if isinstance(raw, dict) else {}
+    normalized: dict[str, dict[str, str]] = {}
+    for family, default_policy in DEFAULT_AUDIENCE_POLICY.items():
+        family_cfg = source.get(family)
+        push = ""
+        if isinstance(family_cfg, dict):
+            push = str(family_cfg.get("push") or "").strip()
+        elif family_cfg is not None:
+            push = str(family_cfg).strip()
+        if push not in AUDIENCE_POLICY_VALUES:
+            push = default_policy["push"]
+        normalized[family] = {"push": push}
+    return normalized
+
+
+def _normalize_aggregation(raw: Any) -> dict[str, Any]:
+    source = raw if isinstance(raw, dict) else {}
+    burst = source.get("global_burst_limit")
+    burst_source = burst if isinstance(burst, dict) else {}
+    default_burst = DEFAULT_AGGREGATION["global_burst_limit"]
+    return {
+        "presence_transition_window_s": _non_negative_int(
+            source.get("presence_transition_window_s"),
+            int(DEFAULT_AGGREGATION["presence_transition_window_s"]),
+        ),
+        "mismatch_window_s": _non_negative_int(
+            source.get("mismatch_window_s"),
+            int(DEFAULT_AGGREGATION["mismatch_window_s"]),
+        ),
+        "global_burst_limit": {
+            "max_notifications": _non_negative_int(
+                burst_source.get("max_notifications"),
+                int(default_burst["max_notifications"]),
+            ),
+            "window_s": _non_negative_int(
+                burst_source.get("window_s"),
+                int(default_burst["window_s"]),
+            ),
+        },
+    }
+
+
+def _normalize_int_mapping(raw: Any, *, defaults: dict[str, int]) -> dict[str, int]:
+    source = raw if isinstance(raw, dict) else {}
+    return {
+        key: _non_negative_int(source.get(key), default)
+        for key, default in defaults.items()
+    }
+
+
+def _normalize_recipient_mapping(raw: Any) -> dict[str, list[str]]:
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): _string_list(value) for key, value in raw.items() if str(key).strip()}
+
+
+def _string_list(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        values = raw.replace(",", "\n").splitlines()
+    elif isinstance(raw, (list, tuple, set)):
+        values = list(raw)
+    else:
+        values = [raw]
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = str(value).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def _non_negative_int(raw: Any, default: int) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(0, value)
 
 
 def _normalize_notify_service_name(route: str) -> str:

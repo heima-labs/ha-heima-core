@@ -22,6 +22,12 @@ from ..const import (
     SECURITY_MISMATCH_EVENT_MODES,
     SECURITY_MISMATCH_POLICIES,
 )
+from ..runtime.notifications import (
+    AUDIENCE_POLICY_OBSERVABILITY,
+    AUDIENCE_POLICY_VALUES,
+    AUDIENCE_TARGET_ROLES,
+    normalize_notification_policy_config,
+)
 from ._common import (
     _NON_NEGATIVE_INT,
     _is_valid_slug,
@@ -787,9 +793,17 @@ class _NotificationsStepsMixin:
                 vol.Optional("recipient_groups"): _object_selector(),
                 vol.Optional("route_targets"): _object_selector(),
                 vol.Optional("notification_service_capabilities"): _object_selector(),
+                vol.Optional("audience_targets"): _object_selector(),
+                vol.Optional("audience_policy"): _object_selector(),
+                vol.Optional("persistence_thresholds"): _object_selector(),
+                vol.Optional("aggregation"): _object_selector(),
                 vol.Optional("enabled_event_categories"): cv.multi_select(
                     EVENT_CATEGORIES_TOGGLEABLE
                 ),
+                vol.Optional(
+                    "startup_notification_grace_s",
+                    default=defaults.get("startup_notification_grace_s", 300),
+                ): _NON_NEGATIVE_INT,
                 vol.Optional(
                     "dedup_window_s", default=defaults.get("dedup_window_s", 60)
                 ): _NON_NEGATIVE_INT,
@@ -858,6 +872,29 @@ class _NotificationsStepsMixin:
         if any(target not in recipient_ids and target not in group_ids for target in route_targets):
             return {"route_targets": "unknown_target"}
 
+        audience_targets = payload.get("audience_targets")
+        if isinstance(audience_targets, dict):
+            available_targets = recipient_ids | group_ids
+            for role, targets in audience_targets.items():
+                if str(role) not in AUDIENCE_TARGET_ROLES:
+                    return {"audience_targets": "unknown_target"}
+                for target in _parse_multiline_items(targets):
+                    if target == AUDIENCE_POLICY_OBSERVABILITY:
+                        return {"audience_targets": "unknown_target"}
+                    if target not in available_targets:
+                        return {"audience_targets": "unknown_target"}
+
+        audience_policy = payload.get("audience_policy")
+        if isinstance(audience_policy, dict):
+            for raw_policy in audience_policy.values():
+                push = ""
+                if isinstance(raw_policy, dict):
+                    push = str(raw_policy.get("push") or "").strip()
+                elif raw_policy is not None:
+                    push = str(raw_policy).strip()
+                if push and push not in AUDIENCE_POLICY_VALUES:
+                    return {"audience_policy": "invalid_policy"}
+
         return {}
 
     def _normalize_notifications_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -915,7 +952,7 @@ class _NotificationsStepsMixin:
         data["security_mismatch_persist_s"] = int(
             data.get("security_mismatch_persist_s", DEFAULT_SECURITY_MISMATCH_PERSIST_S)
         )
-        return data
+        return normalize_notification_policy_config(data, sanitize_unresolved_targets=True)
 
     def _notifications_config(self) -> dict[str, Any]:
         return dict(self.options.get(OPT_NOTIFICATIONS, {}))

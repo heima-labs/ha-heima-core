@@ -1311,6 +1311,49 @@ async def test_notifications_schema_serializes_for_ha_api():
     assert result["type"] == "form"
     assert result["step_id"] == "notifications"
     _assert_schema_serializes(result["data_schema"])
+    for field_name in (
+        "audience_targets",
+        "audience_policy",
+        "persistence_thresholds",
+        "aggregation",
+        "startup_notification_grace_s",
+    ):
+        assert _serialized_field(result["data_schema"], field_name)
+
+
+@pytest.mark.asyncio
+async def test_notifications_step_rejects_invalid_audience_policy():
+    flow = _flow()
+
+    result = await flow.async_step_notifications(
+        {
+            "recipients": {"stefano": "notify.mobile_app_stefano"},
+            "recipient_groups": {"admins": ["stefano"]},
+            "audience_targets": {"admins": ["admins"]},
+            "audience_policy": {"people": {"push": "notify.mobile_app_stefano"}},
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notifications"
+    assert result["errors"]["audience_policy"] == "invalid_policy"
+
+
+@pytest.mark.asyncio
+async def test_notifications_step_rejects_invalid_audience_target():
+    flow = _flow()
+
+    result = await flow.async_step_notifications(
+        {
+            "recipients": {"stefano": "notify.mobile_app_stefano"},
+            "recipient_groups": {"admins": ["stefano"]},
+            "audience_targets": {"admins": ["observability"]},
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notifications"
+    assert result["errors"]["audience_targets"] == "unknown_target"
 
 
 @pytest.mark.asyncio
