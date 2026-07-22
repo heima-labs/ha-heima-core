@@ -156,6 +156,7 @@ class HeimaOptionsFlowHandler(
                 "notification_recipients",
                 "notification_groups",
                 "notification_routes",
+                "notification_delivery_policy",
                 "notification_services",
                 "execution_policy_profiles",
                 "calendar",

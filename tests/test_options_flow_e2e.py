@@ -1830,6 +1830,119 @@ async def test_notification_routes_rejects_unknown_target():
 
 
 @pytest.mark.asyncio
+async def test_notification_delivery_policy_schema_serializes_for_ha_api():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_delivery_policy()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_delivery_policy"
+    _assert_schema_serializes(result["data_schema"])
+    assert _serialized_field(result["data_schema"], "audience_admin_targets")["type"] == (
+        "multi_select"
+    )
+    assert _serialized_field(result["data_schema"], "global_burst_max_notifications")
+
+
+@pytest.mark.asyncio
+async def test_notification_delivery_policy_persists_normalized_config():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {
+                    "stefano": ["mobile_app_stefano"],
+                    "antonia": ["mobile_app_antonia"],
+                },
+                "recipient_groups": {
+                    "admins": ["stefano"],
+                    "residents": ["stefano", "antonia"],
+                },
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_delivery_policy(
+        {
+            "audience_admin_targets": {"admins": True},
+            "audience_resident_targets": {"residents": True},
+            "people_push": "observability",
+            "reaction_push": "observability",
+            "occupancy_mismatch_push": "admins_after_persistence",
+            "security_presence_mismatch_push": (
+                "residents_and_admins_when_critical_else_admins_after_persistence"
+            ),
+            "system_config_issue_push": "admins",
+            "startup_notification_grace_s": 120,
+            "occupancy_mismatch_persist_s": 900,
+            "security_presence_mismatch_persist_s": 300,
+            "mismatch_window_s": 180,
+            "global_burst_max_notifications": 2,
+            "global_burst_window_s": 60,
+            "confirm_noisy_resident_push": False,
+        }
+    )
+
+    notifications = flow.options["notifications"]
+    assert result["type"] == "menu"
+    assert notifications["audience_targets"] == {
+        "admins": ["admins"],
+        "residents": ["residents"],
+    }
+    assert notifications["audience_policy"]["system_config_issue"]["push"] == "admins"
+    assert notifications["startup_notification_grace_s"] == 120
+    assert notifications["persistence_thresholds"]["occupancy_mismatch"] == 900
+    assert notifications["aggregation"]["mismatch_window_s"] == 180
+    assert notifications["aggregation"]["global_burst_limit"] == {
+        "max_notifications": 2,
+        "window_s": 60,
+    }
+
+
+@pytest.mark.asyncio
+async def test_notification_delivery_policy_requires_confirm_for_noisy_resident_push():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"residents": ["stefano"]},
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_delivery_policy(
+        {
+            "audience_admin_targets": {},
+            "audience_resident_targets": {"residents": True},
+            "people_push": "residents",
+            "reaction_push": "observability",
+            "occupancy_mismatch_push": "admins_after_persistence",
+            "security_presence_mismatch_push": (
+                "residents_and_admins_when_critical_else_admins_after_persistence"
+            ),
+            "system_config_issue_push": "admins",
+            "startup_notification_grace_s": 300,
+            "occupancy_mismatch_persist_s": 600,
+            "security_presence_mismatch_persist_s": 300,
+            "mismatch_window_s": 300,
+            "global_burst_max_notifications": 2,
+            "global_burst_window_s": 60,
+            "confirm_noisy_resident_push": False,
+        }
+    )
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "notification_delivery_policy"
+    assert result["errors"]["confirm_noisy_resident_push"] == "required"
+
+
+@pytest.mark.asyncio
 async def test_notification_service_add_persists_supports_actions():
     flow = _flow()
 

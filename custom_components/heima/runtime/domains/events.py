@@ -218,6 +218,7 @@ class EventsDomain:
             route_targets=route_targets,
             dedup_window_s=int(notifications_config.get("dedup_window_s", 60)),
             rate_limit_per_key_s=int(notifications_config.get("rate_limit_per_key_s", 300)),
+            notification_audience=decision.audience,
         )
 
     def _normalized_routing_inputs(

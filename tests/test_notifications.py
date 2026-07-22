@@ -17,6 +17,7 @@ from custom_components.heima.runtime.notifications import (
     NotificationDeliveryPolicy,
     normalize_notification_policy_config,
     parse_actionable_notification_response,
+    render_notification_event,
 )
 
 
@@ -254,6 +255,64 @@ def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallb
     assert decision.reason == "missing_audience_target"
 
 
+def test_render_reaction_notification_uses_label_and_hides_uuid_for_residents():
+    reaction_uuid = "38f7e744-99cb-413f-9d12-60fdfc9570eb"
+
+    rendered = render_notification_event(
+        HeimaEvent(
+            type="reaction.fired",
+            key=f"reaction.fired.{reaction_uuid}",
+            severity="info",
+            title=f"Reaction fired: {reaction_uuid}",
+            message=f"Reaction '{reaction_uuid}' produced 2 step(s).",
+            context={
+                "reaction_id": reaction_uuid,
+                "reaction_label": "Evening studio lights",
+            },
+        ),
+        audience="resident",
+    )
+
+    assert rendered.title == "Home automation ran"
+    assert rendered.message == "Evening studio lights was applied."
+    assert reaction_uuid not in rendered.title
+    assert reaction_uuid not in rendered.message
+
+
+def test_render_people_notification_uses_display_name():
+    rendered = render_notification_event(
+        HeimaEvent(
+            type="people.arrive",
+            key="people.arrive.stefano",
+            severity="info",
+            title="Person arrived",
+            message="Person 'stefano' arrived.",
+            context={"person": "stefano", "display_name": "Stefano"},
+        ),
+        audience="resident",
+    )
+
+    assert rendered.title == "Person arrived"
+    assert rendered.message == "Stefano arrived home."
+
+
+def test_render_admin_system_notification_keeps_readable_summary_and_event_type():
+    rendered = render_notification_event(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="2 configuration issue(s) detected.",
+        ),
+        audience="admin",
+    )
+
+    assert rendered.title == "Heima configuration issue"
+    assert rendered.message.startswith("2 configuration issue(s) detected.")
+    assert "system.config_invalid" in rendered.message
+
+
 @pytest.mark.asyncio
 async def test_events_domain_observability_only_event_still_fires_bus_without_push():
     bus = _FakeBus()
@@ -374,6 +433,43 @@ async def test_events_domain_security_critical_uses_audience_targets_for_push():
         service for domain, service, _data, _blocking in services.calls if domain == "notify"
     ]
     assert called_services == ["mobile_app_resident", "mobile_app_admin"]
+
+
+@pytest.mark.asyncio
+async def test_events_domain_reaction_push_uses_resident_safe_rendered_payload():
+    reaction_uuid = "38f7e744-99cb-413f-9d12-60fdfc9570eb"
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_resident": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="reaction.fired",
+            key=f"reaction.fired.{reaction_uuid}",
+            severity="info",
+            title=f"Reaction fired: {reaction_uuid}",
+            message=f"Reaction '{reaction_uuid}' produced 2 step(s).",
+            context={
+                "reaction_id": reaction_uuid,
+                "reaction_label": "Evening studio lights",
+            },
+        ),
+        notifications_config={
+            "recipients": {"resident": ["mobile_app_resident"]},
+            "recipient_groups": {"residents": ["resident"]},
+            "enabled_event_categories": ["reaction"],
+            "audience_policy": {"reaction": {"push": "residents"}},
+        },
+    )
+
+    notify_calls = [c for c in services.calls if c[0] == "notify"]
+    assert len(notify_calls) == 1
+    payload = notify_calls[0][2]
+    assert payload["title"] == "Home automation ran"
+    assert payload["message"] == "Evening studio lights was applied."
+    assert reaction_uuid not in payload["title"]
+    assert reaction_uuid not in payload["message"]
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,7 @@
           "notification_recipients": "Notification recipients",
           "notification_groups": "Notification recipient groups",
           "notification_routes": "Notification default routes",
+          "notification_delivery_policy": "Notification delivery policy",
           "notification_services": "Notification services",
           "execution_policy_profiles": "Execution policy profiles",
           "calendar": "Calendar",
@@ -491,6 +492,27 @@
         "title": "Notification Default Routes",
         "data": {
           "route_targets": "Default route targets"
+        },
+        "submit": "OK"
+      },
+      "notification_delivery_policy": {
+        "title": "Notification Delivery Policy",
+        "description": "{summary}",
+        "data": {
+          "audience_admin_targets": "Admin notification targets",
+          "audience_resident_targets": "Resident notification targets",
+          "people_push": "People event push policy",
+          "reaction_push": "Reaction event push policy",
+          "occupancy_mismatch_push": "Occupancy mismatch push policy",
+          "security_presence_mismatch_push": "Security presence mismatch push policy",
+          "system_config_issue_push": "System configuration issue push policy",
+          "startup_notification_grace_s": "Startup notification grace (seconds)",
+          "occupancy_mismatch_persist_s": "Occupancy mismatch persistence (seconds)",
+          "security_presence_mismatch_persist_s": "Security mismatch persistence (seconds)",
+          "mismatch_window_s": "Mismatch aggregation window (seconds)",
+          "global_burst_max_notifications": "Global burst max notifications",
+          "global_burst_window_s": "Global burst window (seconds)",
+          "confirm_noisy_resident_push": "Confirm noisy resident-facing push"
         },
         "submit": "OK"
       },

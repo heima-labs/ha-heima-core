@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -18,6 +19,9 @@ from .contracts import HeimaEvent
 _LOGGER = logging.getLogger(__name__)
 _MAX_DEFERRED_ROUTE_DELIVERIES = 128
 _MAX_POLICY_STATE_KEYS = 256
+_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
 
 AUDIENCE_TARGET_ADMINS = "admins"
 AUDIENCE_TARGET_RESIDENTS = "residents"
@@ -163,6 +167,14 @@ class ActionableNotificationResponse:
 
 
 @dataclass(frozen=True)
+class RenderedNotificationMessage:
+    """Human-facing notification text produced from a runtime event."""
+
+    title: str
+    message: str
+
+
+@dataclass(frozen=True)
 class NotificationDeliveryDecision:
     """Structured Notification Delivery Policy decision for an informational event."""
 
@@ -171,6 +183,7 @@ class NotificationDeliveryDecision:
     push_policy: str
     target_roles: tuple[str, ...] = ()
     route_targets: tuple[str, ...] = ()
+    audience: str = "observability"
     security_critical: bool = False
     reason: str = ""
     diagnostics: dict[str, Any] = field(default_factory=dict)
@@ -325,11 +338,12 @@ class NotificationDeliveryPolicy:
             outcome=self.OUTCOME_DELIVER,
             event_family=family,
             push_policy=policy,
-            target_roles=target_roles,
-            route_targets=route_targets,
-            security_critical=security_critical,
-            reason="policy_deliver",
-            diagnostics=diagnostics,
+                target_roles=target_roles,
+                route_targets=route_targets,
+                audience=_audience_for_target_roles(target_roles),
+                security_critical=security_critical,
+                reason="policy_deliver",
+                diagnostics=diagnostics,
         )
 
     def _persistence_decision(
@@ -558,6 +572,29 @@ def is_security_critical_event(event: HeimaEvent) -> bool:
     return security_state == "armed_away" and bool(context.get("people_home_list"))
 
 
+def render_notification_event(
+    event: HeimaEvent,
+    *,
+    audience: str = "resident",
+) -> RenderedNotificationMessage:
+    """Render informational event text for a human notification audience."""
+    audience = "admin" if audience == "admin" else "resident"
+    family = classify_notification_event_family(event)
+    context = event.context if isinstance(event.context, dict) else {}
+    if family == "people":
+        return _render_people_event(event, context)
+    if family == "reaction":
+        return _render_reaction_event(event, context, audience=audience)
+    if family in {"occupancy_mismatch", "security_presence_mismatch", "security_critical"}:
+        return _render_condition_event(event, family=family, audience=audience)
+    if family == "system_config_issue":
+        return _render_system_event(event, audience=audience)
+    return RenderedNotificationMessage(
+        title=_clean_human_text(event.title or "Heima event", audience=audience),
+        message=_clean_human_text(event.message or "Heima recorded an event.", audience=audience),
+    )
+
+
 class HeimaEventPipeline:
     """Deduplicates, rate-limits, and emits Heima events."""
 
@@ -567,7 +604,7 @@ class HeimaEventPipeline:
         self._last_emitted_ts: dict[str, float] = {}
         self._stats = EventPipelineStats()
         self._schema_incompatible_routes: set[str] = set()
-        self._deferred_route_deliveries: deque[tuple[HeimaEvent, str]] = deque(
+        self._deferred_route_deliveries: deque[tuple[HeimaEvent, str, str]] = deque(
             maxlen=_MAX_DEFERRED_ROUTE_DELIVERIES
         )
 
@@ -585,6 +622,7 @@ class HeimaEventPipeline:
         route_targets: list[str] | None = None,
         dedup_window_s: int,
         rate_limit_per_key_s: int,
+        notification_audience: str = "resident",
     ) -> bool:
         now = time.monotonic()
 
@@ -627,7 +665,12 @@ class HeimaEventPipeline:
         for route in effective_routes:
             if not route:
                 continue
-            await self._deliver_or_defer_route(event=event, route=route, is_retry=False)
+            await self._deliver_or_defer_route(
+                event=event,
+                route=route,
+                is_retry=False,
+                notification_audience=notification_audience,
+            )
 
         return True
 
@@ -693,27 +736,41 @@ class HeimaEventPipeline:
         if not self._deferred_route_deliveries:
             return
 
-        remaining: deque[tuple[HeimaEvent, str]] = deque(maxlen=_MAX_DEFERRED_ROUTE_DELIVERIES)
+        remaining: deque[tuple[HeimaEvent, str, str]] = deque(
+            maxlen=_MAX_DEFERRED_ROUTE_DELIVERIES
+        )
         while self._deferred_route_deliveries:
-            event, route = self._deferred_route_deliveries.popleft()
-            delivered = await self._try_deliver_route(event=event, route=route, is_retry=True)
+            event, route, audience = self._deferred_route_deliveries.popleft()
+            delivered = await self._try_deliver_route(
+                event=event,
+                route=route,
+                is_retry=True,
+                notification_audience=audience,
+            )
             if not delivered:
                 if len(remaining) == remaining.maxlen:
                     self._stats.notify_route_deferred_dropped += 1
                     continue
-                remaining.append((event, route))
+                remaining.append((event, route, audience))
 
         self._deferred_route_deliveries = remaining
 
     async def _deliver_or_defer_route(
-        self, *, event: HeimaEvent, route: str, is_retry: bool
+        self, *, event: HeimaEvent, route: str, is_retry: bool, notification_audience: str
     ) -> None:
-        delivered = await self._try_deliver_route(event=event, route=route, is_retry=is_retry)
+        delivered = await self._try_deliver_route(
+            event=event,
+            route=route,
+            is_retry=is_retry,
+            notification_audience=notification_audience,
+        )
         if delivered:
             return
-        self._defer_route_delivery(event, route)
+        self._defer_route_delivery(event, route, notification_audience)
 
-    async def _try_deliver_route(self, *, event: HeimaEvent, route: str, is_retry: bool) -> bool:
+    async def _try_deliver_route(
+        self, *, event: HeimaEvent, route: str, is_retry: bool, notification_audience: str
+    ) -> bool:
         if route in self._schema_incompatible_routes:
             return True
 
@@ -722,7 +779,7 @@ class HeimaEventPipeline:
             _LOGGER.debug("Heima notify route unavailable (deferred): notify.%s", route)
             return False
 
-        payload = self._notify_payload(event)
+        payload = self._notify_payload(event, audience=notification_audience)
         try:
             await self._hass.services.async_call(
                 "notify",
@@ -777,8 +834,8 @@ class HeimaEventPipeline:
             self._stats.notify_route_retried += 1
         return True
 
-    def _defer_route_delivery(self, event: HeimaEvent, route: str) -> None:
-        item = (event, route)
+    def _defer_route_delivery(self, event: HeimaEvent, route: str, audience: str) -> None:
+        item = (event, route, audience)
         # Keep latest attempts; bounded queue avoids unbounded growth during long outages.
         if len(self._deferred_route_deliveries) == self._deferred_route_deliveries.maxlen:
             self._stats.notify_route_deferred_dropped += 1
@@ -794,10 +851,11 @@ class HeimaEventPipeline:
         notify_services = async_services().get("notify", {})
         return route in notify_services
 
-    def _notify_payload(self, event: HeimaEvent) -> dict[str, Any]:
+    def _notify_payload(self, event: HeimaEvent, *, audience: str) -> dict[str, Any]:
+        rendered = render_notification_event(event, audience=audience)
         return {
-            "title": event.title,
-            "message": event.message,
+            "title": rendered.title,
+            "message": rendered.message,
         }
 
     def _actionable_payload(self, notification: ActionableNotification) -> dict[str, Any]:
@@ -979,6 +1037,142 @@ def _aggregation_window_s(bucket: str, config: dict[str, Any]) -> int:
     if bucket == "presence_mismatch":
         return int(aggregation.get("mismatch_window_s", 0))
     return 0
+
+
+def _audience_for_target_roles(target_roles: tuple[str, ...]) -> str:
+    if target_roles == (AUDIENCE_TARGET_ADMINS,):
+        return "admin"
+    if AUDIENCE_TARGET_RESIDENTS in target_roles:
+        return "resident"
+    return "admin"
+
+
+def _render_people_event(event: HeimaEvent, context: dict[str, Any]) -> RenderedNotificationMessage:
+    person = _first_text(
+        context.get("display_name"),
+        context.get("person_display_name"),
+        context.get("person_label"),
+        context.get("person"),
+    )
+    if not person:
+        person = _person_from_people_key(event.key)
+    person = _humanize_identifier(person)
+    arrived = str(event.type).endswith(".arrive")
+    return RenderedNotificationMessage(
+        title="Person arrived" if arrived else "Person left",
+        message=f"{person} {'arrived home' if arrived else 'left home'}.",
+    )
+
+
+def _render_reaction_event(
+    event: HeimaEvent,
+    context: dict[str, Any],
+    *,
+    audience: str,
+) -> RenderedNotificationMessage:
+    label = _first_text(
+        context.get("reaction_label"),
+        context.get("label"),
+        context.get("reaction_name"),
+    )
+    if not label:
+        label = _clean_human_text(event.title or "Reaction", audience="resident")
+    if audience == "admin":
+        reaction_id = _first_text(context.get("reaction_id"), _reaction_id_from_key(event.key))
+        suffix = f" ({reaction_id})" if reaction_id and not _looks_like_uuid(reaction_id) else ""
+        return RenderedNotificationMessage(
+            title="Reaction ran",
+            message=f"{label}{suffix} produced automation steps.",
+        )
+    return RenderedNotificationMessage(
+        title="Home automation ran",
+        message=f"{label} was applied.",
+    )
+
+
+def _render_condition_event(
+    event: HeimaEvent,
+    *,
+    family: str,
+    audience: str,
+) -> RenderedNotificationMessage:
+    if family == "security_critical":
+        return RenderedNotificationMessage(
+            title="Security alert",
+            message=_clean_human_text(
+                event.message or "A security condition needs attention.",
+                audience=audience,
+            ),
+        )
+    if family == "security_presence_mismatch":
+        return RenderedNotificationMessage(
+            title="Security inconsistency",
+            message="Security is armed away while someone appears to be home.",
+        )
+    return RenderedNotificationMessage(
+        title="Occupancy inconsistency",
+        message="Presence says someone is home, but no room is currently occupied.",
+    )
+
+
+def _render_system_event(event: HeimaEvent, *, audience: str) -> RenderedNotificationMessage:
+    title = _clean_human_text(event.title or "Heima configuration issue", audience=audience)
+    message = _clean_human_text(
+        event.message or "Heima detected a configuration issue.",
+        audience=audience,
+    )
+    if audience == "admin":
+        event_type = str(event.type or "").strip()
+        if event_type and event_type not in message:
+            message = f"{message} Event: {event_type}."
+    return RenderedNotificationMessage(title=title, message=message)
+
+
+def _clean_human_text(value: str, *, audience: str) -> str:
+    text = str(value or "").strip()
+    if audience != "admin":
+        text = _UUID_RE.sub("this automation", text)
+        text = text.replace("injected", "created")
+        text = text.replace("Invariant violation", "Condition needs attention")
+        text = text.replace("invariant violation", "condition needs attention")
+    return text
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _humanize_identifier(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "Someone"
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    text = text.replace("_", " ").replace("-", " ").strip()
+    return " ".join(part.capitalize() for part in text.split()) or "Someone"
+
+
+def _person_from_people_key(key: str) -> str:
+    parts = str(key or "").split(".")
+    if len(parts) >= 3:
+        return parts[-1]
+    return ""
+
+
+def _reaction_id_from_key(key: str) -> str:
+    prefix = "reaction.fired."
+    raw = str(key or "")
+    if raw.startswith(prefix):
+        return raw[len(prefix) :]
+    return ""
+
+
+def _looks_like_uuid(value: str) -> bool:
+    return bool(_UUID_RE.fullmatch(str(value or "").strip()))
 
 
 def _target_roles_for_policy(policy: str) -> tuple[str, ...]:

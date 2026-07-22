@@ -131,11 +131,12 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel.
-**Active slice:** Phase AP — Notification Delivery Policy, AP1-AP4 complete; next AP5 message
-rendering.
+**Active slice:** Phase AP — Notification Delivery Policy, AP1-AP6 complete; next AP7
+observability and diagnostics.
 **Branch:** `feat/ap-notification-delivery-policy`.
 **Next action:**
-Implement AP5: add resident/admin message rendering rules for informational notifications.
+Implement AP7: expose effective Notification Delivery Policy, push delivery decisions, and
+suppression reasons in diagnostics/admin observability.
 
 ### Phase AO — Admin Observability Panel
 
@@ -798,7 +799,7 @@ MVP merge.
 
 #### AP5 — Message Rendering
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Add resident/admin message rendering rules for AP informational notifications.
 - Required behavior:
   - resident text is plain-language and avoids raw UUIDs when labels/display names exist
@@ -813,7 +814,7 @@ MVP merge.
 
 #### AP6 — Options Flow / Admin UI Controls
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Expose guided advanced controls for:
   - audience targets
   - audience policy preset/editing

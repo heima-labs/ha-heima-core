@@ -26,6 +26,11 @@ from ..runtime.notifications import (
     AUDIENCE_POLICY_OBSERVABILITY,
     AUDIENCE_POLICY_VALUES,
     AUDIENCE_TARGET_ROLES,
+    DEFAULT_AGGREGATION,
+    DEFAULT_AUDIENCE_POLICY,
+    DEFAULT_AUDIENCE_TARGETS,
+    DEFAULT_PERSISTENCE_THRESHOLDS,
+    DEFAULT_STARTUP_NOTIFICATION_GRACE_S,
     normalize_notification_policy_config,
 )
 from ._common import (
@@ -47,6 +52,18 @@ except ImportError:
 
 class _NotificationsStepsMixin:
     """Mixin for notifications step."""
+
+    _NOISY_RESIDENT_POLICY_FAMILIES = frozenset(
+        {"people", "reaction", "house_state", "occupancy_mismatch"}
+    )
+    _RESIDENT_PUSH_POLICIES = frozenset(
+        {
+            "residents",
+            "residents_and_admins",
+            "residents_and_admins_after_persistence",
+            "residents_and_admins_when_critical_else_admins_after_persistence",
+        }
+    )
 
     async def async_step_notification_recipients(
         self, user_input: dict[str, Any] | None = None
@@ -436,6 +453,36 @@ class _NotificationsStepsMixin:
 
         notifications["route_targets"] = targets
         self._update_options({OPT_NOTIFICATIONS: notifications})
+        return await self.async_step_init()
+
+    async def async_step_notification_delivery_policy(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "FlowResult":
+        notifications = normalize_notification_policy_config(self._notifications_config())
+        if user_input is None:
+            return self.async_show_form(
+                step_id="notification_delivery_policy",
+                data_schema=self._notification_delivery_policy_schema(notifications),
+                description_placeholders={
+                    "summary": self._notification_delivery_policy_summary(notifications)
+                },
+            )
+
+        errors = self._validate_notification_delivery_policy_payload(user_input)
+        if errors:
+            return self.async_show_form(
+                step_id="notification_delivery_policy",
+                data_schema=self._notification_delivery_policy_schema(user_input),
+                errors=errors,
+                description_placeholders={
+                    "summary": self._notification_delivery_policy_summary(notifications)
+                },
+            )
+
+        updated = self._normalize_notification_delivery_policy_payload(user_input)
+        next_notifications = self._notifications_config()
+        next_notifications.update(updated)
+        self._update_options({OPT_NOTIFICATIONS: next_notifications})
         return await self.async_step_init()
 
     async def async_step_notification_services(
@@ -856,6 +903,94 @@ class _NotificationsStepsMixin:
         )
         return self._with_suggested(schema, defaults_with_categories)
 
+    def _notification_delivery_policy_schema(
+        self, defaults: dict[str, Any] | None = None
+    ) -> vol.Schema:
+        normalized = normalize_notification_policy_config(defaults or {})
+        choices = self._notification_route_target_choice_map()
+        policy = normalized["audience_policy"]
+        thresholds = normalized["persistence_thresholds"]
+        aggregation = normalized["aggregation"]
+        burst = aggregation["global_burst_limit"]
+        targets = normalized["audience_targets"]
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "audience_admin_targets",
+                    default=list(targets.get("admins", DEFAULT_AUDIENCE_TARGETS["admins"])),
+                ): cv.multi_select(choices),
+                vol.Optional(
+                    "audience_resident_targets",
+                    default=list(targets.get("residents", DEFAULT_AUDIENCE_TARGETS["residents"])),
+                ): cv.multi_select(choices),
+                vol.Required(
+                    "people_push",
+                    default=policy.get("people", DEFAULT_AUDIENCE_POLICY["people"])["push"],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Required(
+                    "reaction_push",
+                    default=policy.get("reaction", DEFAULT_AUDIENCE_POLICY["reaction"])["push"],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Required(
+                    "occupancy_mismatch_push",
+                    default=policy.get(
+                        "occupancy_mismatch", DEFAULT_AUDIENCE_POLICY["occupancy_mismatch"]
+                    )["push"],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Required(
+                    "security_presence_mismatch_push",
+                    default=policy.get(
+                        "security_presence_mismatch",
+                        DEFAULT_AUDIENCE_POLICY["security_presence_mismatch"],
+                    )["push"],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Required(
+                    "system_config_issue_push",
+                    default=policy.get(
+                        "system_config_issue", DEFAULT_AUDIENCE_POLICY["system_config_issue"]
+                    )["push"],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Optional(
+                    "startup_notification_grace_s",
+                    default=normalized.get(
+                        "startup_notification_grace_s", DEFAULT_STARTUP_NOTIFICATION_GRACE_S
+                    ),
+                ): _NON_NEGATIVE_INT,
+                vol.Optional(
+                    "occupancy_mismatch_persist_s",
+                    default=thresholds.get(
+                        "occupancy_mismatch",
+                        DEFAULT_PERSISTENCE_THRESHOLDS["occupancy_mismatch"],
+                    ),
+                ): _NON_NEGATIVE_INT,
+                vol.Optional(
+                    "security_presence_mismatch_persist_s",
+                    default=thresholds.get(
+                        "security_presence_mismatch",
+                        DEFAULT_PERSISTENCE_THRESHOLDS["security_presence_mismatch"],
+                    ),
+                ): _NON_NEGATIVE_INT,
+                vol.Optional(
+                    "mismatch_window_s",
+                    default=aggregation.get(
+                        "mismatch_window_s", DEFAULT_AGGREGATION["mismatch_window_s"]
+                    ),
+                ): _NON_NEGATIVE_INT,
+                vol.Optional(
+                    "global_burst_max_notifications",
+                    default=burst.get(
+                        "max_notifications",
+                        DEFAULT_AGGREGATION["global_burst_limit"]["max_notifications"],
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                vol.Optional(
+                    "global_burst_window_s",
+                    default=burst.get("window_s", DEFAULT_AGGREGATION["global_burst_limit"]["window_s"]),
+                ): vol.All(vol.Coerce(int), vol.Range(min=10)),
+                vol.Optional("confirm_noisy_resident_push", default=False): bool,
+            }
+        )
+
     # ---- Normalization ----
 
     def _validate_notifications_payload(self, payload: dict[str, Any]) -> dict[str, str]:
@@ -896,6 +1031,93 @@ class _NotificationsStepsMixin:
                     return {"audience_policy": "invalid_policy"}
 
         return {}
+
+    def _validate_notification_delivery_policy_payload(
+        self, payload: dict[str, Any]
+    ) -> dict[str, str]:
+        available = set(self._notification_recipients()) | set(self._notification_groups())
+        admin_targets = _parse_multiline_items(payload.get("audience_admin_targets"))
+        resident_targets = _parse_multiline_items(payload.get("audience_resident_targets"))
+        for target in admin_targets + resident_targets:
+            if target == AUDIENCE_POLICY_OBSERVABILITY or target not in available:
+                return {"audience_admin_targets": "unknown_target"}
+
+        noisy_enabled = self._notification_delivery_policy_noisy_resident_families(payload)
+        if noisy_enabled and not bool(payload.get("confirm_noisy_resident_push", False)):
+            return {"confirm_noisy_resident_push": "required"}
+        return {}
+
+    def _normalize_notification_delivery_policy_payload(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        current = normalize_notification_policy_config(self._notifications_config())
+        policy = dict(current["audience_policy"])
+        policy["people"] = {"push": str(payload.get("people_push"))}
+        policy["reaction"] = {"push": str(payload.get("reaction_push"))}
+        policy["occupancy_mismatch"] = {"push": str(payload.get("occupancy_mismatch_push"))}
+        policy["security_presence_mismatch"] = {
+            "push": str(payload.get("security_presence_mismatch_push"))
+        }
+        policy["system_config_issue"] = {"push": str(payload.get("system_config_issue_push"))}
+        return normalize_notification_policy_config(
+            {
+                **self._notifications_config(),
+                "audience_targets": {
+                    "admins": _parse_multiline_items(payload.get("audience_admin_targets")),
+                    "residents": _parse_multiline_items(payload.get("audience_resident_targets")),
+                },
+                "audience_policy": policy,
+                "startup_notification_grace_s": int(
+                    payload.get("startup_notification_grace_s", DEFAULT_STARTUP_NOTIFICATION_GRACE_S)
+                ),
+                "persistence_thresholds": {
+                    **current["persistence_thresholds"],
+                    "occupancy_mismatch": int(payload.get("occupancy_mismatch_persist_s", 600)),
+                    "security_presence_mismatch": int(
+                        payload.get("security_presence_mismatch_persist_s", 300)
+                    ),
+                },
+                "aggregation": {
+                    **current["aggregation"],
+                    "mismatch_window_s": int(payload.get("mismatch_window_s", 300)),
+                    "global_burst_limit": {
+                        "max_notifications": int(
+                            payload.get("global_burst_max_notifications", 2)
+                        ),
+                        "window_s": int(payload.get("global_burst_window_s", 60)),
+                    },
+                },
+            },
+            sanitize_unresolved_targets=True,
+        )
+
+    def _notification_delivery_policy_noisy_resident_families(
+        self, payload: dict[str, Any]
+    ) -> list[str]:
+        field_by_family = {
+            "people": "people_push",
+            "reaction": "reaction_push",
+            "occupancy_mismatch": "occupancy_mismatch_push",
+        }
+        noisy: list[str] = []
+        for family, field in field_by_family.items():
+            policy = str(payload.get(field) or "").strip()
+            if family in self._NOISY_RESIDENT_POLICY_FAMILIES and policy in self._RESIDENT_PUSH_POLICIES:
+                noisy.append(family)
+        return noisy
+
+    def _notification_delivery_policy_summary(self, notifications: dict[str, Any]) -> str:
+        normalized = normalize_notification_policy_config(notifications)
+        policy = normalized["audience_policy"]
+        targets = normalized["audience_targets"]
+        return (
+            f"admins={', '.join(targets.get('admins', [])) or '-'}; "
+            f"residents={', '.join(targets.get('residents', [])) or '-'}; "
+            f"people={policy.get('people', {}).get('push', '')}; "
+            f"reaction={policy.get('reaction', {}).get('push', '')}; "
+            f"occupancy={policy.get('occupancy_mismatch', {}).get('push', '')}; "
+            f"security={policy.get('security_presence_mismatch', {}).get('push', '')}"
+        )
 
     def _normalize_notifications_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         from ..const import EVENT_CATEGORIES_TOGGLEABLE as _ETC

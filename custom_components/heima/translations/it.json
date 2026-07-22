@@ -32,6 +32,11 @@
           "security": "Sicurezza",
           "camera_privacy_policies": "Policy privacy camere",
           "notifications": "Notifiche",
+          "notification_recipients": "Destinatari notifiche",
+          "notification_groups": "Gruppi destinatari notifiche",
+          "notification_routes": "Route notifiche predefinite",
+          "notification_delivery_policy": "Policy consegna notifiche",
+          "notification_services": "Servizi notifiche",
           "calendar": "Calendario",
           "learning": "Apprendimento",
           "external_context": "Contesto esterno",
@@ -381,6 +386,27 @@
           "security_mismatch_policy": "Policy mismatch sicurezza",
           "security_mismatch_persist_s": "Persistenza mismatch sicurezza (s)",
           "security_mismatch_event_mode": "Modalità evento mismatch sicurezza"
+        },
+        "submit": "OK"
+      },
+      "notification_delivery_policy": {
+        "title": "Policy Consegna Notifiche",
+        "description": "{summary}",
+        "data": {
+          "audience_admin_targets": "Target notifiche admin",
+          "audience_resident_targets": "Target notifiche residenti",
+          "people_push": "Policy push eventi persone",
+          "reaction_push": "Policy push eventi reazioni",
+          "occupancy_mismatch_push": "Policy push mismatch occupancy",
+          "security_presence_mismatch_push": "Policy push mismatch sicurezza/presenza",
+          "system_config_issue_push": "Policy push problemi configurazione",
+          "startup_notification_grace_s": "Periodo iniziale senza notifiche (secondi)",
+          "occupancy_mismatch_persist_s": "Persistenza mismatch occupancy (secondi)",
+          "security_presence_mismatch_persist_s": "Persistenza mismatch sicurezza (secondi)",
+          "mismatch_window_s": "Finestra aggregazione mismatch (secondi)",
+          "global_burst_max_notifications": "Numero massimo notifiche nel burst",
+          "global_burst_window_s": "Finestra burst globale (secondi)",
+          "confirm_noisy_resident_push": "Conferma push rumoroso verso residenti"
         },
         "submit": "OK"
       },
