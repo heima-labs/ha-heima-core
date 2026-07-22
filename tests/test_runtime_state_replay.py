@@ -408,7 +408,10 @@ def test_replay_accepts_consistent_runtime_confirmation_state() -> None:
 
 
 def _load_live_replay_module():
-    path = Path(__file__).resolve().parent.parent / "scripts/live_tests/082_runtime_state_replay_live.py"
+    path = (
+        Path(__file__).resolve().parent.parent
+        / "scripts/live_tests/082_runtime_state_replay_live.py"
+    )
     spec = importlib.util.spec_from_file_location("heima_live_082_runtime_state_replay", path)
     assert spec is not None
     assert spec.loader is not None

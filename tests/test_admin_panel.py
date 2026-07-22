@@ -63,6 +63,24 @@ async def test_register_admin_panel_serves_local_asset_and_requires_admin(monkey
     assert len(PANEL_MODULE.rsplit("?v=", 1)[1]) == 12
 
 
+@pytest.mark.asyncio
+async def test_register_admin_panel_noops_without_http(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def fake_register_panel(**kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "custom_components.heima.panel.panel_custom.async_register_panel",
+        fake_register_panel,
+    )
+    hass = SimpleNamespace(http=None)
+
+    await async_register_admin_panel(hass)
+
+    assert calls == []
+
+
 def test_unregister_admin_panel_removes_frontend_panel(monkeypatch) -> None:
     calls: list[tuple[Any, str, bool]] = []
 

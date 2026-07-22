@@ -628,9 +628,7 @@ def _house_state_diagnostics(engine_diag: Mapping[str, Any]) -> dict[str, Any]:
             or ""
         ),
         "resolution_path": str(
-            resolution_trace.get("resolution_path")
-            or resolution_trace.get("path")
-            or ""
+            resolution_trace.get("resolution_path") or resolution_trace.get("path") or ""
         ),
         "decision_action": str(decision.get("action") or ""),
         "decision_target_state": str(
@@ -903,7 +901,9 @@ def _entity_impact_index(
         cfg = configured.get(reaction_id, {})
         for entity_id in _entity_ids_from_value(cfg):
             _entity_link(builder, entity_id, "reaction_ids", reaction_id)
-            _entity_link(builder, entity_id, "policy_ids", str(reaction.get("source_template_id") or ""))
+            _entity_link(
+                builder, entity_id, "policy_ids", str(reaction.get("source_template_id") or "")
+            )
 
     for trace in decision_traces:
         if not isinstance(trace, Mapping):
@@ -942,7 +942,11 @@ def _entity_impact_index(
                 _entity_append(builder, entity_id, "pending_applies", dict(item))
 
     request_rows = [
-        *[dict(item) for item in runtime_confirmations.get("pending") or [] if isinstance(item, Mapping)],
+        *[
+            dict(item)
+            for item in runtime_confirmations.get("pending") or []
+            if isinstance(item, Mapping)
+        ],
         *[
             dict(item)
             for item in runtime_confirmations.get("recent_completed") or []

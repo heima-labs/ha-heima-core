@@ -1424,9 +1424,7 @@ async def test_notification_recipient_delete_removes_unreferenced_recipient():
     result = await flow.async_step_notification_recipient_delete_confirm({"confirm": True})
 
     assert result["type"] == "menu"
-    assert flow.options["notifications"]["recipients"] == {
-        "stefano": ["mobile_app_stefano"]
-    }
+    assert flow.options["notifications"]["recipients"] == {"stefano": ["mobile_app_stefano"]}
 
 
 @pytest.mark.asyncio
@@ -1825,9 +1823,7 @@ async def test_execution_policy_profile_edit_keeps_id_immutable():
     flow = _flow(
         {
             "reactions": {
-                "execution_policy_profiles": {
-                    "ask_residents_default": {"mode": "ask_residents"}
-                }
+                "execution_policy_profiles": {"ask_residents_default": {"mode": "ask_residents"}}
             }
         }
     )
@@ -1850,9 +1846,7 @@ async def test_execution_policy_profile_delete_blocks_referenced_profile():
     flow = _flow(
         {
             "reactions": {
-                "execution_policy_profiles": {
-                    "ask_residents_default": {"mode": "ask_residents"}
-                },
+                "execution_policy_profiles": {"ask_residents_default": {"mode": "ask_residents"}},
                 "configured": {
                     "r1": {"execution_policy_ref": "ask_residents_default"},
                 },
@@ -5765,7 +5759,7 @@ async def test_reactions_edit_form_updates_context_conditioned_runtime_policy():
                     }
                 },
                 "labels": {"r1": "Studio contextual lighting"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5843,7 +5837,7 @@ async def test_reactions_edit_form_saves_execution_policy_profile_ref():
                         },
                     }
                 },
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5903,7 +5897,7 @@ async def test_reactions_edit_form_saves_execution_policy_profile_override():
                         "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
                     }
                 },
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -5994,9 +5988,7 @@ async def test_reactions_edit_form_profile_override_persists_only_delta():
     assert result["type"] == "menu"
     cfg = flow.options["reactions"]["configured"]["r1"]
     assert cfg["execution_policy_ref"] == "ask_residents_default"
-    assert cfg["execution_policy_override"] == {
-        "confirmation": {"expires_in_minutes": 4}
-    }
+    assert cfg["execution_policy_override"] == {"confirmation": {"expires_in_minutes": 4}}
 
 
 @pytest.mark.asyncio
@@ -6034,9 +6026,7 @@ async def test_reactions_edit_form_profile_override_defaults_use_effective_polic
                         ],
                         "entity_steps": [{"entity_id": "light.studio_main", "action": "off"}],
                         "execution_policy_ref": "ask_residents_default",
-                        "execution_policy_override": {
-                            "confirmation": {"expires_in_minutes": 4}
-                        },
+                        "execution_policy_override": {"confirmation": {"expires_in_minutes": 4}},
                     }
                 },
             },
@@ -6134,7 +6124,7 @@ async def test_reactions_edit_form_can_revert_promoted_auto_apply_to_ask_residen
                     }
                 },
                 "labels": {"r1": "Studio contextual lighting"},
-            }
+            },
         }
     )
     flow._editing_reaction_id = "r1"
@@ -6239,9 +6229,7 @@ async def test_reactions_edit_form_reverts_profile_promoted_auto_apply_to_ask_re
     assert result["type"] == "menu"
     cfg = flow.options["reactions"]["configured"]["r1"]
     assert cfg["execution_policy_ref"] == "ask_residents_default"
-    assert cfg["execution_policy_override"] == {
-        "confirmation": {"expires_in_minutes": 7}
-    }
+    assert cfg["execution_policy_override"] == {"confirmation": {"expires_in_minutes": 7}}
     assert flow.options["reactions"]["confirmation_stats"] == {}
     assert flow.options["reactions"]["promotion_reviews"] == {}
 

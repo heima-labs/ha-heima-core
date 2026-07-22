@@ -97,9 +97,10 @@ def test_health_invariant_transition_reconciles_against_current_engine_state() -
     coordinator._sync_health_sensor()  # noqa: SLF001
 
     assert coordinator.engine.state.get_sensor("heima_health") == "ok"
-    assert coordinator.engine.state.get_sensor_attributes("heima_health")[
-        "last_invariant_violation"
-    ] == {}
+    assert (
+        coordinator.engine.state.get_sensor_attributes("heima_health")["last_invariant_violation"]
+        == {}
+    )
 
 
 def test_manual_hold_transition_owned_apply_external_change_and_release() -> None:

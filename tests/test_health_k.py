@@ -163,10 +163,7 @@ def test_active_invariant_state_keeps_degraded_health() -> None:
 
     assert coordinator.engine.state.get_sensor("heima_health") == "degraded"
     attrs = coordinator.engine.state.get_sensor_attributes("heima_health")
-    assert (
-        attrs["last_invariant_violation"]["context"]["check_id"]
-        == "security_presence_mismatch"
-    )
+    assert attrs["last_invariant_violation"]["context"]["check_id"] == "security_presence_mismatch"
 
 
 @pytest.mark.asyncio

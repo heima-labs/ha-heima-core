@@ -117,7 +117,9 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
 
     def _execution_policy_profile_ref_options(self) -> dict[str, str]:
         reactions = self.options.get("reactions")
-        profiles = dict(reactions).get("execution_policy_profiles") if isinstance(reactions, dict) else {}
+        profiles = (
+            dict(reactions).get("execution_policy_profiles") if isinstance(reactions, dict) else {}
+        )
         options = {"": "Inline execution policy"}
         if isinstance(profiles, dict):
             for profile_id, profile in sorted(profiles.items()):
