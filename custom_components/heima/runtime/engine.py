@@ -1673,14 +1673,19 @@ class HeimaEngine:
                     if not handled:
                         result.extend(tagged)
                     self._register_reaction_outcome(reaction, rid)
+                    label = self._configured_reaction_label(rid)
                     self._events_domain.queue_event(
                         HeimaEvent(
                             type="reaction.fired",
                             key=f"reaction.fired.{rid}",
                             severity="info",
-                            title=f"Reaction fired: {rid}",
-                            message=f"Reaction '{rid}' injected {len(tagged)} step(s).",
-                            context={"reaction_id": rid, "step_count": len(tagged)},
+                            title=f"Reaction fired: {label}",
+                            message=f"Reaction '{label}' produced {len(tagged)} step(s).",
+                            context={
+                                "reaction_id": rid,
+                                "reaction_label": label,
+                                "step_count": len(tagged),
+                            },
                         )
                     )
             except Exception:
@@ -1824,6 +1829,17 @@ class HeimaEngine:
         configured = dict(dict(self._entry.options).get(OPT_REACTIONS, {}).get("configured", {}))
         cfg = configured.get(reaction_id)
         return dict(cfg) if isinstance(cfg, dict) else {}
+
+    def _configured_reaction_label(self, reaction_id: str) -> str:
+        reactions = dict(dict(self._entry.options).get(OPT_REACTIONS, {}))
+        labels = reactions.get("labels")
+        if isinstance(labels, dict):
+            label = str(labels.get(reaction_id) or "").strip()
+            if label:
+                return label
+        cfg = self._configured_reaction_config(reaction_id)
+        label = str(cfg.get("label") or "").strip()
+        return label or reaction_id
 
     def _execution_policy_profiles(self) -> dict[str, Any]:
         reactions = dict(dict(self._entry.options).get(OPT_REACTIONS, {}))

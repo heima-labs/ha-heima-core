@@ -178,6 +178,7 @@ EVENT_CATEGORIES_ALL = [
     "house_state",
     "lighting",
     "heating",
+    "reaction",
     "security",
     "system",
 ]
@@ -187,6 +188,7 @@ EVENT_CATEGORIES_TOGGLEABLE = [
     "house_state",
     "lighting",
     "heating",
+    "reaction",
     "security",
 ]
 DEFAULT_ENABLED_EVENT_CATEGORIES = [

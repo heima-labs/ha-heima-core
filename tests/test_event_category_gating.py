@@ -96,6 +96,36 @@ async def test_lighting_events_can_be_disabled():
 
 
 @pytest.mark.asyncio
+async def test_reaction_events_are_disabled_by_default():
+    engine = _engine()
+    emitted = await engine.async_emit_external_event(
+        event_type="reaction.fired",
+        key="reaction.fired.test",
+        severity="info",
+        title="Reaction fired",
+        message="x",
+        context={"reaction_id": "test"},
+    )
+    assert emitted is False
+    assert engine._hass.bus.events == []
+
+
+@pytest.mark.asyncio
+async def test_reaction_events_can_be_explicitly_enabled():
+    engine = _engine({"enabled_event_categories": ["reaction"]})
+    emitted = await engine.async_emit_external_event(
+        event_type="reaction.fired",
+        key="reaction.fired.test",
+        severity="info",
+        title="Reaction fired",
+        message="x",
+        context={"reaction_id": "test"},
+    )
+    assert emitted is True
+    assert engine._hass.bus.events[-1][1]["type"] == "reaction.fired"
+
+
+@pytest.mark.asyncio
 async def test_custom_debug_category_remains_enabled():
     engine = _engine({"enabled_event_categories": []})
     emitted = await engine.async_emit_external_event(
