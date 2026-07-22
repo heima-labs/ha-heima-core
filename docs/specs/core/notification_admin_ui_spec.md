@@ -1,7 +1,7 @@
 # Heima Notification Admin UI Spec
 
 **Status:** Implemented v2 UI layer over the existing notification recipient model
-**Last Updated:** 2026-07-15
+**Last Updated:** 2026-07-22
 
 ## Purpose
 
@@ -24,6 +24,8 @@ In scope:
 - admin-facing guided UI for notification recipients
 - admin-facing guided UI for recipient groups
 - default routing configuration
+- event audience policy configuration
+- startup grace, persistence threshold, aggregation, and burst-limit configuration
 - reusable execution policy profiles for runtime confirmation and promotion routing
 - validation and preview behavior
 - persistence mapping to the existing options schema
@@ -34,6 +36,7 @@ Out of scope:
 - introducing a new authorization model
 - replacing Home Assistant notify services
 - changing promotion review authority; promotion decisions remain HA-admin-gated
+- exposing raw low-level event streams as resident notification defaults
 
 ## Design Principle
 
@@ -54,6 +57,10 @@ configuration layer that reactions can reference instead of embedding a full `ex
 inline.
 
 The admin should not need to write this structure directly in normal use.
+
+The UI must follow `core/events_and_notifications_spec.md` for audience policy. Default routing is
+not enough to decide who receives a notification: event family, audience, startup grace,
+persistence, aggregation, and actionable capability all participate in delivery.
 
 ## Concepts
 
@@ -301,6 +308,125 @@ route_targets:
 
 The default route targets are used by generic event delivery and by runtime confirmations only when
 the reaction's confirmation policy enables `use_default_route_targets`.
+
+Default routing is intentionally low-level. It must not imply that every event goes to every default
+target. Audience policy and category policy still decide whether a resident/admin push notification
+is appropriate.
+
+### 3.1 Event Audience Policy Editor
+
+The notification configuration flow should provide a guided event policy editor.
+
+Purpose:
+
+- prevent notification storms
+- make resident/admin routing explicit
+- keep technical observability separate from human push notifications
+- let admins tune noisy homes without editing raw JSON/YAML
+
+Required behavior:
+
+- list event families/categories with their effective audience
+- show whether each family is resident-facing, admin-facing, observability-only, or disabled for
+  push delivery
+- expose conservative presets:
+  - `quiet` / resident-safe default
+  - `admin_verbose`
+  - `debug_observability`
+- show warnings when resident push is enabled for noisy categories such as `people`, `occupancy`,
+  `house_state`, or `reaction`
+- preview effective routing for each audience using current recipients/groups
+- show whether events are actionable or informational
+- validate `audience_policy.<family>.push` against the closed vocabulary in
+  `core/events_and_notifications_spec.md`
+- show diagnostics when admin-facing policies have no admin target or resident-facing policies have
+  no resident target
+
+Recommended default policy:
+
+| Family/category | Default audience |
+|---|---|
+| runtime confirmation actionable requests | residents selected by execution policy |
+| promotion reminders | admins |
+| security critical events | residents and admins |
+| security diagnostics/config issues | admins/observability |
+| occupancy mismatch | observability, then admins after persistence threshold |
+| people transitions | observability only |
+| house state changes | observability only |
+| reaction fired/execution events | observability only |
+| system configuration/health issues | admins/observability |
+
+The UI must not send `reaction.fired`, `people.arrive`, or `people.leave` to residents by default.
+
+### 3.2 Delivery Noise Controls
+
+The notification configuration flow should expose safe controls for:
+
+- startup notification grace period
+- mismatch persistence thresholds
+- aggregation windows
+- informational burst limits
+- per-category enablement
+
+Recommended fields:
+
+```yaml
+notifications:
+  audience_targets:
+    admins:
+      - admins
+    residents:
+      - residents
+  audience_policy:
+    people:
+      push: observability
+    occupancy_mismatch:
+      push: admins_after_persistence
+    reaction:
+      push: observability
+    security_presence_mismatch:
+      push: residents_and_admins_when_critical_else_admins_after_persistence
+    system_config_issue:
+      push: admins
+  startup_notification_grace_s: 300
+  aggregation:
+    presence_transition_window_s: 120
+    mismatch_window_s: 300
+    global_burst_limit:
+      max_notifications: 2
+      window_s: 60
+  persistence_thresholds:
+    occupancy_mismatch: 600
+    security_presence_mismatch: 300
+    installation_config_issue: 300
+```
+
+The initial UI may expose these as advanced settings, but it must keep the conservative defaults
+active when the admin does not configure them.
+
+Validation rules:
+
+- audience target values must reference existing recipients or recipient groups
+- audience policy values must be from the supported policy vocabulary
+- `observability` must not be accepted as a recipient, group, or `notify.*` service
+- admin-only policy must not fall back to residents when `audience_targets.admins` is missing or
+  unresolved
+- resident-only policy must not fall back to admins unless the policy explicitly includes admins
+- `route_targets` must be presented as legacy/generic fallback routing, not as the preferred model
+  for human-facing event notifications
+- grace and threshold values must be non-negative integers
+- burst limit count must be at least 1
+- burst limit window must be at least 10 seconds
+- setting a noisy category to resident-facing should require explicit confirmation
+- disabling all admin routes while admin-only issues are enabled should produce a warning
+
+Preview requirements:
+
+- show how many effective resident/admin targets each policy resolves to
+- show which notify services support actions
+- show which event families are currently push-disabled
+- show examples of collapsed notification text for noisy families
+- show whether values are implicit defaults or explicitly saved options
 
 ### 4. Execution Policy Profile Editor
 

@@ -830,12 +830,15 @@ Fields:
 - `enabled_event_categories`
 - `dedup_window_s`
 - `rate_limit_per_key_s`
+- `audience_targets`
+- `audience_policy`
+- `startup_notification_grace_s`
+- `persistence_thresholds`
+- `aggregation`
 - `occupancy_mismatch_policy`
 - `occupancy_mismatch_min_derived_rooms`
-- `occupancy_mismatch_persist_s`
 - `security_mismatch_policy`
 - `security_mismatch_event_mode`
-- `security_mismatch_persist_s`
 - `notification_service_capabilities`
 
 `recipients`:
@@ -857,6 +860,36 @@ Fields:
 - Every route target must exist.
 - Used by generic notification delivery and by runtime confirmation only when an execution policy
   explicitly enables default route targets.
+- Prefer `audience_targets` for human-facing event notifications.
+- Does not mean every Heima event is pushed to those targets. Audience policy, category gating,
+  startup grace, persistence thresholds, aggregation, and burst limits still decide whether a
+  human-facing notification should be sent.
+
+`audience_targets`:
+
+- Mapping from audience names to recipient IDs or group IDs.
+- `admins` and `residents` are recommended routing audiences.
+- These are notification routing conventions only; they do not grant authorization.
+
+`audience_policy`:
+
+- Mapping from event families to push behavior.
+- Keeps technical observability separate from resident/admin push delivery.
+- Defaults should keep noisy families such as `people`, `house_state`, and `reaction` in
+  observability only.
+- Uses a closed vocabulary such as `observability`, `admins`, `residents_and_admins`,
+  `admins_after_persistence`, and
+  `residents_and_admins_when_critical_else_admins_after_persistence`.
+- Admin-facing policies never fall back to residents when no admin target is configured.
+
+`persistence_thresholds`:
+
+- General mapping from mismatch/invariant family to seconds before it may become push-notifiable.
+- Replaces older domain-specific notification persistence fields for new configuration.
+
+The runtime logic that applies audience policy, grace, persistence, aggregation, category gates,
+rate limits, burst limits, target resolution, and notify-service capabilities is the Notification
+Delivery Policy.
 
 `notification_service_capabilities`:
 
@@ -865,6 +898,19 @@ Fields:
 - `supports_actions: true` is required before a service can receive actionable runtime
   confirmation notifications.
 - Non-actionable informational notifications may still use services without `supports_actions`.
+
+Noise-control defaults:
+
+- Heima should be conservative for resident push notifications.
+- Technical events such as `reaction.fired`, raw person arrive/leave transitions, configuration
+  summaries, and transient occupancy mismatch events should stay in observability or admin routing
+  by default.
+- Startup/reload transients should be suppressed for push delivery during the startup notification
+  grace period.
+- Persistent mismatch notifications should be collapsed into one readable message rather than one
+  push notification per low-level event.
+- Actionable runtime confirmations are separate: they are sent according to the reaction execution
+  policy and must not be suppressed by generic informational-event aggregation.
 
 Guided setup workflow:
 

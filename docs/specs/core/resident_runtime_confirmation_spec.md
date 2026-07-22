@@ -1,7 +1,7 @@
 # Resident Runtime Confirmation Spec
 
 **Status:** Draft vNext
-**Date:** 2026-07-12
+**Date:** 2026-07-22
 **Related specs:** `core/events_and_notifications_spec.md`,
 `core/notification_recipients_spec.md`, `core/apply_step_contract.md`,
 `core/manual_hold_framework_spec.md`, `learning/context_conditioned_lighting_learning_spec.md`
@@ -439,12 +439,19 @@ Rules:
 - occurrence-level deduplication defined by this spec is the controlling anti-spam mechanism
 - Heima may still emit separate informational events about request creation, delivery failure, or
   outcome; those informational events may use the normal event pipeline
+- notification audience policy, startup grace, persistence thresholds, and aggregation from
+  `core/events_and_notifications_spec.md` apply only to those separate informational events, not to
+  the actionable request itself
+- if a request is actionable and targets residents, its message must be resident-facing and must not
+  contain raw reaction UUIDs when a configured reaction label exists
 
 Rationale:
 
 - if an admin configured a reaction to ask residents, suppressing the actionable request would make
   the reaction silently do nothing
 - the request itself already has explicit occurrence identity, expiration, and dedup semantics
+- informational event aggregation must not hide or collapse the actual approval/dismiss decision
+  residents need to make
 
 ## Occurrence Identity and Deduplication
 

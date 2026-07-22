@@ -124,20 +124,20 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO8 | Observability Usability & Detail Views | `PLANNED` | AO |
 | AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
+| AP | Notification Delivery Policy | `PLANNED` | AH, AN, AO |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles.
-**Active slice:** Phase AO — Admin Observability Panel completed; pending user MVP verification
-before merge into `feat/an-notification-admin-ui`.
-**Branch:** `feat/ao-admin-observability-panel`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel.
+**Active slice:** Phase AP — Notification Delivery Policy, starting with AP1 policy model and
+normalization.
+**Branch:** `feat/an-notification-admin-ui`.
 **Next action:**
-Hold AO on its feature branch for hands-on MVP verification. After verification, merge
-`feat/ao-admin-observability-panel` into `feat/an-notification-admin-ui`.
-Next observability work should start only after deciding whether to extend the current AO branch
-with AO8-AO10 before merge, or merge the MVP first and develop AO8-AO10 on follow-up branches.
+Implement AP1: normalized notification policy defaults, validation, and tests for
+`audience_targets`, `audience_policy`, `persistence_thresholds`, `aggregation`, and
+`startup_notification_grace_s`.
 
 ### Phase AO — Admin Observability Panel
 
@@ -648,6 +648,233 @@ MVP merge.
   - unsupported reaction types fail explicitly
   - repeated UI calls are bounded by the configured/default rate limit
   - result links to relevant traces, holds, entities, and policies where available
+
+### Phase AP — Notification Delivery Policy
+
+- Status: `PLANNED`.
+- Spec sources:
+  - `docs/specs/core/events_and_notifications_spec.md`
+  - `docs/specs/core/notification_admin_ui_spec.md`
+  - `docs/specs/core/resident_runtime_confirmation_spec.md`
+- Goal: prevent notification storms by separating runtime observability from human push delivery,
+  adding audience policy, startup grace, persistence thresholds, aggregation, burst limits, and
+  clearer message rendering while keeping actionable runtime confirmations separate and reliable.
+- Product boundary:
+  - AP governs informational event push delivery.
+  - AP must not suppress actionable runtime confirmation requests; those remain governed by AH
+    occurrence deduplication, timeout, and `supports_actions`.
+  - AP must not infer authorization from notification groups. `admins` and `residents` are routing
+    conventions only; HA admin authority remains the authorization boundary.
+  - Event bus, diagnostics, and admin observability must retain events even when push delivery is
+    suppressed.
+- Architecture name:
+  - Runtime policy component: **Notification Delivery Policy**.
+  - Acceptable implementation class names include `NotificationDeliveryPolicy` or
+    `NotificationPolicyEngine`, but diagnostics and docs should use "Notification Delivery Policy".
+- Canonical persisted model:
+  - `notifications.audience_targets`
+  - `notifications.audience_policy`
+  - `notifications.persistence_thresholds`
+  - `notifications.aggregation`
+  - `notifications.startup_notification_grace_s`
+- Legacy decision:
+  - AP does not need to preserve old domain-specific notification persistence fields such as
+    `occupancy_mismatch_persist_s` and `security_mismatch_persist_s` as authoritative fields.
+- External model note:
+  - AP follows the same separation of concerns used by systems such as Alertmanager/Grafana
+    (classify, route, group, time/rate-control, deliver), but keeps a smaller Heima-specific
+    audience vocabulary.
+
+#### AP1 — Policy Model And Normalization
+
+- Status: `PLANNED`.
+- Implement normalized notification policy defaults for:
+  - `audience_targets`
+  - `audience_policy`
+  - `persistence_thresholds`
+  - `aggregation`
+  - `startup_notification_grace_s`
+- Define and validate the closed `audience_policy.<family>.push` vocabulary:
+  - `disabled`
+  - `observability`
+  - `admins`
+  - `residents`
+  - `residents_and_admins`
+  - `admins_after_persistence`
+  - `residents_and_admins_after_persistence`
+  - `residents_and_admins_when_critical_else_admins_after_persistence`
+- Required behavior:
+  - apply conservative implicit defaults when config is absent or partial
+  - reject or sanitize unsupported policy values deterministically
+  - never treat `observability` as a recipient, group, or `notify.*` service
+  - no fallback from admin-facing policies to residents when admin targets are missing
+  - no fallback from resident-facing policies to admins unless the policy explicitly includes
+    admins
+- Tests:
+  - config absent, partial, and explicit defaults
+  - invalid `audience_policy` values
+  - invalid audience targets
+  - `observability` rejected as target
+  - old `*_persist_s` fields are not required for normalized AP behavior
+
+#### AP2 — NotificationDeliveryPolicy Core
+
+- Status: `PLANNED`.
+- Add a runtime policy component that accepts an event plus effective notification config and
+  returns a structured delivery decision without sending notifications directly.
+- Decision outcomes:
+  - `deliver`
+  - `observability_only`
+  - `disabled`
+  - `startup_grace`
+  - `waiting_persistence`
+  - `suppressed_aggregation`
+  - `suppressed_category`
+  - `suppressed_dedup`
+  - `suppressed_rate_limit`
+  - `suppressed_burst`
+  - `missing_audience_target`
+- Required behavior:
+  - classify event family/severity
+  - resolve audience policy
+  - identify security-critical cases
+  - preserve event bus/diagnostics regardless of push decision
+- Tests:
+  - `people.arrive` -> observability only by default
+  - `reaction.fired` -> observability only by default
+  - `system.config_issue` -> admins by default
+  - alarm triggered -> residents + admins
+  - armed-away while someone is home -> residents + admins
+  - admin target missing -> no resident fallback and diagnostic reason
+
+#### AP3 — Pipeline Integration
+
+- Status: `PLANNED`.
+- Integrate Notification Delivery Policy into `EventsDomain` / notification pipeline.
+- Runtime order:
+  1. emit event
+  2. classify event family and severity
+  3. resolve audience policy
+  4. apply startup grace for informational push delivery
+  5. apply persistence thresholds for mismatch/invariant families
+  6. aggregate/collapse related events
+  7. apply category gate
+  8. apply deduplication, per-key rate limit, and global informational burst limit
+  9. resolve audience targets to recipients/groups
+  10. resolve recipients to concrete `notify.*` services
+  11. apply transport capability filtering
+  12. deliver
+- Required behavior:
+  - event bus still fires for push-suppressed events
+  - diagnostics and admin observability still retain push-suppressed events
+  - `route_targets` no longer acts as "send everything to residents" for human-facing event
+    delivery
+  - actionable runtime confirmations bypass AP informational grace/aggregation/rate/burst controls
+- Tests:
+  - push-suppressed event appears in event stats/observability
+  - system event is observable without unconditional push
+  - legacy/default `route_targets` does not receive noisy categories by default
+  - runtime confirmation actionable path still sends through AH controls
+
+#### AP4 — Persistence State, Aggregation, And Burst Limits
+
+- Status: `PLANNED`.
+- Add bounded runtime state for:
+  - mismatch first seen / last seen
+  - persistence threshold met/not met
+  - aggregation buckets
+  - global informational burst windows
+- Required behavior:
+  - mismatch that resolves before threshold sends no push
+  - persistent mismatch sends one collapsed push according to audience policy
+  - related `people`, `occupancy`, and invariant events collapse before push delivery
+  - global burst limit applies only to informational push notifications
+  - security-critical events may bypass informational burst limit but still deduplicate by key or
+    occurrence
+- Tests:
+  - occupancy mismatch resolved before threshold -> no push
+  - occupancy mismatch persists -> one admin push
+  - three person-arrival events -> no resident notification storm
+  - global informational limit defaults to max 2 per 60 seconds
+  - event bus/observability are not burst-limited
+
+#### AP5 — Message Rendering
+
+- Status: `PLANNED`.
+- Add resident/admin message rendering rules for AP informational notifications.
+- Required behavior:
+  - resident text is plain-language and avoids raw UUIDs when labels/display names exist
+  - resident text avoids technical wording such as "injected steps" or "invariant violation"
+  - admin text may include technical ids but must lead with a readable summary
+  - collapsed notifications summarize the condition instead of listing raw event ids
+- Tests:
+  - reaction label replaces raw reaction id when reaction push is explicitly enabled
+  - person slug resolves to display name when available
+  - resident-facing rendered text does not contain known reaction UUIDs
+  - admin-facing rendered text includes useful technical context without losing readable summary
+
+#### AP6 — Options Flow / Admin UI Controls
+
+- Status: `PLANNED`.
+- Expose guided advanced controls for:
+  - audience targets
+  - audience policy preset/editing
+  - persistence thresholds
+  - startup notification grace
+  - aggregation and burst limits
+- Required behavior:
+  - show implicit defaults separately from explicitly saved values
+  - validate closed audience policy vocabulary
+  - warn before enabling resident push for noisy families (`people`, `occupancy`, `house_state`,
+    `reaction`)
+  - show unresolved admin/resident audience targets
+  - present `route_targets` as generic/legacy fallback, not preferred human-facing routing
+- Tests:
+  - HA schema serializes
+  - round-trip normalized config
+  - invalid vocabulary errors
+  - `observability` rejected as recipient/group/service
+  - noisy resident-facing policy requires explicit confirmation
+
+#### AP7 — Observability And Diagnostics
+
+- Status: `PLANNED`.
+- Extend diagnostics/admin observability with:
+  - effective Notification Delivery Policy
+  - push delivery decisions and reason codes
+  - startup grace active/inactive state
+  - persistence pending/met state
+  - aggregation bucket summaries
+  - burst-suppressed counts
+  - unresolved audience targets
+- Tests:
+  - observability snapshot includes effective policy
+  - diagnostics explain why a notification was not pushed
+  - unresolved target diagnostics are structured and redacted appropriately
+
+#### AP8 — Live Tests
+
+- Status: `PLANNED`.
+- Add controlled live tests and simulation tooling.
+- Required live checks:
+  - `reaction.fired` does not push by default
+  - `people.arrive` does not push by default
+  - admin-only config issue does not push to residents
+  - armed-away while someone is home pushes to residents and admins when configured targets exist
+  - persistent occupancy mismatch collapses into one admin notification
+- Add a diagnostic script that can simulate AP delivery decisions without sending push
+  notifications.
+- Tests:
+  - live test against Docker HA using controlled notify services or fake observable notify endpoint
+  - replay test from exported observability/diagnostic snapshots where possible
+  - no live test should depend on a real phone receiving a push notification
+
+- Phase AP acceptance:
+  - resident push defaults are quiet and do not produce notification storms
+  - admin/security-critical push remains available and explainable
+  - actionable runtime confirmation behavior remains governed by AH and is not suppressed by AP
+  - every suppressed push has an observable reason in diagnostics/admin panel
+  - the config model is general and does not rely on old domain-specific persistence fields
 
 ### Recent Working Notes
 
