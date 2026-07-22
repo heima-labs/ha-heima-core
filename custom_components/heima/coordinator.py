@@ -2393,6 +2393,26 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         if check_id and str(anomaly_context.get("check_id") or "") == check_id:
             self._last_anomaly = None
 
+    def _reconcile_resolved_invariant_alerts(self) -> None:
+        current = self._last_invariant_violation or {}
+        current_context = current.get("context") if isinstance(current.get("context"), dict) else {}
+        check_id = str(current_context.get("check_id") or "")
+        if not check_id:
+            return
+
+        unresolved_provider = getattr(self.engine, "unresolved_invariant_check_ids", None)
+        if not callable(unresolved_provider):
+            return
+        unresolved_check_ids = {str(item) for item in unresolved_provider()}
+        if check_id in unresolved_check_ids:
+            return
+
+        self._last_invariant_violation = None
+        anomaly = self._last_anomaly or {}
+        anomaly_context = anomaly.get("context") if isinstance(anomaly.get("context"), dict) else {}
+        if str(anomaly_context.get("check_id") or "") == check_id:
+            self._last_anomaly = None
+
     async def async_run_diagnostics(self) -> dict[str, Any]:
         """Collect structured diagnostics and update the health sensor."""
         try:
@@ -2455,24 +2475,31 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         state = getattr(getattr(self, "engine", None), "state", None)
         if state is None or not hasattr(state, "set_sensor"):
             return
+        self._reconcile_resolved_invariant_alerts()
         self.engine.state.set_sensor("heima_health", self._health_status())
         self.engine.state.set_sensor_attributes("heima_health", self._health_attributes())
 
     def _health_status(self) -> str:
+        self._reconcile_resolved_invariant_alerts()
         if not self.engine.health.ok:
             return "error"
-        if self._last_anomaly is not None or self._last_invariant_violation is not None:
+        if self._last_invariant_violation is not None or self._last_anomaly_is_critical():
             return "degraded"
         return "ok"
 
     def _health_reason(self) -> str:
+        self._reconcile_resolved_invariant_alerts()
         if not self.engine.health.ok:
             return self.engine.health.reason
         if self._last_invariant_violation is not None:
             return "invariant_violation"
-        if self._last_anomaly is not None:
+        if self._last_anomaly_is_critical():
             return "anomaly"
         return self.engine.health.reason
+
+    def _last_anomaly_is_critical(self) -> bool:
+        anomaly = self._last_anomaly or {}
+        return str(anomaly.get("severity") or "").strip().lower() == "critical"
 
     def _health_attributes(self) -> dict[str, Any]:
         return {

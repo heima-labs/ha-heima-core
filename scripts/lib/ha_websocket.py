@@ -13,7 +13,6 @@ Usage:
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
 import socket
@@ -143,8 +142,9 @@ class HAWebSocketClient:
             buf += chunk
         return buf
 
-    def _recv_message(self) -> tuple[int, bytes]:
+    def _recv_message(self) -> tuple[bool, int, bytes]:
         header = self._recv_exactly(2)
+        fin = bool(header[0] & 0x80)
         opcode = header[0] & 0x0F
         masked = bool(header[1] & 0x80)
         length = header[1] & 0x7F
@@ -160,11 +160,12 @@ class HAWebSocketClient:
         if masked:
             payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
 
-        return opcode, payload
+        return fin, opcode, payload
 
     def _recv(self) -> dict[str, Any]:
+        fragmented_payload: bytearray | None = None
         while True:
-            opcode, payload = self._recv_message()
+            fin, opcode, payload = self._recv_message()
             if opcode == 0x8:
                 raise HAWebSocketError("WebSocket closed by server")
             if opcode == 0x9:
@@ -172,9 +173,18 @@ class HAWebSocketClient:
                 continue
             if opcode == 0xA:
                 continue
-            if opcode != 0x1:
+            if opcode == 0x1:
+                if fin:
+                    return json.loads(payload.decode("utf-8"))
+                fragmented_payload = bytearray(payload)
                 continue
-            return json.loads(payload.decode("utf-8"))
+            if opcode == 0x0 and fragmented_payload is not None:
+                fragmented_payload.extend(payload)
+                if fin:
+                    data = bytes(fragmented_payload)
+                    fragmented_payload = None
+                    return json.loads(data.decode("utf-8"))
+                continue
 
     # ------------------------------------------------------------------
     # RPC

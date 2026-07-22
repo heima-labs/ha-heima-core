@@ -28,6 +28,12 @@ Related practical guides live outside this tree:
 - `docs/guides/plugin_authoring.md`
 - `docs/guides/options_flow_configuration_guide.md` (compatibility redirect)
 
+Related reference docs also live outside this tree, under `docs/`:
+- `docs/CONFIGURATION_REFERENCE.md` — field-by-field Options Flow reference
+- `docs/PLUGIN_AND_EXTENSION_API_REFERENCE.md` — implemented vs. spec-only plugin/extension APIs
+- `docs/LEARNING_PLUGIN_STATUS.md` — current-state reference for the plugin-oriented learning/reaction model
+- `docs/PROJECT_DECISIONS.md` — log of temporary or transitional product/architecture decisions
+
 ## Core
 
 - `core/core_product_spec.md` — current product semantics (consolidated)
@@ -51,6 +57,8 @@ Related practical guides live outside this tree:
 - `core/contextual_room_lighting_assist_spec.md` — **SUPERSEDED** by Phase AB; retained as historical context
 - `core/heima_test_house_spec.md` — planned internal subproject for the official fake-house live test lab
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
+- `core/admin_observability_panel_spec.md` — custom HA admin panel for runtime explainability,
+  learning transparency, and operational inspection
 - `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX
 - `core/ha_backed_room_inventory_spec.md` — synced HA-derived room inventory and suggested bindings for the `Rooms` flow
 - `core/people_presence_rules_spec.md` — per-person `presence_rule` contract for presence aggregation (`observer | resident | recurrent`)
@@ -77,10 +85,10 @@ Related practical guides live outside this tree:
 
 ## Adapters
 
-Spec per custom integration esterne che normalizzano fonti dati verso il contratto Heima.
-Ogni adapter vive in un repo separato sotto `heima-labs/`.
+Specs for external custom integrations that normalize data sources into the Heima contract.
+Each adapter lives in a separate repo under `heima-labs/`.
 
-- `adapters/external_context_contract.md` — contratto normativo v1.0: entity ID, semantica, degradazione, versioning
+- `adapters/external_context_contract.md` — normative contract v1.0: entity ID, semantics, degradation, versioning
 - `adapters/owm_adapter_spec.md` — adapter OpenWeatherMap (`heima-labs/ha-heima-owm-adapter`)
 - `adapters/protezione_civile_adapter_spec.md` — adapter Protezione Civile italiana (`heima-labs/ha-heima-pc-adapter`)
 
