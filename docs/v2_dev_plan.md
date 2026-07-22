@@ -686,7 +686,7 @@ MVP merge.
 
 #### AP1 — Policy Model And Normalization
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Implement normalized notification policy defaults for:
   - `audience_targets`
   - `audience_policy`
