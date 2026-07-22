@@ -13,9 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from lib.ha_client import HAClient
+
+from custom_components.heima.const import DEFAULT_ENABLED_EVENT_CATEGORIES, EVENT_CATEGORIES_ALL
 from custom_components.heima.runtime.contracts import HeimaEvent
 from custom_components.heima.runtime.notifications import NotificationDeliveryPolicy
-from lib.ha_client import HAClient
 
 
 def _event_cases() -> list[HeimaEvent]:
@@ -86,12 +88,30 @@ def _decision_row(decision: Any) -> dict[str, Any]:
     }
 
 
-def _assert_expected(rows: dict[str, dict[str, Any]]) -> None:
+def _category_enabled(event: HeimaEvent, notifications: dict[str, Any]) -> bool:
+    category = str(event.type or "").split(".", 1)[0] or "system"
+    if category == "system" or category not in set(EVENT_CATEGORIES_ALL):
+        return True
+    raw = notifications.get("enabled_event_categories")
+    if raw is None:
+        enabled = set(DEFAULT_ENABLED_EVENT_CATEGORIES) | {"system"}
+    else:
+        enabled = {str(value) for value in list(raw) if str(value)}
+        enabled.add("system")
+    return category in enabled
+
+
+def _assert_expected(rows: dict[str, dict[str, Any]], notifications: dict[str, Any]) -> None:
     failures: list[str] = []
     if rows["reaction.fired"]["outcome"] not in {"observability_only", "suppressed_category"}:
         failures.append("reaction.fired should not push by default")
-    if rows["people.arrive"]["outcome"] != "observability_only":
-        failures.append("people.arrive should be observability-only by default")
+    if _category_enabled(_event_by_type("people.arrive"), notifications):
+        if rows["people.arrive"]["outcome"] != "observability_only":
+            failures.append("people.arrive should be observability-only by default")
+    elif rows["people.arrive"]["outcome"] != "suppressed_category":
+        failures.append(
+            "people.arrive should be category-suppressed when people events are disabled"
+        )
     if rows["system.config_invalid"]["push_policy"] != "admins":
         failures.append("system.config_invalid should be admin-facing by default")
     if rows["security.alarm_triggered"]["push_policy"] != "residents_and_admins":
@@ -104,6 +124,13 @@ def _assert_expected(rows: dict[str, dict[str, Any]]) -> None:
         raise AssertionError("; ".join(failures))
 
 
+def _event_by_type(event_type: str) -> HeimaEvent:
+    for event in _event_cases():
+        if event.type == event_type:
+            return event
+    raise KeyError(event_type)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
@@ -111,24 +138,31 @@ def main() -> int:
     parser.add_argument("--entry-id", default="")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--no-assert", action="store_true", help="Do not fail on expected checks")
+    parser.add_argument(
+        "--include-startup-grace",
+        action="store_true",
+        help="Evaluate with the configured startup grace instead of steady-state behavior",
+    )
     args = parser.parse_args()
 
     client = HAClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
     entry_id = args.entry_id or client.find_heima_entry_id()
     notifications = dict(_entry_options(client, entry_id).get("notifications") or {})
+    if not args.include_startup_grace:
+        notifications["startup_notification_grace_s"] = 0
     policy = NotificationDeliveryPolicy()
     rows = {
         event.type: _decision_row(
             policy.decide(
                 event,
                 notifications,
-                category_enabled=event.type.split(".", 1)[0] not in {"reaction"} or False,
+                category_enabled=_category_enabled(event, notifications),
             )
         )
         for event in _event_cases()
     }
     if not args.no_assert:
-        _assert_expected(rows)
+        _assert_expected(rows, notifications)
     output = {"entry_id": entry_id, "decisions": rows}
     if args.json:
         print(json.dumps(output, indent=2, sort_keys=True))

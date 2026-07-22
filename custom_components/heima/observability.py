@@ -8,7 +8,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import OPT_REACTIONS, OPT_SECURITY
-from .runtime.notifications import normalize_notification_policy_config
+from .runtime.notifications import (
+    normalize_notification_policy_config,
+    notification_delivery_policy_fields,
+)
 
 OBSERVABILITY_SCHEMA_VERSION = 1
 
@@ -505,7 +508,9 @@ def _promotion_reviews(runtime_confirmation: Mapping[str, Any]) -> list[dict[str
     return rows
 
 
-def _notification_summary(entry: Any, engine_diag: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def _notification_summary(
+    entry: Any, engine_diag: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     options = dict(getattr(entry, "options", {}) or {})
     notifications = options.get("notifications")
     notifications = dict(notifications) if isinstance(notifications, Mapping) else {}
@@ -530,7 +535,9 @@ def _notification_summary(entry: Any, engine_diag: Mapping[str, Any] | None = No
     skipped_non_actionable = [
         route for route in resolved_routes["routes"] if route not in set(actionable_routes)
     ]
-    effective_policy = normalize_notification_policy_config(notifications)
+    effective_policy = notification_delivery_policy_fields(
+        normalize_notification_policy_config(notifications)
+    )
     policy_runtime = {}
     if isinstance(engine_diag, Mapping):
         events_diag = engine_diag.get("events")

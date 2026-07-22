@@ -188,7 +188,6 @@ class EventsDomain:
             notifications_config,
             category_enabled=category_enabled,
         )
-        self._delivery_policy.record_decision(decision)
         if not category_enabled:
             category = self.event_category(event.type)
             self._suppressed_event_categories[category] = (
@@ -202,9 +201,7 @@ class EventsDomain:
 
         if self._uses_legacy_route_targets(event):
             decision_route_targets = [
-                str(t)
-                for t in list(notifications_config.get("route_targets", []))
-                if str(t)
+                str(t) for t in list(notifications_config.get("route_targets", [])) if str(t)
             ]
         else:
             decision_route_targets = list(decision.route_targets)
@@ -212,7 +209,7 @@ class EventsDomain:
             notifications_config,
             route_targets=decision_route_targets,
         )
-        return await self._pipeline.async_emit(
+        result = await self._pipeline.async_emit(
             event,
             routes=[],
             recipients=recipients,
@@ -222,6 +219,13 @@ class EventsDomain:
             rate_limit_per_key_s=int(notifications_config.get("rate_limit_per_key_s", 300)),
             notification_audience=decision.audience,
         )
+        self._delivery_policy.record_decision(
+            decision,
+            event=event,
+            notifications_config=notifications_config,
+            pipeline_result=result,
+        )
+        return bool(result)
 
     def _normalized_routing_inputs(
         self, notifications_config: dict[str, Any], *, route_targets: list[str]

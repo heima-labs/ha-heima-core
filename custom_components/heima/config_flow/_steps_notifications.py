@@ -928,6 +928,12 @@ class _NotificationsStepsMixin:
                     default=policy.get("people", DEFAULT_AUDIENCE_POLICY["people"])["push"],
                 ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
                 vol.Required(
+                    "house_state_push",
+                    default=policy.get("house_state", DEFAULT_AUDIENCE_POLICY["house_state"])[
+                        "push"
+                    ],
+                ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
+                vol.Required(
                     "reaction_push",
                     default=policy.get("reaction", DEFAULT_AUDIENCE_POLICY["reaction"])["push"],
                 ): vol.In(sorted(AUDIENCE_POLICY_VALUES)),
@@ -985,7 +991,9 @@ class _NotificationsStepsMixin:
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     "global_burst_window_s",
-                    default=burst.get("window_s", DEFAULT_AGGREGATION["global_burst_limit"]["window_s"]),
+                    default=burst.get(
+                        "window_s", DEFAULT_AGGREGATION["global_burst_limit"]["window_s"]
+                    ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=10)),
                 vol.Optional("confirm_noisy_resident_push", default=False): bool,
             }
@@ -1038,9 +1046,12 @@ class _NotificationsStepsMixin:
         available = set(self._notification_recipients()) | set(self._notification_groups())
         admin_targets = _parse_multiline_items(payload.get("audience_admin_targets"))
         resident_targets = _parse_multiline_items(payload.get("audience_resident_targets"))
-        for target in admin_targets + resident_targets:
+        for target in admin_targets:
             if target == AUDIENCE_POLICY_OBSERVABILITY or target not in available:
                 return {"audience_admin_targets": "unknown_target"}
+        for target in resident_targets:
+            if target == AUDIENCE_POLICY_OBSERVABILITY or target not in available:
+                return {"audience_resident_targets": "unknown_target"}
 
         noisy_enabled = self._notification_delivery_policy_noisy_resident_families(payload)
         if noisy_enabled and not bool(payload.get("confirm_noisy_resident_push", False)):
@@ -1053,6 +1064,7 @@ class _NotificationsStepsMixin:
         current = normalize_notification_policy_config(self._notifications_config())
         policy = dict(current["audience_policy"])
         policy["people"] = {"push": str(payload.get("people_push"))}
+        policy["house_state"] = {"push": str(payload.get("house_state_push"))}
         policy["reaction"] = {"push": str(payload.get("reaction_push"))}
         policy["occupancy_mismatch"] = {"push": str(payload.get("occupancy_mismatch_push"))}
         policy["security_presence_mismatch"] = {
@@ -1068,7 +1080,9 @@ class _NotificationsStepsMixin:
                 },
                 "audience_policy": policy,
                 "startup_notification_grace_s": int(
-                    payload.get("startup_notification_grace_s", DEFAULT_STARTUP_NOTIFICATION_GRACE_S)
+                    payload.get(
+                        "startup_notification_grace_s", DEFAULT_STARTUP_NOTIFICATION_GRACE_S
+                    )
                 ),
                 "persistence_thresholds": {
                     **current["persistence_thresholds"],
@@ -1081,9 +1095,7 @@ class _NotificationsStepsMixin:
                     **current["aggregation"],
                     "mismatch_window_s": int(payload.get("mismatch_window_s", 300)),
                     "global_burst_limit": {
-                        "max_notifications": int(
-                            payload.get("global_burst_max_notifications", 2)
-                        ),
+                        "max_notifications": int(payload.get("global_burst_max_notifications", 2)),
                         "window_s": int(payload.get("global_burst_window_s", 60)),
                     },
                 },
@@ -1096,13 +1108,17 @@ class _NotificationsStepsMixin:
     ) -> list[str]:
         field_by_family = {
             "people": "people_push",
+            "house_state": "house_state_push",
             "reaction": "reaction_push",
             "occupancy_mismatch": "occupancy_mismatch_push",
         }
         noisy: list[str] = []
         for family, field in field_by_family.items():
             policy = str(payload.get(field) or "").strip()
-            if family in self._NOISY_RESIDENT_POLICY_FAMILIES and policy in self._RESIDENT_PUSH_POLICIES:
+            if (
+                family in self._NOISY_RESIDENT_POLICY_FAMILIES
+                and policy in self._RESIDENT_PUSH_POLICIES
+            ):
                 noisy.append(family)
         return noisy
 
@@ -1114,6 +1130,7 @@ class _NotificationsStepsMixin:
             f"admins={', '.join(targets.get('admins', [])) or '-'}; "
             f"residents={', '.join(targets.get('residents', [])) or '-'}; "
             f"people={policy.get('people', {}).get('push', '')}; "
+            f"house_state={policy.get('house_state', {}).get('push', '')}; "
             f"reaction={policy.get('reaction', {}).get('push', '')}; "
             f"occupancy={policy.get('occupancy_mismatch', {}).get('push', '')}; "
             f"security={policy.get('security_presence_mismatch', {}).get('push', '')}"

@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.heima.const import DOMAIN, SERVICE_SET_MODE
+from custom_components.heima.const import DOMAIN, EVENT_HEIMA_EVENT, SERVICE_SET_MODE
 from custom_components.heima.runtime.domains.heating import HeatingDomain
 from custom_components.heima.runtime.normalization import (
     InputNormalizer,
@@ -710,6 +710,8 @@ async def test_e2e_set_mode_forces_and_clears_final_house_state_override(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     await async_register_services(hass)
+    events = []
+    hass.bus.async_listen(EVENT_HEIMA_EVENT, lambda event: events.append(event.data))
 
     assert hass.states.get("sensor.heima_house_state").state == "away"
 
@@ -723,7 +725,8 @@ async def test_e2e_set_mode_forces_and_clears_final_house_state_override(
 
     assert hass.states.get("sensor.heima_house_state").state == "vacation"
     assert hass.states.get("sensor.heima_house_state_reason").state == "manual_override:vacation"
-    assert hass.states.get("sensor.heima_last_event").state == "system.house_state_override_changed"
+    assert any(event.get("type") == "system.house_state_override_changed" for event in events)
+    assert hass.states.get("sensor.heima_last_event").state == "house_state.changed"
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     override_diag = coordinator.engine.diagnostics()["house_state"]["override"]

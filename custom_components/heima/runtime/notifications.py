@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import voluptuous as vol
@@ -33,9 +33,7 @@ AUDIENCE_POLICY_ADMINS = "admins"
 AUDIENCE_POLICY_RESIDENTS = "residents"
 AUDIENCE_POLICY_RESIDENTS_AND_ADMINS = "residents_and_admins"
 AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE = "admins_after_persistence"
-AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE = (
-    "residents_and_admins_after_persistence"
-)
+AUDIENCE_POLICY_RESIDENTS_AND_ADMINS_AFTER_PERSISTENCE = "residents_and_admins_after_persistence"
 AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE = (
     "residents_and_admins_when_critical_else_admins_after_persistence"
 )
@@ -76,7 +74,7 @@ DEFAULT_PERSISTENCE_THRESHOLDS = {
     "security_presence_mismatch": 300,
     "installation_config_issue": 300,
 }
-DEFAULT_AGGREGATION = {
+DEFAULT_AGGREGATION: dict[str, Any] = {
     "presence_transition_window_s": 120,
     "mismatch_window_s": 300,
     "global_burst_limit": {
@@ -122,6 +120,24 @@ class EventPipelineStats:
             "last_event": self.last_event.as_dict() if self.last_event else None,
             "suppressed_by_key": dict(self.suppressed_by_key),
         }
+
+
+@dataclass(frozen=True)
+class EventPipelineResult:
+    """Outcome of one event pipeline emission."""
+
+    emitted: bool = False
+    dropped_dedup: bool = False
+    dropped_rate_limited: bool = False
+    route_count: int = 0
+    delivered_route_count: int = 0
+
+    @property
+    def push_delivered(self) -> bool:
+        return self.delivered_route_count > 0
+
+    def __bool__(self) -> bool:
+        return self.emitted
 
 
 @dataclass(frozen=True)
@@ -194,12 +210,7 @@ class NotificationDeliveryDecision:
 
 
 class NotificationDeliveryPolicy:
-    """Pure decision engine for informational event push delivery.
-
-    AP2 intentionally does not send notifications and does not mutate runtime
-    state. Stateful controls such as persistence, aggregation, deduplication,
-    rate limiting, and burst limits are integrated in later AP phases.
-    """
+    """Decision engine for informational event push delivery."""
 
     OUTCOME_DELIVER = "deliver"
     OUTCOME_OBSERVABILITY_ONLY = "observability_only"
@@ -212,9 +223,12 @@ class NotificationDeliveryPolicy:
     OUTCOME_SUPPRESSED_RATE_LIMIT = "suppressed_rate_limit"
     OUTCOME_SUPPRESSED_BURST = "suppressed_burst"
     OUTCOME_MISSING_AUDIENCE_TARGET = "missing_audience_target"
+    OUTCOME_DELIVERY_DEFERRED = "delivery_deferred"
 
     def __init__(self) -> None:
+        self._started_ts = time.monotonic()
         self._persistence_first_seen_ts: dict[str, float] = {}
+        self._persistence_last_seen_ts: dict[str, float] = {}
         self._persistence_delivered_keys: set[str] = set()
         self._aggregation_last_delivered_ts: dict[str, float] = {}
         self._burst_delivery_ts: deque[float] = deque(maxlen=_MAX_POLICY_STATE_KEYS)
@@ -275,6 +289,26 @@ class NotificationDeliveryPolicy:
                 diagnostics=diagnostics,
             )
 
+        startup_grace_s = int(config.get("startup_notification_grace_s", 0))
+        elapsed_since_start_s = now - self._started_ts
+        if (
+            startup_grace_s > 0
+            and not security_critical
+            and elapsed_since_start_s < startup_grace_s
+        ):
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_STARTUP_GRACE,
+                event_family=family,
+                push_policy=policy,
+                security_critical=security_critical,
+                reason="startup_notification_grace_active",
+                diagnostics={
+                    **diagnostics,
+                    "startup_grace_remaining_s": startup_grace_s - elapsed_since_start_s,
+                    "startup_grace_s": startup_grace_s,
+                },
+            )
+
         target_roles = _target_roles_for_policy(policy)
         if _policy_requires_persistence(policy) and not security_critical:
             persistence_decision = self._persistence_decision(
@@ -329,40 +363,92 @@ class NotificationDeliveryPolicy:
                 diagnostics=diagnostics,
             )
 
-        self._record_push_delivery(
-            family=family,
-            event=event,
-            security_critical=security_critical,
-            config=config,
-            now=now,
-        )
         return NotificationDeliveryDecision(
             outcome=self.OUTCOME_DELIVER,
             event_family=family,
             push_policy=policy,
-                target_roles=target_roles,
-                route_targets=route_targets,
-                audience=_audience_for_target_roles(target_roles),
-                security_critical=security_critical,
-                reason="policy_deliver",
+            target_roles=target_roles,
+            route_targets=route_targets,
+            audience=_audience_for_target_roles(target_roles),
+            security_critical=security_critical,
+            reason="policy_deliver",
             diagnostics=diagnostics,
         )
 
-    def record_decision(self, decision: NotificationDeliveryDecision) -> None:
+    def record_decision(
+        self,
+        decision: NotificationDeliveryDecision,
+        *,
+        event: HeimaEvent | None = None,
+        notifications_config: dict[str, Any] | None = None,
+        pipeline_result: EventPipelineResult | None = None,
+    ) -> None:
         """Record a structured push-delivery decision for diagnostics."""
-        self._decision_counts[decision.outcome] = self._decision_counts.get(decision.outcome, 0) + 1
+        recorded = decision
+        if decision.outcome == self.OUTCOME_DELIVER:
+            recorded = self._decision_after_pipeline(decision, pipeline_result)
+            if recorded.outcome == self.OUTCOME_DELIVER and event is not None:
+                self._record_push_delivery(
+                    family=decision.event_family,
+                    event=event,
+                    security_critical=decision.security_critical,
+                    config=normalize_notification_policy_config(notifications_config),
+                    now=time.monotonic(),
+                )
+        self._decision_counts[recorded.outcome] = self._decision_counts.get(recorded.outcome, 0) + 1
         self._recent_decisions.append(
             {
-                "outcome": decision.outcome,
-                "reason": decision.reason,
-                "event_family": decision.event_family,
-                "push_policy": decision.push_policy,
-                "target_roles": list(decision.target_roles),
-                "route_targets": list(decision.route_targets),
-                "audience": decision.audience,
-                "security_critical": decision.security_critical,
-                "diagnostics": dict(decision.diagnostics),
+                "outcome": recorded.outcome,
+                "reason": recorded.reason,
+                "event_family": recorded.event_family,
+                "push_policy": recorded.push_policy,
+                "target_roles": list(recorded.target_roles),
+                "route_targets": list(recorded.route_targets),
+                "audience": recorded.audience,
+                "security_critical": recorded.security_critical,
+                "diagnostics": dict(recorded.diagnostics),
             }
+        )
+
+    def _decision_after_pipeline(
+        self,
+        decision: NotificationDeliveryDecision,
+        pipeline_result: EventPipelineResult | None,
+    ) -> NotificationDeliveryDecision:
+        if pipeline_result is None:
+            return decision
+        if pipeline_result.dropped_dedup:
+            return replace(
+                decision,
+                outcome=self.OUTCOME_SUPPRESSED_DEDUP,
+                reason="pipeline_dedup_window",
+                diagnostics={**decision.diagnostics, "pipeline_result": "dropped_dedup"},
+            )
+        if pipeline_result.dropped_rate_limited:
+            return replace(
+                decision,
+                outcome=self.OUTCOME_SUPPRESSED_RATE_LIMIT,
+                reason="pipeline_rate_limit",
+                diagnostics={**decision.diagnostics, "pipeline_result": "dropped_rate_limited"},
+            )
+        if not pipeline_result.push_delivered:
+            return replace(
+                decision,
+                outcome=self.OUTCOME_DELIVERY_DEFERRED,
+                reason="pipeline_no_route_delivered",
+                diagnostics={
+                    **decision.diagnostics,
+                    "pipeline_route_count": pipeline_result.route_count,
+                    "pipeline_delivered_route_count": pipeline_result.delivered_route_count,
+                },
+            )
+        return replace(
+            decision,
+            diagnostics={
+                **decision.diagnostics,
+                "pipeline_route_count": pipeline_result.route_count,
+                "pipeline_delivered_route_count": pipeline_result.delivered_route_count,
+            },
         )
 
     def diagnostics(self) -> dict[str, Any]:
@@ -397,18 +483,24 @@ class NotificationDeliveryPolicy:
         now: float,
     ) -> NotificationDeliveryDecision | None:
         key = _policy_state_key(family, event)
-        if key in self._persistence_delivered_keys:
-            return NotificationDeliveryDecision(
-                outcome=self.OUTCOME_SUPPRESSED_AGGREGATION,
-                event_family=family,
-                push_policy=policy,
-                target_roles=target_roles,
-                reason="persistence_already_notified",
-                diagnostics={**diagnostics, "policy_state_key": key},
-            )
         threshold_s = int(config["persistence_thresholds"].get(family, 0))
+        if key in self._persistence_delivered_keys:
+            last_seen = self._persistence_last_seen_ts.get(key)
+            if threshold_s > 0 and last_seen is not None and (now - last_seen) >= threshold_s:
+                self._persistence_delivered_keys.discard(key)
+                self._persistence_first_seen_ts.pop(key, None)
+            else:
+                self._remember_policy_key(self._persistence_last_seen_ts, key, now)
+                return NotificationDeliveryDecision(
+                    outcome=self.OUTCOME_SUPPRESSED_AGGREGATION,
+                    event_family=family,
+                    push_policy=policy,
+                    target_roles=target_roles,
+                    reason="persistence_already_notified",
+                    diagnostics={**diagnostics, "policy_state_key": key},
+                )
+        self._remember_policy_key(self._persistence_last_seen_ts, key, now)
         if threshold_s <= 0:
-            self._persistence_delivered_keys.add(key)
             return None
         first_seen = self._persistence_first_seen_ts.get(key)
         if first_seen is None:
@@ -429,7 +521,6 @@ class NotificationDeliveryPolicy:
                     "persistence_threshold_s": threshold_s,
                 },
             )
-        self._persistence_delivered_keys.add(key)
         return None
 
     def _aggregation_decision(
@@ -446,7 +537,7 @@ class NotificationDeliveryPolicy:
     ) -> NotificationDeliveryDecision | None:
         if security_critical:
             return None
-        bucket = _aggregation_bucket(family)
+        bucket = _aggregation_bucket(family, target_roles=target_roles, security_critical=False)
         if not bucket:
             return None
         window_s = _aggregation_window_s(bucket, config)
@@ -519,12 +610,23 @@ class NotificationDeliveryPolicy:
             burst_cfg = config["aggregation"]["global_burst_limit"]
             if int(burst_cfg.get("max_notifications", 0)) > 0:
                 self._burst_delivery_ts.append(now)
-        bucket = _aggregation_bucket(family)
+        bucket = _aggregation_bucket(
+            family,
+            target_roles=_target_roles_for_policy(
+                _policy_for_event(
+                    family=family,
+                    security_critical=security_critical,
+                    audience_policy=config["audience_policy"],
+                )
+            ),
+            security_critical=security_critical,
+        )
         if bucket:
             self._aggregation_last_delivered_ts[bucket] = now
         key = _policy_state_key(family, event)
         if key in self._persistence_first_seen_ts:
             self._persistence_delivered_keys.add(key)
+            self._remember_policy_key(self._persistence_last_seen_ts, key, now)
 
     @staticmethod
     def _remember_policy_key(store: dict[str, float], key: str, now: float) -> None:
@@ -566,6 +668,17 @@ def normalize_notification_policy_config(
     )
     config["aggregation"] = _normalize_aggregation(config.get("aggregation"))
     return config
+
+
+def notification_delivery_policy_fields(config: dict[str, Any]) -> dict[str, Any]:
+    """Return only the canonical AP delivery-policy fields from normalized config."""
+    return {
+        "audience_targets": config.get("audience_targets", {}),
+        "audience_policy": config.get("audience_policy", {}),
+        "startup_notification_grace_s": config.get("startup_notification_grace_s", 0),
+        "persistence_thresholds": config.get("persistence_thresholds", {}),
+        "aggregation": config.get("aggregation", {}),
+    }
 
 
 def classify_notification_event_family(event: HeimaEvent) -> str:
@@ -662,7 +775,7 @@ class HeimaEventPipeline:
         dedup_window_s: int,
         rate_limit_per_key_s: int,
         notification_audience: str = "resident",
-    ) -> bool:
+    ) -> EventPipelineResult:
         now = time.monotonic()
 
         self._stats.emitted += 1
@@ -679,7 +792,7 @@ class HeimaEventPipeline:
                     self._stats.suppressed_by_key.get(event.key, 0) + 1
                 )
                 self._last_seen_ts[event.key] = now
-                return True
+                return EventPipelineResult(emitted=True, dropped_dedup=True)
             self._last_seen_ts[event.key] = now
 
         if rate_limit_per_key_s > 0:
@@ -689,7 +802,7 @@ class HeimaEventPipeline:
                 self._stats.suppressed_by_key[event.key] = (
                     self._stats.suppressed_by_key.get(event.key, 0) + 1
                 )
-                return True
+                return EventPipelineResult(emitted=True, dropped_rate_limited=True)
 
         self._last_emitted_ts[event.key] = now
 
@@ -701,17 +814,25 @@ class HeimaEventPipeline:
             recipient_groups=recipient_groups or {},
             route_targets=route_targets or [],
         )
+        delivered_route_count = 0
         for route in effective_routes:
             if not route:
                 continue
+            delivered_before = self._stats.notify_route_delivered
             await self._deliver_or_defer_route(
                 event=event,
                 route=route,
                 is_retry=False,
                 notification_audience=notification_audience,
             )
+            if self._stats.notify_route_delivered > delivered_before:
+                delivered_route_count += 1
 
-        return True
+        return EventPipelineResult(
+            emitted=True,
+            route_count=len(effective_routes),
+            delivered_route_count=delivered_route_count,
+        )
 
     async def async_send_actionable(
         self,
@@ -775,9 +896,7 @@ class HeimaEventPipeline:
         if not self._deferred_route_deliveries:
             return
 
-        remaining: deque[tuple[HeimaEvent, str, str]] = deque(
-            maxlen=_MAX_DEFERRED_ROUTE_DELIVERIES
-        )
+        remaining: deque[tuple[HeimaEvent, str, str]] = deque(maxlen=_MAX_DEFERRED_ROUTE_DELIVERIES)
         while self._deferred_route_deliveries:
             event, route, audience = self._deferred_route_deliveries.popleft()
             delivered = await self._try_deliver_route(
@@ -1064,16 +1183,27 @@ def _policy_state_key(family: str, event: HeimaEvent) -> str:
     return f"{family}:{event.key}"
 
 
-def _aggregation_bucket(family: str) -> str:
-    if family in {"people", "occupancy_mismatch", "security_presence_mismatch"}:
-        return "presence_mismatch"
+def _aggregation_bucket(
+    family: str,
+    *,
+    target_roles: tuple[str, ...],
+    security_critical: bool,
+) -> str:
+    if security_critical:
+        return ""
+    if family == "people":
+        return f"people:{','.join(target_roles)}"
+    if family in {"occupancy_mismatch", "security_presence_mismatch"}:
+        return f"mismatch:{family}:{','.join(target_roles)}"
     return ""
 
 
 def _aggregation_window_s(bucket: str, config: dict[str, Any]) -> int:
     aggregation = config.get("aggregation")
     aggregation = aggregation if isinstance(aggregation, dict) else {}
-    if bucket == "presence_mismatch":
+    if bucket.startswith("people:"):
+        return int(aggregation.get("presence_transition_window_s", 0))
+    if bucket.startswith("mismatch:"):
         return int(aggregation.get("mismatch_window_s", 0))
     return 0
 
@@ -1299,10 +1429,7 @@ def _normalize_aggregation(raw: Any) -> dict[str, Any]:
 
 def _normalize_int_mapping(raw: Any, *, defaults: dict[str, int]) -> dict[str, int]:
     source = raw if isinstance(raw, dict) else {}
-    return {
-        key: _non_negative_int(source.get(key), default)
-        for key, default in defaults.items()
-    }
+    return {key: _non_negative_int(source.get(key), default) for key, default in defaults.items()}
 
 
 def _normalize_recipient_mapping(raw: Any) -> dict[str, list[str]]:

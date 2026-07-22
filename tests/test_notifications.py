@@ -6,12 +6,12 @@ from homeassistant.exceptions import ServiceNotFound
 from custom_components.heima.runtime.contracts import HeimaEvent
 from custom_components.heima.runtime.domains.events import EventsDomain
 from custom_components.heima.runtime.notifications import (
-    ActionableNotification,
     AUDIENCE_POLICY_ADMINS,
     AUDIENCE_POLICY_ADMINS_AFTER_PERSISTENCE,
     AUDIENCE_POLICY_OBSERVABILITY,
-    AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
     AUDIENCE_POLICY_RESIDENTS_AND_ADMINS,
+    AUDIENCE_POLICY_SECURITY_CRITICAL_ELSE_ADMINS_AFTER_PERSISTENCE,
+    ActionableNotification,
     HeimaEventPipeline,
     NotificationAction,
     NotificationDeliveryPolicy,
@@ -171,7 +171,8 @@ def test_notification_delivery_policy_system_config_issue_targets_admins_by_defa
             "audience_targets": {
                 "admins": ["stefano_admins"],
                 "residents": ["residents"],
-            }
+            },
+            "startup_notification_grace_s": 0,
         },
     )
 
@@ -244,7 +245,8 @@ def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallb
             "audience_targets": {
                 "admins": [],
                 "residents": ["residents"],
-            }
+            },
+            "startup_notification_grace_s": 0,
         },
     )
 
@@ -253,6 +255,60 @@ def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallb
     assert decision.target_roles == ("admins",)
     assert decision.route_targets == ()
     assert decision.reason == "missing_audience_target"
+
+
+def test_notification_delivery_policy_startup_grace_suppresses_noncritical_push(monkeypatch):
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    policy = NotificationDeliveryPolicy()
+
+    decision = policy.decide(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="Configuration issue detected.",
+        ),
+        {
+            "audience_targets": {"admins": ["admins"], "residents": ["residents"]},
+            "startup_notification_grace_s": 300,
+        },
+    )
+
+    assert decision.outcome == "startup_grace"
+    assert decision.reason == "startup_notification_grace_active"
+
+
+def test_notification_delivery_policy_startup_grace_does_not_suppress_critical_security(
+    monkeypatch,
+):
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    policy = NotificationDeliveryPolicy()
+
+    decision = policy.decide(
+        HeimaEvent(
+            type="security.alarm_triggered",
+            key="security.alarm_triggered",
+            severity="critical",
+            title="Alarm triggered",
+            message="Alarm triggered.",
+        ),
+        {
+            "audience_targets": {"admins": ["admins"], "residents": ["residents"]},
+            "startup_notification_grace_s": 300,
+        },
+    )
+
+    assert decision.outcome == "deliver"
+    assert decision.security_critical is True
 
 
 def test_render_reaction_notification_uses_label_and_hides_uuid_for_residents():
@@ -335,7 +391,7 @@ async def test_events_domain_observability_only_event_still_fires_bus_without_pu
         },
     )
 
-    assert emitted is True
+    assert bool(emitted) is True
     assert len(bus.events) == 1
     assert services.calls == []
     assert events.pipeline.stats.emitted == 1
@@ -365,10 +421,11 @@ async def test_events_domain_system_event_is_observable_without_unconditional_pu
             "recipient_groups": {"residents": ["resident"]},
             "route_targets": ["residents"],
             "audience_targets": {"admins": [], "residents": ["residents"]},
+            "startup_notification_grace_s": 0,
         },
     )
 
-    assert emitted is True
+    assert bool(emitted) is True
     assert len(bus.events) == 1
     assert services.calls == []
     assert events.pipeline.stats.emitted == 1
@@ -430,6 +487,7 @@ async def test_events_domain_security_critical_uses_audience_targets_for_push():
                 "admins": ["admin"],
             },
             "route_targets": [],
+            "startup_notification_grace_s": 0,
         },
     )
 
@@ -464,6 +522,7 @@ async def test_events_domain_reaction_push_uses_resident_safe_rendered_payload()
             "recipient_groups": {"residents": ["resident"]},
             "enabled_event_categories": ["reaction"],
             "audience_policy": {"reaction": {"push": "residents"}},
+            "startup_notification_grace_s": 0,
         },
     )
 
@@ -501,6 +560,7 @@ async def test_events_domain_occupancy_mismatch_before_persistence_has_no_push(m
             "recipients": {"admin": ["mobile_app_admin"]},
             "recipient_groups": {"admins": ["admin"]},
             "persistence_thresholds": {"occupancy_mismatch": 600},
+            "startup_notification_grace_s": 0,
         },
     )
 
@@ -531,6 +591,7 @@ async def test_events_domain_persistent_occupancy_mismatch_sends_one_admin_push(
         "recipients": {"admin": ["mobile_app_admin"]},
         "recipient_groups": {"admins": ["admin"]},
         "persistence_thresholds": {"occupancy_mismatch": 600},
+        "startup_notification_grace_s": 0,
     }
 
     await events.async_emit_event_obj(event, notifications_config=config)
@@ -543,6 +604,61 @@ async def test_events_domain_persistent_occupancy_mismatch_sends_one_admin_push(
     assert len(bus.events) == 3
     assert len(notify_calls) == 1
     assert notify_calls[0][1] == "mobile_app_admin"
+
+
+@pytest.mark.asyncio
+async def test_events_domain_persistence_resets_after_quiet_period(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_admin": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    event = HeimaEvent(
+        type="occupancy.inconsistency",
+        key="occupancy.inconsistency.presence_without_room",
+        severity="warn",
+        title="Occupancy inconsistency",
+        message="Presence says someone is home, but no room is occupied.",
+    )
+    config = {
+        "recipients": {"admin": ["mobile_app_admin"]},
+        "recipient_groups": {"admins": ["admin"]},
+        "persistence_thresholds": {"occupancy_mismatch": 10},
+        "aggregation": {
+            "mismatch_window_s": 0,
+            "global_burst_limit": {"max_notifications": 10, "window_s": 60},
+        },
+        "dedup_window_s": 0,
+        "rate_limit_per_key_s": 0,
+        "startup_notification_grace_s": 0,
+    }
+
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 111.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 112.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 130.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 141.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+
+    notify_calls = [c for c in services.calls if c[0] == "notify"]
+    assert len(notify_calls) == 2
+    policy_diag = events.diagnostics()["notification_delivery_policy"]
+    outcomes = [row["outcome"] for row in policy_diag["recent_decisions"]]
+    assert outcomes == [
+        "waiting_persistence",
+        "deliver",
+        "suppressed_aggregation",
+        "waiting_persistence",
+        "deliver",
+    ]
 
 
 @pytest.mark.asyncio
@@ -561,6 +677,7 @@ async def test_events_domain_people_push_aggregation_prevents_arrival_storm(monk
         "recipients": {"resident": ["mobile_app_resident"]},
         "recipient_groups": {"residents": ["resident"]},
         "audience_policy": {"people": {"push": "residents"}},
+        "startup_notification_grace_s": 0,
     }
 
     for person in ("stefano", "antonia", "guest"):
@@ -579,6 +696,72 @@ async def test_events_domain_people_push_aggregation_prevents_arrival_storm(monk
     notify_calls = [c for c in services.calls if c[0] == "notify"]
     assert len(bus.events) == 3
     assert len(notify_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_events_domain_people_aggregation_does_not_suppress_mismatch(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(
+        available={
+            "mobile_app_resident": object(),
+            "mobile_app_admin": object(),
+        }
+    )
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    config = {
+        "recipients": {
+            "resident": ["mobile_app_resident"],
+            "admin": ["mobile_app_admin"],
+        },
+        "recipient_groups": {
+            "residents": ["resident"],
+            "admins": ["admin"],
+        },
+        "audience_policy": {
+            "people": {"push": "residents"},
+            "occupancy_mismatch": {"push": "admins"},
+        },
+        "aggregation": {
+            "presence_transition_window_s": 120,
+            "mismatch_window_s": 300,
+            "global_burst_limit": {"max_notifications": 10, "window_s": 60},
+        },
+        "startup_notification_grace_s": 0,
+    }
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="people.arrive",
+            key="people.arrive.stefano",
+            severity="info",
+            title="Person arrived",
+            message="Person arrived.",
+        ),
+        notifications_config=config,
+    )
+    t = 101.0
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="occupancy.inconsistency",
+            key="occupancy.inconsistency.presence_without_room",
+            severity="warn",
+            title="Occupancy inconsistency",
+            message="Presence says someone is home, but no room is occupied.",
+        ),
+        notifications_config=config,
+    )
+
+    called_services = [
+        service for domain, service, _data, _blocking in services.calls if domain == "notify"
+    ]
+    assert called_services == ["mobile_app_resident", "mobile_app_admin"]
 
 
 @pytest.mark.asyncio
@@ -608,6 +791,7 @@ async def test_events_domain_global_burst_limit_does_not_limit_event_bus(monkeyp
             "residents": ["resident"],
         },
         "aggregation": {"global_burst_limit": {"max_notifications": 2, "window_s": 60}},
+        "startup_notification_grace_s": 0,
     }
 
     for idx in range(3):
@@ -647,6 +831,40 @@ async def test_events_domain_global_burst_limit_does_not_limit_event_bus(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_events_domain_records_delivery_deferred_without_burst_state(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(available={})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    config = {
+        "recipients": {"admin": ["mobile_app_admin"]},
+        "recipient_groups": {"admins": ["admin"]},
+        "startup_notification_grace_s": 0,
+    }
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="Configuration issue detected.",
+        ),
+        notifications_config=config,
+    )
+
+    policy_diag = events.diagnostics()["notification_delivery_policy"]
+    assert policy_diag["recent_decisions"][-1]["outcome"] == "delivery_deferred"
+    assert policy_diag["burst"]["recent_delivery_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_event_pipeline_deduplicates(monkeypatch):
     bus = _FakeBus()
     services = _FakeServices()
@@ -672,7 +890,8 @@ async def test_event_pipeline_deduplicates(monkeypatch):
         dedup_window_s=60,
         rate_limit_per_key_s=300,
     )
-    assert emitted is True
+    assert bool(emitted) is True
+    assert emitted.dropped_dedup is False
     assert len(bus.events) == 1
 
     t = 110.0
@@ -688,7 +907,8 @@ async def test_event_pipeline_deduplicates(monkeypatch):
         dedup_window_s=60,
         rate_limit_per_key_s=300,
     )
-    assert emitted is True
+    assert bool(emitted) is True
+    assert emitted.dropped_dedup is True
     assert pipeline.stats.dropped_dedup == 1
     assert len(bus.events) == 2
 
@@ -722,9 +942,9 @@ async def test_event_pipeline_rate_limits_after_dedup_window(monkeypatch):
             rate_limit_per_key_s=300,
         )
         if current_t == 100.0:
-            assert emitted is True
+            assert bool(emitted) is True
         else:
-            assert emitted is True
+            assert bool(emitted) is True
 
     assert pipeline.stats.dropped_rate_limited == 1
     assert len(bus.events) == 2
@@ -750,7 +970,7 @@ async def test_event_pipeline_defers_missing_notify_route_without_failing():
         rate_limit_per_key_s=0,
     )
 
-    assert emitted is True
+    assert bool(emitted) is True
     assert len(bus.events) == 1
     assert services.calls == []
     assert pipeline.stats.notify_route_unavailable >= 1
