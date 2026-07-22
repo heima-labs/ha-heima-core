@@ -22,7 +22,13 @@ class HeimaEvent:
     ts: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        context = data.get("context")
+        if isinstance(context, dict):
+            data["context"] = {
+                key: value for key, value in context.items() if not str(key).startswith("_heima_")
+            }
+        return data
 
 
 @dataclass(frozen=True)

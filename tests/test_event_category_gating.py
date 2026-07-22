@@ -61,8 +61,9 @@ async def test_house_state_events_disabled_by_default():
         message="x",
         context={"from": "away", "to": "home", "reason": "default"},
     )
-    assert emitted is False
-    assert engine._hass.bus.events == []
+    assert emitted is True
+    assert engine._hass.bus.events[-1][1]["type"] == "house_state.changed"
+    assert engine._events_domain.suppressed_event_categories["house_state"] == 1
 
 
 @pytest.mark.asyncio
@@ -91,8 +92,9 @@ async def test_lighting_events_can_be_disabled():
         message="x",
         context={"room": "room", "intent": "scene_evening", "expected_scene": "scene_evening"},
     )
-    assert emitted is False
-    assert engine._hass.bus.events == []
+    assert emitted is True
+    assert engine._hass.bus.events[-1][1]["type"] == "lighting.scene_missing"
+    assert engine._events_domain.suppressed_event_categories["lighting"] == 1
 
 
 @pytest.mark.asyncio
@@ -106,8 +108,9 @@ async def test_reaction_events_are_disabled_by_default():
         message="x",
         context={"reaction_id": "test"},
     )
-    assert emitted is False
-    assert engine._hass.bus.events == []
+    assert emitted is True
+    assert engine._hass.bus.events[-1][1]["type"] == "reaction.fired"
+    assert engine._events_domain.suppressed_event_categories["reaction"] == 1
 
 
 @pytest.mark.asyncio

@@ -398,6 +398,12 @@ class HeimaEventPipeline:
     ) -> bool:
         now = time.monotonic()
 
+        self._stats.emitted += 1
+        self._stats.last_event = event
+
+        payload = event.as_dict()
+        self._hass.bus.async_fire(EVENT_HEIMA_EVENT, payload)
+
         if dedup_window_s > 0:
             last_seen = self._last_seen_ts.get(event.key)
             if last_seen is not None and (now - last_seen) < dedup_window_s:
@@ -406,7 +412,7 @@ class HeimaEventPipeline:
                     self._stats.suppressed_by_key.get(event.key, 0) + 1
                 )
                 self._last_seen_ts[event.key] = now
-                return False
+                return True
             self._last_seen_ts[event.key] = now
 
         if rate_limit_per_key_s > 0:
@@ -416,14 +422,9 @@ class HeimaEventPipeline:
                 self._stats.suppressed_by_key[event.key] = (
                     self._stats.suppressed_by_key.get(event.key, 0) + 1
                 )
-                return False
+                return True
 
         self._last_emitted_ts[event.key] = now
-        self._stats.emitted += 1
-        self._stats.last_event = event
-
-        payload = event.as_dict()
-        self._hass.bus.async_fire(EVENT_HEIMA_EVENT, payload)
 
         await self._flush_deferred_route_deliveries()
 

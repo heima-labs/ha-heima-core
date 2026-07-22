@@ -4,6 +4,7 @@ import pytest
 from homeassistant.exceptions import ServiceNotFound
 
 from custom_components.heima.runtime.contracts import HeimaEvent
+from custom_components.heima.runtime.domains.events import EventsDomain
 from custom_components.heima.runtime.notifications import (
     ActionableNotification,
     AUDIENCE_POLICY_ADMINS,
@@ -254,6 +255,128 @@ def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallb
 
 
 @pytest.mark.asyncio
+async def test_events_domain_observability_only_event_still_fires_bus_without_push():
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_resident": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    emitted = await events.async_emit_event_obj(
+        HeimaEvent(
+            type="people.arrive",
+            key="people.arrive.stefano",
+            severity="info",
+            title="Person arrived",
+            message="Person arrived.",
+        ),
+        notifications_config={
+            "recipients": {"resident": ["mobile_app_resident"]},
+            "recipient_groups": {"residents": ["resident"]},
+            "route_targets": ["residents"],
+        },
+    )
+
+    assert emitted is True
+    assert len(bus.events) == 1
+    assert services.calls == []
+    assert events.pipeline.stats.emitted == 1
+
+
+@pytest.mark.asyncio
+async def test_events_domain_system_event_is_observable_without_unconditional_push():
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_resident": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    emitted = await events.async_emit_event_obj(
+        HeimaEvent(
+            type="system.config_invalid",
+            key="system.config_invalid",
+            severity="warn",
+            title="Heima configuration issue",
+            message="Configuration issue detected.",
+        ),
+        notifications_config={
+            "recipients": {"resident": ["mobile_app_resident"]},
+            "recipient_groups": {"residents": ["resident"]},
+            "route_targets": ["residents"],
+            "audience_targets": {"admins": [], "residents": ["residents"]},
+        },
+    )
+
+    assert emitted is True
+    assert len(bus.events) == 1
+    assert services.calls == []
+    assert events.pipeline.stats.emitted == 1
+
+
+@pytest.mark.asyncio
+async def test_events_domain_legacy_route_targets_do_not_receive_noisy_categories_by_default():
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_resident": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="reaction.fired",
+            key="reaction.fired.scene",
+            severity="info",
+            title="Reaction fired",
+            message="Reaction produced steps.",
+        ),
+        notifications_config={
+            "recipients": {"resident": ["mobile_app_resident"]},
+            "recipient_groups": {"residents": ["resident"]},
+            "route_targets": ["residents"],
+        },
+    )
+
+    assert len(bus.events) == 1
+    assert services.calls == []
+
+
+@pytest.mark.asyncio
+async def test_events_domain_security_critical_uses_audience_targets_for_push():
+    bus = _FakeBus()
+    services = _FakeServices(
+        available={
+            "mobile_app_resident": object(),
+            "mobile_app_admin": object(),
+        }
+    )
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="security.alarm_triggered",
+            key="security.alarm_triggered",
+            severity="critical",
+            title="Alarm triggered",
+            message="Alarm triggered.",
+        ),
+        notifications_config={
+            "recipients": {
+                "resident": ["mobile_app_resident"],
+                "admin": ["mobile_app_admin"],
+            },
+            "recipient_groups": {
+                "residents": ["resident"],
+                "admins": ["admin"],
+            },
+            "route_targets": [],
+        },
+    )
+
+    called_services = [
+        service for domain, service, _data, _blocking in services.calls if domain == "notify"
+    ]
+    assert called_services == ["mobile_app_resident", "mobile_app_admin"]
+
+
+@pytest.mark.asyncio
 async def test_event_pipeline_deduplicates(monkeypatch):
     bus = _FakeBus()
     services = _FakeServices()
@@ -295,9 +418,9 @@ async def test_event_pipeline_deduplicates(monkeypatch):
         dedup_window_s=60,
         rate_limit_per_key_s=300,
     )
-    assert emitted is False
+    assert emitted is True
     assert pipeline.stats.dropped_dedup == 1
-    assert len(bus.events) == 1
+    assert len(bus.events) == 2
 
 
 @pytest.mark.asyncio
@@ -331,10 +454,10 @@ async def test_event_pipeline_rate_limits_after_dedup_window(monkeypatch):
         if current_t == 100.0:
             assert emitted is True
         else:
-            assert emitted is False
+            assert emitted is True
 
     assert pipeline.stats.dropped_rate_limited == 1
-    assert len(bus.events) == 1
+    assert len(bus.events) == 2
 
 
 @pytest.mark.asyncio

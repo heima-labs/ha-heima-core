@@ -266,6 +266,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             title = str(params.get("title", "Heima event"))
             message = str(params.get("message", ""))
             context = dict(params.get("context", {}))
+            context.setdefault("_heima_delivery_mode", "legacy_route_targets")
             if data.get("request_id"):
                 context.setdefault("request_id", str(data.get("request_id")))
 

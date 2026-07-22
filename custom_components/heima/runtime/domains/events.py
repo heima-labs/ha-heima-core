@@ -13,7 +13,7 @@ from ...const import (
     EVENT_CATEGORIES_ALL,
 )
 from ..contracts import HeimaEvent
-from ..notifications import HeimaEventPipeline
+from ..notifications import HeimaEventPipeline, NotificationDeliveryPolicy
 from ..state_store import CanonicalState
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ class EventsDomain:
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
         self._pipeline = HeimaEventPipeline(hass)
+        self._delivery_policy = NotificationDeliveryPolicy()
         self._pending_events: list[HeimaEvent] = []
         self._suppressed_event_categories: dict[str, int] = {}
 
@@ -136,7 +137,9 @@ class EventsDomain:
         enabled.add("system")  # system is always enabled by spec
         return enabled
 
-    def event_enabled(self, event: HeimaEvent, notifications_config: dict[str, Any]) -> bool:
+    def event_category_push_enabled(
+        self, event: HeimaEvent, notifications_config: dict[str, Any]
+    ) -> bool:
         category = self.event_category(event.type)
         if category == "system":
             return True
@@ -178,19 +181,34 @@ class EventsDomain:
         *,
         notifications_config: dict[str, Any],
     ) -> bool:
-        if not self.event_enabled(event, notifications_config):
+        category_enabled = self.event_category_push_enabled(event, notifications_config)
+        decision = self._delivery_policy.decide(
+            event,
+            notifications_config,
+            category_enabled=category_enabled,
+        )
+        if not category_enabled:
             category = self.event_category(event.type)
             self._suppressed_event_categories[category] = (
                 self._suppressed_event_categories.get(category, 0) + 1
             )
             _LOGGER.debug(
-                "Heima event suppressed by category toggle: %s (%s)",
+                "Heima event push suppressed by category toggle: %s (%s)",
                 event.type,
                 category,
             )
-            return False
+
+        if self._uses_legacy_route_targets(event):
+            decision_route_targets = [
+                str(t)
+                for t in list(notifications_config.get("route_targets", []))
+                if str(t)
+            ]
+        else:
+            decision_route_targets = list(decision.route_targets)
         recipients, recipient_groups, route_targets = self._normalized_routing_inputs(
-            notifications_config
+            notifications_config,
+            route_targets=decision_route_targets,
         )
         return await self._pipeline.async_emit(
             event,
@@ -203,15 +221,17 @@ class EventsDomain:
         )
 
     def _normalized_routing_inputs(
-        self, notifications_config: dict[str, Any]
+        self, notifications_config: dict[str, Any], *, route_targets: list[str]
     ) -> tuple[dict[str, list[str]], dict[str, list[str]], list[str]]:
         """Extract routing inputs from notifications config."""
         recipients = dict(notifications_config.get("recipients", {}))
         recipient_groups = dict(notifications_config.get("recipient_groups", {}))
-        route_targets = [
-            str(t) for t in list(notifications_config.get("route_targets", [])) if str(t)
-        ]
-        return recipients, recipient_groups, route_targets
+        return recipients, recipient_groups, [str(t) for t in route_targets if str(t)]
+
+    @staticmethod
+    def _uses_legacy_route_targets(event: HeimaEvent) -> bool:
+        context = event.context if isinstance(event.context, dict) else {}
+        return str(context.get("_heima_delivery_mode") or "") == "legacy_route_targets"
 
     # ------------------------------------------------------------------
     # Sync sensors
