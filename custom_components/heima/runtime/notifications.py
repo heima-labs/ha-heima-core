@@ -218,6 +218,8 @@ class NotificationDeliveryPolicy:
         self._persistence_delivered_keys: set[str] = set()
         self._aggregation_last_delivered_ts: dict[str, float] = {}
         self._burst_delivery_ts: deque[float] = deque(maxlen=_MAX_POLICY_STATE_KEYS)
+        self._recent_decisions: deque[dict[str, Any]] = deque(maxlen=64)
+        self._decision_counts: dict[str, int] = {}
 
     def decide(
         self,
@@ -343,8 +345,45 @@ class NotificationDeliveryPolicy:
                 audience=_audience_for_target_roles(target_roles),
                 security_critical=security_critical,
                 reason="policy_deliver",
-                diagnostics=diagnostics,
+            diagnostics=diagnostics,
         )
+
+    def record_decision(self, decision: NotificationDeliveryDecision) -> None:
+        """Record a structured push-delivery decision for diagnostics."""
+        self._decision_counts[decision.outcome] = self._decision_counts.get(decision.outcome, 0) + 1
+        self._recent_decisions.append(
+            {
+                "outcome": decision.outcome,
+                "reason": decision.reason,
+                "event_family": decision.event_family,
+                "push_policy": decision.push_policy,
+                "target_roles": list(decision.target_roles),
+                "route_targets": list(decision.route_targets),
+                "audience": decision.audience,
+                "security_critical": decision.security_critical,
+                "diagnostics": dict(decision.diagnostics),
+            }
+        )
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Return runtime Notification Delivery Policy diagnostics."""
+        return {
+            "name": "Notification Delivery Policy",
+            "decision_counts": dict(sorted(self._decision_counts.items())),
+            "recent_decisions": list(self._recent_decisions),
+            "persistence": {
+                "pending_keys": sorted(self._persistence_first_seen_ts),
+                "delivered_keys": sorted(self._persistence_delivered_keys),
+                "pending_count": len(self._persistence_first_seen_ts),
+                "delivered_count": len(self._persistence_delivered_keys),
+            },
+            "aggregation": {
+                "buckets": dict(sorted(self._aggregation_last_delivered_ts.items())),
+            },
+            "burst": {
+                "recent_delivery_count": len(self._burst_delivery_ts),
+            },
+        }
 
     def _persistence_decision(
         self,

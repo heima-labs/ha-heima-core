@@ -339,6 +339,10 @@ async def test_events_domain_observability_only_event_still_fires_bus_without_pu
     assert len(bus.events) == 1
     assert services.calls == []
     assert events.pipeline.stats.emitted == 1
+    policy_diag = events.diagnostics()["notification_delivery_policy"]
+    assert policy_diag["decision_counts"]["observability_only"] == 1
+    assert policy_diag["recent_decisions"][-1]["reason"] == "policy_observability_only"
+    assert policy_diag["recent_decisions"][-1]["event_family"] == "people"
 
 
 @pytest.mark.asyncio

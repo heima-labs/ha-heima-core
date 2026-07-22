@@ -152,6 +152,7 @@ class EventsDomain:
         return {
             "stats": self._pipeline.stats.as_dict(),
             "suppressed_event_categories": dict(self._suppressed_event_categories),
+            "notification_delivery_policy": self._delivery_policy.diagnostics(),
         }
 
     # ------------------------------------------------------------------
@@ -187,6 +188,7 @@ class EventsDomain:
             notifications_config,
             category_enabled=category_enabled,
         )
+        self._delivery_policy.record_decision(decision)
         if not category_enabled:
             category = self.event_category(event.type)
             self._suppressed_event_categories[category] = (

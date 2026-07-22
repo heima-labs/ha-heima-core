@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .const import OPT_REACTIONS, OPT_SECURITY
+from .runtime.notifications import normalize_notification_policy_config
 
 OBSERVABILITY_SCHEMA_VERSION = 1
 
@@ -69,7 +70,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
     )
     manual_holds = _manual_hold_summary(engine_diag, runtime_observability)
     runtime_confirmations = _runtime_confirmation_summary(runtime_confirmation)
-    notifications = _notification_summary(entry)
+    notifications = _notification_summary(entry, engine_diag=engine_diag)
     learning = _learning_summary(engine_diag, proposal_diag)
     proposals = _proposal_summary(proposal_diag)
     house_state = _house_state_diagnostics(engine_diag)
@@ -504,7 +505,7 @@ def _promotion_reviews(runtime_confirmation: Mapping[str, Any]) -> list[dict[str
     return rows
 
 
-def _notification_summary(entry: Any) -> dict[str, Any]:
+def _notification_summary(entry: Any, engine_diag: Mapping[str, Any] | None = None) -> dict[str, Any]:
     options = dict(getattr(entry, "options", {}) or {})
     notifications = options.get("notifications")
     notifications = dict(notifications) if isinstance(notifications, Mapping) else {}
@@ -529,6 +530,14 @@ def _notification_summary(entry: Any) -> dict[str, Any]:
     skipped_non_actionable = [
         route for route in resolved_routes["routes"] if route not in set(actionable_routes)
     ]
+    effective_policy = normalize_notification_policy_config(notifications)
+    policy_runtime = {}
+    if isinstance(engine_diag, Mapping):
+        events_diag = engine_diag.get("events")
+        if isinstance(events_diag, Mapping):
+            runtime_policy = events_diag.get("notification_delivery_policy")
+            if isinstance(runtime_policy, Mapping):
+                policy_runtime = dict(runtime_policy)
     return {
         "recipient_count": len(recipients),
         "group_count": len(groups),
@@ -542,7 +551,33 @@ def _notification_summary(entry: Any) -> dict[str, Any]:
         "actionable_routes": actionable_routes,
         "skipped_non_actionable_routes": skipped_non_actionable,
         "notification_service_capabilities": services,
+        "delivery_policy": {
+            "effective": effective_policy,
+            "unresolved_audience_targets": _unresolved_audience_targets(
+                recipients=recipients,
+                groups=groups,
+                audience_targets=effective_policy.get("audience_targets"),
+            ),
+            "runtime": policy_runtime,
+        },
     }
+
+
+def _unresolved_audience_targets(
+    *,
+    recipients: Mapping[str, Any],
+    groups: Mapping[str, Any],
+    audience_targets: Any,
+) -> list[dict[str, str]]:
+    if not isinstance(audience_targets, Mapping):
+        return []
+    available = set(str(key) for key in recipients) | set(str(key) for key in groups)
+    unresolved: list[dict[str, str]] = []
+    for role, values in audience_targets.items():
+        for target in _string_list(values):
+            if target not in available:
+                unresolved.append({"role": str(role), "target": target})
+    return unresolved
 
 
 def _learning_summary(

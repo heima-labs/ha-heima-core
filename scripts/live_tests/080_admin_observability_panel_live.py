@@ -74,6 +74,16 @@ def _assert_snapshot_contract(snapshot: dict[str, Any], entry_id: str) -> None:
         "runtime_confirmations must be a dict",
     )
     _assert(isinstance(snapshot.get("notifications"), dict), "notifications must be a dict")
+    delivery_policy = snapshot["notifications"].get("delivery_policy")
+    _assert(isinstance(delivery_policy, dict), "notifications.delivery_policy must be a dict")
+    _assert(
+        isinstance(delivery_policy.get("effective"), dict),
+        "notifications.delivery_policy.effective must be a dict",
+    )
+    _assert(
+        isinstance(delivery_policy.get("unresolved_audience_targets"), list),
+        "notifications.delivery_policy.unresolved_audience_targets must be a list",
+    )
     _assert(isinstance(snapshot.get("learning"), dict), "learning must be a dict")
     _assert(isinstance(snapshot.get("proposals"), dict), "proposals must be a dict")
     house_state = snapshot.get("house_state")

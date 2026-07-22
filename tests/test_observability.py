@@ -174,6 +174,28 @@ class _FakeEngine:
                 "override": {"house_state_override_active": False},
             },
             "observability": observability,
+            "events": {
+                "notification_delivery_policy": {
+                    "name": "Notification Delivery Policy",
+                    "decision_counts": {"observability_only": 1},
+                    "recent_decisions": [
+                        {
+                            "outcome": "observability_only",
+                            "reason": "policy_observability_only",
+                            "event_family": "people",
+                            "push_policy": "observability",
+                            "target_roles": [],
+                            "route_targets": [],
+                            "audience": "observability",
+                            "security_critical": False,
+                            "diagnostics": {"event_type": "people.arrive"},
+                        }
+                    ],
+                    "persistence": {"pending_count": 0, "delivered_count": 0},
+                    "aggregation": {"buckets": {}},
+                    "burst": {"recent_delivery_count": 0},
+                }
+            },
             "learning_modules": [
                 {"module_id": "house_state_inference", "ready": True},
                 {"module_id": "lighting_pattern", "ready": False},
@@ -429,6 +451,12 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["notifications"]["unresolved_targets"] == ["missing"]
     assert snapshot["notifications"]["actionable_routes"] == ["mobile_app_iphone_stefano"]
     assert snapshot["notifications"]["skipped_non_actionable_routes"] == ["persistent_notification"]
+    delivery_policy = snapshot["notifications"]["delivery_policy"]
+    assert delivery_policy["effective"]["audience_policy"]["people"]["push"] == "observability"
+    assert delivery_policy["runtime"]["decision_counts"] == {"observability_only": 1}
+    assert delivery_policy["runtime"]["recent_decisions"][0]["reason"] == (
+        "policy_observability_only"
+    )
     assert snapshot["proposals"]["review_row_count"] == 3
     assert snapshot["proposals"]["real_pending_count"] == 2
     assert snapshot["proposals"]["visible_pending_count"] == 1
