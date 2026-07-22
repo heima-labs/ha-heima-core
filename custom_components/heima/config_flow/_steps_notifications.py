@@ -930,6 +930,38 @@ class _NotificationsStepsMixin:
     def _notification_groups(self) -> dict[str, list[str]]:
         return _parse_multiline_mapping(self._notifications_config().get("recipient_groups"))
 
+    def _available_notify_service_options(
+        self,
+        *,
+        include: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> dict[str, str]:
+        services: set[str] = set()
+        hass_services = getattr(getattr(self, "hass", None), "services", None)
+        service_map_getter = getattr(hass_services, "async_services", None)
+        if callable(service_map_getter):
+            raw_services = service_map_getter()
+            notify_services = (
+                raw_services.get("notify", {}) if isinstance(raw_services, dict) else {}
+            )
+            if isinstance(notify_services, dict):
+                services.update(
+                    _normalize_notify_service_name(service)
+                    for service in notify_services
+                    if _normalize_notify_service_name(service)
+                )
+        for configured_services in self._notification_recipients().values():
+            services.update(
+                _normalize_notify_service_name(service)
+                for service in configured_services
+                if _normalize_notify_service_name(service)
+            )
+        services.update(self._notification_service_capabilities())
+        for service in include or []:
+            normalized = _normalize_notify_service_name(service)
+            if normalized:
+                services.add(normalized)
+        return {service: f"notify.{service}" for service in sorted(services)}
+
     def _notification_service_capabilities(self) -> dict[str, dict[str, bool]]:
         return _normalize_notification_service_capabilities(
             self._notifications_config().get("notification_service_capabilities")
@@ -945,6 +977,16 @@ class _NotificationsStepsMixin:
         services = defaults.get("notify_services")
         if isinstance(services, list | tuple | set):
             services = "\n".join(str(item) for item in services)
+        service_list = _notification_service_list(services)
+        service_options = self._available_notify_service_options(include=service_list)
+        service_field: Any
+        service_default: Any
+        if service_options:
+            service_field = cv.multi_select(service_options)
+            service_default = service_list
+        else:
+            service_field = str
+            service_default = str(services or "")
         schema = vol.Schema(
             {
                 vol.Required(
@@ -953,8 +995,8 @@ class _NotificationsStepsMixin:
                 ): str,
                 vol.Required(
                     "notify_services",
-                    default=str(services or ""),
-                ): _multiline_notify_services,
+                    default=service_default,
+                ): service_field,
             }
         )
         if is_edit:
@@ -994,6 +1036,23 @@ class _NotificationsStepsMixin:
             label = people_labels.get(recipient_id, recipient_id)
             choices[f"{label} ({recipient_id})"] = recipient_id
         return choices
+
+    def _notification_recipient_multiselect_options(
+        self,
+        *,
+        include: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> dict[str, str]:
+        recipients = self._notification_recipients()
+        labels = self._notification_people_display_names()
+        options = {
+            recipient_id: labels.get(recipient_id, recipient_id)
+            for recipient_id in sorted(recipients)
+        }
+        for recipient_id in include or []:
+            normalized = str(recipient_id or "").strip()
+            if normalized:
+                options.setdefault(normalized, labels.get(normalized, normalized))
+        return options
 
     def _notification_people_display_names(self) -> dict[str, str]:
         people = self.options.get("people_named")
@@ -1052,10 +1111,20 @@ class _NotificationsStepsMixin:
         members = defaults.get("members")
         if isinstance(members, list | tuple | set):
             members = "\n".join(str(item) for item in members)
+        member_list = _parse_multiline_items(members)
+        member_options = self._notification_recipient_multiselect_options(include=member_list)
+        member_field: Any
+        member_default: Any
+        if member_options:
+            member_field = cv.multi_select(member_options)
+            member_default = member_list
+        else:
+            member_field = str
+            member_default = str(members or "")
         return vol.Schema(
             {
                 vol.Required("group_id", default=str(defaults.get("group_id") or "")): str,
-                vol.Required("members", default=str(members or "")): str,
+                vol.Required("members", default=member_default): member_field,
             }
         )
 
@@ -1093,6 +1162,18 @@ class _NotificationsStepsMixin:
             for group_id, members in sorted(groups.items())
         }
 
+    def _notification_group_multiselect_options(
+        self,
+        *,
+        include: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> dict[str, str]:
+        options = {group_id: group_id for group_id in sorted(self._notification_groups())}
+        for group_id in include or []:
+            normalized = str(group_id or "").strip()
+            if normalized:
+                options.setdefault(normalized, normalized)
+        return options
+
     def _notification_groups_summary(self, notifications: dict[str, Any]) -> str:
         groups = _parse_multiline_mapping(notifications.get("recipient_groups"))
         if not groups:
@@ -1124,9 +1205,9 @@ class _NotificationsStepsMixin:
     def _notification_route_target_choice_map(self) -> dict[str, str]:
         choices: dict[str, str] = {}
         for recipient_id in sorted(self._notification_recipients()):
-            choices[f"Recipient: {recipient_id}"] = recipient_id
+            choices[recipient_id] = f"Recipient: {recipient_id}"
         for group_id in sorted(self._notification_groups()):
-            choices[f"Group: {group_id}"] = group_id
+            choices[group_id] = f"Group: {group_id}"
         return choices
 
     def _validate_notification_route_targets(self, targets: list[str]) -> dict[str, str]:
@@ -1142,12 +1223,15 @@ class _NotificationsStepsMixin:
         is_edit: bool = False,
     ) -> vol.Schema:
         defaults = defaults or {}
+        service_name = _normalize_notify_service_name(defaults.get("service_name"))
+        service_options = self._available_notify_service_options(include=[service_name])
+        service_field: Any = vol.In(service_options) if service_options else str
         return vol.Schema(
             {
                 vol.Required(
                     "service_name",
-                    default=str(defaults.get("service_name") or ""),
-                ): str,
+                    default=service_name,
+                ): service_field,
                 vol.Optional(
                     "supports_actions",
                     default=bool(defaults.get("supports_actions", False)),
@@ -1208,6 +1292,18 @@ class _NotificationsStepsMixin:
         is_edit: bool = False,
     ) -> vol.Schema:
         defaults = defaults or {}
+        confirmation_recipients = _parse_multiline_items(
+            defaults.get("confirmation_target_recipients")
+        )
+        confirmation_groups = _parse_multiline_items(defaults.get("confirmation_target_groups"))
+        promotion_recipients = _parse_multiline_items(defaults.get("promotion_target_recipients"))
+        promotion_groups = _parse_multiline_items(defaults.get("promotion_target_groups"))
+        recipient_options = self._notification_recipient_multiselect_options(
+            include=[*confirmation_recipients, *promotion_recipients]
+        )
+        group_options = self._notification_group_multiselect_options(
+            include=[*confirmation_groups, *promotion_groups]
+        )
         return vol.Schema(
             {
                 vol.Required("profile_id", default=str(defaults.get("profile_id") or "")): str,
@@ -1216,12 +1312,16 @@ class _NotificationsStepsMixin:
                 ),
                 vol.Optional(
                     "confirmation_target_recipients",
-                    default=str(defaults.get("confirmation_target_recipients") or ""),
-                ): str,
+                    default=confirmation_recipients
+                    if recipient_options
+                    else str(defaults.get("confirmation_target_recipients") or ""),
+                ): cv.multi_select(recipient_options) if recipient_options else str,
                 vol.Optional(
                     "confirmation_target_groups",
-                    default=str(defaults.get("confirmation_target_groups") or ""),
-                ): str,
+                    default=confirmation_groups
+                    if group_options
+                    else str(defaults.get("confirmation_target_groups") or ""),
+                ): cv.multi_select(group_options) if group_options else str,
                 vol.Optional(
                     "confirmation_use_default_route_targets",
                     default=bool(defaults.get("confirmation_use_default_route_targets", True)),
@@ -1240,12 +1340,16 @@ class _NotificationsStepsMixin:
                 ): bool,
                 vol.Optional(
                     "promotion_target_recipients",
-                    default=str(defaults.get("promotion_target_recipients") or ""),
-                ): str,
+                    default=promotion_recipients
+                    if recipient_options
+                    else str(defaults.get("promotion_target_recipients") or ""),
+                ): cv.multi_select(recipient_options) if recipient_options else str,
                 vol.Optional(
                     "promotion_target_groups",
-                    default=str(defaults.get("promotion_target_groups") or ""),
-                ): str,
+                    default=promotion_groups
+                    if group_options
+                    else str(defaults.get("promotion_target_groups") or ""),
+                ): cv.multi_select(group_options) if group_options else str,
                 vol.Optional(
                     "promotion_min_samples",
                     default=int(defaults.get("promotion_min_samples") or 5),
@@ -1502,13 +1606,6 @@ def _normalize_notify_service_name(value: Any) -> str:
     if service.startswith("notify."):
         service = service.split(".", 1)[1]
     return service
-
-
-def _multiline_notify_services(value: Any) -> list[str]:
-    services = _notification_service_list(value)
-    if not services:
-        raise vol.Invalid("required")
-    return services
 
 
 def _notification_service_list(value: Any) -> list[str]:

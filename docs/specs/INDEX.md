@@ -39,6 +39,7 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/core_product_spec.md` — current product semantics (consolidated)
 - `core/options_flow_spec.md` — configuration and options flow
 - `core/options_flow_ux_spec.md` — current bounded UX/session contract for the options flow
+- `core/options_import_export_spec.md` — draft: YAML export/import of config entry options for installer bulk-editing and backup/versioning (not implemented)
 - `core/events_and_notifications_spec.md` — event model + routing model (consolidated)
 - `core/event_catalog_spec.md` — stable canonical event taxonomy and payload envelope
 - `core/notification_recipients_spec.md` — logical notification recipients, groups, and routing rules

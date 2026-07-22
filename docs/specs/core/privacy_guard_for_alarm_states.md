@@ -1,6 +1,6 @@
 # Camera Privacy Guard for Alarm States
 
-**Status:** Implemented on `feat/v2` via Manual Hold Framework  
+**Status:** Implemented on `main` via Manual Hold Framework  
 **Last audited:** 2026-06-25  
 **Phase:** AE — Camera Privacy Guard & Extensible Entity Actions
 **UI follow-up:** `camera_privacy_policy_ui_spec.md`
@@ -19,7 +19,7 @@ The intended end state is:
 
 ## Current Implementation Summary
 
-This audit reflects the code currently on `feat/v2`.
+This audit reflects the code currently on `main`.
 
 | Slice | Status | Notes |
 |---|---|---|

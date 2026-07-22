@@ -130,6 +130,16 @@ def _extract_form_default(step_result: dict[str, Any], field_name: str) -> Any:
     return None
 
 
+def _extract_form_field(step_result: dict[str, Any], field_name: str) -> dict[str, Any] | None:
+    data_schema = step_result.get("data_schema")
+    if not isinstance(data_schema, list):
+        return None
+    for field in data_schema:
+        if isinstance(field, dict) and str(field.get("name")) == field_name:
+            return field
+    return None
+
+
 def _select_person_choice(
     client: HAFlowClient,
     flow_id: str,
@@ -521,8 +531,40 @@ def scenario_second_level_menu_summaries(client: HAFlowClient, entry_id: str) ->
     print("PASS scenario F")
 
 
+def scenario_notification_recipient_add_schema_no_crash(
+    client: HAFlowClient, entry_id: str
+) -> None:
+    print("== Scenario G: notification recipient add schema does not crash ==")
+    init = client.options_flow_init(entry_id)
+    flow_id = str(init["flow_id"])
+    _expect_step(init, "init")
+    try:
+        step = _menu_next(client, flow_id, "notification_recipients")
+        _expect_step(step, "notification_recipients")
+
+        add_form = _menu_next(client, flow_id, "notification_recipient_add")
+        _expect_step(add_form, "notification_recipient_add")
+        _assert(add_form.get("type") == "form", "notification_recipient_add did not return form")
+
+        recipient_id = _extract_form_field(add_form, "recipient_id")
+        notify_services = _extract_form_field(add_form, "notify_services")
+        _assert(recipient_id is not None, "recipient_id field missing from add recipient form")
+        _assert(
+            notify_services is not None,
+            "notify_services field missing from add recipient form",
+        )
+        _assert(
+            notify_services.get("type") in {"multi_select", "string"},
+            f"unexpected notify_services field type: {notify_services.get('type')}",
+        )
+    finally:
+        client.options_flow_abort(flow_id)
+
+    print("PASS scenario G")
+
+
 def scenario_runtime_persist_without_save(client: HAFlowClient, entry_id: str) -> None:
-    print("== Scenario G: runtime option persists immediately without explicit save ==")
+    print("== Scenario H: runtime option persists immediately without explicit save ==")
 
     # Read current dedup value from a fresh flow's form defaults.
     init0 = client.options_flow_init(entry_id)
@@ -572,7 +614,7 @@ def scenario_runtime_persist_without_save(client: HAFlowClient, entry_id: str) -
     client.options_flow_configure(flow_id2, restore_payload)
     client.options_flow_configure(flow_id2, {"next_step_id": "save"})
 
-    print("PASS scenario G")
+    print("PASS scenario H")
 
 
 def main() -> int:
@@ -592,6 +634,7 @@ def main() -> int:
     scenario_security_mismatch_event_modes_roundtrip(client, entry_id)
     scenario_init_status_block(client, entry_id)
     scenario_second_level_menu_summaries(client, entry_id)
+    scenario_notification_recipient_add_schema_no_crash(client, entry_id)
     scenario_runtime_persist_without_save(client, entry_id)
 
     print("All config-flow live scenarios passed.")

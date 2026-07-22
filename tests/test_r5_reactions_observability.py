@@ -385,6 +385,29 @@ def test_dispatch_queues_reaction_fired_event_when_steps_produced():
     assert any(e.type == "reaction.fired" for e in queued)
 
 
+def test_dispatch_reaction_fired_event_uses_configured_label():
+    engine = _make_engine()
+    engine._entry.options = {
+        "reactions": {
+            "labels": {"r_fire": "Studio evening lights"},
+        }
+    }
+    r = ConsecutiveStateReaction(
+        predicate=lambda s: True,
+        consecutive_n=1,
+        steps=[_step()],
+        reaction_id="r_fire",
+    )
+    engine._reactions.append(r)
+    engine._dispatch_reactions([_snap()])
+
+    event = next(e for e in engine._events_domain._pending_events if e.type == "reaction.fired")
+    assert event.title == "Reaction fired: Studio evening lights"
+    assert event.message == "Reaction 'Studio evening lights' produced 1 step(s)."
+    assert event.context["reaction_id"] == "r_fire"
+    assert event.context["reaction_label"] == "Studio evening lights"
+
+
 def test_dispatch_does_not_queue_event_when_no_steps():
     engine = _make_engine()
     r = ConsecutiveStateReaction(

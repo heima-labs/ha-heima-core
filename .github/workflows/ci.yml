@@ -51,7 +51,7 @@ jobs:
   typecheck:
     name: Type Check (mypy)
     runs-on: ubuntu-latest
-    # Informativo: non blocca la CI in questa fase
+    # Informational: does not block CI at this stage.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4

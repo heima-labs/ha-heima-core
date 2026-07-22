@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new behavior, domain, or capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please skim `docs/v2_dev_plan.md` and `docs/specs/INDEX.md` — your idea may
+        already be planned, in progress, or explicitly out of scope (see `CLAUDE.md`'s
+        "Architectural decisions made" section, e.g. third-party plugin loading is a deliberate
+        non-goal).
+
+        For anything beyond a small, self-contained change, this issue is meant to align on
+        direction *before* a PR is written — see `CONTRIBUTING.md`.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation/behavior you'd want to be different, not just the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like Heima to do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you considered, and why you didn't prefer them.

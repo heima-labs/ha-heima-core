@@ -76,6 +76,16 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
         include_delete: bool,
     ) -> vol.Schema:
         defaults = defaults or {}
+        target_recipients = self._runtime_confirmation_string_list(
+            defaults.get("confirmation_target_recipients")
+        )
+        target_groups = self._runtime_confirmation_string_list(
+            defaults.get("confirmation_target_groups")
+        )
+        recipient_options = self._notification_recipient_multiselect_options(
+            include=target_recipients
+        )
+        group_options = self._notification_group_multiselect_options(include=target_groups)
         schema_fields: dict[Any, Any] = {
             vol.Optional("enabled", default=bool(defaults.get("enabled", True))): bool,
             vol.Optional(
@@ -100,12 +110,16 @@ class _ReactionFormHelpersMixin(_ContextualLightingPolicyFormMixin):
             ): vol.In(self._runtime_confirmation_timeout_options()),
             vol.Optional(
                 "confirmation_target_recipients",
-                default=str(defaults.get("confirmation_target_recipients") or ""),
-            ): str,
+                default=target_recipients
+                if recipient_options
+                else str(defaults.get("confirmation_target_recipients") or ""),
+            ): cv.multi_select(recipient_options) if recipient_options else str,
             vol.Optional(
                 "confirmation_target_groups",
-                default=str(defaults.get("confirmation_target_groups") or ""),
-            ): str,
+                default=target_groups
+                if group_options
+                else str(defaults.get("confirmation_target_groups") or ""),
+            ): cv.multi_select(group_options) if group_options else str,
             vol.Optional(
                 "confirmation_use_default_route_targets",
                 default=bool(defaults.get("confirmation_use_default_route_targets", True)),

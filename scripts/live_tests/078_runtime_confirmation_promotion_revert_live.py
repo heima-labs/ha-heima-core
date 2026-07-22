@@ -165,7 +165,9 @@ def _find_light_entity(client: HAClient) -> str:
 
 
 def _current_context_condition(client: HAClient, entry_id: str) -> dict[str, Any]:
-    client.call_service("heima", "command", {"command": "recompute_now", "target": {"entry_id": entry_id}})
+    client.call_service(
+        "heima", "command", {"command": "recompute_now", "target": {"entry_id": entry_id}}
+    )
     snapshot = _engine_snapshot(client, entry_id)
     signals = snapshot.get("context_signals")
     _assert(isinstance(signals, dict), "snapshot context_signals must be a dict")
@@ -387,8 +389,8 @@ def _edit_reaction_to_ask_residents(client: HAFlowClient, entry_id: str, reactio
                 "execution_mode": "ask_residents",
                 "confirmation_expires_in_minutes": 10,
                 "confirmation_on_timeout": "skip",
-                "confirmation_target_recipients": "",
-                "confirmation_target_groups": "",
+                "confirmation_target_recipients": [],
+                "confirmation_target_groups": [],
                 "confirmation_use_default_route_targets": True,
             },
         )
@@ -493,7 +495,9 @@ def main() -> int:
 
     try:
         _reset_runtime_state_if_present(client, entry_id, REACTION_ID)
-        _configure_notifications(client, entry_id, _live_notification_payload(original_notifications))
+        _configure_notifications(
+            client, entry_id, _live_notification_payload(original_notifications)
+        )
 
         light_entity = _find_light_entity(client)
         condition = _current_context_condition(client, entry_id)

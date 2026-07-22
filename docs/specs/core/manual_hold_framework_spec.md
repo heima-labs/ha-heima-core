@@ -1,6 +1,6 @@
 # Manual Hold Framework Spec
 
-**Status:** Active — initial runtime contract implemented on `feat/v2`  
+**Status:** Active — initial runtime contract implemented on `main`  
 **Date:** 2026-06-25  
 **Motivation source:** Phase AE audit and Phase AB smart-lighting manual override behavior
 

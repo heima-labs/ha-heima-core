@@ -89,8 +89,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
 ```
 
-Active v2 integration happens on branch `feat/v2`; focused work usually lands first on feature
-branches. Current phase status: `docs/v2_dev_plan.md`.
+The v2 architecture described above is what's on `main`. Development happens on dedicated feature
+branches (`feat/...`, `fix/...`) merged into `main` once stable. Current phase status:
+`docs/v2_dev_plan.md`.
 
 ## Test House
 
@@ -134,3 +135,19 @@ Heima's inference and learning design draws on the following body of research:
 - `docs/guides/house_state_behavior_guide.md` — practical guide to house-state behavior and expectations
 - `docs/guides/plugin_authoring.md` — how to write learning and reaction plugins
 - `docs/guides/heima_operations_guide.md` — monitoring and operations guide
+- `docs/CONFIGURATION_REFERENCE.md` — field-by-field reference for every Options Flow section
+- `docs/PLUGIN_AND_EXTENSION_API_REFERENCE.md` — which plugin/extension APIs are implemented today vs. spec-only
+- `docs/LEARNING_PLUGIN_STATUS.md` — current-state reference for the plugin-oriented learning/reaction model
+- `docs/PROJECT_DECISIONS.md` — log of temporary or transitional product/architecture decisions
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started, what the
+acceptance bar is, and what's explicitly out of scope. This project follows the
+[Contributor Covenant](CODE_OF_CONDUCT.md).
+
+## License
+
+Heima is licensed under the [GNU General Public License v2.0](LICENSE).
+
+Copyright (C) 2026 Heima Labs

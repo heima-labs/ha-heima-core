@@ -1,4 +1,9 @@
-# Heima Development Plan
+# Heima Development Plan (v1.x archive)
+
+**SUPERSEDED:** this document is an earlier, v1.x-era planning draft, distinct from
+`docs/DEVELOPMENT_PLAN.md` (the later, more complete v1.x plan, also superseded). Both are kept as
+historical reference only. The active operational plan is `docs/v2_dev_plan.md`; the active spec is
+`docs/specs/heima_v2_spec.md`.
 
 ## Status Overview
 - Completed: `Phase 0`, `Phase 1`
