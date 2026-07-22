@@ -118,18 +118,536 @@ These constraints must never be violated. See spec §16 for rationale.
 | MH | Manual Hold Framework | `DONE` | AB, AE |
 | AF | Policy Editor Framework + Camera Privacy Policy UI | `DONE` | AE, MH |
 | AG | Translate Developer Scripts, Docs, and Specs to English | `DONE` | AF |
-| AH | Resident Runtime Confirmation & Auto-Apply Promotion | `IN PROGRESS` | AD, MH, AF |
+| AH | Resident Runtime Confirmation & Auto-Apply Promotion | `DONE` | AD, MH, AF |
 | AN | Notification Admin UI & Execution Policy Profiles | `DONE` | AH |
+| AO | Admin Observability Panel | `DONE` | AH, AN, MH, AC, AD |
+| AO8 | Observability Usability & Detail Views | `PLANNED` | AO |
+| AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
+| AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AN — Notification Admin UI & Execution Policy Profiles.
-**Active slice:** Phase AN — Notification Admin UI & Execution Policy Profiles complete.
-**Branch:** `feat/an-notification-admin-ui`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles.
+**Active slice:** Phase AO — Admin Observability Panel completed; pending user MVP verification
+before merge into `feat/an-notification-admin-ui`.
+**Branch:** `feat/ao-admin-observability-panel`.
 **Next action:**
-Run a final focused review/CI pass for AN before merge or move to the next v2 slice.
+Hold AO on its feature branch for hands-on MVP verification. After verification, merge
+`feat/ao-admin-observability-panel` into `feat/an-notification-admin-ui`.
+Next observability work should start only after deciding whether to extend the current AO branch
+with AO8-AO10 before merge, or merge the MVP first and develop AO8-AO10 on follow-up branches.
+
+### Phase AO — Admin Observability Panel
+
+- Status: `DONE`.
+- Spec source: `docs/specs/core/admin_observability_panel_spec.md`.
+- Goal: provide a real Home Assistant admin panel that explains what Heima is doing, why runtime
+  decisions apply/skip/block/wait, what is being learned, and which manual holds, runtime
+  confirmations, notification routes, and proposal groups are affecting behavior.
+- Product boundary:
+  - AO is not an Options Flow diagnostic page.
+  - AO1-AO6 are read-only except for navigation/deep links to existing configuration surfaces.
+  - AO7 is the first slice allowed to introduce mutations, and only through existing backend
+    action boundaries.
+  - The panel must be domain-agnostic. Domain-specific details may be rendered only from
+    structured extensions supplied by the backend.
+- Branch: `feat/ao-admin-observability-panel`.
+- AO1 initial implementation completed:
+  - Added `custom_components/heima/observability.py` with a versioned read-only snapshot contract.
+  - Added redaction that preserves local entity IDs while redacting tokens, credentials, auth
+    headers, and sensitive strings.
+  - Added `custom_components/heima/websocket_api.py` with an HA-admin-only
+    `heima/observability/snapshot` websocket command.
+  - Registered the websocket API once during integration setup.
+  - Added unit coverage in `tests/test_observability.py` for minimal schema, partial snapshots,
+    redaction, admin authorization, successful snapshot response, and missing entry errors.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py -q` — 6 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/websocket_api.py custom_components/heima/__init__.py tests/test_observability.py`
+      — passed.
+- AO2 initial implementation completed:
+  - Added `custom_components/heima/runtime/observability.py` with bounded in-memory runtime
+    activity and decision trace buffers.
+  - Runtime traces are exposed through the AO snapshot under `recent_events` and
+    `decision_traces`; retention metadata is marked as `history_since_last_restart`.
+  - The engine records filtered apply-plan outcomes for applied, skipped, and blocked steps.
+  - Runtime confirmation occurrences record a `waiting` trace when a request is created and an
+    apply/block/skip trace when approved or timeout-applied execution is processed.
+  - Added unit coverage in `tests/test_runtime_observability.py` for applied/blocked/skipped
+    traces, runtime confirmation waiting/apply traces, and bounded retention.
+  - Extended AO snapshot tests to verify propagation of runtime events/traces.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_reaction_framework.py tests/test_manual_hold_manager.py tests/test_runtime_confirmation.py -q`
+      — 68 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_runtime_observability.py`
+      — passed.
+- AO3 initial implementation completed:
+  - Added `custom_components/heima/panel.py` to register/unregister the custom HA admin panel.
+  - The panel serves local integration-owned frontend assets from `/heima_static`.
+  - The panel module URL includes a content-hash query parameter so browser caches refresh when the
+    JavaScript asset changes.
+  - Added `custom_components/heima/frontend/heima-admin-panel.js` as a read-only web component
+    shell with Overview, Runtime Activity, and Health routes.
+  - The frontend consumes only the AO websocket snapshot command and handles loading, error,
+    empty, partial, and refresh states.
+  - Integration setup registers services, websocket API, and admin panel only once; unloading the
+    last entry unregisters the panel.
+  - Added unit coverage in `tests/test_admin_panel.py` for panel registration, unload, setup
+    idempotency, and asset contract.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/__init__.py custom_components/heima/panel.py tests/test_admin_panel.py`
+      — passed.
+- AO4 initial implementation completed:
+  - Reaction snapshot rows now include latest trace outcome/id and linked active manual hold scopes.
+  - Manual hold snapshot rows now include affected reaction IDs and structured links back to
+    reactions/source entities when trace data supports that relationship.
+  - The custom admin panel now includes read-only `Reactions` and `Holds` sections.
+  - The Reaction Inspector shows ID, type, origin, enabled/muted status, effective execution policy,
+    latest outcome, latest trace, and linked holds.
+  - The Manual Hold Center shows active hold count, pending apply count, scope, reason, release
+    policy, age, source entity, and affected reactions.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/__init__.py custom_components/heima/panel.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO5 initial implementation completed:
+  - Runtime confirmation snapshot now exposes pending, recent completed, stale response,
+    duplicate occurrence, completed status, completed step count, blocked/failed/skipped reason,
+    scheduled timeout, action subscription, and promotion review state.
+  - Notification snapshot now resolves `route_targets` through recipients and recipient groups,
+    distinguishes actionable routes from text-only routes, and reports unresolved targets.
+  - The custom admin panel now includes read-only `Confirmations` and `Notifications` sections.
+  - Runtime Confirmation Center shows pending/completed requests, timeout behavior, targets, apply
+    result counts, stale responses, and promotion reviews.
+  - Notification Routing Inspector shows recipients, groups, resolved `notify.*` services,
+    actionable capability, text-only skipped routes, and unresolved targets.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO6 initial implementation completed:
+  - Learning snapshot now exposes module rows, module readiness counts, proposal totals, analyzer
+    failures, analyzer output errors, and lifecycle monitoring data.
+  - Proposal snapshot now exposes backend-source-of-truth review rows, temporal bundles, real
+    pending count, visible pending count, suppressed pending count, stale count, type counters,
+    follow-up counters, visible examples, and suppressed examples.
+  - The custom admin panel now includes read-only `Learning` and `Proposals` sections.
+  - Proposal grouping and temporal bundle rendering use backend diagnostics as the source of truth;
+    the frontend does not recompute grouping or visibility.
+  - Added/extended unit coverage in `tests/test_observability.py` and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_admin_panel.py tests/test_observability.py tests/test_runtime_observability.py -q`
+      — 15 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/observability.py tests/test_admin_panel.py tests/test_observability.py`
+      — passed.
+- AO7 completed:
+  - Added an HA-admin-only `heima/observability/action` websocket command.
+  - Added the first allowlisted mutation, `clear_manual_hold`, implemented through the existing
+    engine manual-hold boundary.
+  - Added allowlisted runtime promotion review actions through the existing coordinator
+    `async_review_runtime_promotion` boundary.
+  - Added runtime confirmation promotion-state reset through the existing coordinator
+    `async_reset_runtime_confirmation_promotion_state` boundary.
+  - Added proposal review actions through the existing coordinator `async_review_proposal` boundary.
+  - Added house-state proposal bundle review through the existing coordinator
+    `async_review_house_state_proposal_batch` boundary, including dismiss-similar semantics.
+  - Actions validate payload shape, return an updated observability snapshot, await the existing
+    backend boundary, and record `admin_action` events in the runtime observability buffer.
+  - The custom admin panel now shows an explicit confirmed `Clear` action for parseable manual hold
+    scopes, confirmed promotion review/reset actions for pending promotion reviews, and confirmed
+    proposal accept/reject/bundle actions for proposal review rows.
+  - AO7 remains intentionally narrow: health finding acknowledgements are not implemented because
+    the spec excludes acknowledgement from the MVP and no persisted acknowledgement boundary exists.
+  - Added/extended unit coverage in `tests/test_observability.py`,
+    `tests/test_runtime_observability.py`, and `tests/test_admin_panel.py`.
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py -q`
+      — 26 passed.
+    - `.venv/bin/ruff check custom_components/heima/websocket_api.py custom_components/heima/runtime/observability.py tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/websocket_api.py custom_components/heima/runtime/observability.py tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py`
+      — passed.
+- AO live validation completed:
+  - Added `scripts/live_tests/080_admin_observability_panel_live.py` to validate the AO websocket
+    snapshot/action contract against a real Home Assistant instance.
+  - Added `080_admin_observability_panel_live.py` to the diagnostic live tier.
+  - Fixed `scripts/lib/ha_websocket.py` to support fragmented websocket messages emitted by large
+    AO snapshots.
+  - Fixed AO runtime-confirmation snapshot normalization so real diagnostics counts
+    (`pending`/`recent_completed`) are kept separate from request rows
+    (`pending_requests`/`recent_completed_requests`).
+  - Verification:
+    - `.venv/bin/python -m pytest tests/test_observability.py tests/test_runtime_observability.py tests/test_admin_panel.py -q`
+      — 26 passed.
+    - `.venv/bin/ruff check custom_components/heima/observability.py scripts/lib/ha_websocket.py scripts/live_tests/080_admin_observability_panel_live.py tests/test_observability.py`
+      — passed.
+    - `.venv/bin/ruff format --check custom_components/heima/observability.py scripts/lib/ha_websocket.py scripts/live_tests/080_admin_observability_panel_live.py tests/test_observability.py`
+      — passed.
+    - `scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" ${HA_NON_ADMIN_TOKEN:+--ha-non-admin-token "$HA_NON_ADMIN_TOKEN"}`
+      — passed against the local Docker Home Assistant instance.
+    - `./scripts/check_all_live.sh --tier diagnostic`
+      — passed against the local Docker Home Assistant instance.
+
+#### AO1 — Backend Observability Snapshot Contract
+
+- Deliverables:
+  - Define versioned snapshot contracts for `meta`, `health_findings`, `recent_events`,
+    `decision_traces`, `reactions`, `manual_holds`, `runtime_confirmations`, `notifications`,
+    `learning`, and `proposals`.
+  - Build a read-only aggregator that normalizes existing diagnostics into the snapshot contract.
+  - Add redaction helpers or reuse existing diagnostic redaction consistently.
+  - Add a HA-admin-only websocket/API boundary for retrieving the full snapshot and basic
+    projections.
+  - Ensure missing internal subsystems produce explicit partial/unavailable sections instead of
+    crashing the panel API.
+- Tests:
+  - unit tests for snapshot schema shape and versioning
+  - redaction tests for secrets/tokens/free-form sensitive values
+  - authorization tests for admin and non-admin access
+  - partial-snapshot tests for missing/disabled subsystems
+  - serialization/backward-compatibility tests for unknown/missing sections
+- Acceptance criteria:
+  - an HA admin can retrieve a redacted snapshot from the API
+  - a non-admin receives an authorization error and no partial data
+  - existing config-entry diagnostics remain separate and continue to work
+
+#### AO2 — Runtime Activity and Decision Trace Foundation
+
+- Deliverables:
+  - Add a bounded in-memory observability event/trace buffer.
+  - Emit structured runtime events for reaction match/apply/skip/block/wait/fail outcomes.
+  - Link traces to reaction IDs, apply step IDs, manual hold scopes, runtime request IDs, and
+    affected entity IDs when available.
+  - Add focused "why not now?" projection support for a single reaction without emitting full
+    per-reaction non-match traces on every cycle.
+  - Mark retention as "history since last restart" in snapshot metadata.
+- Tests:
+  - trace buffer retention and ordering tests
+  - decision trace construction tests for applied, skipped, blocked, waiting, and failed outcomes
+  - manual-hold-blocked apply-step tests
+  - dependency-blocked apply-step tests
+  - focused non-match query tests
+- Acceptance criteria:
+  - traces explain real runtime outcomes without requiring log inspection
+  - trace volume is bounded and does not emit every non-match by default
+  - restart volatility is explicit in the snapshot
+
+#### AO3 — Custom HA Admin Panel Shell
+
+- Deliverables:
+  - Register and unload a Home Assistant custom panel during integration setup/unload.
+  - Serve integration-owned frontend assets.
+  - Implement read-only routes for Overview, Runtime Activity, and Health.
+  - Consume only the AO snapshot/API contract, not internal engine structures.
+  - Add basic frontend error, loading, empty, partial, and unavailable states.
+- Tests:
+  - panel registration/unload tests
+  - websocket/API smoke tests through the panel data boundary
+  - frontend build/static asset tests where supported by the project tooling
+  - route smoke tests for Overview, Runtime Activity, and Health
+- Acceptance criteria:
+  - HA admins can open the panel from Home Assistant
+  - the first screen answers current engine health, active holds, pending confirmations, recent
+    activity, proposal counts, and notification health at a glance
+  - non-admin users cannot access panel data through direct API calls
+
+#### AO4 — Reaction and Manual Hold Inspectors
+
+- Deliverables:
+  - Implement reaction list/detail projections.
+  - Show configured source data, normalized/effective data, generated apply-step shape, effective
+    execution policy, runtime-confirmation descriptor status, linked manual hold scopes, and latest
+    outcomes.
+  - Implement Manual Hold Center with scope, reason, release policy, age, expiration/release trigger,
+    source entity, and affected reactions/apply steps.
+  - Keep clear-hold behavior out of AO4; only explain whether a hold would be admin-clearable in
+    future AO7 actions.
+- Tests:
+  - reaction inspector projection tests for admin-authored, learned, muted, and broken reactions
+  - execution-policy resolution display tests
+  - manual hold inspector tests for entity, domain, and reaction scopes
+  - read-only enforcement tests
+- Acceptance criteria:
+  - an admin can inspect why a configured reaction is active, muted, waiting, blocked, or broken
+  - an admin can inspect why a manual hold is active and what will release it
+
+#### AO5 — Runtime Confirmation and Notification Inspectors
+
+- Deliverables:
+  - Implement Runtime Confirmation Center projections for pending, recent completed, stale response,
+    timeout-applied, timeout-skipped, and promotion-review states.
+  - Implement Notification Routing Inspector for recipients, groups, routes, concrete `notify.*`
+    services, `supports_actions`, unresolved targets, skipped non-actionable routes, and recent
+    delivery attempts.
+  - Explain the difference between resident approval, admin promotion approval, and proposal
+    acceptance.
+- Tests:
+  - runtime confirmation inspector tests for approve/dismiss/timeout states
+  - promotion cooldown/review projection tests
+  - notification route resolution tests for recipients, groups, default route targets, and
+    non-actionable services
+  - live diagnostic test for an actionable and non-actionable notification route
+- Acceptance criteria:
+  - an admin can see where a runtime confirmation was sent and why some targets were skipped
+  - an admin can tell whether a reaction is waiting for resident response, promotion review, or
+    normal auto-apply
+
+#### AO6 — Learning and Proposal Transparency
+
+- Deliverables:
+  - Implement Learning Monitor projections for learning families, evidence growth, generated
+    proposals, suppressed proposals, visible representatives, stale proposals, and accepted/rejected
+    history.
+  - Implement Proposal Backlog Inspector projections using existing proposal lifecycle and TB
+    grouping semantics as the source of truth.
+  - Show real pending proposal count, visible representative count, suppressed-by-group count,
+    rejected bundle count, and dismissed similar count.
+  - Explain what accept representative, reject bundle, dismiss similar, expand, and skip mean before
+    the admin acts in existing review surfaces.
+- Tests:
+  - proposal grouping projection tests using existing TB fixtures
+  - representative-vs-real-count tests
+  - hidden/suppressed/stale proposal tests
+  - live diagnostic test covering proposal review-row counts and top review groups
+- Acceptance criteria:
+  - the panel explains why a proposal is visible or hidden
+  - proposal counts match backend diagnostics and do not rely on frontend recomputation
+
+#### AO7 — Safe Admin Actions
+
+- Deliverables:
+  - Add only after AO1-AO6 are stable.
+  - Add safe actions through existing backend boundaries:
+    - open/edit existing policy or reaction surfaces
+    - open proposal review
+    - clear admin-clearable manual hold
+    - reset runtime confirmation stats
+    - review promotion
+    - acknowledge non-critical findings
+  - Add server-side HA-admin checks and admin audit events for every mutation.
+  - Require confirmation for destructive or behavior-changing actions.
+- Tests:
+  - authorization tests for every action
+  - audit event tests
+  - action-boundary tests proving frontend does not mutate internal state directly
+  - regression tests for existing options-flow/admin action behavior
+- Acceptance criteria:
+  - mutations are optional, explicit, audited, and reuse existing domain boundaries
+  - AO remains an observability panel, not an automation builder
+
+#### AO Live Validation
+
+- Required live tests before closing AO MVP:
+  - camera privacy policy decision trace for armed/disarmed alarm transitions
+  - manual hold active/release trace
+  - runtime confirmation pending/resolved trace
+  - notification routing trace with actionable and non-actionable services
+  - proposal backlog grouping counts compared with `scripts/proposal_backlog_audit.py`
+  - panel API authorization check for admin and non-admin tokens
+- Local CI before each AO commit:
+  - targeted pytest for the touched AO slice
+  - `python3 -m pytest tests/test_options_flow_e2e.py tests/test_runtime_confirmation.py`
+    when touching notifications/runtime confirmation projections
+  - full local CI before merging AO MVP
+  - live diagnostic tier before merging AO MVP
+- Status: completed for AO MVP on `feat/ao-admin-observability-panel`; full CI remains required
+  before merging the branch after user MVP verification.
+
+### Planned AO Extensions
+
+These extensions are specified in `docs/specs/core/admin_observability_panel_spec.md` and should be
+implemented only if we choose to extend the MVP before merging, or as follow-up branches after AO
+MVP merge.
+
+#### AO8 — Observability Usability & Detail Views
+
+- Status: `PLANNED`.
+- Goal: make the MVP panel production-usable without adding new mutation types.
+- Product boundary:
+  - AO8 must not add new mutation types.
+  - AO8 must improve the existing AO panel using the existing redacted snapshot, or backend
+    projections derived from the same canonical observability data.
+  - The frontend may filter local table rows for display, but it must not recompute authoritative
+    proposal grouping, entity relationships, or runtime semantics.
+- AO8.1 backend detail projections:
+  - Add projection helpers for reaction, manual-hold, runtime-confirmation, and proposal/review
+    detail rows when the existing snapshot is insufficient.
+  - Keep configured metadata, runtime diagnostics, traces, linked holds, linked requests, proposal
+    source metadata, and execution-policy data clearly separated.
+  - Preserve the existing redaction path for every projection.
+  - Tests:
+    - unit tests for reaction detail projection completeness
+    - unit tests for manual-hold and runtime-confirmation link projection
+    - unit tests proving missing diagnostics degrade to explicit unavailable/empty fields
+    - redaction regression tests for projection payloads
+- AO8.2 frontend detail views and readable layout:
+  - Add detail drawer or route for reactions, manual holds, runtime confirmations, and
+    proposal/review rows.
+  - Improve table layout so long IDs, badges, execution-policy labels, trace IDs, and source
+    metadata remain readable on desktop/tablet widths.
+  - Show raw redacted JSON only as secondary advanced-debugging material.
+  - Tests:
+    - frontend/static smoke tests for each detail affordance
+    - layout smoke tests covering long reaction IDs and execution-policy labels
+    - unit/static tests for graceful empty/unavailable states
+- AO8.3 filters, search, copy buttons, and deep links:
+  - Add filters/search for reactions, traces/events, holds, confirmations, and proposals.
+  - Add copy buttons for reaction IDs, trace IDs, entity IDs, request IDs, hold scopes, and review
+    IDs where present.
+  - Add stable custom-panel deep links for route plus object ID.
+  - Tests:
+    - frontend/static tests for filter controls and local row filtering
+    - tests proving filters do not change backend counts or grouping semantics
+    - smoke tests for copy-button wiring and deep-link route parsing
+- AO8.4 redacted snapshot export:
+  - Add both download JSON and copy-to-clipboard export actions.
+  - Both actions must serialize the exact same redacted snapshot object currently available to the
+    panel.
+  - Do not expose secrets, tokens, credentials, raw auth headers, or sensitive free-form values.
+  - Tests:
+    - snapshot export redaction tests for download payloads
+    - snapshot export redaction tests for clipboard payloads
+    - test proving both export paths use the same serialized redacted object
+- AO8.5 house-state resolver diagnostics:
+  - Add a top-level `house_state` AO snapshot projection sourced from the existing house-state
+    runtime domain diagnostics.
+  - Expose `candidate_trace`, `candidate_summary`, and `resolution_trace` without making the
+    frontend infer resolver semantics from unrelated runtime fields.
+  - Add a House State panel section showing current state/reason, decision action, target state,
+    winning reason, active candidates, pending candidate, resolution path, timers, override state,
+    and a searchable candidate table.
+  - Tests:
+    - unit snapshot contract coverage for the projected house-state fields
+    - frontend/static smoke coverage for the House State route and candidate search
+    - live `080` contract coverage requiring the house-state diagnostics dictionaries
+- Live validation:
+  - Extend live `080` so at least one real reaction has label/type/origin/source metadata, latest
+    trace info where available, linked holds where available, and no unreadable `unknown`-only row.
+  - Verify filters/search and at least one detail route against the running HA test instance.
+- Acceptance:
+  - an admin can inspect one reaction without reading raw JSON
+  - an admin can inspect one hold, confirmation, and proposal/review row from the panel
+  - high-volume tables can be filtered/searched without changing backend semantics
+  - long IDs and badges remain readable
+  - download and clipboard export use the same redacted snapshot payload as the panel
+
+#### AO9 — Entity Impact Inspector
+
+- Status: `PLANNED`.
+- Goal: let an admin start from an HA entity and see what Heima is doing to or because of it.
+- Product boundary:
+  - AO9 must be entity-centric, not domain-specific.
+  - Lighting and camera privacy must be explained through the same generic entity-impact model.
+  - Entity relationships must be backend-derived. The frontend must not infer relationships from
+    naming conventions, room labels, localized text, or entity-ID substrings.
+- AO9.1 backend entity-impact index:
+  - Build an index from apply steps, reaction configs, manual holds, decision traces, runtime
+    confirmations, and structured domain metadata.
+  - Include security camera privacy sources as structured metadata, for example privacy entity to
+    camera source links.
+  - Include notification routes only when linked to an entity-bearing request, apply step, trace, or
+    policy. Generic notification recipients/groups are not Home Assistant entities.
+  - Tests:
+    - entity index projection tests for light apply steps
+    - entity index projection tests for camera privacy policy entities
+    - tests proving notification recipient/group IDs are not indexed as HA entities by themselves
+    - redaction tests for entity-impact rows
+- AO9.2 entity list/search:
+  - Add an `Entities` or `Entity Impact` section.
+  - Support search by entity ID and domain.
+  - Show concise counts for linked reactions, traces, holds, requests, policies, and pending applies.
+  - Tests:
+    - frontend/static tests for entity search and empty state
+    - unit/static tests for count rendering from backend-provided fields
+- AO9.3 entity detail view:
+  - Show entity ID, domain, reactions that target or reference the entity, latest Heima trace,
+    recent apply steps, active manual holds, pending applies, runtime confirmations, source
+    policies/config entries, and last known Heima outcome.
+  - Link entity detail rows back to reaction, trace, hold, request, and policy views when available.
+  - Tests:
+    - detail projection tests for linked reactions/traces/holds/requests/policies
+    - frontend/static smoke tests for entity detail navigation
+- AO9.4 live validation:
+  - Add `081_entity_impact_live.py`.
+  - Validate a known camera privacy entity or test-light entity against the running HA test
+    instance.
+  - Verify that camera privacy and lighting examples are represented through the same generic
+    entity-impact shape.
+- Acceptance:
+  - an admin can search an entity and see linked Heima reactions, holds, traces, requests, and
+    policies
+  - camera privacy and lighting cases are explained through the same generic model
+  - no frontend inference from naming conventions or hardcoded room/domain strings
+
+#### AO10 — Focused Why-Not-Now Evaluation
+
+- Status: `PLANNED`.
+- Goal: answer why one selected reaction would apply, wait, block, skip, or be non-evaluable now.
+- Product boundary:
+  - AO10 is a read-only focused evaluation tool, not a runtime execution path.
+  - It must not enqueue apply steps, create runtime confirmation requests, mutate manual holds,
+    update proposal lifecycle state, or rebuild unrelated domains as a side effect.
+  - Unsupported reaction types must return `not_evaluable` with explicit reasons.
+- AO10.1 websocket/API contract and authorization:
+  - Add an HA-admin-only read-only websocket query for one reaction ID.
+  - Return `reaction_id`, `generated_at`, `outcome`, `reason_codes`, `input_summary`,
+    `condition_results`, `guard_results`, `policy_result`, `apply_steps`, and `links`.
+  - Return `not_found` for unknown reaction IDs.
+  - Tests:
+    - authorization tests for admin/non-admin callers
+    - not-found and malformed-request tests
+    - schema/version compatibility tests for focused results
+- AO10.2 focused evaluation hook:
+  - Prefer an optional reaction/plugin focused-evaluation hook over a one-off lighting-only
+    evaluator.
+  - Reuse existing condition, guard, execution-policy, manual-hold, and apply-step validation
+    helpers where possible.
+  - If only a subset of reaction types is supported in the first slice, unsupported reactions must
+    be explicit in API and UI.
+  - Tests:
+    - supported-reaction focused evaluation tests
+    - unsupported-reaction `not_evaluable` tests
+    - tests proving reason codes and links point to relevant holds/entities/policies when available
+- AO10.3 no-mutation and rate limiting:
+  - Enforce default 2 focused evaluations per minute per config entry.
+  - If it does not materially complicate implementation, make the limit runtime-configurable
+    through normal config entry/options updates without requiring a Home Assistant restart.
+  - If runtime configurability adds meaningful complexity, ship the fixed default first and track
+    runtime configurability as an AO10 follow-up sub-slice.
+  - Record an observability event that an admin ran a focused inspection, without changing runtime
+    state.
+  - Tests:
+    - default rate-limit tests
+    - optional runtime-configurable-rate tests if the option is implemented in this slice
+    - no-mutation tests proving no apply plan, runtime request, manual hold, proposal lifecycle, or
+      options state changes unexpectedly
+- AO10.4 frontend integration and live validation:
+  - Add a `Why not now?` affordance in reaction detail.
+  - Display `would_apply`, `would_wait`, `would_block`, `would_skip`, `not_evaluable`, and
+    `not_found` distinctly.
+  - Show condition, guard, policy, apply-step, and link sections without raw JSON as the primary
+    explanation.
+  - Add `082_why_not_now_live.py` for the first supported focused-evaluation path.
+  - Tests:
+    - frontend/static smoke test for the reaction detail affordance
+    - frontend/static tests for `not_evaluable` and rate-limit display states
+    - live `082` test against the running HA test instance once at least one supported reaction
+      type is wired
+- Acceptance:
+  - focused query never applies actions or creates runtime confirmation requests
+  - unsupported reaction types fail explicitly
+  - repeated UI calls are bounded by the configured/default rate limit
+  - result links to relevant traces, holds, entities, and policies where available
 
 ### Recent Working Notes
 
@@ -403,6 +921,13 @@ Run a final focused review/CI pass for AN before merge or move to the next v2 sl
     correctly (`23:00` vs `01:00` is a 2-hour difference).
   - Arrival, departure, and alarm-disarm unusual-hour baselines are scoped to the same weekday,
     avoiding false positives caused by mixing workday and weekend distributions.
+  - Follow-up fix: `alarm_disarm_unusual_hour` is conservative and cluster/local-support based.
+    It no longer treats one median hour as the only normal disarm time; morning and evening disarm
+    windows may both be valid when each has local support.
+  - Follow-up fix: warning-level statistical anomalies remain visible as events, notifications, and
+    `sensor.heima_health.last_anomaly`, but they do not put the whole integration into
+    `degraded`. `degraded` is reserved for invariant violations, critical anomalies, and engine
+    errors.
   - Presence reaction learning and analyzer calendar boundaries now use HA local time. Activity
     distinct-day counts and analyzer week-span checks use the same local calendar contract.
     Elapsed-time comparisons remain UTC-based.
@@ -533,6 +1058,8 @@ Run a final focused review/CI pass for AN before merge or move to the next v2 sl
   - `alarm_disarm_unusual_hour` scans consecutive snapshot pairs for transitions from
     `armed_*` to `disarmed`; the latest transition is the candidate and is excluded from the
     baseline.
+  - It requires conservative baseline support and compares the current transition against every
+    supported per-weekday disarm window, not against a single median hour.
   - `alarm_expected_not_armed` is statistical only: no calendar/work-window context. It filters
     history by the current `(weekday, hour_bucket)` slot, then checks the latest configured number
     of snapshots within that slot are all `disarmed`.

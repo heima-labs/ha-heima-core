@@ -4,6 +4,9 @@ Status: Draft
 Scope: Product operability, ongoing validation, learning progress review  
 Target: v1.x operational surfaces
 
+Note: the concrete custom Home Assistant admin panel contract is defined in
+`core/admin_observability_panel_spec.md`. This document remains the broader monitoring model.
+
 ## Purpose
 
 Heima needs a bounded but serious monitoring surface so an operator can answer, over time:

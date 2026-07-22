@@ -226,6 +226,34 @@ def test_invariant_state_re_emits_persistent_violation() -> None:
     assert third.violation == violation
 
 
+def test_engine_reports_active_invariant_check_ids() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"notifications": {}}))
+    engine.register_invariant_check(_AlwaysViolationCheck())
+
+    engine._run_invariant_checks(_snapshot())  # noqa: SLF001
+
+    assert engine.active_invariant_check_ids() == {"always"}
+    assert engine.unresolved_invariant_check_ids() == {"always"}
+    assert engine.diagnostics()["invariants"] == {
+        "active_check_ids": ["always"],
+        "unresolved_check_ids": ["always"],
+    }
+
+
+def test_engine_reports_pending_invariant_check_ids_before_debounce() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"notifications": {}}))
+    engine.register_invariant_check(SecurityPresenceMismatch())
+
+    engine._run_invariant_checks(  # noqa: SLF001
+        _snapshot(anyone_home=True, security_state="armed_away")
+    )
+
+    assert engine.active_invariant_check_ids() == set()
+    assert engine.unresolved_invariant_check_ids() == {"security_presence_mismatch"}
+
+
 def test_engine_runs_invariant_checks_before_apply_plan() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={"notifications": {}}))

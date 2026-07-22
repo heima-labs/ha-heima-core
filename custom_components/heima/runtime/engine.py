@@ -86,6 +86,7 @@ from .manual_hold import ManualHoldManager, ManualHoldReason, ManualHoldScope
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .notifications import HeimaEventPipeline
+from .observability import RuntimeObservabilityBuffer
 from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .proposal_engine import ProposalEngine
@@ -228,6 +229,7 @@ class HeimaEngine:
         self._runtime_confirmation_request_handler: RuntimeConfirmationRequestHandler | None = None
         self._runtime_confirmation_descriptors: dict[str, RuntimeConfirmationDescriptor] = {}
         self._snapshot_buffer = SnapshotBuffer()
+        self._observability = RuntimeObservabilityBuffer()
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -871,6 +873,11 @@ class HeimaEngine:
         plan = self._build_apply_plan(snapshot)
         plan = self._dispatch_apply_filter(plan, snapshot)
         self._apply_plan = plan
+        self._observability.record_apply_plan(
+            reason=reason,
+            plan=plan,
+            engine_enabled=self._options.engine_enabled,
+        )
         self._sync_reactions_sensor()
         await self._emit_lighting_hold_events()
         await self._emit_queued_events()
@@ -1411,6 +1418,22 @@ class HeimaEngine:
             elif outcome.resolved:
                 self._queue_invariant_resolved_event(check.check_id)
 
+    def active_invariant_check_ids(self) -> set[str]:
+        """Return invariant checks that are currently active after debounce."""
+        return {
+            check_id
+            for check_id, state in getattr(self, "_invariant_states", {}).items()
+            if bool(state.is_active)
+        }
+
+    def unresolved_invariant_check_ids(self) -> set[str]:
+        """Return invariant checks whose current condition has not cleared yet."""
+        return {
+            check_id
+            for check_id, state in getattr(self, "_invariant_states", {}).items()
+            if bool(state.is_active) or state.first_seen_ts is not None
+        }
+
     def _invariant_config(self) -> dict[str, Any]:
         options = dict(self._entry.options)
         anomaly_cfg = options.get("anomaly", {})
@@ -1769,6 +1792,12 @@ class HeimaEngine:
             confirmation_targets=self._runtime_confirmation_targets(policy),
             context_snapshot=snapshot.as_dict(),
         )
+        self._observability.record_runtime_confirmation_waiting(
+            reaction_id=reaction_id,
+            reaction_type=reaction_type,
+            occurrence_key=request.occurrence_key,
+            steps=steps,
+        )
         async_create_task = getattr(self._hass, "async_create_task", None)
         if not callable(async_create_task):
             self._events_domain.queue_event(
@@ -1802,6 +1831,8 @@ class HeimaEngine:
         return dict(profiles) if isinstance(profiles, dict) else {}
 
     def _reaction_execution_policy_diagnostics(self) -> dict[str, Any]:
+        if not hasattr(self, "_entry"):
+            return {}
         reactions = dict(dict(self._entry.options).get(OPT_REACTIONS, {}))
         configured = reactions.get("configured")
         if not isinstance(configured, dict):
@@ -1833,9 +1864,7 @@ class HeimaEngine:
                 promotion = dict(policy.promotion)
                 item["promotion"] = promotion
                 item["promotion_targets"] = {
-                    "target_recipients": list(
-                        _string_list(promotion.get("target_recipients"))
-                    ),
+                    "target_recipients": list(_string_list(promotion.get("target_recipients"))),
                     "target_groups": list(_string_list(promotion.get("target_groups"))),
                 }
             diagnostics[str(reaction_id)] = item
@@ -2399,6 +2428,15 @@ class HeimaEngine:
         )
         if executable_steps:
             await self._execute_apply_plan(ApplyPlan(steps=executable_steps))
+        self._observability.record_runtime_confirmation_apply(
+            reaction_id=request.reaction_id,
+            request_id=request.request_id,
+            status=status,
+            apply_steps=dependency_result.steps,
+            applied_steps=apply_result.applied_steps,
+            blocked_reasons=dict(apply_result.blocked_reasons),
+            skipped_reasons=dict(apply_result.skipped_reasons),
+        )
 
         return fail_if_zero_applied(
             request,
@@ -2778,10 +2816,19 @@ class HeimaEngine:
                 if (outcome_tracker := getattr(self, "_outcome_tracker", None)) is not None
                 else {}
             ),
+            "invariants": {
+                "active_check_ids": sorted(self.active_invariant_check_ids()),
+                "unresolved_check_ids": sorted(self.unresolved_invariant_check_ids()),
+            },
             "manual_hold": (
                 manual_hold_manager.diagnostics()
                 if (manual_hold_manager := getattr(self, "_manual_hold_manager", None)) is not None
                 else ManualHoldManager().diagnostics()
+            ),
+            "observability": (
+                observability.diagnostics()
+                if (observability := getattr(self, "_observability", None)) is not None
+                else RuntimeObservabilityBuffer(event_limit=1, trace_limit=1).diagnostics()
             ),
             "behaviors": {b.behavior_id: b.diagnostics() for b in self._behaviors},
             "reactions": {r.reaction_id: r.diagnostics() for r in self._reactions},
