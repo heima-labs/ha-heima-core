@@ -379,7 +379,7 @@
           "routes": "Legacy routes (deprecated)",
           "recipients": "Recipient aliases (object mapping: alias -> [notify services])",
           "recipient_groups": "Recipient groups (object mapping: group -> [aliases])",
-          "route_targets": "Default notification targets (aliases/groups)",
+          "route_targets": "Fallback notification targets (aliases/groups)",
           "enabled_event_categories": "Enabled event categories",
           "dedup_window_s": "Dedup window (s)",
           "rate_limit_per_key_s": "Rate limit per key (s)",
@@ -489,9 +489,9 @@
         "submit": "OK"
       },
       "notification_routes": {
-        "title": "Notification Default Routes",
+        "title": "Notification Fallback Targets",
         "data": {
-          "route_targets": "Default route targets"
+          "route_targets": "Fallback notification targets"
         },
         "submit": "OK"
       },

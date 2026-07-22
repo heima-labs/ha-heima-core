@@ -103,6 +103,15 @@ def _serialized_field(schema, name: str) -> dict:
     raise AssertionError(f"Missing serialized schema field: {name}")
 
 
+def _assert_multiselect_defaults_are_available(schema) -> None:
+    for field in _serialized_schema(schema):
+        if field.get("type") != "multi_select":
+            continue
+        default = field.get("default") or []
+        options = set(field.get("options") or {})
+        assert set(default) <= options, field
+
+
 def _fake_hass(
     *,
     is_admin: bool = True,
@@ -1830,6 +1839,27 @@ async def test_notification_routes_rejects_unknown_target():
 
 
 @pytest.mark.asyncio
+async def test_notification_routes_schema_drops_missing_saved_targets():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+                "route_targets": ["missing", "admins"],
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_routes()
+
+    assert result["type"] == "form"
+    _assert_schema_serializes(result["data_schema"])
+    _assert_multiselect_defaults_are_available(result["data_schema"])
+    defaults = _schema_defaults(result["data_schema"])
+    assert defaults["route_targets"] == ["admins"]
+
+
+@pytest.mark.asyncio
 async def test_notification_delivery_policy_schema_serializes_for_ha_api():
     flow = _flow(
         {
@@ -1845,10 +1875,40 @@ async def test_notification_delivery_policy_schema_serializes_for_ha_api():
     assert result["type"] == "form"
     assert result["step_id"] == "notification_delivery_policy"
     _assert_schema_serializes(result["data_schema"])
+    _assert_multiselect_defaults_are_available(result["data_schema"])
     assert _serialized_field(result["data_schema"], "audience_admin_targets")["type"] == (
         "multi_select"
     )
     assert _serialized_field(result["data_schema"], "global_burst_max_notifications")
+
+
+@pytest.mark.asyncio
+async def test_notification_delivery_policy_schema_drops_missing_saved_targets():
+    flow = _flow(
+        {
+            "notifications": {
+                "recipients": {"stefano": ["mobile_app_stefano"]},
+                "recipient_groups": {"admins": ["stefano"]},
+                "audience_targets": {
+                    "admins": ["admins"],
+                    "residents": ["residents"],
+                },
+            }
+        }
+    )
+
+    result = await flow.async_step_notification_delivery_policy()
+
+    assert result["type"] == "form"
+    _assert_schema_serializes(result["data_schema"])
+    _assert_multiselect_defaults_are_available(result["data_schema"])
+    defaults = _schema_defaults(result["data_schema"])
+    assert defaults["audience_admin_targets"] == ["admins"]
+    assert defaults["audience_resident_targets"] == []
+    resident_targets = _serialized_field(result["data_schema"], "audience_resident_targets")
+    assert "stefano" in resident_targets["options"]
+    assert "admins" in resident_targets["options"]
+    assert "residents" not in resident_targets["options"]
 
 
 @pytest.mark.asyncio

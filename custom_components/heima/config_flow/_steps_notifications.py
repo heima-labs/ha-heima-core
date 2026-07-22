@@ -429,7 +429,9 @@ class _NotificationsStepsMixin:
                     {
                         vol.Optional(
                             "route_targets",
-                            default=list(notifications.get("route_targets", [])),
+                            default=self._available_notification_route_targets(
+                                notifications.get("route_targets", []), choices=choices
+                            ),
                         ): cv.multi_select(choices)
                     }
                 ),
@@ -444,7 +446,9 @@ class _NotificationsStepsMixin:
                     {
                         vol.Optional(
                             "route_targets",
-                            default=targets,
+                            default=self._available_notification_route_targets(
+                                targets, choices=choices
+                            ),
                         ): cv.multi_select(choices)
                     }
                 ),
@@ -917,11 +921,17 @@ class _NotificationsStepsMixin:
             {
                 vol.Optional(
                     "audience_admin_targets",
-                    default=list(targets.get("admins", DEFAULT_AUDIENCE_TARGETS["admins"])),
+                    default=self._available_notification_route_targets(
+                        targets.get("admins", DEFAULT_AUDIENCE_TARGETS["admins"]),
+                        choices=choices,
+                    ),
                 ): cv.multi_select(choices),
                 vol.Optional(
                     "audience_resident_targets",
-                    default=list(targets.get("residents", DEFAULT_AUDIENCE_TARGETS["residents"])),
+                    default=self._available_notification_route_targets(
+                        targets.get("residents", DEFAULT_AUDIENCE_TARGETS["residents"]),
+                        choices=choices,
+                    ),
                 ): cv.multi_select(choices),
                 vol.Required(
                     "people_push",
@@ -1485,6 +1495,12 @@ class _NotificationsStepsMixin:
         for group_id in sorted(self._notification_groups()):
             choices[group_id] = f"Group: {group_id}"
         return choices
+
+    def _available_notification_route_targets(
+        self, targets: Any, *, choices: dict[str, str] | None = None
+    ) -> list[str]:
+        available = set(choices or self._notification_route_target_choice_map())
+        return [target for target in _parse_multiline_items(targets) if target in available]
 
     def _validate_notification_route_targets(self, targets: list[str]) -> dict[str, str]:
         available = set(self._notification_recipients()) | set(self._notification_groups())

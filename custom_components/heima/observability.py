@@ -558,6 +558,12 @@ def _notification_summary(
         "actionable_routes": actionable_routes,
         "skipped_non_actionable_routes": skipped_non_actionable,
         "notification_service_capabilities": services,
+        "audience_resolution": _notification_audience_resolution(
+            recipients=recipients,
+            groups=groups,
+            services=services,
+            audience_targets=effective_policy.get("audience_targets"),
+        ),
         "delivery_policy": {
             "effective": effective_policy,
             "unresolved_audience_targets": _unresolved_audience_targets(
@@ -565,8 +571,116 @@ def _notification_summary(
                 groups=groups,
                 audience_targets=effective_policy.get("audience_targets"),
             ),
+            "health": _notification_delivery_policy_health(
+                recipients=recipients,
+                groups=groups,
+                route_targets=route_targets,
+                resolved_routes=resolved_routes["routes"],
+                unresolved_route_targets=resolved_routes["unresolved_targets"],
+                actionable_routes=actionable_routes,
+                effective_policy=effective_policy,
+            ),
             "runtime": policy_runtime,
         },
+    }
+
+
+def _notification_audience_resolution(
+    *,
+    recipients: Mapping[str, Any],
+    groups: Mapping[str, Any],
+    services: Mapping[str, Any],
+    audience_targets: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(audience_targets, Mapping):
+        return []
+    rows: list[dict[str, Any]] = []
+    for role, targets in sorted(audience_targets.items(), key=lambda item: str(item[0])):
+        for target in _string_list(targets):
+            resolved = _resolve_notification_targets(
+                recipients=recipients,
+                groups=groups,
+                route_targets=[target],
+            )
+            routes = resolved["routes"]
+            rows.append(
+                {
+                    "role": str(role),
+                    "target": target,
+                    "target_type": _notification_target_type(
+                        target, recipients=recipients, groups=groups
+                    ),
+                    "routes": routes,
+                    "unresolved": bool(resolved["unresolved_targets"]),
+                    "actionable_routes": [
+                        route
+                        for route in routes
+                        if _notification_route_supports_actions(route, services)
+                    ],
+                    "text_only_routes": [
+                        route
+                        for route in routes
+                        if not _notification_route_supports_actions(route, services)
+                    ],
+                }
+            )
+    return rows
+
+
+def _notification_target_type(
+    target: str,
+    *,
+    recipients: Mapping[str, Any],
+    groups: Mapping[str, Any],
+) -> str:
+    if target in recipients:
+        return "recipient"
+    if target in groups:
+        return "group"
+    return "missing"
+
+
+def _notification_delivery_policy_health(
+    *,
+    recipients: Mapping[str, Any],
+    groups: Mapping[str, Any],
+    route_targets: list[str],
+    resolved_routes: list[str],
+    unresolved_route_targets: list[str],
+    actionable_routes: list[str],
+    effective_policy: Mapping[str, Any],
+) -> dict[str, Any]:
+    audience_targets = effective_policy.get("audience_targets")
+    unresolved_audience = _unresolved_audience_targets(
+        recipients=recipients,
+        groups=groups,
+        audience_targets=audience_targets,
+    )
+    issues: list[dict[str, str]] = []
+    if not recipients:
+        issues.append({"severity": "warning", "reason": "no_recipients"})
+    if not route_targets:
+        issues.append({"severity": "warning", "reason": "no_fallback_targets"})
+    if unresolved_route_targets:
+        issues.append({"severity": "warning", "reason": "unresolved_fallback_targets"})
+    if unresolved_audience:
+        issues.append({"severity": "warning", "reason": "unresolved_audience_targets"})
+    if route_targets and not resolved_routes:
+        issues.append({"severity": "warning", "reason": "fallback_targets_resolve_no_routes"})
+    if resolved_routes and not actionable_routes:
+        issues.append({"severity": "warning", "reason": "no_actionable_routes"})
+
+    if isinstance(audience_targets, Mapping):
+        for role in ("admins", "residents"):
+            configured = [target for target in _string_list(audience_targets.get(role))]
+            if not configured:
+                issues.append({"severity": "warning", "reason": f"empty_{role}_audience"})
+
+    status = "ok" if not issues else "warning"
+    return {
+        "status": status,
+        "issue_count": len(issues),
+        "issues": issues,
     }
 
 

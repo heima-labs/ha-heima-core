@@ -819,13 +819,24 @@ class HeimaAdminPanel extends HTMLElement {
 
   _notifications(snapshot) {
     const notifications = snapshot.notifications || {};
+    const deliveryPolicy = notifications.delivery_policy || {};
+    const health = deliveryPolicy.health || {};
+    const runtime = deliveryPolicy.runtime || {};
+    const recentDecisions = runtime.recent_decisions || [];
     return `
       <section class="grid">
         ${this._metric("Recipients", notifications.recipient_count || 0)}
         ${this._metric("Groups", notifications.group_count || 0)}
-        ${this._metric("Route Targets", notifications.route_count || 0)}
+        ${this._metric("Fallback Targets", notifications.route_count || 0)}
         ${this._metric("Actionable Routes", (notifications.actionable_routes || []).length)}
+        ${this._metric("Policy Health", health.status || "unknown")}
+        ${this._metric("Recent Decisions", recentDecisions.length)}
       </section>
+      ${this._notificationHealth(deliveryPolicy)}
+      ${this._notificationPolicyMatrix(deliveryPolicy)}
+      ${this._notificationAudienceResolution(notifications)}
+      ${this._notificationRecentDecisions(runtime)}
+      ${this._notificationSuppressionState(runtime)}
       ${this._notificationRoutesTable(notifications)}
       ${this._notificationRecipientsTable(notifications)}
     `;
@@ -1003,10 +1014,10 @@ class HeimaAdminPanel extends HTMLElement {
     const actionable = new Set(notifications.actionable_routes || []);
     const skipped = new Set(notifications.skipped_non_actionable_routes || []);
     if (!routes.length && !unresolved.length) {
-      return `<div class="empty">No notification routes configured.</div>`;
+      return `<div class="empty">No fallback notification targets configured.</div>`;
     }
     return `
-      <h2>Resolved Routes</h2>
+      <h2>Resolved Fallback Routes</h2>
       <table>
         <thead>
           <tr><th>Route</th><th>Capability</th></tr>
@@ -1029,6 +1040,168 @@ class HeimaAdminPanel extends HTMLElement {
           `).join("")}
         </tbody>
       </table>
+    `;
+  }
+
+  _notificationHealth(deliveryPolicy) {
+    const health = deliveryPolicy.health || {};
+    const issues = health.issues || [];
+    return `
+      <h2>Notification Health</h2>
+      ${issues.length ? `
+        <table>
+          <thead><tr><th>Severity</th><th>Reason</th></tr></thead>
+          <tbody>
+            ${issues.map((issue) => `
+              <tr>
+                <td><span class="status">${this._escape(issue.severity || "")}</span></td>
+                <td>${this._escape(issue.reason || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">Notification routing health is OK.</div>`}
+    `;
+  }
+
+  _notificationPolicyMatrix(deliveryPolicy) {
+    const effective = deliveryPolicy.effective || {};
+    const policy = effective.audience_policy || {};
+    const targets = effective.audience_targets || {};
+    const thresholds = effective.persistence_thresholds || {};
+    const aggregation = effective.aggregation || {};
+    const rows = [
+      ["people", "People"],
+      ["house_state", "House State"],
+      ["reaction", "Reaction"],
+      ["occupancy_mismatch", "Occupancy Mismatch"],
+      ["security_presence_mismatch", "Security Presence Mismatch"],
+      ["system_config_issue", "System Config Issue"],
+    ];
+    return `
+      <h2>Delivery Policy Matrix</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Family</th>
+            <th>Push Policy</th>
+            <th>Audience Targets</th>
+            <th>Persistence</th>
+            <th>Aggregation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(([family, label]) => {
+            const push = policy[family]?.push || "";
+            const roles = this._policyRoles(push);
+            return `
+              <tr>
+                <td>${this._escape(label)}</td>
+                <td><span class="status">${this._escape(push || "unspecified")}</span></td>
+                <td>${roles.length ? roles.map((role) => `
+                  <div><strong>${this._escape(role)}</strong>: ${this._list(targets[role] || [])}</div>
+                `).join("") : `<span class="status">observability only</span>`}</td>
+                <td>${this._notificationPersistence(family, thresholds)}</td>
+                <td>${this._notificationAggregation(family, aggregation)}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _notificationAudienceResolution(notifications) {
+    const rows = notifications.audience_resolution || [];
+    const unresolved = notifications.delivery_policy?.unresolved_audience_targets || [];
+    if (!rows.length && !unresolved.length) {
+      return `<h2>Audience Resolution</h2><div class="empty">No audience targets configured.</div>`;
+    }
+    return `
+      <h2>Audience Resolution</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Target</th>
+            <th>Type</th>
+            <th>Routes</th>
+            <th>Capability</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><span class="status">${this._escape(row.role || "")}</span></td>
+              <td>${this._escape(row.target || "")}</td>
+              <td>${this._escape(row.target_type || "")}</td>
+              <td>${this._list(row.routes || [])}</td>
+              <td>
+                ${(row.actionable_routes || []).length ? `<div>actions: ${this._list(row.actionable_routes || [])}</div>` : ""}
+                ${(row.text_only_routes || []).length ? `<div>text only: ${this._list(row.text_only_routes || [])}</div>` : ""}
+                ${row.unresolved ? `<span class="status">unresolved</span>` : ""}
+              </td>
+            </tr>
+          `).join("")}
+          ${unresolved.map((row) => `
+            <tr>
+              <td><span class="status">${this._escape(row.role || "")}</span></td>
+              <td>${this._escape(row.target || "")}</td>
+              <td>missing</td>
+              <td></td>
+              <td><span class="status">unresolved</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _notificationRecentDecisions(runtime) {
+    const rows = runtime.recent_decisions || [];
+    if (!rows.length) {
+      return `<h2>Last Delivery Decisions</h2><div class="empty">No notification delivery decisions recorded yet.</div>`;
+    }
+    return `
+      <h2>Last Delivery Decisions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Outcome</th>
+            <th>Reason</th>
+            <th>Family</th>
+            <th>Policy</th>
+            <th>Roles</th>
+            <th>Targets</th>
+            <th>Diagnostics</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.slice().reverse().slice(0, 20).map((row) => `
+            <tr>
+              <td><span class="status">${this._escape(row.outcome || "")}</span></td>
+              <td>${this._escape(row.reason || "")}</td>
+              <td>${this._escape(row.event_family || "")}</td>
+              <td>${this._escape(row.push_policy || "")}</td>
+              <td>${this._list(row.target_roles || [])}</td>
+              <td>${this._list(row.route_targets || [])}</td>
+              <td>${this._escape(this._notificationDecisionDiagnostics(row.diagnostics || {}))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _notificationSuppressionState(runtime) {
+    return `
+      <h2>Suppression State</h2>
+      <section class="grid">
+        ${this._objectCard("Decision Counts", runtime.decision_counts || {})}
+        ${this._objectCard("Persistence", runtime.persistence || {})}
+        ${this._objectCard("Aggregation", runtime.aggregation || {})}
+        ${this._objectCard("Burst", runtime.burst || {})}
+      </section>
     `;
   }
 
@@ -1519,9 +1692,56 @@ class HeimaAdminPanel extends HTMLElement {
     return `
       <div class="card">
         <div class="label">${this._escape(title)}</div>
-        <div>${entries.length ? entries.map(([key, count]) => `${this._escape(key)}: ${this._escape(count)}`).join("<br>") : "none"}</div>
+        <div>${entries.length ? entries.map(([key, count]) => `${this._escape(key)}: ${this._escape(this._compactValue(count))}`).join("<br>") : "none"}</div>
       </div>
     `;
+  }
+
+  _policyRoles(pushPolicy) {
+    const policy = String(pushPolicy || "");
+    const roles = [];
+    if (policy.includes("admins")) roles.push("admins");
+    if (policy.includes("residents")) roles.unshift("residents");
+    return [...new Set(roles)];
+  }
+
+  _notificationPersistence(family, thresholds) {
+    const value = thresholds?.[family];
+    if (value === undefined || value === null) return "";
+    return this._escape(this._duration(value));
+  }
+
+  _notificationAggregation(family, aggregation) {
+    if (family === "people") {
+      return this._escape(this._duration(aggregation?.presence_transition_window_s));
+    }
+    if (family === "occupancy_mismatch" || family === "security_presence_mismatch") {
+      return this._escape(this._duration(aggregation?.mismatch_window_s));
+    }
+    return "";
+  }
+
+  _notificationDecisionDiagnostics(diagnostics) {
+    if (!diagnostics || typeof diagnostics !== "object") return "";
+    const keys = [
+      "event_type",
+      "pipeline_result",
+      "persistence_key",
+      "aggregation_key",
+      "dedup_key",
+      "rate_limit_key",
+    ];
+    return keys
+      .filter((key) => diagnostics[key] !== undefined && diagnostics[key] !== null)
+      .map((key) => `${key}=${this._compactValue(diagnostics[key])}`)
+      .join("; ");
+  }
+
+  _compactValue(value) {
+    if (value === null || value === undefined) return "";
+    if (Array.isArray(value)) return value.join(", ");
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
   }
 
   _executionPolicy(policy) {

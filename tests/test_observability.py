@@ -317,8 +317,12 @@ class _FakeCoordinator:
                         "tablet": ["persistent_notification"],
                     },
                     "groups": {"residents": {"members": ["stefano"]}},
-                    "recipient_groups": {"residents": ["stefano", "tablet"]},
+                    "recipient_groups": {
+                        "admins": ["stefano"],
+                        "residents": ["stefano", "tablet"],
+                    },
                     "route_targets": ["residents", "missing"],
+                    "audience_targets": {"admins": ["admins"], "residents": ["missing"]},
                     "routes": {"runtime_confirmation": {"target_groups": ["residents"]}},
                     "notification_service_capabilities": {
                         "mobile_app_iphone_stefano": {"supports_actions": True},
@@ -451,8 +455,37 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     assert snapshot["notifications"]["unresolved_targets"] == ["missing"]
     assert snapshot["notifications"]["actionable_routes"] == ["mobile_app_iphone_stefano"]
     assert snapshot["notifications"]["skipped_non_actionable_routes"] == ["persistent_notification"]
+    assert snapshot["notifications"]["audience_resolution"] == [
+        {
+            "role": "admins",
+            "target": "admins",
+            "target_type": "group",
+            "routes": ["mobile_app_iphone_stefano"],
+            "unresolved": False,
+            "actionable_routes": ["mobile_app_iphone_stefano"],
+            "text_only_routes": [],
+        },
+        {
+            "role": "residents",
+            "target": "missing",
+            "target_type": "missing",
+            "routes": [],
+            "unresolved": True,
+            "actionable_routes": [],
+            "text_only_routes": [],
+        },
+    ]
     delivery_policy = snapshot["notifications"]["delivery_policy"]
     assert delivery_policy["effective"]["audience_policy"]["people"]["push"] == "observability"
+    assert delivery_policy["health"]["status"] == "warning"
+    assert delivery_policy["health"]["issue_count"] == 2
+    assert delivery_policy["health"]["issues"] == [
+        {"severity": "warning", "reason": "unresolved_fallback_targets"},
+        {"severity": "warning", "reason": "unresolved_audience_targets"}
+    ]
+    assert delivery_policy["unresolved_audience_targets"] == [
+        {"role": "residents", "target": "missing"}
+    ]
     assert delivery_policy["runtime"]["decision_counts"] == {"observability_only": 1}
     assert delivery_policy["runtime"]["recent_decisions"][0]["reason"] == (
         "policy_observability_only"
