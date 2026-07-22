@@ -377,6 +377,176 @@ async def test_events_domain_security_critical_uses_audience_targets_for_push():
 
 
 @pytest.mark.asyncio
+async def test_events_domain_occupancy_mismatch_before_persistence_has_no_push(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_admin": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="occupancy.inconsistency",
+            key="occupancy.inconsistency.presence_without_room",
+            severity="warn",
+            title="Occupancy inconsistency",
+            message="Presence says someone is home, but no room is occupied.",
+        ),
+        notifications_config={
+            "recipients": {"admin": ["mobile_app_admin"]},
+            "recipient_groups": {"admins": ["admin"]},
+            "persistence_thresholds": {"occupancy_mismatch": 600},
+        },
+    )
+
+    assert len(bus.events) == 1
+    assert services.calls == []
+
+
+@pytest.mark.asyncio
+async def test_events_domain_persistent_occupancy_mismatch_sends_one_admin_push(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_admin": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    event = HeimaEvent(
+        type="occupancy.inconsistency",
+        key="occupancy.inconsistency.presence_without_room",
+        severity="warn",
+        title="Occupancy inconsistency",
+        message="Presence says someone is home, but no room is occupied.",
+    )
+    config = {
+        "recipients": {"admin": ["mobile_app_admin"]},
+        "recipient_groups": {"admins": ["admin"]},
+        "persistence_thresholds": {"occupancy_mismatch": 600},
+    }
+
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 701.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+    t = 702.0
+    await events.async_emit_event_obj(event, notifications_config=config)
+
+    notify_calls = [c for c in services.calls if c[0] == "notify"]
+    assert len(bus.events) == 3
+    assert len(notify_calls) == 1
+    assert notify_calls[0][1] == "mobile_app_admin"
+
+
+@pytest.mark.asyncio
+async def test_events_domain_people_push_aggregation_prevents_arrival_storm(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(available={"mobile_app_resident": object()})
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    config = {
+        "recipients": {"resident": ["mobile_app_resident"]},
+        "recipient_groups": {"residents": ["resident"]},
+        "audience_policy": {"people": {"push": "residents"}},
+    }
+
+    for person in ("stefano", "antonia", "guest"):
+        await events.async_emit_event_obj(
+            HeimaEvent(
+                type="people.arrive",
+                key=f"people.arrive.{person}",
+                severity="info",
+                title="Person arrived",
+                message=f"Person '{person}' arrived.",
+            ),
+            notifications_config=config,
+        )
+        t += 1.0
+
+    notify_calls = [c for c in services.calls if c[0] == "notify"]
+    assert len(bus.events) == 3
+    assert len(notify_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_events_domain_global_burst_limit_does_not_limit_event_bus(monkeypatch):
+    bus = _FakeBus()
+    services = _FakeServices(
+        available={
+            "mobile_app_admin": object(),
+            "mobile_app_resident": object(),
+        }
+    )
+    hass = SimpleNamespace(bus=bus, services=services)
+    events = EventsDomain(hass)
+
+    t = 100.0
+    monkeypatch.setattr(
+        "custom_components.heima.runtime.notifications.time.monotonic",
+        lambda: t,
+    )
+    config = {
+        "recipients": {
+            "admin": ["mobile_app_admin"],
+            "resident": ["mobile_app_resident"],
+        },
+        "recipient_groups": {
+            "admins": ["admin"],
+            "residents": ["resident"],
+        },
+        "aggregation": {"global_burst_limit": {"max_notifications": 2, "window_s": 60}},
+    }
+
+    for idx in range(3):
+        await events.async_emit_event_obj(
+            HeimaEvent(
+                type="system.config_invalid",
+                key=f"system.config_invalid.{idx}",
+                severity="warn",
+                title="Heima configuration issue",
+                message="Configuration issue detected.",
+            ),
+            notifications_config=config,
+        )
+        t += 1.0
+
+    await events.async_emit_event_obj(
+        HeimaEvent(
+            type="security.alarm_triggered",
+            key="security.alarm_triggered",
+            severity="critical",
+            title="Alarm triggered",
+            message="Alarm triggered.",
+        ),
+        notifications_config=config,
+    )
+
+    called_services = [
+        service for domain, service, _data, _blocking in services.calls if domain == "notify"
+    ]
+    assert len(bus.events) == 4
+    assert called_services == [
+        "mobile_app_admin",
+        "mobile_app_admin",
+        "mobile_app_resident",
+        "mobile_app_admin",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_event_pipeline_deduplicates(monkeypatch):
     bus = _FakeBus()
     services = _FakeServices()

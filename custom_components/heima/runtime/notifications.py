@@ -17,6 +17,7 @@ from .contracts import HeimaEvent
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_DEFERRED_ROUTE_DELIVERIES = 128
+_MAX_POLICY_STATE_KEYS = 256
 
 AUDIENCE_TARGET_ADMINS = "admins"
 AUDIENCE_TARGET_RESIDENTS = "residents"
@@ -199,6 +200,12 @@ class NotificationDeliveryPolicy:
     OUTCOME_SUPPRESSED_BURST = "suppressed_burst"
     OUTCOME_MISSING_AUDIENCE_TARGET = "missing_audience_target"
 
+    def __init__(self) -> None:
+        self._persistence_first_seen_ts: dict[str, float] = {}
+        self._persistence_delivered_keys: set[str] = set()
+        self._aggregation_last_delivered_ts: dict[str, float] = {}
+        self._burst_delivery_ts: deque[float] = deque(maxlen=_MAX_POLICY_STATE_KEYS)
+
     def decide(
         self,
         event: HeimaEvent,
@@ -206,6 +213,7 @@ class NotificationDeliveryPolicy:
         *,
         category_enabled: bool = True,
     ) -> NotificationDeliveryDecision:
+        now = time.monotonic()
         config = normalize_notification_policy_config(notifications_config)
         family = classify_notification_event_family(event)
         security_critical = is_security_critical_event(event)
@@ -254,15 +262,42 @@ class NotificationDeliveryPolicy:
 
         target_roles = _target_roles_for_policy(policy)
         if _policy_requires_persistence(policy) and not security_critical:
-            return NotificationDeliveryDecision(
-                outcome=self.OUTCOME_WAITING_PERSISTENCE,
-                event_family=family,
-                push_policy=policy,
+            persistence_decision = self._persistence_decision(
+                event=event,
+                family=family,
+                policy=policy,
+                config=config,
                 target_roles=target_roles,
-                security_critical=security_critical,
-                reason="persistence_required",
                 diagnostics=diagnostics,
+                now=now,
             )
+            if persistence_decision is not None:
+                return persistence_decision
+
+        aggregation_decision = self._aggregation_decision(
+            event=event,
+            family=family,
+            policy=policy,
+            target_roles=target_roles,
+            security_critical=security_critical,
+            config=config,
+            diagnostics=diagnostics,
+            now=now,
+        )
+        if aggregation_decision is not None:
+            return aggregation_decision
+
+        burst_decision = self._burst_decision(
+            family=family,
+            policy=policy,
+            target_roles=target_roles,
+            security_critical=security_critical,
+            config=config,
+            diagnostics=diagnostics,
+            now=now,
+        )
+        if burst_decision is not None:
+            return burst_decision
 
         route_targets = _route_targets_for_roles(
             config["audience_targets"],
@@ -279,6 +314,13 @@ class NotificationDeliveryPolicy:
                 diagnostics=diagnostics,
             )
 
+        self._record_push_delivery(
+            family=family,
+            event=event,
+            security_critical=security_critical,
+            config=config,
+            now=now,
+        )
         return NotificationDeliveryDecision(
             outcome=self.OUTCOME_DELIVER,
             event_family=family,
@@ -289,6 +331,154 @@ class NotificationDeliveryPolicy:
             reason="policy_deliver",
             diagnostics=diagnostics,
         )
+
+    def _persistence_decision(
+        self,
+        *,
+        event: HeimaEvent,
+        family: str,
+        policy: str,
+        config: dict[str, Any],
+        target_roles: tuple[str, ...],
+        diagnostics: dict[str, Any],
+        now: float,
+    ) -> NotificationDeliveryDecision | None:
+        key = _policy_state_key(family, event)
+        if key in self._persistence_delivered_keys:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_SUPPRESSED_AGGREGATION,
+                event_family=family,
+                push_policy=policy,
+                target_roles=target_roles,
+                reason="persistence_already_notified",
+                diagnostics={**diagnostics, "policy_state_key": key},
+            )
+        threshold_s = int(config["persistence_thresholds"].get(family, 0))
+        if threshold_s <= 0:
+            self._persistence_delivered_keys.add(key)
+            return None
+        first_seen = self._persistence_first_seen_ts.get(key)
+        if first_seen is None:
+            self._remember_policy_key(self._persistence_first_seen_ts, key, now)
+            first_seen = now
+        age_s = now - first_seen
+        if age_s < threshold_s:
+            return NotificationDeliveryDecision(
+                outcome=self.OUTCOME_WAITING_PERSISTENCE,
+                event_family=family,
+                push_policy=policy,
+                target_roles=target_roles,
+                reason="persistence_threshold_not_met",
+                diagnostics={
+                    **diagnostics,
+                    "policy_state_key": key,
+                    "persistence_age_s": age_s,
+                    "persistence_threshold_s": threshold_s,
+                },
+            )
+        self._persistence_delivered_keys.add(key)
+        return None
+
+    def _aggregation_decision(
+        self,
+        *,
+        event: HeimaEvent,
+        family: str,
+        policy: str,
+        target_roles: tuple[str, ...],
+        security_critical: bool,
+        config: dict[str, Any],
+        diagnostics: dict[str, Any],
+        now: float,
+    ) -> NotificationDeliveryDecision | None:
+        if security_critical:
+            return None
+        bucket = _aggregation_bucket(family)
+        if not bucket:
+            return None
+        window_s = _aggregation_window_s(bucket, config)
+        if window_s <= 0:
+            return None
+        last_delivered = self._aggregation_last_delivered_ts.get(bucket)
+        if last_delivered is None or (now - last_delivered) >= window_s:
+            return None
+        return NotificationDeliveryDecision(
+            outcome=self.OUTCOME_SUPPRESSED_AGGREGATION,
+            event_family=family,
+            push_policy=policy,
+            target_roles=target_roles,
+            security_critical=security_critical,
+            reason="aggregation_window_active",
+            diagnostics={
+                **diagnostics,
+                "aggregation_bucket": bucket,
+                "aggregation_window_s": window_s,
+            },
+        )
+
+    def _burst_decision(
+        self,
+        *,
+        family: str,
+        policy: str,
+        target_roles: tuple[str, ...],
+        security_critical: bool,
+        config: dict[str, Any],
+        diagnostics: dict[str, Any],
+        now: float,
+    ) -> NotificationDeliveryDecision | None:
+        if security_critical:
+            return None
+        burst_cfg = config["aggregation"]["global_burst_limit"]
+        max_notifications = int(burst_cfg.get("max_notifications", 0))
+        window_s = int(burst_cfg.get("window_s", 0))
+        if max_notifications <= 0 or window_s <= 0:
+            return None
+        while self._burst_delivery_ts and (now - self._burst_delivery_ts[0]) >= window_s:
+            self._burst_delivery_ts.popleft()
+        if len(self._burst_delivery_ts) < max_notifications:
+            return None
+        return NotificationDeliveryDecision(
+            outcome=self.OUTCOME_SUPPRESSED_BURST,
+            event_family=family,
+            push_policy=policy,
+            target_roles=target_roles,
+            security_critical=security_critical,
+            reason="global_burst_limit",
+            diagnostics={
+                **diagnostics,
+                "burst_window_s": window_s,
+                "burst_max_notifications": max_notifications,
+                "burst_current_notifications": len(self._burst_delivery_ts),
+            },
+        )
+
+    def _record_push_delivery(
+        self,
+        *,
+        family: str,
+        event: HeimaEvent,
+        security_critical: bool,
+        config: dict[str, Any],
+        now: float,
+    ) -> None:
+        if not security_critical:
+            burst_cfg = config["aggregation"]["global_burst_limit"]
+            if int(burst_cfg.get("max_notifications", 0)) > 0:
+                self._burst_delivery_ts.append(now)
+        bucket = _aggregation_bucket(family)
+        if bucket:
+            self._aggregation_last_delivered_ts[bucket] = now
+        key = _policy_state_key(family, event)
+        if key in self._persistence_first_seen_ts:
+            self._persistence_delivered_keys.add(key)
+
+    @staticmethod
+    def _remember_policy_key(store: dict[str, float], key: str, now: float) -> None:
+        if key not in store and len(store) >= _MAX_POLICY_STATE_KEYS:
+            oldest = next(iter(store))
+            store.pop(oldest, None)
+        store[key] = now
 
 
 def normalize_notification_policy_config(
@@ -767,6 +957,28 @@ def _policy_for_event(
             "push", AUDIENCE_POLICY_RESIDENTS_AND_ADMINS
         )
     return audience_policy.get(family, {"push": AUDIENCE_POLICY_OBSERVABILITY})["push"]
+
+
+def _policy_state_key(family: str, event: HeimaEvent) -> str:
+    context = event.context if isinstance(event.context, dict) else {}
+    subtype = str(context.get("subtype") or "").strip()
+    if subtype:
+        return f"{family}:{subtype}"
+    return f"{family}:{event.key}"
+
+
+def _aggregation_bucket(family: str) -> str:
+    if family in {"people", "occupancy_mismatch", "security_presence_mismatch"}:
+        return "presence_mismatch"
+    return ""
+
+
+def _aggregation_window_s(bucket: str, config: dict[str, Any]) -> int:
+    aggregation = config.get("aggregation")
+    aggregation = aggregation if isinstance(aggregation, dict) else {}
+    if bucket == "presence_mismatch":
+        return int(aggregation.get("mismatch_window_s", 0))
+    return 0
 
 
 def _target_roles_for_policy(policy: str) -> tuple[str, ...]:
