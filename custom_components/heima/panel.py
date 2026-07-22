@@ -30,7 +30,12 @@ PANEL_MODULE = f"{PANEL_MODULE_BASE}?v={_panel_asset_version()}"
 
 async def async_register_admin_panel(hass: HomeAssistant) -> None:
     """Register the Heima custom admin panel."""
-    await hass.http.async_register_static_paths(
+    http = getattr(hass, "http", None)
+    register_static_paths = getattr(http, "async_register_static_paths", None)
+    if not callable(register_static_paths):
+        return
+
+    await register_static_paths(
         [StaticPathConfig(PANEL_STATIC_URL, str(_PANEL_ASSET_DIR), cache_headers=False)]
     )
     await panel_custom.async_register_panel(

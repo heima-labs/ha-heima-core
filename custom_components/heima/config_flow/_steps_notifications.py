@@ -277,11 +277,7 @@ class _NotificationsStepsMixin:
             return self.async_show_form(
                 step_id="notification_group_edit",
                 data_schema=vol.Schema(
-                    {
-                        vol.Required("group_id"): vol.In(
-                            self._notification_group_choice_map(groups)
-                        )
-                    }
+                    {vol.Required("group_id"): vol.In(self._notification_group_choice_map(groups))}
                 ),
             )
 
@@ -340,11 +336,7 @@ class _NotificationsStepsMixin:
             return self.async_show_form(
                 step_id="notification_group_delete",
                 data_schema=vol.Schema(
-                    {
-                        vol.Required("group_id"): vol.In(
-                            self._notification_group_choice_map(groups)
-                        )
-                    }
+                    {vol.Required("group_id"): vol.In(self._notification_group_choice_map(groups))}
                 ),
             )
 
@@ -1300,12 +1292,8 @@ class _NotificationsStepsMixin:
                 payload.get("promotion_target_groups")
             ),
             "promotion_min_samples": int(payload.get("promotion_min_samples") or 5),
-            "promotion_min_approval_rate": float(
-                payload.get("promotion_min_approval_rate") or 0.8
-            ),
-            "promotion_min_distinct_days": int(
-                payload.get("promotion_min_distinct_days") or 3
-            ),
+            "promotion_min_approval_rate": float(payload.get("promotion_min_approval_rate") or 0.8),
+            "promotion_min_distinct_days": int(payload.get("promotion_min_distinct_days") or 3),
             "promotion_reminder_interval_days": int(
                 payload.get("promotion_reminder_interval_days") or 7
             ),
@@ -1368,9 +1356,7 @@ class _NotificationsStepsMixin:
                 "min_samples": int(payload.get("promotion_min_samples") or 5),
                 "min_approval_rate": float(payload.get("promotion_min_approval_rate") or 0.8),
                 "min_distinct_days": int(payload.get("promotion_min_distinct_days") or 3),
-                "reminder_interval_days": int(
-                    payload.get("promotion_reminder_interval_days") or 7
-                ),
+                "reminder_interval_days": int(payload.get("promotion_reminder_interval_days") or 7),
             }
         return policy
 
@@ -1393,9 +1379,7 @@ class _NotificationsStepsMixin:
             "confirmation_use_default_route_targets": bool(
                 confirmation.get("use_default_route_targets", True)
             ),
-            "confirmation_expires_in_minutes": int(
-                confirmation.get("expires_in_minutes") or 10
-            ),
+            "confirmation_expires_in_minutes": int(confirmation.get("expires_in_minutes") or 10),
             "confirmation_on_timeout": str(confirmation.get("on_timeout") or "skip"),
             "promotion_enabled": bool(promotion.get("enabled", True)),
             "promotion_target_recipients": ", ".join(
@@ -1407,9 +1391,7 @@ class _NotificationsStepsMixin:
             "promotion_min_samples": int(promotion.get("min_samples") or 5),
             "promotion_min_approval_rate": float(promotion.get("min_approval_rate") or 0.8),
             "promotion_min_distinct_days": int(promotion.get("min_distinct_days") or 3),
-            "promotion_reminder_interval_days": int(
-                promotion.get("reminder_interval_days") or 7
-            ),
+            "promotion_reminder_interval_days": int(promotion.get("reminder_interval_days") or 7),
         }
 
     def _execution_policy_profile_choice_map(

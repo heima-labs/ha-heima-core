@@ -151,9 +151,10 @@ def resolve_execution_policy_config(
 
         effective = deepcopy(profile)
         override = cfg.get("execution_policy_override")
-        has_override = isinstance(override, dict) and bool(override)
+        override_mapping = dict(override) if isinstance(override, dict) else {}
+        has_override = bool(override_mapping)
         if has_override:
-            effective = _deep_merge_policy_mapping(effective, override)
+            effective = _deep_merge_policy_mapping(effective, override_mapping)
         return ResolvedExecutionPolicy(
             policy=ExecutionPolicy.from_mapping(effective),
             source="profile_with_override" if has_override else "profile",

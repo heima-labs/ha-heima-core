@@ -400,7 +400,8 @@ def _why_not_now_result(coordinator: Any, reaction_id: str) -> dict[str, Any]:
             "links": [],
         }
     detail = dict(reactions.get(normalized) or {})
-    latest_trace = detail.get("latest_trace") if isinstance(detail.get("latest_trace"), dict) else {}
+    raw_latest_trace = detail.get("latest_trace")
+    latest_trace = dict(raw_latest_trace) if isinstance(raw_latest_trace, dict) else {}
     summary = dict(detail.get("summary") or {})
     return {
         "reaction_id": normalized,

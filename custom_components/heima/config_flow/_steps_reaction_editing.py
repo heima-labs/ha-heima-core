@@ -882,7 +882,11 @@ class _ReactionEditingStepsMixin:
             cfg.pop("execution_policy", None)
             if bool(current_input.get("use_execution_policy_override", False)):
                 profiles = reactions_cfg.get("execution_policy_profiles")
-                profile = dict(profiles.get(execution_policy_ref, {})) if isinstance(profiles, dict) else {}
+                profile = (
+                    dict(profiles.get(execution_policy_ref, {}))
+                    if isinstance(profiles, dict)
+                    else {}
+                )
                 override = self._runtime_confirmation_profile_override_delta(
                     profile_policy=profile,
                     submitted_policy=execution_policy,
@@ -1356,7 +1360,9 @@ class _ReactionEditingStepsMixin:
 
         return override
 
-    def _runtime_confirmation_effective_policy_from_cfg(self, cfg: dict[str, Any]) -> dict[str, Any]:
+    def _runtime_confirmation_effective_policy_from_cfg(
+        self, cfg: dict[str, Any]
+    ) -> dict[str, Any]:
         """Return the policy the runtime will use for this reaction config."""
         profile_ref = str(cfg.get("execution_policy_ref") or "").strip()
         if profile_ref:

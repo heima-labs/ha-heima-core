@@ -1270,7 +1270,9 @@ async def test_anomaly_analyzer_alarm_disarm_unusual_hour_requires_conservative_
     ]
 
 
-async def test_anomaly_analyzer_alarm_disarm_unusual_hour_allows_multiple_supported_windows() -> None:
+async def test_anomaly_analyzer_alarm_disarm_unusual_hour_allows_multiple_supported_windows() -> (
+    None
+):
     analyzer = AnomalyAnalyzer()
     snapshots: list[HouseSnapshot] = []
     for _ in range(6):

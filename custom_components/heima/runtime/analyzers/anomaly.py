@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -1364,7 +1364,7 @@ def _clock_median_hour(values: list[float]) -> float:
 
 
 def _clock_local_count(
-    values: list[int | float],
+    values: Sequence[int | float],
     hour: int | float,
     *,
     window_hours: float,
@@ -1375,7 +1375,7 @@ def _clock_local_count(
 
 
 def _supported_clock_windows(
-    values: list[int | float],
+    values: Sequence[int | float],
     *,
     window_hours: float,
     min_observations: int,
@@ -1384,10 +1384,7 @@ def _supported_clock_windows(
     for candidate in sorted({float(value) for value in values}):
         if _clock_local_count(values, candidate, window_hours=window_hours) < min_observations:
             continue
-        if any(
-            _clock_distance_hours(candidate, existing) <= window_hours
-            for existing in windows
-        ):
+        if any(_clock_distance_hours(candidate, existing) <= window_hours for existing in windows):
             continue
         windows.append(candidate)
     return windows
