@@ -478,10 +478,11 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
     delivery_policy = snapshot["notifications"]["delivery_policy"]
     assert delivery_policy["effective"]["audience_policy"]["people"]["push"] == "observability"
     assert delivery_policy["health"]["status"] == "warning"
-    assert delivery_policy["health"]["issue_count"] == 2
+    assert delivery_policy["health"]["issue_count"] == 3
     assert delivery_policy["health"]["issues"] == [
         {"severity": "warning", "reason": "unresolved_fallback_targets"},
-        {"severity": "warning", "reason": "unresolved_audience_targets"}
+        {"severity": "warning", "reason": "unresolved_audience_targets"},
+        {"severity": "warning", "reason": "residents_audience_not_group_backed"},
     ]
     assert delivery_policy["unresolved_audience_targets"] == [
         {"role": "residents", "target": "missing"}
@@ -555,6 +556,25 @@ def test_observability_snapshot_has_versioned_minimal_sections() -> None:
         },
     ]
     assert "notify.mobile_app_iphone_stefano" not in entities
+
+
+def test_observability_notification_health_warns_when_residents_group_is_missing() -> None:
+    coordinator = _FakeCoordinator()
+    notifications = coordinator.entry.options["notifications"]
+    notifications["recipient_groups"] = {"admins": ["stefano"]}
+    notifications["route_targets"] = ["admins"]
+    notifications["audience_targets"] = {"admins": ["admins"], "residents": ["stefano"]}
+
+    snapshot = build_observability_snapshot(coordinator)
+
+    health = snapshot["notifications"]["delivery_policy"]["health"]
+    assert health["status"] == "warning"
+    assert {"severity": "warning", "reason": "missing_residents_group"} in health["issues"]
+    assert {
+        "severity": "warning",
+        "reason": "residents_audience_not_group_backed",
+    } in health["issues"]
+    assert snapshot["notifications"]["delivery_policy"]["unresolved_audience_targets"] == []
 
 
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:

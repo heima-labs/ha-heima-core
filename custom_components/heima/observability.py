@@ -9,6 +9,8 @@ from typing import Any
 
 from .const import OPT_REACTIONS, OPT_SECURITY
 from .runtime.notifications import (
+    AUDIENCE_TARGET_ADMINS,
+    AUDIENCE_TARGET_RESIDENTS,
     normalize_notification_policy_config,
     notification_delivery_policy_fields,
 )
@@ -671,10 +673,20 @@ def _notification_delivery_policy_health(
         issues.append({"severity": "warning", "reason": "no_actionable_routes"})
 
     if isinstance(audience_targets, Mapping):
-        for role in ("admins", "residents"):
+        for role in (AUDIENCE_TARGET_ADMINS, AUDIENCE_TARGET_RESIDENTS):
             configured = [target for target in _string_list(audience_targets.get(role))]
             if not configured:
                 issues.append({"severity": "warning", "reason": f"empty_{role}_audience"})
+            if _notification_policy_uses_audience(effective_policy, role):
+                if role not in groups:
+                    issues.append({"severity": "warning", "reason": f"missing_{role}_group"})
+                if role not in configured:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "reason": f"{role}_audience_not_group_backed",
+                        }
+                    )
 
     status = "ok" if not issues else "warning"
     return {
@@ -682,6 +694,29 @@ def _notification_delivery_policy_health(
         "issue_count": len(issues),
         "issues": issues,
     }
+
+
+def _notification_policy_uses_audience(effective_policy: Mapping[str, Any], role: str) -> bool:
+    audience_policy = effective_policy.get("audience_policy")
+    if not isinstance(audience_policy, Mapping):
+        return False
+    for raw_policy in audience_policy.values():
+        policy = ""
+        if isinstance(raw_policy, Mapping):
+            policy = str(raw_policy.get("push") or "").strip()
+        elif raw_policy is not None:
+            policy = str(raw_policy).strip()
+        if _notification_push_policy_uses_audience(policy, role):
+            return True
+    return False
+
+
+def _notification_push_policy_uses_audience(push_policy: str, role: str) -> bool:
+    if role == AUDIENCE_TARGET_ADMINS:
+        return "admins" in push_policy
+    if role == AUDIENCE_TARGET_RESIDENTS:
+        return "residents" in push_policy
+    return False
 
 
 def _unresolved_audience_targets(
