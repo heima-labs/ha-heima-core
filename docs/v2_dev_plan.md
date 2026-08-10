@@ -2629,6 +2629,9 @@ state awareness; `heima.configure_anomaly_rule` service.
      percentile of historical absence runs.
    - `presence_pattern_drift` compares the recent `anyone_home=True` ratio against the baseline for
      the same `(weekday, hour_bucket)`.
+   - Presence anomaly rules are house-state aware: `vacation` snapshots are excluded from normal
+     presence baselines, and no presence anomaly is emitted while the current snapshot is in
+     `house_state=vacation`.
    - Tests: each rule covers trigger, insufficient support, normal condition, threshold override,
      and disabled rule.
 3. Q3 — Heating rules (3): `DONE`

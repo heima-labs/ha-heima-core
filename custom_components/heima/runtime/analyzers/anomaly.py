@@ -43,6 +43,7 @@ _APPLIANCE_UNUSUAL_HOUR_ACTIVITIES = frozenset(
         "pc_active",
     }
 )
+_PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES = frozenset({"vacation"})
 
 
 @dataclass(frozen=True)
@@ -130,7 +131,7 @@ class AnomalyAnalyzer:
         min_observations = _threshold_int(rule, "min_observations", 5)
         delta_hours = _threshold_float(rule, "delta_hours", 3.0)
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
-        snapshots = snapshot_store.snapshots(limit=window)
+        snapshots = _presence_anomaly_snapshots(snapshot_store.snapshots(limit=window))
         transitions = _presence_transitions(snapshots, previous_home=False, current_home=True)
         if not transitions:
             return []
@@ -182,7 +183,7 @@ class AnomalyAnalyzer:
         min_observations = _threshold_int(rule, "min_observations", 5)
         delta_hours = _threshold_float(rule, "delta_hours", 3.0)
         window = max(min_observations + 1, _threshold_int(rule, "window", 1000))
-        snapshots = snapshot_store.snapshots(limit=window)
+        snapshots = _presence_anomaly_snapshots(snapshot_store.snapshots(limit=window))
         transitions = _presence_transitions(snapshots, previous_home=True, current_home=False)
         if not transitions:
             return []
@@ -234,7 +235,9 @@ class AnomalyAnalyzer:
         history_window = _threshold_int(rule, "history_window", 1000)
         min_observations = _threshold_int(rule, "min_observations", 5)
         multiplier = _threshold_float(rule, "multiplier", 2.0)
-        snapshots = snapshot_store.snapshots(limit=max(history_window, min_observations + 1))
+        snapshots = _presence_anomaly_snapshots(
+            snapshot_store.snapshots(limit=max(history_window, min_observations + 1))
+        )
         current_run = _current_absence_run_length(snapshots)
         if current_run <= 0:
             return []
@@ -283,8 +286,10 @@ class AnomalyAnalyzer:
         min_observations = _threshold_int(rule, "min_observations", 10)
         recent_observations = _threshold_int(rule, "recent_observations", 4)
         drift_delta = _threshold_float(rule, "drift_delta", 0.5)
-        snapshots = snapshot_store.snapshots(
-            limit=max(history_window, min_observations + recent_observations)
+        snapshots = _presence_anomaly_snapshots(
+            snapshot_store.snapshots(
+                limit=max(history_window, min_observations + recent_observations)
+            )
         )
         if not snapshots:
             return []
@@ -1445,6 +1450,22 @@ def _security_state(snapshot: Any) -> str:
 
 def _is_armed_state(security_state: str) -> bool:
     return security_state in {"armed_away", "armed_home", "armed_night"}
+
+
+def _presence_anomaly_snapshots(snapshots: Sequence[Any]) -> list[Any]:
+    if not snapshots:
+        return []
+    if _snapshot_house_state(snapshots[-1]) in _PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES:
+        return []
+    return [
+        snapshot
+        for snapshot in snapshots
+        if _snapshot_house_state(snapshot) not in _PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES
+    ]
+
+
+def _snapshot_house_state(snapshot: Any) -> str:
+    return str(getattr(snapshot, "house_state", "") or "").strip().lower()
 
 
 def _snapshot_slot(snapshot: Any) -> tuple[int, int]:

@@ -1658,6 +1658,11 @@ Rules are loaded from options on every `analyze()` — changes via `heima.config
 | `extended_absence` | No presence event > threshold days | `threshold_days=5` | `warning` |
 | `presence_pattern_drift` | 7-day rolling average of arrivals deviates > threshold from the 30-day baseline | `drift_minutes=90` | `info` |
 
+Presence anomaly rules are house-state aware. Snapshots whose effective `house_state` is
+`vacation` are excluded from the normal presence baseline, and no presence anomaly is emitted
+while the current snapshot is in `vacation`. Vacation is an intentional away-from-home context,
+not evidence that normal presence behavior drifted.
+
 **Heating** (requires Phase O: `heating_current_temperature` in HouseSnapshot)
 
 | Rule ID | Trigger | Default thresholds | Severity |
