@@ -1663,6 +1663,14 @@ Presence anomaly rules are house-state aware. Snapshots whose effective `house_s
 while the current snapshot is in `vacation`. Vacation is an intentional away-from-home context,
 not evidence that normal presence behavior drifted.
 
+Rules that interpret low presence or no-presence observations as suspicious must apply the same
+house-state semantics. `vacation` is an expected-absence context: it must be excluded from
+absence-based baselines and must not emit findings whose only evidence is "nobody is home" while
+vacation mode is active. This applies to `sensor_activity_drop`, `ghost_activity`, and
+`lights_on_unattended`. Safety-critical unattended appliance rules (`stove_on_unattended`,
+`oven_on_unattended`) are not suppressed by vacation because a real stove/oven signal while the
+house is empty remains actionable.
+
 **Heating** (requires Phase O: `heating_current_temperature` in HouseSnapshot)
 
 | Rule ID | Trigger | Default thresholds | Severity |

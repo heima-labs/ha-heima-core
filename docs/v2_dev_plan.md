@@ -2632,6 +2632,10 @@ state awareness; `heima.configure_anomaly_rule` service.
    - Presence anomaly rules are house-state aware: `vacation` snapshots are excluded from normal
      presence baselines, and no presence anomaly is emitted while the current snapshot is in
      `house_state=vacation`.
+   - Follow-up audit covered all canonical house states:
+     - `vacation` is an expected-absence context and must not produce absence-only anomalies.
+     - `away` is still valid input for absence/security/heating rules and is not globally excluded.
+     - `guest`, `home`, `working`, `sleeping`, and `relax` remain valid learned/runtime contexts.
    - Tests: each rule covers trigger, insufficient support, normal condition, threshold override,
      and disabled rule.
 3. Q3 — Heating rules (3): `DONE`
@@ -2646,6 +2650,12 @@ state awareness; `heima.configure_anomaly_rule` service.
    - `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`, `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
    - Security subset `DONE`: `alarm_disarm_unusual_hour`, `alarm_expected_not_armed`.
    - Residual subset `DONE`: `sensor_activity_drop`, `ghost_activity`, `unusual_stillness`.
+   - `sensor_activity_drop` and `ghost_activity` are vacation-aware: they ignore `vacation`
+     snapshots and do not emit when the current snapshot is in `house_state=vacation`.
+   - `lights_on_unattended` is also vacation-aware because vacation presence simulation may
+     intentionally leave lights on while no resident is home.
+   - Safety-critical unattended appliance rules (`stove_on_unattended`, `oven_on_unattended`) remain
+     active during `vacation`.
 6. Q6 — `heima.configure_anomaly_rule` service: `DONE`
    - Handler in the coordinator: updates options, takes effect on the next `analyze()`.
    - Tests: threshold override applied, disabled rule doesn't trigger.

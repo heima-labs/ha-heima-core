@@ -120,6 +120,7 @@ def _timed_snapshot(
     hour: int | None = None,
     room_occupancy: dict[str, bool] | None = None,
     anyone_home: bool = True,
+    house_state: str = "home",
 ) -> HouseSnapshot:
     local_hour = when.hour if hour is None else hour
     return _snapshot(
@@ -128,6 +129,7 @@ def _timed_snapshot(
         minute_of_day=local_hour * 60,
         anyone_home=anyone_home,
         room_occupancy=room_occupancy,
+        house_state=house_state,
     )
 
 
@@ -1042,6 +1044,24 @@ async def test_anomaly_analyzer_lights_on_unattended_ignores_attended_lights() -
     ]
 
 
+async def test_anomaly_analyzer_lights_on_unattended_ignores_vacation_context() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _lighting_snapshot(
+            anyone_home=False,
+            house_state="vacation",
+            lights_physically_on={"light.living_main": True},
+        )
+        for _ in range(3)
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding for finding in findings if finding.payload.anomaly_type == "lights_on_unattended"
+    ]
+
+
 async def test_anomaly_analyzer_lights_on_unattended_disabled_rule() -> None:
     analyzer = AnomalyAnalyzer(
         options_provider=lambda: {
@@ -1504,6 +1524,26 @@ async def test_anomaly_analyzer_sensor_activity_drop_ignores_normal_activity() -
     ]
 
 
+async def test_anomaly_analyzer_sensor_activity_drop_ignores_vacation_context() -> None:
+    analyzer = AnomalyAnalyzer()
+    recent_time = datetime(2026, 5, 5, 20, 0, tzinfo=UTC)
+    baseline_start = recent_time - timedelta(hours=12)
+    baseline = [
+        _timed_snapshot(baseline_start + timedelta(minutes=minute), weekday=1, hour=20)
+        for minute in range(0, 200, 10)
+    ]
+    snapshots = [
+        *baseline,
+        _timed_snapshot(recent_time, weekday=1, hour=20, house_state="vacation"),
+    ]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [
+        finding for finding in findings if finding.payload.anomaly_type == "sensor_activity_drop"
+    ]
+
+
 async def test_anomaly_analyzer_sensor_activity_drop_threshold_override() -> None:
     analyzer = AnomalyAnalyzer(
         options_provider=lambda: {
@@ -1588,6 +1628,22 @@ async def test_anomaly_analyzer_ghost_activity_respects_min_observations() -> No
 async def test_anomaly_analyzer_ghost_activity_ignores_normal_occupancy() -> None:
     analyzer = AnomalyAnalyzer()
     snapshots = [_snapshot(anyone_home=True, room_occupancy={"living": True}) for _ in range(20)]
+
+    findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
+
+    assert not [finding for finding in findings if finding.payload.anomaly_type == "ghost_activity"]
+
+
+async def test_anomaly_analyzer_ghost_activity_ignores_vacation_context() -> None:
+    analyzer = AnomalyAnalyzer()
+    snapshots = [
+        _snapshot(
+            anyone_home=False,
+            room_occupancy={"living": True},
+            house_state="vacation",
+        )
+        for _ in range(3)
+    ]
 
     findings = await analyzer.analyze(_FakeEventStore(), _FakeSnapshotStore(snapshots))  # type: ignore[arg-type]
 

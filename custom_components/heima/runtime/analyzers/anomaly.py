@@ -43,7 +43,7 @@ _APPLIANCE_UNUSUAL_HOUR_ACTIVITIES = frozenset(
         "pc_active",
     }
 )
-_PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES = frozenset({"vacation"})
+_EXPECTED_ABSENCE_HOUSE_STATES = frozenset({"vacation"})
 
 
 @dataclass(frozen=True)
@@ -532,6 +532,7 @@ class AnomalyAnalyzer:
             snapshot
             for snapshot in snapshots
             if not bool(getattr(snapshot, "anyone_home", False)) and _lit_entities(snapshot)
+            and not _is_expected_absence_context(snapshot)
         ]
         if len(unattended) < min_observations:
             return []
@@ -665,10 +666,16 @@ class AnomalyAnalyzer:
         ]
         if not timed:
             return []
+        if _is_expected_absence_context(timed[-1][1]):
+            return []
 
         latest_time = timed[-1][0]
         recent_cutoff = latest_time - timedelta(hours=max(window_hours, 0.1))
-        recent = [(ts, snapshot) for ts, snapshot in timed if ts >= recent_cutoff]
+        recent = [
+            (ts, snapshot)
+            for ts, snapshot in timed
+            if ts >= recent_cutoff and not _is_expected_absence_context(snapshot)
+        ]
         recent_rate = len(recent) / max(window_hours, 0.1)
         current_slot = (
             int(getattr(timed[-1][1], "weekday", 0) or 0),
@@ -678,6 +685,7 @@ class AnomalyAnalyzer:
             (ts, snapshot)
             for ts, snapshot in timed
             if ts < recent_cutoff
+            and not _is_expected_absence_context(snapshot)
             and (
                 int(getattr(snapshot, "weekday", 0) or 0),
                 int(getattr(snapshot, "minute_of_day", 0) or 0) // 60,
@@ -737,6 +745,7 @@ class AnomalyAnalyzer:
             snapshot
             for snapshot in snapshots
             if not bool(getattr(snapshot, "anyone_home", False))
+            and not _is_expected_absence_context(snapshot)
             and any(
                 bool(value)
                 for value in _safe_dict(getattr(snapshot, "room_occupancy", {})).values()
@@ -1455,17 +1464,21 @@ def _is_armed_state(security_state: str) -> bool:
 def _presence_anomaly_snapshots(snapshots: Sequence[Any]) -> list[Any]:
     if not snapshots:
         return []
-    if _snapshot_house_state(snapshots[-1]) in _PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES:
+    if _is_expected_absence_context(snapshots[-1]):
         return []
     return [
         snapshot
         for snapshot in snapshots
-        if _snapshot_house_state(snapshot) not in _PRESENCE_ANOMALY_EXCLUDED_HOUSE_STATES
+        if not _is_expected_absence_context(snapshot)
     ]
 
 
 def _snapshot_house_state(snapshot: Any) -> str:
     return str(getattr(snapshot, "house_state", "") or "").strip().lower()
+
+
+def _is_expected_absence_context(snapshot: Any) -> bool:
+    return _snapshot_house_state(snapshot) in _EXPECTED_ABSENCE_HOUSE_STATES
 
 
 def _snapshot_slot(snapshot: Any) -> tuple[int, int]:
