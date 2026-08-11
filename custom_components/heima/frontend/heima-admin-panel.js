@@ -543,13 +543,38 @@ class HeimaAdminPanel extends HTMLElement {
   _health(snapshot) {
     const findings = snapshot.health_findings || [];
     const retention = snapshot.meta?.retention || {};
+    const health = snapshot.health || {};
     return `
       <section class="grid">
-        ${this._metric("Status", snapshot.health?.status || "unknown")}
-        ${this._metric("Reason", snapshot.health?.reason || "")}
+        ${this._metric("Status", health.status || "unknown")}
+        ${this._metric("Reason", health.reason || "")}
         ${this._metric("Retention", retention.description || "unknown")}
       </section>
+      ${this._healthEventPanel("Last Invariant Violation", health.last_invariant_violation)}
+      ${this._healthEventPanel("Last Anomaly", health.last_anomaly)}
       ${findings.length ? this._findingsTable(findings) : `<div class="empty">No active health findings.</div>`}
+    `;
+  }
+
+  _healthEventPanel(title, event) {
+    if (!event || !Object.keys(event).length) return "";
+    const context = event.context && typeof event.context === "object" ? event.context : {};
+    return `
+      <section class="detail-panel">
+        <h2>${this._escape(title)}</h2>
+        <section class="detail-grid">
+          ${this._detailSection("Event", {
+            type: event.type,
+            key: event.key,
+            severity: event.severity,
+            title: event.title,
+            message: event.message,
+            timestamp: event.ts,
+            event_id: event.event_id,
+          })}
+          ${this._detailSection("Context", context)}
+        </section>
+      </section>
     `;
   }
 

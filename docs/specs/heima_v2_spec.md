@@ -1658,6 +1658,19 @@ Rules are loaded from options on every `analyze()` — changes via `heima.config
 | `extended_absence` | No presence event > threshold days | `threshold_days=5` | `warning` |
 | `presence_pattern_drift` | 7-day rolling average of arrivals deviates > threshold from the 30-day baseline | `drift_minutes=90` | `info` |
 
+Presence anomaly rules are house-state aware. Snapshots whose effective `house_state` is
+`vacation` are excluded from the normal presence baseline, and no presence anomaly is emitted
+while the current snapshot is in `vacation`. Vacation is an intentional away-from-home context,
+not evidence that normal presence behavior drifted.
+
+Rules that interpret low presence or no-presence observations as suspicious must apply the same
+house-state semantics. `vacation` is an expected-absence context: it must be excluded from
+absence-based baselines and must not emit findings whose only evidence is "nobody is home" while
+vacation mode is active. This applies to `sensor_activity_drop`, `ghost_activity`, and
+`lights_on_unattended`. Safety-critical unattended appliance rules (`stove_on_unattended`,
+`oven_on_unattended`) are not suppressed by vacation because a real stove/oven signal while the
+house is empty remains actionable.
+
 **Heating** (requires Phase O: `heating_current_temperature` in HouseSnapshot)
 
 | Rule ID | Trigger | Default thresholds | Severity |

@@ -305,6 +305,10 @@ class _FakeRuntimeConfirmation:
 
 class _FakeCoordinator:
     def __init__(self) -> None:
+        self._health_status_value = "ok"
+        self._health_reason_value = "ok"
+        self._last_anomaly: dict[str, Any] | None = None
+        self._last_invariant_violation: dict[str, Any] | None = None
         self.entry = SimpleNamespace(
             entry_id="entry-1",
             options={
@@ -370,10 +374,10 @@ class _FakeCoordinator:
         )
 
     def _health_status(self) -> str:
-        return "ok"
+        return self._health_status_value
 
     def _health_reason(self) -> str:
-        return "ok"
+        return self._health_reason_value
 
     def _validation_report(self) -> SimpleNamespace:
         return SimpleNamespace(as_dict=lambda: {"ok": True, "issues": []})
@@ -575,6 +579,46 @@ def test_observability_notification_health_warns_when_residents_group_is_missing
         "reason": "residents_audience_not_group_backed",
     } in health["issues"]
     assert snapshot["notifications"]["delivery_policy"]["unresolved_audience_targets"] == []
+
+
+def test_observability_health_exports_invariant_violation_details() -> None:
+    coordinator = _FakeCoordinator()
+    coordinator._health_status_value = "degraded"
+    coordinator._health_reason_value = "invariant_violation"
+    coordinator._last_anomaly = {
+        "type": "anomaly.presence_without_occupancy",
+        "key": "anomaly.presence_without_occupancy",
+        "severity": "warning",
+        "title": "Invariant violation",
+        "message": "Presence says someone is home, but no derived room is occupied.",
+        "context": {
+            "check_id": "presence_without_occupancy",
+            "anomaly_type": "presence_without_occupancy",
+            "people_count": 2,
+            "occupied_rooms": [],
+        },
+        "event_id": "event.presence",
+        "ts": "2026-07-23T08:27:33+00:00",
+    }
+    coordinator._last_invariant_violation = dict(coordinator._last_anomaly)
+
+    snapshot = build_observability_snapshot(coordinator)
+
+    health = snapshot["health"]
+    assert health["status"] == "degraded"
+    assert health["reason"] == "invariant_violation"
+    assert health["last_anomaly"]["type"] == "anomaly.presence_without_occupancy"
+    assert health["last_invariant_violation"]["context"]["check_id"] == (
+        "presence_without_occupancy"
+    )
+    finding = snapshot["health_findings"][0]
+    assert finding["summary"] == (
+        "Presence says someone is home, but no derived room is occupied."
+    )
+    assert finding["suggested_action"] == (
+        "Inspect invariant check 'presence_without_occupancy' in the Health section."
+    )
+    assert finding["details"]["event_id"] == "event.presence"
 
 
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:

@@ -180,6 +180,10 @@ def _health_summary(coordinator: Any, validation: Mapping[str, Any]) -> dict[str
     return {
         "status": str(health_status or "unknown"),
         "reason": str(health_reason or ""),
+        "last_anomaly": _health_event_detail(getattr(coordinator, "_last_anomaly", None)),
+        "last_invariant_violation": _health_event_detail(
+            getattr(coordinator, "_last_invariant_violation", None)
+        ),
         "validation": dict(validation),
     }
 
@@ -211,18 +215,20 @@ def _health_findings(
     health_status = str(getattr(coordinator, "_health_status", lambda: "unknown")())
     health_reason = str(getattr(coordinator, "_health_reason", lambda: "")())
     if health_status not in {"ok", "unknown"}:
+        active_health_event = _active_health_event(coordinator, health_reason)
         findings.append(
             {
                 "finding_id": f"health:{health_status}:{health_reason or 'unknown'}",
                 "severity": "error" if health_status == "error" else "warning",
                 "reason_code": health_reason or health_status,
-                "summary": f"Heima health is {health_status}.",
+                "summary": _health_finding_summary(health_status, active_health_event),
                 "affected_object_ids": [],
-                "suggested_action": "Open the Health section for details.",
+                "suggested_action": _health_finding_suggested_action(active_health_event),
                 "links": [{"kind": "health", "id": health_reason or health_status}],
                 "first_seen_at": generated_at,
                 "last_seen_at": generated_at,
                 "acknowledged": False,
+                "details": active_health_event,
             }
         )
 
@@ -244,6 +250,39 @@ def _health_findings(
             }
         )
     return findings
+
+
+def _active_health_event(coordinator: Any, health_reason: str) -> dict[str, Any]:
+    if health_reason == "invariant_violation":
+        return _health_event_detail(getattr(coordinator, "_last_invariant_violation", None))
+    if health_reason == "anomaly":
+        return _health_event_detail(getattr(coordinator, "_last_anomaly", None))
+    return {}
+
+
+def _health_event_detail(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _health_finding_summary(health_status: str, event: Mapping[str, Any]) -> str:
+    message = str(event.get("message") or "").strip()
+    title = str(event.get("title") or "").strip()
+    event_type = str(event.get("type") or "").strip()
+    if message:
+        return message
+    if title and event_type:
+        return f"{title}: {event_type}"
+    if event_type:
+        return event_type
+    return f"Heima health is {health_status}."
+
+
+def _health_finding_suggested_action(event: Mapping[str, Any]) -> str:
+    context = event.get("context") if isinstance(event.get("context"), Mapping) else {}
+    check_id = str(context.get("check_id") or "").strip()
+    if check_id:
+        return f"Inspect invariant check '{check_id}' in the Health section."
+    return "Open the Health section for details."
 
 
 def _validation_issues(validation: Mapping[str, Any]) -> list[dict[str, Any]]:
