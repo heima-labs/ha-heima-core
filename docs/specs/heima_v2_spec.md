@@ -1671,6 +1671,12 @@ vacation mode is active. This applies to `sensor_activity_drop`, `ghost_activity
 `oven_on_unattended`) are not suppressed by vacation because a real stove/oven signal while the
 house is empty remains actionable.
 
+Statistical anomaly findings are active runtime findings, not permanent installer alerts. After
+each analyzer run, Heima must reconcile the currently emitted anomaly types with the previously
+stored `last_anomaly`. If the previous statistical anomaly is no longer emitted, Heima must clear it
+from health/observability state and dismiss its installer persistent notification. Invariant
+violations keep their separate explicit resolved-event path.
+
 **Heating** (requires Phase O: `heating_current_temperature` in HouseSnapshot)
 
 | Rule ID | Trigger | Default thresholds | Severity |

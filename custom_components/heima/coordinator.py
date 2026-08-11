@@ -2056,6 +2056,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             self._house_snapshot_store,
         )
         await router.async_route(findings)
+        await self._async_reconcile_resolved_statistical_anomalies(findings)
 
     def _sync_occupancy_inference_rooms(self) -> None:
         """Sync sensorless room ids after startup or options reload."""
@@ -2412,6 +2413,46 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         anomaly_context = anomaly.get("context") if isinstance(anomaly.get("context"), dict) else {}
         if str(anomaly_context.get("check_id") or "") == check_id:
             self._last_anomaly = None
+
+    async def _async_reconcile_resolved_statistical_anomalies(
+        self,
+        findings: list[Any],
+    ) -> None:
+        anomaly = self._last_anomaly or {}
+        anomaly_context = anomaly.get("context") if isinstance(anomaly.get("context"), dict) else {}
+        if anomaly_context.get("check_id"):
+            return
+        anomaly_type = str(anomaly_context.get("anomaly_type") or "").strip()
+        if not anomaly_type:
+            event_type = str(anomaly.get("type") or "").strip()
+            if event_type.startswith("anomaly."):
+                anomaly_type = event_type.removeprefix("anomaly.")
+        if not anomaly_type:
+            return
+
+        active_anomaly_types = _finding_anomaly_types(findings)
+        if anomaly_type in active_anomaly_types:
+            return
+
+        self._last_anomaly = None
+        await self._async_dismiss_installer_alert(str(anomaly.get("key") or f"anomaly.{anomaly_type}"))
+        self._sync_health_sensor()
+
+    async def _async_dismiss_installer_alert(self, key: str) -> None:
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            return
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "dismiss",
+                {
+                    "notification_id": _installer_notification_id(normalized_key),
+                },
+                blocking=False,
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to dismiss installer alert notification")
 
     async def async_run_diagnostics(self) -> dict[str, Any]:
         """Collect structured diagnostics and update the health sensor."""
@@ -2933,6 +2974,16 @@ def _health_event_record(event: dict[str, Any]) -> dict[str, Any]:
         "event_id": str(event.get("event_id") or ""),
         "ts": str(event.get("ts") or ""),
     }
+
+
+def _finding_anomaly_types(findings: list[Any]) -> set[str]:
+    anomaly_types: set[str] = set()
+    for finding in findings:
+        payload = getattr(finding, "payload", None)
+        anomaly_type = str(getattr(payload, "anomaly_type", "") or "").strip()
+        if anomaly_type:
+            anomaly_types.add(anomaly_type)
+    return anomaly_types
 
 
 def _sensorless_occupancy_room_ids(options: dict[str, Any]) -> set[str]:

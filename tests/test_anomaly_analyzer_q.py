@@ -1813,6 +1813,55 @@ async def test_anomaly_finding_routes_to_installer_alert() -> None:
     assert services.calls[0][0:2] == ("persistent_notification", "create")
 
 
+async def test_resolved_statistical_anomaly_clears_last_alert_and_notification() -> None:
+    coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
+    coordinator.engine = _FakeEngine()
+    coordinator.hass = SimpleNamespace(services=_FakeServices())
+    coordinator._notified_installer_alert_keys = set()
+    coordinator._last_anomaly = None
+    coordinator._last_invariant_violation = None
+    coordinator._sync_health_sensor = MagicMock()
+    coordinator._event_store = _FakeEventStore()
+    coordinator._anomaly_analyzer = AnomalyAnalyzer()
+    coordinator._finding_router = FindingRouter(
+        proposal_engine=SimpleNamespace(),
+        anomaly_handler=coordinator._async_handle_anomaly_finding,
+    )
+
+    coordinator._house_snapshot_store = _FakeSnapshotStore(
+        [
+            *[_presence_snapshot(hour=8, anyone_home=False) for _ in range(1)],
+            *[_presence_snapshot(hour=8, anyone_home=True) for _ in range(1)],
+            *[_presence_snapshot(hour=9, anyone_home=False) for _ in range(1)],
+            *[_presence_snapshot(hour=9, anyone_home=True) for _ in range(1)],
+            *[_presence_snapshot(hour=10, anyone_home=False) for _ in range(1)],
+            *[_presence_snapshot(hour=10, anyone_home=True) for _ in range(1)],
+            *[_presence_snapshot(hour=11, anyone_home=False) for _ in range(1)],
+            *[_presence_snapshot(hour=11, anyone_home=True) for _ in range(1)],
+            *[_presence_snapshot(hour=12, anyone_home=False) for _ in range(1)],
+            *[_presence_snapshot(hour=12, anyone_home=True) for _ in range(1)],
+            *[_presence_snapshot(hour=13, anyone_home=False) for _ in range(20)],
+        ]
+    )
+    await coordinator._async_run_anomaly_analyzer()
+
+    assert coordinator._last_anomaly is not None
+    assert coordinator._last_anomaly["type"] == "anomaly.extended_absence"
+
+    coordinator._house_snapshot_store = _FakeSnapshotStore(
+        [_presence_snapshot(hour=13, anyone_home=False, house_state="vacation") for _ in range(20)]
+    )
+    await coordinator._async_run_anomaly_analyzer()
+
+    assert coordinator._last_anomaly is None
+    assert (
+        "persistent_notification",
+        "dismiss",
+        {"notification_id": "heima_installer_anomaly_extended_absence"},
+        False,
+    ) in coordinator.hass.services.calls
+
+
 def _learned_model_diagnostics() -> dict[str, Any]:
     return {
         "model_total_snapshots": 100,

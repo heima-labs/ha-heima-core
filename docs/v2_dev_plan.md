@@ -2656,6 +2656,9 @@ state awareness; `heima.configure_anomaly_rule` service.
      intentionally leave lights on while no resident is home.
    - Safety-critical unattended appliance rules (`stove_on_unattended`, `oven_on_unattended`) remain
      active during `vacation`.
+   - Statistical anomaly alerts are reconciled after each analyzer run. If a previous anomaly type
+     is no longer emitted, `_last_anomaly` is cleared and the matching installer persistent
+     notification is dismissed.
 6. Q6 — `heima.configure_anomaly_rule` service: `DONE`
    - Handler in the coordinator: updates options, takes effect on the next `analyze()`.
    - Tests: threshold override applied, disabled rule doesn't trigger.
