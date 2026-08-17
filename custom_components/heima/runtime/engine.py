@@ -2153,7 +2153,7 @@ class HeimaEngine:
             HeimaEvent(
                 type="system.behavior_error",
                 key=f"system.behavior_error.{component}.{object_id}.{hook}",
-                severity="warn",
+                severity="warning",
                 title="Behavior hook error",
                 message=(f"{component.title()} '{object_id}' raised in hook '{hook}'."),
                 context={
@@ -2741,7 +2741,7 @@ class HeimaEngine:
             HeimaEvent(
                 type="system.config_invalid",
                 key="system.config_invalid",
-                severity="warn",
+                severity="warning",
                 title="Heima configuration issue",
                 message=f"{len(issues)} configuration issue(s) detected.",
                 context={"issues": issues},

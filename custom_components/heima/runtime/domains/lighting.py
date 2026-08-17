@@ -303,7 +303,7 @@ class LightingDomain:
                     HeimaEvent(
                         type="lighting.zone_conflict",
                         key=f"lighting.zone_conflict.{room_id}",
-                        severity="warn",
+                        severity="warning",
                         title="Lighting zone conflict",
                         message=(
                             f"Multiple lighting zones targeted room '{room_id}' "
@@ -420,7 +420,7 @@ class LightingDomain:
                         HeimaEvent(
                             type="lighting.scene_missing",
                             key=f"lighting.scene_missing.{room_id}.{intent}",
-                            severity="warn",
+                            severity="warning",
                             title="Lighting scene missing",
                             message=(f"No mapped scene for room '{room_id}' and intent '{intent}'"),
                             context={

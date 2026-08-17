@@ -1,14 +1,15 @@
 # Runtime Checkpoint and Power Recovery Spec
 
-**Status:** Draft vNext
+**Status:** Planned — not implemented on `main`
 **Date:** 2026-08-17
 **Scope:** Runtime checkpointing, Home Assistant restart recovery, power outage recovery,
 startup stabilization, observability
 **Related specs:** `core/admin_observability_panel_spec.md`,
 `core/manual_hold_framework_spec.md`, `core/apply_step_contract.md`,
 `core/resident_runtime_confirmation_spec.md`, `core/runtime_scheduler_spec.md`,
-`domains/house_state_spec.md`, `domains/heating_spec.md`,
-`domains/security_presence_simulation_spec.md`
+`core/events_and_notifications_spec.md`, `core/event_catalog_spec.md`,
+`core/security_mismatch_generalization_spec.md`, `domains/house_state_spec.md`,
+`domains/heating_spec.md`, `domains/security_presence_simulation_spec.md`
 
 ## Purpose
 
@@ -39,6 +40,40 @@ Normative rule:
 Home Assistant's current entity states remain the physical source of truth after startup. The Heima
 runtime checkpoint is a recovery hint used to classify uncertainty, stabilize evaluation, and
 preserve short-lived context where doing so is safe.
+
+## Architecture Integration
+
+### Recovery State Is Engine Context, Not A Domain
+
+Recovery classification does not run as a core domain and is not a plugin. It runs as a core
+runtime facility, in the same category as the Runtime Scheduler (`core/runtime_scheduler_spec.md`)
+and the Manual Hold Manager (`core/manual_hold_framework_spec.md`): a shared component consulted
+directly by domains, plugins, and the apply layer, not a node in the fixed core DAG
+(`People -> Occupancy -> Activity -> HouseState`, then plugins).
+
+Recovery state is computed once per evaluation cycle, before the core DAG runs, from current raw HA
+entity state and the persisted checkpoint. It is exposed as read-only context for the remainder of
+that same cycle.
+
+This follows the same treatment already given to wall-clock time: time is context, not a domain
+output, and is available to every domain within the current cycle without violating the rule that
+domains read CanonicalState from the previous cycle. Recovery state is context in the same sense.
+That rule governs domain-to-domain data flow inside the DAG; it does not apply to engine-computed
+pre-DAG context, exactly as it does not apply to the current timestamp.
+
+Consequence: recovery state must never lag by a full evaluation cycle. A mass-unavailable
+transition detected at the start of a cycle must be visible, in that same cycle, to House State,
+Security, Heating, the Manual Hold Manager, and anomaly analyzers before they act on it.
+
+### Exposure
+
+Recovery state is not plugin state and must not use the `plugin_id.key` CanonicalState namespace
+reserved for plugins. It is exposed under a reserved engine-owned namespace (e.g. `runtime.recovery.*`),
+read-only for all consumers.
+
+Consumers must treat this namespace as computed context: never write to it, and never treat its
+absence as an error before the runtime checkpoint/recovery component has finished initializing for
+the current cycle.
 
 ## Scenarios
 
@@ -135,6 +170,39 @@ incomplete or unstable.
 A bounded runtime mode entered when Heima detects likely power loss or mass device recovery while
 Home Assistant stayed online.
 
+### Degraded Recovery
+
+A bounded-but-open-ended runtime mode entered when `startup_recovery` or `power_recovery` cannot
+complete because critical entity availability remains below threshold after the stabilization
+window elapses. Heima may operate in a limited mode; observability must make the degraded reason
+explicit. `degraded_timeout_s` does not force a further state transition — it is the threshold
+after which degraded recovery becomes admin-notifiable (see Notification routing in Event Catalog
+Additions). Heima remains in `degraded_recovery` until critical entity availability recovers above
+threshold, at which point normal Exit Conditions apply.
+
+### Recovery Settling
+
+A transitional sub-phase of `startup_recovery` or `power_recovery`, entered once critical entity
+availability has crossed back above threshold but the minimum stabilization window has not yet
+elapsed. The same suppression rules as the parent recovery state apply (learning, anomaly
+detection, non-critical applies). `recovery_settling` exits to `normal` when Exit Conditions are
+met, or reverts to `startup_recovery`/`power_recovery` if critical entity availability drops back
+below threshold before the window elapses.
+
+### Unknown During Downtime
+
+A diagnostic label for an entity state difference observed after an HA/Heima restart whose cause
+cannot be determined. Used when Heima cannot tell whether a difference is due to power restore,
+manual action during downtime, or device behavior. Never used to activate an implicit manual hold
+or to classify a change as Heima-owned.
+
+### Power Restore Candidate
+
+A diagnostic label for an entity state difference observed after an HA/Heima restart that
+plausibly matches the entity's power-on/restore behavior (for example, a light or switch returning
+to its power-on default). Higher confidence than `unknown_during_downtime`, but still not used to
+activate an implicit manual hold. Surfaced as entity impact detail per Lighting and Switches below.
+
 ### Stable Snapshot
 
 A post-recovery `HouseSnapshot` produced after critical inputs have been available for the required
@@ -218,8 +286,8 @@ critical_entities:
 
 manual_hold:
   active_explicit_holds: [...]
-  active_implicit_holds: [...]
-  pending_applies: [...]
+  active_implicit_holds: [...]  # diagnostics-only, never restored after restart; see Manual Hold below
+  pending_applies: [...]  # diagnostics-only, never restore-eligible; see Pending Applies below
 
 runtime_confirmation:
   pending_request_ids: [string]
@@ -233,6 +301,8 @@ heating:
   heima_branch: string
   heima_reason: string
   last_applied_target: number | null
+  vacation_curve_start_temp: number | null   # only when heima_branch == vacation_curve
+  vacation_curve_started_at: iso8601 | null  # only when heima_branch == vacation_curve
 
 observability:
   last_event_ids: [string]
@@ -270,16 +340,24 @@ Heima must write a checkpoint:
 - after a successful apply that changes a critical target;
 - after a manual hold is activated, cleared, or materially changed;
 - after a runtime confirmation is created, approved, dismissed, cancelled, or times out;
-- after startup recovery exits;
+- after recovery exits (a transition from any recovery state — `startup_recovery`, `power_recovery`,
+  `degraded_recovery`, or `recovery_settling` — back to `normal`);
 - periodically when runtime state changed since the previous checkpoint.
 
 ### Periodic Write Cadence
+
+Periodic checkpoint writes must be registered as a keyed job on the Runtime Scheduler
+(`core/runtime_scheduler_spec.md`, e.g. `job_id=recovery.checkpoint_write`, `owner=recovery`), not
+implemented as an ad hoc timer. Keyed scheduling already provides the debounce/replace semantics
+this policy needs: re-registering the same `job_id` after a material change replaces the pending
+timer instead of stacking a second one.
 
 Target default:
 
 - 60 seconds when relevant runtime state changed;
 - no periodic write when nothing material changed;
-- debounce writes to avoid storage churn.
+- debounce writes to avoid storage churn, via keyed job replacement rather than bespoke debounce
+  logic.
 
 The implementation may use a longer interval if Home Assistant storage pressure requires it, but
 must still write after important changes.
@@ -317,7 +395,8 @@ Heima must enter `startup_recovery` when:
 
 Heima should enter `power_recovery` when HA stayed online but runtime observes one or more of:
 
-- mass transition of critical entities to `unavailable` / `unknown`;
+- the fraction of critical entities that are `unavailable` / `unknown` crosses above
+  `critical_entity_unavailable_ratio` (default 0.35, see Configuration) — "mass transition";
 - mass transition from `unavailable` / `unknown` back to available;
 - configured UPS/power sensor indicates outage or restore;
 - network/gateway entities indicate outage or restore;
@@ -325,17 +404,20 @@ Heima should enter `power_recovery` when HA stayed online but runtime observes o
 
 ### Degraded Recovery
 
-`degraded_recovery` is used when recovery cannot complete because critical inputs remain
-unavailable beyond the stabilization timeout.
-
-Heima may still operate in a limited mode, but observability must make the degraded reason explicit.
+`degraded_recovery` is entered when `startup_recovery` or `power_recovery` cannot complete because
+critical entity availability remains below threshold after the applicable stabilization window
+(120 seconds for startup, 60 seconds for power recovery) elapses. See Terminology for full
+semantics, including the role of `degraded_timeout_s`.
 
 ### Exit Conditions
 
 Heima exits recovery when all are true:
 
 - minimum stabilization window elapsed;
-- critical entity availability is above threshold;
+- critical entity availability is above threshold — the same `critical_entity_unavailable_ratio`
+  used for Power Recovery Entry Conditions, checked in the opposite direction (fraction unavailable
+  below the ratio). The first implementation uses one symmetric ratio with no separate hysteresis
+  band;
 - at least one stable `HouseSnapshot` has been produced;
 - house state was resolved using current HA state;
 - no required recovery reconciliation remains pending.
@@ -348,6 +430,28 @@ Default stabilization window:
 
 These values should be configurable later, but the first implementation may use constants if
 configuration would materially increase scope.
+
+### Deadline Rechecks Must Be Scheduled
+
+Heima's evaluation cycle is event-driven with a 300-second fallback (see architecture
+non-negotiable: time is context, not trigger). All stabilization windows above default to less than
+300 seconds. If no entity state change happens to trigger a re-evaluation during the window, exit
+from recovery must not silently wait for the 300-second fallback — that would delay stabilization
+well past its stated default.
+
+Two one-shot Runtime Scheduler jobs are involved, registered at different moments, not both at
+initial recovery entry:
+
+- `job_id=recovery.stabilization_deadline` (`owner=recovery`) is registered the moment
+  `startup_recovery` or `power_recovery` is entered, firing at the applicable stabilization window
+  (120s / 60s), so Exit Conditions are rechecked regardless of entity churn.
+- `job_id=recovery.degraded_timeout` (`owner=recovery`) is registered only when
+  `degraded_recovery` is actually entered — i.e., when the stabilization deadline job fires without
+  Exit Conditions being met. It fires at `degraded_timeout_s` (default 600s) *after entering
+  `degraded_recovery`*, which is when Notification routing's admin-notify threshold applies (not
+  600s after the original outage/restart).
+
+Both jobs are cancelled/replaced if recovery exits earlier through a normal evaluation cycle.
 
 ## Runtime Behavior During Recovery
 
@@ -388,33 +492,48 @@ Power restore must not look like a human manual override.
 
 If an actuator changes state during recovery and there is no matching pending apply:
 
-- classify as `recovery_state_change`, not `external_user_change`;
-- do not activate an implicit manual hold by default;
-- record diagnostics explaining the classification.
+- classify as `external`, per the existing State Change Classification contract in
+  `core/manual_hold_framework_spec.md`; recovery does not add a new classification value to that
+  contract;
+- before activating an implicit hold, the Manual Hold Manager checks engine-level recovery state
+  via the `runtime.recovery.*` context (see Architecture Integration); if recovery is active for
+  the affected scope, implicit hold activation is skipped by default;
+- tag the suppressed activation `recovery_state_change` in diagnostics/observability only — this is
+  a diagnostic label, not a manual-hold classification value;
+- record diagnostics explaining the suppression.
 
-Explicit helper-backed holds are re-derived from current helper state after startup.
+Explicit helper-backed holds are re-derived from current helper state after startup, per
+`core/manual_hold_framework_spec.md`.
 
-Implicit in-memory holds:
-
-- may be restored from checkpoint only if their release policy and scope make restart-safe recovery
-  explicit;
-- otherwise must be dropped or marked `unknown_after_restart`.
+Implicit in-memory holds are never restored from the checkpoint after a restart. This matches
+`core/manual_hold_framework_spec.md`'s explicit non-goal ("persistent cross-restart manual hold
+history for implicit holds") and its existing rule that implicit holds are in-memory only. The
+checkpoint's `manual_hold.active_implicit_holds` field (see Minimum Checkpoint Payload) is
+diagnostics-only, mirroring `pending_applies` and `runtime_confirmation.pending_request_ids`: it
+explains what was active right before shutdown, but no runtime logic reads it back to reconstruct
+hold state. After a restart, any actuator state that would have matched a pre-restart implicit hold
+is simply subject to the normal recovery classification rules above (`external`, gated activation).
 
 ### Pending Applies
 
-Pending applies are short-lived and must not be blindly restored.
+Pending applies are short-lived (`PendingApply.ttl`, default 5.0 seconds per
+`core/manual_hold_framework_spec.md`) and must not be blindly restored. This distinguishes the two
+recovery scenarios sharply:
 
-On startup:
-
-- pending applies older than their TTL are discarded;
-- pending applies without a reliable HA context/provenance are discarded;
-- pending applies from before HA downtime must not be used to classify post-restart entity changes
-  as Heima-owned.
-
-During HA-online power recovery:
+During HA-online power recovery (Scenario A, in-memory registry never serialized):
 
 - pending applies may still match if within TTL and the entity transition is observed normally;
 - if a mass restore is in progress, pending-apply matching should be conservative.
+
+After an HA/Heima restart (Scenario B, checkpoint-based):
+
+- any real restart or outage takes far longer than the pending-apply TTL, so a checkpointed pending
+  apply is always past its TTL by the time it could be read back;
+- checkpointed pending applies are therefore never restore-eligible and must not be used to classify
+  post-restart entity changes as Heima-owned;
+- `manual_hold.pending_applies` in the checkpoint payload is diagnostics-only — the same treatment
+  already given to `runtime_confirmation.pending_request_ids` below — kept for post-mortem
+  explanation ("what was Heima about to do"), not for recovery decisions.
 
 ### Runtime Confirmations
 
@@ -437,7 +556,14 @@ During recovery:
 
 - non-critical auto-apply reactions should be suspended;
 - reaction evaluation may run in inspection mode for observability;
-- apply plans may be generated but blocked with reason `startup_recovery` or `power_recovery`;
+- apply plans may be generated but blocked with `blocked_by="recovery:<state>"`, where `<state>` is
+  the current recovery state (`startup_recovery`, `power_recovery`, `degraded_recovery`, or
+  `recovery_settling`);
+- if a step would also be blocked by an active manual hold, the two filters are independent: neither
+  overwrites the other's `blocked_by` reason, per the existing rule in
+  `core/manual_hold_framework_spec.md` ("manual hold must not overwrite an existing `blocked_by`
+  reason"). Recovery blocking runs first in the apply pipeline, so a step blocked by recovery keeps
+  `blocked_by="recovery:<state>"` even if a manual hold would independently also block it;
 - safety-critical reactions may be allowed by explicit policy.
 
 Examples of generally suspendable actions:
@@ -455,6 +581,9 @@ Examples of actions that may remain eligible:
 - explicit admin commands.
 
 ## Domain-Specific Notes
+
+All domain checks below read the `runtime.recovery.*` context (see Architecture Integration), not
+a domain output.
 
 ### House State
 
@@ -482,6 +611,18 @@ If the alarm panel is unavailable:
 - security-dependent reactions must be blocked unless explicitly safe;
 - observability must report `security_state_unavailable`.
 
+Security-relevant consequences of recovery must be emitted through the existing `security.*` event
+family owned by the Security domain, not through the `system.recovery_*` catalog defined in this
+spec. This follows the "more specific domain owns the condition" rule in Event Catalog Additions
+below.
+
+Concretely, `security_state_unavailable` is not a new event type: it is emitted as the existing
+`security.mismatch` event (`core/security_mismatch_generalization_spec.md`) with
+`subtype=security_state_unavailable`, the same pattern already used for
+`subtype=armed_away_but_home`. `key` follows the existing convention:
+`security.mismatch.security_state_unavailable`. This spec does not define a new security event
+contract; it only supplies a new subtype value under the existing one.
+
 ### Heating
 
 Heating recovery must preserve current physical climate state as observed from HA.
@@ -502,6 +643,13 @@ Heima must not reapply heating targets during startup recovery unless:
 If current climate state changed while HA was down, classify it as
 `unknown_during_downtime`, not as a user manual override and not as Heima-owned.
 
+If the `vacation_curve` branch (`domains/heating_spec.md` §6.5/6.7) was active before restart,
+Heima must restore `start_temp` and the branch activation timestamp from the checkpoint rather than
+recapturing `start_temp` from the post-restart setpoint. Recapturing on every restart would silently
+alter the ramp curve. If the checkpoint does not have these fields (older schema, missing
+checkpoint), Heima may recapture as if the branch were newly activated, but must record this as a
+diagnostic so the discontinuity is explainable.
+
 ### Lighting and Switches
 
 Many lights and switches have power-on defaults.
@@ -510,7 +658,8 @@ During recovery:
 
 - light/switch changes caused by restore must not create implicit manual holds;
 - smart-lighting reactions must not immediately reapply scenes until stabilization exits;
-- power-restore state may be exposed as entity impact detail.
+- restore-plausible changes are labeled `power_restore_candidate` (see Terminology) and exposed as
+  entity impact detail.
 
 ### Camera Privacy
 
@@ -536,6 +685,11 @@ During recovery:
 - skipped/delayed simulation must be observable.
 
 ## Observability Requirements
+
+This spec adds `recovery` as a new top-level key to the `HeimaObservabilitySnapshot` contract
+defined in `core/admin_observability_panel_spec.md`, alongside the existing `manual_holds`,
+`runtime_confirmations`, and `notifications` keys — the same category of cross-cutting facility
+(see Architecture Integration), not nested under `runtime`.
 
 Admin observability must expose:
 
@@ -581,34 +735,71 @@ recovery:
 
 Runtime Activity must include events such as:
 
-- `recovery.startup_started`;
-- `recovery.power_outage_suspected`;
-- `recovery.power_restored`;
-- `recovery.stabilization_started`;
-- `recovery.completed`;
-- `recovery.degraded`;
-- `recovery.checkpoint_written`;
-- `recovery.checkpoint_invalid`.
+- `system.recovery_startup_started`;
+- `system.recovery_power_outage_suspected`;
+- `system.recovery_power_restored`;
+- `system.recovery_stabilization_started`;
+- `system.recovery_completed`;
+- `system.recovery_degraded`;
+- `system.recovery_checkpoint_written`;
+- `system.recovery_checkpoint_invalid`.
 
 ## Event Catalog Additions
 
-Events should use the `system` family unless a more specific domain owns the condition.
+Recovery lifecycle events use the existing `system` family (`core/event_catalog_spec.md`), typed
+`system.recovery_*` so they fall under the existing `system.*` default audience mapping in
+`core/events_and_notifications_spec.md` without requiring a new closed-vocabulary family.
 
-| Event type | Severity | Meaning |
-|---|---|---|
-| `recovery.startup_started` | `info` | Heima entered startup recovery after HA/integration startup. |
-| `recovery.power_outage_suspected` | `warning` | Mass unavailability or power signal suggests outage while HA stayed online. |
-| `recovery.power_restored` | `info` | Critical entities are returning after suspected outage. |
-| `recovery.completed` | `info` | Recovery exited and normal runtime resumed. |
-| `recovery.degraded` | `warning` | Recovery could not complete because critical inputs remain unavailable. |
-| `recovery.checkpoint_written` | `debug` or `info` | Runtime checkpoint persisted. |
-| `recovery.checkpoint_invalid` | `warning` | Stored checkpoint could not be used. |
+Severity uses the unified `debug | info | warning | error | critical` enum, consolidated across
+`core/event_catalog_spec.md` and this codebase (see Open Questions). None of the events below are
+`debug` or `critical` — recovery lifecycle events are not themselves safety-critical; security
+consequences route through `security.*` as noted above.
 
-Notification routing should follow `events_and_notifications_spec.md`:
+Events whose condition is owned by a more specific domain (for example
+`security_state_unavailable`, see Domain-Specific Notes -> Security) must be emitted through that
+domain's existing event family instead of a `system.recovery_*` type.
 
-- ordinary startup recovery is observability-only;
-- degraded recovery may notify admins after persistence threshold;
-- security-relevant degraded recovery may notify admins and residents according to audience policy;
+`key` follows `core/event_catalog_spec.md` convention: `key = type` for all events below, since each
+is a singleton per recovery cycle per config entry (no per-room/per-entity dedup granularity is
+needed).
+
+| Event type | Key | Severity | Meaning |
+|---|---|---|---|
+| `system.recovery_startup_started` | `system.recovery_startup_started` | `info` | Heima entered startup recovery after HA/integration startup. |
+| `system.recovery_power_outage_suspected` | `system.recovery_power_outage_suspected` | `warning` | Mass unavailability or power signal suggests outage while HA stayed online. |
+| `system.recovery_power_restored` | `system.recovery_power_restored` | `info` | Critical entities are returning after suspected outage. |
+| `system.recovery_stabilization_started` | `system.recovery_stabilization_started` | `info` | Recovery entered the stabilization window. |
+| `system.recovery_completed` | `system.recovery_completed` | `info` | Recovery exited and normal runtime resumed. |
+| `system.recovery_degraded` | `system.recovery_degraded` | `warning` | Recovery could not complete because critical inputs remain unavailable. |
+| `system.recovery_checkpoint_written` | `system.recovery_checkpoint_written` | `info` | Runtime checkpoint persisted. |
+| `system.recovery_checkpoint_invalid` | `system.recovery_checkpoint_invalid` | `warning` | Stored checkpoint could not be used. |
+
+Notification routing should follow `core/events_and_notifications_spec.md`. The `system.*` default
+audience mapping is admins/observability, not observability-only — routing for each recovery event
+is stated explicitly below rather than assumed quiet by default:
+
+- `system.recovery_startup_started` (`info`): the `system.*` default would push admins immediately,
+  but this is a startup-derived configuration-summary event — the category the Startup Grace Period
+  (`startup_notification_grace_s`, default 300s) exists to cover — so it is suppressed during the
+  grace period, observability only;
+- `system.recovery_power_outage_suspected` (`warning`): not a startup-derived configuration-summary
+  event — it is entered mid-session while HA stays online — so the Startup Grace Period category
+  does not apply. This pushes to admins immediately per the standard
+  `system.*` default — intentional, an admin should learn promptly that the house may have lost
+  power;
+- `system.recovery_power_restored` / `system.recovery_stabilization_started` /
+  `system.recovery_completed` (`info`): admins/observability per the standard `system.*` default;
+  these are low-urgency status events, not gated further by this spec;
+- `system.recovery_degraded` (`warning`): admins/observability per the standard `system.*` default
+  on entry; if degraded recovery persists, admins are additionally notified once
+  `degraded_timeout_s` (default 600s, see Configuration and Terminology -> Degraded Recovery) is
+  reached, reusing the existing state timeout as the persistence threshold rather than defining a
+  separate `persistence_thresholds.*` entry;
+- `system.recovery_checkpoint_written` / `system.recovery_checkpoint_invalid`: admins/observability
+  per the standard `system.*` default;
+- security-relevant recovery consequences are carried by `security.mismatch` with
+  `subtype=security_state_unavailable` (see Domain-Specific Notes -> Security), and follow
+  `security.*` audience policy, not a `system.recovery_*` exception;
 - actionable runtime confirmations are not sent during recovery unless explicitly allowed.
 
 ## Configuration
@@ -659,8 +850,15 @@ Unit tests:
 - mass unavailable -> power recovery;
 - mass restore -> settling;
 - recovery suppresses learning/anomaly;
-- recovery blocks non-critical apply;
-- recovery does not create implicit manual holds for restore changes.
+- recovery blocks non-critical apply with `blocked_by="recovery:<state>"`;
+- a step already blocked by recovery is not overwritten by a subsequently-evaluated manual hold
+  block, and vice versa;
+- recovery does not create implicit manual holds for restore changes, and implicit holds are never
+  restored from a checkpoint after restart;
+- `recovery.stabilization_deadline` fires and is rechecked even with zero entity state changes
+  during the window (no reliance on the 300s evaluation fallback);
+- `recovery.degraded_timeout` is registered only on transition into `degraded_recovery`, not at
+  initial recovery entry.
 
 Integration tests:
 
@@ -669,7 +867,14 @@ Integration tests:
 - climate state changed during downtime;
 - light state changed during downtime;
 - camera privacy switch state changed during downtime;
-- pending runtime confirmation before restart is forgotten and cannot apply stale steps.
+- pending runtime confirmation before restart is forgotten and cannot apply stale steps;
+- restart mid-`vacation_curve` restores `vacation_curve_start_temp`/`vacation_curve_started_at` from
+  the checkpoint instead of recapturing the setpoint;
+- `system.recovery_startup_started` does not push during the startup grace period;
+- `system.recovery_power_outage_suspected` pushes to admins immediately when entered mid-session
+  (no startup grace, no persistence gate);
+- `security_state_unavailable` is emitted as `security.mismatch` with
+  `subtype=security_state_unavailable`, not as a `system.recovery_*` type.
 
 Live tests:
 
@@ -684,6 +889,12 @@ Live tests:
 3. Which action families should be explicitly allowed during recovery in the first implementation?
 4. Should admins be able to manually end recovery from the observability panel?
 5. Should recovery windows be configurable in the first implementation or only after field testing?
+
+Resolved: the severity vocabulary this spec depends on (`debug | info | warning | error | critical`)
+has been consolidated across `core/event_catalog_spec.md`, `core/admin_observability_panel_spec.md`,
+`core/security_mismatch_generalization_spec.md`, `HeimaEvent.severity` (now a typed `EventSeverity`
+Literal in `custom_components/heima/runtime/contracts.py`), and all event-emission call sites. No
+longer an open question.
 
 ## Acceptance Criteria
 

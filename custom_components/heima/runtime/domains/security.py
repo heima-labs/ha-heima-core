@@ -459,7 +459,7 @@ class SecurityDomain:
         explicit_event = HeimaEvent(
             type=f"security.{subtype}",
             key=f"security.{subtype}",
-            severity="warn",
+            severity="warning",
             title="Security inconsistency",
             message="Security is armed away while someone is home.",
             context=dict(shared_context),
@@ -467,7 +467,7 @@ class SecurityDomain:
         generic_event = HeimaEvent(
             type="security.mismatch",
             key=f"security.mismatch.{subtype}",
-            severity="warn",
+            severity="warning",
             title="Security mismatch",
             message=f"Security mismatch detected ({subtype}).",
             context={

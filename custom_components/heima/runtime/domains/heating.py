@@ -518,7 +518,7 @@ class HeatingDomain:
                 HeimaEvent(
                     type="heating.vacation_bindings_unavailable",
                     key="heating.vacation_bindings_unavailable",
-                    severity="warn",
+                    severity="warning",
                     title="Heating vacation bindings unavailable",
                     message="Heating vacation branch could not compute a target because required bindings are unavailable.",
                     context={"branch": selected_branch},

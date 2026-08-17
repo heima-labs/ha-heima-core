@@ -2,7 +2,7 @@
 ## Notification Domain: Standard Events, Keys, Severity, Payloads
 
 **Status:** Active v1 event catalog
-**Last Verified Against Code:** 2026-03-20
+**Last Verified Against Code:** 2026-08-17
 
 This document defines the **standard event catalog** emitted by Heima.
 Events are consumed by the Notification domain to route messages via `notify.*`
@@ -41,7 +41,7 @@ All events conform to this envelope:
 - `ts` (ISO8601)
 - `key` (string) — used for dedup/rate-limit
 - `type` (string) — stable event type identifier
-- `severity` (enum: `info | warn | crit`)
+- `severity` (enum: `debug | info | warning | error | critical`)
 - `title` (string)
 - `message` (string)
 - `context` (object/dict) — redacted, safe to share in diagnostics
@@ -220,7 +220,7 @@ Emission policy (v1.x):
 #### E032 — Lighting Scene Missing (Misconfiguration)
 - `type`: `lighting.scene_missing`
 - `key`: `lighting.scene_missing.<room_id>.<intent>`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `room`
   - `intent`
@@ -281,7 +281,7 @@ Emission policy (v1.x):
 #### E046 — Heating Vacation Bindings Unavailable
 - `type`: `heating.vacation_bindings_unavailable`
 - `key`: `heating.vacation_bindings_unavailable`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `branch`
 
@@ -292,7 +292,7 @@ Emission policy (v1.x):
 #### E051 — Armed Away While Someone Home (Inconsistency)
 - `type`: `security.armed_away_but_home`
 - `key`: `security.armed_away_but_home`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `security_state`
   - `security_observation_reason`
@@ -317,14 +317,14 @@ Emission policy (v1.x):
 #### E901 — Invalid Configuration (Hard Fail)
 - `type`: `system.config_invalid`
 - `key`: `system.config_invalid`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `issues`
 
 #### E902 — Behavior Error (Recovered)
 - `type`: `system.behavior_error`
 - `key`: `system.behavior_error.<component>.<id>.<hook>`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `component`
   - `behavior`
@@ -344,7 +344,7 @@ Emission policy (v1.x):
 #### E904 — Legacy Notification Routes Deprecated
 - `type`: `system.notifications_routes_deprecated`
 - `key`: `system.notifications_routes_deprecated`
-- `severity`: `warn`
+- `severity`: `warning`
 - `context`:
   - `routes_count`
   - `has_recipients`

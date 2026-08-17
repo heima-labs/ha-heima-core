@@ -163,7 +163,7 @@ def test_notification_delivery_policy_system_config_issue_targets_admins_by_defa
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -213,7 +213,7 @@ def test_notification_delivery_policy_armed_away_home_targets_residents_and_admi
         HeimaEvent(
             type="security.armed_away_but_home",
             key="security.armed_away_but_home",
-            severity="warn",
+            severity="warning",
             title="Security inconsistency",
             message="Security is armed away while someone is home.",
             context={"security_state": "armed_away", "people_home_list": ["stefano"]},
@@ -237,7 +237,7 @@ def test_notification_delivery_policy_missing_admin_target_has_no_resident_fallb
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -269,7 +269,7 @@ def test_notification_delivery_policy_startup_grace_suppresses_noncritical_push(
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -357,7 +357,7 @@ def test_render_admin_system_notification_keeps_readable_summary_and_event_type(
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="2 configuration issue(s) detected.",
         ),
@@ -412,7 +412,7 @@ async def test_events_domain_system_event_is_observable_without_unconditional_pu
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -552,7 +552,7 @@ async def test_events_domain_occupancy_mismatch_before_persistence_has_no_push(m
         HeimaEvent(
             type="occupancy.inconsistency",
             key="occupancy.inconsistency.presence_without_room",
-            severity="warn",
+            severity="warning",
             title="Occupancy inconsistency",
             message="Presence says someone is home, but no room is occupied.",
         ),
@@ -583,7 +583,7 @@ async def test_events_domain_persistent_occupancy_mismatch_sends_one_admin_push(
     event = HeimaEvent(
         type="occupancy.inconsistency",
         key="occupancy.inconsistency.presence_without_room",
-        severity="warn",
+        severity="warning",
         title="Occupancy inconsistency",
         message="Presence says someone is home, but no room is occupied.",
     )
@@ -621,7 +621,7 @@ async def test_events_domain_persistence_resets_after_quiet_period(monkeypatch):
     event = HeimaEvent(
         type="occupancy.inconsistency",
         key="occupancy.inconsistency.presence_without_room",
-        severity="warn",
+        severity="warning",
         title="Occupancy inconsistency",
         message="Presence says someone is home, but no room is occupied.",
     )
@@ -751,7 +751,7 @@ async def test_events_domain_people_aggregation_does_not_suppress_mismatch(monke
         HeimaEvent(
             type="occupancy.inconsistency",
             key="occupancy.inconsistency.presence_without_room",
-            severity="warn",
+            severity="warning",
             title="Occupancy inconsistency",
             message="Presence says someone is home, but no room is occupied.",
         ),
@@ -799,7 +799,7 @@ async def test_events_domain_global_burst_limit_does_not_limit_event_bus(monkeyp
             HeimaEvent(
                 type="system.config_invalid",
                 key=f"system.config_invalid.{idx}",
-                severity="warn",
+                severity="warning",
                 title="Heima configuration issue",
                 message="Configuration issue detected.",
             ),
@@ -852,7 +852,7 @@ async def test_events_domain_records_delivery_deferred_without_burst_state(monke
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -880,7 +880,7 @@ async def test_event_pipeline_deduplicates(monkeypatch):
     event = HeimaEvent(
         type="lighting.scene_missing",
         key="lighting.scene_missing.room1.scene_relax",
-        severity="warn",
+        severity="warning",
         title="x",
         message="x",
     )

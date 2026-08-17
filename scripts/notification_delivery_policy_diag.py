@@ -41,7 +41,7 @@ def _event_cases() -> list[HeimaEvent]:
         HeimaEvent(
             type="system.config_invalid",
             key="system.config_invalid.diagnostic",
-            severity="warn",
+            severity="warning",
             title="Heima configuration issue",
             message="Configuration issue detected.",
         ),
@@ -55,7 +55,7 @@ def _event_cases() -> list[HeimaEvent]:
         HeimaEvent(
             type="security.armed_away_but_home",
             key="security.armed_away_but_home.diagnostic",
-            severity="warn",
+            severity="warning",
             title="Security inconsistency",
             message="Security is armed away while someone is home.",
             context={"security_state": "armed_away", "people_home_list": ["diagnostic"]},
@@ -63,7 +63,7 @@ def _event_cases() -> list[HeimaEvent]:
         HeimaEvent(
             type="occupancy.inconsistency",
             key="occupancy.inconsistency.diagnostic",
-            severity="warn",
+            severity="warning",
             title="Occupancy inconsistency",
             message="Presence says someone is home, but no room is currently occupied.",
         ),

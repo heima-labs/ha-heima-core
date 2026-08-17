@@ -66,6 +66,10 @@ reference in `docs/specs/rfc/heima_spec_v1.md`.
 - Domains read CanonicalState (previous cycle), NOT the outputs of other domains in the current cycle.
 - No circular dependency between domains.
 - Apply plan is the only output channel for actions on HA.
+- Engine-computed context (wall-clock time, runtime recovery state) is read-only input available to
+  every domain and plugin within the current cycle. It is not domain output and is exempt from the
+  previous-cycle rule. Cross-cutting runtime facilities (Runtime Scheduler, Manual Hold Manager,
+  Recovery/Checkpoint) sit outside the DAG — they are neither domains nor plugins.
 
 ## Architectural decisions made
 

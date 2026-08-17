@@ -26,7 +26,7 @@ Current runtime status:
 
 - `type`: `security.mismatch`
 - `key`: `security.mismatch.<subtype>`
-- `severity`: `warn`
+- `severity`: `warning`
 
 Required context fields:
 

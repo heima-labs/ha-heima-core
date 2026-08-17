@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
+
+EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
 
 
 @dataclass(frozen=True)
@@ -14,7 +16,7 @@ class HeimaEvent:
 
     type: str
     key: str
-    severity: str
+    severity: EventSeverity
     title: str
     message: str
     context: dict[str, Any] = field(default_factory=dict)

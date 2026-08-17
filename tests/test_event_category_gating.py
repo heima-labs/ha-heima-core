@@ -87,7 +87,7 @@ async def test_lighting_events_can_be_disabled():
     emitted = await engine.async_emit_external_event(
         event_type="lighting.scene_missing",
         key="lighting.scene_missing.room.intent",
-        severity="warn",
+        severity="warning",
         title="Missing",
         message="x",
         context={"room": "room", "intent": "scene_evening", "expected_scene": "scene_evening"},

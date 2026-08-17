@@ -77,6 +77,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | 11 | Time is context, not trigger. Evaluation is driven by state changes + 300s fallback. |
 | 12 | `Activity.context: dict[str, Any]` is the only forward-compatibility hook on Activity. Keys namespaced by contributor. |
 | 13 | Composite activities always require user approval before `ActivityInferenceModule` emits signals. |
+| 14 | Recovery state (see `core/runtime_checkpoint_and_power_recovery_spec.md`) is engine context computed pre-DAG, like time (#11) — not a domain, not a plugin, exempt from the previous-cycle CanonicalState rule. Cross-cutting runtime facilities (Scheduler, Manual Hold Manager, Recovery/Checkpoint) sit outside the DAG. |
 
 ---
 
@@ -121,10 +122,11 @@ These constraints must never be violated. See spec §16 for rationale.
 | AH | Resident Runtime Confirmation & Auto-Apply Promotion | `DONE` | AD, MH, AF |
 | AN | Notification Admin UI & Execution Policy Profiles | `DONE` | AH |
 | AO | Admin Observability Panel | `DONE` | AH, AN, MH, AC, AD |
-| AO8 | Observability Usability & Detail Views | `PLANNED` | AO |
+| AO8 | Observability Usability & Detail Views | `DONE` | AO |
 | AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
+| AQ | Runtime Checkpoint and Power Recovery | `PLANNED` | AH, MH, AO, AP |
 
 ---
 
@@ -648,7 +650,7 @@ MVP merge.
 
 ### Phase AP — Notification Delivery Policy
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Spec sources:
   - `docs/specs/core/events_and_notifications_spec.md`
   - `docs/specs/core/notification_admin_ui_spec.md`
@@ -872,6 +874,150 @@ MVP merge.
   - actionable runtime confirmation behavior remains governed by AH and is not suppressed by AP
   - every suppressed push has an observable reason in diagnostics/admin panel
   - the config model is general and does not rely on old domain-specific persistence fields
+
+### Phase AQ — Runtime Checkpoint and Power Recovery
+
+- Status: `PLANNED`.
+- Spec source: `docs/specs/core/runtime_checkpoint_and_power_recovery_spec.md` (Status: Planned —
+  not implemented on `main`; approved after three review rounds).
+- Also touches: `core/admin_observability_panel_spec.md` (new `recovery` snapshot key),
+  `core/event_catalog_spec.md` / `core/security_mismatch_generalization_spec.md` (severity
+  vocabulary already unified as part of spec approval, see below), `domains/heating_spec.md`
+  (`vacation_curve` checkpoint fields).
+- Goal: behave conservatively and explainably when the home loses power, when Home Assistant
+  restarts, or when many devices temporarily become unavailable — without ever blindly restoring
+  old checkpoint state over current HA state.
+- Product boundary:
+  - runtime recovery is an explanation/guardrail layer, not a restore engine;
+  - recovery state is engine-computed context read pre-DAG (like time), not a domain and not a
+    plugin — see CLAUDE.md and Architecture non-negotiable #14;
+  - implicit manual holds are never restored from a checkpoint after restart (matches MH's
+    existing non-goal);
+  - actionable runtime confirmations are explicitly not made restart-safe by this phase (AH's
+    existing vNext baseline).
+- Pre-work already landed ahead of implementation (approved during spec review, not gated behind
+  AQ slices below):
+  - `HeimaEvent.severity` is now `EventSeverity = Literal["debug","info","warning","error","critical"]`
+    in `custom_components/heima/runtime/contracts.py`.
+  - All `severity="warn"` call sites renamed to `"warning"` (`engine.py`, `heating.py`,
+    `lighting.py`, `security.py`, plus tests/scripts).
+  - `core/event_catalog_spec.md`, `core/admin_observability_panel_spec.md`,
+    `core/security_mismatch_generalization_spec.md` severity vocabularies aligned.
+  - Verification: `.venv/bin/python -m pytest tests/ -q` — 1800 passed, 3 pre-existing unrelated
+    failures in `test_inference_foundation.py` (confirmed present on `main` before this work).
+
+#### AQ1 — Recovery Context Foundation
+
+- Status: `PLANNED`.
+- Build the pre-DAG recovery classification facility (name TBD at implementation time, e.g.
+  `RecoveryManager`), computed once per evaluation cycle before the core DAG runs, exposed
+  read-only via the `runtime.recovery.*` context namespace.
+- Implement the Recovery States state machine (`normal`, `startup_recovery`, `power_recovery`,
+  `degraded_recovery`, `recovery_settling`) with entry/exit conditions and
+  `critical_entity_unavailable_ratio` (default 0.35), as pure logic with no consumers wired yet —
+  no observable behavior change at the end of this slice.
+- Tests: state transitions, ratio threshold entry/exit, `recovery_settling` reversion on flapping.
+
+#### AQ2 — Runtime Checkpoint Persistence
+
+- Status: `PLANNED`.
+- Implement the checkpoint contract (schema, attribute allowlist, redaction, atomic write, bounded
+  size, versioned/tolerant reader) backed by an HA `Store`. Resolve Open Question 2 (separate store
+  file vs. existing coordinator/runtime store) before starting.
+- Implement Checkpoint Write Policy triggers and register periodic writes, the stabilization
+  deadline, and the degraded timeout as Runtime Scheduler jobs (`core/runtime_scheduler_spec.md`),
+  per the two-stage job-registration rule (stabilization job at recovery entry, degraded-timeout
+  job only on transition into `degraded_recovery`).
+- Tests: serialization/deserialization, version tolerance, redaction, write debounce/keyed
+  replacement, scheduler jobs firing independent of entity churn.
+
+#### AQ3 — Startup Recovery Wiring
+
+- Status: `PLANNED`.
+- Wire checkpoint load + current-HA-state comparison + difference classification
+  (`unknown_during_downtime` / `power_restore_candidate`) into engine startup.
+- Enter/exit `startup_recovery` per Startup Entry Conditions / Exit Conditions.
+- Tests: startup recovery entry with no checkpoint, with a stale checkpoint, with a checkpoint that
+  fails validation; recovery exit after stable critical entities.
+
+#### AQ4 — Power Recovery Detection
+
+- Status: `PLANNED`.
+- Detect mass unavailable/mass restore while HA stays online; enter/exit `power_recovery` and
+  `recovery_settling`.
+- Tests: mass unavailable -> `power_recovery`; mass restore -> `recovery_settling`; flapping reverts
+  `recovery_settling` back to `power_recovery`.
+
+#### AQ5 — Runtime Behavior Gating
+
+- Status: `PLANNED`.
+- Wire `runtime.recovery.*` context consumption into: Learning suppression, Anomaly Detection
+  suppression (see Suppressed/Not-automatically-suppressed lists in the spec), Manual Hold gating
+  (implicit hold activation skipped during active recovery; classification stays `external`; no
+  checkpoint restore of implicit holds), Pending Applies handling, and Reactions/Apply blocking
+  (`blocked_by="recovery:<state>"`, with the defined precedence vs. manual-hold blocking).
+- Tests: recovery suppresses learning/anomaly; recovery blocks non-critical apply with the correct
+  `blocked_by` value; `blocked_by` precedence when both recovery and manual hold would apply;
+  recovery does not create implicit manual holds for restore changes.
+
+#### AQ6 — Domain-Specific Recovery Behavior
+
+- Status: `PLANNED`.
+- House State: distinguish checkpointed/current/stable state; no `away` inference from sensor
+  silence during recovery.
+- Security: emit `security.mismatch` with `subtype=security_state_unavailable` when the alarm panel
+  is unavailable during recovery; block security-dependent reactions unless explicitly safe.
+- Heating: preserve `vacation_curve_start_temp` / `vacation_curve_started_at` across restart instead
+  of recapturing; do not reapply heating targets during startup recovery except by the defined
+  exceptions.
+- Lighting and Switches: no implicit holds from restore changes; label restore-plausible changes
+  `power_restore_candidate`; smart-lighting reactions do not reapply scenes until stabilization
+  exits.
+- Camera Privacy: security-driven privacy enforcement gated on alarm-state availability during
+  recovery.
+- Vacation Presence Simulation: suspend source-profile learning; skip/delay scheduled events
+  observably during recovery.
+- Tests: climate/light/camera-privacy state changed during downtime (integration tests); vacation
+  curve restore vs. recapture.
+
+#### AQ7 — Observability, Event Catalog and Diagnostics
+
+- Status: `PLANNED`.
+- Add `recovery` as a new top-level key in the AO snapshot (`core/admin_observability_panel_spec.md`),
+  sibling to `manual_holds`/`runtime_confirmations`/`notifications`.
+- Add the 8 `system.recovery_*` events (Runtime Activity + Event Catalog Additions), with the
+  per-event notification routing defined in the spec (Startup Grace Period for
+  `system.recovery_startup_started`, immediate admin push for
+  `system.recovery_power_outage_suspected`, `degraded_timeout_s`-gated admin push for
+  `system.recovery_degraded`).
+- Extend the diagnostics payload per the spec's Diagnostics and Support section.
+- Read-only admin panel section, following the same pattern as AO's existing read-only sections
+  (no new mutation boundary in this slice).
+- Tests: AO snapshot includes `recovery`; each event type routes as specified; diagnostics answers
+  all 7 questions listed in the spec.
+
+#### AQ8 — Live Tests and Validation
+
+- Status: `PLANNED`.
+- Add a live test script under `scripts/live_tests/` (naming/number per existing convention)
+  covering: controlled restart of the HA test container with a valid/stale checkpoint; simulated
+  unavailable/available burst for critical entities; observability export contains recovery state
+  and checkpoint metadata.
+- Add this script to the diagnostic live tier (`scripts/check_all_live.sh`), matching AO's live
+  validation pattern.
+
+- Phase AQ acceptance (from the spec's own Acceptance Criteria):
+  - Heima writes compact runtime checkpoints after important runtime changes.
+  - After HA restart, Heima enters startup recovery and exposes why.
+  - During recovery, non-critical apply steps are blocked with explicit recovery reasons.
+  - During recovery, learning and absence-based anomaly rules do not consume unstable snapshots.
+  - Power-restore actuator changes do not create implicit manual holds.
+  - After stabilization, Heima exits recovery and resumes normal runtime from current HA state.
+  - Admin observability shows checkpoint age, recovery state, entity differences, and blocked
+    actions.
+  - The implementation is covered by unit, integration, and live restart tests.
+  - Mandatory merge-to-main procedure (version bump, changelog, `ci_local.sh`) applies before AQ
+    lands on `main`, per CLAUDE.md.
 
 ### Recent Working Notes
 

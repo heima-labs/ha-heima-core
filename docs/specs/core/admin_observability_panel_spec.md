@@ -205,6 +205,7 @@ HeimaObservabilitySnapshot = {
     "manual_holds": {...},
     "runtime_confirmations": {...},
     "notifications": {...},
+    "recovery": {...},
     "learning": {...},
     "proposals": {...},
     "house_state": {...},
@@ -252,6 +253,11 @@ The first implementation must define these fields at minimum.
 }
 ```
 
+`severity` here is intentionally a 4-level subset (`info|warning|error|critical`) of the general
+`debug|info|warning|error|critical` event severity enum (`core/event_catalog_spec.md`) — health
+findings are always admin-actionable by definition and never produced at `debug` level. This is a
+deliberate scoping, not an inconsistency with `recent_events[]` below.
+
 `acknowledged` is reserved for forward compatibility and must remain `False` until a persisted
 health-finding acknowledgement model is implemented.
 
@@ -262,7 +268,7 @@ health-finding acknowledgement model is implemented.
     "event_id": "stable-or-buffer-id",
     "timestamp": "...",
     "category": "reaction|manual_hold|notification|proposal|learning|health|admin_action",
-    "severity": "debug|info|warning|error",
+    "severity": "debug|info|warning|error|critical",
     "summary": "...",
     "reason_code": "manual_hold_active",
     "object_links": [{"kind": "reaction", "id": "r1"}],
