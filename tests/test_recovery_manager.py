@@ -28,6 +28,9 @@ class _FakeStates:
     def get(self, _entity_id: str):
         return self._states.get(_entity_id)
 
+    def set(self, entity_id: str, state: str) -> None:
+        self._states[entity_id] = SimpleNamespace(state=state, attributes={})
+
 
 class _FakeBus:
     def async_fire(self, _event_type: str, _data: dict) -> None:
@@ -159,6 +162,80 @@ def test_engine_marks_invalid_checkpoint_unusable() -> None:
     assert engine._runtime_context["runtime.recovery.checkpoint.available"] is True
     assert engine._runtime_context["runtime.recovery.checkpoint.usable"] is False
     assert engine._runtime_context["runtime.recovery.checkpoint.reason"] == "invalid_created_at"
+
+
+def test_engine_detects_online_power_recovery_with_configured_targets() -> None:
+    states = _FakeStates()
+    for entity_id, state in {
+        "binary_sensor.camera_motion": "off",
+        "climate.boiler": "unavailable",
+        "switch.camera_privacy": "unavailable",
+        "switch.pump": "unavailable",
+    }.items():
+        states.set(entity_id, state)
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "heating": {"climate_entity": "climate.boiler"},
+                "security": {
+                    "camera_evidence_sources": [
+                        {
+                            "motion_entity": "binary_sensor.camera_motion",
+                            "privacy_entity": "switch.camera_privacy",
+                        }
+                    ]
+                },
+                "reactions": {
+                    "configured": {
+                        "pump_off": {
+                            "steps": [
+                                {
+                                    "domain": "switch",
+                                    "target": "switch.pump",
+                                    "action": "switch.turn_off",
+                                    "params": {"entity_id": "switch.pump"},
+                                }
+                            ]
+                        }
+                    }
+                },
+            },
+        ),
+    )
+    engine._startup_recovery_pending = False
+
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.state"] == "power_recovery"
+    assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_unavailable"
+    critical_ids = {
+        entity.entity_id for entity in engine._recovery_manager.context.critical_entities
+    }
+    assert {
+        "binary_sensor.camera_motion",
+        "climate.boiler",
+        "switch.camera_privacy",
+        "switch.pump",
+    }.issubset(critical_ids)
+    assert "recovery.stabilization" in engine.scheduled_runtime_jobs()
+
+    states.set("climate.boiler", "heat")
+    states.set("switch.camera_privacy", "on")
+    states.set("switch.pump", "off")
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.state"] == "recovery_settling"
+    assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_restored"
+
+    states.set("switch.pump", "unavailable")
+    states.set("switch.camera_privacy", "unavailable")
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.state"] == "power_recovery"
+    assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_flapping"
 
 
 def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:

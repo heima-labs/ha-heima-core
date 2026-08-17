@@ -224,6 +224,12 @@ Examples:
 - heating climate entity and heating timing helpers;
 - notification helper entities where configured.
 
+The recovery critical set is related to, but not identical to, the entity-trigger set. Entity
+triggers decide when Heima should evaluate. Recovery critical entities decide whether the current HA
+state is complete enough to trust. Therefore the recovery critical set must also include configured
+actuators and configured apply targets even when those entities are not state-change triggers for
+normal evaluation.
+
 ## Runtime Checkpoint Contract
 
 ### Storage Semantics

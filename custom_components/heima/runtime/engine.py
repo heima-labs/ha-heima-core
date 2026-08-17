@@ -983,7 +983,7 @@ class HeimaEngine:
         if not callable(state_getter):
             return ()
         entities: list[CriticalEntityState] = []
-        for entity_id in sorted(self.tracked_entity_ids()):
+        for entity_id in sorted(self._recovery_critical_entity_ids()):
             state_obj = state_getter(entity_id)
             if state_obj is None:
                 continue
@@ -995,6 +995,53 @@ class HeimaEngine:
                 )
             )
         return tuple(entities)
+
+    def _recovery_critical_entity_ids(self) -> set[str]:
+        """Return entities whose availability affects recovery classification."""
+        critical = set(self.tracked_entity_ids())
+        options = dict(self._entry.options)
+
+        heating = options.get(OPT_HEATING, {})
+        if isinstance(heating, dict):
+            _add_entity_id(critical, heating.get("climate_entity"))
+
+        security = options.get(OPT_SECURITY, {})
+        if isinstance(security, dict):
+            for source in security.get("camera_evidence_sources", []) or []:
+                if not isinstance(source, dict):
+                    continue
+                _add_entity_id(critical, source.get("privacy_entity"))
+                _add_entity_id(critical, source.get("manual_hold_entity"))
+
+        for room_map in options.get(OPT_LIGHTING_ROOMS, []) or []:
+            if not isinstance(room_map, dict):
+                continue
+            for entity_id in _entity_ids_from_value(room_map):
+                _add_entity_id(critical, entity_id)
+            room_id = str(room_map.get("room_id") or "").strip()
+            if room_id:
+                for entity_id in self._lighting_domain.expected_room_light_entities(room_id):
+                    _add_entity_id(critical, entity_id)
+
+        for zone in options.get(OPT_LIGHTING_ZONES, []) or []:
+            if not isinstance(zone, dict):
+                continue
+            for entity_id in _entity_ids_from_value(zone):
+                _add_entity_id(critical, entity_id)
+
+        reactions = (options.get(OPT_REACTIONS, {}) or {}).get("configured") or {}
+        if isinstance(reactions, dict):
+            for reaction in reactions.values():
+                if not isinstance(reaction, dict):
+                    continue
+                for step in reaction.get("steps", []) or []:
+                    if not isinstance(step, dict):
+                        continue
+                    _add_entity_id(critical, step.get("target"))
+                    for entity_id in _entity_ids_from_value(step.get("params", {})):
+                        _add_entity_id(critical, entity_id)
+
+        return critical
 
     def _checkpoint_recovery_status(self) -> CheckpointRecoveryStatus:
         store = self._runtime_checkpoint_store
@@ -3132,3 +3179,32 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list | tuple | set):
         return [str(item).strip() for item in value if str(item).strip()]
     return []
+
+
+def _add_entity_id(target: set[str], value: Any) -> None:
+    entity_id = str(value or "").strip()
+    if _looks_like_entity_id(entity_id):
+        target.add(entity_id)
+
+
+def _entity_ids_from_value(value: Any) -> list[str]:
+    found: set[str] = set()
+    if isinstance(value, str):
+        if _looks_like_entity_id(value.strip()):
+            found.add(value.strip())
+    elif isinstance(value, dict):
+        for item in value.values():
+            found.update(_entity_ids_from_value(item))
+    elif isinstance(value, list | tuple | set):
+        for item in value:
+            found.update(_entity_ids_from_value(item))
+    return sorted(found)
+
+
+def _looks_like_entity_id(value: str) -> bool:
+    domain, sep, object_id = value.partition(".")
+    if not sep or not domain or not object_id:
+        return False
+    if any(char.isspace() for char in value):
+        return False
+    return domain.replace("_", "").isalnum() and "/" not in object_id

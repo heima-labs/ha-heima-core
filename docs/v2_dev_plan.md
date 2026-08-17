@@ -133,10 +133,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ3 complete; AQ4 next.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ4 complete; AQ5 next.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Implement AQ4 power recovery detection for mass unavailable/mass restore while HA stays online.
+Implement AQ5 runtime behavior gating for learning, anomaly detection, manual holds, pending
+applies, and apply steps while recovery is active.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1004,11 +1005,33 @@ MVP merge.
 
 #### AQ4 — Power Recovery Detection
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Detect mass unavailable/mass restore while HA stays online; enter/exit `power_recovery` and
   `recovery_settling`.
 - Tests: mass unavailable -> `power_recovery`; mass restore -> `recovery_settling`; flapping reverts
   `recovery_settling` back to `power_recovery`.
+- Implemented:
+  - Engine now uses a recovery-specific critical entity set instead of reusing only
+    `tracked_entity_ids()`. The set includes normal trigger entities plus configured climate
+    targets, camera privacy switches, camera privacy manual-hold helpers, lighting room/zone
+    entities, best-effort room light entities, and configured reaction step targets.
+  - The critical set uses stricter HA entity-id detection to avoid accidentally treating arbitrary
+    strings with dots as entities.
+  - Online mass-unavailable state transitions now enter `power_recovery`; restoration transitions
+    to `recovery_settling`; flapping during settling returns to `power_recovery`.
+  - Existing Runtime Scheduler stabilization job (`recovery.stabilization`) is reused for online
+    power recovery, so recovery can progress without additional entity churn.
+  - Added engine-level test coverage for configured target inclusion and
+    `power_recovery -> recovery_settling -> power_recovery` flapping.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 19 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py custom_components/heima/runtime/recovery.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py custom_components/heima/runtime/recovery.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ5 — Runtime Behavior Gating
 
