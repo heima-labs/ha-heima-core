@@ -133,11 +133,12 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ5 complete; AQ6 next.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ7 complete; AQ8
+implemented with live execution blocked by local Docker daemon unavailability.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Implement AQ6 domain-specific recovery behavior for House State, Security, Heating, Lighting,
-Switches, and Camera Privacy.
+Run AQ8 live validation when the HA test instance is reachable, then decide whether to add the
+explicit opt-in destructive restart/unavailable-burst live tests.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1145,13 +1146,38 @@ MVP merge.
 
 #### AQ8 — Live Tests and Validation
 
-- Status: `PLANNED`.
+- Status: `IMPLEMENTED`; live execution blocked by local Docker daemon unavailability in this run.
 - Add a live test script under `scripts/live_tests/` (naming/number per existing convention)
   covering: controlled restart of the HA test container with a valid/stale checkpoint; simulated
   unavailable/available burst for critical entities; observability export contains recovery state
   and checkpoint metadata.
 - Add this script to the diagnostic live tier (`scripts/check_all_live.sh`), matching AO's live
   validation pattern.
+- Implementation notes:
+  - Added `scripts/live_tests/085_recovery_observability_live.py`.
+  - Updated `scripts/live_tests/080_admin_observability_panel_live.py` so `recovery` is a required
+    AO snapshot section.
+  - Added the new script to the diagnostic tier.
+  - Current AQ8 script is live-safe and read-only: it validates the observability recovery contract,
+    checkpoint metadata shape, recovery-blocked apply step shape, recent recovery event shape, and
+    `sensor.heima_health` alignment.
+  - Controlled restart and active simulated unavailable/available bursts remain a future destructive
+    live-test extension; they should require explicit operator opt-in because they restart or perturb
+    the HA test instance.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_observability.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check scripts/live_tests/080_admin_observability_panel_live.py scripts/live_tests/085_recovery_observability_live.py custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check scripts/live_tests/080_admin_observability_panel_live.py scripts/live_tests/085_recovery_observability_live.py custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py scripts/live_tests/085_recovery_observability_live.py --ignore-missing-imports`
+    — passed.
+  - `bash -n scripts/check_all_live.sh` — passed.
+  - Live execution attempted with
+    `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — blocked because `HA_URL` was not reachable and Docker daemon was unavailable from this
+    session.
 
 - Phase AQ acceptance (from the spec's own Acceptance Criteria):
   - Heima writes compact runtime checkpoints after important runtime changes.

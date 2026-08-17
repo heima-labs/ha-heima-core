@@ -63,6 +63,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/078_runtime_confirmation_promotion_revert_live.py"
   "scripts/live_tests/079_runtime_confirmation_profile_policy_live.py"
   "scripts/live_tests/080_admin_observability_panel_live.py"
+  "scripts/live_tests/085_recovery_observability_live.py"
   "scripts/live_tests/084_notification_delivery_policy_live.py"
   "scripts/live_tests/083_health_invariant_clear_active_live.py"
   "scripts/live_tests/082_runtime_state_replay_live.py"
