@@ -45,7 +45,7 @@ from .analyzers.base import ReactionProposal
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .behaviors.event_recorder import EventRecorderBehavior
-from .contracts import ApplyPlan, ApplyStep, HeimaEvent, ScriptApplyBatch
+from .contracts import ApplyPlan, ApplyStep, EventSeverity, HeimaEvent, ScriptApplyBatch
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
 from .domains.activity_domain import ActivityDomain
@@ -917,7 +917,7 @@ class HeimaEngine:
         *,
         event_type: str,
         key: str,
-        severity: str,
+        severity: EventSeverity,
         title: str,
         message: str,
         context: dict[str, Any] | None = None,

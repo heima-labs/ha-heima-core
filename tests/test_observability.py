@@ -621,6 +621,24 @@ def test_observability_health_exports_invariant_violation_details() -> None:
     assert finding["details"]["event_id"] == "event.presence"
 
 
+def test_observability_health_finding_handles_missing_context() -> None:
+    coordinator = _FakeCoordinator()
+    coordinator._health_status_value = "degraded"
+    coordinator._health_reason_value = "invariant_violation"
+    coordinator._last_invariant_violation = {
+        "type": "anomaly.presence_without_occupancy",
+        "severity": "warning",
+        "title": "Invariant violation",
+        "message": "Presence says someone is home, but no derived room is occupied.",
+        "context": None,
+    }
+
+    snapshot = build_observability_snapshot(coordinator)
+
+    finding = snapshot["health_findings"][0]
+    assert finding["suggested_action"] == "Open the Health section for details."
+
+
 def test_observability_redacts_secrets_but_preserves_entity_ids() -> None:
     redacted = redact_observability_data(
         {

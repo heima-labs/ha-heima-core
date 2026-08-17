@@ -8,6 +8,21 @@ from typing import Any, Literal
 from uuid import uuid4
 
 EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
+EVENT_SEVERITY_VALUES: tuple[EventSeverity, ...] = (
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "critical",
+)
+
+
+def coerce_event_severity(value: str) -> EventSeverity:
+    """Normalize and validate a public event severity value."""
+    normalized = str(value or "").strip().lower()
+    if normalized not in EVENT_SEVERITY_VALUES:
+        raise ValueError(f"Unsupported event severity '{value}'")
+    return normalized
 
 
 @dataclass(frozen=True)

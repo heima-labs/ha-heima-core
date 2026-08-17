@@ -278,7 +278,8 @@ def _health_finding_summary(health_status: str, event: Mapping[str, Any]) -> str
 
 
 def _health_finding_suggested_action(event: Mapping[str, Any]) -> str:
-    context = event.get("context") if isinstance(event.get("context"), Mapping) else {}
+    raw_context = event.get("context")
+    context = raw_context if isinstance(raw_context, Mapping) else {}
     check_id = str(context.get("check_id") or "").strip()
     if check_id:
         return f"Inspect invariant check '{check_id}' in the Health section."

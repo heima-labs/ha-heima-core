@@ -23,6 +23,7 @@ from .const import (
     SERVICE_SET_OVERRIDE,
 )
 from .coordinator import HeimaCoordinator
+from .runtime.contracts import coerce_event_severity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -262,7 +263,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if command == "notify_event":
             event_type = str(params.get("type", "custom.notify_event"))
             key = str(params.get("key", "custom.notify_event"))
-            severity = str(params.get("severity", "info"))
+            try:
+                severity = coerce_event_severity(str(params.get("severity", "info")))
+            except ValueError as err:
+                raise ServiceValidationError(str(err)) from err
             title = str(params.get("title", "Heima event"))
             message = str(params.get("message", ""))
             context = dict(params.get("context", {}))

@@ -42,6 +42,12 @@ Initial subtype set:
 
 - `armed_away_but_home`
 
+Planned Phase AQ subtype:
+
+- `security_state_unavailable` — alarm/security state cannot be read during runtime checkpoint or
+  power recovery. This is planned by
+  `core/runtime_checkpoint_and_power_recovery_spec.md` and is not implemented on `main` yet.
+
 Mapping of current runtime event:
 
 - `security.armed_away_but_home` -> `security.mismatch` with `subtype=armed_away_but_home`

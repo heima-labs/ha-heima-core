@@ -321,6 +321,46 @@ async def test_heima_command_notify_event_uses_pipeline_and_updates_sensors(monk
 
 
 @pytest.mark.asyncio
+async def test_heima_command_notify_event_rejects_invalid_severity(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},
+        services=services,
+        bus=_FakeBus(),
+        states=_FakeStates(),
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(options={}))
+    engine._build_default_state()
+    coordinator = _FakeCoordinator(engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    with pytest.raises(ServiceValidationError, match="Unsupported event severity"):
+        await handler(
+            SimpleNamespace(
+                data={
+                    "command": "notify_event",
+                    "target": {},
+                    "params": {
+                        "type": "debug.manual_test",
+                        "key": "debug.manual_test",
+                        "severity": "fatal",
+                        "title": "Test",
+                        "message": "hello",
+                    },
+                }
+            )
+        )
+
+    assert hass.bus.events == []
+
+
+@pytest.mark.asyncio
 async def test_heima_set_mode_sets_and_clears_final_house_state_override(monkeypatch):
     services = _FakeServicesRegistry()
     hass = SimpleNamespace(

@@ -52,6 +52,7 @@ from .runtime.behaviors import (
     LightingRecorderBehavior,
 )
 from .runtime.context_builder import ContextBuilder
+from .runtime.contracts import EventSeverity
 from .runtime.engine import HeimaEngine
 from .runtime.event_store import EventStore
 from .runtime.finding_router import FindingRouter
@@ -616,7 +617,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         *,
         event_type: str,
         key: str,
-        severity: str,
+        severity: EventSeverity,
         title: str,
         message: str,
         context: dict | None = None,
