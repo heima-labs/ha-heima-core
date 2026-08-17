@@ -23,6 +23,8 @@ RecoveryReason = Literal[
     "stabilized",
 ]
 
+CheckpointDifferenceKind = Literal["unknown_during_downtime", "power_restore_candidate"]
+
 
 @dataclass(frozen=True)
 class CriticalEntityState:
@@ -46,12 +48,62 @@ class CriticalEntityState:
 
 
 @dataclass(frozen=True)
+class CheckpointDifference:
+    """Difference between latest checkpoint and current HA state."""
+
+    entity_id: str
+    domain: str
+    checkpoint_state: str
+    current_state: str
+    kind: CheckpointDifferenceKind
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "entity_id": self.entity_id,
+            "domain": self.domain,
+            "checkpoint_state": self.checkpoint_state,
+            "current_state": self.current_state,
+            "kind": self.kind,
+        }
+
+
+@dataclass(frozen=True)
+class CheckpointRecoveryStatus:
+    """Recovery-facing status of the latest runtime checkpoint."""
+
+    available: bool = False
+    usable: bool = False
+    stale: bool = False
+    checkpoint_id: str | None = None
+    age_s: float | None = None
+    reason: str = "missing"
+    differences: tuple[CheckpointDifference, ...] = ()
+
+    @property
+    def difference_count(self) -> int:
+        return len(self.differences)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "usable": self.usable,
+            "stale": self.stale,
+            "checkpoint_id": self.checkpoint_id,
+            "age_s": self.age_s,
+            "reason": self.reason,
+            "difference_count": self.difference_count,
+            "differences": [difference.as_dict() for difference in self.differences],
+        }
+
+
+@dataclass(frozen=True)
 class RecoveryConfig:
     """Configuration knobs for runtime recovery classification."""
 
     critical_entity_unavailable_ratio: float = 0.35
     startup_stabilization_s: float = 120.0
     power_restore_stabilization_s: float = 60.0
+    checkpoint_freshness_s: float = 15 * 60.0
 
 
 @dataclass(frozen=True)
@@ -63,6 +115,7 @@ class RecoveryEvaluationInput:
     startup_requested: bool = False
     stable_snapshot_available: bool = False
     reconciliation_pending: bool = False
+    checkpoint_status: CheckpointRecoveryStatus = field(default_factory=CheckpointRecoveryStatus)
 
 
 @dataclass(frozen=True)
@@ -82,6 +135,7 @@ class RecoveryContext:
     stable_snapshot_available: bool = False
     reconciliation_pending: bool = False
     critical_entities: tuple[CriticalEntityState, ...] = field(default_factory=tuple)
+    checkpoint_status: CheckpointRecoveryStatus = field(default_factory=CheckpointRecoveryStatus)
 
     def as_runtime_context(self) -> dict[str, Any]:
         """Return the reserved engine-owned runtime context namespace."""
@@ -97,6 +151,14 @@ class RecoveryContext:
             ),
             "runtime.recovery.stable_snapshot_available": self.stable_snapshot_available,
             "runtime.recovery.reconciliation_pending": self.reconciliation_pending,
+            "runtime.recovery.checkpoint.available": self.checkpoint_status.available,
+            "runtime.recovery.checkpoint.usable": self.checkpoint_status.usable,
+            "runtime.recovery.checkpoint.stale": self.checkpoint_status.stale,
+            "runtime.recovery.checkpoint.reason": self.checkpoint_status.reason,
+            "runtime.recovery.checkpoint.age_s": self.checkpoint_status.age_s,
+            "runtime.recovery.checkpoint.difference_count": (
+                self.checkpoint_status.difference_count
+            ),
         }
 
     def diagnostics(self) -> dict[str, Any]:
@@ -114,6 +176,7 @@ class RecoveryContext:
             "stable_snapshot_available": self.stable_snapshot_available,
             "reconciliation_pending": self.reconciliation_pending,
             "critical_entities": [entity.as_dict() for entity in self.critical_entities],
+            "checkpoint": self.checkpoint_status.as_dict(),
         }
 
 
@@ -131,6 +194,10 @@ class RecoveryManager:
     @property
     def context(self) -> RecoveryContext:
         return self._context
+
+    @property
+    def config(self) -> RecoveryConfig:
+        return self._config
 
     def evaluate(self, inputs: RecoveryEvaluationInput) -> RecoveryContext:
         entities = tuple(inputs.critical_entities)
@@ -178,7 +245,11 @@ class RecoveryManager:
                 reason = "critical_entities_restored"
                 settling_started_at = inputs.now_monotonic
         elif state == "recovery_settling":
-            fallback_parent = parent_state if parent_state in {"startup_recovery", "power_recovery"} else "power_recovery"
+            fallback_parent = (
+                parent_state
+                if parent_state in {"startup_recovery", "power_recovery"}
+                else "power_recovery"
+            )
             if above_threshold:
                 state = fallback_parent
                 reason = "critical_entities_flapping"
@@ -218,6 +289,7 @@ class RecoveryManager:
             stable_snapshot_available=inputs.stable_snapshot_available,
             reconciliation_pending=inputs.reconciliation_pending,
             critical_entities=entities,
+            checkpoint_status=inputs.checkpoint_status,
         )
         return self._context
 
@@ -259,7 +331,9 @@ class RecoveryManager:
             return started_at + self._stabilization_window_s(state)
         if state == "recovery_settling" and settling_started_at is not None:
             source_state = (
-                parent_state if parent_state in {"startup_recovery", "power_recovery"} else "power_recovery"
+                parent_state
+                if parent_state in {"startup_recovery", "power_recovery"}
+                else "power_recovery"
             )
             return settling_started_at + self._stabilization_window_s(source_state)
         return None

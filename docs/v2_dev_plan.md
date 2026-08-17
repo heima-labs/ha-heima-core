@@ -133,11 +133,10 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ2 complete; AQ3 next.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ3 complete; AQ4 next.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Implement AQ3 startup recovery by loading the persisted checkpoint and classifying current-state
-differences without restoring old checkpoint state over HA state.
+Implement AQ4 power recovery detection for mass unavailable/mass restore while HA stays online.
 
 ### Phase AO — Admin Observability Panel
 
@@ -972,12 +971,36 @@ MVP merge.
 
 #### AQ3 — Startup Recovery Wiring
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Wire checkpoint load + current-HA-state comparison + difference classification
   (`unknown_during_downtime` / `power_restore_candidate`) into engine startup.
 - Enter/exit `startup_recovery` per Startup Entry Conditions / Exit Conditions.
 - Tests: startup recovery entry with no checkpoint, with a stale checkpoint, with a checkpoint that
   fails validation; recovery exit after stable critical entities.
+- Implemented:
+  - Engine now requests `startup_recovery` on the first evaluation cycle only.
+  - Engine reads the latest `heima_runtime_checkpoints` checkpoint for the current config entry and
+    exposes checkpoint availability, usability, freshness, age, reason, and difference count under
+    the reserved `runtime.recovery.*` context namespace.
+  - Checkpoint/current HA differences are classified as `power_restore_candidate` for restore-
+    plausible actuator domains (`light`, `switch`, `climate`, `cover`, `fan`) and
+    `unknown_during_downtime` otherwise. Current HA state remains source of truth; no old
+    checkpoint state is restored.
+  - Recovery diagnostics include redacted checkpoint status and per-entity difference details.
+  - Engine schedules `recovery.stabilization` via Runtime Scheduler using the recovery
+    stabilization deadline, so startup recovery can progress without requiring a new HA entity
+    change.
+  - Added/extended `tests/test_recovery_manager.py` coverage for missing, stale, invalid, and
+    changed checkpoints.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 18 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/ruff format --check tests/test_recovery_manager.py custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ4 — Power Recovery Detection
 

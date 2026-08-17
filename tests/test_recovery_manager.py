@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from custom_components.heima.runtime.checkpoint_store import (
+    CheckpointEntityState,
+    RuntimeCheckpoint,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.recovery import (
     CriticalEntityState,
@@ -18,8 +22,11 @@ def _entity(entity_id: str, state: str) -> CriticalEntityState:
 
 
 class _FakeStates:
+    def __init__(self, states=None):
+        self._states = states or {}
+
     def get(self, _entity_id: str):
-        return None
+        return self._states.get(_entity_id)
 
 
 class _FakeBus:
@@ -49,8 +56,109 @@ def test_engine_computes_recovery_context_before_runtime_consumers() -> None:
 
     engine._compute_recovery_context()
 
-    assert engine._runtime_context["runtime.recovery.state"] == "normal"
-    assert engine._runtime_context["runtime.recovery.active"] is False
+    assert engine._runtime_context["runtime.recovery.state"] == "startup_recovery"
+    assert engine._runtime_context["runtime.recovery.reason"] == "startup_requested"
+    assert engine._runtime_context["runtime.recovery.active"] is True
+    assert engine._runtime_context["runtime.recovery.checkpoint.reason"] == "store_not_configured"
+    assert "recovery.stabilization" in engine.scheduled_runtime_jobs()
+
+
+def test_engine_classifies_fresh_checkpoint_differences() -> None:
+    checkpoint = RuntimeCheckpoint(
+        entry_id="entry-a",
+        reason="unit",
+        critical_entities=(
+            CheckpointEntityState(
+                entity_id="light.desk",
+                domain="light",
+                state="off",
+            ),
+        ),
+    )
+    hass = SimpleNamespace(
+        states=_FakeStates({"light.desk": SimpleNamespace(state="on", attributes={})}),
+        bus=_FakeBus(),
+        services=_FakeServices(),
+    )
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a", options={"rooms": [{"motion_sensor": "light.desk"}]}
+        ),
+    )
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: checkpoint)
+    )
+
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.checkpoint.usable"] is True
+    assert engine._runtime_context["runtime.recovery.checkpoint.difference_count"] == 1
+    diff = engine._recovery_manager.context.checkpoint_status.differences[0]
+    assert diff.entity_id == "light.desk"
+    assert diff.kind == "power_restore_candidate"
+
+
+def test_engine_reports_missing_checkpoint_from_loaded_store() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(entry_id="entry-a", options={}),
+    )
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: None)
+    )
+
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.state"] == "startup_recovery"
+    assert engine._runtime_context["runtime.recovery.checkpoint.available"] is False
+    assert engine._runtime_context["runtime.recovery.checkpoint.reason"] == "missing"
+
+
+def test_engine_marks_stale_checkpoint_unusable() -> None:
+    checkpoint = RuntimeCheckpoint(
+        entry_id="entry-a",
+        reason="unit",
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(entry_id="entry-a", options={}),
+    )
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: checkpoint)
+    )
+
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.checkpoint.available"] is True
+    assert engine._runtime_context["runtime.recovery.checkpoint.usable"] is False
+    assert engine._runtime_context["runtime.recovery.checkpoint.stale"] is True
+    assert engine._runtime_context["runtime.recovery.checkpoint.reason"] == "stale"
+
+
+def test_engine_marks_invalid_checkpoint_unusable() -> None:
+    checkpoint = RuntimeCheckpoint(
+        entry_id="entry-a",
+        reason="unit",
+        created_at="not-a-date",
+    )
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(entry_id="entry-a", options={}),
+    )
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: checkpoint)
+    )
+
+    engine._compute_recovery_context()
+
+    assert engine._runtime_context["runtime.recovery.checkpoint.available"] is True
+    assert engine._runtime_context["runtime.recovery.checkpoint.usable"] is False
+    assert engine._runtime_context["runtime.recovery.checkpoint.reason"] == "invalid_created_at"
 
 
 def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:
@@ -58,9 +166,7 @@ def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:
         RecoveryConfig(startup_stabilization_s=120.0, power_restore_stabilization_s=60.0)
     )
 
-    context = manager.evaluate(
-        RecoveryEvaluationInput(now_monotonic=100.0, startup_requested=True)
-    )
+    context = manager.evaluate(RecoveryEvaluationInput(now_monotonic=100.0, startup_requested=True))
 
     assert context.state == "startup_recovery"
     assert context.reason == "startup_requested"

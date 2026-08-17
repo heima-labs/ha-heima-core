@@ -457,7 +457,7 @@ well past its stated default.
 Two one-shot Runtime Scheduler jobs are involved, registered at different moments, not both at
 initial recovery entry:
 
-- `job_id=recovery.stabilization_deadline` (`owner=recovery`) is registered the moment
+- `job_id=recovery.stabilization` (`owner=recovery`) is registered the moment
   `startup_recovery` or `power_recovery` is entered, firing at the applicable stabilization window
   (120s / 60s), so Exit Conditions are rechecked regardless of entity churn.
 - `job_id=recovery.degraded_timeout` (`owner=recovery`) is registered only when
@@ -870,7 +870,7 @@ Unit tests:
   block, and vice versa;
 - recovery does not create implicit manual holds for restore changes, and implicit holds are never
   restored from a checkpoint after restart;
-- `recovery.stabilization_deadline` fires and is rechecked even with zero entity state changes
+- `recovery.stabilization` fires and is rechecked even with zero entity state changes
   during the window (no reliance on the 300s evaluation fallback);
 - `recovery.degraded_timeout` is registered only on transition into `degraded_recovery`, not at
   initial recovery entry.

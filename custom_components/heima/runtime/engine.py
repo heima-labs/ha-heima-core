@@ -103,7 +103,14 @@ from .reactions import (
     resolve_reaction_type,
 )
 from .reactions.base import HeimaReaction
-from .recovery import RecoveryEvaluationInput, RecoveryManager
+from .recovery import (
+    CheckpointDifference,
+    CheckpointDifferenceKind,
+    CheckpointRecoveryStatus,
+    CriticalEntityState,
+    RecoveryEvaluationInput,
+    RecoveryManager,
+)
 from .room_context import (
     RoomDeviceContext,
     RoomDeviceContextBuilder,
@@ -140,7 +147,9 @@ _REMOVED_REACTION_TYPES = {
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 _RUNTIME_CHECKPOINT_WRITE_JOB_ID = "recovery.checkpoint.write"
+_RECOVERY_STABILIZATION_JOB_ID = "recovery.stabilization"
 _RUNTIME_CHECKPOINT_WRITE_DELAY_S = 60.0
+_CHECKPOINT_POWER_RESTORE_DOMAINS = {"climate", "cover", "fan", "light", "switch"}
 
 # Maps plugin domain_id to the InferenceSignal subclass it can consume (spec §10.8).
 _PLUGIN_SIGNAL_TYPE: dict[str, type] = {
@@ -244,6 +253,7 @@ class HeimaEngine:
         self._runtime_checkpoint_store: RuntimeCheckpointStore | None = None
         self._last_runtime_checkpoint_key: str | None = None
         self._pending_runtime_checkpoint_reason: str | None = None
+        self._startup_recovery_pending = True
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -941,14 +951,116 @@ class HeimaEngine:
     def _compute_recovery_context(self) -> None:
         """Compute read-only recovery context before the DAG runs.
 
-        AQ1 deliberately supplies no critical entities and no startup/restart
-        signal yet. AQ2/AQ3 populate those inputs without changing the pre-DAG
-        placement introduced here.
+        Recovery context is computed before domain DAG execution so all domains
+        observe the same startup/power recovery state in the current cycle.
         """
+        critical_entities = self._current_recovery_critical_entities()
+        checkpoint_status = self._checkpoint_recovery_status()
         context = self._recovery_manager.evaluate(
-            RecoveryEvaluationInput(now_monotonic=time.monotonic())
+            RecoveryEvaluationInput(
+                now_monotonic=time.monotonic(),
+                critical_entities=critical_entities,
+                startup_requested=self._startup_recovery_pending,
+                stable_snapshot_available=bool(self._snapshot.snapshot_id),
+                checkpoint_status=checkpoint_status,
+            )
         )
+        self._startup_recovery_pending = False
         self._runtime_context = context.as_runtime_context()
+        if context.stabilization_deadline_monotonic is not None:
+            self._schedule_timed_recheck_deadline(
+                job_id=_RECOVERY_STABILIZATION_JOB_ID,
+                deadline=context.stabilization_deadline_monotonic,
+                owner="recovery",
+                label="Recovery stabilization",
+            )
+        else:
+            self._timed_rechecks.pop(_RECOVERY_STABILIZATION_JOB_ID, None)
+
+    def _current_recovery_critical_entities(self) -> tuple[CriticalEntityState, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        entities: list[CriticalEntityState] = []
+        for entity_id in sorted(self.tracked_entity_ids()):
+            state_obj = state_getter(entity_id)
+            if state_obj is None:
+                continue
+            entities.append(
+                CriticalEntityState(
+                    entity_id=entity_id,
+                    domain=entity_id.split(".", 1)[0],
+                    state=str(getattr(state_obj, "state", "") or ""),
+                )
+            )
+        return tuple(entities)
+
+    def _checkpoint_recovery_status(self) -> CheckpointRecoveryStatus:
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return CheckpointRecoveryStatus(reason="store_not_configured")
+        checkpoint = store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+        if checkpoint is None:
+            return CheckpointRecoveryStatus(reason="missing")
+        age_s = self._checkpoint_age_s(checkpoint)
+        if age_s is None:
+            return CheckpointRecoveryStatus(
+                available=True,
+                checkpoint_id=checkpoint.checkpoint_id,
+                reason="invalid_created_at",
+            )
+        stale = age_s > self._recovery_manager.config.checkpoint_freshness_s
+        return CheckpointRecoveryStatus(
+            available=True,
+            usable=not stale,
+            stale=stale,
+            checkpoint_id=checkpoint.checkpoint_id,
+            age_s=age_s,
+            reason="stale" if stale else "loaded",
+            differences=self._checkpoint_differences(checkpoint),
+        )
+
+    def _checkpoint_age_s(self, checkpoint: RuntimeCheckpoint) -> float | None:
+        try:
+            created_at = datetime.fromisoformat(checkpoint.created_at)
+        except ValueError:
+            return None
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - created_at).total_seconds())
+
+    def _checkpoint_differences(
+        self,
+        checkpoint: RuntimeCheckpoint,
+    ) -> tuple[CheckpointDifference, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        differences: list[CheckpointDifference] = []
+        for checkpoint_entity in checkpoint.critical_entities:
+            current = state_getter(checkpoint_entity.entity_id)
+            current_state = (
+                str(getattr(current, "state", "") or "") if current is not None else "unavailable"
+            )
+            if current_state == checkpoint_entity.state:
+                continue
+            kind: CheckpointDifferenceKind
+            if checkpoint_entity.domain in _CHECKPOINT_POWER_RESTORE_DOMAINS:
+                kind = "power_restore_candidate"
+            else:
+                kind = "unknown_during_downtime"
+            differences.append(
+                CheckpointDifference(
+                    entity_id=checkpoint_entity.entity_id,
+                    domain=checkpoint_entity.domain,
+                    checkpoint_state=checkpoint_entity.state,
+                    current_state=current_state,
+                    kind=kind,
+                )
+            )
+        return tuple(differences)
 
     async def async_emit_external_event(
         self,
