@@ -22,6 +22,7 @@ from custom_components.heima.runtime.recovery import (
     RecoveryManager,
 )
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
+from custom_components.heima.runtime.state_store import CanonicalState
 
 
 def _entity(entity_id: str, state: str) -> CriticalEntityState:
@@ -390,6 +391,143 @@ def test_engine_does_not_create_runtime_confirmation_during_recovery() -> None:
     )
 
     assert handled is False
+
+
+def test_engine_recovery_guard_prevents_away_from_sensor_silence() -> None:
+    checkpoint = RuntimeCheckpoint(
+        entry_id="entry-a",
+        reason="unit",
+        runtime={"snapshot": {"house_state": "working"}},
+    )
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(entry_id="entry-a", options={}),
+    )
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: checkpoint)
+    )
+    engine._runtime_context = {
+        "runtime.recovery.state": "startup_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    state, reason = engine._recovery_guard_house_state(
+        house_state="away",
+        house_reason="presence_absent",
+        previous_house_state="unknown",
+        anyone_home=False,
+        occupied_rooms=[],
+    )
+
+    assert state == "working"
+    assert reason == "recovery_guard:no_away_from_sensor_silence:presence_absent"
+
+
+def test_engine_recovery_guard_prefers_previous_non_away_house_state() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    state, _reason = engine._recovery_guard_house_state(
+        house_state="away",
+        house_reason="presence_absent",
+        previous_house_state="home",
+        anyone_home=False,
+        occupied_rooms=[],
+    )
+
+    assert state == "home"
+
+
+def test_engine_restores_heating_vacation_curve_runtime_from_checkpoint() -> None:
+    checkpoint = RuntimeCheckpoint(
+        entry_id="entry-a",
+        reason="unit",
+        heating={
+            "selected_branch": "vacation_curve",
+            "vacation_curve_start_temp": 20.5,
+            "vacation_curve_started_at": "2026-07-01T10:00:00+00:00",
+        },
+    )
+    hass = SimpleNamespace(
+        states=_FakeStates(
+            {
+                "climate.boiler": SimpleNamespace(
+                    state="heat",
+                    attributes={"temperature": 18.0},
+                )
+            }
+        ),
+        bus=_FakeBus(),
+        services=_FakeServices(),
+    )
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine.set_runtime_checkpoint_store(
+        SimpleNamespace(checkpoint_for_entry=lambda _entry_id: checkpoint)
+    )
+
+    engine._heating_domain.compute_policy(
+        house_state="vacation",
+        heating_cfg={
+            "climate_entity": "climate.boiler",
+            "override_branches": {
+                "vacation": {
+                    "branch": "vacation_curve",
+                    "vacation_ramp_down_h": 8,
+                    "vacation_ramp_up_h": 8,
+                    "vacation_min_temp": 16,
+                    "vacation_comfort_temp": 20,
+                    "vacation_min_total_hours_for_ramp": 24,
+                }
+            },
+        },
+        state=CanonicalState(),
+        events=engine._events_domain,
+        schedule_recheck=lambda **_kwargs: None,
+    )
+
+    trace = engine._heating_domain.diagnostics()
+    assert trace["selected_branch"] == "vacation_curve"
+    assert trace["vacation_curve_start_temp"] == 20.5
+    assert trace["vacation_curve_started_at"] == "2026-07-01T10:00:00+00:00"
+
+
+def test_engine_emits_security_unavailable_mismatch_during_recovery_once() -> None:
+    states = _FakeStates()
+    states.set("alarm_control_panel.home", "unavailable")
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    options = {
+        "security": {
+            "enabled": True,
+            "security_state_entity": "alarm_control_panel.home",
+        }
+    }
+
+    engine._queue_security_state_unavailable_recovery_event(
+        options=options,
+        security_state="unknown",
+        security_reason="unavailable",
+    )
+    engine._queue_security_state_unavailable_recovery_event(
+        options=options,
+        security_state="unknown",
+        security_reason="unavailable",
+    )
+
+    pending = engine._events_domain._pending_events
+    assert len(pending) == 1
+    assert pending[0].type == "security.mismatch"
+    assert pending[0].key == "security.mismatch.security_state_unavailable"
+    assert pending[0].context["subtype"] == "security_state_unavailable"
 
 
 def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:

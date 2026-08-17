@@ -472,6 +472,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._event_store.async_load()
         await self._house_snapshot_store.async_load()
         await self._runtime_checkpoint_store.async_load()
+        self.engine.restore_runtime_from_checkpoint()
         await self._approval_store.async_load()
         self._sync_house_state_approval_state()
         self._sync_activity_approval_state()

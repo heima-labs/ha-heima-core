@@ -1072,7 +1072,7 @@ MVP merge.
 
 #### AQ6 — Domain-Specific Recovery Behavior
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - House State: distinguish checkpointed/current/stable state; no `away` inference from sensor
   silence during recovery.
 - Security: emit `security.mismatch` with `subtype=security_state_unavailable` when the alarm panel
@@ -1089,6 +1089,27 @@ MVP merge.
   observably during recovery.
 - Tests: climate/light/camera-privacy state changed during downtime (integration tests); vacation
   curve restore vs. recapture.
+- Implementation notes:
+  - House-state recovery now keeps an effective/checkpoint-aware state separate from the raw
+    computed state, and exposes the recovery decision in `heima_house_state` attributes.
+  - `away` inferred only from sensor silence is blocked during active recovery; Heima falls back to
+    the previous non-`away` state, then the checkpointed non-`away` state, then `unknown`.
+  - Security unavailable during recovery is emitted as `security.mismatch` with
+    `subtype=security_state_unavailable`, once per unavailable episode.
+  - Heating checkpoints now persist and restore the active `vacation_curve` runtime so restart does
+    not recapture the post-restart setpoint as the ramp origin.
+  - The AQ5 recovery apply gate already prevents lighting, switch, camera privacy, heating, and
+    runtime-confirmation applies from executing while recovery is active, and suppresses implicit
+    holds from restore-time state changes.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/coordinator.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/coordinator.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/runtime/checkpoint_store.py custom_components/heima/coordinator.py --ignore-missing-imports`
+    — passed.
 
 #### AQ7 — Observability, Event Catalog and Diagnostics
 

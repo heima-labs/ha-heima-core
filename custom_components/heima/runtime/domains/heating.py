@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Callable
 
 from homeassistant.components.climate.const import ATTR_CURRENT_TEMPERATURE
@@ -41,6 +42,7 @@ class HeatingDomain:
         self._normalizer = normalizer
         self._heating_trace: dict[str, Any] = {}
         self._heating_vacation_curve_start_temp: float | None = None
+        self._heating_vacation_curve_started_at: str | None = None
         self._heating_last_target_temp: float | None = None
         self._heating_last_apply_ts: float | None = None
         self._heating_last_apply_provenance: dict[str, Any] | None = None
@@ -78,6 +80,7 @@ class HeatingDomain:
         """Called on options reload. Clears transient heating state."""
         self._heating_trace = {}
         self._heating_vacation_curve_start_temp = None
+        self._heating_vacation_curve_started_at = None
         self._heating_last_target_temp = None
         self._heating_last_apply_ts = None
         self._heating_last_apply_provenance = None
@@ -111,6 +114,31 @@ class HeatingDomain:
 
     def diagnostics(self) -> dict[str, Any]:
         return dict(self._heating_trace)
+
+    def checkpoint_runtime(self) -> dict[str, Any]:
+        """Return restart-sensitive heating runtime state."""
+        return {
+            "selected_branch": self._heating_trace.get("selected_branch"),
+            "vacation_curve_start_temp": self._heating_vacation_curve_start_temp,
+            "vacation_curve_started_at": self._heating_vacation_curve_started_at,
+        }
+
+    def restore_checkpoint_runtime(self, raw: dict[str, Any]) -> None:
+        """Restore restart-sensitive heating runtime state from a checkpoint."""
+        selected_branch = str(raw.get("selected_branch") or "").strip()
+        start_temp = self._coerce_float(raw.get("vacation_curve_start_temp"))
+        started_at = str(raw.get("vacation_curve_started_at") or "").strip() or None
+        if selected_branch != "vacation_curve" or start_temp is None:
+            return
+        self._heating_vacation_curve_start_temp = start_temp
+        self._heating_vacation_curve_started_at = started_at
+        self._heating_trace = {
+            **self._heating_trace,
+            "selected_branch": "vacation_curve",
+            "vacation_curve_start_temp": start_temp,
+            "vacation_curve_started_at": started_at,
+            "restored_from_checkpoint": True,
+        }
 
     def current_temperature(self) -> float | None:
         """Return the current ambient temperature reported by the configured climate entity."""
@@ -259,6 +287,7 @@ class HeatingDomain:
         elif branch_type == "vacation_curve":
             if previous_selected_branch != "vacation_curve":
                 self._heating_vacation_curve_start_temp = current_setpoint
+                self._heating_vacation_curve_started_at = datetime.now(UTC).isoformat()
             (
                 target_temperature,
                 phase,
@@ -302,6 +331,7 @@ class HeatingDomain:
 
         if branch_type != "vacation_curve":
             self._heating_vacation_curve_start_temp = None
+            self._heating_vacation_curve_started_at = None
 
         state.set_sensor("heima_heating_state", heating_state)
         state.set_sensor("heima_heating_reason", reason)
@@ -343,6 +373,7 @@ class HeatingDomain:
             "last_apply_ts": self._heating_last_apply_ts,
             "vacation": dict(vacation_meta),
             "vacation_curve_start_temp": self._heating_vacation_curve_start_temp,
+            "vacation_curve_started_at": self._heating_vacation_curve_started_at,
         }
 
         self._queue_heating_runtime_events(

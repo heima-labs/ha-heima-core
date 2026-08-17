@@ -254,6 +254,7 @@ class HeimaEngine:
         self._last_runtime_checkpoint_key: str | None = None
         self._pending_runtime_checkpoint_reason: str | None = None
         self._startup_recovery_pending = True
+        self._security_unavailable_recovery_event_active = False
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -333,6 +334,19 @@ class HeimaEngine:
     def set_runtime_checkpoint_store(self, store: RuntimeCheckpointStore) -> None:
         """Set the runtime checkpoint store for recovery persistence."""
         self._runtime_checkpoint_store = store
+        self.restore_runtime_from_checkpoint()
+
+    def restore_runtime_from_checkpoint(self) -> None:
+        """Restore domain runtime that is safe to carry across HA restarts."""
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return
+        if not hasattr(store, "checkpoint_for_entry"):
+            return
+        checkpoint = store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+        if checkpoint is None:
+            return
+        self._heating_domain.restore_checkpoint_runtime(dict(checkpoint.heating))
 
     def set_outcome_tracker(self, tracker: OutcomeTracker) -> None:
         """Set the outcome tracker for reaction verification."""
@@ -1124,6 +1138,126 @@ class HeimaEngine:
             )
         return tuple(differences)
 
+    def _recovery_guard_house_state(
+        self,
+        *,
+        house_state: str,
+        house_reason: str,
+        previous_house_state: str,
+        anyone_home: bool,
+        occupied_rooms: list[str],
+    ) -> tuple[str, str]:
+        if not self._recovery_active() or house_state != "away" or anyone_home or occupied_rooms:
+            return house_state, house_reason
+        fallback = self._recovery_house_state_fallback(previous_house_state)
+        if fallback == "away":
+            return house_state, house_reason
+        return fallback, f"recovery_guard:no_away_from_sensor_silence:{house_reason}"
+
+    def _recovery_house_state_fallback(self, previous_house_state: str) -> str:
+        previous = str(previous_house_state or "").strip()
+        if previous and previous not in {"unknown", "away"}:
+            return previous
+        checkpoint_state = self._checkpoint_house_state()
+        if checkpoint_state and checkpoint_state not in {"unknown", "away"}:
+            return checkpoint_state
+        return "unknown"
+
+    def _checkpoint_house_state(self) -> str:
+        store = self._runtime_checkpoint_store
+        checkpoint = (
+            store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+            if store is not None
+            else None
+        )
+        runtime = checkpoint.runtime if checkpoint is not None else {}
+        snapshot = runtime.get("snapshot") if isinstance(runtime, dict) else None
+        checkpoint_state = (
+            str(snapshot.get("house_state") or "").strip() if isinstance(snapshot, dict) else ""
+        )
+        return checkpoint_state
+
+    def _recovery_house_state_diagnostics(
+        self,
+        *,
+        raw_house_state: str,
+        effective_house_state: str,
+        previous_house_state: str,
+        guard_applied: bool,
+    ) -> dict[str, Any]:
+        return {
+            "active": self._recovery_active(),
+            "state": self._recovery_state(),
+            "stable": not self._recovery_active(),
+            "raw_state": raw_house_state,
+            "effective_state": effective_house_state,
+            "previous_state": previous_house_state,
+            "checkpoint_state": self._checkpoint_house_state(),
+            "guard_applied": guard_applied,
+        }
+
+    def _queue_security_state_unavailable_recovery_event(
+        self,
+        *,
+        options: dict[str, Any],
+        security_state: str,
+        security_reason: str,
+    ) -> None:
+        active = self._security_state_unavailable_during_recovery(
+            options=options,
+            security_state=security_state,
+        )
+        if not active:
+            self._security_unavailable_recovery_event_active = False
+            return
+        if self._security_unavailable_recovery_event_active:
+            return
+        self._security_unavailable_recovery_event_active = True
+        security_cfg = dict(options.get(OPT_SECURITY, {}) or {})
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="security.mismatch",
+                key="security.mismatch.security_state_unavailable",
+                severity="warning",
+                title="Security mismatch",
+                message="Security mismatch detected (security_state_unavailable).",
+                context={
+                    "subtype": "security_state_unavailable",
+                    "security_state": security_state,
+                    "security_reason": security_reason,
+                    "security_entity": str(security_cfg.get("security_state_entity") or ""),
+                    "recovery_state": self._recovery_state(),
+                },
+            )
+        )
+
+    def _security_state_unavailable_during_recovery(
+        self,
+        *,
+        options: dict[str, Any],
+        security_state: str,
+    ) -> bool:
+        if not self._recovery_active():
+            return False
+        security_cfg = dict(options.get(OPT_SECURITY, {}) or {})
+        if not security_cfg.get("enabled"):
+            return False
+        entity_id = str(security_cfg.get("security_state_entity") or "").strip()
+        if not entity_id:
+            return False
+        state_obj = self._hass.states.get(entity_id)
+        raw_state = str(getattr(state_obj, "state", "") or "").strip()
+        return (
+            state_obj is None
+            or raw_state in {"unknown", "unavailable", ""}
+            or security_state
+            in {
+                "unknown",
+                "unavailable",
+                "",
+            }
+        )
+
     async def async_emit_external_event(
         self,
         *,
@@ -1395,12 +1529,31 @@ class HeimaEngine:
         )
         security_state = security_result.security_state
         security_reason = security_result.security_reason
+        self._queue_security_state_unavailable_recovery_event(
+            options=options,
+            security_state=security_state,
+            security_reason=security_reason,
+        )
 
         self._state.set_binary("heima_anyone_home", anyone_home)
         self._state.set_sensor("heima_people_count", people_count)
         self._state.set_sensor("heima_people_home_list", ",".join(people_home_list))
         self._state.set_sensor("lighting.lights_on", dict(lights_on))
         prev_house_state = self._state.get_sensor("heima_house_state")
+        raw_house_state = house_state
+        house_state, house_reason = self._recovery_guard_house_state(
+            house_state=house_state,
+            house_reason=house_reason,
+            previous_house_state=str(prev_house_state or ""),
+            anyone_home=anyone_home,
+            occupied_rooms=occupied_rooms,
+        )
+        recovery_house_state = self._recovery_house_state_diagnostics(
+            raw_house_state=raw_house_state,
+            effective_house_state=house_state,
+            previous_house_state=str(prev_house_state or ""),
+            guard_applied=house_state != raw_house_state,
+        )
         house_state_diag = self._house_state_domain.diagnostics()
         resolution_trace = dict(house_state_diag.get("resolution_trace", {}))
         candidate_summary = dict(house_state_diag.get("candidate_summary", {}))
@@ -1431,6 +1584,7 @@ class HeimaEngine:
             {
                 "resolution_trace": resolution_trace,
                 "candidate_summary": candidate_summary,
+                "recovery": recovery_house_state,
             },
         )
         self._state.set_sensor_attributes(
@@ -1438,6 +1592,7 @@ class HeimaEngine:
             {
                 "resolution_trace": resolution_trace,
                 "candidate_summary": candidate_summary,
+                "recovery": recovery_house_state,
             },
         )
         self._queue_house_state_changed_event(
@@ -1812,6 +1967,7 @@ class HeimaEngine:
             },
             heating={
                 "current_temperature": self._heating_domain.current_temperature(),
+                **self._heating_domain.checkpoint_runtime(),
                 "diagnostic_keys": sorted(self._heating_domain.diagnostics()),
             },
             observability={
