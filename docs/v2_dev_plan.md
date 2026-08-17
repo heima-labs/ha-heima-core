@@ -1113,7 +1113,7 @@ MVP merge.
 
 #### AQ7 — Observability, Event Catalog and Diagnostics
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Add `recovery` as a new top-level key in the AO snapshot (`core/admin_observability_panel_spec.md`),
   sibling to `manual_holds`/`runtime_confirmations`/`notifications`.
 - Add the 8 `system.recovery_*` events (Runtime Activity + Event Catalog Additions), with the
@@ -1126,6 +1126,22 @@ MVP merge.
   (no new mutation boundary in this slice).
 - Tests: AO snapshot includes `recovery`; each event type routes as specified; diagnostics answers
   all 7 questions listed in the spec.
+- Implementation notes:
+  - Added top-level AO snapshot `recovery` with state, critical entity availability, checkpoint
+    status/store details, recovery-blocked apply steps, and recent recovery events.
+  - Added a read-only Recovery section to the Heima admin panel.
+  - Added runtime lifecycle events for recovery transitions plus checkpoint written/invalid events.
+  - Added recovery events to `core/event_catalog_spec.md`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_observability.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
+  - `node --check custom_components/heima/frontend/heima-admin-panel.js` — passed.
 
 #### AQ8 — Live Tests and Validation
 

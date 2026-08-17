@@ -370,6 +370,7 @@ class HeimaAdminPanel extends HTMLElement {
           <div class="items">
             ${this._navButton("overview", "Overview")}
             ${this._navButton("activity", "Runtime")}
+            ${this._navButton("recovery", "Recovery")}
             ${this._navButton("house_state", "House State")}
             ${this._navButton("reactions", "Reactions")}
             ${this._navButton("holds", "Holds")}
@@ -450,6 +451,7 @@ class HeimaAdminPanel extends HTMLElement {
 
   _title() {
     if (this._route === "activity") return "Runtime Activity";
+    if (this._route === "recovery") return "Recovery";
     if (this._route === "house_state") return "House State";
     if (this._route === "reactions") return "Reaction Inspector";
     if (this._route === "holds") return "Manual Hold Center";
@@ -484,6 +486,7 @@ class HeimaAdminPanel extends HTMLElement {
 
   _bodyContent(snapshot) {
     if (this._route === "activity") return this._activity(snapshot);
+    if (this._route === "recovery") return this._recovery(snapshot);
     if (this._route === "house_state") return this._houseState(snapshot);
     if (this._route === "reactions") return this._reactions(snapshot);
     if (this._route === "holds") return this._manualHolds(snapshot);
@@ -502,16 +505,124 @@ class HeimaAdminPanel extends HTMLElement {
     const pendingConfirmations = snapshot.runtime_confirmations?.pending || [];
     const proposalRows = snapshot.proposals?.review_row_count ?? snapshot.proposals?.pending ?? 0;
     const findings = snapshot.health_findings || [];
+    const recovery = snapshot.recovery || {};
     return `
       <section class="grid">
         ${this._metric("Engine", snapshot.health?.status || "unknown")}
         ${this._metric("House State", runtime.house_state || "unknown")}
+        ${this._metric("Recovery", recovery.state || "unknown")}
         ${this._metric("Manual Holds", manualHolds.length)}
         ${this._metric("Confirmations", pendingConfirmations.length)}
         ${this._metric("Proposal Rows", proposalRows)}
         ${this._metric("Findings", findings.length)}
       </section>
       ${snapshot.meta?.is_partial ? `<div class="card error">Partial snapshot: ${this._escape((snapshot.meta.partial_reasons || []).join(", "))}</div>` : ""}
+    `;
+  }
+
+  _recovery(snapshot) {
+    const recovery = snapshot.recovery || {};
+    const critical = recovery.critical_entities || {};
+    const checkpoint = recovery.checkpoint || {};
+    const blocked = recovery.blocked_apply_steps || {};
+    const criticalRows = this._filterRows("recovery", critical.items || []);
+    return `
+      <section class="grid">
+        ${this._metric("State", recovery.state || "unknown")}
+        ${this._metric("Reason", recovery.reason || "")}
+        ${this._metric("Active", recovery.active ? "yes" : "no")}
+        ${this._metric("Critical Entities", `${critical.available || 0}/${critical.total || 0}`)}
+        ${this._metric("Unavailable", critical.unavailable || 0)}
+        ${this._metric("Blocked Steps", blocked.total || 0)}
+        ${this._metric("Checkpoint", checkpoint.reason || "unknown")}
+        ${this._metric("Checkpoint Age", this._duration(checkpoint.age_s))}
+      </section>
+      <section class="detail-grid">
+        ${this._detailSection("Recovery State", {
+          state: recovery.state,
+          reason: recovery.reason,
+          active: recovery.active,
+          parent_state: recovery.parent_state,
+          started_at_monotonic: recovery.started_at_monotonic,
+          settling_started_at_monotonic: recovery.settling_started_at_monotonic,
+          stabilization_deadline_monotonic: recovery.stabilization_deadline_monotonic,
+          stable_snapshot_available: recovery.stable_snapshot_available,
+          reconciliation_pending: recovery.reconciliation_pending,
+        })}
+        ${this._detailSection("Checkpoint", checkpoint)}
+      </section>
+      ${this._filterToolbar("recovery", "Search critical entities")}
+      ${this._filteredCount(criticalRows.length, (critical.items || []).length)}
+      ${criticalRows.length ? this._recoveryCriticalEntitiesTable(criticalRows) : `<div class="empty">No critical recovery entities in the snapshot.</div>`}
+      ${blocked.examples?.length ? this._recoveryBlockedSteps(blocked.examples) : `<div class="empty">No apply steps blocked by recovery.</div>`}
+      ${recovery.recent_events?.length ? this._recoveryEvents(recovery.recent_events) : ""}
+      ${this._rawDetails(recovery.raw || {})}
+    `;
+  }
+
+  _recoveryCriticalEntitiesTable(rows) {
+    return `
+      <table>
+        <thead>
+          <tr><th>Entity</th><th>Domain</th><th>State</th><th>Available</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${this._copyableId(row.entity_id || "")}</td>
+              <td>${this._escape(row.domain || "")}</td>
+              <td>${this._escape(row.state || "")}</td>
+              <td><span class="status">${row.available === false ? "no" : "yes"}</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _recoveryBlockedSteps(rows) {
+    return `
+      <section class="detail-section">
+        <h3>Blocked Apply Steps</h3>
+        <table>
+          <thead>
+            <tr><th>Domain</th><th>Target</th><th>Action</th><th>Blocked By</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${this._escape(row.domain || "")}</td>
+                <td>${this._copyableId(row.target || "")}</td>
+                <td>${this._escape(row.action || "")}</td>
+                <td>${this._escape(row.blocked_by || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </section>
+    `;
+  }
+
+  _recoveryEvents(rows) {
+    return `
+      <section class="detail-section">
+        <h3>Recovery Events</h3>
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Reason</th><th>Severity</th><th>Summary</th></tr>
+          </thead>
+          <tbody>
+            ${rows.slice().reverse().map((row) => `
+              <tr>
+                <td>${this._escape(this._time(row.timestamp))}</td>
+                <td>${this._escape(row.reason_code || "")}</td>
+                <td><span class="status">${this._escape(row.severity || "")}</span></td>
+                <td>${this._escape(row.summary || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </section>
     `;
   }
 

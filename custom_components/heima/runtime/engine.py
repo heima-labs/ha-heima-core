@@ -108,6 +108,7 @@ from .recovery import (
     CheckpointDifferenceKind,
     CheckpointRecoveryStatus,
     CriticalEntityState,
+    RecoveryContext,
     RecoveryEvaluationInput,
     RecoveryManager,
 )
@@ -255,6 +256,8 @@ class HeimaEngine:
         self._pending_runtime_checkpoint_reason: str | None = None
         self._startup_recovery_pending = True
         self._security_unavailable_recovery_event_active = False
+        self._last_recovery_event_state = "normal"
+        self._last_checkpoint_invalid_event_key: str | None = None
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -976,6 +979,7 @@ class HeimaEngine:
         """
         critical_entities = self._current_recovery_critical_entities()
         checkpoint_status = self._checkpoint_recovery_status()
+        previous_context = self._recovery_manager.context
         context = self._recovery_manager.evaluate(
             RecoveryEvaluationInput(
                 now_monotonic=time.monotonic(),
@@ -987,6 +991,8 @@ class HeimaEngine:
         )
         self._startup_recovery_pending = False
         self._runtime_context = context.as_runtime_context()
+        self._queue_checkpoint_invalid_event(checkpoint_status)
+        self._queue_recovery_transition_events(previous_context, context)
         if context.stabilization_deadline_monotonic is not None:
             self._schedule_timed_recheck_deadline(
                 job_id=_RECOVERY_STABILIZATION_JOB_ID,
@@ -996,6 +1002,126 @@ class HeimaEngine:
             )
         else:
             self._timed_rechecks.pop(_RECOVERY_STABILIZATION_JOB_ID, None)
+
+    def _queue_recovery_transition_events(
+        self,
+        previous: RecoveryContext,
+        current: RecoveryContext,
+    ) -> None:
+        if current.state == previous.state and current.reason == previous.reason:
+            return
+        for event in self._recovery_transition_events(previous, current):
+            if event.type == self._last_recovery_event_state:
+                continue
+            self._last_recovery_event_state = event.type
+            self._events_domain.queue_event(event)
+
+    def _recovery_transition_events(
+        self,
+        previous: RecoveryContext,
+        current: RecoveryContext,
+    ) -> list[HeimaEvent]:
+        context = {
+            "from_state": previous.state,
+            "to_state": current.state,
+            "reason": current.reason,
+            "unavailable_count": current.unavailable_count,
+            "critical_entity_count": current.critical_entity_count,
+            "unavailable_ratio": current.unavailable_ratio,
+            "checkpoint": current.checkpoint_status.as_dict(),
+        }
+        events: list[HeimaEvent] = []
+        if current.state == "startup_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_startup_started",
+                    key="system.recovery_startup_started",
+                    severity="info",
+                    title="Recovery startup started",
+                    message="Heima entered startup recovery.",
+                    context=context,
+                )
+            )
+        elif current.state == "power_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_power_outage_suspected",
+                    key="system.recovery_power_outage_suspected",
+                    severity="warning",
+                    title="Power recovery suspected",
+                    message="Heima detected unavailable critical entities during runtime.",
+                    context=context,
+                )
+            )
+        elif current.state == "recovery_settling":
+            if previous.state in {"power_recovery", "degraded_recovery"}:
+                events.append(
+                    HeimaEvent(
+                        type="system.recovery_power_restored",
+                        key="system.recovery_power_restored",
+                        severity="info",
+                        title="Recovery power restored",
+                        message="Critical entities are available again after suspected outage.",
+                        context=context,
+                    )
+                )
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_stabilization_started",
+                    key="system.recovery_stabilization_started",
+                    severity="info",
+                    title="Recovery stabilization started",
+                    message="Heima entered recovery stabilization.",
+                    context=context,
+                )
+            )
+        elif current.state == "degraded_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_degraded",
+                    key="system.recovery_degraded",
+                    severity="warning",
+                    title="Recovery degraded",
+                    message=(
+                        "Heima recovery could not complete because critical inputs remain unstable."
+                    ),
+                    context=context,
+                )
+            )
+        elif current.state == "normal" and previous.state != "normal":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_completed",
+                    key="system.recovery_completed",
+                    severity="info",
+                    title="Recovery completed",
+                    message="Heima recovery completed and normal runtime resumed.",
+                    context=context,
+                )
+            )
+        return events
+
+    def _queue_checkpoint_invalid_event(self, checkpoint_status: CheckpointRecoveryStatus) -> None:
+        if checkpoint_status.usable or checkpoint_status.reason in {"missing", ""}:
+            self._last_checkpoint_invalid_event_key = None
+            return
+        event_key = (
+            f"{checkpoint_status.checkpoint_id or 'unknown'}:{checkpoint_status.reason}:"
+            f"{checkpoint_status.stale}"
+        )
+        if event_key == self._last_checkpoint_invalid_event_key:
+            return
+        self._last_checkpoint_invalid_event_key = event_key
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="system.recovery_checkpoint_invalid",
+                key="system.recovery_checkpoint_invalid",
+                severity="warning",
+                title="Recovery checkpoint invalid",
+                message="Stored runtime checkpoint cannot be used for recovery.",
+                context={"checkpoint": checkpoint_status.as_dict()},
+            )
+        )
 
     def _recovery_state(self) -> str:
         state = str(self._runtime_context.get("runtime.recovery.state") or "").strip()
@@ -1912,6 +2038,20 @@ class HeimaEngine:
         self._last_runtime_checkpoint_key = checkpoint.semantic_key()
         self._pending_runtime_checkpoint_reason = None
         self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="system.recovery_checkpoint_written",
+                key="system.recovery_checkpoint_written",
+                severity="info",
+                title="Recovery checkpoint written",
+                message="Runtime checkpoint persisted.",
+                context={
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "reason": checkpoint.reason,
+                    "critical_entity_count": len(checkpoint.critical_entities),
+                },
+            )
+        )
         return True
 
     def _schedule_runtime_checkpoint_write(self, *, reason: str) -> None:

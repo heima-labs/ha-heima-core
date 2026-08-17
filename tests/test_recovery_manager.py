@@ -16,8 +16,10 @@ from custom_components.heima.runtime.manual_hold import ManualHoldReason, Manual
 from custom_components.heima.runtime.plugin_contracts import InvariantViolation
 from custom_components.heima.runtime.reactions.base import HeimaReaction
 from custom_components.heima.runtime.recovery import (
+    CheckpointRecoveryStatus,
     CriticalEntityState,
     RecoveryConfig,
+    RecoveryContext,
     RecoveryEvaluationInput,
     RecoveryManager,
 )
@@ -528,6 +530,42 @@ def test_engine_emits_security_unavailable_mismatch_during_recovery_once() -> No
     assert pending[0].type == "security.mismatch"
     assert pending[0].key == "security.mismatch.security_state_unavailable"
     assert pending[0].context["subtype"] == "security_state_unavailable"
+
+
+def test_engine_queues_recovery_lifecycle_events_for_transitions() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+
+    engine._queue_recovery_transition_events(
+        RecoveryContext(state="power_recovery", reason="critical_entities_unavailable"),
+        RecoveryContext(state="recovery_settling", reason="critical_entities_restored"),
+    )
+
+    assert [event.type for event in engine._events_domain._pending_events] == [
+        "system.recovery_power_restored",
+        "system.recovery_stabilization_started",
+    ]
+
+
+def test_engine_queues_checkpoint_invalid_event_once_per_invalid_checkpoint() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    status = CheckpointRecoveryStatus(
+        available=True,
+        usable=False,
+        stale=True,
+        checkpoint_id="checkpoint.one",
+        reason="stale",
+        age_s=3600,
+    )
+
+    engine._queue_checkpoint_invalid_event(status)
+    engine._queue_checkpoint_invalid_event(status)
+
+    pending = engine._events_domain._pending_events
+    assert len(pending) == 1
+    assert pending[0].type == "system.recovery_checkpoint_invalid"
+    assert pending[0].context["checkpoint"]["reason"] == "stale"
 
 
 def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:

@@ -351,6 +351,78 @@ Emission policy (v1.x):
   - `has_recipient_groups`
   - `has_route_targets`
 
+#### E905 — Recovery Startup Started
+- `type`: `system.recovery_startup_started`
+- `key`: `system.recovery_startup_started`
+- `severity`: `info`
+- `context`:
+  - `from_state`
+  - `to_state`
+  - `reason`
+  - `checkpoint`
+
+#### E906 — Recovery Power Outage Suspected
+- `type`: `system.recovery_power_outage_suspected`
+- `key`: `system.recovery_power_outage_suspected`
+- `severity`: `warning`
+- `context`:
+  - `unavailable_count`
+  - `critical_entity_count`
+  - `unavailable_ratio`
+  - `checkpoint`
+
+#### E907 — Recovery Power Restored
+- `type`: `system.recovery_power_restored`
+- `key`: `system.recovery_power_restored`
+- `severity`: `info`
+- `context`:
+  - `from_state`
+  - `to_state`
+  - `reason`
+
+#### E908 — Recovery Stabilization Started
+- `type`: `system.recovery_stabilization_started`
+- `key`: `system.recovery_stabilization_started`
+- `severity`: `info`
+- `context`:
+  - `from_state`
+  - `to_state`
+  - `reason`
+
+#### E909 — Recovery Completed
+- `type`: `system.recovery_completed`
+- `key`: `system.recovery_completed`
+- `severity`: `info`
+- `context`:
+  - `from_state`
+  - `to_state`
+  - `reason`
+
+#### E910 — Recovery Degraded
+- `type`: `system.recovery_degraded`
+- `key`: `system.recovery_degraded`
+- `severity`: `warning`
+- `context`:
+  - `unavailable_count`
+  - `critical_entity_count`
+  - `unavailable_ratio`
+
+#### E911 — Recovery Checkpoint Written
+- `type`: `system.recovery_checkpoint_written`
+- `key`: `system.recovery_checkpoint_written`
+- `severity`: `info`
+- `context`:
+  - `checkpoint_id`
+  - `reason`
+  - `critical_entity_count`
+
+#### E912 — Recovery Checkpoint Invalid
+- `type`: `system.recovery_checkpoint_invalid`
+- `key`: `system.recovery_checkpoint_invalid`
+- `severity`: `warning`
+- `context`:
+  - `checkpoint`
+
 ### 2.8 Reactions
 
 #### E950 — Reaction Fired
