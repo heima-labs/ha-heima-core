@@ -4,17 +4,24 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.heima.runtime.checkpoint_store import (
     CheckpointEntityState,
     RuntimeCheckpoint,
 )
+from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
 from custom_components.heima.runtime.engine import HeimaEngine
+from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
+from custom_components.heima.runtime.plugin_contracts import InvariantViolation
+from custom_components.heima.runtime.reactions.base import HeimaReaction
 from custom_components.heima.runtime.recovery import (
     CriticalEntityState,
     RecoveryConfig,
     RecoveryEvaluationInput,
     RecoveryManager,
 )
+from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
 def _entity(entity_id: str, state: str) -> CriticalEntityState:
@@ -40,6 +47,35 @@ class _FakeBus:
 class _FakeServices:
     def async_services(self) -> dict[str, dict]:
         return {}
+
+
+class _FakeSnapshotStore:
+    def __init__(self) -> None:
+        self.appended = 0
+
+    async def async_append_if_changed(self, _snapshot) -> bool:
+        self.appended += 1
+        return True
+
+
+class _AlwaysViolatesCheck:
+    check_id = "unit_violation"
+    default_debounce_s = 0.0
+    default_re_emit_interval_s = 0.0
+
+    def check(self, _snapshot, _domain_results):
+        return InvariantViolation(
+            check_id=self.check_id,
+            severity="critical",
+            anomaly_type="unit_violation",
+            description="Unit violation",
+        )
+
+
+class _FakeReaction(HeimaReaction):
+    @property
+    def reaction_id(self) -> str:
+        return "fake_reaction"
 
 
 def test_recovery_manager_starts_normal_with_no_critical_entities() -> None:
@@ -236,6 +272,124 @@ def test_engine_detects_online_power_recovery_with_configured_targets() -> None:
 
     assert engine._runtime_context["runtime.recovery.state"] == "power_recovery"
     assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_flapping"
+
+
+@pytest.mark.asyncio
+async def test_engine_suppresses_learning_snapshots_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    store = _FakeSnapshotStore()
+    engine.set_snapshot_store(store)  # type: ignore[arg-type]
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    await engine._record_snapshot_if_changed(DecisionSnapshot.empty())
+
+    assert store.appended == 0
+
+
+def test_engine_suppresses_invariants_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine.register_invariant_check(_AlwaysViolatesCheck())  # type: ignore[arg-type]
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    engine._run_invariant_checks(DecisionSnapshot.empty())
+
+    assert engine._events_domain._pending_events == []
+
+
+def test_engine_blocks_apply_steps_before_manual_hold_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    engine._manual_hold_manager.activate_hold(
+        ManualHoldScope("switch", "entity", "switch.camera_privacy"),
+        ManualHoldReason(kind="external_on", source_entity="switch.camera_privacy"),
+    )
+    plan = ApplyPlan(
+        steps=[
+            ApplyStep(
+                domain="switch",
+                target="switch.camera_privacy",
+                action="switch.turn_off",
+                params={"entity_id": "switch.camera_privacy"},
+            )
+        ]
+    )
+
+    filtered = engine._dispatch_apply_filter(plan, DecisionSnapshot.empty())
+
+    assert filtered.steps[0].blocked_by == "recovery:power_recovery"
+
+
+def test_engine_does_not_create_camera_privacy_hold_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "security": {
+                    "camera_evidence_sources": [
+                        {
+                            "privacy_entity": "switch.camera_privacy",
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    event = SimpleNamespace(
+        data={
+            "entity_id": "switch.camera_privacy",
+            "old_state": SimpleNamespace(state="off"),
+            "new_state": SimpleNamespace(state="on"),
+        }
+    )
+
+    engine.handle_camera_privacy_state_changed(event)  # type: ignore[arg-type]
+
+    assert engine._manual_hold_manager.diagnostics()["active_holds"] == []
+
+
+def test_engine_does_not_create_runtime_confirmation_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    engine.set_runtime_confirmation_request_handler(
+        lambda _request: (_ for _ in ()).throw(AssertionError("should not create request"))
+    )
+
+    handled = engine._maybe_create_runtime_confirmation_request(
+        _FakeReaction(),
+        [
+            ApplyStep(
+                domain="light",
+                target="light.desk",
+                action="light.turn_on",
+                params={"entity_id": "light.desk"},
+            )
+        ],
+        DecisionSnapshot.empty(),
+    )
+
+    assert handled is False
 
 
 def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:

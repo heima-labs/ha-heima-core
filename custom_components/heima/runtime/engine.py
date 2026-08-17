@@ -372,6 +372,8 @@ class HeimaEngine:
 
     def _register_pending_apply_for_step(self, step: ApplyStep) -> None:
         """Register pending apply provenance for a step about to execute."""
+        if self._recovery_active():
+            return
         reaction = self._reaction_from_step_source(step)
         if reaction is None:
             self._manual_hold_manager.register_pending_apply(step)
@@ -421,6 +423,8 @@ class HeimaEngine:
             consume_pending = getattr(reaction, "consume_pending_apply", None)
             if callable(consume_pending) and bool(consume_pending(entity_id, new_state)):
                 continue
+            if self._recovery_active():
+                continue
             handle_external = getattr(reaction, "handle_external_light_change", None)
             if callable(handle_external):
                 handle_external(entity_id, state_value)
@@ -441,6 +445,8 @@ class HeimaEngine:
         if old_state_value == state_value:
             return
         if self._manual_hold_manager.classify_state_change(entity_id, new_state) == "heima_owned":
+            return
+        if self._recovery_active():
             return
         scope = self._camera_privacy_scopes_by_entity()[entity_id]
         self._manual_hold_manager.activate_hold(
@@ -976,6 +982,15 @@ class HeimaEngine:
             )
         else:
             self._timed_rechecks.pop(_RECOVERY_STABILIZATION_JOB_ID, None)
+
+    def _recovery_state(self) -> str:
+        state = str(self._runtime_context.get("runtime.recovery.state") or "").strip()
+        return "" if state in {"", "normal"} else state
+
+    def _recovery_active(self) -> bool:
+        return bool(self._runtime_context.get("runtime.recovery.active")) or bool(
+            self._recovery_state()
+        )
 
     def _current_recovery_critical_entities(self) -> tuple[CriticalEntityState, ...]:
         states = getattr(self._hass, "states", None)
@@ -1576,6 +1591,8 @@ class HeimaEngine:
         """Persist a HouseSnapshot for inference learning, only on state change."""
         if self._house_snapshot_store is None:
             return
+        if self._recovery_active():
+            return
         snapshot_local = dt_util.as_local(datetime.fromisoformat(snapshot.ts))
         people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
         named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
@@ -1600,6 +1617,8 @@ class HeimaEngine:
 
     def _run_invariant_checks(self, snapshot: DecisionSnapshot) -> None:
         if not self._invariant_config()["enabled"]:
+            return
+        if self._recovery_active():
             return
         for check in self._invariant_checks:
             violation = check.check(snapshot, self._last_domain_results)
@@ -1997,6 +2016,8 @@ class HeimaEngine:
         snapshot: DecisionSnapshot,
     ) -> bool:
         """Divert ask-residents reaction steps into a runtime confirmation request."""
+        if self._recovery_active():
+            return False
         reaction_id = reaction.reaction_id
         cfg = self._configured_reaction_config(reaction_id)
         resolved_policy = resolve_execution_policy_config(
@@ -2304,7 +2325,24 @@ class HeimaEngine:
                     hook="apply_filter",
                     error="exception_raised",
                 )
+        plan = self._dispatch_recovery_apply_filter(plan)
         return self._dispatch_manual_hold_filter(plan)
+
+    def _dispatch_recovery_apply_filter(self, plan: ApplyPlan) -> ApplyPlan:
+        state = self._recovery_state()
+        if not state:
+            return plan
+        filtered: list[ApplyStep] = []
+        changed = False
+        for step in plan.steps:
+            if step.blocked_by:
+                filtered.append(step)
+                continue
+            changed = True
+            filtered.append(dataclass_replace(step, blocked_by=f"recovery:{state}"))
+        if not changed:
+            return plan
+        return ApplyPlan(plan_id=plan.plan_id, steps=filtered)
 
     def _dispatch_manual_hold_filter(self, plan: ApplyPlan) -> ApplyPlan:
         filtered: list[ApplyStep] = []

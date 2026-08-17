@@ -133,11 +133,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ4 complete; AQ5 next.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ5 complete; AQ6 next.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Implement AQ5 runtime behavior gating for learning, anomaly detection, manual holds, pending
-applies, and apply steps while recovery is active.
+Implement AQ6 domain-specific recovery behavior for House State, Security, Heating, Lighting,
+Switches, and Camera Privacy.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1035,7 +1035,7 @@ MVP merge.
 
 #### AQ5 — Runtime Behavior Gating
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Wire `runtime.recovery.*` context consumption into: Learning suppression, Anomaly Detection
   suppression (see Suppressed/Not-automatically-suppressed lists in the spec), Manual Hold gating
   (implicit hold activation skipped during active recovery; classification stays `external`; no
@@ -1044,6 +1044,31 @@ MVP merge.
 - Tests: recovery suppresses learning/anomaly; recovery blocks non-critical apply with the correct
   `blocked_by` value; `blocked_by` precedence when both recovery and manual hold would apply;
   recovery does not create implicit manual holds for restore changes.
+- Implemented:
+  - Snapshot persistence for learning is skipped while recovery is active, preventing unstable
+    startup/power snapshots from entering learning history.
+  - Invariant/anomaly checks are skipped while recovery is active, preventing recovery conditions
+    from being reported as ordinary invariant violations.
+  - Apply plans pass through a recovery gate before manual-hold filtering. Unblocked steps are kept
+    in diagnostics but marked `blocked_by="recovery:<state>"`; existing blockers are preserved.
+    This gives recovery precedence over manual hold when both would block the same step.
+  - Pending apply registration is skipped while recovery is active, avoiding stale Heima-owned
+    classifications during power restore.
+  - Smart-lighting external-change handling and camera privacy implicit manual-hold creation are
+    skipped while recovery is active.
+  - Runtime confirmation requests are not created while recovery is active; reaction steps remain
+    in the plan and are blocked by the recovery gate.
+  - Added focused engine tests for learning suppression, invariant suppression, apply/manual-hold
+    precedence, implicit hold gating, and runtime-confirmation gating.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 24 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ6 — Domain-Specific Recovery Behavior
 
