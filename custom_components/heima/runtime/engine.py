@@ -45,6 +45,12 @@ from .analyzers.base import ReactionProposal
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .behaviors.event_recorder import EventRecorderBehavior
+from .checkpoint_store import (
+    MAX_CHECKPOINT_ENTITIES,
+    CheckpointEntityState,
+    RuntimeCheckpoint,
+    RuntimeCheckpointStore,
+)
 from .contracts import ApplyPlan, ApplyStep, EventSeverity, HeimaEvent, ScriptApplyBatch
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
@@ -133,6 +139,8 @@ _REMOVED_REACTION_TYPES = {
 }
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
+_RUNTIME_CHECKPOINT_WRITE_JOB_ID = "recovery.checkpoint.write"
+_RUNTIME_CHECKPOINT_WRITE_DELAY_S = 60.0
 
 # Maps plugin domain_id to the InferenceSignal subclass it can consume (spec §10.8).
 _PLUGIN_SIGNAL_TYPE: dict[str, type] = {
@@ -233,6 +241,9 @@ class HeimaEngine:
         self._observability = RuntimeObservabilityBuffer()
         self._recovery_manager = RecoveryManager()
         self._runtime_context: dict[str, Any] = {}
+        self._runtime_checkpoint_store: RuntimeCheckpointStore | None = None
+        self._last_runtime_checkpoint_key: str | None = None
+        self._pending_runtime_checkpoint_reason: str | None = None
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -308,6 +319,10 @@ class HeimaEngine:
     def set_snapshot_store(self, store: SnapshotStore) -> None:
         """Set the snapshot store for write-on-change persistence."""
         self._house_snapshot_store = store
+
+    def set_runtime_checkpoint_store(self, store: RuntimeCheckpointStore) -> None:
+        """Set the runtime checkpoint store for recovery persistence."""
+        self._runtime_checkpoint_store = store
 
     def set_outcome_tracker(self, tracker: OutcomeTracker) -> None:
         """Set the outcome tracker for reaction verification."""
@@ -478,6 +493,7 @@ class HeimaEngine:
 
     async def async_shutdown(self) -> None:
         _LOGGER.debug("Heima engine shutdown")
+        await self.async_write_runtime_checkpoint(reason="shutdown")
         self._health = EngineHealth(ok=True, reason="shutdown")
         for behavior in self._behaviors:
             try:
@@ -863,6 +879,7 @@ class HeimaEngine:
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
         _LOGGER.debug("Heima evaluation requested: %s", reason)
+        checkpoint_job_due = reason == f"scheduler:{_RUNTIME_CHECKPOINT_WRITE_JOB_ID}"
         self._compute_recovery_context()
         calendar_cfg = dict(self._entry.options.get(OPT_CALENDAR, {}))
         await self._calendar_domain.async_maybe_refresh(calendar_cfg)
@@ -913,6 +930,11 @@ class HeimaEngine:
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
         await self._maybe_boost_reaction_confidence()
+        if checkpoint_job_due:
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            await self.async_write_runtime_checkpoint(reason="scheduled")
+        else:
+            self._schedule_runtime_checkpoint_write(reason=reason)
 
         return snapshot
 
@@ -1541,6 +1563,101 @@ class HeimaEngine:
             except Exception:
                 _LOGGER.exception("Reaction %s raised in scheduled_jobs", reaction.reaction_id)
         return jobs
+
+    async def async_write_runtime_checkpoint(self, *, reason: str) -> bool:
+        """Persist the current runtime checkpoint immediately."""
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return False
+        try:
+            checkpoint = self._build_runtime_checkpoint(reason=reason)
+            await store.async_save_checkpoint(checkpoint, flush=True)
+        except Exception:
+            _LOGGER.exception("Failed to write Heima runtime checkpoint")
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            return False
+        self._last_runtime_checkpoint_key = checkpoint.semantic_key()
+        self._pending_runtime_checkpoint_reason = None
+        self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+        return True
+
+    def _schedule_runtime_checkpoint_write(self, *, reason: str) -> None:
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return
+        try:
+            checkpoint = self._build_runtime_checkpoint(reason=reason)
+        except Exception:
+            _LOGGER.exception("Failed to build Heima runtime checkpoint")
+            return
+        checkpoint_key = checkpoint.semantic_key()
+        if checkpoint_key == self._last_runtime_checkpoint_key:
+            return
+        self._pending_runtime_checkpoint_reason = reason
+        self._schedule_timed_recheck_deadline(
+            job_id=_RUNTIME_CHECKPOINT_WRITE_JOB_ID,
+            deadline=time.monotonic() + _RUNTIME_CHECKPOINT_WRITE_DELAY_S,
+            owner="recovery",
+            label="Runtime checkpoint write",
+        )
+
+    def _build_runtime_checkpoint(self, *, reason: str) -> RuntimeCheckpoint:
+        entry_id = str(getattr(self._entry, "entry_id", "") or "default")
+        apply_steps = list(self._apply_plan.steps)
+        blocked_steps = [step for step in apply_steps if step.blocked_by]
+        observability_diag = self._observability.diagnostics()
+        recent_events = observability_diag.get("recent_events")
+        decision_traces = observability_diag.get("decision_traces")
+        return RuntimeCheckpoint(
+            entry_id=entry_id,
+            reason=reason,
+            runtime={
+                "engine_health": {"ok": self._health.ok, "reason": self._health.reason},
+                "snapshot": self._snapshot.as_dict(),
+                "runtime_context": dict(self._runtime_context),
+                "active_constraints": sorted(self._active_constraints),
+                "muted_reactions": sorted(self._muted_reactions),
+                "apply_plan": {
+                    "plan_id": self._apply_plan.plan_id,
+                    "step_count": len(apply_steps),
+                    "blocked_step_count": len(blocked_steps),
+                    "domains": sorted({step.domain for step in apply_steps}),
+                },
+            },
+            critical_entities=self._checkpoint_critical_entity_states(),
+            manual_hold=self._manual_hold_manager.diagnostics(),
+            runtime_confirmations={
+                "descriptor_reaction_types": sorted(self._runtime_confirmation_descriptors),
+                "pending_request_handler_registered": (
+                    self._runtime_confirmation_request_handler is not None
+                ),
+            },
+            heating={
+                "current_temperature": self._heating_domain.current_temperature(),
+                "diagnostic_keys": sorted(self._heating_domain.diagnostics()),
+            },
+            observability={
+                "recent_event_count": len(recent_events) if isinstance(recent_events, list) else 0,
+                "decision_trace_count": (
+                    len(decision_traces) if isinstance(decision_traces, list) else 0
+                ),
+            },
+        )
+
+    def _checkpoint_critical_entity_states(self) -> tuple[CheckpointEntityState, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        entities: list[CheckpointEntityState] = []
+        for entity_id in sorted(self.tracked_entity_ids()):
+            state_obj = state_getter(entity_id)
+            if state_obj is None:
+                continue
+            entities.append(CheckpointEntityState.from_ha_state(entity_id, state_obj))
+            if len(entities) >= MAX_CHECKPOINT_ENTITIES:
+                break
+        return tuple(entities)
 
     def next_dwell_recheck_delay_s(self) -> float | None:
         """Return seconds until the earliest scheduled runtime recheck.
@@ -2840,6 +2957,22 @@ class HeimaEngine:
             "events": self._events_domain.diagnostics(),
             "recovery": self._recovery_manager.diagnostics(),
             "runtime_context": dict(self._runtime_context),
+            "runtime_checkpoint": (
+                runtime_checkpoint_store.diagnostics()
+                if (runtime_checkpoint_store := getattr(self, "_runtime_checkpoint_store", None))
+                is not None
+                else {
+                    "storage_key": RuntimeCheckpointStore.STORAGE_KEY,
+                    "loaded": False,
+                    "entry_count": 0,
+                    "load_errors": 0,
+                    "checkpoints": {},
+                }
+            ),
+            "runtime_checkpoint_status": {
+                "pending_write_reason": self._pending_runtime_checkpoint_reason,
+                "write_job_id": _RUNTIME_CHECKPOINT_WRITE_JOB_ID,
+            },
             "normalization": self._normalizer.diagnostics(),
             "learning_modules": [
                 module.diagnostics() for module in getattr(self, "_learning_modules", [])

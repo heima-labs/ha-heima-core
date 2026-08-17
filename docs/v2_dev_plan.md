@@ -133,10 +133,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1 complete; AQ2 next.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ2 complete; AQ3 next.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Resolve AQ2 storage placement (separate HA Store file vs. existing runtime/coordinator store), then implement checkpoint persistence.
+Implement AQ3 startup recovery by loading the persisted checkpoint and classifying current-state
+differences without restoring old checkpoint state over HA state.
 
 ### Phase AO — Admin Observability Panel
 
@@ -935,16 +936,39 @@ MVP merge.
 
 #### AQ2 — Runtime Checkpoint Persistence
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Implement the checkpoint contract (schema, attribute allowlist, redaction, atomic write, bounded
-  size, versioned/tolerant reader) backed by an HA `Store`. Resolve Open Question 2 (separate store
-  file vs. existing coordinator/runtime store) before starting.
-- Implement Checkpoint Write Policy triggers and register periodic writes, the stabilization
-  deadline, and the degraded timeout as Runtime Scheduler jobs (`core/runtime_scheduler_spec.md`),
-  per the two-stage job-registration rule (stabilization job at recovery entry, degraded-timeout
-  job only on transition into `degraded_recovery`).
+  size, versioned/tolerant reader) backed by a dedicated HA `Store`.
+- Storage decision: use separate store `heima_runtime_checkpoints`, with one latest checkpoint per
+  config entry. Do not embed checkpoint state in learning snapshots, approval records, proposal
+  lifecycle state, or event storage.
+- Implement Checkpoint Write Policy baseline using Runtime Scheduler job
+  `recovery.checkpoint.write` (`owner=recovery`) with write-on-change semantics and a 60s default
+  cadence. The job is keyed and deduplicated; when it fires, the engine writes and flushes the
+  latest checkpoint, then removes the job. Shutdown performs a best-effort immediate checkpoint
+  write.
+- AQ2 intentionally does not yet classify startup differences, block apply steps, suppress learning,
+  or restore heating branch context; those remain AQ3-AQ6.
 - Tests: serialization/deserialization, version tolerance, redaction, write debounce/keyed
   replacement, scheduler jobs firing independent of entity churn.
+- Implemented:
+  - Added `custom_components/heima/runtime/checkpoint_store.py` with `RuntimeCheckpointStore`,
+    `RuntimeCheckpoint`, `CheckpointEntityState`, domain attribute allowlist, redaction, bounded
+    entity capture, tolerant loading, and redacted diagnostics.
+  - Coordinator owns and loads the checkpoint store and injects it into the engine.
+  - Engine builds compact runtime checkpoints, captures allowlisted tracked entity states, exposes
+    checkpoint diagnostics, schedules keyed checkpoint writes via Runtime Scheduler, and flushes on
+    scheduled write/shutdown.
+  - Added `tests/test_runtime_checkpoint_store.py`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_runtime_checkpoint_store.py tests/test_recovery_manager.py -q`
+    — 14 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py custom_components/heima/coordinator.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py custom_components/heima/coordinator.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
 
 #### AQ3 — Startup Recovery Wiring
 

@@ -51,6 +51,7 @@ from .runtime.behaviors import (
     HeatingRecorderBehavior,
     LightingRecorderBehavior,
 )
+from .runtime.checkpoint_store import RuntimeCheckpointStore
 from .runtime.context_builder import ContextBuilder
 from .runtime.contracts import EventSeverity
 from .runtime.engine import HeimaEngine
@@ -298,6 +299,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             )
         )
         self._house_snapshot_store = SnapshotStore(hass)
+        self._runtime_checkpoint_store = RuntimeCheckpointStore(hass)
+        self.engine.set_runtime_checkpoint_store(self._runtime_checkpoint_store)
         self._learning_plugin_registry = self._build_learning_plugin_registry(entry)
         self._proposal_lifecycle_store = ProposalLifecycleStore(hass)
         self._proposal_engine = ProposalEngine(
@@ -468,6 +471,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         summary, changed = await self._async_reconcile_ha_backed_objects()
         await self._event_store.async_load()
         await self._house_snapshot_store.async_load()
+        await self._runtime_checkpoint_store.async_load()
         await self._approval_store.async_load()
         self._sync_house_state_approval_state()
         self._sync_activity_approval_state()
@@ -1630,6 +1634,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         await self._proposal_engine.async_shutdown()
         await self._scheduler.async_shutdown()
         await self._event_store.async_flush()
+        await self._runtime_checkpoint_store.async_flush()
         await self.engine.async_shutdown()
         _LOGGER.debug("Heima runtime shutdown")
 
@@ -2436,7 +2441,9 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             return
 
         self._last_anomaly = None
-        await self._async_dismiss_installer_alert(str(anomaly.get("key") or f"anomaly.{anomaly_type}"))
+        await self._async_dismiss_installer_alert(
+            str(anomaly.get("key") or f"anomaly.{anomaly_type}")
+        )
         self._sync_health_sensor()
 
     async def _async_dismiss_installer_alert(self, key: str) -> None:
