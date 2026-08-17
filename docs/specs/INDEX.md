@@ -46,6 +46,7 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/resident_runtime_confirmation_spec.md` — draft vNext contract for resident approval of runtime actions and promotion to auto-apply
 - `core/security_mismatch_generalization_spec.md` — canonical `security.mismatch` taxonomy and compatibility contract
 - `core/runtime_scheduler_spec.md` — runtime timer scheduler
+- `core/runtime_checkpoint_and_power_recovery_spec.md` — draft vNext checkpoint/recovery contract for HA restart, power outage, and startup stabilization
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/apply_step_contract.md` — canonical runtime action contract, including `target` vs `params.entity_id`

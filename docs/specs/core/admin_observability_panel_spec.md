@@ -5,8 +5,8 @@
 **Scope:** Custom Home Assistant admin panel, runtime explainability, learning transparency
 **Related specs:** `core/heima_monitoring_spec.md`, `core/events_and_notifications_spec.md`,
 `core/resident_runtime_confirmation_spec.md`, `core/manual_hold_framework_spec.md`,
-`learning/proposal_lifecycle_spec.md`, `learning/learning_system_spec.md`,
-`core/apply_step_contract.md`
+`core/runtime_checkpoint_and_power_recovery_spec.md`, `learning/proposal_lifecycle_spec.md`,
+`learning/learning_system_spec.md`, `core/apply_step_contract.md`
 
 ## Purpose
 
