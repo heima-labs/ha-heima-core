@@ -133,10 +133,10 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, ready to start AQ1.
-**Branch:** `main` before creating the dedicated AQ implementation branch.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1 complete; AQ2 next.
+**Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Create a dedicated AQ implementation branch and start AQ1.
+Resolve AQ2 storage placement (separate HA Store file vs. existing runtime/coordinator store), then implement checkpoint persistence.
 
 ### Phase AO — Admin Observability Panel
 
@@ -908,7 +908,7 @@ MVP merge.
 
 #### AQ1 — Recovery Context Foundation
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Build the pre-DAG recovery classification facility (name TBD at implementation time, e.g.
   `RecoveryManager`), computed once per evaluation cycle before the core DAG runs, exposed
   read-only via the `runtime.recovery.*` context namespace.
@@ -917,6 +917,21 @@ MVP merge.
   `critical_entity_unavailable_ratio` (default 0.35), as pure logic with no consumers wired yet —
   no observable behavior change at the end of this slice.
 - Tests: state transitions, ratio threshold entry/exit, `recovery_settling` reversion on flapping.
+- Implemented:
+  - Added `custom_components/heima/runtime/recovery.py` with `RecoveryManager`,
+    `RecoveryContext`, `RecoveryConfig`, `RecoveryEvaluationInput`, and `CriticalEntityState`.
+  - Engine now computes the recovery context once before the DAG in `async_evaluate()`, with no
+    critical entities/startup signal wired yet, so AQ1 does not change runtime behavior.
+  - Engine diagnostics expose internal `recovery` and `runtime_context` snapshots for development
+    visibility; AO-facing recovery UI remains AQ7.
+  - Added `tests/test_recovery_manager.py`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_observability.py tests/test_event_category_gating.py -q`
+    — 38 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
 
 #### AQ2 — Runtime Checkpoint Persistence
 

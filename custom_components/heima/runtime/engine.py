@@ -97,6 +97,7 @@ from .reactions import (
     resolve_reaction_type,
 )
 from .reactions.base import HeimaReaction
+from .recovery import RecoveryEvaluationInput, RecoveryManager
 from .room_context import (
     RoomDeviceContext,
     RoomDeviceContextBuilder,
@@ -230,6 +231,8 @@ class HeimaEngine:
         self._runtime_confirmation_descriptors: dict[str, RuntimeConfirmationDescriptor] = {}
         self._snapshot_buffer = SnapshotBuffer()
         self._observability = RuntimeObservabilityBuffer()
+        self._recovery_manager = RecoveryManager()
+        self._runtime_context: dict[str, Any] = {}
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -860,6 +863,7 @@ class HeimaEngine:
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
         _LOGGER.debug("Heima evaluation requested: %s", reason)
+        self._compute_recovery_context()
         calendar_cfg = dict(self._entry.options.get(OPT_CALENDAR, {}))
         await self._calendar_domain.async_maybe_refresh(calendar_cfg)
         snapshot = self._compute_snapshot(reason=reason)
@@ -911,6 +915,18 @@ class HeimaEngine:
         await self._maybe_boost_reaction_confidence()
 
         return snapshot
+
+    def _compute_recovery_context(self) -> None:
+        """Compute read-only recovery context before the DAG runs.
+
+        AQ1 deliberately supplies no critical entities and no startup/restart
+        signal yet. AQ2/AQ3 populate those inputs without changing the pre-DAG
+        placement introduced here.
+        """
+        context = self._recovery_manager.evaluate(
+            RecoveryEvaluationInput(now_monotonic=time.monotonic())
+        )
+        self._runtime_context = context.as_runtime_context()
 
     async def async_emit_external_event(
         self,
@@ -2822,6 +2838,8 @@ class HeimaEngine:
             "presence": self._people_domain.diagnostics(),
             "occupancy": self._occupancy_domain.diagnostics(),
             "events": self._events_domain.diagnostics(),
+            "recovery": self._recovery_manager.diagnostics(),
+            "runtime_context": dict(self._runtime_context),
             "normalization": self._normalizer.diagnostics(),
             "learning_modules": [
                 module.diagnostics() for module in getattr(self, "_learning_modules", [])
