@@ -51,7 +51,15 @@ from .checkpoint_store import (
     RuntimeCheckpoint,
     RuntimeCheckpointStore,
 )
-from .contracts import ApplyPlan, ApplyStep, EventSeverity, HeimaEvent, ScriptApplyBatch
+from .contracts import (
+    ApplyPlan,
+    ApplyStep,
+    EventSeverity,
+    HeimaEvent,
+    ScriptApplyBatch,
+    reaction_id_from_step_source,
+    step_source_legacy_key,
+)
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
 from .domains.activity_domain import ActivityDomain
@@ -400,10 +408,7 @@ class HeimaEngine:
 
     def _reaction_from_step_source(self, step: ApplyStep) -> HeimaReaction | None:
         """Return the originating reaction when a step source is reaction-tagged."""
-        source = str(step.source or "").strip()
-        if not source.startswith("reaction:"):
-            return None
-        reaction_id = source.split(":", 1)[1].strip()
+        reaction_id = reaction_id_from_step_source(step)
         if not reaction_id:
             return None
         return next((item for item in self._reactions if item.reaction_id == reaction_id), None)
@@ -2768,7 +2773,7 @@ class HeimaEngine:
         if policy == "block":
             return False
         if policy == "allow_admin_command":
-            return not str(step.source or "").startswith("reaction:")
+            return reaction_id_from_step_source(step) is None
         if policy != "allow_when_inputs_stable":
             return False
         reaction = self._reaction_from_step_source(step)
@@ -3048,7 +3053,7 @@ class HeimaEngine:
                     if applied_temp is not None:
                         self._heating_domain.mark_applied(
                             applied_temp,
-                            source=step.source,
+                            source=step_source_legacy_key(step),
                             origin_reaction_id=(
                                 reaction.reaction_id if reaction is not None else None
                             ),
@@ -3106,7 +3111,7 @@ class HeimaEngine:
                     expected_entity_ids=expected_subject_ids,
                     applied_ts=time.monotonic(),
                     correlation_id=f"script-apply:{uuid4()}",
-                    source=step.source,
+                    source=step_source_legacy_key(step),
                     origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
                     origin_reaction_type=(
                         self._reaction_type_for_reaction_id(reaction.reaction_id)
@@ -3136,7 +3141,7 @@ class HeimaEngine:
                     "Applying switch step: service=switch.%s entity_id=%s source=%s reason=%s",
                     service,
                     switch_entity,
-                    step.source,
+                    step_source_legacy_key(step),
                     step.reason,
                 )
                 self._register_pending_apply_for_step(step)

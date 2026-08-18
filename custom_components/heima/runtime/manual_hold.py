@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import ApplyStep
+from .contracts import ApplyStep, reaction_id_from_step_source
 
 _DEFAULT_PENDING_APPLY_TTL_S = 5.0
 _BRIGHTNESS_TOLERANCE = 5
@@ -244,7 +244,7 @@ class ManualHoldManager:
             expected_state=expected_state,
             timestamp=timestamp,
             expected_attributes=_expected_attributes_for_step(step),
-            source_reaction_id=_reaction_id_from_source(step.source),
+            source_reaction_id=reaction_id_from_step_source(step),
             source_reaction_type=source_reaction_type,
             scope=scope,
         )
@@ -305,14 +305,6 @@ def _expected_attributes_for_step(step: ApplyStep) -> dict[str, Any]:
         if value is not None:
             attrs[key] = value
     return attrs
-
-
-def _reaction_id_from_source(source: str) -> str | None:
-    token = str(source or "").strip()
-    if not token.startswith("reaction:"):
-        return None
-    reaction_id = token.split(":", 1)[1].strip()
-    return reaction_id or None
 
 
 def _attr_matches(actual: Any, expected: Any, tolerance: int) -> bool:

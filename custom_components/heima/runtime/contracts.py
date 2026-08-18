@@ -297,6 +297,13 @@ def step_source_legacy_key(source_or_step: object) -> str:
     return str(source or "").strip()
 
 
+def step_source_diagnostics(source_or_step: object) -> dict[str, Any] | None:
+    source = _source_value(source_or_step)
+    if isinstance(source, ApplyStepSource):
+        return source.as_redacted_dict()
+    return None
+
+
 def reaction_id_from_step_source(source_or_step: object) -> str | None:
     source = _source_value(source_or_step)
     if isinstance(source, ApplyStepSource):
@@ -355,7 +362,7 @@ class ApplyStep:
     params: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     blocked_by: str = ""  # set by apply_filter; non-empty means step is skipped
-    source: str = ""  # e.g. "reaction:MyReaction"; empty = domain pipeline
+    source: ApplyStepSourceValue = ""  # legacy string or structured runtime source
     context_id: str | None = None  # HA Context id to use when executing this step
     step_id: str = ""  # optional id for dependency-aware runtime plans
     depends_on: tuple[str, ...] = ()  # step_id values from the same runtime plan
@@ -386,7 +393,7 @@ class ScriptApplyBatch:
     script_entity: str
     applied_ts: float
     correlation_id: str
-    source: str = ""
+    source: ApplyStepSourceValue = ""
     origin_reaction_id: str | None = None
     origin_reaction_type: str | None = None
     room_id: str | None = None
@@ -399,4 +406,8 @@ class ScriptApplyBatch:
         raw["expected_domains"] = list(self.expected_domains)
         raw["expected_subject_ids"] = list(self.expected_subject_ids)
         raw["expected_entity_ids"] = list(self.expected_entity_ids)
+        raw["source"] = step_source_legacy_key(self.source)
+        source_details = step_source_diagnostics(self.source)
+        if source_details is not None:
+            raw["source_details"] = source_details
         return raw

@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS2 — ApplyStep Source Compatibility.
+**Active slice:** AS3 — Engine Reaction Boundary.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Change `ApplyStep.source` to accept structured sources and update diagnostics/serialization
-boundaries so existing behavior stays compatible.
+Tag reaction-produced apply steps with structured reaction sources and replace engine reaction-source
+parsing with helper semantics.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5313,11 +5313,28 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS2 — ApplyStep Source Compatibility
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Change `ApplyStep.source` to `ApplyStepSource | str`.
 - Update serialization/diagnostics helpers so they expose a deterministic legacy rendering plus
   safe structured source fields where appropriate.
 - Tests cover diagnostics and serialization for both legacy string sources and structured sources.
+- Implemented:
+  - Changed `ApplyStep.source` and `ScriptApplyBatch.source` to `ApplyStepSource | str`.
+  - Runtime confirmation diagnostics, runtime observability step summaries, script apply batch
+    serialization, heating apply provenance, and switch apply logging now render sources through
+    `step_source_legacy_key`.
+  - Structured source details are emitted only through redacted diagnostics dictionaries.
+  - Engine/manual-hold/runtime-observability reaction-source lookup now uses
+    `reaction_id_from_step_source` compatibility helpers.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_apply_step_source.py tests/test_runtime_observability.py tests/test_runtime_confirmation.py -q`
+    — 30 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py tests/test_apply_step_source.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
+  - Broader `tests/test_manual_hold_manager.py` remains blocked by pre-existing AQ/recovery test
+    fixture construction that creates `HeimaEngine.__new__` without `_runtime_context`.
 
 #### AS3 — Engine Reaction Boundary
 
@@ -5391,7 +5408,9 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS2 is the active implementation slice.
+- AS3 is the active implementation slice.
+- Existing manual-hold tests built with `HeimaEngine.__new__` need AQ/recovery fixture alignment;
+  this is separate from AS2 source compatibility.
 
 ---
 

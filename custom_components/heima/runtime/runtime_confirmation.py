@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Callable, Literal
 from uuid import uuid4
 
-from .contracts import ApplyStep
+from .contracts import ApplyStep, step_source_diagnostics, step_source_legacy_key
 from .snapshot import DecisionSnapshot
 
 ExecutionPolicyMode = Literal["auto_apply", "ask_residents"]
@@ -426,7 +426,7 @@ def _request_diagnostics(request: RuntimeActionRequest) -> dict[str, Any]:
 
 
 def _apply_step_diagnostics(step: ApplyStep) -> dict[str, Any]:
-    return {
+    diagnostics: dict[str, Any] = {
         "domain": step.domain,
         "target": step.target,
         "action": step.action,
@@ -434,9 +434,13 @@ def _apply_step_diagnostics(step: ApplyStep) -> dict[str, Any]:
         "depends_on": list(step.depends_on),
         "blocked_by": step.blocked_by,
         "reason": step.reason,
-        "source": step.source,
+        "source": step_source_legacy_key(step),
         "recovery_policy": step.recovery_policy,
     }
+    source_details = step_source_diagnostics(step)
+    if source_details is not None:
+        diagnostics["source_details"] = source_details
+    return diagnostics
 
 
 def _merge_reason_counts(target: dict[str, int], source: dict[str, int]) -> None:

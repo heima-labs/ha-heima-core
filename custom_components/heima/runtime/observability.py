@@ -8,7 +8,13 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from .contracts import ApplyPlan, ApplyStep
+from .contracts import (
+    ApplyPlan,
+    ApplyStep,
+    reaction_id_from_step_source,
+    step_source_diagnostics,
+    step_source_legacy_key,
+)
 
 DEFAULT_EVENT_LIMIT = 500
 DEFAULT_TRACE_LIMIT = 100
@@ -272,16 +278,9 @@ class RuntimeObservabilityBuffer:
 def _group_steps(steps: list[ApplyStep]) -> dict[str, list[ApplyStep]]:
     grouped: dict[str, list[ApplyStep]] = {}
     for step in steps:
-        group_id = _reaction_id_from_source(step.source) or f"domain:{step.domain}"
+        group_id = reaction_id_from_step_source(step) or f"domain:{step.domain}"
         grouped.setdefault(group_id, []).append(step)
     return grouped
-
-
-def _reaction_id_from_source(source: str) -> str:
-    token = str(source or "").strip()
-    if token.startswith("reaction:"):
-        return token.split(":", 1)[1]
-    return ""
 
 
 def _reason_code_from_blocker(blocked_by: str) -> str:
@@ -304,16 +303,20 @@ def _guard_result(step: ApplyStep) -> dict[str, Any]:
 
 
 def _step_summary(step: ApplyStep) -> dict[str, Any]:
-    return {
+    summary: dict[str, Any] = {
         "step_id": step.step_id,
         "domain": step.domain,
         "target": step.target,
         "action": step.action,
         "reason": step.reason,
-        "source": step.source,
+        "source": step_source_legacy_key(step),
         "blocked_by": step.blocked_by,
         "depends_on": list(step.depends_on),
     }
+    source_details = step_source_diagnostics(step)
+    if source_details is not None:
+        summary["source_details"] = source_details
+    return summary
 
 
 def _links_for_group(group_id: str, steps: list[ApplyStep]) -> list[dict[str, str]]:
