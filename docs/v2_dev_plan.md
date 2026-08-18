@@ -127,16 +127,18 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
 | AQ | Runtime Checkpoint and Power Recovery | `DONE` | AH, MH, AO, AP |
+| AS | Structured Runtime Source | `IN PROGRESS` | AH, MH, AQ, AO, AP |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** Post-review AQ hardening on `feat/aq-runtime-checkpoint-recovery`.
-**Branch:** `feat/aq-runtime-checkpoint-recovery`.
+**Active slice:** AS2 — ApplyStep Source Compatibility.
+**Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Run focused CI and decide whether to merge the post-review AQ hardening into `main`.
+Change `ApplyStep.source` to accept structured sources and update diagnostics/serialization
+boundaries so existing behavior stays compatible.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5255,6 +5257,141 @@ groups, service capabilities, and execution policy profile model.
 ### Current open items
 
 - Final focused review/CI before merge.
+
+### Phase AS — Structured Runtime Source
+
+- Status: `IN PROGRESS`.
+- Spec source: `docs/specs/core/runtime_provenance_spec.md`.
+- Also touches: `core/apply_step_contract.md`, `core/manual_hold_framework_spec.md`,
+  `core/runtime_checkpoint_and_power_recovery_spec.md`,
+  `core/resident_runtime_confirmation_spec.md`, `core/admin_observability_panel_spec.md`.
+- Goal: evolve the existing `ApplyStep.source` field from a free-form string into a structured
+  runtime source contract that can support ownership classification, recovery authorization,
+  runtime confirmations, and observability without adding a parallel `ApplyStep.provenance` field.
+- Product boundary:
+  - legacy string sources remain accepted for compatibility but are never authoritative;
+  - persisted config, proposal payloads, notification payloads, and user-controlled data must not
+    be trusted as authorization provenance;
+  - raw actor ids are runtime-memory-only and must be redacted before diagnostics, observability,
+    checkpoints, logs, and persisted stores;
+  - Home Assistant remains the permission system. AS only records and enforces Heima runtime
+    boundary semantics.
+
+#### AS1 — Source Contract Foundation
+
+- Status: `DONE`.
+- Add the structured source contract and helper API:
+  - `ApplyStepSource`;
+  - `ApplyStepSourceKind`;
+  - `ApplyStepSourceActorType`;
+  - helper constructors for reaction, domain, admin command, resident response, timeout, recovery,
+    system, test, and legacy compatibility sources;
+  - helper readers such as `step_source_kind`, `step_source_id`, `step_source_type`,
+    `step_source_actor_type`, `step_source_legacy_key`, `reaction_id_from_step_source`, and
+    `is_authoritative_source`.
+- Structured sources created by runtime code are authoritative for their own kind. Raw dictionaries
+  or strings read from persisted/user-controlled data are sanitized into non-authoritative legacy
+  compatibility sources.
+- Tests:
+  - legacy `reaction:<id>` strings still resolve correctly;
+  - structured reaction/domain/admin/resident/timeout sources expose the expected helper values;
+  - forged structured dictionaries are sanitized and cannot be authoritative;
+  - actor redaction is stable and does not expose raw actor ids.
+- Implemented:
+  - Added `ApplyStepSource`, source kind/actor vocabularies, source constructors, legacy
+    compatibility helpers, authority helpers, sanitization helpers, and actor redaction helpers in
+    `custom_components/heima/runtime/contracts.py`.
+  - Kept `ApplyStep.source` typed as `str` until AS2 to avoid widening the public apply-step
+    contract before diagnostics and consumer compatibility are updated.
+  - Added focused source contract tests in `tests/test_apply_step_source.py`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_apply_step_source.py -q` — 5 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py tests/test_apply_step_source.py`
+    — passed.
+  - `.venv/bin/python -m mypy tests/test_apply_step_source.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
+
+#### AS2 — ApplyStep Source Compatibility
+
+- Status: `NOT STARTED`.
+- Change `ApplyStep.source` to `ApplyStepSource | str`.
+- Update serialization/diagnostics helpers so they expose a deterministic legacy rendering plus
+  safe structured source fields where appropriate.
+- Tests cover diagnostics and serialization for both legacy string sources and structured sources.
+
+#### AS3 — Engine Reaction Boundary
+
+- Status: `NOT STARTED`.
+- Tag reaction-produced steps with `ApplyStepSource(kind="reaction", source_id=reaction_id,
+  source_type=reaction_type, actor_type="heima")`.
+- Replace direct `reaction:<id>` parsing in the engine with source helper functions.
+- Tests cover reaction lookup/grouping for both structured and legacy sources.
+
+#### AS4 — Domain Boundaries
+
+- Status: `NOT STARTED`.
+- Tag domain-generated non-reaction steps with `kind="domain"` and an explicit domain/source type.
+- Preserve current behavior for lighting, heating, security, camera privacy, and other existing
+  domains.
+- Tests cover representative domain-generated lighting/heating sources and unchanged apply
+  behavior.
+
+#### AS5 — Manual Hold and Script Apply Batch
+
+- Status: `NOT STARTED`.
+- Derive pending-apply ownership, source reaction id, and source reaction type from structured
+  source helpers instead of string parsing.
+- Update `ScriptApplyBatch` to carry structured source-derived fields while keeping existing
+  diagnostics shape where needed.
+- Tests cover Heima-owned vs external classification, source reaction derivation, and script apply
+  batch diagnostics.
+
+#### AS6 — Runtime Confirmation Sources
+
+- Status: `NOT STARTED`.
+- Runtime-confirmation approved requests apply their stored steps with `kind="resident_response"`.
+- Timeout-applied steps use `kind="timeout"` and must never count toward auto-apply promotion.
+- Dismissed/cancelled requests do not apply steps and therefore produce no apply source.
+- Tests cover approved vs timeout provenance and forged notification payload rejection.
+
+#### AS7 — Recovery Authorization Hardening
+
+- Status: `NOT STARTED`.
+- Replace recovery/admin bypass checks based on string shape with authoritative structured source
+  checks.
+- `allow_admin_command` may pass only for an authoritative `admin_command` source created by an
+  HA-admin-verified websocket/admin-panel boundary.
+- Preserve camera privacy `allow_when_inputs_stable` behavior.
+- Tests cover forged `source="admin_command:<id>"` rejection, authoritative admin-command
+  allowance, and camera privacy recovery allowance.
+
+#### AS8 — Observability and Live Coverage
+
+- Status: `NOT STARTED`.
+- Group observability/runtime diagnostics by structured source while preserving legacy fallback
+  rendering.
+- AO/export surfaces structured source fields with redacted actors and clear legacy rendering.
+- Add live/diagnostic coverage for representative reaction, domain, recovery-blocked, and runtime
+  confirmation source shapes where feasible.
+- Tests:
+  - focused unit/integration coverage from AS1-AS7;
+  - AO snapshot contract coverage;
+  - diagnostic/live source-shape check against the local HA test instance when available.
+
+### Acceptance Criteria
+
+- [ ] New runtime-created apply steps use structured source objects in `ApplyStep.source`.
+- [ ] Legacy string sources remain accepted and behavior-compatible.
+- [ ] Authorization decisions never trust free-form strings or raw user-controlled source payloads.
+- [ ] Manual Hold, recovery gating, runtime confirmations, script apply batches, and observability
+  use source helper semantics instead of direct string parsing.
+- [ ] Raw actor ids are not emitted in diagnostics, observability, checkpoints, logs, or stores.
+- [ ] Tests cover helper semantics, compatibility, forged-source rejection, and representative
+  runtime integrations.
+
+### Current open items
+
+- AS2 is the active implementation slice.
 
 ---
 

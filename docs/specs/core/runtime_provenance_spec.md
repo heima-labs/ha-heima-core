@@ -245,15 +245,16 @@ empty `source` fallback behavior.
 
 `kind="admin_command"` may be assigned only by a Home Assistant admin-verified boundary.
 
-Allowed initial boundaries:
+Allowed AS boundary:
 
 - websocket commands protected by `websocket_api.require_admin` and an explicit
-  `connection.user.is_admin` check;
-- future service commands only if they can verify a Home Assistant admin user from
-  `ServiceCall.context.user_id` or another HA-supported permission check.
+  `connection.user.is_admin` check.
 
-Until service-call admin verification exists, service calls must not produce authoritative
-`admin_command` provenance merely because they call a Heima service.
+Service calls must not produce authoritative `admin_command` source in AS. They may produce
+`kind="service"` if a future vocabulary extension needs it, or no apply-step source at all when the
+service does not create apply steps. A future phase may allow service calls to produce
+`admin_command` only after explicit HA-admin verification from `ServiceCall.context.user_id` or an
+equivalent HA-supported permission check.
 
 ### Resident Response Boundary
 
@@ -379,6 +380,20 @@ If an import/config payload includes structured `source`, the normalizer must ei
 No user-editable config field may cause Heima to create `admin_command`, `resident_response`,
 `timeout`, `recovery`, or `system` authoritative provenance.
 
+### Actor Redaction
+
+Raw `actor_id` values may exist only in runtime memory.
+
+Diagnostics, admin observability exports, logs, checkpoints, and persisted stores must expose only
+redacted actor identifiers. AS uses stable hashes without display names:
+
+```yaml
+actor_id: ha_user:sha256:<short_hash>
+```
+
+This keeps repeated actions attributable to the same actor for debugging without exposing the raw HA
+user id or mobile-device identifier.
+
 ## Backward Compatibility
 
 The migration should be staged:
@@ -396,6 +411,12 @@ The migration should be staged:
 9. After all production builders are migrated, fail tests when non-test apply steps reach the apply
    layer with `kind="legacy"`.
 
+Post-AS target:
+
+- production builders emit `ApplyStepSource`;
+- helper functions continue accepting legacy strings at compatibility/import/test boundaries;
+- legacy strings are never authoritative and cannot bypass recovery or other safety filters.
+
 ## Acceptance Criteria
 
 - No recovery authorization decision depends on parsing `ApplyStep.source`.
@@ -409,11 +430,11 @@ The migration should be staged:
 - Unit tests cover reaction, domain, admin-command, resident-response, timeout, and legacy
   source paths.
 
-## Open Questions
+## Resolved Decisions
 
-1. Should Home Assistant service calls be allowed to create authoritative `admin_command`
-   provenance if `ServiceCall.context.user_id` belongs to an HA admin, or should admin-command
-   provenance be limited to websocket/admin-panel actions at first?
-2. Should `actor_id` be stored as raw HA user id in diagnostics, or redacted/hardened before export?
-3. After migration, should `source` keep accepting legacy strings, or should production code require
-   `ApplyStepSource` while tests/import compatibility handle strings at the boundary only?
+1. AS assigns authoritative `admin_command` source only from websocket/admin-panel actions guarded by
+   Home Assistant admin checks. Service calls are not authoritative admin commands in AS.
+2. Raw `actor_id` is runtime-memory-only. Diagnostics, observability, logs, checkpoints, and stores
+   expose stable hashed actor ids.
+3. `ApplyStep.source` remains `ApplyStepSource | str` through AS. Production builders must migrate
+   to `ApplyStepSource`; legacy strings remain compatibility-only and never authoritative.
