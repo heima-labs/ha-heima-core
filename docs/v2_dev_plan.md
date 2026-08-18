@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS5 — Manual Hold and Script Apply Batch.
+**Active slice:** AS6 — Runtime Confirmation Sources.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Derive manual-hold pending ownership and script apply batch provenance from structured source
-helpers.
+Assign structured resident-response and timeout sources when runtime confirmations apply stored
+steps, without letting timeout applies count toward promotion.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5382,13 +5382,26 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS5 — Manual Hold and Script Apply Batch
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Derive pending-apply ownership, source reaction id, and source reaction type from structured
   source helpers instead of string parsing.
 - Update `ScriptApplyBatch` to carry structured source-derived fields while keeping existing
   diagnostics shape where needed.
 - Tests cover Heima-owned vs external classification, source reaction derivation, and script apply
   batch diagnostics.
+- Implemented:
+  - Manual Hold pending applies now derive `source_reaction_id` through
+    `reaction_id_from_step_source`.
+  - Script apply batches keep the original structured source in memory and serialize it as a
+    legacy key plus redacted `source_details`.
+  - Added explicit structured-source pending apply coverage.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_manual_hold_manager.py tests/test_engine_lighting_runtime.py tests/test_apply_step_source.py -q`
+    — 51 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py tests/test_manual_hold_manager.py tests/test_engine_lighting_runtime.py tests/test_apply_step_source.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py tests/test_apply_step_source.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
 
 #### AS6 — Runtime Confirmation Sources
 
@@ -5435,7 +5448,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS5 is the active implementation slice.
+- AS6 is the active implementation slice.
 
 ---
 

@@ -3123,7 +3123,7 @@ class HeimaEngine:
                     expected_entity_ids=expected_subject_ids,
                     applied_ts=time.monotonic(),
                     correlation_id=f"script-apply:{uuid4()}",
-                    source=step_source_legacy_key(step),
+                    source=step.source,
                     origin_reaction_id=(reaction.reaction_id if reaction is not None else None),
                     origin_reaction_type=(
                         self._reaction_type_for_reaction_id(reaction.reaction_id)

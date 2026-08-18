@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
+from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep, reaction_step_source
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.manual_hold import (
     ManualHoldManager,
@@ -90,6 +90,31 @@ def test_manual_hold_manager_registers_and_consumes_light_pending_apply() -> Non
         ),
     )
     assert manager.diagnostics()["pending_applies"] == {"total": 0, "by_domain": {}, "items": []}
+
+
+def test_manual_hold_manager_derives_pending_apply_from_structured_source() -> None:
+    clock = _Clock()
+    manager = ManualHoldManager(monotonic=clock)
+    step = ApplyStep(
+        domain="light",
+        target="light.studio_main",
+        action="light.turn_off",
+        params={"entity_id": "light.studio_main"},
+        source=reaction_step_source(
+            "smart-studio",
+            reaction_type="room.smart_lighting_assist.basic",
+            correlation_id="corr-1",
+        ),
+    )
+
+    manager.register_pending_apply(
+        step,
+        source_reaction_type="room.smart_lighting_assist.basic",
+    )
+
+    pending = manager.diagnostics()["pending_applies"]["items"][0]
+    assert pending["source_reaction_id"] == "smart-studio"
+    assert pending["source_reaction_type"] == "room.smart_lighting_assist.basic"
 
 
 def test_manual_hold_manager_classifies_owned_and_external_light_changes() -> None:
