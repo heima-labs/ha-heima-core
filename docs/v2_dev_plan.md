@@ -1169,6 +1169,14 @@ MVP merge.
     `unavailable`, verifies `power_recovery`, restores original states, verifies stabilization and
     completion, restarts the HA test container, and verifies that checkpoint metadata is available
     after restart.
+  - The destructive AQ script also covers the "HA server went down with the house" case by stopping
+    the HA test container, temporarily mutating `core.restore_state` and
+    `heima_runtime_checkpoints`, starting HA again, and verifying that the checkpoint/current-state
+    difference is surfaced as `unknown_during_downtime`. It restores both storage files and the HA
+    entity state in `finally`.
+  - Added `heima.command` command `write_runtime_checkpoint` so admin/operator live tests can force
+    a fresh checkpoint before destructive recovery scenarios instead of depending on a pre-existing
+    scheduler write.
   - Recovery lifecycle events are now mirrored into `RuntimeObservabilityBuffer`, so the admin
     Recovery view can show the `system.recovery_*` lifecycle instead of only the internal event
     queue.
@@ -1184,12 +1192,15 @@ MVP merge.
   - `bash -n scripts/check_all_live.sh` — passed.
   - `python3 -m py_compile scripts/live_tests/086_recovery_destructive_live.py` — passed.
   - `.venv/bin/python -m pytest tests/test_recovery_manager.py -q` — passed.
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_services_notify_event.py -q`
+    — passed.
   - `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
     — passed against the local HA test instance.
   - `source scripts/.env && scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
     — passed against the local HA test instance.
   - `source scripts/.env && ./scripts/check_all_live.sh --tier destructive --allow-destructive --docker-container "$DEV_CONTAINER_NAME"`
-    — passed against the local HA test instance.
+    — passed against the local HA test instance, including unavailable burst, HA restart, and
+    offline restore-state drift.
   - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic`
     — blocked before reaching AQ8 by `074_camera_privacy_manual_hold_live.py`.
   - `source scripts/.env && scripts/live_tests/074_camera_privacy_manual_hold_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --timeout-s 120`
