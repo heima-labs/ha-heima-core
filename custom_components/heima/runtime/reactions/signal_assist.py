@@ -9,7 +9,7 @@ from typing import Any, Literal
 from homeassistant.core import HomeAssistant
 
 from ...room_sources import room_signal_bucket_labels
-from ..contracts import ApplyStep
+from ..contracts import ApplyStep, apply_step_from_mapping
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
 from .composite import (
@@ -429,7 +429,7 @@ def _build_normalized_room_signal_assist_reaction(
         correlation_window_s = int(cfg.get("correlation_window_s", 600))
         followup_window_s = int(cfg.get("followup_window_s", 900))
         steps_raw: list = cfg.get("steps", [])
-        steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+        steps = [apply_step_from_mapping(s) if isinstance(s, dict) else s for s in steps_raw]
         rooms = list(dict(getattr(engine, "_entry").options).get("rooms") or [])  # noqa: SLF001
         primary_bucket_labels = room_signal_bucket_labels(
             rooms, room_id, normalized["primary_signal_name"]

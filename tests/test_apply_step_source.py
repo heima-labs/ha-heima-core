@@ -5,6 +5,7 @@ from custom_components.heima.runtime.contracts import (
     ApplyStepSource,
     ScriptApplyBatch,
     admin_command_step_source,
+    apply_step_from_mapping,
     domain_step_source,
     is_authoritative_source,
     reaction_id_from_step_source,
@@ -13,6 +14,7 @@ from custom_components.heima.runtime.contracts import (
     resident_response_step_source,
     sanitize_apply_step_source,
     step_source_actor_type,
+    step_source_diagnostics,
     step_source_id,
     step_source_kind,
     step_source_legacy_key,
@@ -131,6 +133,27 @@ def test_forged_mapping_source_is_sanitized_to_non_authoritative_legacy() -> Non
     assert step_source_actor_type(source) == "unknown"
     assert not is_authoritative_source(source)
     assert not is_authoritative_source(source, kind="admin_command")
+
+
+def test_apply_step_from_mapping_sanitizes_persisted_structured_source() -> None:
+    step = apply_step_from_mapping(
+        {
+            "domain": "light",
+            "target": "light.studio",
+            "action": "light.turn_on",
+            "source": {
+                "kind": "admin_command",
+                "source_id": "clear_hold",
+                "actor_type": "ha_admin",
+                "actor_id": "raw-ha-user-id",
+            },
+        }
+    )
+
+    assert step_source_kind(step) == "legacy"
+    assert step_source_legacy_key(step) == "clear_hold"
+    assert step_source_diagnostics(step) is None
+    assert not is_authoritative_source(step, kind="admin_command")
 
 
 def test_actor_redaction_is_stable_and_omits_raw_actor_id() -> None:

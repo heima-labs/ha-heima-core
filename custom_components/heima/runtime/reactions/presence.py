@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
-from ..contracts import ApplyStep
+from ..contracts import ApplyStep, apply_step_from_mapping
 from ..outcome_tracker import OutcomeSpec
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
@@ -243,7 +243,7 @@ def build_presence_pattern_reaction(
         pre_cond = int(cfg.get("pre_condition_min", 20))
         min_arrivals = int(cfg.get("min_arrivals", 5))
         steps_raw: list = cfg.get("steps", [])
-        steps = [ApplyStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+        steps = [apply_step_from_mapping(s) if isinstance(s, dict) else s for s in steps_raw]
     except (KeyError, TypeError, ValueError):
         return None
 

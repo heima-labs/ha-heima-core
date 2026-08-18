@@ -5492,6 +5492,13 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
+- Post-review AS hardening:
+  - `apply_step_from_mapping(...)` is now the boundary for building apply steps from persisted or
+    user-controlled mappings.
+  - Presence and room signal assist reaction builders use that boundary instead of `ApplyStep(**raw)`.
+  - Legacy/non-authoritative sources do not emit structured `source_details`.
+  - Verification: `.venv/bin/python -m pytest tests/test_runtime_observability.py tests/test_observability.py tests/test_apply_step_source.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_recovery_manager.py tests/test_runtime_confirmation.py tests/test_runtime_confirmation_promotion_stats.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py tests/test_signal_assist_reaction.py tests/test_presence_pattern_reaction.py -q`
+    — 246 passed.
 - Full-suite failure triage is required before AS can be marked `DONE`.
 - Decide whether to fix stale `recovery_policy` test expectations now or separate them into an AQ
   cleanup commit.

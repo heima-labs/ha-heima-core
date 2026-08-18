@@ -300,6 +300,8 @@ def step_source_legacy_key(source_or_step: object) -> str:
 def step_source_diagnostics(source_or_step: object) -> dict[str, Any] | None:
     source = _source_value(source_or_step)
     if isinstance(source, ApplyStepSource):
+        if source.kind == "legacy":
+            return None
         return source.as_redacted_dict()
     return None
 
@@ -367,6 +369,14 @@ class ApplyStep:
     step_id: str = ""  # optional id for dependency-aware runtime plans
     depends_on: tuple[str, ...] = ()  # step_id values from the same runtime plan
     recovery_policy: RecoveryApplyPolicy = "block"
+
+
+def apply_step_from_mapping(raw: dict[str, Any]) -> ApplyStep:
+    """Build an apply step from persisted/user-controlled data."""
+    data = dict(raw)
+    if "source" in data:
+        data["source"] = sanitize_apply_step_source(data.get("source"))
+    return ApplyStep(**data)
 
 
 @dataclass(frozen=True)
