@@ -422,8 +422,12 @@ Heima must enter `startup_recovery` when:
 - Home Assistant starts or reloads the integration;
 - no valid checkpoint exists;
 - the latest checkpoint is older than the configured freshness threshold;
-- `ha_started_at` changed since the latest checkpoint;
 - the latest checkpoint cannot be read or fails validation.
+
+When both the current Home Assistant start timestamp and checkpoint `ha_started_at` are known, a
+changed value is reported as `restarted_since_checkpoint=true` and confirms that startup recovery is
+required. It does not by itself make a fresh, parseable checkpoint unusable: Scenario B depends on
+using that checkpoint as a comparison hint after HA restarts.
 
 ### Power Recovery Entry Conditions
 
@@ -479,10 +483,12 @@ initial recovery entry:
 - `job_id=recovery.stabilization` (`owner=recovery`) is registered the moment
   `startup_recovery` or `power_recovery` is entered, firing at the applicable stabilization window
   (120s / 60s), so Exit Conditions are rechecked regardless of entity churn.
-- `job_id=recovery.degraded_timeout` (`owner=recovery`) is registered only when
+- `job_id=recovery.degraded_timeout` (`owner=recovery`) becomes due only after
   `degraded_recovery` is actually entered — i.e., when the stabilization deadline job fires without
-  Exit Conditions being met. It fires at `degraded_timeout_s` (default 600s) *after entering
-  `degraded_recovery`*, which is when Notification routing's admin-notify threshold applies (not
+  Exit Conditions being met. Implementations may keep the same job idempotently scheduled while the
+  runtime remains in `degraded_recovery`, but must not move it later. It fires at
+  `degraded_timeout_s` (default 600s) *after entering `degraded_recovery`*, which is when
+  Notification routing's admin-notify threshold applies (not
   600s after the original outage/restart).
 
 Both jobs are cancelled/replaced if recovery exits earlier through a normal evaluation cycle.
@@ -901,8 +907,8 @@ Unit tests:
   restored from a checkpoint after restart;
 - `recovery.stabilization` fires and is rechecked even with zero entity state changes
   during the window (no reliance on the 300s evaluation fallback);
-- `recovery.degraded_timeout` is registered only on transition into `degraded_recovery`, not at
-  initial recovery entry.
+- `recovery.degraded_timeout` is not registered at initial recovery entry and does not move later
+  while already in `degraded_recovery`.
 
 Integration tests:
 

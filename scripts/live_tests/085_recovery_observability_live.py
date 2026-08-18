@@ -44,6 +44,18 @@ def _assert_recovery_contract(snapshot: dict[str, Any]) -> None:
     _assert(isinstance(recovery["state"], str), "recovery.state must be a string")
     _assert(isinstance(recovery["reason"], str), "recovery.reason must be a string")
     _assert(isinstance(recovery["active"], bool), "recovery.active must be a bool")
+    for key in (
+        "started_at",
+        "settling_started_at",
+        "degraded_started_at",
+        "stabilization_deadline_at",
+        "degraded_timeout_at",
+    ):
+        _assert(key in recovery, f"snapshot.recovery missing {key}")
+        _assert(
+            recovery[key] is None or isinstance(recovery[key], str),
+            f"recovery.{key} must be null or an ISO timestamp string",
+        )
 
     critical = recovery["critical_entities"]
     _assert(isinstance(critical, dict), "recovery.critical_entities must be a dict")
