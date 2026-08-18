@@ -149,6 +149,7 @@ _REMOVED_REACTION_TYPES = {
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
 _RUNTIME_CHECKPOINT_WRITE_JOB_ID = "recovery.checkpoint.write"
 _RECOVERY_STABILIZATION_JOB_ID = "recovery.stabilization"
+_RECOVERY_DEGRADED_TIMEOUT_JOB_ID = "recovery.degraded_timeout"
 _RUNTIME_CHECKPOINT_WRITE_DELAY_S = 60.0
 _CHECKPOINT_POWER_RESTORE_DOMAINS = {"climate", "cover", "fan", "light", "switch"}
 
@@ -192,6 +193,25 @@ def _is_armed_security_state(state: str) -> bool:
 
 def _entity_domain(entity_id: str) -> str:
     return str(entity_id or "").split(".", 1)[0] or "unknown"
+
+
+def _isoformat_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
 
 
 def _tuple_of_strings(value: Any) -> tuple[str, ...]:
@@ -254,6 +274,7 @@ class HeimaEngine:
         self._runtime_checkpoint_store: RuntimeCheckpointStore | None = None
         self._last_runtime_checkpoint_key: str | None = None
         self._pending_runtime_checkpoint_reason: str | None = None
+        self._heima_started_at = datetime.now(timezone.utc).isoformat()
         self._startup_recovery_pending = True
         self._security_unavailable_recovery_event_active = False
         self._last_recovery_event_state = "normal"
@@ -993,12 +1014,15 @@ class HeimaEngine:
         Recovery context is computed before domain DAG execution so all domains
         observe the same startup/power recovery state in the current cycle.
         """
+        now_monotonic = time.monotonic()
+        now_utc = datetime.now(timezone.utc).isoformat()
         critical_entities = self._current_recovery_critical_entities()
         checkpoint_status = self._checkpoint_recovery_status()
         previous_context = self._recovery_manager.context
         context = self._recovery_manager.evaluate(
             RecoveryEvaluationInput(
-                now_monotonic=time.monotonic(),
+                now_monotonic=now_monotonic,
+                now_utc=now_utc,
                 critical_entities=critical_entities,
                 startup_requested=self._startup_recovery_pending,
                 stable_snapshot_available=bool(self._snapshot.snapshot_id),
@@ -1018,6 +1042,21 @@ class HeimaEngine:
             )
         else:
             self._timed_rechecks.pop(_RECOVERY_STABILIZATION_JOB_ID, None)
+        if (
+            context.state == "degraded_recovery"
+            and context.degraded_started_at_monotonic is not None
+        ):
+            self._schedule_timed_recheck_deadline(
+                job_id=_RECOVERY_DEGRADED_TIMEOUT_JOB_ID,
+                deadline=(
+                    context.degraded_started_at_monotonic
+                    + self._recovery_manager.config.degraded_timeout_s
+                ),
+                owner="recovery",
+                label="Recovery degraded timeout",
+            )
+        else:
+            self._timed_rechecks.pop(_RECOVERY_DEGRADED_TIMEOUT_JOB_ID, None)
 
     def _queue_recovery_transition_events(
         self,
@@ -1173,6 +1212,13 @@ class HeimaEngine:
         for entity_id in sorted(self._recovery_critical_entity_ids()):
             state_obj = state_getter(entity_id)
             if state_obj is None:
+                entities.append(
+                    CriticalEntityState(
+                        entity_id=entity_id,
+                        domain=entity_id.split(".", 1)[0],
+                        state="unavailable",
+                    )
+                )
                 continue
             entities.append(
                 CriticalEntityState(
@@ -1182,6 +1228,21 @@ class HeimaEngine:
                 )
             )
         return tuple(entities)
+
+    def _ha_started_at(self) -> str | None:
+        """Best-effort Home Assistant start timestamp for checkpoint diagnostics."""
+        for attr in ("started_at", "start_time"):
+            value = getattr(self._hass, attr, None)
+            timestamp = _isoformat_or_none(value)
+            if timestamp:
+                return timestamp
+        data = getattr(self._hass, "data", None)
+        if isinstance(data, dict):
+            for key in ("homeassistant_started_at", "homeassistant_start_time", "ha_started_at"):
+                timestamp = _isoformat_or_none(data.get(key))
+                if timestamp:
+                    return timestamp
+        return None
 
     def _recovery_critical_entity_ids(self) -> set[str]:
         """Return entities whose availability affects recovery classification."""
@@ -1252,8 +1313,18 @@ class HeimaEngine:
             checkpoint_id=checkpoint.checkpoint_id,
             age_s=age_s,
             reason="stale" if stale else "loaded",
+            ha_started_at=checkpoint.ha_started_at,
+            heima_started_at=checkpoint.heima_started_at,
+            ha_restarted_since_checkpoint=self._ha_restarted_since_checkpoint(checkpoint),
             differences=self._checkpoint_differences(checkpoint),
         )
+
+    def _ha_restarted_since_checkpoint(self, checkpoint: RuntimeCheckpoint) -> bool | None:
+        current_started = self._ha_started_at()
+        checkpoint_started = str(checkpoint.ha_started_at or "").strip()
+        if not current_started or not checkpoint_started:
+            return None
+        return current_started != checkpoint_started
 
     def _checkpoint_age_s(self, checkpoint: RuntimeCheckpoint) -> float | None:
         try:
@@ -2055,10 +2126,14 @@ class HeimaEngine:
                 _LOGGER.exception("Reaction %s raised in scheduled_jobs", reaction.reaction_id)
         return jobs
 
-    async def async_write_runtime_checkpoint(self, *, reason: str) -> bool:
+    async def async_write_runtime_checkpoint(self, *, reason: str, force: bool = False) -> bool:
         """Persist the current runtime checkpoint immediately."""
         store = self._runtime_checkpoint_store
         if store is None:
+            return False
+        if self._recovery_active() and not force:
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            self._pending_runtime_checkpoint_reason = None
             return False
         try:
             checkpoint = self._build_runtime_checkpoint(reason=reason)
@@ -2116,6 +2191,8 @@ class HeimaEngine:
         return RuntimeCheckpoint(
             entry_id=entry_id,
             reason=reason,
+            ha_started_at=self._ha_started_at(),
+            heima_started_at=self._heima_started_at,
             runtime={
                 "engine_health": {"ok": self._health.ok, "reason": self._health.reason},
                 "snapshot": self._snapshot.as_dict(),
@@ -2156,9 +2233,18 @@ class HeimaEngine:
         if not callable(state_getter):
             return ()
         entities: list[CheckpointEntityState] = []
-        for entity_id in sorted(self.tracked_entity_ids()):
+        for entity_id in sorted(self._recovery_critical_entity_ids()):
             state_obj = state_getter(entity_id)
             if state_obj is None:
+                entities.append(
+                    CheckpointEntityState(
+                        entity_id=entity_id,
+                        domain=entity_id.split(".", 1)[0],
+                        state="unavailable",
+                    )
+                )
+                if len(entities) >= MAX_CHECKPOINT_ENTITIES:
+                    break
                 continue
             entities.append(CheckpointEntityState.from_ha_state(entity_id, state_obj))
             if len(entities) >= MAX_CHECKPOINT_ENTITIES:
@@ -2653,10 +2739,12 @@ class HeimaEngine:
                     hook="apply_filter",
                     error="exception_raised",
                 )
-        plan = self._dispatch_recovery_apply_filter(plan)
+        plan = self._dispatch_recovery_apply_filter(plan, snapshot)
         return self._dispatch_manual_hold_filter(plan)
 
-    def _dispatch_recovery_apply_filter(self, plan: ApplyPlan) -> ApplyPlan:
+    def _dispatch_recovery_apply_filter(
+        self, plan: ApplyPlan, snapshot: DecisionSnapshot
+    ) -> ApplyPlan:
         state = self._recovery_state()
         if not state:
             return plan
@@ -2666,11 +2754,43 @@ class HeimaEngine:
             if step.blocked_by:
                 filtered.append(step)
                 continue
+            if self._step_allowed_during_recovery(step, snapshot):
+                filtered.append(step)
+                continue
             changed = True
             filtered.append(dataclass_replace(step, blocked_by=f"recovery:{state}"))
         if not changed:
             return plan
         return ApplyPlan(plan_id=plan.plan_id, steps=filtered)
+
+    def _step_allowed_during_recovery(self, step: ApplyStep, snapshot: DecisionSnapshot) -> bool:
+        policy = str(getattr(step, "recovery_policy", "block") or "block").strip()
+        if policy == "block":
+            return False
+        if policy == "allow_admin_command":
+            return not str(step.source or "").startswith("reaction:")
+        if policy != "allow_when_inputs_stable":
+            return False
+        reaction = self._reaction_from_step_source(step)
+        if reaction is None:
+            return False
+        cfg = self._configured_reaction_config(reaction.reaction_id)
+        if cfg.get("source_template_id") != "security.camera_privacy_policy":
+            return False
+        security_state = str(snapshot.security_state or "").strip()
+        if security_state in {"", "unknown", "unavailable"}:
+            return False
+        if step.domain != "switch" or not step.action.startswith("switch."):
+            return False
+        security = self._entry.options.get(OPT_SECURITY, {})
+        if not isinstance(security, dict):
+            return False
+        privacy_entities = {
+            str(source.get("privacy_entity") or "").strip()
+            for source in security.get("camera_evidence_sources", []) or []
+            if isinstance(source, dict)
+        }
+        return step.target in privacy_entities
 
     def _dispatch_manual_hold_filter(self, plan: ApplyPlan) -> ApplyPlan:
         filtered: list[ApplyStep] = []
@@ -3463,6 +3583,7 @@ class HeimaEngine:
                         "params": dict(step.params),
                         "reason": step.reason,
                         "blocked_by": step.blocked_by,
+                        "recovery_policy": step.recovery_policy,
                     }
                     for step in self._apply_plan.steps
                 ],
@@ -3497,6 +3618,7 @@ class HeimaEngine:
             "runtime_checkpoint_status": {
                 "pending_write_reason": self._pending_runtime_checkpoint_reason,
                 "write_job_id": _RUNTIME_CHECKPOINT_WRITE_JOB_ID,
+                "degraded_timeout_job_id": _RECOVERY_DEGRADED_TIMEOUT_JOB_ID,
             },
             "normalization": self._normalizer.diagnostics(),
             "learning_modules": [

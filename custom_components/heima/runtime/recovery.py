@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 RecoveryState = Literal[
@@ -77,6 +78,9 @@ class CheckpointRecoveryStatus:
     checkpoint_id: str | None = None
     age_s: float | None = None
     reason: str = "missing"
+    ha_started_at: str | None = None
+    heima_started_at: str | None = None
+    ha_restarted_since_checkpoint: bool | None = None
     differences: tuple[CheckpointDifference, ...] = ()
 
     @property
@@ -91,6 +95,9 @@ class CheckpointRecoveryStatus:
             "checkpoint_id": self.checkpoint_id,
             "age_s": self.age_s,
             "reason": self.reason,
+            "ha_started_at": self.ha_started_at,
+            "heima_started_at": self.heima_started_at,
+            "ha_restarted_since_checkpoint": self.ha_restarted_since_checkpoint,
             "difference_count": self.difference_count,
             "differences": [difference.as_dict() for difference in self.differences],
         }
@@ -104,6 +111,7 @@ class RecoveryConfig:
     startup_stabilization_s: float = 120.0
     power_restore_stabilization_s: float = 60.0
     checkpoint_freshness_s: float = 15 * 60.0
+    degraded_timeout_s: float = 10 * 60.0
 
 
 @dataclass(frozen=True)
@@ -111,6 +119,7 @@ class RecoveryEvaluationInput:
     """Inputs required to classify recovery state for one evaluation cycle."""
 
     now_monotonic: float
+    now_utc: str | None = None
     critical_entities: tuple[CriticalEntityState, ...] = ()
     startup_requested: bool = False
     stable_snapshot_available: bool = False
@@ -127,6 +136,12 @@ class RecoveryContext:
     active: bool = False
     started_at_monotonic: float | None = None
     settling_started_at_monotonic: float | None = None
+    degraded_started_at_monotonic: float | None = None
+    started_at: str | None = None
+    settling_started_at: str | None = None
+    degraded_started_at: str | None = None
+    stabilization_deadline_at: str | None = None
+    degraded_timeout_at: str | None = None
     parent_state: RecoveryState | None = None
     unavailable_ratio: float = 0.0
     unavailable_count: int = 0
@@ -149,6 +164,11 @@ class RecoveryContext:
             "runtime.recovery.stabilization_deadline_monotonic": (
                 self.stabilization_deadline_monotonic
             ),
+            "runtime.recovery.started_at": self.started_at,
+            "runtime.recovery.settling_started_at": self.settling_started_at,
+            "runtime.recovery.degraded_started_at": self.degraded_started_at,
+            "runtime.recovery.stabilization_deadline_at": self.stabilization_deadline_at,
+            "runtime.recovery.degraded_timeout_at": self.degraded_timeout_at,
             "runtime.recovery.stable_snapshot_available": self.stable_snapshot_available,
             "runtime.recovery.reconciliation_pending": self.reconciliation_pending,
             "runtime.recovery.checkpoint.available": self.checkpoint_status.available,
@@ -168,11 +188,17 @@ class RecoveryContext:
             "active": self.active,
             "started_at_monotonic": self.started_at_monotonic,
             "settling_started_at_monotonic": self.settling_started_at_monotonic,
+            "degraded_started_at_monotonic": self.degraded_started_at_monotonic,
+            "started_at": self.started_at,
+            "settling_started_at": self.settling_started_at,
+            "degraded_started_at": self.degraded_started_at,
             "parent_state": self.parent_state,
             "unavailable_ratio": self.unavailable_ratio,
             "unavailable_count": self.unavailable_count,
             "critical_entity_count": self.critical_entity_count,
             "stabilization_deadline_monotonic": self.stabilization_deadline_monotonic,
+            "stabilization_deadline_at": self.stabilization_deadline_at,
+            "degraded_timeout_at": self.degraded_timeout_at,
             "stable_snapshot_available": self.stable_snapshot_available,
             "reconciliation_pending": self.reconciliation_pending,
             "critical_entities": [entity.as_dict() for entity in self.critical_entities],
@@ -211,6 +237,10 @@ class RecoveryManager:
         reason: RecoveryReason = "normal"
         started_at = current.started_at_monotonic
         settling_started_at = current.settling_started_at_monotonic
+        degraded_started_at = current.degraded_started_at_monotonic
+        started_at_wall = current.started_at
+        settling_started_at_wall = current.settling_started_at
+        degraded_started_at_wall = current.degraded_started_at
         parent_state = current.parent_state
 
         if state == "normal":
@@ -218,13 +248,21 @@ class RecoveryManager:
                 state = "startup_recovery"
                 reason = "startup_requested"
                 started_at = inputs.now_monotonic
+                started_at_wall = inputs.now_utc
                 settling_started_at = None
+                settling_started_at_wall = None
+                degraded_started_at = None
+                degraded_started_at_wall = None
                 parent_state = "startup_recovery"
             elif above_threshold:
                 state = "power_recovery"
                 reason = "critical_entities_unavailable"
                 started_at = inputs.now_monotonic
+                started_at_wall = inputs.now_utc
                 settling_started_at = None
+                settling_started_at_wall = None
+                degraded_started_at = None
+                degraded_started_at_wall = None
                 parent_state = "power_recovery"
         elif state in {"startup_recovery", "power_recovery"}:
             parent_state = state
@@ -233,10 +271,15 @@ class RecoveryManager:
                 if self._stabilization_elapsed(state, started_at, inputs.now_monotonic):
                     state = "degraded_recovery"
                     reason = "degraded_timeout"
+                    degraded_started_at = inputs.now_monotonic
+                    degraded_started_at_wall = inputs.now_utc
             else:
                 state = "recovery_settling"
                 reason = "critical_entities_restored"
                 settling_started_at = inputs.now_monotonic
+                settling_started_at_wall = inputs.now_utc
+                degraded_started_at = None
+                degraded_started_at_wall = None
         elif state == "degraded_recovery":
             if above_threshold:
                 reason = "degraded_timeout"
@@ -244,6 +287,9 @@ class RecoveryManager:
                 state = "recovery_settling"
                 reason = "critical_entities_restored"
                 settling_started_at = inputs.now_monotonic
+                settling_started_at_wall = inputs.now_utc
+                degraded_started_at = None
+                degraded_started_at_wall = None
         elif state == "recovery_settling":
             fallback_parent = (
                 parent_state
@@ -254,6 +300,7 @@ class RecoveryManager:
                 state = fallback_parent
                 reason = "critical_entities_flapping"
                 settling_started_at = None
+                settling_started_at_wall = None
             elif self._can_exit_settling(
                 settling_started_at=settling_started_at,
                 now_monotonic=inputs.now_monotonic,
@@ -265,6 +312,10 @@ class RecoveryManager:
                 reason = "stabilized"
                 started_at = None
                 settling_started_at = None
+                degraded_started_at = None
+                started_at_wall = None
+                settling_started_at_wall = None
+                degraded_started_at_wall = None
                 parent_state = None
             else:
                 reason = "critical_entities_restored"
@@ -275,17 +326,36 @@ class RecoveryManager:
             settling_started_at=settling_started_at,
             parent_state=parent_state,
         )
+        degraded_deadline = (
+            degraded_started_at + self._config.degraded_timeout_s
+            if state == "degraded_recovery" and degraded_started_at is not None
+            else None
+        )
         self._context = RecoveryContext(
             state=state,
             reason=reason,
             active=state != "normal",
             started_at_monotonic=started_at,
             settling_started_at_monotonic=settling_started_at,
+            degraded_started_at_monotonic=degraded_started_at,
+            started_at=started_at_wall,
+            settling_started_at=settling_started_at_wall,
+            degraded_started_at=degraded_started_at_wall,
             parent_state=parent_state,
             unavailable_ratio=ratio,
             unavailable_count=unavailable,
             critical_entity_count=total,
             stabilization_deadline_monotonic=deadline,
+            stabilization_deadline_at=_deadline_at(
+                now_monotonic=inputs.now_monotonic,
+                now_utc=inputs.now_utc,
+                deadline_monotonic=deadline,
+            ),
+            degraded_timeout_at=_deadline_at(
+                now_monotonic=inputs.now_monotonic,
+                now_utc=inputs.now_utc,
+                deadline_monotonic=degraded_deadline,
+            ),
             stable_snapshot_available=inputs.stable_snapshot_available,
             reconciliation_pending=inputs.reconciliation_pending,
             critical_entities=entities,
@@ -342,3 +412,19 @@ class RecoveryManager:
         if state == "startup_recovery":
             return self._config.startup_stabilization_s
         return self._config.power_restore_stabilization_s
+
+
+def _deadline_at(
+    *,
+    now_monotonic: float,
+    now_utc: str | None,
+    deadline_monotonic: float | None,
+) -> str | None:
+    if deadline_monotonic is None or not now_utc:
+        return None
+    try:
+        parsed = datetime.fromisoformat(now_utc)
+    except ValueError:
+        return None
+    delta_s = max(0.0, float(deadline_monotonic) - float(now_monotonic))
+    return (parsed + timedelta(seconds=delta_s)).isoformat()

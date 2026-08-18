@@ -168,6 +168,79 @@ async def test_engine_schedules_and_flushes_checkpoint_write() -> None:
 
 
 @pytest.mark.asyncio
+async def test_engine_checkpoint_uses_recovery_critical_entity_source_of_truth() -> None:
+    hass = SimpleNamespace(
+        states=_FakeStates(
+            {
+                "binary_sensor.camera_motion": SimpleNamespace(
+                    state="off",
+                    attributes={},
+                    last_changed=None,
+                    last_updated=None,
+                ),
+                "switch.camera_privacy": SimpleNamespace(
+                    state="on",
+                    attributes={},
+                    last_changed=None,
+                    last_updated=None,
+                ),
+                "switch.pump": SimpleNamespace(
+                    state="off",
+                    attributes={},
+                    last_changed=None,
+                    last_updated=None,
+                ),
+            }
+        ),
+        bus=_FakeBus(),
+        services=_FakeServices(),
+    )
+    entry = SimpleNamespace(
+        entry_id="entry-a",
+        options={
+            "security": {
+                "camera_evidence_sources": [
+                    {
+                        "motion_entity": "binary_sensor.camera_motion",
+                        "privacy_entity": "switch.camera_privacy",
+                    }
+                ]
+            },
+            "reactions": {
+                "configured": {
+                    "pump_off": {
+                        "steps": [
+                            {
+                                "domain": "switch",
+                                "target": "switch.pump",
+                                "action": "switch.turn_off",
+                                "params": {"entity_id": "switch.pump"},
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+    store = SimpleNamespace(saved=[])
+
+    async def _save(checkpoint: RuntimeCheckpoint, *, flush: bool = False) -> None:
+        store.saved.append((checkpoint, flush))
+
+    store.async_save_checkpoint = _save
+    engine = HeimaEngine(hass=hass, entry=entry)
+    engine.set_runtime_checkpoint_store(store)  # type: ignore[arg-type]
+
+    assert await engine.async_write_runtime_checkpoint(reason="unit") is True
+
+    checkpoint, _flush = store.saved[-1]
+    entity_ids = {entity.entity_id for entity in checkpoint.critical_entities}
+    assert "binary_sensor.camera_motion" in entity_ids
+    assert "switch.camera_privacy" in entity_ids
+    assert "switch.pump" in entity_ids
+
+
+@pytest.mark.asyncio
 async def test_engine_checkpoint_write_failure_is_non_fatal() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
     entry = SimpleNamespace(entry_id="entry-a", options={})

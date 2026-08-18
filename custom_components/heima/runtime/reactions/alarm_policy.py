@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from ..contracts import ApplyStep
+from ..contracts import ApplyStep, RecoveryApplyPolicy
 from ..snapshot import DecisionSnapshot
 from .base import HeimaReaction
 
@@ -148,6 +148,10 @@ class AlarmStateActionReaction(HeimaReaction):
                 action=str(step["action"]),
                 params=dict(step["params"]),
                 reason=f"alarm_state_action:{self._reaction_id}:{security_state}",
+                recovery_policy=cast(
+                    RecoveryApplyPolicy,
+                    str(step.get("recovery_policy") or "block"),
+                ),
             )
             for step in self._steps
         ]
@@ -294,12 +298,16 @@ def _normalize_steps(raw_steps: Any) -> list[dict[str, Any]]:
             continue
         normalized_params = dict(params)
         normalized_params["entity_id"] = target
+        recovery_policy = str(raw_step.get("recovery_policy") or "block").strip()
+        if recovery_policy not in {"block", "allow_when_inputs_stable", "allow_admin_command"}:
+            recovery_policy = "block"
         steps.append(
             {
                 "domain": domain,
                 "target": target,
                 "action": action,
                 "params": normalized_params,
+                "recovery_policy": recovery_policy,
             }
         )
     return steps

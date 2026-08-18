@@ -802,6 +802,7 @@ async def test_async_evaluate_executes_switch_steps_when_lighting_apply_mode_del
         {"engine_enabled": True, "lighting_apply_mode": "delegate"},
         {"switch.interna_privacy": "on"},
     )
+    engine._startup_recovery_pending = False
     engine._lighting_domain.execute_lighting_steps = AsyncMock()
     plan = ApplyPlan(
         steps=[

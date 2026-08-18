@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -79,6 +80,15 @@ class _FakeReaction(HeimaReaction):
     @property
     def reaction_id(self) -> str:
         return "fake_reaction"
+
+
+class _FakeReactionWithId(HeimaReaction):
+    def __init__(self, reaction_id: str) -> None:
+        self._reaction_id = reaction_id
+
+    @property
+    def reaction_id(self) -> str:
+        return self._reaction_id
 
 
 def test_recovery_manager_starts_normal_with_no_critical_entities() -> None:
@@ -277,6 +287,56 @@ def test_engine_detects_online_power_recovery_with_configured_targets() -> None:
     assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_flapping"
 
 
+def test_engine_counts_missing_critical_entities_as_unavailable() -> None:
+    states = _FakeStates(
+        {
+            "binary_sensor.camera_motion": SimpleNamespace(state="off", attributes={}),
+        }
+    )
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "security": {
+                    "camera_evidence_sources": [
+                        {
+                            "motion_entity": "binary_sensor.camera_motion",
+                            "privacy_entity": "switch.camera_privacy",
+                        }
+                    ]
+                },
+                "reactions": {
+                    "configured": {
+                        "pump_off": {
+                            "steps": [
+                                {
+                                    "domain": "switch",
+                                    "target": "switch.pump",
+                                    "action": "switch.turn_off",
+                                    "params": {"entity_id": "switch.pump"},
+                                }
+                            ]
+                        }
+                    }
+                },
+            },
+        ),
+    )
+    engine._startup_recovery_pending = False
+
+    engine._compute_recovery_context()
+
+    context = engine._recovery_manager.context
+    assert context.state == "power_recovery"
+    assert context.critical_entity_count == 3
+    assert context.unavailable_count == 2
+    missing = {entity.entity_id: entity for entity in context.critical_entities}
+    assert missing["switch.camera_privacy"].state == "unavailable"
+    assert missing["switch.pump"].state == "unavailable"
+
+
 @pytest.mark.asyncio
 async def test_engine_suppresses_learning_snapshots_during_recovery() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
@@ -319,6 +379,26 @@ async def test_engine_does_not_write_runtime_checkpoint_during_recovery() -> Non
     assert writes == []
     assert engine._pending_runtime_checkpoint_reason is None
     assert "recovery.checkpoint.write" not in engine._timed_rechecks
+
+
+@pytest.mark.asyncio
+async def test_engine_public_checkpoint_write_is_guarded_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    store = SimpleNamespace(saved=[])
+
+    async def _save(checkpoint, *, flush: bool = False) -> None:
+        store.saved.append((checkpoint, flush))
+
+    store.async_save_checkpoint = _save
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine.set_runtime_checkpoint_store(store)  # type: ignore[arg-type]
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    assert await engine.async_write_runtime_checkpoint(reason="unit") is False
+    assert store.saved == []
 
 
 def test_engine_suppresses_invariants_during_recovery() -> None:
@@ -394,6 +474,54 @@ def test_engine_does_not_create_camera_privacy_hold_during_recovery() -> None:
     engine.handle_camera_privacy_state_changed(event)  # type: ignore[arg-type]
 
     assert engine._manual_hold_manager.diagnostics()["active_holds"] == []
+
+
+def test_engine_allows_camera_privacy_policy_during_recovery_when_security_is_stable() -> None:
+    states = _FakeStates({"switch.camera_privacy": SimpleNamespace(state="on", attributes={})})
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "security": {
+                    "camera_evidence_sources": [
+                        {
+                            "privacy_entity": "switch.camera_privacy",
+                        }
+                    ]
+                },
+                "reactions": {
+                    "configured": {
+                        "privacy": {
+                            "reaction_type": "alarm_state_action",
+                            "source_template_id": "security.camera_privacy_policy",
+                        }
+                    }
+                },
+            },
+        ),
+    )
+    step = ApplyStep(
+        domain="switch",
+        target="switch.camera_privacy",
+        action="switch.turn_off",
+        params={"entity_id": "switch.camera_privacy"},
+        source="reaction:privacy",
+        recovery_policy="allow_when_inputs_stable",
+    )
+    engine._reactions = [_FakeReactionWithId("privacy")]
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+
+    filtered = engine._dispatch_recovery_apply_filter(
+        ApplyPlan(steps=[step]),
+        replace(DecisionSnapshot.empty(), security_state="armed_night"),
+    )
+
+    assert filtered.steps[0].blocked_by == ""
 
 
 def test_engine_does_not_create_runtime_confirmation_during_recovery() -> None:
@@ -618,12 +746,20 @@ def test_recovery_manager_enters_startup_recovery_on_startup_request() -> None:
         RecoveryConfig(startup_stabilization_s=120.0, power_restore_stabilization_s=60.0)
     )
 
-    context = manager.evaluate(RecoveryEvaluationInput(now_monotonic=100.0, startup_requested=True))
+    context = manager.evaluate(
+        RecoveryEvaluationInput(
+            now_monotonic=100.0,
+            now_utc="2026-07-01T10:00:00+00:00",
+            startup_requested=True,
+        )
+    )
 
     assert context.state == "startup_recovery"
     assert context.reason == "startup_requested"
     assert context.active is True
     assert context.started_at_monotonic == 100.0
+    assert context.started_at == "2026-07-01T10:00:00+00:00"
+    assert context.stabilization_deadline_at == "2026-07-01T10:02:00+00:00"
     assert context.parent_state == "startup_recovery"
     assert context.stabilization_deadline_monotonic == 220.0
 
@@ -681,12 +817,68 @@ def test_recovery_manager_enters_degraded_after_stabilization_window_elapsed() -
     manager.evaluate(RecoveryEvaluationInput(now_monotonic=100.0, critical_entities=entities))
 
     context = manager.evaluate(
-        RecoveryEvaluationInput(now_monotonic=161.0, critical_entities=entities)
+        RecoveryEvaluationInput(
+            now_monotonic=161.0,
+            now_utc="2026-07-01T10:03:00+00:00",
+            critical_entities=entities,
+        )
     )
 
     assert context.state == "degraded_recovery"
     assert context.reason == "degraded_timeout"
     assert context.stabilization_deadline_monotonic is None
+    assert context.degraded_started_at == "2026-07-01T10:03:00+00:00"
+    assert context.degraded_timeout_at == "2026-07-01T10:13:00+00:00"
+
+
+def test_engine_schedules_degraded_timeout_job() -> None:
+    states = _FakeStates()
+    for entity_id in ("switch.a", "switch.b", "switch.c"):
+        states.set(entity_id, "unavailable")
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "reactions": {
+                    "configured": {
+                        "a": {
+                            "steps": [
+                                {
+                                    "domain": "switch",
+                                    "target": "switch.a",
+                                    "action": "switch.turn_off",
+                                    "params": {"entity_id": "switch.a"},
+                                },
+                                {
+                                    "domain": "switch",
+                                    "target": "switch.b",
+                                    "action": "switch.turn_off",
+                                    "params": {"entity_id": "switch.b"},
+                                },
+                                {
+                                    "domain": "switch",
+                                    "target": "switch.c",
+                                    "action": "switch.turn_off",
+                                    "params": {"entity_id": "switch.c"},
+                                },
+                            ]
+                        }
+                    }
+                }
+            },
+        ),
+    )
+    engine._startup_recovery_pending = False
+    engine._recovery_manager = RecoveryManager(
+        RecoveryConfig(critical_entity_unavailable_ratio=0.35, power_restore_stabilization_s=0.0)
+    )
+
+    engine._compute_recovery_context()
+    engine._compute_recovery_context()
+
+    assert "recovery.degraded_timeout" in engine.scheduled_runtime_jobs()
 
 
 def test_recovery_manager_moves_to_settling_then_normal_after_stable_snapshot() -> None:

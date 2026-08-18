@@ -102,6 +102,8 @@ class RuntimeCheckpoint:
 
     entry_id: str
     reason: str
+    ha_started_at: str | None = None
+    heima_started_at: str | None = None
     runtime: dict[str, Any] = field(default_factory=dict)
     critical_entities: tuple[CheckpointEntityState, ...] = ()
     manual_hold: dict[str, Any] = field(default_factory=dict)
@@ -119,6 +121,8 @@ class RuntimeCheckpoint:
             "checkpoint_id": self.checkpoint_id,
             "entry_id": self.entry_id,
             "created_at": self.created_at,
+            "ha_started_at": self.ha_started_at,
+            "heima_started_at": self.heima_started_at,
             "reason": self.reason,
             "runtime": _json_safe_dict(self.runtime),
             "critical_entities": [
@@ -161,6 +165,8 @@ class RuntimeCheckpoint:
             checkpoint_id=checkpoint_id,
             entry_id=entry_id,
             created_at=created_at,
+            ha_started_at=_optional_str(raw.get("ha_started_at")),
+            heima_started_at=_optional_str(raw.get("heima_started_at")),
             reason=reason,
             runtime=_dict_or_empty(raw.get("runtime")),
             critical_entities=tuple(entities),
@@ -185,6 +191,8 @@ class RuntimeCheckpoint:
             "created_at": self.created_at,
             "entry_id": self.entry_id,
             "reason": self.reason,
+            "ha_started_at": self.ha_started_at,
+            "heima_started_at": self.heima_started_at,
             "schema_version": self.schema_version,
             "critical_entity_count": len(self.critical_entities),
             "runtime_keys": sorted(self.runtime),

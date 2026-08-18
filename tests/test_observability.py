@@ -145,11 +145,17 @@ class _FakeEngine:
                 "active": True,
                 "started_at_monotonic": 100.0,
                 "settling_started_at_monotonic": None,
+                "degraded_started_at_monotonic": None,
+                "started_at": "2026-07-01T10:00:00+00:00",
+                "settling_started_at": None,
+                "degraded_started_at": None,
                 "parent_state": "power_recovery",
                 "unavailable_ratio": 0.5,
                 "unavailable_count": 1,
                 "critical_entity_count": 2,
                 "stabilization_deadline_monotonic": 160.0,
+                "stabilization_deadline_at": "2026-07-01T10:01:00+00:00",
+                "degraded_timeout_at": None,
                 "stable_snapshot_available": False,
                 "reconciliation_pending": False,
                 "critical_entities": [
@@ -196,6 +202,7 @@ class _FakeEngine:
             "runtime_checkpoint_status": {
                 "pending_write_reason": "scheduled",
                 "write_job_id": "recovery.checkpoint.write",
+                "degraded_timeout_job_id": "recovery.degraded_timeout",
             },
             "manual_hold": {
                 "active_holds": [
@@ -656,6 +663,8 @@ def test_observability_snapshot_exposes_recovery_state() -> None:
     recovery = snapshot["recovery"]
     assert recovery["state"] == "power_recovery"
     assert recovery["active"] is True
+    assert recovery["started_at"] == "2026-07-01T10:00:00+00:00"
+    assert recovery["stabilization_deadline_at"] == "2026-07-01T10:01:00+00:00"
     assert recovery["critical_entities"]["total"] == 2
     assert recovery["critical_entities"]["unavailable"] == 1
     assert recovery["critical_entities"]["unavailable_items"][0]["entity_id"] == "light.studio"

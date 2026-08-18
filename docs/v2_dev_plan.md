@@ -126,20 +126,17 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO9 | Entity Impact Inspector | `PLANNED` | AO8 |
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
-| AQ | Runtime Checkpoint and Power Recovery | `PLANNED` | AH, MH, AO, AP |
+| AQ | Runtime Checkpoint and Power Recovery | `DONE` | AH, MH, AO, AP |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ8 implemented; AQ8
-live-safe and destructive opt-in validation passed, while the full diagnostic tier is blocked by
-unrelated live test 074.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
+**Active slice:** Post-review AQ hardening on `feat/aq-runtime-checkpoint-recovery`.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Investigate `074_camera_privacy_manual_hold_live.py` scenario C, which reports
-`external_on` while expecting `external_off`.
+Run focused CI and decide whether to merge the post-review AQ hardening into `main`.
 
 ### Phase AO — Admin Observability Panel
 
@@ -880,9 +877,8 @@ MVP merge.
 
 ### Phase AQ — Runtime Checkpoint and Power Recovery
 
-- Status: `PLANNED`.
-- Spec source: `docs/specs/core/runtime_checkpoint_and_power_recovery_spec.md` (Status: Planned —
-  not implemented on `main`; approved after three review rounds).
+- Status: `DONE`.
+- Spec source: `docs/specs/core/runtime_checkpoint_and_power_recovery_spec.md`.
 - Also touches: `core/admin_observability_panel_spec.md` (new `recovery` snapshot key),
   `core/event_catalog_spec.md` / `core/security_mismatch_generalization_spec.md` (severity
   vocabulary already unified as part of spec approval, see below), `domains/heating_spec.md`
@@ -1218,6 +1214,25 @@ MVP merge.
   - The implementation is covered by unit, integration, and live restart tests.
   - Mandatory merge-to-main procedure (version bump, changelog, `ci_local.sh`) applies before AQ
     lands on `main`, per CLAUDE.md.
+
+- Post-review hardening:
+  - Missing critical entities are now classified as unavailable at runtime instead of being omitted
+    from recovery ratios.
+  - Runtime recovery classification and checkpoint persistence now share the same critical-entity
+    source of truth.
+  - Public checkpoint writes are guarded inside `async_write_runtime_checkpoint`; service and shutdown
+    calls no longer write while recovery is active unless an explicit force path is used.
+  - Recovery diagnostics expose wall-clock timestamps for started, settling, degraded, stabilization
+    deadline, and degraded timeout fields.
+  - Runtime checkpoints persist best-effort `ha_started_at` and per-entry `heima_started_at`, and
+    expose `restarted_since_checkpoint` as `true`, `false`, or `null` when not determinable.
+  - `recovery.degraded_timeout` is registered only after entering `degraded_recovery`.
+  - `ApplyStep.recovery_policy` now provides a closed-vocabulary allow path; camera privacy policies
+    use `allow_when_inputs_stable` so security-driven privacy enforcement may run during recovery
+    when the alarm input is stable.
+  - Focused verification:
+    - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py tests/test_observability.py tests/test_camera_privacy_policy_materializer.py -q`
+      — 72 passed.
 
 ### Recent Working Notes
 

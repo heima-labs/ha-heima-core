@@ -34,6 +34,7 @@ def _make_engine(options: dict | None = None) -> HeimaEngine:
     engine._reactions = []
     engine._muted_reactions = set()
     engine._configured_reaction_ids = set()
+    engine._runtime_context = {}
     engine._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
     engine._events_domain = MagicMock()
     return engine
@@ -72,6 +73,7 @@ def test_materialize_camera_privacy_policy_row_generates_alarm_state_action_conf
                 "target": "switch.interna_privacy",
                 "action": "switch.turn_off",
                 "params": {"entity_id": "switch.interna_privacy"},
+                "recovery_policy": "allow_when_inputs_stable",
             }
         ],
         "skip_house_states": ["guest"],

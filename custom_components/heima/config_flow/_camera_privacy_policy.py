@@ -84,6 +84,7 @@ def materialize_camera_privacy_policy_row(
                     "target": normalized.privacy_entity,
                     "action": f"switch.{normalized.privacy_action}",
                     "params": {"entity_id": normalized.privacy_entity},
+                    "recovery_policy": "allow_when_inputs_stable",
                 }
             ],
             CAMERA_PRIVACY_POLICY_METADATA_KEY: {

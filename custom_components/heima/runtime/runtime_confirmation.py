@@ -435,6 +435,7 @@ def _apply_step_diagnostics(step: ApplyStep) -> dict[str, Any]:
         "blocked_by": step.blocked_by,
         "reason": step.reason,
         "source": step.source,
+        "recovery_policy": step.recovery_policy,
     }
 
 

@@ -243,9 +243,11 @@ def _recovery_summary(
             recovery.get("reason") or runtime_context.get("runtime.recovery.reason") or ""
         ),
         "active": bool(recovery.get("active") or runtime_context.get("runtime.recovery.active")),
-        "started_at_monotonic": recovery.get("started_at_monotonic"),
-        "settling_started_at_monotonic": recovery.get("settling_started_at_monotonic"),
-        "stabilization_deadline_monotonic": recovery.get("stabilization_deadline_monotonic"),
+        "started_at": recovery.get("started_at"),
+        "settling_started_at": recovery.get("settling_started_at"),
+        "degraded_started_at": recovery.get("degraded_started_at"),
+        "stabilization_deadline_at": recovery.get("stabilization_deadline_at"),
+        "degraded_timeout_at": recovery.get("degraded_timeout_at"),
         "parent_state": recovery.get("parent_state"),
         "stable_snapshot_available": bool(recovery.get("stable_snapshot_available")),
         "reconciliation_pending": bool(recovery.get("reconciliation_pending")),
@@ -262,6 +264,7 @@ def _recovery_summary(
             "store": checkpoint_store,
             "pending_write_reason": runtime_checkpoint_status.get("pending_write_reason"),
             "write_job_id": runtime_checkpoint_status.get("write_job_id"),
+            "degraded_timeout_job_id": runtime_checkpoint_status.get("degraded_timeout_job_id"),
         },
         "blocked_apply_steps": {
             "total": len(blocked_steps),

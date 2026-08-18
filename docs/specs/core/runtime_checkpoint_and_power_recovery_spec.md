@@ -230,6 +230,11 @@ state is complete enough to trust. Therefore the recovery critical set must also
 actuators and configured apply targets even when those entities are not state-change triggers for
 normal evaluation.
 
+If a configured critical entity is absent from the HA state machine during evaluation, Heima must
+classify it as unavailable for recovery purposes. Missing critical entities are runtime evidence, not
+only a diagnostics concern: they count in both the unavailable numerator and the critical-entity
+denominator.
+
 ## Runtime Checkpoint Contract
 
 ### Storage Semantics
@@ -349,6 +354,9 @@ Normative rule:
 
 - Checkpoint persistence must not store secrets, tokens, auth data, GPS coordinates, or large raw
   attribute blobs.
+- The checkpoint critical-entity list must use the same source of truth as runtime recovery
+  classification. A target may not be critical for power recovery while being omitted from the
+  checkpoint comparison set.
 
 ## Checkpoint Write Policy
 
@@ -389,6 +397,11 @@ If Home Assistant provides a reliable stop/unload hook, Heima should attempt a f
 `reason=shutdown`.
 
 This checkpoint is best-effort only. Recovery must not depend on it being present.
+
+Checkpoint writes must be guarded at the public write boundary. By default,
+`async_write_runtime_checkpoint` must refuse to write while recovery is active, including service
+commands and shutdown writes. A force path may exist only for explicit diagnostics/tests and must be
+auditable.
 
 ## Startup Recovery State Machine
 
@@ -580,6 +593,10 @@ During recovery:
 - apply plans may be generated but blocked with `blocked_by="recovery:<state>"`, where `<state>` is
   the current recovery state (`startup_recovery`, `power_recovery`, `degraded_recovery`, or
   `recovery_settling`);
+- apply steps may bypass the recovery block only through an explicit closed-vocabulary
+  `recovery_policy` on the `ApplyStep`. Default is `block`. Unknown values fail closed as `block`.
+  The first allowed policy is `allow_when_inputs_stable`, used for camera privacy policies only when
+  the alarm/security input is current and not `unknown`/`unavailable`;
 - if a step would also be blocked by an active manual hold, the two filters are independent: neither
   overwrites the other's `blocked_by` reason, per the existing rule in
   `core/manual_hold_framework_spec.md` ("manual hold must not overwrite an existing `blocked_by`
@@ -734,15 +751,21 @@ recovery:
   state: normal | startup_recovery | power_recovery | degraded_recovery | recovery_settling
   reason: string
   started_at: iso8601 | null
-  stabilization_deadline: iso8601 | null
+  settling_started_at: iso8601 | null
+  degraded_started_at: iso8601 | null
+  stabilization_deadline_at: iso8601 | null
+  degraded_timeout_at: iso8601 | null
   checkpoint:
     checkpoint_id: string | null
     created_at: iso8601 | null
     age_s: number | null
     reason: string | null
     valid: boolean
+    ha_started_at: iso8601 | null
+    heima_started_at: iso8601 | null
+    restarted_since_checkpoint: boolean | null
   ha:
-    restarted_since_checkpoint: boolean
+    restarted_since_checkpoint: boolean | null
     ha_started_at: iso8601 | null
   critical_entities:
     total: number
@@ -905,10 +928,15 @@ Live tests:
 
 ## Open Questions
 
-1. Which HA source should be used for reliable `ha_started_at` across supported versions?
-2. Which action families should be explicitly allowed during recovery in the first implementation?
-3. Should admins be able to manually end recovery from the observability panel?
-4. Should recovery windows be configurable in the first implementation or only after field testing?
+1. Should admins be able to manually end recovery from the observability panel?
+2. Should recovery windows be configurable in the first implementation or only after field testing?
+
+Resolved:
+
+- `ha_started_at` is best-effort. Heima stores it when HA exposes a parseable start timestamp and
+  reports `restarted_since_checkpoint=null` when it cannot determine the answer reliably.
+- The first action family explicitly allowed during recovery is security camera privacy policy
+  enforcement, and only through `recovery_policy=allow_when_inputs_stable`.
 
 Resolved: the severity vocabulary this spec depends on (`debug | info | warning | error | critical`)
 has been consolidated across `core/event_catalog_spec.md`, `core/admin_observability_panel_spec.md`,

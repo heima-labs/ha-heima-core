@@ -8,6 +8,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 EventSeverity = Literal["debug", "info", "warning", "error", "critical"]
+RecoveryApplyPolicy = Literal["block", "allow_when_inputs_stable", "allow_admin_command"]
 EVENT_SEVERITY_VALUES: tuple[EventSeverity, ...] = (
     "debug",
     "info",
@@ -62,6 +63,7 @@ class ApplyStep:
     context_id: str | None = None  # HA Context id to use when executing this step
     step_id: str = ""  # optional id for dependency-aware runtime plans
     depends_on: tuple[str, ...] = ()  # step_id values from the same runtime plan
+    recovery_policy: RecoveryApplyPolicy = "block"
 
 
 @dataclass(frozen=True)
