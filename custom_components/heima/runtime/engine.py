@@ -963,13 +963,29 @@ class HeimaEngine:
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
         await self._maybe_boost_reaction_confidence()
+        await self._update_runtime_checkpoint_after_evaluation(
+            reason=reason,
+            checkpoint_job_due=checkpoint_job_due,
+        )
+
+        return snapshot
+
+    async def _update_runtime_checkpoint_after_evaluation(
+        self,
+        *,
+        reason: str,
+        checkpoint_job_due: bool,
+    ) -> None:
+        """Write checkpoints only for stable runtime, never during recovery."""
+        if self._recovery_active():
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            self._pending_runtime_checkpoint_reason = None
+            return
         if checkpoint_job_due:
             self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
             await self.async_write_runtime_checkpoint(reason="scheduled")
         else:
             self._schedule_runtime_checkpoint_write(reason=reason)
-
-        return snapshot
 
     def _compute_recovery_context(self) -> None:
         """Compute read-only recovery context before the DAG runs.

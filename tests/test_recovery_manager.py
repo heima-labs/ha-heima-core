@@ -293,6 +293,34 @@ async def test_engine_suppresses_learning_snapshots_during_recovery() -> None:
     assert store.appended == 0
 
 
+@pytest.mark.asyncio
+async def test_engine_does_not_write_runtime_checkpoint_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    writes: list[str] = []
+
+    async def _write_checkpoint(*, reason: str) -> bool:
+        writes.append(reason)
+        return True
+
+    engine.async_write_runtime_checkpoint = _write_checkpoint  # type: ignore[method-assign]
+    engine._runtime_context = {
+        "runtime.recovery.state": "recovery_settling",
+        "runtime.recovery.active": True,
+    }
+    engine._pending_runtime_checkpoint_reason = "scheduled"
+    engine._timed_rechecks["recovery.checkpoint.write"] = SimpleNamespace()
+
+    await engine._update_runtime_checkpoint_after_evaluation(
+        reason="test",
+        checkpoint_job_due=True,
+    )
+
+    assert writes == []
+    assert engine._pending_runtime_checkpoint_reason is None
+    assert "recovery.checkpoint.write" not in engine._timed_rechecks
+
+
 def test_engine_suppresses_invariants_during_recovery() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
