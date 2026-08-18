@@ -547,6 +547,23 @@ def test_engine_queues_recovery_lifecycle_events_for_transitions() -> None:
     ]
 
 
+def test_engine_records_recovery_lifecycle_events_in_observability() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+
+    engine._queue_recovery_transition_events(
+        RecoveryContext(state="normal", reason="normal"),
+        RecoveryContext(state="power_recovery", reason="critical_entities_unavailable"),
+    )
+
+    events = engine.diagnostics()["observability"]["recent_events"]
+    assert [event["category"] for event in events] == ["system"]
+    assert [event["reason_code"] for event in events] == ["recovery_power_outage_suspected"]
+    assert events[0]["object_links"] == [
+        {"kind": "recovery", "id": "system.recovery_power_outage_suspected"}
+    ]
+
+
 def test_engine_queues_checkpoint_invalid_event_once_per_invalid_checkpoint() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))

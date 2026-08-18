@@ -134,12 +134,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
 **Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ8 implemented; AQ8
-live-safe validation passed, while the full diagnostic tier is blocked by unrelated live test 074.
+live-safe and destructive opt-in validation passed, while the full diagnostic tier is blocked by
+unrelated live test 074.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
 Investigate `074_camera_privacy_manual_hold_live.py` scenario C, which reports
-`external_on` while expecting `external_off`, then decide whether to add the explicit opt-in
-destructive restart/unavailable-burst AQ live tests.
+`external_on` while expecting `external_off`.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1147,25 +1147,31 @@ MVP merge.
 
 #### AQ8 — Live Tests and Validation
 
-- Status: `DONE` for live-safe validation; destructive restart/unavailable-burst validation remains
-  a future opt-in extension.
+- Status: `DONE` for live-safe validation and destructive opt-in validation.
 - Add a live test script under `scripts/live_tests/` (naming/number per existing convention)
-  covering: controlled restart of the HA test container with a valid/stale checkpoint; simulated
-  unavailable/available burst for critical entities; observability export contains recovery state
-  and checkpoint metadata.
-- Add this script to the diagnostic live tier (`scripts/check_all_live.sh`), matching AO's live
-  validation pattern.
+  covering: controlled restart of the HA test container with a valid checkpoint; simulated
+  unavailable/available burst for critical entities; observability export contains recovery state,
+  lifecycle events, and checkpoint metadata. Stale-checkpoint construction remains a lower-level
+  unit-test concern unless a safe live corruption hook is introduced.
+- Add destructive AQ checks to a separate opt-in tier in `scripts/check_all_live.sh`; default,
+  diagnostic, and `all` tiers must remain non-destructive.
 - Implementation notes:
   - Added `scripts/live_tests/085_recovery_observability_live.py`.
+  - Added `scripts/live_tests/086_recovery_destructive_live.py`.
   - Updated `scripts/live_tests/080_admin_observability_panel_live.py` so `recovery` is a required
     AO snapshot section.
-  - Added the new script to the diagnostic tier.
-  - Current AQ8 script is live-safe and read-only: it validates the observability recovery contract,
+  - The AQ8 live-safe script is read-only: it validates the observability recovery contract,
     checkpoint metadata shape, recovery-blocked apply step shape, recent recovery event shape, and
     `sensor.heima_health` alignment.
-  - Controlled restart and active simulated unavailable/available bursts remain a future destructive
-    live-test extension; they should require explicit operator opt-in because they restart or perturb
-    the HA test instance.
+  - Added `--tier destructive` to `scripts/check_all_live.sh`. It requires `--allow-destructive`
+    or `ALLOW_DESTRUCTIVE_LIVE=1`, and passes `--docker-container` only when explicitly provided.
+  - The destructive AQ script forces a threshold-sized set of recovery critical entities to
+    `unavailable`, verifies `power_recovery`, restores original states, verifies stabilization and
+    completion, restarts the HA test container, and verifies that checkpoint metadata is available
+    after restart.
+  - Recovery lifecycle events are now mirrored into `RuntimeObservabilityBuffer`, so the admin
+    Recovery view can show the `system.recovery_*` lifecycle instead of only the internal event
+    queue.
 - Verification:
   - `.venv/bin/python -m pytest tests/test_observability.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
     — passed.
@@ -1176,9 +1182,13 @@ MVP merge.
   - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py scripts/live_tests/085_recovery_observability_live.py --ignore-missing-imports`
     — passed.
   - `bash -n scripts/check_all_live.sh` — passed.
+  - `python3 -m py_compile scripts/live_tests/086_recovery_destructive_live.py` — passed.
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py -q` — passed.
   - `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
     — passed against the local HA test instance.
   - `source scripts/.env && scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — passed against the local HA test instance.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier destructive --allow-destructive --docker-container "$DEV_CONTAINER_NAME"`
     — passed against the local HA test instance.
   - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic`
     — blocked before reaching AQ8 by `074_camera_privacy_manual_hold_live.py`.

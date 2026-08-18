@@ -92,7 +92,7 @@ from .manual_hold import ManualHoldManager, ManualHoldReason, ManualHoldScope
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .notifications import HeimaEventPipeline
-from .observability import RuntimeObservabilityBuffer
+from .observability import RuntimeActivityEvent, RuntimeObservabilityBuffer
 from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .proposal_engine import ProposalEngine
@@ -1015,6 +1015,22 @@ class HeimaEngine:
                 continue
             self._last_recovery_event_state = event.type
             self._events_domain.queue_event(event)
+            self._record_recovery_observability_event(event)
+
+    def _record_recovery_observability_event(self, event: HeimaEvent) -> None:
+        """Mirror recovery lifecycle events into the admin observability buffer."""
+        event_type = str(event.type or "")
+        if not event_type.startswith("system.recovery_"):
+            return
+        self._observability.record_event(
+            RuntimeActivityEvent(
+                category="system",
+                severity=event.severity,
+                summary=event.title or event.message or event_type,
+                reason_code=event_type.removeprefix("system.").replace(".", "_"),
+                object_links=({"kind": "recovery", "id": event_type},),
+            )
+        )
 
     def _recovery_transition_events(
         self,

@@ -14,7 +14,10 @@ HA_URL="${HA_URL:-http://127.0.0.1:8123}"
 HA_TOKEN="${HA_TOKEN:-}"
 HA_NON_ADMIN_TOKEN="${HA_NON_ADMIN_TOKEN:-}"
 PERSON_SLUG="${PERSON_SLUG:-}"
+DEV_CONTAINER_NAME="${DEV_CONTAINER_NAME:-}"
+ALLOW_DESTRUCTIVE_LIVE="${ALLOW_DESTRUCTIVE_LIVE:-}"
 SUITE_TIER="${SUITE_TIER:-live_e2e}"
+ALLOW_DESTRUCTIVE=false
 declare -a SKIP_PREFIXES=()
 
 SETUP_SCRIPTS=(
@@ -69,6 +72,10 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/082_runtime_state_replay_live.py"
 )
 
+DESTRUCTIVE_SCRIPTS=(
+  "scripts/live_tests/086_recovery_destructive_live.py"
+)
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -82,8 +89,10 @@ Execution model:
 - numeric filename prefixes are legacy IDs, not the authoritative suite order
 
 Options:
-  --tier <name>       one of: setup, live_e2e, seeded_integration, diagnostic, all
+  --tier <name>       one of: setup, live_e2e, seeded_integration, diagnostic, destructive, all
   --skip <prefixes>   comma-separated legacy numeric IDs to skip (e.g. --skip 005,015)
+  --allow-destructive explicitly allow destructive tests that mutate HA state or restart Docker
+  --docker-container  Docker container name used by destructive restart checks
 EOF
 }
 
@@ -95,6 +104,10 @@ while [[ $# -gt 0 ]]; do
       SUITE_TIER="${2:-}"; shift 2;;
     --skip)
       IFS=',' read -ra SKIP_PREFIXES <<< "${2:-}"; shift 2;;
+    --allow-destructive)
+      ALLOW_DESTRUCTIVE=true; shift;;
+    --docker-container)
+      DEV_CONTAINER_NAME="${2:-}"; shift 2;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -123,6 +136,13 @@ case "$SUITE_TIER" in
     ;;
   diagnostic)
     files=("${DIAGNOSTIC_SCRIPTS[@]}")
+    ;;
+  destructive)
+    if [[ "$ALLOW_DESTRUCTIVE" != true && "$ALLOW_DESTRUCTIVE_LIVE" != "1" ]]; then
+      echo "--allow-destructive or ALLOW_DESTRUCTIVE_LIVE=1 is required for destructive tier" >&2
+      exit 2
+    fi
+    files=("${DESTRUCTIVE_SCRIPTS[@]}")
     ;;
   all)
     files=(
@@ -167,6 +187,12 @@ for file in "${files[@]}"; do
       fi
       if [[ "$base" == 080_* && -n "$HA_NON_ADMIN_TOKEN" ]]; then
         args+=(--ha-non-admin-token "$HA_NON_ADMIN_TOKEN")
+      fi
+      if [[ "$base" == 086_* ]]; then
+        args+=(--allow-destructive)
+        if [[ -n "$DEV_CONTAINER_NAME" ]]; then
+          args+=(--docker-container "$DEV_CONTAINER_NAME")
+        fi
       fi
       if [[ "$base" == 020_* ]]; then
         if [[ -z "$PERSON_SLUG" ]]; then
