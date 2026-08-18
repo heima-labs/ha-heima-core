@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
+from custom_components.heima.runtime.contracts import (
+    ApplyPlan,
+    ApplyStep,
+    reaction_step_source,
+    redact_actor_id,
+    resident_response_step_source,
+)
 from custom_components.heima.runtime.observability import RuntimeObservabilityBuffer
 
 
@@ -100,6 +106,51 @@ def test_observability_buffer_records_runtime_confirmation_waiting_and_apply() -
     ]
     assert diagnostics["decision_traces"][1]["outcome"] == "applied"
     assert diagnostics["decision_traces"][1]["reason_codes"] == ["approved", "applied"]
+
+
+def test_observability_buffer_exports_structured_source_details_redacted() -> None:
+    buffer = RuntimeObservabilityBuffer(event_limit=10, trace_limit=10)
+    plan = ApplyPlan(
+        plan_id="plan-1",
+        steps=[
+            ApplyStep(
+                domain="light",
+                target="light.studio",
+                action="light.turn_on",
+                params={"entity_id": "light.studio"},
+                source=reaction_step_source(
+                    "studio_scene",
+                    reaction_type="context_conditioned_lighting_scene",
+                    correlation_id="corr-1",
+                ),
+            ),
+            ApplyStep(
+                domain="light",
+                target="light.desk",
+                action="light.turn_on",
+                params={"entity_id": "light.desk"},
+                source=resident_response_step_source(
+                    "request-1",
+                    actor_id="recipient-stefano",
+                    correlation_id="corr-2",
+                ),
+            ),
+        ],
+    )
+
+    buffer.record_apply_plan(reason="test", plan=plan, engine_enabled=True)
+
+    traces = buffer.diagnostics()["decision_traces"]
+    reaction_step = traces[0]["apply_steps"][0]
+    resident_step = traces[1]["apply_steps"][0]
+    assert reaction_step["source"] == "reaction:studio_scene"
+    assert reaction_step["source_details"]["kind"] == "reaction"
+    assert reaction_step["source_details"]["source_type"] == "context_conditioned_lighting_scene"
+    assert resident_step["source"] == "resident_response:request-1"
+    assert resident_step["source_details"]["actor_id_hash"] == redact_actor_id(
+        "recipient-stefano"
+    )
+    assert "actor_id" not in resident_step["source_details"]
 
 
 def test_observability_buffer_is_bounded() -> None:

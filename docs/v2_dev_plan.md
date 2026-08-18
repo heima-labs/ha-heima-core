@@ -134,11 +134,10 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS8 — Observability and Live Coverage.
+**Active slice:** AS final CI triage.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Extend observability/export source grouping where needed and add final diagnostic/live source-shape
-coverage where feasible.
+Triage the 14 full-suite failures before marking AS complete or merging.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5454,7 +5453,7 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS8 — Observability and Live Coverage
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Group observability/runtime diagnostics by structured source while preserving legacy fallback
   rendering.
 - AO/export surfaces structured source fields with redacted actors and clear legacy rendering.
@@ -5464,6 +5463,21 @@ groups, service capabilities, and execution policy profile model.
   - focused unit/integration coverage from AS1-AS7;
   - AO snapshot contract coverage;
   - diagnostic/live source-shape check against the local HA test instance when available.
+- Implemented:
+  - Runtime observability traces already carry the runtime step summaries used by AO snapshots.
+  - Added coverage proving structured `source_details` are exported with legacy rendering and
+    redacted actor ids.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_runtime_observability.py tests/test_observability.py tests/test_apply_step_source.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_recovery_manager.py tests/test_runtime_confirmation.py tests/test_runtime_confirmation_promotion_stats.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py -q`
+    — 196 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py custom_components/heima/runtime/domains/lighting.py tests/test_apply_step_source.py tests/test_runtime_observability.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_recovery_manager.py tests/test_runtime_confirmation.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py custom_components/heima/runtime/domains/lighting.py tests/test_apply_step_source.py tests/test_runtime_confirmation.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
+  - `.venv/bin/python -m pytest tests/ -q` — 1843 passed, 14 failed. The failing areas are:
+    stale alarm-policy/options/proposal expectations around persisted `recovery_policy`; three
+    `test_inference_foundation.py` snapshot-store failures already noted during AQ; four
+    `test_integration_normalization_e2e.py` state/heating integration failures.
 
 ### Acceptance Criteria
 
@@ -5478,7 +5492,11 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS8 is the active implementation slice.
+- Full-suite failure triage is required before AS can be marked `DONE`.
+- Decide whether to fix stale `recovery_policy` test expectations now or separate them into an AQ
+  cleanup commit.
+- Re-check the existing `test_inference_foundation.py` and `test_integration_normalization_e2e.py`
+  failures against `main` before attributing them to AS.
 
 ---
 
