@@ -60,7 +60,9 @@ from .contracts import (
     domain_step_source,
     reaction_id_from_step_source,
     reaction_step_source,
+    resident_response_step_source,
     step_source_legacy_key,
+    timeout_step_source,
 )
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
@@ -3218,8 +3220,15 @@ class HeimaEngine:
                 status="cancelled",
             )
 
+        if status == "approved":
+            apply_source = resident_response_step_source(request.request_id)
+        else:
+            apply_source = timeout_step_source(request.request_id)
+
         plan = self._dispatch_apply_filter(
-            ApplyPlan(steps=list(request.apply_steps)),
+            ApplyPlan(
+                steps=[dataclass_replace(step, source=apply_source) for step in request.apply_steps]
+            ),
             self._snapshot,
         )
         dependency_result = evaluate_step_dependencies(plan.steps)

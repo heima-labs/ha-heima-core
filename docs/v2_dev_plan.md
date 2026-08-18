@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS6 — Runtime Confirmation Sources.
+**Active slice:** AS7 — Recovery Authorization Hardening.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Assign structured resident-response and timeout sources when runtime confirmations apply stored
-steps, without letting timeout applies count toward promotion.
+Replace recovery/admin bypass checks with authoritative structured-source checks and keep camera
+privacy recovery allowances intact.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5405,11 +5405,25 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS6 — Runtime Confirmation Sources
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Runtime-confirmation approved requests apply their stored steps with `kind="resident_response"`.
 - Timeout-applied steps use `kind="timeout"` and must never count toward auto-apply promotion.
 - Dismissed/cancelled requests do not apply steps and therefore produce no apply source.
 - Tests cover approved vs timeout provenance and forged notification payload rejection.
+- Implemented:
+  - `async_apply_runtime_confirmation_request(...)` retags stored apply steps with
+    `resident_response_step_source(request_id)` for approved requests and
+    `timeout_step_source(request_id)` for timeout-applied requests before runtime validation/apply.
+  - Existing promotion stats behavior remains unchanged: timeout outcomes are counted as timeout
+    stats but do not create promotion reviews.
+  - Added engine-level tests for approved and timeout-applied source tagging.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_runtime_confirmation.py tests/test_runtime_confirmation_controller.py tests/test_runtime_confirmation_promotion_stats.py tests/test_apply_step_source.py -q`
+    — 53 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py tests/test_runtime_confirmation_promotion_stats.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/runtime_confirmation.py tests/test_runtime_confirmation.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
 
 #### AS7 — Recovery Authorization Hardening
 
@@ -5448,7 +5462,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS6 is the active implementation slice.
+- AS7 is the active implementation slice.
 
 ---
 

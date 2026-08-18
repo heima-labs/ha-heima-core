@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
-from custom_components.heima.runtime.contracts import ApplyStep
+import pytest
+
+from custom_components.heima.runtime.contracts import (
+    ApplyPlan,
+    ApplyStep,
+    step_source_kind,
+    step_source_legacy_key,
+)
+from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.runtime_confirmation import (
     FAILURE_ALL_STEPS_BLOCKED,
     SKIP_DEPENDENCY_BLOCKED,
@@ -18,6 +27,7 @@ from custom_components.heima.runtime.runtime_confirmation import (
     resolve_execution_policy_config,
     resolve_runtime_request,
 )
+from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
 
 def test_execution_policy_defaults_to_auto_apply() -> None:
@@ -348,6 +358,42 @@ def test_dependency_evaluation_detects_cycle() -> None:
     assert result.steps == ()
     assert set(result.skipped_step_ids) == {"first", "second"}
     assert result.skipped_reasons == {SKIP_DEPENDENCY_CYCLE: 2}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected_kind"),
+    [("approved", "resident_response"), ("timeout_applied", "timeout")],
+)
+async def test_runtime_confirmation_apply_retags_steps_with_decision_source(
+    status: str,
+    expected_kind: str,
+) -> None:
+    engine = HeimaEngine.__new__(HeimaEngine)
+    engine._snapshot = DecisionSnapshot.empty()
+    setattr(engine, "_runtime_confirmation_source_state", lambda _request: "")
+    setattr(engine, "_dispatch_apply_filter", lambda plan, _snapshot: plan)
+    setattr(
+        engine,
+        "_observability",
+        SimpleNamespace(record_runtime_confirmation_apply=lambda **_kwargs: None),
+    )
+    captured: list[ApplyStep] = []
+
+    async def _execute(plan: ApplyPlan) -> None:
+        captured.extend(plan.steps)
+
+    setattr(engine, "_execute_apply_plan", _execute)
+
+    resolved = await engine.async_apply_runtime_confirmation_request(
+        _request(request_id="request-structured-source"),
+        status,  # type: ignore[arg-type]
+    )
+
+    assert resolved.status == status
+    assert len(captured) == 1
+    assert step_source_kind(captured[0]) == expected_kind
+    assert step_source_legacy_key(captured[0]) == f"{expected_kind}:request-structured-source"
 
 
 def _request(
