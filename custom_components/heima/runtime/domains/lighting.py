@@ -13,7 +13,7 @@ from uuid import uuid4
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 
-from ..contracts import ApplyStep, HeimaEvent
+from ..contracts import ApplyStep, HeimaEvent, domain_step_source
 from ..domain_result_bag import DomainResultBag
 from ..lighting import pick_scene_for_intent_with_trace, resolve_zone_intent
 from ..normalization.service import InputNormalizer
@@ -347,6 +347,10 @@ class LightingDomain:
                     action=action,
                     params=dict(action_params),
                     reason=reason,
+                    source=domain_step_source(
+                        "lighting",
+                        source_type=f"zone_intent:{zone_id}:{intent}",
+                    ),
                 )
             )
             return True

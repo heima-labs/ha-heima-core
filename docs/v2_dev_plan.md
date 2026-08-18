@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS4 — Domain Boundaries.
+**Active slice:** AS5 — Manual Hold and Script Apply Batch.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Tag domain-generated non-reaction apply steps with structured domain sources while preserving
-current apply behavior.
+Derive manual-hold pending ownership and script apply batch provenance from structured source
+helpers.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5361,12 +5361,24 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS4 — Domain Boundaries
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Tag domain-generated non-reaction steps with `kind="domain"` and an explicit domain/source type.
 - Preserve current behavior for lighting, heating, security, camera privacy, and other existing
   domains.
 - Tests cover representative domain-generated lighting/heating sources and unchanged apply
   behavior.
+- Implemented:
+  - Lighting domain apply steps now use `domain_step_source("lighting", source_type=...)`.
+  - Heating branch apply steps now use `domain_step_source("heating", source_type=selected_branch)`.
+  - Runtime execution still renders source through legacy keys when writing heating provenance,
+    script apply batches, and logs.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_apply_step_source.py -q`
+    — 98 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/lighting.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/lighting.py tests/test_apply_step_source.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
 
 #### AS5 — Manual Hold and Script Apply Batch
 
@@ -5423,7 +5435,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS4 is the active implementation slice.
+- AS5 is the active implementation slice.
 
 ---
 

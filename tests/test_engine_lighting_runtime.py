@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock
 import pytest
 from homeassistant.exceptions import ServiceNotFound
 
-from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
+from custom_components.heima.runtime.contracts import (
+    ApplyPlan,
+    ApplyStep,
+    step_source_kind,
+    step_source_legacy_key,
+    step_source_type,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
 from custom_components.heima.runtime.runtime_confirmation import RuntimeActionRequest
@@ -229,6 +235,9 @@ async def test_off_without_scene_uses_area_light_turn_off_fallback():
     step = plan.steps[0]
     assert step.action == "light.turn_off"
     assert step.params == {"area_id": "soggiorno"}
+    assert step_source_kind(step) == "domain"
+    assert step_source_legacy_key(step) == "domain:lighting"
+    assert step_source_type(step) == "zone_intent:zona:off"
 
     await engine._execute_apply_plan(plan)
     assert engine._hass.services.calls[-1] == (

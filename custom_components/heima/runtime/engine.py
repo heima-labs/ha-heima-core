@@ -57,6 +57,7 @@ from .contracts import (
     EventSeverity,
     HeimaEvent,
     ScriptApplyBatch,
+    domain_step_source,
     reaction_id_from_step_source,
     reaction_step_source,
     step_source_legacy_key,
@@ -2344,6 +2345,10 @@ class HeimaEngine:
                         action="climate.set_temperature",
                         params=heating_params,
                         reason=f"branch:{heating_trace.get('selected_branch', 'disabled')}",
+                        source=domain_step_source(
+                            "heating",
+                            source_type=str(heating_trace.get("selected_branch", "") or ""),
+                        ),
                     )
                 )
 

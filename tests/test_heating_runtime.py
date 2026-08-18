@@ -4,6 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.heima.runtime.contracts import (
+    step_source_kind,
+    step_source_legacy_key,
+    step_source_type,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
 
 
@@ -109,7 +114,10 @@ async def test_fixed_target_branch_builds_and_executes_heating_apply_step():
     assert engine.state.get_sensor("heima_heating_target_temp") == 20.0
     assert engine.state.get_sensor("heima_heating_current_setpoint") == 18.0
     assert engine._heating_domain.current_temperature() == 19.2
-    assert any(step.action == "climate.set_temperature" for step in plan.steps)
+    heating_step = next(step for step in plan.steps if step.action == "climate.set_temperature")
+    assert step_source_kind(heating_step) == "domain"
+    assert step_source_legacy_key(heating_step) == "domain:heating"
+    assert step_source_type(heating_step) == "fixed_target"
 
     await engine._execute_apply_plan(plan)
 
