@@ -11,7 +11,11 @@ from custom_components.heima.runtime.checkpoint_store import (
     CheckpointEntityState,
     RuntimeCheckpoint,
 )
-from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep
+from custom_components.heima.runtime.contracts import (
+    ApplyPlan,
+    ApplyStep,
+    admin_command_step_source,
+)
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
 from custom_components.heima.runtime.plugin_contracts import InvariantViolation
@@ -519,6 +523,59 @@ def test_engine_allows_camera_privacy_policy_during_recovery_when_security_is_st
     filtered = engine._dispatch_recovery_apply_filter(
         ApplyPlan(steps=[step]),
         replace(DecisionSnapshot.empty(), security_state="armed_night"),
+    )
+
+    assert filtered.steps[0].blocked_by == ""
+
+
+def test_engine_rejects_forged_admin_command_string_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    step = ApplyStep(
+        domain="switch",
+        target="switch.manual",
+        action="switch.turn_off",
+        params={"entity_id": "switch.manual"},
+        source="admin_command:clear_hold",
+        recovery_policy="allow_admin_command",
+    )
+
+    filtered = engine._dispatch_recovery_apply_filter(
+        ApplyPlan(steps=[step]),
+        DecisionSnapshot.empty(),
+    )
+
+    assert filtered.steps[0].blocked_by == "recovery:power_recovery"
+
+
+def test_engine_allows_authoritative_admin_command_during_recovery() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
+    engine._runtime_context = {
+        "runtime.recovery.state": "power_recovery",
+        "runtime.recovery.active": True,
+    }
+    step = ApplyStep(
+        domain="switch",
+        target="switch.manual",
+        action="switch.turn_off",
+        params={"entity_id": "switch.manual"},
+        source=admin_command_step_source(
+            "clear_hold",
+            command_type="manual_hold.clear",
+            actor_id="ha-user-1",
+            correlation_id="corr-1",
+        ),
+        recovery_policy="allow_admin_command",
+    )
+
+    filtered = engine._dispatch_recovery_apply_filter(
+        ApplyPlan(steps=[step]),
+        DecisionSnapshot.empty(),
     )
 
     assert filtered.steps[0].blocked_by == ""

@@ -58,6 +58,7 @@ from .contracts import (
     HeimaEvent,
     ScriptApplyBatch,
     domain_step_source,
+    is_authoritative_source,
     reaction_id_from_step_source,
     reaction_step_source,
     resident_response_step_source,
@@ -2787,7 +2788,7 @@ class HeimaEngine:
         if policy == "block":
             return False
         if policy == "allow_admin_command":
-            return reaction_id_from_step_source(step) is None
+            return is_authoritative_source(step, kind="admin_command")
         if policy != "allow_when_inputs_stable":
             return False
         reaction = self._reaction_from_step_source(step)

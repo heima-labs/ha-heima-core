@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS7 — Recovery Authorization Hardening.
+**Active slice:** AS8 — Observability and Live Coverage.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Replace recovery/admin bypass checks with authoritative structured-source checks and keep camera
-privacy recovery allowances intact.
+Extend observability/export source grouping where needed and add final diagnostic/live source-shape
+coverage where feasible.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5427,7 +5427,7 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS7 — Recovery Authorization Hardening
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Replace recovery/admin bypass checks based on string shape with authoritative structured source
   checks.
 - `allow_admin_command` may pass only for an authoritative `admin_command` source created by an
@@ -5435,6 +5435,22 @@ groups, service capabilities, and execution policy profile model.
 - Preserve camera privacy `allow_when_inputs_stable` behavior.
 - Tests cover forged `source="admin_command:<id>"` rejection, authoritative admin-command
   allowance, and camera privacy recovery allowance.
+- Implemented:
+  - Recovery `allow_admin_command` now checks `is_authoritative_source(..., kind="admin_command")`
+    instead of accepting any non-reaction string.
+  - Legacy string sources, including forged `admin_command:<id>` strings, cannot bypass recovery.
+  - Camera privacy `allow_when_inputs_stable` remains reaction/source-template based and is still
+    allowed when the security state is stable.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_apply_step_source.py -q`
+    — 40 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py tests/test_recovery_manager.py tests/test_apply_step_source.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
+  - Full mypy on `tests/test_recovery_manager.py` is intentionally not used because that test file
+    uses long-standing `SimpleNamespace` HA fixtures that are not type-compatible with real HA
+    classes.
 
 #### AS8 — Observability and Live Coverage
 
@@ -5462,7 +5478,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS7 is the active implementation slice.
+- AS8 is the active implementation slice.
 
 ---
 
