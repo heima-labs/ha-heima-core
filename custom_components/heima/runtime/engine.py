@@ -58,6 +58,7 @@ from .contracts import (
     HeimaEvent,
     ScriptApplyBatch,
     reaction_id_from_step_source,
+    reaction_step_source,
     step_source_legacy_key,
 )
 from .dag import resolve_dag
@@ -1200,11 +1201,13 @@ class HeimaEngine:
         )
 
     def _recovery_state(self) -> str:
-        state = str(self._runtime_context.get("runtime.recovery.state") or "").strip()
+        runtime_context = getattr(self, "_runtime_context", {})
+        state = str(runtime_context.get("runtime.recovery.state") or "").strip()
         return "" if state in {"", "normal"} else state
 
     def _recovery_active(self) -> bool:
-        return bool(self._runtime_context.get("runtime.recovery.active")) or bool(
+        runtime_context = getattr(self, "_runtime_context", {})
+        return bool(runtime_context.get("runtime.recovery.active")) or bool(
             self._recovery_state()
         )
 
@@ -2393,7 +2396,11 @@ class HeimaEngine:
                 continue
             try:
                 steps = reaction.evaluate(history)
-                tagged = [dataclass_replace(step, source=f"reaction:{rid}") for step in steps]
+                source = reaction_step_source(
+                    rid,
+                    reaction_type=self._reaction_type_for_reaction_id(rid),
+                )
+                tagged = [dataclass_replace(step, source=source) for step in steps]
                 if tagged:
                     handled = self._maybe_create_runtime_confirmation_request(
                         reaction,
@@ -3606,8 +3613,12 @@ class HeimaEngine:
             "presence": self._people_domain.diagnostics(),
             "occupancy": self._occupancy_domain.diagnostics(),
             "events": self._events_domain.diagnostics(),
-            "recovery": self._recovery_manager.diagnostics(),
-            "runtime_context": dict(self._runtime_context),
+            "recovery": (
+                recovery_manager.diagnostics()
+                if (recovery_manager := getattr(self, "_recovery_manager", None)) is not None
+                else RecoveryManager().diagnostics()
+            ),
+            "runtime_context": dict(getattr(self, "_runtime_context", {})),
             "runtime_checkpoint": (
                 runtime_checkpoint_store.diagnostics()
                 if (runtime_checkpoint_store := getattr(self, "_runtime_checkpoint_store", None))
@@ -3621,7 +3632,7 @@ class HeimaEngine:
                 }
             ),
             "runtime_checkpoint_status": {
-                "pending_write_reason": self._pending_runtime_checkpoint_reason,
+                "pending_write_reason": getattr(self, "_pending_runtime_checkpoint_reason", None),
                 "write_job_id": _RUNTIME_CHECKPOINT_WRITE_JOB_ID,
                 "degraded_timeout_job_id": _RECOVERY_DEGRADED_TIMEOUT_JOB_ID,
             },

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.contracts import ApplyStep, step_source_legacy_key
 from custom_components.heima.runtime.reactions.builtin import ConsecutiveStateReaction
 from custom_components.heima.runtime.snapshot import DecisionSnapshot
 
@@ -350,7 +350,7 @@ def test_dispatch_fires_unmuted_reaction():
     history = [_snap(False)]
     result = engine._dispatch_reactions(history)
     assert len(result) == 1
-    assert result[0].source == "reaction:r1"
+    assert step_source_legacy_key(result[0]) == "reaction:r1"
 
 
 def test_dispatch_tags_source_with_reaction_id():
@@ -363,7 +363,7 @@ def test_dispatch_tags_source_with_reaction_id():
     )
     engine._reactions.append(r)
     result = engine._dispatch_reactions([_snap()])
-    assert all(s.source == "reaction:presence_preheat" for s in result)
+    assert all(step_source_legacy_key(s) == "reaction:presence_preheat" for s in result)
 
 
 # ---------------------------------------------------------------------------

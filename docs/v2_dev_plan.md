@@ -134,11 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS3 — Engine Reaction Boundary.
+**Active slice:** AS4 — Domain Boundaries.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Tag reaction-produced apply steps with structured reaction sources and replace engine reaction-source
-parsing with helper semantics.
+Tag domain-generated non-reaction apply steps with structured domain sources while preserving
+current apply behavior.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5338,11 +5338,26 @@ groups, service capabilities, and execution policy profile model.
 
 #### AS3 — Engine Reaction Boundary
 
-- Status: `NOT STARTED`.
+- Status: `DONE`.
 - Tag reaction-produced steps with `ApplyStepSource(kind="reaction", source_id=reaction_id,
   source_type=reaction_type, actor_type="heima")`.
 - Replace direct `reaction:<id>` parsing in the engine with source helper functions.
 - Tests cover reaction lookup/grouping for both structured and legacy sources.
+- Implemented:
+  - Reaction dispatch now tags produced steps with `reaction_step_source(...)`.
+  - Reaction source lookup in engine, manual hold, and runtime observability uses structured-source
+    helpers while preserving legacy string fallback.
+  - Reaction tests now assert source semantics through helper functions instead of internal string
+    representation.
+  - Recovery runtime-context readers and diagnostics now tolerate partial engine instances used by
+    tests and diagnostics helpers.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_apply_step_source.py tests/test_runtime_observability.py tests/test_runtime_confirmation.py tests/test_manual_hold_manager.py -q`
+    — 94 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py tests/test_apply_step_source.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/contracts.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/manual_hold.py custom_components/heima/runtime/observability.py custom_components/heima/runtime/runtime_confirmation.py tests/test_apply_step_source.py --ignore-missing-imports --explicit-package-bases`
+    — passed.
 
 #### AS4 — Domain Boundaries
 
@@ -5408,9 +5423,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Current open items
 
-- AS3 is the active implementation slice.
-- Existing manual-hold tests built with `HeimaEngine.__new__` need AQ/recovery fixture alignment;
-  this is separate from AS2 source compatibility.
+- AS4 is the active implementation slice.
 
 ---
 

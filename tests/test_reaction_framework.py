@@ -5,7 +5,12 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock
 
-from custom_components.heima.runtime.contracts import ApplyStep
+from custom_components.heima.runtime.contracts import (
+    ApplyStep,
+    step_source_kind,
+    step_source_legacy_key,
+    step_source_type,
+)
 from custom_components.heima.runtime.reactions.base import HeimaReaction
 from custom_components.heima.runtime.runtime_confirmation import (
     RenderedRuntimeRequest,
@@ -121,7 +126,8 @@ def test_dispatch_reactions_tags_source():
 
     engine.register_reaction(TaggedReaction())
     result = engine._dispatch_reactions([])
-    assert result[0].source == "reaction:TaggedReaction"
+    assert step_source_kind(result[0]) == "reaction"
+    assert step_source_legacy_key(result[0]) == "reaction:TaggedReaction"
 
 
 def test_dispatch_reactions_diverts_ask_residents_to_runtime_confirmation():
@@ -172,7 +178,8 @@ def test_dispatch_reactions_diverts_ask_residents_to_runtime_confirmation():
     assert captured[0].reaction_id == "_StepCapture"
     assert captured[0].reaction_type == "test_confirmable"
     assert captured[0].confirmation_targets == ("resident",)
-    assert captured[0].apply_steps[0].source == "reaction:_StepCapture"
+    assert step_source_legacy_key(captured[0].apply_steps[0]) == "reaction:_StepCapture"
+    assert step_source_type(captured[0].apply_steps[0]) == "test_confirmable"
 
 
 def test_dispatch_reactions_uses_execution_policy_profile():
@@ -361,7 +368,8 @@ def test_source_tag_does_not_overwrite_other_fields():
     result = engine._dispatch_reactions([])
     assert result[0].domain == "heating"
     assert result[0].reason == "test"
-    assert result[0].source.startswith("reaction:")
+    assert step_source_kind(result[0]) == "reaction"
+    assert step_source_legacy_key(result[0]).startswith("reaction:")
 
 
 # ---------------------------------------------------------------------------
