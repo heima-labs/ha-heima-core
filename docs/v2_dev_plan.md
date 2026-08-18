@@ -133,12 +133,13 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ7 complete; AQ8
-implemented with live execution blocked by local Docker daemon unavailability.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ8 implemented; AQ8
+live-safe validation passed, while the full diagnostic tier is blocked by unrelated live test 074.
 **Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Run AQ8 live validation when the HA test instance is reachable, then decide whether to add the
-explicit opt-in destructive restart/unavailable-burst live tests.
+Investigate `074_camera_privacy_manual_hold_live.py` scenario C, which reports
+`external_on` while expecting `external_off`, then decide whether to add the explicit opt-in
+destructive restart/unavailable-burst AQ live tests.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1146,7 +1147,8 @@ MVP merge.
 
 #### AQ8 — Live Tests and Validation
 
-- Status: `IMPLEMENTED`; live execution blocked by local Docker daemon unavailability in this run.
+- Status: `DONE` for live-safe validation; destructive restart/unavailable-burst validation remains
+  a future opt-in extension.
 - Add a live test script under `scripts/live_tests/` (naming/number per existing convention)
   covering: controlled restart of the HA test container with a valid/stale checkpoint; simulated
   unavailable/available burst for critical entities; observability export contains recovery state
@@ -1174,10 +1176,14 @@ MVP merge.
   - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py scripts/live_tests/085_recovery_observability_live.py --ignore-missing-imports`
     — passed.
   - `bash -n scripts/check_all_live.sh` — passed.
-  - Live execution attempted with
-    `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
-    — blocked because `HA_URL` was not reachable and Docker daemon was unavailable from this
-    session.
+  - `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — passed against the local HA test instance.
+  - `source scripts/.env && scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — passed against the local HA test instance.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic`
+    — blocked before reaching AQ8 by `074_camera_privacy_manual_hold_live.py`.
+  - `source scripts/.env && scripts/live_tests/074_camera_privacy_manual_hold_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --timeout-s 120`
+    — failed in scenario C: expected manual hold reason `external_off`, observed `external_on`.
 
 - Phase AQ acceptance (from the spec's own Acceptance Criteria):
   - Heima writes compact runtime checkpoints after important runtime changes.
