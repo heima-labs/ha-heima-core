@@ -134,10 +134,13 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy.
-**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, ready to start AQ1.
-**Branch:** `main` before creating the dedicated AQ implementation branch.
+**Active slice:** Phase AQ — Runtime Checkpoint and Power Recovery, AQ1-AQ8 implemented; AQ8
+live-safe and destructive opt-in validation passed, while the full diagnostic tier is blocked by
+unrelated live test 074.
+**Branch:** `feat/aq-runtime-checkpoint-recovery`.
 **Next action:**
-Create a dedicated AQ implementation branch and start AQ1.
+Investigate `074_camera_privacy_manual_hold_live.py` scenario C, which reports
+`external_on` while expecting `external_off`.
 
 ### Phase AO — Admin Observability Panel
 
@@ -909,7 +912,7 @@ MVP merge.
 
 #### AQ1 — Recovery Context Foundation
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Build the pre-DAG recovery classification facility (name TBD at implementation time, e.g.
   `RecoveryManager`), computed once per evaluation cycle before the core DAG runs, exposed
   read-only via the `runtime.recovery.*` context namespace.
@@ -918,40 +921,124 @@ MVP merge.
   `critical_entity_unavailable_ratio` (default 0.35), as pure logic with no consumers wired yet —
   no observable behavior change at the end of this slice.
 - Tests: state transitions, ratio threshold entry/exit, `recovery_settling` reversion on flapping.
+- Implemented:
+  - Added `custom_components/heima/runtime/recovery.py` with `RecoveryManager`,
+    `RecoveryContext`, `RecoveryConfig`, `RecoveryEvaluationInput`, and `CriticalEntityState`.
+  - Engine now computes the recovery context once before the DAG in `async_evaluate()`, with no
+    critical entities/startup signal wired yet, so AQ1 does not change runtime behavior.
+  - Engine diagnostics expose internal `recovery` and `runtime_context` snapshots for development
+    visibility; AO-facing recovery UI remains AQ7.
+  - Added `tests/test_recovery_manager.py`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_observability.py tests/test_event_category_gating.py -q`
+    — 38 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
 
 #### AQ2 — Runtime Checkpoint Persistence
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Implement the checkpoint contract (schema, attribute allowlist, redaction, atomic write, bounded
-  size, versioned/tolerant reader) backed by an HA `Store`. Resolve Open Question 2 (separate store
-  file vs. existing coordinator/runtime store) before starting.
-- Implement Checkpoint Write Policy triggers and register periodic writes, the stabilization
-  deadline, and the degraded timeout as Runtime Scheduler jobs (`core/runtime_scheduler_spec.md`),
-  per the two-stage job-registration rule (stabilization job at recovery entry, degraded-timeout
-  job only on transition into `degraded_recovery`).
+  size, versioned/tolerant reader) backed by a dedicated HA `Store`.
+- Storage decision: use separate store `heima_runtime_checkpoints`, with one latest checkpoint per
+  config entry. Do not embed checkpoint state in learning snapshots, approval records, proposal
+  lifecycle state, or event storage.
+- Implement Checkpoint Write Policy baseline using Runtime Scheduler job
+  `recovery.checkpoint.write` (`owner=recovery`) with write-on-change semantics and a 60s default
+  cadence. The job is keyed and deduplicated; when it fires, the engine writes and flushes the
+  latest checkpoint, then removes the job. Shutdown performs a best-effort immediate checkpoint
+  write.
+- AQ2 intentionally does not yet classify startup differences, block apply steps, suppress learning,
+  or restore heating branch context; those remain AQ3-AQ6.
 - Tests: serialization/deserialization, version tolerance, redaction, write debounce/keyed
   replacement, scheduler jobs firing independent of entity churn.
+- Implemented:
+  - Added `custom_components/heima/runtime/checkpoint_store.py` with `RuntimeCheckpointStore`,
+    `RuntimeCheckpoint`, `CheckpointEntityState`, domain attribute allowlist, redaction, bounded
+    entity capture, tolerant loading, and redacted diagnostics.
+  - Coordinator owns and loads the checkpoint store and injects it into the engine.
+  - Engine builds compact runtime checkpoints, captures allowlisted tracked entity states, exposes
+    checkpoint diagnostics, schedules keyed checkpoint writes via Runtime Scheduler, and flushes on
+    scheduled write/shutdown.
+  - Added `tests/test_runtime_checkpoint_store.py`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_runtime_checkpoint_store.py tests/test_recovery_manager.py -q`
+    — 14 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py custom_components/heima/coordinator.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py custom_components/heima/coordinator.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/checkpoint_store.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
 
 #### AQ3 — Startup Recovery Wiring
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Wire checkpoint load + current-HA-state comparison + difference classification
   (`unknown_during_downtime` / `power_restore_candidate`) into engine startup.
 - Enter/exit `startup_recovery` per Startup Entry Conditions / Exit Conditions.
 - Tests: startup recovery entry with no checkpoint, with a stale checkpoint, with a checkpoint that
   fails validation; recovery exit after stable critical entities.
+- Implemented:
+  - Engine now requests `startup_recovery` on the first evaluation cycle only.
+  - Engine reads the latest `heima_runtime_checkpoints` checkpoint for the current config entry and
+    exposes checkpoint availability, usability, freshness, age, reason, and difference count under
+    the reserved `runtime.recovery.*` context namespace.
+  - Checkpoint/current HA differences are classified as `power_restore_candidate` for restore-
+    plausible actuator domains (`light`, `switch`, `climate`, `cover`, `fan`) and
+    `unknown_during_downtime` otherwise. Current HA state remains source of truth; no old
+    checkpoint state is restored.
+  - Recovery diagnostics include redacted checkpoint status and per-entity difference details.
+  - Engine schedules `recovery.stabilization` via Runtime Scheduler using the recovery
+    stabilization deadline, so startup recovery can progress without requiring a new HA entity
+    change.
+  - Added/extended `tests/test_recovery_manager.py` coverage for missing, stale, invalid, and
+    changed checkpoints.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 18 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py`
+    — passed.
+  - `.venv/bin/ruff format --check tests/test_recovery_manager.py custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ4 — Power Recovery Detection
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Detect mass unavailable/mass restore while HA stays online; enter/exit `power_recovery` and
   `recovery_settling`.
 - Tests: mass unavailable -> `power_recovery`; mass restore -> `recovery_settling`; flapping reverts
   `recovery_settling` back to `power_recovery`.
+- Implemented:
+  - Engine now uses a recovery-specific critical entity set instead of reusing only
+    `tracked_entity_ids()`. The set includes normal trigger entities plus configured climate
+    targets, camera privacy switches, camera privacy manual-hold helpers, lighting room/zone
+    entities, best-effort room light entities, and configured reaction step targets.
+  - The critical set uses stricter HA entity-id detection to avoid accidentally treating arbitrary
+    strings with dots as entities.
+  - Online mass-unavailable state transitions now enter `power_recovery`; restoration transitions
+    to `recovery_settling`; flapping during settling returns to `power_recovery`.
+  - Existing Runtime Scheduler stabilization job (`recovery.stabilization`) is reused for online
+    power recovery, so recovery can progress without additional entity churn.
+  - Added engine-level test coverage for configured target inclusion and
+    `power_recovery -> recovery_settling -> power_recovery` flapping.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 19 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py custom_components/heima/runtime/recovery.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py custom_components/heima/runtime/recovery.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ5 — Runtime Behavior Gating
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Wire `runtime.recovery.*` context consumption into: Learning suppression, Anomaly Detection
   suppression (see Suppressed/Not-automatically-suppressed lists in the spec), Manual Hold gating
   (implicit hold activation skipped during active recovery; classification stays `external`; no
@@ -960,10 +1047,35 @@ MVP merge.
 - Tests: recovery suppresses learning/anomaly; recovery blocks non-critical apply with the correct
   `blocked_by` value; `blocked_by` precedence when both recovery and manual hold would apply;
   recovery does not create implicit manual holds for restore changes.
+- Implemented:
+  - Snapshot persistence for learning is skipped while recovery is active, preventing unstable
+    startup/power snapshots from entering learning history.
+  - Invariant/anomaly checks are skipped while recovery is active, preventing recovery conditions
+    from being reported as ordinary invariant violations.
+  - Apply plans pass through a recovery gate before manual-hold filtering. Unblocked steps are kept
+    in diagnostics but marked `blocked_by="recovery:<state>"`; existing blockers are preserved.
+    This gives recovery precedence over manual hold when both would block the same step.
+  - Pending apply registration is skipped while recovery is active, avoiding stale Heima-owned
+    classifications during power restore.
+  - Smart-lighting external-change handling and camera privacy implicit manual-hold creation are
+    skipped while recovery is active.
+  - Runtime confirmation requests are not created while recovery is active; reaction steps remain
+    in the plan and are blocked by the recovery gate.
+  - Added focused engine tests for learning suppression, invariant suppression, apply/manual-hold
+    precedence, implicit hold gating, and runtime-confirmation gating.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — 24 passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/checkpoint_store.py --ignore-missing-imports`
+    — passed.
 
 #### AQ6 — Domain-Specific Recovery Behavior
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - House State: distinguish checkpointed/current/stable state; no `away` inference from sensor
   silence during recovery.
 - Security: emit `security.mismatch` with `subtype=security_state_unavailable` when the alarm panel
@@ -980,10 +1092,31 @@ MVP merge.
   observably during recovery.
 - Tests: climate/light/camera-privacy state changed during downtime (integration tests); vacation
   curve restore vs. recapture.
+- Implementation notes:
+  - House-state recovery now keeps an effective/checkpoint-aware state separate from the raw
+    computed state, and exposes the recovery decision in `heima_house_state` attributes.
+  - `away` inferred only from sensor silence is blocked during active recovery; Heima falls back to
+    the previous non-`away` state, then the checkpointed non-`away` state, then `unknown`.
+  - Security unavailable during recovery is emitted as `security.mismatch` with
+    `subtype=security_state_unavailable`, once per unavailable episode.
+  - Heating checkpoints now persist and restore the active `vacation_curve` runtime so restart does
+    not recapture the post-restart setpoint as the ramp origin.
+  - The AQ5 recovery apply gate already prevents lighting, switch, camera privacy, heating, and
+    runtime-confirmation applies from executing while recovery is active, and suppresses implicit
+    holds from restore-time state changes.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/coordinator.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/coordinator.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/runtime/recovery.py custom_components/heima/runtime/engine.py custom_components/heima/runtime/domains/heating.py custom_components/heima/runtime/checkpoint_store.py custom_components/heima/coordinator.py --ignore-missing-imports`
+    — passed.
 
 #### AQ7 — Observability, Event Catalog and Diagnostics
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Add `recovery` as a new top-level key in the AO snapshot (`core/admin_observability_panel_spec.md`),
   sibling to `manual_holds`/`runtime_confirmations`/`notifications`.
 - Add the 8 `system.recovery_*` events (Runtime Activity + Event Catalog Additions), with the
@@ -996,16 +1129,83 @@ MVP merge.
   (no new mutation boundary in this slice).
 - Tests: AO snapshot includes `recovery`; each event type routes as specified; diagnostics answers
   all 7 questions listed in the spec.
+- Implementation notes:
+  - Added top-level AO snapshot `recovery` with state, critical entity availability, checkpoint
+    status/store details, recovery-blocked apply steps, and recent recovery events.
+  - Added a read-only Recovery section to the Heima admin panel.
+  - Added runtime lifecycle events for recovery transitions plus checkpoint written/invalid events.
+  - Added recovery events to `core/event_catalog_spec.md`.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_observability.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py --ignore-missing-imports`
+    — passed.
+  - `node --check custom_components/heima/frontend/heima-admin-panel.js` — passed.
 
 #### AQ8 — Live Tests and Validation
 
-- Status: `PLANNED`.
+- Status: `DONE` for live-safe validation and destructive opt-in validation.
 - Add a live test script under `scripts/live_tests/` (naming/number per existing convention)
-  covering: controlled restart of the HA test container with a valid/stale checkpoint; simulated
-  unavailable/available burst for critical entities; observability export contains recovery state
-  and checkpoint metadata.
-- Add this script to the diagnostic live tier (`scripts/check_all_live.sh`), matching AO's live
-  validation pattern.
+  covering: controlled restart of the HA test container with a valid checkpoint; simulated
+  unavailable/available burst for critical entities; observability export contains recovery state,
+  lifecycle events, and checkpoint metadata. Stale-checkpoint construction remains a lower-level
+  unit-test concern unless a safe live corruption hook is introduced.
+- Add destructive AQ checks to a separate opt-in tier in `scripts/check_all_live.sh`; default,
+  diagnostic, and `all` tiers must remain non-destructive.
+- Implementation notes:
+  - Added `scripts/live_tests/085_recovery_observability_live.py`.
+  - Added `scripts/live_tests/086_recovery_destructive_live.py`.
+  - Updated `scripts/live_tests/080_admin_observability_panel_live.py` so `recovery` is a required
+    AO snapshot section.
+  - The AQ8 live-safe script is read-only: it validates the observability recovery contract,
+    checkpoint metadata shape, recovery-blocked apply step shape, recent recovery event shape, and
+    `sensor.heima_health` alignment.
+  - Added `--tier destructive` to `scripts/check_all_live.sh`. It requires `--allow-destructive`
+    or `ALLOW_DESTRUCTIVE_LIVE=1`, and passes `--docker-container` only when explicitly provided.
+  - The destructive AQ script forces a threshold-sized set of recovery critical entities to
+    `unavailable`, verifies `power_recovery`, restores original states, verifies stabilization and
+    completion, restarts the HA test container, and verifies that checkpoint metadata is available
+    after restart.
+  - The destructive AQ script also covers the "HA server went down with the house" case by stopping
+    the HA test container, temporarily mutating `core.restore_state` and
+    `heima_runtime_checkpoints`, starting HA again, and verifying that the checkpoint/current-state
+    difference is surfaced as `unknown_during_downtime`. It restores both storage files and the HA
+    entity state in `finally`.
+  - Added `heima.command` command `write_runtime_checkpoint` so admin/operator live tests can force
+    a fresh checkpoint before destructive recovery scenarios instead of depending on a pre-existing
+    scheduler write.
+  - Recovery lifecycle events are now mirrored into `RuntimeObservabilityBuffer`, so the admin
+    Recovery view can show the `system.recovery_*` lifecycle instead of only the internal event
+    queue.
+- Verification:
+  - `.venv/bin/python -m pytest tests/test_observability.py tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py -q`
+    — passed.
+  - `.venv/bin/ruff check scripts/live_tests/080_admin_observability_panel_live.py scripts/live_tests/085_recovery_observability_live.py custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/ruff format --check scripts/live_tests/080_admin_observability_panel_live.py scripts/live_tests/085_recovery_observability_live.py custom_components/heima/observability.py custom_components/heima/runtime/engine.py tests/test_observability.py tests/test_recovery_manager.py`
+    — passed.
+  - `.venv/bin/python -m mypy custom_components/heima/observability.py custom_components/heima/runtime/engine.py scripts/live_tests/085_recovery_observability_live.py --ignore-missing-imports`
+    — passed.
+  - `bash -n scripts/check_all_live.sh` — passed.
+  - `python3 -m py_compile scripts/live_tests/086_recovery_destructive_live.py` — passed.
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py -q` — passed.
+  - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_services_notify_event.py -q`
+    — passed.
+  - `source scripts/.env && scripts/live_tests/085_recovery_observability_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — passed against the local HA test instance.
+  - `source scripts/.env && scripts/live_tests/080_admin_observability_panel_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN"`
+    — passed against the local HA test instance.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier destructive --allow-destructive --docker-container "$DEV_CONTAINER_NAME"`
+    — passed against the local HA test instance, including unavailable burst, HA restart, and
+    offline restore-state drift.
+  - `source scripts/.env && ./scripts/check_all_live.sh --tier diagnostic`
+    — blocked before reaching AQ8 by `074_camera_privacy_manual_hold_live.py`.
+  - `source scripts/.env && scripts/live_tests/074_camera_privacy_manual_hold_live.py --ha-url "$HA_URL" --ha-token "$HA_TOKEN" --timeout-s 120`
+    — failed in scenario C: expected manual hold reason `external_off`, observed `external_on`.
 
 - Phase AQ acceptance (from the spec's own Acceptance Criteria):
   - Heima writes compact runtime checkpoints after important runtime changes.

@@ -128,6 +128,75 @@ class _FakeEngine:
                 }
             },
             "muted_reactions": [],
+            "apply_plan": {
+                "plan_id": "plan.one",
+                "steps": [
+                    {
+                        "domain": "light",
+                        "target": "light.studio",
+                        "action": "light.turn_on",
+                        "blocked_by": "recovery:power_recovery",
+                    }
+                ],
+            },
+            "recovery": {
+                "state": "power_recovery",
+                "reason": "critical_entities_unavailable",
+                "active": True,
+                "started_at_monotonic": 100.0,
+                "settling_started_at_monotonic": None,
+                "parent_state": "power_recovery",
+                "unavailable_ratio": 0.5,
+                "unavailable_count": 1,
+                "critical_entity_count": 2,
+                "stabilization_deadline_monotonic": 160.0,
+                "stable_snapshot_available": False,
+                "reconciliation_pending": False,
+                "critical_entities": [
+                    {
+                        "entity_id": "light.studio",
+                        "domain": "light",
+                        "state": "unavailable",
+                        "available": False,
+                    },
+                    {
+                        "entity_id": "switch.interna_privacy",
+                        "domain": "switch",
+                        "state": "on",
+                        "available": True,
+                    },
+                ],
+                "checkpoint": {
+                    "available": True,
+                    "usable": True,
+                    "stale": False,
+                    "checkpoint_id": "checkpoint.one",
+                    "age_s": 45.0,
+                    "reason": "usable",
+                    "difference_count": 1,
+                    "differences": [
+                        {
+                            "entity_id": "light.studio",
+                            "domain": "light",
+                            "checkpoint_state": "off",
+                            "current_state": "unavailable",
+                            "kind": "unknown_during_downtime",
+                        }
+                    ],
+                },
+            },
+            "runtime_context": {"runtime.recovery.state": "power_recovery"},
+            "runtime_checkpoint": {
+                "storage_key": "heima_runtime_checkpoints",
+                "loaded": True,
+                "entry_count": 1,
+                "load_errors": 0,
+                "checkpoints": {"entry-1": {"checkpoint_id": "checkpoint.one"}},
+            },
+            "runtime_checkpoint_status": {
+                "pending_write_reason": "scheduled",
+                "write_job_id": "recovery.checkpoint.write",
+            },
             "manual_hold": {
                 "active_holds": [
                     {
@@ -581,6 +650,24 @@ def test_observability_notification_health_warns_when_residents_group_is_missing
     assert snapshot["notifications"]["delivery_policy"]["unresolved_audience_targets"] == []
 
 
+def test_observability_snapshot_exposes_recovery_state() -> None:
+    snapshot = build_observability_snapshot(_FakeCoordinator())
+
+    recovery = snapshot["recovery"]
+    assert recovery["state"] == "power_recovery"
+    assert recovery["active"] is True
+    assert recovery["critical_entities"]["total"] == 2
+    assert recovery["critical_entities"]["unavailable"] == 1
+    assert recovery["critical_entities"]["unavailable_items"][0]["entity_id"] == "light.studio"
+    assert recovery["checkpoint"]["checkpoint_id"] == "checkpoint.one"
+    assert recovery["checkpoint"]["pending_write_reason"] == "scheduled"
+    assert recovery["blocked_apply_steps"]["total"] == 1
+    assert recovery["blocked_apply_steps"]["examples"][0]["blocked_by"] == (
+        "recovery:power_recovery"
+    )
+    assert snapshot["details"]["recovery"]["checkpoint"]["checkpoint_id"] == "checkpoint.one"
+
+
 def test_observability_health_exports_invariant_violation_details() -> None:
     coordinator = _FakeCoordinator()
     coordinator._health_status_value = "degraded"
@@ -612,9 +699,7 @@ def test_observability_health_exports_invariant_violation_details() -> None:
         "presence_without_occupancy"
     )
     finding = snapshot["health_findings"][0]
-    assert finding["summary"] == (
-        "Presence says someone is home, but no derived room is occupied."
-    )
+    assert finding["summary"] == ("Presence says someone is home, but no derived room is occupied.")
     assert finding["suggested_action"] == (
         "Inspect invariant check 'presence_without_occupancy' in the Health section."
     )

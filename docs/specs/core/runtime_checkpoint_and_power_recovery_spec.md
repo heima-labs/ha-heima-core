@@ -224,11 +224,32 @@ Examples:
 - heating climate entity and heating timing helpers;
 - notification helper entities where configured.
 
+The recovery critical set is related to, but not identical to, the entity-trigger set. Entity
+triggers decide when Heima should evaluate. Recovery critical entities decide whether the current HA
+state is complete enough to trust. Therefore the recovery critical set must also include configured
+actuators and configured apply targets even when those entities are not state-change triggers for
+normal evaluation.
+
 ## Runtime Checkpoint Contract
 
 ### Storage Semantics
 
 The checkpoint must be persisted in Home Assistant storage under the Heima integration namespace.
+Checkpoint persistence uses a dedicated HA `Store`, separate from snapshots, approvals, proposal
+lifecycle state, and event storage:
+
+```yaml
+storage_key: heima_runtime_checkpoints
+storage_version: 1
+data:
+  entries:
+    <config_entry_id>: <runtime_checkpoint>
+```
+
+The dedicated store is the normative storage shape for AQ. Checkpoints are operational recovery
+state with different retention, write cadence, redaction, and failure semantics from learning
+snapshots or admin proposal state. Keeping them separate prevents checkpoint churn from rewriting
+larger stores and lets recovery code fail closed if the checkpoint store is unreadable.
 
 Properties:
 
@@ -289,7 +310,7 @@ manual_hold:
   active_implicit_holds: [...]  # diagnostics-only, never restored after restart; see Manual Hold below
   pending_applies: [...]  # diagnostics-only, never restore-eligible; see Pending Applies below
 
-runtime_confirmation:
+runtime_confirmations:
   pending_request_ids: [string]
 
 heating:
@@ -347,7 +368,7 @@ Heima must write a checkpoint:
 ### Periodic Write Cadence
 
 Periodic checkpoint writes must be registered as a keyed job on the Runtime Scheduler
-(`core/runtime_scheduler_spec.md`, e.g. `job_id=recovery.checkpoint_write`, `owner=recovery`), not
+(`core/runtime_scheduler_spec.md`, `job_id=recovery.checkpoint.write`, `owner=recovery`), not
 implemented as an ad hoc timer. Keyed scheduling already provides the debounce/replace semantics
 this policy needs: re-registering the same `job_id` after a material change replaces the pending
 timer instead of stacking a second one.
@@ -442,7 +463,7 @@ well past its stated default.
 Two one-shot Runtime Scheduler jobs are involved, registered at different moments, not both at
 initial recovery entry:
 
-- `job_id=recovery.stabilization_deadline` (`owner=recovery`) is registered the moment
+- `job_id=recovery.stabilization` (`owner=recovery`) is registered the moment
   `startup_recovery` or `power_recovery` is entered, firing at the applicable stabilization window
   (120s / 60s), so Exit Conditions are rechecked regardless of entity churn.
 - `job_id=recovery.degraded_timeout` (`owner=recovery`) is registered only when
@@ -855,7 +876,7 @@ Unit tests:
   block, and vice versa;
 - recovery does not create implicit manual holds for restore changes, and implicit holds are never
   restored from a checkpoint after restart;
-- `recovery.stabilization_deadline` fires and is rechecked even with zero entity state changes
+- `recovery.stabilization` fires and is rechecked even with zero entity state changes
   during the window (no reliance on the 300s evaluation fallback);
 - `recovery.degraded_timeout` is registered only on transition into `degraded_recovery`, not at
   initial recovery entry.
@@ -885,16 +906,19 @@ Live tests:
 ## Open Questions
 
 1. Which HA source should be used for reliable `ha_started_at` across supported versions?
-2. Should checkpoint storage be a separate store file or part of existing coordinator/runtime store?
-3. Which action families should be explicitly allowed during recovery in the first implementation?
-4. Should admins be able to manually end recovery from the observability panel?
-5. Should recovery windows be configurable in the first implementation or only after field testing?
+2. Which action families should be explicitly allowed during recovery in the first implementation?
+3. Should admins be able to manually end recovery from the observability panel?
+4. Should recovery windows be configurable in the first implementation or only after field testing?
 
 Resolved: the severity vocabulary this spec depends on (`debug | info | warning | error | critical`)
 has been consolidated across `core/event_catalog_spec.md`, `core/admin_observability_panel_spec.md`,
 `core/security_mismatch_generalization_spec.md`, `HeimaEvent.severity` (now a typed `EventSeverity`
 Literal in `custom_components/heima/runtime/contracts.py`), and all event-emission call sites. No
 longer an open question.
+
+Resolved: checkpoint persistence uses a dedicated HA `Store` with
+`storage_key=heima_runtime_checkpoints`, storing one latest checkpoint per config entry. It is not
+stored inside learning snapshots, approval records, proposal lifecycle state, or event storage.
 
 ## Acceptance Criteria
 

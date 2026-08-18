@@ -25,6 +25,7 @@ REQUIRED_SNAPSHOT_SECTIONS = {
     "manual_holds",
     "runtime_confirmations",
     "notifications",
+    "recovery",
     "learning",
     "proposals",
     "house_state",

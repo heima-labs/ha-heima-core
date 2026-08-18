@@ -373,6 +373,7 @@ async def test_heima_set_mode_sets_and_clears_final_house_state_override(monkeyp
     entry = SimpleNamespace(options={})
     engine = HeimaEngine(hass=hass, entry=entry)
     engine._build_default_state()
+    engine._startup_recovery_pending = False
     coordinator = _FakeCoordinator(engine)
 
     await async_register_services(hass)
@@ -388,8 +389,12 @@ async def test_heima_set_mode_sets_and_clears_final_house_state_override(monkeyp
     assert engine.state.get_sensor("heima_house_state") == "vacation"
     assert engine.state.get_sensor("heima_house_state_reason") == "manual_override:vacation"
     assert engine.diagnostics()["house_state"]["override"]["house_state_override"] == "vacation"
-    assert hass.bus.events[-1][1]["type"] == "system.house_state_override_changed"
-    assert hass.bus.events[-1][1]["context"]["action"] == "set"
+    override_events = [
+        payload
+        for event_type, payload in hass.bus.events
+        if event_type == "heima_event" and payload["type"] == "system.house_state_override_changed"
+    ]
+    assert override_events[-1]["context"]["action"] == "set"
 
     await handler(SimpleNamespace(data={"mode": "vacation", "state": False}))
 
@@ -721,6 +726,31 @@ async def test_heima_command_recompute_now_requests_evaluation(monkeypatch):
     await handler(SimpleNamespace(data={"command": "recompute_now", "target": {}, "params": {}}))
 
     coordinator.async_request_evaluation.assert_awaited_once_with(reason="service:recompute_now")
+
+
+@pytest.mark.asyncio
+async def test_heima_command_write_runtime_checkpoint_calls_engine(monkeypatch):
+    services = _FakeServicesRegistry()
+    hass = SimpleNamespace(
+        data={DOMAIN: {}}, services=services, bus=_FakeBus(), states=_FakeStates()
+    )
+    engine = SimpleNamespace(async_write_runtime_checkpoint=AsyncMock(return_value=True))
+    coordinator = SimpleNamespace(engine=engine)
+
+    await async_register_services(hass)
+    monkeypatch.setattr(
+        "custom_components.heima.services._coordinators_for_target",
+        lambda _hass, _target: [coordinator],
+    )
+
+    handler = services.handler(DOMAIN, SERVICE_COMMAND)
+    await handler(
+        SimpleNamespace(data={"command": "write_runtime_checkpoint", "target": {}, "params": {}})
+    )
+
+    engine.async_write_runtime_checkpoint.assert_awaited_once_with(
+        reason="service:write_runtime_checkpoint"
+    )
 
 
 @pytest.mark.asyncio

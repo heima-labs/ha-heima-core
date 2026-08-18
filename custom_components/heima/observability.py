@@ -76,6 +76,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
     manual_holds = _manual_hold_summary(engine_diag, runtime_observability)
     runtime_confirmations = _runtime_confirmation_summary(runtime_confirmation)
     notifications = _notification_summary(entry, engine_diag=engine_diag)
+    recovery = _recovery_summary(engine_diag, recent_events=recent_events)
     learning = _learning_summary(engine_diag, proposal_diag)
     proposals = _proposal_summary(proposal_diag)
     house_state = _house_state_diagnostics(engine_diag)
@@ -112,6 +113,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
         "manual_holds": manual_holds,
         "runtime_confirmations": runtime_confirmations,
         "notifications": notifications,
+        "recovery": recovery,
         "learning": learning,
         "proposals": proposals,
         "house_state": house_state,
@@ -122,6 +124,7 @@ def build_observability_snapshot(coordinator: Any) -> dict[str, Any]:
             reactions=reactions,
             manual_holds=manual_holds,
             runtime_confirmations=runtime_confirmations,
+            recovery=recovery,
             proposals=proposals,
             house_state=house_state,
             decision_traces=decision_traces,
@@ -204,6 +207,74 @@ def _runtime_summary(coordinator: Any, engine_diag: Mapping[str, Any]) -> dict[s
 def _runtime_observability(engine_diag: Mapping[str, Any]) -> dict[str, Any]:
     raw = engine_diag.get("observability") if isinstance(engine_diag, Mapping) else {}
     return dict(raw) if isinstance(raw, Mapping) else {}
+
+
+def _recovery_summary(
+    engine_diag: Mapping[str, Any],
+    *,
+    recent_events: list[Any],
+) -> dict[str, Any]:
+    recovery = _mapping_or_empty(engine_diag.get("recovery"))
+    checkpoint_store = _mapping_or_empty(engine_diag.get("runtime_checkpoint"))
+    checkpoint_status = _mapping_or_empty(recovery.get("checkpoint"))
+    runtime_context = _mapping_or_empty(engine_diag.get("runtime_context"))
+    runtime_checkpoint_status = _mapping_or_empty(engine_diag.get("runtime_checkpoint_status"))
+    critical_entities = [
+        dict(item) for item in recovery.get("critical_entities") or [] if isinstance(item, Mapping)
+    ]
+    unavailable = [item for item in critical_entities if not bool(item.get("available", True))]
+    apply_plan = _mapping_or_empty(engine_diag.get("apply_plan"))
+    apply_steps = [
+        dict(item) for item in apply_plan.get("steps") or [] if isinstance(item, Mapping)
+    ]
+    blocked_steps = [
+        step for step in apply_steps if str(step.get("blocked_by") or "").startswith("recovery:")
+    ]
+    recovery_events = [
+        dict(item)
+        for item in recent_events
+        if isinstance(item, Mapping)
+        and str(item.get("category") or "") == "system"
+        and str(item.get("reason_code") or "").startswith("recovery_")
+    ]
+    return {
+        "state": str(recovery.get("state") or runtime_context.get("runtime.recovery.state") or ""),
+        "reason": str(
+            recovery.get("reason") or runtime_context.get("runtime.recovery.reason") or ""
+        ),
+        "active": bool(recovery.get("active") or runtime_context.get("runtime.recovery.active")),
+        "started_at_monotonic": recovery.get("started_at_monotonic"),
+        "settling_started_at_monotonic": recovery.get("settling_started_at_monotonic"),
+        "stabilization_deadline_monotonic": recovery.get("stabilization_deadline_monotonic"),
+        "parent_state": recovery.get("parent_state"),
+        "stable_snapshot_available": bool(recovery.get("stable_snapshot_available")),
+        "reconciliation_pending": bool(recovery.get("reconciliation_pending")),
+        "critical_entities": {
+            "total": len(critical_entities),
+            "available": len(critical_entities) - len(unavailable),
+            "unavailable": len(unavailable),
+            "unavailable_ratio": recovery.get("unavailable_ratio", 0),
+            "items": critical_entities,
+            "unavailable_items": unavailable,
+        },
+        "checkpoint": {
+            **checkpoint_status,
+            "store": checkpoint_store,
+            "pending_write_reason": runtime_checkpoint_status.get("pending_write_reason"),
+            "write_job_id": runtime_checkpoint_status.get("write_job_id"),
+        },
+        "blocked_apply_steps": {
+            "total": len(blocked_steps),
+            "examples": blocked_steps[:10],
+        },
+        "recent_events": recovery_events[-20:],
+        "raw": {
+            "recovery": recovery,
+            "runtime_context": runtime_context,
+            "runtime_checkpoint": checkpoint_store,
+            "runtime_checkpoint_status": runtime_checkpoint_status,
+        },
+    }
 
 
 def _health_findings(
@@ -889,6 +960,7 @@ def _detail_projections(
     reactions: list[dict[str, Any]],
     manual_holds: Mapping[str, Any],
     runtime_confirmations: Mapping[str, Any],
+    recovery: Mapping[str, Any],
     proposals: Mapping[str, Any],
     house_state: Mapping[str, Any],
     decision_traces: list[Any],
@@ -956,6 +1028,7 @@ def _detail_projections(
             "review_rows_by_id": _review_row_details_by_id(review_rows),
         },
         "house_state": dict(house_state),
+        "recovery": dict(recovery),
         "entities": {
             "by_id": {
                 str(row.get("entity_id")): row

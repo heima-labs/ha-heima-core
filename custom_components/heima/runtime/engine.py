@@ -45,6 +45,12 @@ from .analyzers.base import ReactionProposal
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
 from .behaviors.base import HeimaBehavior
 from .behaviors.event_recorder import EventRecorderBehavior
+from .checkpoint_store import (
+    MAX_CHECKPOINT_ENTITIES,
+    CheckpointEntityState,
+    RuntimeCheckpoint,
+    RuntimeCheckpointStore,
+)
 from .contracts import ApplyPlan, ApplyStep, EventSeverity, HeimaEvent, ScriptApplyBatch
 from .dag import resolve_dag
 from .domain_result_bag import DomainResultBag
@@ -86,7 +92,7 @@ from .manual_hold import ManualHoldManager, ManualHoldReason, ManualHoldScope
 from .normalization import NormalizedObservation
 from .normalization.service import InputNormalizer
 from .notifications import HeimaEventPipeline
-from .observability import RuntimeObservabilityBuffer
+from .observability import RuntimeActivityEvent, RuntimeObservabilityBuffer
 from .outcome_tracker import OutcomeTracker
 from .plugin_contracts import IDomainPlugin, IInvariantCheck, InvariantViolation
 from .proposal_engine import ProposalEngine
@@ -97,6 +103,15 @@ from .reactions import (
     resolve_reaction_type,
 )
 from .reactions.base import HeimaReaction
+from .recovery import (
+    CheckpointDifference,
+    CheckpointDifferenceKind,
+    CheckpointRecoveryStatus,
+    CriticalEntityState,
+    RecoveryContext,
+    RecoveryEvaluationInput,
+    RecoveryManager,
+)
 from .room_context import (
     RoomDeviceContext,
     RoomDeviceContextBuilder,
@@ -132,6 +147,10 @@ _REMOVED_REACTION_TYPES = {
 }
 
 _LIGHTING_MIN_SECONDS_BETWEEN_APPLIES = 10
+_RUNTIME_CHECKPOINT_WRITE_JOB_ID = "recovery.checkpoint.write"
+_RECOVERY_STABILIZATION_JOB_ID = "recovery.stabilization"
+_RUNTIME_CHECKPOINT_WRITE_DELAY_S = 60.0
+_CHECKPOINT_POWER_RESTORE_DOMAINS = {"climate", "cover", "fan", "light", "switch"}
 
 # Maps plugin domain_id to the InferenceSignal subclass it can consume (spec §10.8).
 _PLUGIN_SIGNAL_TYPE: dict[str, type] = {
@@ -230,6 +249,15 @@ class HeimaEngine:
         self._runtime_confirmation_descriptors: dict[str, RuntimeConfirmationDescriptor] = {}
         self._snapshot_buffer = SnapshotBuffer()
         self._observability = RuntimeObservabilityBuffer()
+        self._recovery_manager = RecoveryManager()
+        self._runtime_context: dict[str, Any] = {}
+        self._runtime_checkpoint_store: RuntimeCheckpointStore | None = None
+        self._last_runtime_checkpoint_key: str | None = None
+        self._pending_runtime_checkpoint_reason: str | None = None
+        self._startup_recovery_pending = True
+        self._security_unavailable_recovery_event_active = False
+        self._last_recovery_event_state = "normal"
+        self._last_checkpoint_invalid_event_key: str | None = None
         self._recent_script_applies: dict[str, ScriptApplyBatch] = {}
         self._manual_hold_manager = ManualHoldManager()
         self._reaction_plugin_registry = create_builtin_reaction_plugin_registry()
@@ -306,6 +334,23 @@ class HeimaEngine:
         """Set the snapshot store for write-on-change persistence."""
         self._house_snapshot_store = store
 
+    def set_runtime_checkpoint_store(self, store: RuntimeCheckpointStore) -> None:
+        """Set the runtime checkpoint store for recovery persistence."""
+        self._runtime_checkpoint_store = store
+        self.restore_runtime_from_checkpoint()
+
+    def restore_runtime_from_checkpoint(self) -> None:
+        """Restore domain runtime that is safe to carry across HA restarts."""
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return
+        if not hasattr(store, "checkpoint_for_entry"):
+            return
+        checkpoint = store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+        if checkpoint is None:
+            return
+        self._heating_domain.restore_checkpoint_runtime(dict(checkpoint.heating))
+
     def set_outcome_tracker(self, tracker: OutcomeTracker) -> None:
         """Set the outcome tracker for reaction verification."""
         self._outcome_tracker = tracker
@@ -344,6 +389,8 @@ class HeimaEngine:
 
     def _register_pending_apply_for_step(self, step: ApplyStep) -> None:
         """Register pending apply provenance for a step about to execute."""
+        if self._recovery_active():
+            return
         reaction = self._reaction_from_step_source(step)
         if reaction is None:
             self._manual_hold_manager.register_pending_apply(step)
@@ -393,6 +440,8 @@ class HeimaEngine:
             consume_pending = getattr(reaction, "consume_pending_apply", None)
             if callable(consume_pending) and bool(consume_pending(entity_id, new_state)):
                 continue
+            if self._recovery_active():
+                continue
             handle_external = getattr(reaction, "handle_external_light_change", None)
             if callable(handle_external):
                 handle_external(entity_id, state_value)
@@ -413,6 +462,8 @@ class HeimaEngine:
         if old_state_value == state_value:
             return
         if self._manual_hold_manager.classify_state_change(entity_id, new_state) == "heima_owned":
+            return
+        if self._recovery_active():
             return
         scope = self._camera_privacy_scopes_by_entity()[entity_id]
         self._manual_hold_manager.activate_hold(
@@ -475,6 +526,7 @@ class HeimaEngine:
 
     async def async_shutdown(self) -> None:
         _LOGGER.debug("Heima engine shutdown")
+        await self.async_write_runtime_checkpoint(reason="shutdown")
         self._health = EngineHealth(ok=True, reason="shutdown")
         for behavior in self._behaviors:
             try:
@@ -860,6 +912,8 @@ class HeimaEngine:
     async def async_evaluate(self, reason: str) -> DecisionSnapshot:
         """Evaluate canonical state from configured bindings."""
         _LOGGER.debug("Heima evaluation requested: %s", reason)
+        checkpoint_job_due = reason == f"scheduler:{_RUNTIME_CHECKPOINT_WRITE_JOB_ID}"
+        self._compute_recovery_context()
         calendar_cfg = dict(self._entry.options.get(OPT_CALENDAR, {}))
         await self._calendar_domain.async_maybe_refresh(calendar_cfg)
         snapshot = self._compute_snapshot(reason=reason)
@@ -909,8 +963,458 @@ class HeimaEngine:
         self._check_reaction_outcomes()
         await self._maybe_submit_degradation_proposals()
         await self._maybe_boost_reaction_confidence()
+        await self._update_runtime_checkpoint_after_evaluation(
+            reason=reason,
+            checkpoint_job_due=checkpoint_job_due,
+        )
 
         return snapshot
+
+    async def _update_runtime_checkpoint_after_evaluation(
+        self,
+        *,
+        reason: str,
+        checkpoint_job_due: bool,
+    ) -> None:
+        """Write checkpoints only for stable runtime, never during recovery."""
+        if self._recovery_active():
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            self._pending_runtime_checkpoint_reason = None
+            return
+        if checkpoint_job_due:
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            await self.async_write_runtime_checkpoint(reason="scheduled")
+        else:
+            self._schedule_runtime_checkpoint_write(reason=reason)
+
+    def _compute_recovery_context(self) -> None:
+        """Compute read-only recovery context before the DAG runs.
+
+        Recovery context is computed before domain DAG execution so all domains
+        observe the same startup/power recovery state in the current cycle.
+        """
+        critical_entities = self._current_recovery_critical_entities()
+        checkpoint_status = self._checkpoint_recovery_status()
+        previous_context = self._recovery_manager.context
+        context = self._recovery_manager.evaluate(
+            RecoveryEvaluationInput(
+                now_monotonic=time.monotonic(),
+                critical_entities=critical_entities,
+                startup_requested=self._startup_recovery_pending,
+                stable_snapshot_available=bool(self._snapshot.snapshot_id),
+                checkpoint_status=checkpoint_status,
+            )
+        )
+        self._startup_recovery_pending = False
+        self._runtime_context = context.as_runtime_context()
+        self._queue_checkpoint_invalid_event(checkpoint_status)
+        self._queue_recovery_transition_events(previous_context, context)
+        if context.stabilization_deadline_monotonic is not None:
+            self._schedule_timed_recheck_deadline(
+                job_id=_RECOVERY_STABILIZATION_JOB_ID,
+                deadline=context.stabilization_deadline_monotonic,
+                owner="recovery",
+                label="Recovery stabilization",
+            )
+        else:
+            self._timed_rechecks.pop(_RECOVERY_STABILIZATION_JOB_ID, None)
+
+    def _queue_recovery_transition_events(
+        self,
+        previous: RecoveryContext,
+        current: RecoveryContext,
+    ) -> None:
+        if current.state == previous.state and current.reason == previous.reason:
+            return
+        for event in self._recovery_transition_events(previous, current):
+            if event.type == self._last_recovery_event_state:
+                continue
+            self._last_recovery_event_state = event.type
+            self._events_domain.queue_event(event)
+            self._record_recovery_observability_event(event)
+
+    def _record_recovery_observability_event(self, event: HeimaEvent) -> None:
+        """Mirror recovery lifecycle events into the admin observability buffer."""
+        event_type = str(event.type or "")
+        if not event_type.startswith("system.recovery_"):
+            return
+        self._observability.record_event(
+            RuntimeActivityEvent(
+                category="system",
+                severity=event.severity,
+                summary=event.title or event.message or event_type,
+                reason_code=event_type.removeprefix("system.").replace(".", "_"),
+                object_links=({"kind": "recovery", "id": event_type},),
+            )
+        )
+
+    def _recovery_transition_events(
+        self,
+        previous: RecoveryContext,
+        current: RecoveryContext,
+    ) -> list[HeimaEvent]:
+        context = {
+            "from_state": previous.state,
+            "to_state": current.state,
+            "reason": current.reason,
+            "unavailable_count": current.unavailable_count,
+            "critical_entity_count": current.critical_entity_count,
+            "unavailable_ratio": current.unavailable_ratio,
+            "checkpoint": current.checkpoint_status.as_dict(),
+        }
+        events: list[HeimaEvent] = []
+        if current.state == "startup_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_startup_started",
+                    key="system.recovery_startup_started",
+                    severity="info",
+                    title="Recovery startup started",
+                    message="Heima entered startup recovery.",
+                    context=context,
+                )
+            )
+        elif current.state == "power_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_power_outage_suspected",
+                    key="system.recovery_power_outage_suspected",
+                    severity="warning",
+                    title="Power recovery suspected",
+                    message="Heima detected unavailable critical entities during runtime.",
+                    context=context,
+                )
+            )
+        elif current.state == "recovery_settling":
+            if previous.state in {"power_recovery", "degraded_recovery"}:
+                events.append(
+                    HeimaEvent(
+                        type="system.recovery_power_restored",
+                        key="system.recovery_power_restored",
+                        severity="info",
+                        title="Recovery power restored",
+                        message="Critical entities are available again after suspected outage.",
+                        context=context,
+                    )
+                )
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_stabilization_started",
+                    key="system.recovery_stabilization_started",
+                    severity="info",
+                    title="Recovery stabilization started",
+                    message="Heima entered recovery stabilization.",
+                    context=context,
+                )
+            )
+        elif current.state == "degraded_recovery":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_degraded",
+                    key="system.recovery_degraded",
+                    severity="warning",
+                    title="Recovery degraded",
+                    message=(
+                        "Heima recovery could not complete because critical inputs remain unstable."
+                    ),
+                    context=context,
+                )
+            )
+        elif current.state == "normal" and previous.state != "normal":
+            events.append(
+                HeimaEvent(
+                    type="system.recovery_completed",
+                    key="system.recovery_completed",
+                    severity="info",
+                    title="Recovery completed",
+                    message="Heima recovery completed and normal runtime resumed.",
+                    context=context,
+                )
+            )
+        return events
+
+    def _queue_checkpoint_invalid_event(self, checkpoint_status: CheckpointRecoveryStatus) -> None:
+        if checkpoint_status.usable or checkpoint_status.reason in {"missing", ""}:
+            self._last_checkpoint_invalid_event_key = None
+            return
+        event_key = (
+            f"{checkpoint_status.checkpoint_id or 'unknown'}:{checkpoint_status.reason}:"
+            f"{checkpoint_status.stale}"
+        )
+        if event_key == self._last_checkpoint_invalid_event_key:
+            return
+        self._last_checkpoint_invalid_event_key = event_key
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="system.recovery_checkpoint_invalid",
+                key="system.recovery_checkpoint_invalid",
+                severity="warning",
+                title="Recovery checkpoint invalid",
+                message="Stored runtime checkpoint cannot be used for recovery.",
+                context={"checkpoint": checkpoint_status.as_dict()},
+            )
+        )
+
+    def _recovery_state(self) -> str:
+        state = str(self._runtime_context.get("runtime.recovery.state") or "").strip()
+        return "" if state in {"", "normal"} else state
+
+    def _recovery_active(self) -> bool:
+        return bool(self._runtime_context.get("runtime.recovery.active")) or bool(
+            self._recovery_state()
+        )
+
+    def _current_recovery_critical_entities(self) -> tuple[CriticalEntityState, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        entities: list[CriticalEntityState] = []
+        for entity_id in sorted(self._recovery_critical_entity_ids()):
+            state_obj = state_getter(entity_id)
+            if state_obj is None:
+                continue
+            entities.append(
+                CriticalEntityState(
+                    entity_id=entity_id,
+                    domain=entity_id.split(".", 1)[0],
+                    state=str(getattr(state_obj, "state", "") or ""),
+                )
+            )
+        return tuple(entities)
+
+    def _recovery_critical_entity_ids(self) -> set[str]:
+        """Return entities whose availability affects recovery classification."""
+        critical = set(self.tracked_entity_ids())
+        options = dict(self._entry.options)
+
+        heating = options.get(OPT_HEATING, {})
+        if isinstance(heating, dict):
+            _add_entity_id(critical, heating.get("climate_entity"))
+
+        security = options.get(OPT_SECURITY, {})
+        if isinstance(security, dict):
+            for source in security.get("camera_evidence_sources", []) or []:
+                if not isinstance(source, dict):
+                    continue
+                _add_entity_id(critical, source.get("privacy_entity"))
+                _add_entity_id(critical, source.get("manual_hold_entity"))
+
+        for room_map in options.get(OPT_LIGHTING_ROOMS, []) or []:
+            if not isinstance(room_map, dict):
+                continue
+            for entity_id in _entity_ids_from_value(room_map):
+                _add_entity_id(critical, entity_id)
+            room_id = str(room_map.get("room_id") or "").strip()
+            if room_id:
+                for entity_id in self._lighting_domain.expected_room_light_entities(room_id):
+                    _add_entity_id(critical, entity_id)
+
+        for zone in options.get(OPT_LIGHTING_ZONES, []) or []:
+            if not isinstance(zone, dict):
+                continue
+            for entity_id in _entity_ids_from_value(zone):
+                _add_entity_id(critical, entity_id)
+
+        reactions = (options.get(OPT_REACTIONS, {}) or {}).get("configured") or {}
+        if isinstance(reactions, dict):
+            for reaction in reactions.values():
+                if not isinstance(reaction, dict):
+                    continue
+                for step in reaction.get("steps", []) or []:
+                    if not isinstance(step, dict):
+                        continue
+                    _add_entity_id(critical, step.get("target"))
+                    for entity_id in _entity_ids_from_value(step.get("params", {})):
+                        _add_entity_id(critical, entity_id)
+
+        return critical
+
+    def _checkpoint_recovery_status(self) -> CheckpointRecoveryStatus:
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return CheckpointRecoveryStatus(reason="store_not_configured")
+        checkpoint = store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+        if checkpoint is None:
+            return CheckpointRecoveryStatus(reason="missing")
+        age_s = self._checkpoint_age_s(checkpoint)
+        if age_s is None:
+            return CheckpointRecoveryStatus(
+                available=True,
+                checkpoint_id=checkpoint.checkpoint_id,
+                reason="invalid_created_at",
+            )
+        stale = age_s > self._recovery_manager.config.checkpoint_freshness_s
+        return CheckpointRecoveryStatus(
+            available=True,
+            usable=not stale,
+            stale=stale,
+            checkpoint_id=checkpoint.checkpoint_id,
+            age_s=age_s,
+            reason="stale" if stale else "loaded",
+            differences=self._checkpoint_differences(checkpoint),
+        )
+
+    def _checkpoint_age_s(self, checkpoint: RuntimeCheckpoint) -> float | None:
+        try:
+            created_at = datetime.fromisoformat(checkpoint.created_at)
+        except ValueError:
+            return None
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - created_at).total_seconds())
+
+    def _checkpoint_differences(
+        self,
+        checkpoint: RuntimeCheckpoint,
+    ) -> tuple[CheckpointDifference, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        differences: list[CheckpointDifference] = []
+        for checkpoint_entity in checkpoint.critical_entities:
+            current = state_getter(checkpoint_entity.entity_id)
+            current_state = (
+                str(getattr(current, "state", "") or "") if current is not None else "unavailable"
+            )
+            if current_state == checkpoint_entity.state:
+                continue
+            kind: CheckpointDifferenceKind
+            if checkpoint_entity.domain in _CHECKPOINT_POWER_RESTORE_DOMAINS:
+                kind = "power_restore_candidate"
+            else:
+                kind = "unknown_during_downtime"
+            differences.append(
+                CheckpointDifference(
+                    entity_id=checkpoint_entity.entity_id,
+                    domain=checkpoint_entity.domain,
+                    checkpoint_state=checkpoint_entity.state,
+                    current_state=current_state,
+                    kind=kind,
+                )
+            )
+        return tuple(differences)
+
+    def _recovery_guard_house_state(
+        self,
+        *,
+        house_state: str,
+        house_reason: str,
+        previous_house_state: str,
+        anyone_home: bool,
+        occupied_rooms: list[str],
+    ) -> tuple[str, str]:
+        if not self._recovery_active() or house_state != "away" or anyone_home or occupied_rooms:
+            return house_state, house_reason
+        fallback = self._recovery_house_state_fallback(previous_house_state)
+        if fallback == "away":
+            return house_state, house_reason
+        return fallback, f"recovery_guard:no_away_from_sensor_silence:{house_reason}"
+
+    def _recovery_house_state_fallback(self, previous_house_state: str) -> str:
+        previous = str(previous_house_state or "").strip()
+        if previous and previous not in {"unknown", "away"}:
+            return previous
+        checkpoint_state = self._checkpoint_house_state()
+        if checkpoint_state and checkpoint_state not in {"unknown", "away"}:
+            return checkpoint_state
+        return "unknown"
+
+    def _checkpoint_house_state(self) -> str:
+        store = self._runtime_checkpoint_store
+        checkpoint = (
+            store.checkpoint_for_entry(str(getattr(self._entry, "entry_id", "")))
+            if store is not None
+            else None
+        )
+        runtime = checkpoint.runtime if checkpoint is not None else {}
+        snapshot = runtime.get("snapshot") if isinstance(runtime, dict) else None
+        checkpoint_state = (
+            str(snapshot.get("house_state") or "").strip() if isinstance(snapshot, dict) else ""
+        )
+        return checkpoint_state
+
+    def _recovery_house_state_diagnostics(
+        self,
+        *,
+        raw_house_state: str,
+        effective_house_state: str,
+        previous_house_state: str,
+        guard_applied: bool,
+    ) -> dict[str, Any]:
+        return {
+            "active": self._recovery_active(),
+            "state": self._recovery_state(),
+            "stable": not self._recovery_active(),
+            "raw_state": raw_house_state,
+            "effective_state": effective_house_state,
+            "previous_state": previous_house_state,
+            "checkpoint_state": self._checkpoint_house_state(),
+            "guard_applied": guard_applied,
+        }
+
+    def _queue_security_state_unavailable_recovery_event(
+        self,
+        *,
+        options: dict[str, Any],
+        security_state: str,
+        security_reason: str,
+    ) -> None:
+        active = self._security_state_unavailable_during_recovery(
+            options=options,
+            security_state=security_state,
+        )
+        if not active:
+            self._security_unavailable_recovery_event_active = False
+            return
+        if self._security_unavailable_recovery_event_active:
+            return
+        self._security_unavailable_recovery_event_active = True
+        security_cfg = dict(options.get(OPT_SECURITY, {}) or {})
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="security.mismatch",
+                key="security.mismatch.security_state_unavailable",
+                severity="warning",
+                title="Security mismatch",
+                message="Security mismatch detected (security_state_unavailable).",
+                context={
+                    "subtype": "security_state_unavailable",
+                    "security_state": security_state,
+                    "security_reason": security_reason,
+                    "security_entity": str(security_cfg.get("security_state_entity") or ""),
+                    "recovery_state": self._recovery_state(),
+                },
+            )
+        )
+
+    def _security_state_unavailable_during_recovery(
+        self,
+        *,
+        options: dict[str, Any],
+        security_state: str,
+    ) -> bool:
+        if not self._recovery_active():
+            return False
+        security_cfg = dict(options.get(OPT_SECURITY, {}) or {})
+        if not security_cfg.get("enabled"):
+            return False
+        entity_id = str(security_cfg.get("security_state_entity") or "").strip()
+        if not entity_id:
+            return False
+        state_obj = self._hass.states.get(entity_id)
+        raw_state = str(getattr(state_obj, "state", "") or "").strip()
+        return (
+            state_obj is None
+            or raw_state in {"unknown", "unavailable", ""}
+            or security_state
+            in {
+                "unknown",
+                "unavailable",
+                "",
+            }
+        )
 
     async def async_emit_external_event(
         self,
@@ -1183,12 +1687,31 @@ class HeimaEngine:
         )
         security_state = security_result.security_state
         security_reason = security_result.security_reason
+        self._queue_security_state_unavailable_recovery_event(
+            options=options,
+            security_state=security_state,
+            security_reason=security_reason,
+        )
 
         self._state.set_binary("heima_anyone_home", anyone_home)
         self._state.set_sensor("heima_people_count", people_count)
         self._state.set_sensor("heima_people_home_list", ",".join(people_home_list))
         self._state.set_sensor("lighting.lights_on", dict(lights_on))
         prev_house_state = self._state.get_sensor("heima_house_state")
+        raw_house_state = house_state
+        house_state, house_reason = self._recovery_guard_house_state(
+            house_state=house_state,
+            house_reason=house_reason,
+            previous_house_state=str(prev_house_state or ""),
+            anyone_home=anyone_home,
+            occupied_rooms=occupied_rooms,
+        )
+        recovery_house_state = self._recovery_house_state_diagnostics(
+            raw_house_state=raw_house_state,
+            effective_house_state=house_state,
+            previous_house_state=str(prev_house_state or ""),
+            guard_applied=house_state != raw_house_state,
+        )
         house_state_diag = self._house_state_domain.diagnostics()
         resolution_trace = dict(house_state_diag.get("resolution_trace", {}))
         candidate_summary = dict(house_state_diag.get("candidate_summary", {}))
@@ -1219,6 +1742,7 @@ class HeimaEngine:
             {
                 "resolution_trace": resolution_trace,
                 "candidate_summary": candidate_summary,
+                "recovery": recovery_house_state,
             },
         )
         self._state.set_sensor_attributes(
@@ -1226,6 +1750,7 @@ class HeimaEngine:
             {
                 "resolution_trace": resolution_trace,
                 "candidate_summary": candidate_summary,
+                "recovery": recovery_house_state,
             },
         )
         self._queue_house_state_changed_event(
@@ -1379,6 +1904,8 @@ class HeimaEngine:
         """Persist a HouseSnapshot for inference learning, only on state change."""
         if self._house_snapshot_store is None:
             return
+        if self._recovery_active():
+            return
         snapshot_local = dt_util.as_local(datetime.fromisoformat(snapshot.ts))
         people_home_raw = self._state.get_sensor("heima_people_home_list") or ""
         named_present = tuple(sorted(p for p in str(people_home_raw).split(",") if p.strip()))
@@ -1403,6 +1930,8 @@ class HeimaEngine:
 
     def _run_invariant_checks(self, snapshot: DecisionSnapshot) -> None:
         if not self._invariant_config()["enabled"]:
+            return
+        if self._recovery_active():
             return
         for check in self._invariant_checks:
             violation = check.check(snapshot, self._last_domain_results)
@@ -1525,6 +2054,116 @@ class HeimaEngine:
             except Exception:
                 _LOGGER.exception("Reaction %s raised in scheduled_jobs", reaction.reaction_id)
         return jobs
+
+    async def async_write_runtime_checkpoint(self, *, reason: str) -> bool:
+        """Persist the current runtime checkpoint immediately."""
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return False
+        try:
+            checkpoint = self._build_runtime_checkpoint(reason=reason)
+            await store.async_save_checkpoint(checkpoint, flush=True)
+        except Exception:
+            _LOGGER.exception("Failed to write Heima runtime checkpoint")
+            self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+            return False
+        self._last_runtime_checkpoint_key = checkpoint.semantic_key()
+        self._pending_runtime_checkpoint_reason = None
+        self._timed_rechecks.pop(_RUNTIME_CHECKPOINT_WRITE_JOB_ID, None)
+        self._events_domain.queue_event(
+            HeimaEvent(
+                type="system.recovery_checkpoint_written",
+                key="system.recovery_checkpoint_written",
+                severity="info",
+                title="Recovery checkpoint written",
+                message="Runtime checkpoint persisted.",
+                context={
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "reason": checkpoint.reason,
+                    "critical_entity_count": len(checkpoint.critical_entities),
+                },
+            )
+        )
+        return True
+
+    def _schedule_runtime_checkpoint_write(self, *, reason: str) -> None:
+        store = self._runtime_checkpoint_store
+        if store is None:
+            return
+        try:
+            checkpoint = self._build_runtime_checkpoint(reason=reason)
+        except Exception:
+            _LOGGER.exception("Failed to build Heima runtime checkpoint")
+            return
+        checkpoint_key = checkpoint.semantic_key()
+        if checkpoint_key == self._last_runtime_checkpoint_key:
+            return
+        self._pending_runtime_checkpoint_reason = reason
+        self._schedule_timed_recheck_deadline(
+            job_id=_RUNTIME_CHECKPOINT_WRITE_JOB_ID,
+            deadline=time.monotonic() + _RUNTIME_CHECKPOINT_WRITE_DELAY_S,
+            owner="recovery",
+            label="Runtime checkpoint write",
+        )
+
+    def _build_runtime_checkpoint(self, *, reason: str) -> RuntimeCheckpoint:
+        entry_id = str(getattr(self._entry, "entry_id", "") or "default")
+        apply_steps = list(self._apply_plan.steps)
+        blocked_steps = [step for step in apply_steps if step.blocked_by]
+        observability_diag = self._observability.diagnostics()
+        recent_events = observability_diag.get("recent_events")
+        decision_traces = observability_diag.get("decision_traces")
+        return RuntimeCheckpoint(
+            entry_id=entry_id,
+            reason=reason,
+            runtime={
+                "engine_health": {"ok": self._health.ok, "reason": self._health.reason},
+                "snapshot": self._snapshot.as_dict(),
+                "runtime_context": dict(self._runtime_context),
+                "active_constraints": sorted(self._active_constraints),
+                "muted_reactions": sorted(self._muted_reactions),
+                "apply_plan": {
+                    "plan_id": self._apply_plan.plan_id,
+                    "step_count": len(apply_steps),
+                    "blocked_step_count": len(blocked_steps),
+                    "domains": sorted({step.domain for step in apply_steps}),
+                },
+            },
+            critical_entities=self._checkpoint_critical_entity_states(),
+            manual_hold=self._manual_hold_manager.diagnostics(),
+            runtime_confirmations={
+                "descriptor_reaction_types": sorted(self._runtime_confirmation_descriptors),
+                "pending_request_handler_registered": (
+                    self._runtime_confirmation_request_handler is not None
+                ),
+            },
+            heating={
+                "current_temperature": self._heating_domain.current_temperature(),
+                **self._heating_domain.checkpoint_runtime(),
+                "diagnostic_keys": sorted(self._heating_domain.diagnostics()),
+            },
+            observability={
+                "recent_event_count": len(recent_events) if isinstance(recent_events, list) else 0,
+                "decision_trace_count": (
+                    len(decision_traces) if isinstance(decision_traces, list) else 0
+                ),
+            },
+        )
+
+    def _checkpoint_critical_entity_states(self) -> tuple[CheckpointEntityState, ...]:
+        states = getattr(self._hass, "states", None)
+        state_getter = getattr(states, "get", None)
+        if not callable(state_getter):
+            return ()
+        entities: list[CheckpointEntityState] = []
+        for entity_id in sorted(self.tracked_entity_ids()):
+            state_obj = state_getter(entity_id)
+            if state_obj is None:
+                continue
+            entities.append(CheckpointEntityState.from_ha_state(entity_id, state_obj))
+            if len(entities) >= MAX_CHECKPOINT_ENTITIES:
+                break
+        return tuple(entities)
 
     def next_dwell_recheck_delay_s(self) -> float | None:
         """Return seconds until the earliest scheduled runtime recheck.
@@ -1705,6 +2344,8 @@ class HeimaEngine:
         snapshot: DecisionSnapshot,
     ) -> bool:
         """Divert ask-residents reaction steps into a runtime confirmation request."""
+        if self._recovery_active():
+            return False
         reaction_id = reaction.reaction_id
         cfg = self._configured_reaction_config(reaction_id)
         resolved_policy = resolve_execution_policy_config(
@@ -2012,7 +2653,24 @@ class HeimaEngine:
                     hook="apply_filter",
                     error="exception_raised",
                 )
+        plan = self._dispatch_recovery_apply_filter(plan)
         return self._dispatch_manual_hold_filter(plan)
+
+    def _dispatch_recovery_apply_filter(self, plan: ApplyPlan) -> ApplyPlan:
+        state = self._recovery_state()
+        if not state:
+            return plan
+        filtered: list[ApplyStep] = []
+        changed = False
+        for step in plan.steps:
+            if step.blocked_by:
+                filtered.append(step)
+                continue
+            changed = True
+            filtered.append(dataclass_replace(step, blocked_by=f"recovery:{state}"))
+        if not changed:
+            return plan
+        return ApplyPlan(plan_id=plan.plan_id, steps=filtered)
 
     def _dispatch_manual_hold_filter(self, plan: ApplyPlan) -> ApplyPlan:
         filtered: list[ApplyStep] = []
@@ -2822,6 +3480,24 @@ class HeimaEngine:
             "presence": self._people_domain.diagnostics(),
             "occupancy": self._occupancy_domain.diagnostics(),
             "events": self._events_domain.diagnostics(),
+            "recovery": self._recovery_manager.diagnostics(),
+            "runtime_context": dict(self._runtime_context),
+            "runtime_checkpoint": (
+                runtime_checkpoint_store.diagnostics()
+                if (runtime_checkpoint_store := getattr(self, "_runtime_checkpoint_store", None))
+                is not None
+                else {
+                    "storage_key": RuntimeCheckpointStore.STORAGE_KEY,
+                    "loaded": False,
+                    "entry_count": 0,
+                    "load_errors": 0,
+                    "checkpoints": {},
+                }
+            ),
+            "runtime_checkpoint_status": {
+                "pending_write_reason": self._pending_runtime_checkpoint_reason,
+                "write_job_id": _RUNTIME_CHECKPOINT_WRITE_JOB_ID,
+            },
             "normalization": self._normalizer.diagnostics(),
             "learning_modules": [
                 module.diagnostics() for module in getattr(self, "_learning_modules", [])
@@ -2869,3 +3545,32 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list | tuple | set):
         return [str(item).strip() for item in value if str(item).strip()]
     return []
+
+
+def _add_entity_id(target: set[str], value: Any) -> None:
+    entity_id = str(value or "").strip()
+    if _looks_like_entity_id(entity_id):
+        target.add(entity_id)
+
+
+def _entity_ids_from_value(value: Any) -> list[str]:
+    found: set[str] = set()
+    if isinstance(value, str):
+        if _looks_like_entity_id(value.strip()):
+            found.add(value.strip())
+    elif isinstance(value, dict):
+        for item in value.values():
+            found.update(_entity_ids_from_value(item))
+    elif isinstance(value, list | tuple | set):
+        for item in value:
+            found.update(_entity_ids_from_value(item))
+    return sorted(found)
+
+
+def _looks_like_entity_id(value: str) -> bool:
+    domain, sep, object_id = value.partition(".")
+    if not sep or not domain or not object_id:
+        return False
+    if any(char.isspace() for char in value):
+        return False
+    return domain.replace("_", "").isalnum() and "/" not in object_id

@@ -84,6 +84,7 @@ CONFIGURE_ANOMALY_RULE_SCHEMA = vol.Schema(
 SUPPORTED_COMMANDS = {
     "dev_reload",
     "recompute_now",
+    "write_runtime_checkpoint",
     "learning_run",
     "set_lighting_intent",
     "set_security_intent",
@@ -204,6 +205,17 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         if command == "recompute_now":
             await _evaluate_all(coordinators, reason="service:recompute_now")
+            return
+
+        if command == "write_runtime_checkpoint":
+            for coordinator in coordinators:
+                engine = getattr(coordinator, "engine", None)
+                write_checkpoint = getattr(engine, "async_write_runtime_checkpoint", None)
+                if not callable(write_checkpoint):
+                    raise ServiceValidationError(
+                        "Target Heima entry does not support runtime checkpoint writes"
+                    )
+                await write_checkpoint(reason="service:write_runtime_checkpoint")
             return
 
         if command == "set_lighting_intent":
