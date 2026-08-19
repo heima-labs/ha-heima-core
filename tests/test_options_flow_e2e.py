@@ -8,7 +8,7 @@ import voluptuous_serialize
 from homeassistant.helpers import config_validation as cv
 
 from custom_components.heima.config_flow import HeimaOptionsFlowHandler
-from custom_components.heima.config_flow._steps_reactions import _ReactionsStepsMixin
+from custom_components.heima.config_flow_steps._steps_reactions import _ReactionsStepsMixin
 from custom_components.heima.const import (
     DEFAULT_CALENDAR_CACHE_TTL_HOURS,
     DEFAULT_CALENDAR_LOOKAHEAD_DAYS,
@@ -214,7 +214,7 @@ async def test_init_bootstraps_rooms_from_ha_areas(monkeypatch):
     flow = _flow()
     area_reg = _FakeAreaRegistry([("living", "Living"), ("studio", "Studio")])
     monkeypatch.setattr(
-        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        "custom_components.heima.config_flow_steps._steps_rooms.ar.async_get",
         lambda hass: area_reg,
     )
 
@@ -849,6 +849,7 @@ async def test_camera_privacy_policy_flow_adds_policy_reaction():
             "target": "switch.interna_privacy",
             "action": "switch.turn_off",
             "params": {"entity_id": "switch.interna_privacy"},
+            "recovery_policy": "allow_when_inputs_stable",
         }
     ]
     assert stored["camera_privacy_policy"] == {
@@ -2967,7 +2968,7 @@ async def test_rooms_add_creates_linked_ha_area_when_missing(monkeypatch):
     flow = _flow()
     area_reg = _FakeAreaRegistry()
     monkeypatch.setattr(
-        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        "custom_components.heima.config_flow_steps._steps_rooms.ar.async_get",
         lambda hass: area_reg,
     )
 
@@ -3012,7 +3013,7 @@ async def test_rooms_edit_updates_linked_ha_area_name(monkeypatch):
     )
     area_reg = _FakeAreaRegistry([("living", "Living")])
     monkeypatch.setattr(
-        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        "custom_components.heima.config_flow_steps._steps_rooms.ar.async_get",
         lambda hass: area_reg,
     )
     flow._editing_room_id = "living"
@@ -3059,7 +3060,7 @@ async def test_rooms_remove_requires_confirmation_and_deletes_linked_ha_area(mon
     )
     area_reg = _FakeAreaRegistry([("living", "Living")])
     monkeypatch.setattr(
-        "custom_components.heima.config_flow._steps_rooms.ar.async_get",
+        "custom_components.heima.config_flow_steps._steps_rooms.ar.async_get",
         lambda hass: area_reg,
     )
 

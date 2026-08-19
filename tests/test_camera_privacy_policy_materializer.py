@@ -6,7 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from custom_components.heima.config_flow._camera_privacy_policy import (
+from custom_components.heima.config_flow_steps._camera_privacy_policy import (
     CAMERA_PRIVACY_POLICY_TYPE,
     CameraPrivacyPolicyRow,
     apply_camera_privacy_policy_rows_to_options,

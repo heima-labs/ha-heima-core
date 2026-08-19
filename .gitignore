@@ -8,6 +8,7 @@ __pycache__/
 
 # Local dev artifacts — keep untracked
 *.png
+!custom_components/heima/brand/*.png
 *.zip
 config_entry-*.json
 heima_specs_index.md
