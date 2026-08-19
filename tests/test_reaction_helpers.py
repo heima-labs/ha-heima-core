@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta, timezone
 
-from custom_components.heima.config_flow import _reaction_helpers
-from custom_components.heima.config_flow._reaction_helpers import (
+from custom_components.heima.config_flow_steps import _reaction_helpers
+from custom_components.heima.config_flow_steps._reaction_helpers import (
     format_last_seen,
     house_state_proposal_review_details,
 )
