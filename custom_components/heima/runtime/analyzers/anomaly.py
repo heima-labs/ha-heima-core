@@ -531,7 +531,8 @@ class AnomalyAnalyzer:
         unattended = [
             snapshot
             for snapshot in snapshots
-            if not bool(getattr(snapshot, "anyone_home", False)) and _lit_entities(snapshot)
+            if not bool(getattr(snapshot, "anyone_home", False))
+            and _lit_entities(snapshot)
             and not _is_expected_absence_context(snapshot)
         ]
         if len(unattended) < min_observations:
@@ -1466,11 +1467,7 @@ def _presence_anomaly_snapshots(snapshots: Sequence[Any]) -> list[Any]:
         return []
     if _is_expected_absence_context(snapshots[-1]):
         return []
-    return [
-        snapshot
-        for snapshot in snapshots
-        if not _is_expected_absence_context(snapshot)
-    ]
+    return [snapshot for snapshot in snapshots if not _is_expected_absence_context(snapshot)]
 
 
 def _snapshot_house_state(snapshot: Any) -> str:
