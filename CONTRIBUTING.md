@@ -46,12 +46,15 @@ architectural assumption that doesn't hold.
 
 Small, self-contained bug fixes don't need this — just open the PR.
 
-## The plugin/extension model is intentionally closed
+## The plugin/extension model is closed, for now
 
-Heima does **not** support dynamically loaded third-party plugins. This is a deliberate,
-already-made architectural decision, not a temporary limitation. Built-in domains and reaction/
-learning plugins are added by modifying this repo directly, following the declarative DAG contract
-described in `docs/specs/heima_v2_spec.md` and `docs/guides/plugin_authoring.md`.
+Heima does **not** support dynamically loaded third-party plugins. This is not a permanent
+technical limitation, but a choice tied to the current complexity of the product: opening an
+external plugin API brings attack surface, versioning, compatibility, and support burden that
+aren't sustainable today. It's a possibility that will be reevaluated in the future, not a
+definitive non-goal. For now, built-in domains and reaction/learning plugins are added by modifying
+this repo directly, following the declarative DAG contract described in `docs/specs/heima_v2_spec.md`
+and `docs/guides/plugin_authoring.md`.
 
 If you're looking to extend *what Heima can learn or do*, that's a welcome contribution — but it
 lands as a PR against this repo, not as an out-of-tree plugin.

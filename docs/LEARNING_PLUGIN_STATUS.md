@@ -36,7 +36,9 @@ Extensibility is expressed through two built-in plugin concepts:
 - contributes steps to the shared apply plan
 
 The current model is **built-in registry only**.
-It is intentionally not a dynamic third-party plugin system.
+It is not a dynamic third-party plugin system today, but this is a stance tied to the current
+product complexity, not a permanent decision — opening it up is a possibility to be reevaluated in
+the future.
 
 Conceptually, learned behaviors can also be read through two semantic axes:
 - `trigger family`
