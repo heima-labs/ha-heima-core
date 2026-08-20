@@ -134,10 +134,11 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS final CI triage.
+**Active slice:** AS final CI triage — resolved, pending developer sign-off to mark `DONE`.
 **Branch:** `feat/runtime-source-provenance-spec`.
 **Next action:**
-Triage the 14 full-suite failures before marking AS complete or merging.
+Developer review of the AS closing slice (commit `87cc1e0`); if accepted, mark Phase AS `DONE` and
+plan the merge to `main`.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5499,11 +5500,36 @@ groups, service capabilities, and execution policy profile model.
   - Legacy/non-authoritative sources do not emit structured `source_details`.
   - Verification: `.venv/bin/python -m pytest tests/test_runtime_observability.py tests/test_observability.py tests/test_apply_step_source.py tests/test_reaction_framework.py tests/test_r5_reactions_observability.py tests/test_recovery_manager.py tests/test_runtime_confirmation.py tests/test_runtime_confirmation_promotion_stats.py tests/test_engine_lighting_runtime.py tests/test_heating_runtime.py tests/test_signal_assist_reaction.py tests/test_presence_pattern_reaction.py -q`
     — 246 passed.
-- Full-suite failure triage is required before AS can be marked `DONE`.
-- Decide whether to fix stale `recovery_policy` test expectations now or separate them into an AQ
-  cleanup commit.
-- Re-check the existing `test_inference_foundation.py` and `test_integration_normalization_e2e.py`
-  failures against `main` before attributing them to AS.
+- Full-suite failure triage: `DONE` (commit `87cc1e0`). Root causes and fixes:
+  - Stale `recovery_policy` test expectations: the `"block"` default on `ApplyStep`/
+    `reactions/alarm_policy.py` was already shipped; `test_alarm_policy_reaction.py`,
+    `test_rebuild_configured_reactions.py`, and `test_semantic_policies_n.py` just never caught up.
+    Fixed in place rather than deferred to an AQ cleanup commit.
+  - `test_inference_foundation.py` snapshot-store failures were hardcoded fixture dates
+    (`2026-04-30`) that had drifted into the past relative to real wall-clock `now`. Bumped to
+    current dates — still date-relative, so this will recur; worth making time-independent later.
+  - `test_integration_normalization_e2e.py`, `test_manual_hold_manager.py`, and the camera-privacy
+    materializer failures traced to a real gap: reactions were still being evaluated (and could
+    misfire or consume their schedule window) while the engine was in startup/checkpoint recovery.
+    Fixed by adding `_reaction_evaluation_suppressed_during_recovery()` in `engine.py`, which skips
+    evaluating all reactions during active recovery except the `security.camera_privacy_policy`
+    template (camera privacy must keep working through recovery). e2e tests use a new
+    `_enter_normal_runtime()` fixture helper to exit recovery before asserting normal behavior; the
+    live-lab scripts gained an equivalent `_wait_recovery_inactive()` poll helper.
+  - Incidental fix while touching the same code: `camera_evidence_sources` now accepts both list
+    and dict-keyed-by-id shapes at every runtime call site (`_camera_evidence_source_items()` in
+    `engine.py`), matching the options-flow editor's existing dual-shape tolerance
+    (`_normalize_camera_evidence_sources` / `_camera_evidence_sources_to_editor` in
+    `config_flow_steps/_steps_security.py`). The installer-facing "camera_evidence_sources[idx] is
+    not an object" diagnostic for malformed entries — dropped by the initial refactor through the
+    shared helper — was restored as an explicit pre-check in `_collect_config_issues` so installers
+    still see it.
+  - Verification: `.venv/bin/python -m pytest tests/ -q` — 1861 passed, 0 failed.
+    `ruff check custom_components/heima tests` and `ruff format --check` clean.
+    `mypy custom_components/heima/runtime/engine.py --ignore-missing-imports --explicit-package-bases`
+    — no issues.
+- AS acceptance criteria all appear satisfied given AS1-AS8 plus this closing slice; the phase looks
+  ready to mark `DONE`, pending explicit developer sign-off (not marked here).
 
 ---
 
