@@ -49,6 +49,7 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/runtime_provenance_spec.md` — draft vNext structured runtime provenance for apply steps,
   manual-hold ownership, recovery authorization, and observability grouping
 - `core/runtime_checkpoint_and_power_recovery_spec.md` — approved, planned checkpoint/recovery contract for HA restart, power outage, and startup stabilization (Phase AQ, not implemented on `main`)
+- `core/room_topology_spec.md` — approved, planned spatial topology contract (room adjacency graph, openings, orientation) for Security/Occupancy/HouseState (Phase AR, not implemented on `main`)
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/apply_step_contract.md` — canonical runtime action contract, including `target` vs `params.entity_id`

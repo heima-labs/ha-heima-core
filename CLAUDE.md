@@ -83,11 +83,12 @@ see `docs/v2_dev_plan.md`). The file `docs/specs/learning/inference_engine_spec.
 by the v2.1.0-draft spec.
 
 ### Plugin API
-Registries remain built-in. Dynamic loading of third-party plugins is not supported even in the
-current architecture: it's an explicit non-goal (`heima_v2_spec.md`, note on `monitored_entities`).
-Anyone who wants to add a built-in domain/plugin modifies the code directly, following the
-declarative DAG contract (Phase A). Reopening to third-party plugins remains, by design, not
-planned.
+Registries remain built-in. Dynamic loading of third-party plugins is not supported in the current
+architecture, but this is a choice tied to the current product complexity (attack surface,
+versioning, compatibility, support burden), not a definitive non-goal — reopening to third-party
+plugins is a possibility to be reevaluated in the future, not something ruled out for good. Today,
+anyone who wants to add a built-in domain/plugin modifies the code directly, following the
+declarative DAG contract (Phase A).
 
 ## v2 development
 

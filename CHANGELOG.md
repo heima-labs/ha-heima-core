@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.0] — 2026-08-19
+
+- Fix Hassfest `config_flow.py` file requirement by moving the config flow step
+  implementation to `config_flow_steps/` and adding a `config_flow.py` entry point that
+  re-exports `HeimaConfigFlow`/`HeimaOptionsFlowHandler`.
+- Sort `manifest.json` keys per Hassfest convention (`domain`, `name`, then alphabetical).
+- Remove the unsupported `domains` key from `hacs.json`.
+- Add brand assets (`icon.png`, `icon@2x.png`) for HACS brand validation.
+
 ## [0.10.0] — 2026-07-07
 
 - Release implicit camera privacy manual holds when the configured alarm transitions from

@@ -127,6 +127,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
 | AQ | Runtime Checkpoint and Power Recovery | `DONE` | AH, MH, AO, AP |
+| AR | Room Topology | `PLANNED` | AO, M |
 | AS | Structured Runtime Source | `IN PROGRESS` | AH, MH, AQ, AO, AP |
 
 ---
@@ -1235,6 +1236,115 @@ MVP merge.
   - Focused verification:
     - `.venv/bin/python -m pytest tests/test_recovery_manager.py tests/test_runtime_checkpoint_store.py tests/test_observability.py tests/test_camera_privacy_policy_materializer.py -q`
       — 72 passed.
+
+### Phase AR — Room Topology
+
+- Status: `PLANNED`.
+- Spec source: `docs/specs/core/room_topology_spec.md` (Status: Planned — not implemented on
+  `main`; approved after a multi-round pre-spec discussion, see
+  `heima_topologia_discussione.md`).
+- Also touches: `learning/room_context_spec.md` (sibling `rooms.*` CanonicalState namespace, no
+  changes to that spec itself), `core/admin_observability_panel_spec.md` (new `topology` diagnostics
+  summary), Installation Validation (`validation.py`, Phase M — new `ValidationSection`).
+- Goal: give Heima a declarative spatial topology (room adjacency graph, doors/windows, orientation)
+  as configuration, without any floorplan visualization or third-party tool dependency, so Security,
+  Occupancy, and HouseState can consume it, and future orientation-aware automations are not blocked
+  by the data model.
+- Product boundary:
+  - the graph is admin-declared, never geometrically inferred or imported in this phase;
+  - `geometry` is reserved `null` on every `Room` — an explicit, additive hook for a future
+    floorplan-visualization phase, not built or numbered here;
+  - topology stays room-level aggregate; no per-person presence tracking or display;
+  - Heating is not a consumer of this phase.
+
+#### AR1 — Data Model and Derivation
+
+- Status: `PLANNED`.
+- Extend `options[OPT_ROOMS][*]` with `room_type`, `floor`, `geometry` (always `null`).
+- Add `OPT_ROOM_OPENINGS` / `OPT_ROOM_CONNECTIONS` option lists and their record shapes.
+- Implement `connection_type` derivation (priority rule) and `exposure` derivation (union of window
+  orientations). No independently stored `is_outdoor`/`is_separate`.
+- Tests: `room_type` defaults to `indoor`; derivation priority-rule branches including
+  `room_b: "outside"`; `connection_type_override` precedence; `exposure` recomputation.
+
+#### AR2 — Topology Cache and CanonicalState Exposure
+
+- Status: `PLANNED`.
+- Compute and cache `CanonicalState["rooms.topology"]`, invalidated on options change and on
+  `EVENT_AREA_REGISTRY_UPDATED` / `EVENT_ENTITY_REGISTRY_UPDATED`, following the Room Context
+  Model's (Phase X) staleness pattern.
+- Tests: cache invalidation triggers; no per-cycle recomputation when nothing changed.
+
+#### AR3 — Validation and Reconciliation
+
+- Status: `PLANNED`.
+- Add a new `ValidationSection` to `validation.py` (Phase M): isolated `indoor` room warning
+  (non-`indoor` types excluded), shared `entity_id` warning (non-blocking), dangling
+  `room_id`/`opening_id` references as errors, `entity_unavailable` marking on Entity Registry
+  removal.
+- Hook orphan detection into the same lifecycle as `_reconcile_rooms()`.
+- Tests: per the spec's Testing Requirements (Area/entity removal scenarios).
+
+#### AR4 — Admin Editor (Panel)
+
+- Status: `PLANNED`.
+- Add `heima/topology/snapshot` and `heima/topology/action` websocket commands (admin-only),
+  mirroring the AO7 admin-action pattern (payload validation, updated snapshot returned, action
+  recorded for observability).
+- Panel UI: graph/form-based room + opening + connection editor, not an Options Flow step.
+- Tests: admin-gating, mutation round-trip through `config_entries.async_update_entry`.
+
+#### AR5 — Security Consumption
+
+- Status: `PLANNED`.
+- `SecurityDomain` reads `connection_type` + `Opening.entity_id` from `rooms.topology` for
+  alarm-boundary classification; openings without a bound entity are excluded from alarm coverage
+  and explicitly visible as such in diagnostics.
+- Reuse the existing `blocked_by` convention for topology-driven blocks.
+- Tests: separate/outdoor connection with armed_away triggers correctly; entity-less opening does
+  not silently participate in alarm logic.
+
+#### AR6 — Occupancy Consumption
+
+- Status: `PLANNED`.
+- `OccupancyDomain` reads `room_type` from `rooms.topology` and applies its own room-type weight
+  table alongside existing `room_occupancy_mode` handling.
+- Tests: weighted presence matches expected values per room type.
+
+#### AR7 — HouseState Consumption
+
+- Status: `PLANNED`.
+- After `house_state` resolution runs unchanged, `HouseStateDomain` separately cross-references
+  `rooms.topology`'s `connection_type` structure with the live entity state of `separate`/`outdoor`
+  openings, and attaches the result as a new `topology_context: {open_boundary_openings: [...]}`
+  key on the existing house-state diagnostics contract (`domains/house_state_spec.md` §11).
+- Purely explanatory: never influences the resolved `house_state` value, never triggers an action.
+  No new top-level `house_state` values — the enum stays closed.
+- Tests: `topology_context` appears in diagnostics when a `separate`/`outdoor` opening is open;
+  `house_state` resolution and its enum values are unchanged before/after this slice.
+
+#### AR8 — Observability
+
+- Status: `PLANNED`.
+- Add the `topology` diagnostics summary to the AO snapshot (room/opening/connection counts,
+  validation counts, unresolved entity references).
+- Ensure topology-driven Security decisions are traceable in existing AO decision traces.
+- Tests: AO snapshot includes `topology`; decision traces reference topology-derived
+  classifications.
+
+- Phase AR acceptance (from the spec's own Acceptance Criteria):
+  - `Room` topology fields, `Opening`, `Connection` persisted per config entry via the existing
+    options boundary.
+  - `rooms.topology` available as cached configuration, correctly invalidated.
+  - `connection_type` and `exposure` always derived, never independently stored.
+  - `entity_id` optional on every `Opening`; sharing supported, not flagged as an error.
+  - Security, Occupancy, and HouseState consume topology as configuration, no new per-cycle
+    computation or `InferenceSignal` type.
+  - `house_state` enum unchanged.
+  - Installation Validation reports topology issues with correct severity/scope.
+  - Admin editing is panel-based, admin-only, traceable in observability.
+  - Covered by unit and integration tests.
+  - Mandatory merge-to-main procedure applies before AR lands on `main`, per CLAUDE.md.
 
 ### Recent Working Notes
 
