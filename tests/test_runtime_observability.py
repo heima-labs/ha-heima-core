@@ -147,9 +147,7 @@ def test_observability_buffer_exports_structured_source_details_redacted() -> No
     assert reaction_step["source_details"]["kind"] == "reaction"
     assert reaction_step["source_details"]["source_type"] == "context_conditioned_lighting_scene"
     assert resident_step["source"] == "resident_response:request-1"
-    assert resident_step["source_details"]["actor_id_hash"] == redact_actor_id(
-        "recipient-stefano"
-    )
+    assert resident_step["source_details"]["actor_id_hash"] == redact_actor_id("recipient-stefano")
     assert "actor_id" not in resident_step["source_details"]
 
 
