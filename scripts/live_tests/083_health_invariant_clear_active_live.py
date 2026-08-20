@@ -44,6 +44,25 @@ def _engine_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return dict(engine) if isinstance(engine, dict) else {}
 
 
+def _wait_recovery_inactive(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: dict[str, Any] = {}
+    while time.time() < deadline:
+        _call_recompute(client)
+        runtime_context = _engine_diagnostics(client, entry_id).get("runtime_context", {})
+        last = dict(runtime_context) if isinstance(runtime_context, dict) else {}
+        if not bool(last.get("runtime.recovery.active")):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(f"runtime recovery did not become inactive: {last}")
+
+
 def _health_payload(client: HAClient) -> dict[str, Any]:
     return client.get_state("sensor.heima_health")
 
@@ -86,9 +105,7 @@ def _wait_health(
         last_attrs = _health_attrs(client)
         last_unresolved = _unresolved_check_ids(client, entry_id)
         unresolved_ok = (
-            True
-            if check_unresolved is None
-            else (CHECK_ID in last_unresolved) is check_unresolved
+            True if check_unresolved is None else (CHECK_ID in last_unresolved) is check_unresolved
         )
         if last_state == expected and unresolved_ok:
             return
@@ -126,6 +143,12 @@ def run(ha_url: str, ha_token: str, *, timeout_s: int, poll_s: float) -> None:
         pass
 
     try:
+        _wait_recovery_inactive(
+            client,
+            entry_id,
+            timeout_s=timeout_s,
+            poll_s=poll_s,
+        )
         print("Scenario A: force security_presence_mismatch and wait for degraded health...")
         client.call_service(
             "select",
@@ -203,7 +226,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ha-url", required=True)
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--timeout-s", type=int, default=95)
+    parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--poll-s", type=float, default=2.0)
     args = parser.parse_args()
     run(args.ha_url, args.ha_token, timeout_s=args.timeout_s, poll_s=args.poll_s)

@@ -80,6 +80,31 @@ def _engine_snapshot(client: HAClient, entry_id: str) -> dict[str, Any]:
     return snapshot
 
 
+def _wait_recovery_inactive(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: dict[str, Any] = {}
+    while time.time() < deadline:
+        client.call_service(
+            "heima",
+            "command",
+            {"command": "recompute_now", "target": {"entry_id": entry_id}},
+        )
+        runtime = _diagnostics_data(client, entry_id).get("runtime", {})
+        engine = runtime.get("engine", {}) if isinstance(runtime, dict) else {}
+        runtime_context = engine.get("runtime_context", {}) if isinstance(engine, dict) else {}
+        last = dict(runtime_context) if isinstance(runtime_context, dict) else {}
+        if not bool(last.get("runtime.recovery.active")):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(f"runtime recovery did not become inactive: {last}")
+
+
 def _persisted_row(client: HAClient, entry_id: str, reaction_id: str) -> dict[str, Any]:
     persisted = _runtime_confirmation(client, entry_id).get("persisted", {})
     by_reaction = persisted.get("by_reaction", {}) if isinstance(persisted, dict) else {}
@@ -174,10 +199,11 @@ def _current_context_condition(client: HAClient, entry_id: str) -> dict[str, Any
     for signal_name, state in sorted(signals.items()):
         clean_signal = str(signal_name or "").strip()
         clean_state = str(state or "").strip()
-        if clean_signal and clean_state:
+        if clean_signal and "." not in clean_signal and clean_state:
             return {"signal_name": clean_signal, "state_in": [clean_state]}
     raise AssertionError(
-        "no context_signals available; configure at least one learning/context signal in the lab"
+        "no compatible context_signals available; configure at least one abstract "
+        "learning/context signal in the lab"
     )
 
 
@@ -214,8 +240,8 @@ def _build_due_reaction(
                 "expires_in_minutes": 10,
                 "on_timeout": "skip",
                 "target_recipients": [],
-                "target_groups": [],
-                "use_default_route_targets": True,
+                "target_groups": ["live_test_residents"],
+                "use_default_route_targets": False,
             },
             "promotion": {
                 "enabled": True,
@@ -263,10 +289,15 @@ def _reset_runtime_state_if_present(client: HAFlowClient, entry_id: str, reactio
         step = _menu_next(client, flow_id, "runtime_confirmation_maintenance")
         if step.get("step_id") != "runtime_confirmation_maintenance":
             return
-        result = client.options_flow_configure(
-            flow_id,
-            {"reaction": reaction_id, "confirm_reset": True},
-        )
+        try:
+            result = client.options_flow_configure(
+                flow_id,
+                {"reaction": reaction_id, "confirm_reset": True},
+            )
+        except HAApiError as exc:
+            if "value must be one of" in str(exc):
+                return
+            raise
         _expect_step(result, "init")
     finally:
         client.options_flow_abort(flow_id)
@@ -390,8 +421,8 @@ def _edit_reaction_to_ask_residents(client: HAFlowClient, entry_id: str, reactio
                 "confirmation_expires_in_minutes": 10,
                 "confirmation_on_timeout": "skip",
                 "confirmation_target_recipients": [],
-                "confirmation_target_groups": [],
-                "confirmation_use_default_route_targets": True,
+                "confirmation_target_groups": ["live_test_residents"],
+                "confirmation_use_default_route_targets": False,
             },
         )
         _expect_step(result, "init")
@@ -483,7 +514,7 @@ def main() -> int:
     )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--timeout-s", type=int, default=60)
+    parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--poll-s", type=float, default=1.0)
     parser.add_argument("--settle-s", type=float, default=2.0)
     args = parser.parse_args()
@@ -497,6 +528,12 @@ def main() -> int:
         _reset_runtime_state_if_present(client, entry_id, REACTION_ID)
         _configure_notifications(
             client, entry_id, _live_notification_payload(original_notifications)
+        )
+        _wait_recovery_inactive(
+            client,
+            entry_id,
+            timeout_s=args.timeout_s,
+            poll_s=args.poll_s,
         )
 
         light_entity = _find_light_entity(client)

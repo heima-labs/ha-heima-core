@@ -150,6 +150,7 @@ def test_alarm_state_action_normalizes_climate_steps() -> None:
                 "target": "climate.living_room",
                 "action": "climate.set_hvac_mode",
                 "params": {"hvac_mode": "off", "entity_id": "climate.living_room"},
+                "recovery_policy": "block",
             }
         ],
         "skip_house_states": [],

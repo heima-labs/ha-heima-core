@@ -102,18 +102,21 @@ def test_alarm_away_lights_off_returns_admin_authored_proposal():
                 "target": "light.living_main",
                 "action": "light.turn_off",
                 "params": {"entity_id": "light.living_main"},
+                "recovery_policy": "block",
             },
             {
                 "domain": "light",
                 "target": "light.living_spot",
                 "action": "light.turn_off",
                 "params": {"entity_id": "light.living_spot"},
+                "recovery_policy": "block",
             },
             {
                 "domain": "light",
                 "target": "light.studio_desk",
                 "action": "light.turn_off",
                 "params": {"entity_id": "light.studio_desk"},
+                "recovery_policy": "block",
             },
         ],
         "skip_house_states": [],
@@ -161,6 +164,7 @@ def test_alarm_away_climate_off_returns_admin_authored_proposal():
                 "target": "climate.hall",
                 "action": "climate.set_hvac_mode",
                 "params": {"entity_id": "climate.hall", "hvac_mode": "off"},
+                "recovery_policy": "block",
             }
         ],
         "skip_house_states": [],
@@ -182,6 +186,7 @@ def test_alarm_night_climate_sleep_returns_sleep_preset_proposal():
                 "target": "climate.hall",
                 "action": "climate.set_preset_mode",
                 "params": {"entity_id": "climate.hall", "preset_mode": "sleep"},
+                "recovery_policy": "block",
             }
         ],
         "skip_house_states": [],

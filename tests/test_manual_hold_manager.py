@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.heima.runtime.contracts import ApplyPlan, ApplyStep, reaction_step_source
 from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.manual_hold import (
@@ -257,20 +259,20 @@ def test_engine_manual_hold_filter_does_not_overwrite_existing_blocker() -> None
     assert filtered.steps[0].blocked_by == "security.armed_away"
 
 
-def _privacy_engine(*, hold_state: str | None = None) -> HeimaEngine:
+def _privacy_engine(*, hold_state: str | None = None, source_shape: str = "list") -> HeimaEngine:
     engine = HeimaEngine.__new__(HeimaEngine)
     engine._manual_hold_manager = ManualHoldManager(monotonic=_Clock())
+    source = {
+        "id": "front",
+        "role": "entry",
+        "privacy_entity": "switch.front_privacy",
+        "manual_hold_entity": "input_boolean.front_privacy_hold",
+    }
+    camera_evidence_sources = {"front": source} if source_shape == "map" else [source]
     engine._entry = SimpleNamespace(
         options={
             "security": {
-                "camera_evidence_sources": [
-                    {
-                        "id": "front",
-                        "role": "entry",
-                        "privacy_entity": "switch.front_privacy",
-                        "manual_hold_entity": "input_boolean.front_privacy_hold",
-                    }
-                ]
+                "camera_evidence_sources": camera_evidence_sources,
             }
         }
     )
@@ -361,8 +363,9 @@ def test_engine_camera_privacy_restored_switch_state_does_not_hold() -> None:
     assert engine._manual_hold_manager.held_reason_for_scope(scope) == ""
 
 
-def test_engine_camera_privacy_external_switch_change_holds_entity() -> None:
-    engine = _privacy_engine(hold_state="off")
+@pytest.mark.parametrize("source_shape", ["list", "map"])
+def test_engine_camera_privacy_external_switch_change_holds_entity(source_shape: str) -> None:
+    engine = _privacy_engine(hold_state="off", source_shape=source_shape)
 
     engine.handle_camera_privacy_state_changed(
         SimpleNamespace(

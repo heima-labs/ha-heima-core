@@ -6,6 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.heima.runtime.checkpoint_store import (
     CheckpointEntityState,
@@ -20,6 +21,9 @@ from custom_components.heima.runtime.engine import HeimaEngine
 from custom_components.heima.runtime.manual_hold import ManualHoldReason, ManualHoldScope
 from custom_components.heima.runtime.plugin_contracts import InvariantViolation
 from custom_components.heima.runtime.reactions.base import HeimaReaction
+from custom_components.heima.runtime.reactions.context_conditioned_lighting import (
+    ContextConditionedLightingReaction,
+)
 from custom_components.heima.runtime.recovery import (
     CheckpointRecoveryStatus,
     CriticalEntityState,
@@ -419,6 +423,52 @@ def test_engine_suppresses_invariants_during_recovery() -> None:
     assert engine._events_domain._pending_events == []
 
 
+def test_engine_suppresses_reaction_evaluation_during_recovery_without_consuming_schedule() -> None:
+    hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
+    now = dt_util.now()
+    reaction = ContextConditionedLightingReaction(
+        reaction_id="scheduled_scene",
+        room_id="studio",
+        weekday=now.weekday(),
+        scheduled_min=now.hour * 60 + now.minute,
+        window_half_min=10,
+        entity_steps=[{"entity_id": "light.studio", "action": "on", "brightness": 42}],
+        context_conditions=[{"signal_name": "test_context", "state_in": ["active"]}],
+    )
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "reactions": {
+                    "configured": {
+                        "scheduled_scene": {"reaction_type": "context_conditioned_lighting_scene"}
+                    }
+                }
+            },
+        ),
+    )
+    engine._reactions = [reaction]
+    engine._runtime_context = {
+        "runtime.recovery.state": "recovery_settling",
+        "runtime.recovery.active": True,
+    }
+    history = [
+        replace(
+            DecisionSnapshot.empty(),
+            context_signals={"test_context": "active"},
+        )
+    ]
+
+    assert engine._dispatch_reactions(history) == []
+    assert reaction.diagnostics()["last_fired_date"] is None
+
+    engine._runtime_context = {"runtime.recovery.state": "normal", "runtime.recovery.active": False}
+
+    assert len(engine._dispatch_reactions(history)) == 1
+    assert reaction.diagnostics()["last_fired_date"] == now.date().isoformat()
+
+
 def test_engine_blocks_apply_steps_before_manual_hold_during_recovery() -> None:
     hass = SimpleNamespace(states=_FakeStates(), bus=_FakeBus(), services=_FakeServices())
     engine = HeimaEngine(hass=hass, entry=SimpleNamespace(entry_id="entry-a", options={}))
@@ -480,7 +530,16 @@ def test_engine_does_not_create_camera_privacy_hold_during_recovery() -> None:
     assert engine._manual_hold_manager.diagnostics()["active_holds"] == []
 
 
-def test_engine_allows_camera_privacy_policy_during_recovery_when_security_is_stable() -> None:
+@pytest.mark.parametrize(
+    "camera_sources",
+    [
+        [{"privacy_entity": "switch.camera_privacy"}],
+        {"camera": {"privacy_entity": "switch.camera_privacy"}},
+    ],
+)
+def test_engine_allows_camera_privacy_policy_during_recovery_when_security_is_stable(
+    camera_sources,
+) -> None:
     states = _FakeStates({"switch.camera_privacy": SimpleNamespace(state="on", attributes={})})
     hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
     engine = HeimaEngine(
@@ -489,11 +548,7 @@ def test_engine_allows_camera_privacy_policy_during_recovery_when_security_is_st
             entry_id="entry-a",
             options={
                 "security": {
-                    "camera_evidence_sources": [
-                        {
-                            "privacy_entity": "switch.camera_privacy",
-                        }
-                    ]
+                    "camera_evidence_sources": camera_sources,
                 },
                 "reactions": {
                     "configured": {

@@ -87,6 +87,29 @@ def _engine_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return engine
 
 
+def _wait_recovery_inactive(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: dict[str, Any] = {}
+    while time.time() < deadline:
+        client.call_service(
+            "heima",
+            "command",
+            {"command": "recompute_now", "target": {"entry_id": entry_id}},
+        )
+        runtime_context = _engine_diagnostics(client, entry_id).get("runtime_context", {})
+        last = dict(runtime_context) if isinstance(runtime_context, dict) else {}
+        if not bool(last.get("runtime.recovery.active")):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(f"runtime recovery did not become inactive: {last}")
+
+
 def _runtime_confirmation(client: HAClient, entry_id: str) -> dict[str, Any]:
     runtime = _diagnostics_data(client, entry_id).get("runtime", {})
     confirmation = runtime.get("runtime_confirmation", {}) if isinstance(runtime, dict) else {}
@@ -161,8 +184,8 @@ def _upsert_profile(client: HAFlowClient, entry_id: str) -> None:
         "profile_id": PROFILE_ID,
         "mode": "ask_residents",
         "confirmation_target_recipients": [],
-        "confirmation_target_groups": [],
-        "confirmation_use_default_route_targets": True,
+        "confirmation_target_groups": ["live_test_residents"],
+        "confirmation_use_default_route_targets": False,
         "confirmation_expires_in_minutes": 10,
         "confirmation_on_timeout": "skip",
         "promotion_enabled": True,
@@ -274,9 +297,11 @@ def _current_context_condition(client: HAClient, entry_id: str) -> dict[str, Any
     for signal_name, state in sorted(signals.items()):
         clean_signal = str(signal_name or "").strip()
         clean_state = str(state or "").strip()
-        if clean_signal and clean_state:
+        if clean_signal and "." not in clean_signal and clean_state:
             return {"signal_name": clean_signal, "state_in": [clean_state]}
-    raise AssertionError("no context_signals available for runtime confirmation profile live test")
+    raise AssertionError(
+        "no compatible context_signals available for runtime confirmation profile live test"
+    )
 
 
 def _build_due_profile_reaction(
@@ -393,7 +418,7 @@ def _assert_effective_policy_diagnostics(client: HAClient, entry_id: str) -> Non
     _assert(isinstance(confirmation, dict), f"missing confirmation diagnostics: {policy}")
     _assert(
         "live_test_residents" in confirmation.get("effective_targets", []),
-        f"default route group missing from effective targets: {confirmation}",
+        f"profile target group missing from effective targets: {confirmation}",
     )
 
 
@@ -430,7 +455,7 @@ def main() -> int:
     )
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--timeout-s", type=int, default=60)
+    parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--poll-s", type=float, default=1.0)
     parser.add_argument("--settle-s", type=float, default=2.0)
     args = parser.parse_args()
@@ -444,6 +469,12 @@ def main() -> int:
         _delete_profile_if_present(client, entry_id)
         _configure_notifications(
             client, entry_id, _live_notification_payload(original_notifications)
+        )
+        _wait_recovery_inactive(
+            client,
+            entry_id,
+            timeout_s=args.timeout_s,
+            poll_s=args.poll_s,
         )
         _upsert_profile(client, entry_id)
 

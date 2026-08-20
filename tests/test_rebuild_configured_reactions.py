@@ -403,6 +403,7 @@ def test_normalize_reaction_options_payload_normalizes_alarm_state_action_steps(
                 "target": "climate.living_room",
                 "action": "climate.set_hvac_mode",
                 "params": {"hvac_mode": "off", "entity_id": "climate.living_room"},
+                "recovery_policy": "block",
             }
         ],
         "skip_house_states": [],
@@ -467,6 +468,7 @@ def test_normalize_reaction_options_payload_preserves_alarm_state_action_envelop
             "target": "switch.interna_privacy",
             "action": "switch.turn_off",
             "params": {"entity_id": "switch.interna_privacy"},
+            "recovery_policy": "block",
         }
     ]
     assert "unknown_editor_field" not in cfg

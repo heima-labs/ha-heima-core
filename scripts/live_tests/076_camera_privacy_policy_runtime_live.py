@@ -144,6 +144,7 @@ def _policy_config(*, alarm_states: list[str], privacy_action: str) -> dict[str,
                 "target": PRIVACY_SWITCH,
                 "action": action,
                 "params": {"entity_id": PRIVACY_SWITCH},
+                "recovery_policy": "allow_when_inputs_stable",
             }
         ],
     }

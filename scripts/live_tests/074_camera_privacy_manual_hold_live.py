@@ -16,7 +16,7 @@ from lib.ha_client import HAApiError, HAClient
 ALARM_ENTITY = "alarm_control_panel.test_heima_alarm"
 PRIVACY_SWITCH = "switch.test_heima_heater_relay"
 PRIVACY_SWITCH_RAW = "input_boolean.test_heima_heater_relay_raw"
-MANUAL_HOLD_ENTITY = "input_boolean.test_heima_studio_fan_raw"
+MANUAL_HOLD_ENTITY = "input_boolean.test_heima_camera_privacy_manual_hold_raw"
 RESET_SCRIPT = "script.test_heima_reset"
 REACTION_ID = "live-camera-privacy-manual-hold"
 PROPOSAL_KEY = "alarm_night_camera_privacy"
@@ -95,6 +95,11 @@ def _manual_hold_diag(client: HAClient, entry_id: str) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _recovery_diag(client: HAClient, entry_id: str) -> dict[str, Any]:
+    value = _runtime_engine(client, entry_id).get("recovery", {})
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _active_hold_reasons(client: HAClient, entry_id: str, scope: str = SCOPE) -> set[str]:
     diag = _manual_hold_diag(client, entry_id)
     holds = diag.get("active_holds", [])
@@ -158,17 +163,29 @@ def _upsert_reaction(client: HAClient, entry_id: str) -> None:
     cfg = {
         "reaction_type": "alarm_state_action",
         "alarm_states": ["armed_night"],
+        "origin": "admin_authored",
+        "author_kind": "admin",
+        "source_request": "template:security.camera_privacy_policy",
+        "source_template_id": "security.camera_privacy_policy",
+        "admin_authored_template_id": "security.camera_privacy_policy",
+        "camera_privacy_policy": {
+            "camera_source_id": "entry_cam",
+            "privacy_entity": PRIVACY_SWITCH,
+            "house_filter_mode": "always",
+            "house_states": [],
+            "privacy_action": "turn_on",
+        },
         "steps": [
             {
                 "domain": "switch",
                 "target": PRIVACY_SWITCH,
                 "action": "switch.turn_on",
                 "params": {"entity_id": PRIVACY_SWITCH},
+                "recovery_policy": "allow_when_inputs_stable",
             }
         ],
         "skip_house_states": [],
         "enabled": True,
-        "source_request": "live-test:camera-privacy-manual-hold",
     }
     client.call_service(
         "heima",
@@ -209,6 +226,19 @@ def _disable_reaction(client: HAClient, entry_id: str) -> None:
 
 def _call_recompute(client: HAClient) -> None:
     client.call_service("heima", "command", {"command": "recompute_now"})
+
+
+def _set_state(client: HAClient, entity_id: str, state: str, attributes: dict[str, Any]) -> None:
+    client.post(f"/api/states/{entity_id}", {"state": state, "attributes": attributes})
+
+
+def _set_manual_hold_helper(client: HAClient, state: str) -> None:
+    _set_state(
+        client,
+        MANUAL_HOLD_ENTITY,
+        state,
+        {"friendly_name": "Test Heima Camera Privacy Manual Hold Raw"},
+    )
 
 
 def _wait_for_semantic_proposal(
@@ -258,14 +288,16 @@ def _wait_hold_reason(
     *,
     timeout_s: int,
     poll_s: float,
+    recompute: bool = True,
 ) -> None:
     deadline = time.time() + timeout_s
     last: set[str] = set()
     while time.time() < deadline:
-        _call_recompute(client)
         last = _active_hold_reasons(client, entry_id)
         if reason in last:
             return
+        if recompute:
+            _call_recompute(client)
         time.sleep(poll_s)
     raise AssertionError(f"manual hold reason {reason!r} not active; last={sorted(last)}")
 
@@ -294,6 +326,47 @@ def _assert_no_pending_apply(client: HAClient, entry_id: str) -> None:
     _assert(total == 0, f"unexpected pending apply while manual hold is active: {pending}")
 
 
+def _wait_no_pending_apply_for_switch(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: list[dict[str, Any]] = []
+    while time.time() < deadline:
+        _call_recompute(client)
+        pending = _manual_hold_diag(client, entry_id).get("pending_applies", {})
+        items = pending.get("items", []) if isinstance(pending, dict) else []
+        last = [dict(item) for item in items if isinstance(item, dict)]
+        if not any(item.get("entity_id") == PRIVACY_SWITCH for item in last):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(f"pending apply for {PRIVACY_SWITCH} did not clear: {last}")
+
+
+def _wait_recovery_inactive(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: dict[str, Any] = {}
+    while time.time() < deadline:
+        _call_recompute(client)
+        last = _recovery_diag(client, entry_id)
+        if not bool(last.get("active")):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(
+        "recovery did not become inactive before external hold scenario: "
+        f"state={last.get('state')!r} reason={last.get('reason')!r}"
+    )
+
+
 def _set_alarm_state(client: HAClient, state: str, *, timeout_s: int, poll_s: float) -> None:
     if state == "disarmed":
         client.call_service(
@@ -315,7 +388,7 @@ def _set_alarm_state(client: HAClient, state: str, *, timeout_s: int, poll_s: fl
 
 def _reset_lab(client: HAClient, *, timeout_s: int, poll_s: float) -> None:
     client.call_service("script", "turn_on", {"entity_id": RESET_SCRIPT})
-    client.call_service("input_boolean", "turn_off", {"entity_id": MANUAL_HOLD_ENTITY})
+    _set_manual_hold_helper(client, "off")
     client.call_service("switch", "turn_off", {"entity_id": PRIVACY_SWITCH})
     client.call_service("input_boolean", "turn_off", {"entity_id": PRIVACY_SWITCH_RAW})
     client.wait_state(PRIVACY_SWITCH, "off", timeout_s, poll_s)
@@ -326,11 +399,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ha-url", default="http://127.0.0.1:8123")
     parser.add_argument("--ha-token", required=True)
-    parser.add_argument("--timeout-s", type=int, default=60)
+    parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--poll-s", type=float, default=1.0)
     args = parser.parse_args()
 
     client = HAFlowClient(args.ha_url, args.ha_token, timeout_s=args.timeout_s)
+    _set_manual_hold_helper(client, "off")
     required = [ALARM_ENTITY, PRIVACY_SWITCH, PRIVACY_SWITCH_RAW, MANUAL_HOLD_ENTITY, RESET_SCRIPT]
     missing = [entity_id for entity_id in required if not client.entity_exists(entity_id)]
     _assert(not missing, "missing required entities:\n- " + "\n- ".join(missing))
@@ -362,7 +436,7 @@ def main() -> int:
 
         print("Scenario A: explicit manual_hold_entity blocks camera privacy apply...")
         _reset_lab(client, timeout_s=args.timeout_s, poll_s=args.poll_s)
-        client.call_service("input_boolean", "turn_on", {"entity_id": MANUAL_HOLD_ENTITY})
+        _set_manual_hold_helper(client, "on")
         _wait_hold_reason(
             client, entry_id, "helper_on", timeout_s=args.timeout_s, poll_s=args.poll_s
         )
@@ -374,18 +448,27 @@ def main() -> int:
         print("PASS scenario A")
 
         print("Scenario B: Heima-owned privacy switch apply does not activate hold...")
-        client.call_service("input_boolean", "turn_off", {"entity_id": MANUAL_HOLD_ENTITY})
+        _set_manual_hold_helper(client, "off")
         _set_alarm_state(client, "disarmed", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _wait_no_hold_for_scope(client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s)
         _set_alarm_state(client, "armed_night", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _wait_switch(client, "on", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _wait_no_hold_for_scope(client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s)
+        _wait_no_pending_apply_for_switch(
+            client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s
+        )
         print("PASS scenario B")
 
         print("Scenario C: external privacy switch hold releases on the next arm cycle...")
+        _wait_recovery_inactive(client, entry_id, timeout_s=args.timeout_s, poll_s=args.poll_s)
         client.call_service("switch", "turn_off", {"entity_id": PRIVACY_SWITCH})
         _wait_hold_reason(
-            client, entry_id, "external_off", timeout_s=args.timeout_s, poll_s=args.poll_s
+            client,
+            entry_id,
+            "external_off",
+            timeout_s=args.timeout_s,
+            poll_s=args.poll_s,
+            recompute=False,
         )
         _set_alarm_state(client, "disarmed", timeout_s=args.timeout_s, poll_s=args.poll_s)
         _set_alarm_state(client, "armed_night", timeout_s=args.timeout_s, poll_s=args.poll_s)
@@ -398,7 +481,7 @@ def main() -> int:
             _configure_security(client, entry_id, original_security)
             _disable_reaction(client, entry_id)
             client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
-            client.call_service("input_boolean", "turn_off", {"entity_id": MANUAL_HOLD_ENTITY})
+            _set_manual_hold_helper(client, "off")
             client.call_service("input_boolean", "turn_off", {"entity_id": PRIVACY_SWITCH_RAW})
             _set_alarm_state(client, "disarmed", timeout_s=args.timeout_s, poll_s=args.poll_s)
         except Exception as exc:  # noqa: BLE001

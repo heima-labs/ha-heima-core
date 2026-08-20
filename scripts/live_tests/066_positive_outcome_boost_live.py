@@ -69,6 +69,35 @@ def _outcome_diagnostics(client: HAClient, entry_id: str) -> dict[str, Any]:
     return dict(outcome) if isinstance(outcome, dict) else {}
 
 
+def _engine_runtime_context(client: HAClient, entry_id: str) -> dict[str, Any]:
+    runtime = _diagnostics_data(client, entry_id).get("runtime", {})
+    engine = runtime.get("engine", {}) if isinstance(runtime, dict) else {}
+    context = engine.get("runtime_context", {}) if isinstance(engine, dict) else {}
+    return dict(context) if isinstance(context, dict) else {}
+
+
+def _wait_recovery_inactive(
+    client: HAClient,
+    entry_id: str,
+    *,
+    timeout_s: int,
+    poll_s: float,
+) -> None:
+    deadline = time.time() + timeout_s
+    last: dict[str, Any] = {}
+    while time.time() < deadline:
+        client.call_service(
+            "heima",
+            "command",
+            {"command": "recompute_now", "target": {"entry_id": entry_id}},
+        )
+        last = _engine_runtime_context(client, entry_id)
+        if not bool(last.get("runtime.recovery.active")):
+            return
+        time.sleep(poll_s)
+    raise AssertionError(f"runtime recovery did not become inactive: {last}")
+
+
 def _proposal_by_id(client: HAClient, entry_id: str, proposal_id: str) -> dict[str, Any] | None:
     for proposal in _proposal_diagnostics(client, entry_id):
         if str(proposal.get("id") or "") == proposal_id:
@@ -162,10 +191,7 @@ def _proposal_step_matches(step: dict[str, Any], proposal: dict[str, Any]) -> bo
     return bool(
         (proposal_id and proposal_id in text)
         or (description and description[:32] in text)
-        or (
-            str(proposal.get("type") or "") == "presence_preheat"
-            and "presence_preheat" in text
-        )
+        or (str(proposal.get("type") or "") == "presence_preheat" and "presence_preheat" in text)
     )
 
 
@@ -270,9 +296,7 @@ def _upsert_due_reaction(
         {
             "command": "upsert_configured_reactions",
             "params": {
-                "configured": {
-                    reaction_id: _build_due_presence_config(reaction_id, step_entity)
-                },
+                "configured": {reaction_id: _build_due_presence_config(reaction_id, step_entity)},
                 "labels": {reaction_id: "Live positive outcome boost probe"},
             },
         },
@@ -360,7 +384,7 @@ def main() -> int:
     parser.add_argument("--step-entity", default="input_boolean.test_heima_studio_fan_raw")
     parser.add_argument("--outcome-cycles", type=int, default=10)
     parser.add_argument("--settle-s", type=float, default=0.35)
-    parser.add_argument("--timeout-s", type=int, default=90)
+    parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--poll-s", type=float, default=0.5)
     args = parser.parse_args()
 
@@ -412,12 +436,20 @@ def main() -> int:
         poll_s=args.poll_s,
     )
     before_confidence = float(accepted.get("confidence") or 0.0)
-    print(f"Accepted proposal target={accepted.get('target_reaction_id')} confidence={before_confidence:.3f}")
+    print(
+        f"Accepted proposal target={accepted.get('target_reaction_id')} confidence={before_confidence:.3f}"
+    )
 
     print("Configuring accepted presence reaction to fire now with a real non-empty step...")
     _upsert_due_reaction(client, reaction_id=proposal_id, step_entity=args.step_entity)
     client.call_service("homeassistant", "reload_config_entry", {"entry_id": entry_id})
     time.sleep(max(args.settle_s, 1.0))
+    _wait_recovery_inactive(
+        client,
+        entry_id,
+        timeout_s=args.timeout_s,
+        poll_s=args.poll_s,
+    )
 
     print("Driving positive outcomes through the real event recorder...")
     _drive_positive_outcomes(

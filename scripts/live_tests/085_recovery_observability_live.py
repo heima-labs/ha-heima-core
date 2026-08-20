@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.ha_client import HAClient
-from lib.ha_websocket import HAWebSocketClient
+from lib.ha_websocket import HAWebSocketClient, HAWebSocketError
 
 
 def _assert(cond: bool, msg: str) -> None:
@@ -23,6 +24,20 @@ def _snapshot(ws: HAWebSocketClient, entry_id: str) -> dict[str, Any]:
     result = ws.call("heima/observability/snapshot", entry_id=entry_id)
     _assert(isinstance(result, dict), f"snapshot result must be a dict: {type(result)}")
     return result
+
+
+def _snapshot_with_retry(ha_url: str, ha_token: str, entry_id: str) -> dict[str, Any]:
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with HAWebSocketClient(ha_url, ha_token) as ws:
+                return _snapshot(ws, entry_id)
+        except HAWebSocketError as exc:
+            last_error = exc
+            if attempt == 2:
+                break
+            time.sleep(1.0)
+    raise AssertionError(f"observability snapshot websocket failed after retries: {last_error}")
 
 
 def _assert_recovery_contract(snapshot: dict[str, Any]) -> None:
@@ -132,8 +147,7 @@ def main() -> int:
     client = HAClient(base_url=args.ha_url, token=args.ha_token, timeout_s=20)
     entry_id = client.find_heima_entry_id()
 
-    with HAWebSocketClient(args.ha_url, args.ha_token) as ws:
-        snapshot = _snapshot(ws, entry_id)
+    snapshot = _snapshot_with_retry(args.ha_url, args.ha_token, entry_id)
     _assert_recovery_contract(snapshot)
     _assert_health_alignment(client, snapshot)
 

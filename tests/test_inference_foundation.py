@@ -49,7 +49,7 @@ def reset_fake_store() -> None:
 
 def _snapshot(
     *,
-    ts: str = "2026-04-30T10:00:00+00:00",
+    ts: str = "2026-08-20T10:00:00+00:00",
     anyone_home: bool = True,
     house_state: str = "home",
 ) -> HouseSnapshot:
@@ -127,8 +127,8 @@ async def test_learning_module_base_returns_no_signals_before_analysis() -> None
 
 
 def test_house_snapshot_serialization_and_semantic_key() -> None:
-    first = _snapshot(ts="2026-04-30T10:00:00+00:00")
-    second = _snapshot(ts="2026-04-30T10:01:00+00:00")
+    first = _snapshot(ts="2026-08-20T10:00:00+00:00")
+    second = _snapshot(ts="2026-08-20T10:01:00+00:00")
 
     restored = HouseSnapshot.from_dict(first.as_dict())
 
@@ -204,12 +204,12 @@ async def test_snapshot_store_appends_only_on_semantic_change(
     monkeypatch.setattr(snapshot_store, "Store", _FakeStore)
     store = SnapshotStore(object())  # type: ignore[arg-type]
 
-    first_written = await store.async_append_if_changed(_snapshot(ts="2026-04-30T10:00:00+00:00"))
+    first_written = await store.async_append_if_changed(_snapshot(ts="2026-08-20T10:00:00+00:00"))
     duplicate_written = await store.async_append_if_changed(
-        _snapshot(ts="2026-04-30T10:01:00+00:00")
+        _snapshot(ts="2026-08-20T10:01:00+00:00")
     )
     changed_written = await store.async_append_if_changed(
-        _snapshot(ts="2026-04-30T10:02:00+00:00", house_state="away")
+        _snapshot(ts="2026-08-20T10:02:00+00:00", house_state="away")
     )
 
     assert first_written is True
@@ -225,19 +225,19 @@ async def test_snapshot_store_prunes_ttl_and_max_records(monkeypatch: pytest.Mon
     monkeypatch.setattr(snapshot_store, "Store", _FakeStore)
     monkeypatch.setattr(SnapshotStore, "MAX_RECORDS", 3)
     store = SnapshotStore(object())  # type: ignore[arg-type]
-    old = _snapshot(ts="2025-12-01T10:00:00+00:00")
-    fresh = _snapshot(ts="2026-04-30T10:00:00+00:00", house_state="away")
+    old = _snapshot(ts="2026-04-01T10:00:00+00:00")
+    fresh = _snapshot(ts="2026-08-20T10:00:00+00:00", house_state="away")
 
     await store.async_append(old)
     await store.async_append(fresh)
-    store._evict_ttl(now=datetime(2026, 4, 30, 12, 0, tzinfo=UTC))  # noqa: SLF001
+    store._evict_ttl(now=datetime(2026, 8, 20, 12, 0, tzinfo=UTC))  # noqa: SLF001
 
     assert store.snapshots() == [fresh]
 
     for index in range(SnapshotStore.MAX_RECORDS + 2):
         await store.async_append(
             _snapshot(
-                ts=f"2026-04-30T10:{index % 60:02d}:00+00:00",
+                ts=f"2026-08-20T10:{index % 60:02d}:00+00:00",
                 house_state=f"state_{index}",
             )
         )

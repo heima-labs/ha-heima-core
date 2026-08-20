@@ -14,6 +14,7 @@ from custom_components.heima.runtime.normalization import (
     InputNormalizer,
     NormalizationFusionRegistry,
 )
+from custom_components.heima.runtime.recovery import RecoveryManager
 from custom_components.heima.services import async_register_services
 
 
@@ -49,6 +50,17 @@ def _anon_source_state(hass: HomeAssistant):
 async def _advance_event_debounce(hass: HomeAssistant, seconds: float = 5.1) -> None:
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
     await hass.async_block_till_done()
+
+
+async def _enter_normal_runtime(hass: HomeAssistant, entry: MockConfigEntry):
+    """Move an e2e fixture out of startup recovery for non-recovery behavior checks."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator.engine._startup_recovery_pending = False  # noqa: SLF001
+    coordinator.engine._recovery_manager = RecoveryManager()  # noqa: SLF001
+    coordinator.engine._runtime_context = {}  # noqa: SLF001
+    await coordinator.async_request_evaluation(reason="test:normal_runtime")
+    await hass.async_block_till_done()
+    return coordinator
 
 
 class _ExplodingAnyOfPlugin:
@@ -713,6 +725,7 @@ async def test_e2e_set_mode_forces_and_clears_final_house_state_override(
     events = []
     hass.bus.async_listen(EVENT_HEIMA_EVENT, lambda event: events.append(event.data))
 
+    coordinator = await _enter_normal_runtime(hass, entry)
     assert hass.states.get("sensor.heima_house_state").state == "away"
 
     await hass.services.async_call(
@@ -728,7 +741,6 @@ async def test_e2e_set_mode_forces_and_clears_final_house_state_override(
     assert any(event.get("type") == "system.house_state_override_changed" for event in events)
     assert hass.states.get("sensor.heima_last_event").state == "house_state.changed"
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     override_diag = coordinator.engine.diagnostics()["house_state"]["override"]
     assert override_diag["house_state_override"] == "vacation"
     assert override_diag["house_state_override_active"] is True
@@ -782,7 +794,7 @@ async def test_e2e_heating_fixed_target_branch_updates_canonical_entities_and_ca
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = await _enter_normal_runtime(hass, entry)
 
     assert hass.states.get("sensor.heima_heating_state") is not None
     assert hass.states.get("sensor.heima_heating_state").state in {"target_active", "idle"}
@@ -861,7 +873,7 @@ async def test_e2e_heating_vacation_curve_branch_computes_and_applies_target(
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = await _enter_normal_runtime(hass, entry)
 
     assert hass.states.get("sensor.heima_house_state").state == "vacation"
     assert hass.states.get("sensor.heima_heating_state").state in {"target_active", "idle"}
@@ -965,7 +977,7 @@ async def test_e2e_heating_manual_hold_blocks_fixed_target_apply(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = await _enter_normal_runtime(hass, entry)
     coordinator.engine.state.set_binary("heima_heating_manual_hold", True)
     await coordinator.async_request_evaluation(reason="test:heating_manual_hold")
     await hass.async_block_till_done()

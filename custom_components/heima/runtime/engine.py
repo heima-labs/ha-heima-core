@@ -1211,9 +1211,7 @@ class HeimaEngine:
 
     def _recovery_active(self) -> bool:
         runtime_context = getattr(self, "_runtime_context", {})
-        return bool(runtime_context.get("runtime.recovery.active")) or bool(
-            self._recovery_state()
-        )
+        return bool(runtime_context.get("runtime.recovery.active")) or bool(self._recovery_state())
 
     def _current_recovery_critical_entities(self) -> tuple[CriticalEntityState, ...]:
         states = getattr(self._hass, "states", None)
@@ -1267,9 +1265,7 @@ class HeimaEngine:
 
         security = options.get(OPT_SECURITY, {})
         if isinstance(security, dict):
-            for source in security.get("camera_evidence_sources", []) or []:
-                if not isinstance(source, dict):
-                    continue
+            for source in _camera_evidence_source_items(security):
                 _add_entity_id(critical, source.get("privacy_entity"))
                 _add_entity_id(critical, source.get("manual_hold_entity"))
 
@@ -1558,9 +1554,7 @@ class HeimaEngine:
         security_entity = security.get("security_state_entity")
         if security_entity:
             tracked.add(str(security_entity))
-        for source in security.get("camera_evidence_sources", []) or []:
-            if not isinstance(source, dict):
-                continue
+        for source in _camera_evidence_source_items(security):
             for key in ("motion_entity", "person_entity", "vehicle_entity", "contact_entity"):
                 value = source.get(key)
                 if value:
@@ -2402,6 +2396,8 @@ class HeimaEngine:
             rid = reaction.reaction_id
             if rid in self._muted_reactions:
                 continue
+            if self._reaction_evaluation_suppressed_during_recovery(rid):
+                continue
             try:
                 steps = reaction.evaluate(history)
                 source = reaction_step_source(
@@ -2442,6 +2438,15 @@ class HeimaEngine:
                     error="exception_raised",
                 )
         return result
+
+    def _reaction_evaluation_suppressed_during_recovery(self, reaction_id: str) -> bool:
+        """Return whether recovery must skip evaluation to avoid reaction side effects."""
+        if not self._recovery_active():
+            return False
+        cfg = self._configured_reaction_config(reaction_id)
+        if cfg.get("source_template_id") == "security.camera_privacy_policy":
+            return False
+        return True
 
     def _maybe_create_runtime_confirmation_request(
         self,
@@ -2807,8 +2812,7 @@ class HeimaEngine:
             return False
         privacy_entities = {
             str(source.get("privacy_entity") or "").strip()
-            for source in security.get("camera_evidence_sources", []) or []
-            if isinstance(source, dict)
+            for source in _camera_evidence_source_items(security)
         }
         return step.target in privacy_entities
 
@@ -2834,9 +2838,7 @@ class HeimaEngine:
         if not isinstance(security, dict):
             return {}
         scopes: dict[str, ManualHoldScope] = {}
-        for source in security.get("camera_evidence_sources", []) or []:
-            if not isinstance(source, dict):
-                continue
+        for source in _camera_evidence_source_items(security):
             entity_id = str(source.get("privacy_entity") or "").strip()
             if entity_id.startswith("switch."):
                 scopes[entity_id] = ManualHoldScope("switch", "entity", entity_id)
@@ -2847,9 +2849,7 @@ class HeimaEngine:
         if not isinstance(security, dict):
             return {}
         holds: dict[str, str] = {}
-        for source in security.get("camera_evidence_sources", []) or []:
-            if not isinstance(source, dict):
-                continue
+        for source in _camera_evidence_source_items(security):
             privacy_entity = str(source.get("privacy_entity") or "").strip()
             hold_entity = str(source.get("manual_hold_entity") or "").strip()
             if privacy_entity.startswith("switch.") and hold_entity.startswith("input_boolean."):
@@ -3497,9 +3497,15 @@ class HeimaEngine:
                 issues.append("security: enabled but security_state_entity is not configured")
             elif self._hass.states.get(entity_id) is None:
                 issues.append(f"security: security_state_entity '{entity_id}' not found in HA")
-        camera_sources = security_cfg.get("camera_evidence_sources", [])
-        if isinstance(camera_sources, list):
-            for idx, raw_source in enumerate(camera_sources):
+        if isinstance(security_cfg, dict):
+            raw_camera_sources = security_cfg.get("camera_evidence_sources", [])
+            if isinstance(raw_camera_sources, dict):
+                raw_camera_items: list[tuple[Any, Any]] = list(raw_camera_sources.items())
+            elif isinstance(raw_camera_sources, list | tuple):
+                raw_camera_items = list(enumerate(raw_camera_sources))
+            else:
+                raw_camera_items = []
+            for idx, raw_source in raw_camera_items:
                 if not isinstance(raw_source, dict):
                     issues.append(f"security: camera_evidence_sources[{idx}] is not an object")
                     continue
@@ -3718,6 +3724,15 @@ def _entity_ids_from_value(value: Any) -> list[str]:
         for item in value:
             found.update(_entity_ids_from_value(item))
     return sorted(found)
+
+
+def _camera_evidence_source_items(security: dict[str, Any]) -> list[dict[str, Any]]:
+    sources = security.get("camera_evidence_sources", [])
+    if isinstance(sources, dict):
+        return [dict(source) for source in sources.values() if isinstance(source, dict)]
+    if isinstance(sources, list | tuple):
+        return [dict(source) for source in sources if isinstance(source, dict)]
+    return []
 
 
 def _looks_like_entity_id(value: str) -> bool:
