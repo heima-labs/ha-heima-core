@@ -128,18 +128,20 @@ These constraints must never be violated. See spec §16 for rationale.
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
 | AQ | Runtime Checkpoint and Power Recovery | `DONE` | AH, MH, AO, AP |
 | AR | Room Topology | `PLANNED` | AO, M |
-| AS | Structured Runtime Source | `IN PROGRESS` | AH, MH, AQ, AO, AP |
+| AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery.
-**Active slice:** AS final CI triage — resolved, pending developer sign-off to mark `DONE`.
-**Branch:** `feat/runtime-source-provenance-spec`.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
+— Structured Runtime Source.
+**Active slice:** None — AS closed out, ready to merge to `main`.
+**Branch:** `feat/runtime-source-provenance-spec` (merged `main` in at `a3e9be7`, `main` merged back
+at commit time; see CHANGELOG for the released version).
 **Next action:**
-Developer review of the AS closing slice (commit `87cc1e0`); if accepted, mark Phase AS `DONE` and
-plan the merge to `main`.
+Pick up Phase AR — Room Topology (spec already on `main`, all sub-phases `PLANNED`) or another
+priority per developer direction.
 
 ### Phase AO — Admin Observability Panel
 
@@ -5370,7 +5372,7 @@ groups, service capabilities, and execution policy profile model.
 
 ### Phase AS — Structured Runtime Source
 
-- Status: `IN PROGRESS`.
+- Status: `DONE`.
 - Spec source: `docs/specs/core/runtime_provenance_spec.md`.
 - Also touches: `core/apply_step_contract.md`, `core/manual_hold_framework_spec.md`,
   `core/runtime_checkpoint_and_power_recovery_spec.md`,
@@ -5592,13 +5594,13 @@ groups, service capabilities, and execution policy profile model.
 
 ### Acceptance Criteria
 
-- [ ] New runtime-created apply steps use structured source objects in `ApplyStep.source`.
-- [ ] Legacy string sources remain accepted and behavior-compatible.
-- [ ] Authorization decisions never trust free-form strings or raw user-controlled source payloads.
-- [ ] Manual Hold, recovery gating, runtime confirmations, script apply batches, and observability
+- [x] New runtime-created apply steps use structured source objects in `ApplyStep.source`.
+- [x] Legacy string sources remain accepted and behavior-compatible.
+- [x] Authorization decisions never trust free-form strings or raw user-controlled source payloads.
+- [x] Manual Hold, recovery gating, runtime confirmations, script apply batches, and observability
   use source helper semantics instead of direct string parsing.
-- [ ] Raw actor ids are not emitted in diagnostics, observability, checkpoints, logs, or stores.
-- [ ] Tests cover helper semantics, compatibility, forged-source rejection, and representative
+- [x] Raw actor ids are not emitted in diagnostics, observability, checkpoints, logs, or stores.
+- [x] Tests cover helper semantics, compatibility, forged-source rejection, and representative
   runtime integrations.
 
 ### Current open items
@@ -5638,8 +5640,8 @@ groups, service capabilities, and execution policy profile model.
     `ruff check custom_components/heima tests` and `ruff format --check` clean.
     `mypy custom_components/heima/runtime/engine.py --ignore-missing-imports --explicit-package-bases`
     — no issues.
-- AS acceptance criteria all appear satisfied given AS1-AS8 plus this closing slice; the phase looks
-  ready to mark `DONE`, pending explicit developer sign-off (not marked here).
+- Developer sign-off received; Phase AS marked `DONE` (see Acceptance Criteria and phase overview
+  table above).
 
 ---
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0] — 2026-08-20
+
+- Runtime checkpoint and power recovery: post-review hardening — missing critical entities are
+  classified as unavailable instead of being silently omitted from recovery ratios; checkpoint
+  writes are guarded against concurrent recovery; recovery diagnostics expose wall-clock
+  timestamps for every phase transition; `ApplyStep.recovery_policy` gained an explicit allow
+  vocabulary so camera privacy enforcement can run during recovery when the alarm input is stable.
+- Structured runtime source (`ApplyStepSource`): apply steps now carry a typed source (reaction,
+  domain, admin command, resident response, timeout, recovery, system, test) instead of a
+  free-form string. Legacy string sources remain accepted but are never authoritative. Recovery
+  admin bypass, Manual Hold ownership, runtime confirmation provenance, script apply batches, and
+  observability all derive from structured sources instead of parsing strings; raw actor ids are
+  redacted everywhere they could otherwise leak (diagnostics, observability, checkpoints, logs,
+  persisted stores).
+- Reaction evaluation is now suppressed during active runtime recovery (except the camera privacy
+  policy template, which must keep protecting the home), so scheduled reactions don't misfire or
+  lose their trigger window while the system is still settling after a restart.
+- `camera_evidence_sources` now accepts both list and dict-keyed-by-id shapes at every runtime
+  call site, matching the Options Flow editor's existing tolerance; malformed entries are still
+  surfaced as an installer diagnostic instead of being silently dropped.
+
 ## [0.11.0] — 2026-08-19
 
 - Fix Hassfest `config_flow.py` file requirement by moving the config flow step
