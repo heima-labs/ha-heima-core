@@ -665,3 +665,38 @@ def apply_room_connection_delete(
     if len(remaining) == len(existing):
         return None, ()
     return _apply_and_validate(options, OPT_ROOM_CONNECTIONS, remaining)
+
+
+# room_type/floor/geometry never affect entity registry/platform setup (unlike area_id,
+# occupancy sources, etc.), so a change limited to these fields doesn't need the full
+# hass.config_entries.async_reload the other options[OPT_ROOMS] fields do — see __init__.py's
+# _async_entry_updated, which calls this to decide between the light and heavy reload path.
+_ROOM_TOPOLOGY_FIELDS = frozenset({"room_type", "floor", "geometry"})
+
+
+def is_room_options_change_topology_only(prev_rooms: Any, new_rooms: Any) -> bool:
+    """True if the only differences between two options[OPT_ROOMS] lists are edits to
+    room_type/floor/geometry on already-existing rooms — no room added/removed, and no other
+    field (area_id, occupancy config, ...) changed on any room.
+    """
+    if not isinstance(prev_rooms, list) or not isinstance(new_rooms, list):
+        return False
+    prev_by_id = {
+        str(room.get("room_id")): room
+        for room in prev_rooms
+        if isinstance(room, dict) and room.get("room_id")
+    }
+    new_by_id = {
+        str(room.get("room_id")): room
+        for room in new_rooms
+        if isinstance(room, dict) and room.get("room_id")
+    }
+    if set(prev_by_id) != set(new_by_id):
+        return False
+    for room_id, prev_room in prev_by_id.items():
+        new_room = new_by_id[room_id]
+        prev_rest = {k: v for k, v in prev_room.items() if k not in _ROOM_TOPOLOGY_FIELDS}
+        new_rest = {k: v for k, v in new_room.items() if k not in _ROOM_TOPOLOGY_FIELDS}
+        if prev_rest != new_rest:
+            return False
+    return True

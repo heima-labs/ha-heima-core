@@ -1430,6 +1430,34 @@ Resulting order and rationale per phase:
 - Depends on: AR1 (save-time blocking reuses the same pure validation core — error-severity blocks
   the save, warning-severity does not).
 
+**Post-implementation fixes, found by real smoke testing (2026-08-21):**
+
+- The admin panel disappeared from the sidebar after editing a room's `room_type` through the
+  editor, and reloading Heima didn't bring it back — only a full HA restart did. Root cause was
+  pre-existing, not introduced by AR4: `OPT_ROOMS` is in `STRUCTURAL_OPTION_KEYS`, so any "rooms"
+  change triggers `hass.config_entries.async_reload`, which calls `async_unload_entry` (unregisters
+  the panel, clears `admin_panel_registered`) — but `async_setup_entry` never re-registers it; only
+  the component-level `async_setup` did, and that only runs once per HA startup. AR4 just made this
+  easy to trigger interactively for the first time. Fixed in `custom_components/heima/__init__.py`:
+  `async_setup_entry` now carries the same idempotent registration guard `async_setup` uses.
+  Regression test in `tests/test_admin_panel.py`.
+- Editing only `room_type`/`floor`/`geometry` on an existing room still triggered the full
+  structural reload above (correctness was fine, but slower/more disruptive than necessary — those
+  fields never affect entity registry/platform setup, unlike `area_id` rebinding or adding/removing
+  a room, which do). Fixed with a new pure helper,
+  `room_topology.is_room_options_change_topology_only(prev_rooms, new_rooms)`, consulted from
+  `_async_entry_updated` in `__init__.py`: when `rooms` is the *only* structural key that changed
+  AND the diff is limited to those three fields, the change is downgraded to the light
+  `coordinator.async_reload_options()` path instead of a full entry reload. Any other room field
+  change (`area_id`, add/remove) still takes the full path unchanged. 8 new tests
+  (`tests/test_room_topology.py` for the pure helper, `tests/test_integration_reaction_recovery.py`
+  for the two reload-path outcomes).
+- Separately (found while smoke-testing, not topology-specific): the admin panel lost the expanded
+  state of any `<details>` block (raw JSON views) on every re-render — full `innerHTML` replace on
+  every 15s poll or admin action silently collapsed anything the admin had opened. Fixed generically
+  across all 11 call sites in `heima-admin-panel.js` with a stable per-element id + a tracked open-id
+  set, not specific to the Topology route.
+
 **Backend — done:**
 
 - `room_topology.py` (still pure) gained: `build_room_topology_snapshot(options)` (rooms with

@@ -62,3 +62,50 @@ async def test_entry_updated_normalizes_redacted_reactions_before_reload():
     # snapshot intentionally NOT updated: the second _async_entry_updated invocation
     # (scheduled by async_update_entry) will detect the delta and call async_reload_options
     assert coordinator.last_options_snapshot == {}
+
+
+@pytest.mark.asyncio
+async def test_entry_updated_room_type_edit_uses_light_reload_not_full_reload():
+    prev_rooms = [{"room_id": "kitchen", "area_id": "area.kitchen", "room_type": "indoor"}]
+    new_rooms = [{"room_id": "kitchen", "area_id": "area.kitchen", "room_type": "garage"}]
+    coordinator = SimpleNamespace(
+        last_options_snapshot={"rooms": prev_rooms},
+        async_reload_options=AsyncMock(),
+    )
+    hass = SimpleNamespace(
+        data={DOMAIN: {"entry-1": {"coordinator": coordinator}}},
+        config_entries=SimpleNamespace(
+            async_update_entry=MagicMock(),
+            async_reload=AsyncMock(),
+        ),
+    )
+    entry = SimpleNamespace(entry_id="entry-1", options={"rooms": new_rooms})
+
+    await _async_entry_updated(hass, entry)
+
+    coordinator.async_reload_options.assert_awaited_once()
+    hass.config_entries.async_reload.assert_not_awaited()
+    assert coordinator.last_options_snapshot == {"rooms": new_rooms}
+
+
+@pytest.mark.asyncio
+async def test_entry_updated_room_area_id_change_still_uses_full_reload():
+    prev_rooms = [{"room_id": "kitchen", "area_id": "area.kitchen"}]
+    new_rooms = [{"room_id": "kitchen", "area_id": "area.other"}]
+    coordinator = SimpleNamespace(
+        last_options_snapshot={"rooms": prev_rooms},
+        async_reload_options=AsyncMock(),
+    )
+    hass = SimpleNamespace(
+        data={DOMAIN: {"entry-1": {"coordinator": coordinator}}},
+        config_entries=SimpleNamespace(
+            async_update_entry=MagicMock(),
+            async_reload=AsyncMock(),
+        ),
+    )
+    entry = SimpleNamespace(entry_id="entry-1", options={"rooms": new_rooms})
+
+    await _async_entry_updated(hass, entry)
+
+    hass.config_entries.async_reload.assert_awaited_once_with("entry-1")
+    coordinator.async_reload_options.assert_not_awaited()

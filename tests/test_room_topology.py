@@ -15,6 +15,7 @@ from custom_components.heima.room_topology import (
     build_topology_graph,
     derive_connection_type,
     derive_exposure,
+    is_room_options_change_topology_only,
     room_floor_of,
     room_type_of,
     validate_topology,
@@ -533,3 +534,52 @@ def test_build_room_topology_snapshot_surfaces_validation_issues():
     }
     snapshot = build_room_topology_snapshot(options)
     assert any(issue["key"] == "topology.opening.op1.dangling_room" for issue in snapshot["issues"])
+
+
+# --- is_room_options_change_topology_only: reload-classification helper ----------
+
+
+def test_topology_only_change_true_for_room_type_edit():
+    prev = [{"room_id": "kitchen", "area_id": "area.kitchen", "room_type": "indoor"}]
+    new = [{"room_id": "kitchen", "area_id": "area.kitchen", "room_type": "garage"}]
+    assert is_room_options_change_topology_only(prev, new) is True
+
+
+def test_topology_only_change_true_for_floor_edit():
+    prev = [{"room_id": "kitchen", "area_id": "area.kitchen", "floor": 0}]
+    new = [{"room_id": "kitchen", "area_id": "area.kitchen", "floor": 1}]
+    assert is_room_options_change_topology_only(prev, new) is True
+
+
+def test_topology_only_change_false_when_room_added():
+    prev = [{"room_id": "kitchen", "area_id": "area.kitchen"}]
+    new = [
+        {"room_id": "kitchen", "area_id": "area.kitchen"},
+        {"room_id": "hallway", "area_id": "area.hallway"},
+    ]
+    assert is_room_options_change_topology_only(prev, new) is False
+
+
+def test_topology_only_change_false_when_room_removed():
+    prev = [
+        {"room_id": "kitchen", "area_id": "area.kitchen"},
+        {"room_id": "hallway", "area_id": "area.hallway"},
+    ]
+    new = [{"room_id": "kitchen", "area_id": "area.kitchen"}]
+    assert is_room_options_change_topology_only(prev, new) is False
+
+
+def test_topology_only_change_false_when_area_id_changes():
+    prev = [{"room_id": "kitchen", "area_id": "area.kitchen"}]
+    new = [{"room_id": "kitchen", "area_id": "area.other"}]
+    assert is_room_options_change_topology_only(prev, new) is False
+
+
+def test_topology_only_change_false_for_non_list_input():
+    assert is_room_options_change_topology_only(None, []) is False
+    assert is_room_options_change_topology_only([], None) is False
+
+
+def test_topology_only_change_true_for_identical_lists():
+    rooms = [{"room_id": "kitchen", "area_id": "area.kitchen"}]
+    assert is_room_options_change_topology_only(rooms, rooms) is True
