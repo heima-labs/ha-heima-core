@@ -149,6 +149,9 @@ Target behavior:
 - Making actionable runtime confirmations fully restart-safe.
 - Restoring physical devices to pre-outage state automatically.
 - Inferring exact outage cause without reliable input signals.
+- Admin-configurable gating vs. tracked-only classification for critical entities. The
+  `device_class` rule (see Critical Entity) is fixed for now; a future admin UI to override
+  classification per entity is a candidate to revisit later, not scoped here.
 
 ## Terminology
 
@@ -173,12 +176,13 @@ Home Assistant stayed online.
 ### Degraded Recovery
 
 A bounded-but-open-ended runtime mode entered when `startup_recovery` or `power_recovery` cannot
-complete because critical entity availability remains below threshold after the stabilization
-window elapses. Heima may operate in a limited mode; observability must make the degraded reason
+complete because gating critical entity availability remains below threshold after the stabilization
+window elapses. See Gating vs. Tracked Critical Entities: tracked-only entities never trigger or
+prolong this state. Heima may operate in a limited mode; observability must make the degraded reason
 explicit. `degraded_timeout_s` does not force a further state transition — it is the threshold
 after which degraded recovery becomes admin-notifiable (see Notification routing in Event Catalog
-Additions). Heima remains in `degraded_recovery` until critical entity availability recovers above
-threshold, at which point normal Exit Conditions apply.
+Additions). Heima remains in `degraded_recovery` until gating critical entity availability recovers
+above threshold, at which point normal Exit Conditions apply.
 
 ### Recovery Settling
 
@@ -234,6 +238,28 @@ If a configured critical entity is absent from the HA state machine during evalu
 classify it as unavailable for recovery purposes. Missing critical entities are runtime evidence, not
 only a diagnostics concern: they count in both the unavailable numerator and the critical-entity
 denominator.
+
+### Gating vs. Tracked Critical Entities
+
+Critical entities split into two roles:
+
+- **Gating**: counts toward `critical_entity_unavailable_ratio` for Power Recovery Entry,
+  Degraded Recovery, and Exit Conditions. Determines whether Heima blocks stabilization.
+- **Tracked-only**: remains part of the critical entity set for checkpoint differences,
+  observability, and diagnostic events, but never blocks or delays recovery on its own.
+
+An entity is tracked-only, not gating, when its HA `device_class` is `motion`, `occupancy`, or
+`presence`. These are event-driven signals with no meaningful "at rest" available state — they
+are expected to report `unavailable` until their first real-world trigger after a restart, and
+that alone must not be read as a system health problem.
+
+This classification is static and derived from `device_class` at evaluation time; it does not
+depend on an entity's history within the current recovery episode. A tracked-only entity that
+stays unavailable indefinitely remains visible via checkpoint differences and recovery
+diagnostics — it is simply excluded from the ratio that gates stabilization.
+
+All other critical entities keep today's behavior unchanged: unavailable counts immediately,
+no grace period.
 
 ## Runtime Checkpoint Contract
 
@@ -433,8 +459,9 @@ using that checkpoint as a comparison hint after HA restarts.
 
 Heima should enter `power_recovery` when HA stayed online but runtime observes one or more of:
 
-- the fraction of critical entities that are `unavailable` / `unknown` crosses above
-  `critical_entity_unavailable_ratio` (default 0.35, see Configuration) — "mass transition";
+- the fraction of gating critical entities (see Gating vs. Tracked Critical Entities) that are
+  `unavailable` / `unknown` crosses above `critical_entity_unavailable_ratio` (default 0.35, see
+  Configuration) — "mass transition";
 - mass transition from `unavailable` / `unknown` back to available;
 - configured UPS/power sensor indicates outage or restore;
 - network/gateway entities indicate outage or restore;
@@ -443,7 +470,7 @@ Heima should enter `power_recovery` when HA stayed online but runtime observes o
 ### Degraded Recovery
 
 `degraded_recovery` is entered when `startup_recovery` or `power_recovery` cannot complete because
-critical entity availability remains below threshold after the applicable stabilization window
+gating critical entity availability remains below threshold after the applicable stabilization window
 (120 seconds for startup, 60 seconds for power recovery) elapses. See Terminology for full
 semantics, including the role of `degraded_timeout_s`.
 
@@ -452,7 +479,7 @@ semantics, including the role of `degraded_timeout_s`.
 Heima exits recovery when all are true:
 
 - minimum stabilization window elapsed;
-- critical entity availability is above threshold — the same `critical_entity_unavailable_ratio`
+- gating critical entity availability is above threshold — the same `critical_entity_unavailable_ratio`
   used for Power Recovery Entry Conditions, checked in the opposite direction (fraction unavailable
   below the ratio). The first implementation uses one symmetric ratio with no separate hysteresis
   band;
