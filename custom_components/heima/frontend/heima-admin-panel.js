@@ -111,6 +111,13 @@ class HeimaAdminPanel extends HTMLElement {
         delete this._filters.topology_new_opening;
       } else if (action === "upsert_connection") {
         delete this._filters.topology_new_connection;
+      } else if (action === "set_room_fields" && payload?.room_id) {
+        // Drop the tracked in-progress value so the row falls back to reading the fresh
+        // (now-saved) value from the snapshot, instead of showing the pre-save value forever.
+        const roomFields = { ...(this._filters.topology_room_field || {}) };
+        delete roomFields[`${payload.room_id}:room_type`];
+        delete roomFields[`${payload.room_id}:floor`];
+        this._filters = { ...this._filters, topology_room_field: roomFields };
       }
     } catch (err) {
       this._topologyActionError =
@@ -695,12 +702,32 @@ class HeimaAdminPanel extends HTMLElement {
   _topologyRoomRow(room, enums) {
     const roomId = this._escape(room.room_id);
     const exposure = (room.exposure || []).map((value) => this._escape(value)).join(", ") || "—";
+    // Same reset-on-unrelated-re-render problem as the "add" forms: these fields auto-save on
+    // change, but between the admin starting to edit and that change event firing, any
+    // unrelated re-render (15s observability poll, another admin action) would otherwise
+    // replace this row's DOM straight from the last-saved snapshot, discarding what's not yet
+    // saved. Tracked the same way via _filters, keyed per room+field; cleared on save success.
+    const roomFields = this._filters.topology_room_field || {};
+    const trackedRoomType = roomFields[`${room.room_id}:room_type`];
+    const trackedFloor = roomFields[`${room.room_id}:floor`];
+    const roomTypeValue = trackedRoomType !== undefined ? trackedRoomType : room.room_type;
+    const floorValue =
+      trackedFloor !== undefined
+        ? trackedFloor
+        : Number.isFinite(room.floor)
+          ? room.floor
+          : 0;
     return `
       <tr>
         <td>${this._escape(room.display_name || room.room_id)}</td>
         <td>
-          <select data-room-topology-field="room_type" data-room-id="${roomId}">
-            ${this._selectOptions(enums.room_types || [], room.room_type)}
+          <select
+            data-room-topology-field="room_type"
+            data-room-id="${roomId}"
+            data-filter-section="topology_room_field"
+            data-filter-key="${roomId}:room_type"
+          >
+            ${this._selectOptions(enums.room_types || [], roomTypeValue)}
           </select>
         </td>
         <td>
@@ -708,7 +735,9 @@ class HeimaAdminPanel extends HTMLElement {
             type="number"
             data-room-topology-field="floor"
             data-room-id="${roomId}"
-            value="${Number.isFinite(room.floor) ? room.floor : 0}"
+            data-filter-section="topology_room_field"
+            data-filter-key="${roomId}:floor"
+            value="${floorValue}"
           />
         </td>
         <td>${exposure}</td>

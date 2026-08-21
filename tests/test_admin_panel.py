@@ -274,3 +274,7 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # or an unrelated re-render (e.g. the 15s observability poll) silently resets them.
     assert 'data-filter-section="topology_new_opening"' in text
     assert 'data-filter-section="topology_new_connection"' in text
+    # The Rooms table's inline room_type/floor editors have the identical problem (auto-save
+    # on change, but a re-render before that change fires would otherwise discard whatever
+    # wasn't saved yet) and must be protected the same way.
+    assert 'data-filter-section="topology_room_field"' in text
