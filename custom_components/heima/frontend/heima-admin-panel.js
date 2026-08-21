@@ -29,7 +29,16 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "topology") {
       this._loadTopologySnapshot();
     }
-    this._refreshTimer = window.setInterval(() => this._loadSnapshot(), 15000);
+    // The observability snapshot isn't rendered on the topology route (_body() early-returns
+    // to _topologyBody() for it), so polling it there only forces a pointless full DOM replace
+    // every 15s — which forcibly closes any native <select> dropdown the admin has open mid-edit
+    // (add opening/connection, room_type/floor pickers), since the underlying DOM node is
+    // destroyed and recreated. Skip the poll while on that route.
+    this._refreshTimer = window.setInterval(() => {
+      if (this._route !== "topology") {
+        this._loadSnapshot();
+      }
+    }, 15000);
   }
 
   disconnectedCallback() {

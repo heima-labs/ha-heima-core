@@ -278,3 +278,7 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # on change, but a re-render before that change fires would otherwise discard whatever
     # wasn't saved yet) and must be protected the same way.
     assert 'data-filter-section="topology_room_field"' in text
+    # The 15s observability poll must not fire (and force a full DOM replace, which forcibly
+    # closes any open native <select>) while the admin is on the topology route, since that
+    # route doesn't even render observability data.
+    assert 'if (this._route !== "topology") {' in text
