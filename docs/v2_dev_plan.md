@@ -136,12 +136,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
 — Structured Runtime Source.
-**Active slice:** None — AS closed out, ready to merge to `main`.
-**Branch:** `feat/runtime-source-provenance-spec` (merged `main` in at `a3e9be7`, `main` merged back
-at commit time; see CHANGELOG for the released version).
-**Next action:**
-Pick up Phase AR — Room Topology (spec already on `main`, all sub-phases `PLANNED`) or another
-priority per developer direction.
+**Active slice:** Phase AR — Room Topology, AR1 (Data Model, Derivation, and Validation Core) —
+implemented, tests green.
+**Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
+**Next action:** AR2 — Installation Validation and Reconciliation (wire AR1's pure checks into
+`validation.py` as a new `ValidationSection`, add the HA-registry-only checks per the
+Sequencing Rationale below).
 
 ### Phase AO — Admin Observability Panel
 
@@ -1311,7 +1311,20 @@ Resulting order and rationale per phase:
 
 #### AR1 — Data Model, Derivation, and Validation Core
 
-- Status: `PLANNED`.
+- Status: `DONE`.
+- Implementation: `custom_components/heima/room_topology.py` (new, no `homeassistant` import) +
+  `OPT_ROOM_OPENINGS`/`OPT_ROOM_CONNECTIONS` added to `const.py`. `Opening`/`Connection`/
+  `ResolvedConnection`/`TopologyGraph` frozen dataclasses; `parse_openings`/`parse_connections`
+  (tolerant, skip malformed); `derive_connection_type`/`derive_exposure`; `build_topology_graph`
+  (best-effort, excludes broken entries, never raises); `validate_topology` (pure, returns
+  `tuple[ValidationIssue, ...]` from `validation.py`'s existing type — not a new severity system).
+- Tests: `tests/test_room_topology.py`, 35 tests — defaults, every `connection_type` priority-rule
+  branch including override precedence and `room_b: "outside"`, `exposure` recomputation, all
+  referential-integrity error cases, isolation warning (incl. non-`indoor` exemption), shared-entity
+  warning vs. conflicting-`connection_type` error, and malformed-input robustness for both
+  `build_topology_graph` and `validate_topology`.
+- Verification: `pytest tests/ -q` — 1899 passed (full suite, no regressions). `ruff check` /
+  `ruff format --check` on the new files — clean.
 - Extend `options[OPT_ROOMS][*]` with `room_type`, `floor`, `geometry` (always `null`).
 - Add `OPT_ROOM_OPENINGS` / `OPT_ROOM_CONNECTIONS` option lists and their record shapes.
 - Implement `connection_type` derivation (priority rule) and `exposure` derivation (union of window
