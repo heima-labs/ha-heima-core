@@ -18,6 +18,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._topologyLoading = false;
     this._topologyError = "";
     this._topologyActionError = "";
+    this._openDetailIds = new Set();
   }
 
   connectedCallback() {
@@ -527,6 +528,17 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-topology-action]").forEach((button) => {
       button.addEventListener("click", () => this._onTopologyActionButton(button));
     });
+    this.shadowRoot.querySelectorAll("details[data-details-id]").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        const id = details.getAttribute("data-details-id") || "";
+        if (!id) return;
+        if (details.open) {
+          this._openDetailIds.add(id);
+        } else {
+          this._openDetailIds.delete(id);
+        }
+      });
+    });
     this._restoreFilterFocus();
   }
 
@@ -912,7 +924,7 @@ class HeimaAdminPanel extends HTMLElement {
       ${criticalRows.length ? this._recoveryCriticalEntitiesTable(criticalRows) : `<div class="empty">No critical recovery entities in the snapshot.</div>`}
       ${blocked.examples?.length ? this._recoveryBlockedSteps(blocked.examples) : `<div class="empty">No apply steps blocked by recovery.</div>`}
       ${recovery.recent_events?.length ? this._recoveryEvents(recovery.recent_events) : ""}
-      ${this._rawDetails(recovery.raw || {})}
+      ${this._rawDetails(recovery.raw || {}, "recovery.raw")}
     `;
   }
 
@@ -1072,7 +1084,7 @@ class HeimaAdminPanel extends HTMLElement {
         ${this._detailSection("Timers", house.timers || {})}
         ${this._detailSection("Override", house.override || {})}
       </section>
-      ${this._rawDetails(house)}
+      ${this._rawDetails(house, "house_state.raw")}
     `;
   }
 
@@ -1122,7 +1134,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(this._formatDetailValue(row.state))}</td>
               <td>${this._escape(row.reason || "")}</td>
               <td>${this._escape(this._houseStateTiming(row))}</td>
-              <td>${this._rawDetails(row.inputs || {})}</td>
+              <td>${this._rawDetails(row.inputs || {}, `house_state.candidate.${row.candidate || ""}`)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1359,7 +1371,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(module.module_id || module.id || "unknown")}</td>
               <td><span class="status">${module.ready === true ? "ready" : "not ready"}</span></td>
               <td>${this._escape(module.pattern_count ?? module.slot_count ?? module.approved_patterns ?? "")}</td>
-              <td>${this._rawDetails(module)}</td>
+              <td>${this._rawDetails(module, `learning.module.${module.module_id || module.id || "unknown"}`)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1817,10 +1829,13 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._linkedRows("Promotion Reviews", detail.linked_promotion_reviews || [], "review_id")}
       ${this._linkedRows("Linked Proposals", detail.linked_proposals || [], "id")}
       ${this._traceSummary(detail.latest_trace)}
-      ${this._rawDetails({
-        configured_metadata: detail.configured_metadata || {},
-        runtime_diagnostics: detail.runtime_diagnostics || {},
-      })}
+      ${this._rawDetails(
+        {
+          configured_metadata: detail.configured_metadata || {},
+          runtime_diagnostics: detail.runtime_diagnostics || {},
+        },
+        `reaction.${reactionId}`,
+      )}
     `;
   }
 
@@ -1843,7 +1858,7 @@ class HeimaAdminPanel extends HTMLElement {
           link_count: (detail.links || []).length,
         })}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `manual_hold.${scope}`)}
     `;
   }
 
@@ -1867,7 +1882,7 @@ class HeimaAdminPanel extends HTMLElement {
         })}
         ${this._detailSection("Apply Result", summary.apply_result || {})}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `runtime_confirmation.${requestId}`)}
     `;
   }
 
@@ -1890,7 +1905,7 @@ class HeimaAdminPanel extends HTMLElement {
           hour_range: `${summary.start_hour_bucket ?? ""}-${summary.end_hour_bucket ?? ""}`,
         })}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `proposal_review.${rowId}`)}
     `;
   }
 
@@ -1917,7 +1932,7 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._linkedRows("Apply Steps", detail.apply_steps || [], "step_id")}
       ${this._linkedRows("Pending Applies", detail.pending_applies || [], "step_id")}
       ${this._linkedRows("Source Metadata", detail.source_metadata || [], "kind")}
-      ${this._rawDetails(detail)}
+      ${this._rawDetails(detail, `entity.${entityId}`)}
     `;
   }
 
@@ -1992,7 +2007,7 @@ class HeimaAdminPanel extends HTMLElement {
         </section>
         ${this._linkedRows("Candidate Apply Steps", result.apply_steps || [], "step_id")}
         ${this._linkedRows("Guard Results", result.guard_results || [], "reason_code")}
-        ${this._rawDetails(result)}
+        ${this._rawDetails(result, `why_not_now.${reactionId}`)}
       </div>
     `;
   }
@@ -2263,9 +2278,15 @@ class HeimaAdminPanel extends HTMLElement {
     return this._escape(row.type || row.identity_key || "");
   }
 
-  _rawDetails(value) {
+  _rawDetails(value, id) {
+    // `id` must be stable across re-renders (a row/entity id, not an array index) so the
+    // open/closed state below survives the next _render() — every render replaces the whole
+    // shadow DOM, which would otherwise silently collapse any <details> the admin had expanded
+    // (e.g. on the next 15s snapshot poll, or right after any admin action).
+    const key = id ? String(id) : "";
+    const open = key && this._openDetailIds.has(key) ? " open" : "";
     return `
-      <details>
+      <details data-details-id="${this._escape(key)}"${open}>
         <summary>raw</summary>
         <pre>${this._escape(JSON.stringify(value, null, 2))}</pre>
       </details>
