@@ -280,17 +280,35 @@ def test_validate_topology_flags_connection_with_dangling_room_b():
 # --- validate_topology: isolation -------------------------------------------------
 
 
-def test_validate_topology_warns_on_isolated_indoor_room():
+def test_validate_topology_skips_isolation_check_when_topology_entirely_unconfigured():
+    # Every pre-AR installation: rooms exist, but no Opening/Connection has ever been created
+    # (AR4's editor is the only way to create them). Must never warn in this state.
     options = {
         OPT_ROOMS: [_room("living_room", room_type="indoor")],
         OPT_ROOM_OPENINGS: [],
         OPT_ROOM_CONNECTIONS: [],
     }
     issues = validate_topology(options)
+    assert not any(key.startswith("topology.room.") for key in _issue_keys(issues))
+
+
+def test_validate_topology_warns_on_isolated_indoor_room_once_topology_is_in_use():
+    options = {
+        OPT_ROOMS: [
+            _room("living_room", room_type="indoor"),
+            _room("hallway", room_type="indoor"),
+            _room("kitchen", room_type="indoor"),
+        ],
+        OPT_ROOM_OPENINGS: [_opening("op1", "hallway", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "kitchen")],
+    }
+    issues = validate_topology(options)
     assert any(
         issue.key == "topology.room.living_room.isolated" and issue.severity == "warning"
         for issue in issues
     )
+    assert not any(issue.key == "topology.room.hallway.isolated" for issue in issues)
+    assert not any(issue.key == "topology.room.kitchen.isolated" for issue in issues)
 
 
 def test_validate_topology_does_not_warn_on_isolated_garage_basement_outdoor_external():
@@ -300,12 +318,15 @@ def test_validate_topology_does_not_warn_on_isolated_garage_basement_outdoor_ext
             _room("basement", room_type="basement"),
             _room("patio", room_type="outdoor"),
             _room("guest_house", room_type="external"),
+            _room("hallway", room_type="indoor"),
+            _room("kitchen", room_type="indoor"),
         ],
-        OPT_ROOM_OPENINGS: [],
-        OPT_ROOM_CONNECTIONS: [],
+        OPT_ROOM_OPENINGS: [_opening("op1", "hallway", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "kitchen")],
     }
     issues = validate_topology(options)
-    assert not any(key.startswith("topology.room.") for key in _issue_keys(issues))
+    for exempt_room_id in ("garage", "basement", "patio", "guest_house"):
+        assert not any(issue.key == f"topology.room.{exempt_room_id}.isolated" for issue in issues)
 
 
 def test_validate_topology_no_isolation_warning_when_connected():

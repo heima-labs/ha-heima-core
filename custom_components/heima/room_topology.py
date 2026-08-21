@@ -374,8 +374,13 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
                 )
             )
 
-    referenced_room_ids = _referenced_room_ids(graph)
+    # Isolation is only a meaningful signal once the household has started declaring topology at
+    # all. Skipping it while both lists are empty avoids flooding every pre-AR installation (whose
+    # rooms/openings/connections are all unset) with a warning nobody asked for.
+    referenced_room_ids = _referenced_room_ids(graph) if (openings or connections) else None
     for room_id, room in rooms_by_id.items():
+        if referenced_room_ids is None:
+            continue
         room_type = room_type_of(room)
         if room_type in _ISOLATION_EXEMPT_ROOM_TYPES:
             continue

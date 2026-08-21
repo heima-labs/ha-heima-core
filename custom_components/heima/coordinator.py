@@ -2514,11 +2514,17 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         snapshot_diag = self._house_snapshot_store.diagnostics()
         approval_diag = self._approval_store.diagnostics()
         proposal_diag = self._proposal_engine.diagnostics()
+        known_entity_ids = frozenset(
+            str(getattr(state, "entity_id", "") or "")
+            for state in self._safe_all_states()
+            if getattr(state, "entity_id", None)
+        )
         return build_validation_report(
             options=dict(getattr(self.entry, "options", {}) or {}),
             snapshot_count=int(snapshot_diag.get("total_snapshots") or 0),
             approval_count=int(approval_diag.get("total_records") or 0),
             pending_proposal_count=int(proposal_diag.get("pending") or 0),
+            known_entity_ids=known_entity_ids,
         )
 
     def _sync_health_sensor(self) -> None:

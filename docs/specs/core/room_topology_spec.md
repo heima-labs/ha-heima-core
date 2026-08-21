@@ -296,7 +296,11 @@ Checks:
 
 - An `indoor`-type `Room` with zero `Connection`s referencing it (as `room_a` or `room_b`) —
   `warning`. Non-`indoor` types (`garage`, `basement`, `outdoor`, `external`) may legitimately be a
-  disconnected component (a detached garage, a guest house) — never warned on isolation alone.
+  disconnected component (a detached garage, a guest house) — never warned on isolation alone. This
+  check only runs once the household has at least one `Opening` or `Connection` configured anywhere
+  — while topology is entirely unconfigured (the default for every pre-AR installation, since AR4's
+  editor is the only way to create this data), it is silently skipped rather than warning on every
+  existing room.
 - An `Opening.entity_id` referenced by more than one `Opening`, where every `Connection` referencing
   those `Opening`s resolves to the same `connection_type` — `warning`, informational only, per the
   legitimate-sharing cases above (e.g. one alarm contact wired across two windows on the same
@@ -404,8 +408,9 @@ Unit tests:
   produces a warning, not a validation error;
 - shared `entity_id` across multiple `Opening`s whose `Connection`s resolve to different
   `connection_type` values produces an `error`;
-- isolated `indoor` room produces a warning; isolated `garage`/`basement`/`outdoor`/`external` room
-  does not.
+- isolated `indoor` room produces a warning once the household has at least one `Opening`/
+  `Connection` configured elsewhere; isolated `garage`/`basement`/`outdoor`/`external` room does
+  not; no isolation warning is produced at all while topology is entirely unconfigured.
 
 Integration tests:
 

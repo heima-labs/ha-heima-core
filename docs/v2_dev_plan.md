@@ -136,12 +136,11 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
 — Structured Runtime Source.
-**Active slice:** Phase AR — Room Topology, AR1 (Data Model, Derivation, and Validation Core) —
-implemented, tests green.
+**Active slice:** Phase AR — Room Topology, AR1 and AR2 done, tests green.
 **Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
-**Next action:** AR2 — Installation Validation and Reconciliation (wire AR1's pure checks into
-`validation.py` as a new `ValidationSection`, add the HA-registry-only checks per the
-Sequencing Rationale below).
+**Next action:** AR3 — Topology Cache and CanonicalState Exposure (compute/cache
+`CanonicalState["rooms.topology"]` via `build_topology_graph()`, invalidated on options change and
+on `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED`).
 
 ### Phase AO — Admin Observability Panel
 
@@ -1344,7 +1343,38 @@ Resulting order and rationale per phase:
 
 #### AR2 — Installation Validation and Reconciliation
 
-- Status: `PLANNED`.
+- Status: `DONE`.
+- Implementation notes (deviations from the original plan, discovered while implementing):
+  - The "hook into the same reconciliation lifecycle as `_reconcile_rooms()`" language turned out
+    to mean something more specific than a fresh registry lookup: `_reconcile_rooms()` never
+    deletes an orphaned room, it sets `ha_sync_status: "orphaned"` on the still-present room record
+    (confirmed in `reconciliation.py`). So the Area-removed check needed no new HA Area Registry
+    access at all — `_topology_section` just reads that field directly. Only the Entity Registry
+    check (`entity_unavailable`) needed genuinely new registry access, via an optional
+    `known_entity_ids: frozenset[str] | None` parameter threaded through
+    `build_validation_report()`; `coordinator.py`'s `_validation_report()` supplies it from
+    `self._safe_all_states()` (an existing helper), the config-flow local fallback (no `hass`)
+    omits it and that one check is skipped there — documented in `build_validation_report`'s
+    docstring, not a silent gap.
+  - Both `entity_unavailable` and the orphaned-room check are `warning`-severity (informational,
+    the record is retained either way), not `error`.
+  - `validation.py` imports `validate_topology` from `room_topology.py` with a **local** import
+    inside `_topology_section` (not at module scope) — `room_topology.py` imports `ValidationIssue`
+    from `validation.py`, so a top-level import in the other direction would be circular.
+  - Found and fixed a real false-positive bug surfaced only by wiring AR1 into the live report:
+    AR1's isolation check fired for every `indoor` room on every installation, since 100% of
+    pre-AR installations have zero `Opening`/`Connection` records (AR4's editor doesn't exist
+    yet). Fixed in AR1 itself (`room_topology.py`): the isolation check now only runs once the
+    household has at least one `Opening` or `Connection` configured anywhere. Spec's Validation
+    and Reconciliation / Testing Requirements sections updated to document this. This is exactly
+    the kind of integration-only bug the "run the full suite after each sub-phase" sequencing
+    rationale exists to catch early.
+- Tests: `tests/test_validation_m.py` (+5: topology section present/ok, dangling reference
+  surfaces as `error` and raises overall report severity, orphaned-room warning, entity-unavailable
+  warning with/without `known_entity_ids`) and `tests/test_room_topology.py` (updated isolation
+  tests for the "topology in use" guard).
+- Verification: `pytest tests/ -q` — 1905 passed (full suite). `ruff check` / `ruff format --check`
+  on all touched files — clean.
 - Depends on: AR1 (calls its pure validation core; does not reimplement any check).
 - Add a new `ValidationSection` to `validation.py` (Phase M), wiring in AR1's pure checks plus the
   checks that inherently require HA Registry access:
