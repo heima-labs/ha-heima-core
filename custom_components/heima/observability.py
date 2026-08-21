@@ -223,6 +223,8 @@ def _recovery_summary(
         dict(item) for item in recovery.get("critical_entities") or [] if isinstance(item, Mapping)
     ]
     unavailable = [item for item in critical_entities if not bool(item.get("available", True))]
+    gating_entities = [item for item in critical_entities if bool(item.get("gating", True))]
+    gating_unavailable = [item for item in gating_entities if not bool(item.get("available", True))]
     apply_plan = _mapping_or_empty(engine_diag.get("apply_plan"))
     apply_steps = [
         dict(item) for item in apply_plan.get("steps") or [] if isinstance(item, Mapping)
@@ -256,6 +258,9 @@ def _recovery_summary(
             "available": len(critical_entities) - len(unavailable),
             "unavailable": len(unavailable),
             "unavailable_ratio": recovery.get("unavailable_ratio", 0),
+            "gating_total": len(gating_entities),
+            "gating_available": len(gating_entities) - len(gating_unavailable),
+            "gating_unavailable": len(gating_unavailable),
             "items": critical_entities,
             "unavailable_items": unavailable,
         },

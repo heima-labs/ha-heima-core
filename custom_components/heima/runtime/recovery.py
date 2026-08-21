@@ -26,6 +26,11 @@ RecoveryReason = Literal[
 
 CheckpointDifferenceKind = Literal["unknown_during_downtime", "power_restore_candidate"]
 
+# device_class values for event-driven entities with no meaningful "at rest" available state.
+# These are tracked-only: they never gate recovery stabilization on their own. See "Gating vs.
+# Tracked Critical Entities" in the runtime checkpoint and power recovery spec.
+TRACKED_ONLY_DEVICE_CLASSES = frozenset({"motion", "occupancy", "presence"})
+
 
 @dataclass(frozen=True)
 class CriticalEntityState:
@@ -34,17 +39,25 @@ class CriticalEntityState:
     entity_id: str
     state: str
     domain: str = ""
+    device_class: str = ""
 
     @property
     def available(self) -> bool:
         return self.state not in {"unavailable", "unknown", ""}
 
+    @property
+    def gating(self) -> bool:
+        """Whether this entity's availability counts toward the recovery ratio."""
+        return self.device_class not in TRACKED_ONLY_DEVICE_CLASSES
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "entity_id": self.entity_id,
             "domain": self.domain,
+            "device_class": self.device_class,
             "state": self.state,
             "available": self.available,
+            "gating": self.gating,
         }
 
 
@@ -227,8 +240,9 @@ class RecoveryManager:
 
     def evaluate(self, inputs: RecoveryEvaluationInput) -> RecoveryContext:
         entities = tuple(inputs.critical_entities)
-        total = len(entities)
-        unavailable = sum(1 for entity in entities if not entity.available)
+        gating_entities = tuple(entity for entity in entities if entity.gating)
+        total = len(gating_entities)
+        unavailable = sum(1 for entity in gating_entities if not entity.available)
         ratio = (unavailable / total) if total else 0.0
         above_threshold = total > 0 and ratio >= self._config.critical_entity_unavailable_ratio
 

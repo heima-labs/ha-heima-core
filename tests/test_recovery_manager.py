@@ -36,8 +36,13 @@ from custom_components.heima.runtime.snapshot import DecisionSnapshot
 from custom_components.heima.runtime.state_store import CanonicalState
 
 
-def _entity(entity_id: str, state: str) -> CriticalEntityState:
-    return CriticalEntityState(entity_id=entity_id, domain=entity_id.split(".", 1)[0], state=state)
+def _entity(entity_id: str, state: str, device_class: str = "") -> CriticalEntityState:
+    return CriticalEntityState(
+        entity_id=entity_id,
+        domain=entity_id.split(".", 1)[0],
+        state=state,
+        device_class=device_class,
+    )
 
 
 class _FakeStates:
@@ -293,6 +298,40 @@ def test_engine_detects_online_power_recovery_with_configured_targets() -> None:
 
     assert engine._runtime_context["runtime.recovery.state"] == "power_recovery"
     assert engine._runtime_context["runtime.recovery.reason"] == "critical_entities_flapping"
+
+
+def test_engine_excludes_motion_device_class_from_recovery_ratio() -> None:
+    states = _FakeStates(
+        {
+            "binary_sensor.camera_motion": SimpleNamespace(
+                state="unavailable", attributes={"device_class": "motion"}
+            ),
+        }
+    )
+    hass = SimpleNamespace(states=states, bus=_FakeBus(), services=_FakeServices())
+    engine = HeimaEngine(
+        hass=hass,
+        entry=SimpleNamespace(
+            entry_id="entry-a",
+            options={
+                "security": {
+                    "camera_evidence_sources": [{"motion_entity": "binary_sensor.camera_motion"}]
+                },
+            },
+        ),
+    )
+    engine._startup_recovery_pending = False
+
+    engine._compute_recovery_context()
+
+    context = engine._recovery_manager.context
+    assert context.state == "normal"
+    assert context.critical_entity_count == 0
+    assert context.unavailable_count == 0
+    entities = {entity.entity_id: entity for entity in context.critical_entities}
+    assert entities["binary_sensor.camera_motion"].device_class == "motion"
+    assert entities["binary_sensor.camera_motion"].gating is False
+    assert entities["binary_sensor.camera_motion"].available is False
 
 
 def test_engine_counts_missing_critical_entities_as_unavailable() -> None:
@@ -895,6 +934,57 @@ def test_recovery_manager_enters_power_recovery_when_unavailable_ratio_crosses_t
     assert context.reason == "critical_entities_unavailable"
     assert context.unavailable_count == 2
     assert context.critical_entity_count == 4
+    assert context.unavailable_ratio == 0.5
+
+
+def test_recovery_manager_ignores_tracked_only_entities_in_ratio() -> None:
+    manager = RecoveryManager(RecoveryConfig(critical_entity_unavailable_ratio=0.35))
+
+    context = manager.evaluate(
+        RecoveryEvaluationInput(
+            now_monotonic=10.0,
+            critical_entities=(
+                _entity("binary_sensor.cam_motion", "unavailable", device_class="motion"),
+                _entity("binary_sensor.hall_occupancy", "unavailable", device_class="occupancy"),
+                _entity("binary_sensor.room_presence", "unavailable", device_class="presence"),
+                _entity("light.a", "on"),
+                _entity("switch.c", "on"),
+                _entity("alarm_control_panel.home", "disarmed"),
+            ),
+        )
+    )
+
+    assert context.state == "normal"
+    assert context.unavailable_count == 0
+    assert context.critical_entity_count == 3
+    assert context.unavailable_ratio == 0.0
+    assert {entity.entity_id for entity in context.critical_entities} == {
+        "binary_sensor.cam_motion",
+        "binary_sensor.hall_occupancy",
+        "binary_sensor.room_presence",
+        "light.a",
+        "switch.c",
+        "alarm_control_panel.home",
+    }
+
+
+def test_recovery_manager_still_gates_on_non_tracked_only_unavailable() -> None:
+    manager = RecoveryManager(RecoveryConfig(critical_entity_unavailable_ratio=0.35))
+
+    context = manager.evaluate(
+        RecoveryEvaluationInput(
+            now_monotonic=10.0,
+            critical_entities=(
+                _entity("binary_sensor.cam_motion", "unavailable", device_class="motion"),
+                _entity("light.a", "unavailable"),
+                _entity("switch.c", "on"),
+            ),
+        )
+    )
+
+    assert context.state == "power_recovery"
+    assert context.unavailable_count == 1
+    assert context.critical_entity_count == 2
     assert context.unavailable_ratio == 0.5
 
 

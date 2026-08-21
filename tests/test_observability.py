@@ -162,14 +162,26 @@ class _FakeEngine:
                     {
                         "entity_id": "light.studio",
                         "domain": "light",
+                        "device_class": "",
                         "state": "unavailable",
                         "available": False,
+                        "gating": True,
                     },
                     {
                         "entity_id": "switch.interna_privacy",
                         "domain": "switch",
+                        "device_class": "",
                         "state": "on",
                         "available": True,
+                        "gating": True,
+                    },
+                    {
+                        "entity_id": "binary_sensor.cam_motion",
+                        "domain": "binary_sensor",
+                        "device_class": "motion",
+                        "state": "unavailable",
+                        "available": False,
+                        "gating": False,
                     },
                 ],
                 "checkpoint": {
@@ -665,9 +677,12 @@ def test_observability_snapshot_exposes_recovery_state() -> None:
     assert recovery["active"] is True
     assert recovery["started_at"] == "2026-07-01T10:00:00+00:00"
     assert recovery["stabilization_deadline_at"] == "2026-07-01T10:01:00+00:00"
-    assert recovery["critical_entities"]["total"] == 2
-    assert recovery["critical_entities"]["unavailable"] == 1
+    assert recovery["critical_entities"]["total"] == 3
+    assert recovery["critical_entities"]["unavailable"] == 2
     assert recovery["critical_entities"]["unavailable_items"][0]["entity_id"] == "light.studio"
+    assert recovery["critical_entities"]["gating_total"] == 2
+    assert recovery["critical_entities"]["gating_unavailable"] == 1
+    assert recovery["critical_entities"]["gating_available"] == 1
     assert recovery["checkpoint"]["checkpoint_id"] == "checkpoint.one"
     assert recovery["checkpoint"]["pending_write_reason"] == "scheduled"
     assert recovery["blocked_apply_steps"]["total"] == 1

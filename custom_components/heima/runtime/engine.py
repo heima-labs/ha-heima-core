@@ -1230,11 +1230,16 @@ class HeimaEngine:
                     )
                 )
                 continue
+            attributes = getattr(state_obj, "attributes", None)
+            device_class = ""
+            if isinstance(attributes, dict):
+                device_class = str(attributes.get("device_class") or "")
             entities.append(
                 CriticalEntityState(
                     entity_id=entity_id,
                     domain=entity_id.split(".", 1)[0],
                     state=str(getattr(state_obj, "state", "") or ""),
+                    device_class=device_class,
                 )
             )
         return tuple(entities)
