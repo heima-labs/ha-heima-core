@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0] — 2026-08-21
+
+- Recovery no longer blocks stabilization on motion/occupancy/presence entities that are
+  `unavailable` only because they haven't fired since restart. These entities stay visible in
+  checkpoint differences and observability but no longer count toward the recovery unavailable
+  ratio (`critical_entities` in admin observability now also reports `gating_total` /
+  `gating_unavailable` alongside the full counts).
+
 ## [0.12.0] — 2026-08-20
 
 - Runtime checkpoint and power recovery: post-review hardening — missing critical entities are
