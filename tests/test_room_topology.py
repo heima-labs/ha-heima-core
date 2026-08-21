@@ -5,6 +5,7 @@ from __future__ import annotations
 from custom_components.heima.const import OPT_ROOM_CONNECTIONS, OPT_ROOM_OPENINGS, OPT_ROOMS
 from custom_components.heima.room_topology import (
     Opening,
+    TopologyGraphCache,
     build_topology_graph,
     derive_connection_type,
     derive_exposure,
@@ -430,3 +431,63 @@ def test_validate_topology_never_raises_on_malformed_options():
 
 def test_validate_topology_empty_options_produces_no_issues():
     assert validate_topology({}) == ()
+
+
+# --- TopologyGraphCache: AR3 caching, invalidated only by mark_stale() ------------
+
+
+def test_topology_graph_cache_builds_on_first_call():
+    cache = TopologyGraphCache()
+    options = {
+        OPT_ROOMS: [_room("kitchen"), _room("garage", room_type="garage")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "garage")],
+    }
+    graph = cache.get_graph(options)
+    assert len(graph.connections) == 1
+    assert graph.connections[0].connection_type == "separate"
+
+
+def test_topology_graph_cache_does_not_rebuild_without_mark_stale():
+    cache = TopologyGraphCache()
+    options = {
+        OPT_ROOMS: [_room("kitchen"), _room("garage", room_type="garage")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "garage")],
+    }
+    first = cache.get_graph(options)
+
+    changed_options = {
+        OPT_ROOMS: [_room("kitchen"), _room("hallway")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "hallway")],
+    }
+    second = cache.get_graph(changed_options)
+
+    assert second is first
+    assert second.connections[0].connection_type == "separate"
+
+
+def test_topology_graph_cache_rebuilds_after_mark_stale():
+    cache = TopologyGraphCache()
+    options = {
+        OPT_ROOMS: [_room("kitchen"), _room("garage", room_type="garage")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "garage")],
+    }
+    cache.get_graph(options)
+
+    changed_options = {
+        OPT_ROOMS: [_room("kitchen"), _room("hallway")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "hallway")],
+    }
+    cache.mark_stale()
+    rebuilt = cache.get_graph(changed_options)
+
+    assert rebuilt.connections[0].connection_type == "indoor"
+
+
+def test_topology_graph_cache_empty_before_first_call_never_raises():
+    cache = TopologyGraphCache()
+    assert cache.get_graph({}).connections == ()

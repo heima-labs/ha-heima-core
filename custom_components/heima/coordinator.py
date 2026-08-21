@@ -37,6 +37,7 @@ from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids, room_signal_entity_id
+from .room_topology import TopologyGraphCache
 from .runtime.analyzers import (
     ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
@@ -338,6 +339,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._approval_store = ApprovalStore(hass)
         self._room_context_builder = RoomDeviceContextBuilder(hass, self.engine._normalizer)
         self.engine.set_room_context_builder(self._room_context_builder)
+        self._room_topology_cache = TopologyGraphCache()
+        self.engine.set_room_topology_cache(self._room_topology_cache)
         self._weekday_module = WeekdayStateModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -1673,6 +1676,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         @callback
         def _handle_registry_updated(_event: Event) -> None:
             self._room_context_builder.mark_stale()
+            self._room_topology_cache.mark_stale()
 
         unsub_entity = self.hass.bus.async_listen(
             er.EVENT_ENTITY_REGISTRY_UPDATED,

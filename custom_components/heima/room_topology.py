@@ -6,15 +6,25 @@ structural validation, consumed — never reimplemented — by the cache builder
 (AR3, defensive/best-effort mode), Installation Validation (AR2, plus its own
 HA-registry-only checks), and the admin editor's save-time blocking (AR4). See
 `docs/specs/core/room_topology_spec.md` and `docs/v2_dev_plan.md` Phase AR.
+
+Deliberately no top-level import of `.validation` either: `validation.py` has a
+heavy transitive import chain (`runtime.activity_detectors` -> ... ->
+`runtime.inference`) that contains a pre-existing, order-sensitive circular
+import elsewhere in that chain. This module is imported very early (by
+`coordinator.py`, before `runtime.engine`), so pulling that chain in here would
+surface it. `ValidationIssue` is imported under `TYPE_CHECKING` for annotations
+and locally inside `validate_topology()` where it's actually constructed.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .const import OPT_ROOM_CONNECTIONS, OPT_ROOM_OPENINGS, OPT_ROOMS
-from .validation import ValidationIssue
+
+if TYPE_CHECKING:
+    from .validation import ValidationIssue
 
 OUTSIDE = "outside"
 
@@ -273,6 +283,35 @@ def _resolve_topology_graph(
     )
 
 
+_EMPTY_TOPOLOGY_GRAPH = TopologyGraph(openings=(), connections=(), exposure_by_room={})
+
+
+class TopologyGraphCache:
+    """Caches the derived topology graph; invalidated only by an explicit `mark_stale()`.
+
+    Mirrors `RoomDeviceContextBuilder`'s staleness pattern (`runtime/room_context.py`): the engine
+    calls `mark_stale()` unconditionally on every options reload, and the coordinator calls it on
+    `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` — the same triggers, same
+    lifecycle. Unlike the Room Context Model, nothing here is recomputed per-cycle: the whole graph
+    is cached until one of those triggers fires.
+    """
+
+    def __init__(self) -> None:
+        self._stale = True
+        self._graph: TopologyGraph = _EMPTY_TOPOLOGY_GRAPH
+
+    def mark_stale(self) -> None:
+        """Force a rebuild on the next `get_graph()` call."""
+        self._stale = True
+
+    def get_graph(self, options: dict[str, Any]) -> TopologyGraph:
+        """Return the cached graph, rebuilding first if stale."""
+        if self._stale:
+            self._graph = build_topology_graph(options)
+            self._stale = False
+        return self._graph
+
+
 def build_topology_graph(options: dict[str, Any]) -> TopologyGraph:
     """Build the best-effort topology graph: structurally broken entries excluded, never raises.
 
@@ -300,6 +339,8 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
     Registry-backed checks (HA Area/Entity Registry removal, `entity_unavailable`) are not this
     module's concern — they require `hass` and are added by AR2 alongside these checks.
     """
+    from .validation import ValidationIssue  # local: see module docstring
+
     rooms_by_id = _rooms_by_id(options)
     openings = parse_openings(options)
     openings_by_id = {opening.opening_id: opening for opening in openings}

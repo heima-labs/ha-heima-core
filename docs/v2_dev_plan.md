@@ -136,11 +136,11 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
 — Structured Runtime Source.
-**Active slice:** Phase AR — Room Topology, AR1 and AR2 done, tests green.
+**Active slice:** Phase AR — Room Topology, AR1-AR3 done, tests green.
 **Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
-**Next action:** AR3 — Topology Cache and CanonicalState Exposure (compute/cache
-`CanonicalState["rooms.topology"]` via `build_topology_graph()`, invalidated on options change and
-on `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED`).
+**Next action:** AR4 — Admin Editor (Panel): `heima/topology/snapshot` and `heima/topology/action`
+websocket commands, admin-only, mirroring the AO7 admin-action pattern; save-time blocking reuses
+AR1's pure validation core (error-severity blocks, warning-severity does not).
 
 ### Phase AO — Admin Observability Panel
 
@@ -1387,17 +1387,41 @@ Resulting order and rationale per phase:
 
 #### AR3 — Topology Cache and CanonicalState Exposure
 
-- Status: `PLANNED`.
-- Depends on: AR1 (derivation, and the validation core in best-effort/defensive mode — excludes
-  structurally broken entries from the cached graph, never crashes the engine on malformed
-  `options`).
-- Compute and cache `CanonicalState["rooms.topology"]`, invalidated on options change and on
-  `EVENT_AREA_REGISTRY_UPDATED` / `EVENT_ENTITY_REGISTRY_UPDATED`, following the Room Context
-  Model's (Phase X) staleness pattern — confirmed as a genuine same-cycle, pre-DAG precedent in
-  `engine.py` (`_compute_room_device_context()` runs before `_compute_domain_plugins()` /
-  `resolve_dag()`), not merely asserted by the spec.
-- Tests: cache invalidation triggers; no per-cycle recomputation when nothing changed; malformed or
-  dangling entries excluded from the cached graph without raising.
+- Status: `DONE`.
+- Implementation:
+  - `TopologyGraphCache` added to `room_topology.py` (still pure — no `homeassistant` import):
+    `mark_stale()` + `get_graph(options)`, rebuilding only when stale. Deliberately simpler than
+    `RoomDeviceContextBuilder` (no per-cycle partial recompute): the whole graph is cached until
+    invalidated, matching the spec's cadence table (Room Context Model recomputes every cycle,
+    topology only on options/registry change).
+  - `engine.py`: `_room_topology_cache` field + `set_room_topology_cache()` setter (mirrors
+    `set_room_context_builder`); `_compute_room_topology()` calls `cache.get_graph(options)` and
+    writes `CanonicalState["rooms.topology"]`; called once per cycle right before
+    `_compute_room_device_context()`, i.e. before `_compute_domain_plugins()`/`resolve_dag()` —
+    same pre-DAG, same-cycle slot confirmed for the Room Context Model precedent.
+    `async_reload_options()` calls `mark_stale()` unconditionally on every options reload, matching
+    the existing `_room_context_builder.mark_stale()` call right above it.
+  - `coordinator.py`: instantiates `TopologyGraphCache()` and binds it to the engine next to the
+    existing `RoomDeviceContextBuilder` wiring; `_subscribe_room_context_registry_updates()`'s
+    existing `EVENT_ENTITY_REGISTRY_UPDATED`/`EVENT_AREA_REGISTRY_UPDATED` listener now also calls
+    `self._room_topology_cache.mark_stale()` — reused, not duplicated, since it's already exactly
+    the trigger set the spec calls for.
+- Implementation notes (deviations found while implementing):
+  - A real, pre-existing circular import (`runtime.inference` <-> `runtime.analyzers` <->
+    `runtime.proposal_engine`, order-dependent, unrelated to this feature) was exposed — not
+    created — by `coordinator.py` gaining a new top-level import that ruff's import sorter placed
+    earlier than `runtime.engine`. Root-causing that chain was out of scope for AR3, so
+    `room_topology.py` was hardened instead: its already-local-only need for `ValidationIssue` (used
+    for annotations and inside `validate_topology()`) is now `TYPE_CHECKING`-only at module scope
+    plus a local import inside the function, so `room_topology.py` carries zero heavy transitive
+    imports and is safe to import first from anywhere, including very early in `coordinator.py`.
+- Tests: `tests/test_room_topology.py` (+4: cache builds on first call, does not rebuild without
+  `mark_stale()`, rebuilds after `mark_stale()`, empty-options smoke test) and new
+  `tests/test_room_topology_engine_wiring.py` (3: `_compute_room_topology` writes `{}` without a
+  bound cache, writes the derived graph through a bound cache, and confirms two calls without an
+  intervening `mark_stale()` reuse the cached graph rather than recomputing).
+- Verification: `pytest tests/ -q` — 1912 passed (full suite). `ruff check` / `ruff format --check`
+  on all touched files — clean.
 
 #### AR4 — Admin Editor (Panel)
 
