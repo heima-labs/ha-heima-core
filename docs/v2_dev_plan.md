@@ -1259,63 +1259,121 @@ MVP merge.
   - topology stays room-level aggregate; no per-person presence tracking or display;
   - Heating is not a consumer of this phase.
 
-#### AR1 — Data Model and Derivation
+#### Sequencing Rationale
+
+The sub-phase order below was revised from the spec's original draft numbering after an explicit
+dependency and risk analysis (2026-08-21). Two findings drove the change:
+
+1. **AR2 (validation), AR3 (cache), AR4 (editor) are a fan-out from AR1, not a chain.** All three
+   depend only on the AR1 data model and derivation rules — none of them depends on each other
+   (Installation Validation runs against raw `options` data, not the cache; the editor reads/writes
+   `options` directly, not the cache). The original draft order implied a dependency chain that does
+   not actually exist. Sequencing the fan-out by risk instead of spec order reduces the chance of
+   late rework.
+2. **Validation logic must have exactly one implementation.** It is needed by the cache builder
+   (best-effort — must never crash the engine on malformed `options`, the same defensive pattern
+   already used for `camera_evidence_sources`), by the Installation Validation section, and by the
+   editor's save-time blocking. Writing it three times risks silent divergence between "what the
+   editor blocks" and "what the engine actually tolerates at runtime" — a bug class already found and
+   fixed once in this codebase (the `camera_evidence_sources` diagnostic regression during the AS
+   phase). AR1 is therefore redefined to own this logic as a single pure module (no HA/`hass`
+   dependency), consumed — not reimplemented — by every later phase that needs it.
+
+Resulting order and rationale per phase:
+
+- **AR1** now also absorbs the pure, HA-independent half of the original validation phase (structural
+  referential-integrity checks, plus the new shared-`entity_id`/`connection_type` conflict rule).
+  Fully unit-testable with no `hass` fixture — the highest-leverage phase to get right, since every
+  bug here propagates to all seven later phases.
+- **AR2** (was "Validation and Reconciliation", unchanged scope, moved up) keeps only the checks that
+  inherently require HA Registry access (Area/Entity removal, `entity_unavailable`) and wires AR1's
+  pure checks into the existing Installation Validation framework. Placed right after AR1 because it
+  is the cheapest way to build confidence in AR1's correctness against realistic fixtures, before
+  tackling the one genuinely novel mechanism in this phase (cache invalidation, next).
+- **AR3** (was "Topology Cache", moved down one slot) — `CanonicalState` exposure — now comes after
+  AR1/AR2 have already exercised the core logic, so the invalidation-timing work (registry event
+  wiring, staleness — the actual novel risk in this phase) is built on a foundation already covered by
+  tests, not debugged simultaneously with the derivation/validation logic itself.
+- **AR4** — admin editor — unchanged in substance and position, still after the storage/derivation/
+  validation core is stable, since it is the largest surface (websocket commands, panel UI, admin
+  gating).
+- **AR5–AR7** (consumers) are reordered from Security→Occupancy→HouseState to **HouseState→Occupancy→
+  Security** — ascending blast radius of a bug, not spec order. HouseState's use of topology is purely
+  explanatory (`topology_context` diagnostics, never changes `house_state`, never triggers an action)
+  — the cheapest consumer on which to prove the `rooms.topology` read pattern. Occupancy is next: a
+  bug there degrades presence-weighting quality but has no safety implication. Security is last, so
+  its alarm-boundary classification is built once the read pattern is already proven correct on two
+  lower-stakes consumers, and the entity_id/connection_type conflict rule — which exists specifically
+  to protect Security from an ambiguous boundary — has already been enforced upstream by AR1/AR2 by
+  the time Security code is written.
+- **AR8** (observability) is unaffected — still last, it aggregates state produced by every earlier
+  phase.
+
+#### AR1 — Data Model, Derivation, and Validation Core
 
 - Status: `PLANNED`.
 - Extend `options[OPT_ROOMS][*]` with `room_type`, `floor`, `geometry` (always `null`).
 - Add `OPT_ROOM_OPENINGS` / `OPT_ROOM_CONNECTIONS` option lists and their record shapes.
 - Implement `connection_type` derivation (priority rule) and `exposure` derivation (union of window
   orientations). No independently stored `is_outdoor`/`is_separate`.
+- Implement the **pure, HA-independent validation core** as a standalone module (no `hass`
+  dependency), consumed by AR2 (Installation Validation), AR3 (cache builder, defensive/best-effort
+  mode), and AR4 (editor save-time blocking) — not reimplemented by any of them:
+  - dangling `room_id`/`opening_id` references within `options` data (error);
+  - `Connection.opening_id` referencing an `Opening` that is not `door`/`door_window` (error);
+  - isolated `indoor` room with zero `Connection`s (warning; non-`indoor` types excluded);
+  - shared `entity_id` across `Opening`s — warning if every referencing `Connection` agrees on
+    `connection_type`, **error** if they disagree (see spec's Validation and Reconciliation /
+    Security sections).
 - Tests: `room_type` defaults to `indoor`; derivation priority-rule branches including
-  `room_b: "outside"`; `connection_type_override` precedence; `exposure` recomputation.
+  `room_b: "outside"`; `connection_type_override` precedence; `exposure` recomputation; every
+  validation rule above, including the conflicting-`connection_type` error case — all without `hass`.
 
-#### AR2 — Topology Cache and CanonicalState Exposure
+#### AR2 — Installation Validation and Reconciliation
 
 - Status: `PLANNED`.
+- Depends on: AR1 (calls its pure validation core; does not reimplement any check).
+- Add a new `ValidationSection` to `validation.py` (Phase M), wiring in AR1's pure checks plus the
+  checks that inherently require HA Registry access:
+  - `entity_id` no longer resolving in the HA Entity Registry → `entity_unavailable` diagnostic,
+    `Opening` retained (not deleted);
+  - `Connection.room_b` / `Opening.room_id` referencing a `room_id` removed from the HA Area Registry
+    → surfaced immediately, hooked into the same reconciliation lifecycle as `_reconcile_rooms()`.
+- Tests: per the spec's Testing Requirements (Area/entity removal scenarios), plus confirming AR1's
+  pure checks surface correctly through this section (no duplicated logic).
+
+#### AR3 — Topology Cache and CanonicalState Exposure
+
+- Status: `PLANNED`.
+- Depends on: AR1 (derivation, and the validation core in best-effort/defensive mode — excludes
+  structurally broken entries from the cached graph, never crashes the engine on malformed
+  `options`).
 - Compute and cache `CanonicalState["rooms.topology"]`, invalidated on options change and on
   `EVENT_AREA_REGISTRY_UPDATED` / `EVENT_ENTITY_REGISTRY_UPDATED`, following the Room Context
-  Model's (Phase X) staleness pattern.
-- Tests: cache invalidation triggers; no per-cycle recomputation when nothing changed.
-
-#### AR3 — Validation and Reconciliation
-
-- Status: `PLANNED`.
-- Add a new `ValidationSection` to `validation.py` (Phase M): isolated `indoor` room warning
-  (non-`indoor` types excluded), shared `entity_id` warning (non-blocking), dangling
-  `room_id`/`opening_id` references as errors, `entity_unavailable` marking on Entity Registry
-  removal.
-- Hook orphan detection into the same lifecycle as `_reconcile_rooms()`.
-- Tests: per the spec's Testing Requirements (Area/entity removal scenarios).
+  Model's (Phase X) staleness pattern — confirmed as a genuine same-cycle, pre-DAG precedent in
+  `engine.py` (`_compute_room_device_context()` runs before `_compute_domain_plugins()` /
+  `resolve_dag()`), not merely asserted by the spec.
+- Tests: cache invalidation triggers; no per-cycle recomputation when nothing changed; malformed or
+  dangling entries excluded from the cached graph without raising.
 
 #### AR4 — Admin Editor (Panel)
 
 - Status: `PLANNED`.
+- Depends on: AR1 (save-time blocking reuses the same pure validation core — error-severity blocks
+  the save, warning-severity does not).
 - Add `heima/topology/snapshot` and `heima/topology/action` websocket commands (admin-only),
   mirroring the AO7 admin-action pattern (payload validation, updated snapshot returned, action
   recorded for observability).
 - Panel UI: graph/form-based room + opening + connection editor, not an Options Flow step.
-- Tests: admin-gating, mutation round-trip through `config_entries.async_update_entry`.
+- Tests: admin-gating, mutation round-trip through `config_entries.async_update_entry`, save-time
+  blocking on error-severity only.
 
-#### AR5 — Security Consumption
-
-- Status: `PLANNED`.
-- `SecurityDomain` reads `connection_type` + `Opening.entity_id` from `rooms.topology` for
-  alarm-boundary classification; openings without a bound entity are excluded from alarm coverage
-  and explicitly visible as such in diagnostics.
-- Reuse the existing `blocked_by` convention for topology-driven blocks.
-- Tests: separate/outdoor connection with armed_away triggers correctly; entity-less opening does
-  not silently participate in alarm logic.
-
-#### AR6 — Occupancy Consumption
+#### AR5 — HouseState Consumption
 
 - Status: `PLANNED`.
-- `OccupancyDomain` reads `room_type` from `rooms.topology` and applies its own room-type weight
-  table alongside existing `room_occupancy_mode` handling.
-- Tests: weighted presence matches expected values per room type.
-
-#### AR7 — HouseState Consumption
-
-- Status: `PLANNED`.
+- Depends on: AR3 (reads cached `rooms.topology`).
+- Sequenced first among consumers: lowest blast radius of a bug (diagnostics-only), the cheapest way
+  to validate the `rooms.topology` read pattern before higher-stakes consumers use it.
 - After `house_state` resolution runs unchanged, `HouseStateDomain` separately cross-references
   `rooms.topology`'s `connection_type` structure with the live entity state of `separate`/`outdoor`
   openings, and attaches the result as a new `topology_context: {open_boundary_openings: [...]}`
@@ -1325,9 +1383,36 @@ MVP merge.
 - Tests: `topology_context` appears in diagnostics when a `separate`/`outdoor` opening is open;
   `house_state` resolution and its enum values are unchanged before/after this slice.
 
+#### AR6 — Occupancy Consumption
+
+- Status: `PLANNED`.
+- Depends on: AR3 (reads cached `rooms.topology`).
+- Sequenced second among consumers: a bug here degrades presence-weighting quality, no safety
+  implication — moderate blast radius.
+- `OccupancyDomain` reads `room_type` from `rooms.topology` and applies its own room-type weight
+  table alongside existing `room_occupancy_mode` handling.
+- Tests: weighted presence matches expected values per room type.
+
+#### AR7 — Security Consumption
+
+- Status: `PLANNED`.
+- Depends on: AR3 (reads cached `rooms.topology`); AR1/AR2 having already enforced the
+  shared-`entity_id`/`connection_type` conflict rule, so Security never has to resolve that
+  ambiguity itself.
+- Sequenced last among consumers: highest blast radius of a bug (false-negative alarm coverage) —
+  built once the topology read pattern is already proven on two lower-stakes consumers.
+- `SecurityDomain` reads `connection_type` + `Opening.entity_id` from `rooms.topology` for
+  alarm-boundary classification; openings without a bound entity are excluded from alarm coverage
+  and explicitly visible as such in diagnostics.
+- Reuse the existing `blocked_by` convention for topology-driven blocks.
+- Tests: separate/outdoor connection with armed_away triggers correctly; entity-less opening does
+  not silently participate in alarm logic; conflicting shared `entity_id` never reaches this code
+  path (rejected upstream by AR1/AR2, confirmed by an integration test).
+
 #### AR8 — Observability
 
 - Status: `PLANNED`.
+- Depends on: AR2 (validation counts), AR3 (topology counts), AR7 (Security decision traces).
 - Add the `topology` diagnostics summary to the AO snapshot (room/opening/connection counts,
   validation counts, unresolved entity references).
 - Ensure topology-driven Security decisions are traceable in existing AO decision traces.

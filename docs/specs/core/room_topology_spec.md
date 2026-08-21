@@ -200,8 +200,10 @@ Non-Goals). Validation must surface, not hide, the distinction between "no senso
 
 The same `entity_id` **may** be referenced by more than one `Opening`. Real cases: alarm contact
 sensors wired in series/parallel across multiple physical windows; a `door_window` and a
-neighboring `window` sharing one contact in some installations. This is never a validation error —
-at most a non-blocking warning.
+neighboring `window` sharing one contact in some installations. This is a non-blocking warning as
+long as every `Connection` referencing those `Opening`s resolves to the same `connection_type` (same
+security boundary); if they resolve to different `connection_type` values, it is a validation error
+— see Validation and Reconciliation.
 
 `door_window` (porta-finestra) behaves as both `door` (may be referenced by a `Connection`) and
 `window` (contributes `orientation` to the owner room's `exposure`). It is a single `Opening`
@@ -295,8 +297,16 @@ Checks:
 - An `indoor`-type `Room` with zero `Connection`s referencing it (as `room_a` or `room_b`) —
   `warning`. Non-`indoor` types (`garage`, `basement`, `outdoor`, `external`) may legitimately be a
   disconnected component (a detached garage, a guest house) — never warned on isolation alone.
-- An `Opening.entity_id` referenced by more than one `Opening` — `warning`, informational only, per
-  the legitimate-sharing cases above.
+- An `Opening.entity_id` referenced by more than one `Opening`, where every `Connection` referencing
+  those `Opening`s resolves to the same `connection_type` — `warning`, informational only, per the
+  legitimate-sharing cases above (e.g. one alarm contact wired across two windows on the same
+  exterior boundary).
+- An `Opening.entity_id` referenced by more than one `Opening`, where the `Connection`s referencing
+  those `Opening`s resolve to *different* `connection_type` values (e.g. one side `separate`, the
+  other `indoor`) — `error`. This is not the legitimate same-boundary sharing case; it means Security
+  cannot determine which boundary the entity's state applies to. Silently picking one would be exactly
+  the kind of undiagnosable "why didn't the alarm fire" outcome this spec's Observability section
+  requires avoiding — the admin must resolve it by using distinct entities or correcting the topology.
 - A `Connection.opening_id` referencing an `Opening` that is not `door` or `door_window` — `error`.
 - A `Connection.room_b` (when not `"outside"`) or an `Opening.room_id` referencing a `room_id` that
   no longer exists in `options[OPT_ROOMS]` — `error`, surfaced immediately (not silently dropped),
@@ -318,6 +328,10 @@ classify actuator-backed openings for alarm logic:
 - An `Opening` with no `entity_id` is not alarm-eligible — it cannot contribute to security logic,
   only to future informational use. This must be visible in diagnostics (Installation Validation,
   above), not silently absent from alarm coverage.
+- An `entity_id` shared across `Opening`s whose `Connection`s resolve to *different* `connection_type`
+  values is rejected by Installation Validation as an `error` (see Validation and Reconciliation) and
+  must never reach Security's runtime classification — there is no implicit precedence rule between
+  the conflicting boundaries.
 - Reaction/apply blocking caused by topology-driven security classification should use the same
   `blocked_by` convention already established by `core/manual_hold_framework_spec.md` and
   `core/runtime_checkpoint_and_power_recovery_spec.md` (a short, structured reason string), not a
@@ -386,7 +400,10 @@ Unit tests:
 - `connection_type` derivation for every priority-rule branch, including `room_b: "outside"`;
 - `connection_type_override` wins over derivation;
 - `exposure` recomputed correctly as `Opening`s are added/changed/removed;
-- shared `entity_id` across multiple `Opening`s produces a warning, not a validation error;
+- shared `entity_id` across multiple `Opening`s whose `Connection`s agree on `connection_type`
+  produces a warning, not a validation error;
+- shared `entity_id` across multiple `Opening`s whose `Connection`s resolve to different
+  `connection_type` values produces an `error`;
 - isolated `indoor` room produces a warning; isolated `garage`/`basement`/`outdoor`/`external` room
   does not.
 
@@ -401,17 +418,19 @@ Integration tests:
 
 ## Open Questions
 
-1. Should `RoomContextSignalProvider` (Phase X's planned internal provider interface for
-   entity-keyed room signals) be extended to also carry relational/graph data, or should
-   `rooms.topology` remain a separate sibling namespace permanently? Leaning toward keeping them
-   separate — the provider interface is entity-keyed and scalar-valued by design, topology is
-   graph-shaped — but not yet decided.
-2. Default occupancy weight for `room_type: transit` — proposed low (analogous to `balcony`), to be
-   confirmed against a real multi-floor test case.
-3. Should Installation Validation block saving an invalid topology edit in the panel UI, or only
-   warn post-save? Leaning toward blocking `error`-severity issues (dangling references) at
-   save-time in the editor, and only warning (non-blocking) for `warning`-severity issues (isolated
-   room, shared entity).
+1. Default occupancy weight for `room_type: transit` — proposed low (analogous to `balcony`), to be
+   confirmed against a real multi-floor test case. Deferred to AR6.
+
+**Resolved:**
+
+- `rooms.topology` stays a separate sibling namespace to `RoomContextSignalProvider` permanently, not
+  extended to carry it. `RoomContextSignalProvider` (Phase X, not yet implemented) is entity-keyed and
+  scalar-valued, recomputed from live HA state every cycle; `rooms.topology` is graph-shaped,
+  admin-declared, and cached until options/registry change. Forcing one interface to cover both would
+  compromise the provider contract before it has shipped for its original purpose.
+- The admin editor (AR4) blocks saving on `error`-severity validation issues (dangling references,
+  conflicting shared `entity_id`) and only warns, non-blocking, on `warning`-severity issues (isolated
+  room, same-boundary shared entity).
 
 ## Acceptance Criteria
 
@@ -421,8 +440,9 @@ Integration tests:
   recomputed every cycle, invalidated correctly on options/registry changes.
 - `connection_type` and `exposure` are always derived, never independently stored, and never drift
   from their inputs.
-- `entity_id` is optional on every `Opening`; sharing one `entity_id` across `Opening`s is
-  supported, not flagged as an error.
+- `entity_id` is optional on every `Opening`; sharing one `entity_id` across same-boundary `Opening`s
+  (agreeing `connection_type`) is supported, not flagged as an error — sharing across `Opening`s that
+  resolve to conflicting `connection_type` values is rejected as an `error`.
 - Security, Occupancy, and HouseState can consume topology as configuration input without any new
   per-cycle computation or new `InferenceSignal` type.
 - `house_state`'s enum is unchanged; topology-derived facts reach HouseState as context/diagnostics
