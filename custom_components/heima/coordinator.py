@@ -37,7 +37,14 @@ from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids, room_signal_entity_id
-from .room_topology import TopologyGraphCache
+from .room_topology import (
+    TopologyGraphCache,
+    apply_room_connection_delete,
+    apply_room_connection_upsert,
+    apply_room_opening_delete,
+    apply_room_opening_upsert,
+    apply_room_topology_fields,
+)
 from .runtime.analyzers import (
     ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
@@ -994,6 +1001,97 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         options["reactions"] = reactions
         self.hass.config_entries.async_update_entry(self.entry, options=options)
         return True
+
+    def _apply_room_topology_mutation(
+        self,
+        new_options: dict[str, Any] | None,
+        issues: tuple[Any, ...],
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Persist a room topology mutation, or report the blocking issues that rejected it."""
+        if new_options is None:
+            return False, tuple(issue.as_dict() for issue in issues)
+        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+        return True, ()
+
+    async def async_set_room_topology_fields(
+        self,
+        *,
+        room_id: str,
+        room_type: str | None = None,
+        floor: int | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Set topology fields (room_type/floor) on an existing room, admin-editor entry point."""
+        new_options, issues = apply_room_topology_fields(
+            dict(getattr(self.entry, "options", {}) or {}),
+            room_id=room_id,
+            room_type=room_type,
+            floor=floor,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_upsert_room_opening(
+        self,
+        *,
+        opening_id: str | None,
+        room_id: str,
+        opening_type: str,
+        orientation: str | None = None,
+        entity_id: str | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Create or replace one Opening, admin-editor entry point."""
+        new_options, issues = apply_room_opening_upsert(
+            dict(getattr(self.entry, "options", {}) or {}),
+            opening_id=opening_id,
+            room_id=room_id,
+            type=opening_type,
+            orientation=orientation,
+            entity_id=entity_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_delete_room_opening(
+        self,
+        *,
+        opening_id: str,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Delete one Opening, admin-editor entry point."""
+        new_options, issues = apply_room_opening_delete(
+            dict(getattr(self.entry, "options", {}) or {}),
+            opening_id=opening_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_upsert_room_connection(
+        self,
+        *,
+        connection_id: str | None,
+        opening_id: str,
+        room_b: str,
+        access_type: str | None = None,
+        connection_type_override: str | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Create or replace one Connection, admin-editor entry point."""
+        new_options, issues = apply_room_connection_upsert(
+            dict(getattr(self.entry, "options", {}) or {}),
+            connection_id=connection_id,
+            opening_id=opening_id,
+            room_b=room_b,
+            access_type=access_type,
+            connection_type_override=connection_type_override,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_delete_room_connection(
+        self,
+        *,
+        connection_id: str,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Delete one Connection, admin-editor entry point."""
+        new_options, issues = apply_room_connection_delete(
+            dict(getattr(self.entry, "options", {}) or {}),
+            connection_id=connection_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
 
     async def async_reset_runtime_confirmation_promotion_state(self, reaction_id: str) -> bool:
         """Clear persisted runtime confirmation stats and promotion review state."""

@@ -12,10 +12,18 @@ from homeassistant.exceptions import Unauthorized
 
 from .const import DOMAIN
 from .observability import build_observability_snapshot
+from .room_topology import build_room_topology_snapshot
 
 WS_TYPE_OBSERVABILITY_SNAPSHOT = "heima/observability/snapshot"
 WS_TYPE_OBSERVABILITY_ACTION = "heima/observability/action"
 WS_TYPE_OBSERVABILITY_WHY_NOT_NOW = "heima/observability/why_not_now"
+WS_TYPE_TOPOLOGY_SNAPSHOT = "heima/topology/snapshot"
+WS_TYPE_TOPOLOGY_ACTION = "heima/topology/action"
+TOPOLOGY_ACTION_SET_ROOM_FIELDS = "set_room_fields"
+TOPOLOGY_ACTION_UPSERT_OPENING = "upsert_opening"
+TOPOLOGY_ACTION_DELETE_OPENING = "delete_opening"
+TOPOLOGY_ACTION_UPSERT_CONNECTION = "upsert_connection"
+TOPOLOGY_ACTION_DELETE_CONNECTION = "delete_connection"
 WHY_NOT_NOW_RATE_LIMIT = 2
 WHY_NOT_NOW_RATE_WINDOW_S = 60.0
 ACTION_CLEAR_MANUAL_HOLD = "clear_manual_hold"
@@ -40,6 +48,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_observability_snapshot)
     websocket_api.async_register_command(hass, websocket_observability_action)
     websocket_api.async_register_command(hass, websocket_observability_why_not_now)
+    websocket_api.async_register_command(hass, websocket_topology_snapshot)
+    websocket_api.async_register_command(hass, websocket_topology_action)
 
 
 @websocket_api.websocket_command(
@@ -438,6 +448,178 @@ def _why_not_now_rate_allowed(entry_id: str) -> bool:
     recent.append(now)
     _WHY_NOT_NOW_CALLS[key] = recent
     return True
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_TOPOLOGY_SNAPSHOT,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@callback
+def websocket_topology_snapshot(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the read-only admin room topology snapshot."""
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested room topology snapshot.",
+        )
+        return
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(msg["id"], build_room_topology_snapshot(options))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_TOPOLOGY_ACTION,
+        vol.Optional("entry_id"): str,
+        vol.Required("action"): vol.In(
+            [
+                TOPOLOGY_ACTION_SET_ROOM_FIELDS,
+                TOPOLOGY_ACTION_UPSERT_OPENING,
+                TOPOLOGY_ACTION_DELETE_OPENING,
+                TOPOLOGY_ACTION_UPSERT_CONNECTION,
+                TOPOLOGY_ACTION_DELETE_CONNECTION,
+            ]
+        ),
+        vol.Optional("payload", default={}): dict,
+    }
+)
+@callback
+def websocket_topology_action(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Run one allowlisted admin room topology mutation."""
+    if not connection.user or not connection.user.is_admin:
+        raise Unauthorized()
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested room topology action.",
+        )
+        return
+    hass.async_create_task(_async_handle_topology_action(coordinator, connection, msg))
+
+
+async def _async_handle_topology_action(
+    coordinator: Any,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle one allowlisted admin room topology action and send its websocket response."""
+    action = str(msg.get("action") or "").strip()
+    payload = dict(msg.get("payload") or {})
+
+    if action == TOPOLOGY_ACTION_SET_ROOM_FIELDS:
+        room_id = str(payload.get("room_id") or "").strip()
+        if not room_id:
+            connection.send_error(msg["id"], "invalid_payload", "set_room_fields requires room_id.")
+            return
+        applied, issues = await coordinator.async_set_room_topology_fields(
+            room_id=room_id,
+            room_type=payload.get("room_type"),
+            floor=payload.get("floor"),
+        )
+    elif action == TOPOLOGY_ACTION_UPSERT_OPENING:
+        room_id = str(payload.get("room_id") or "").strip()
+        opening_type = str(payload.get("type") or "").strip()
+        if not room_id or not opening_type:
+            connection.send_error(
+                msg["id"], "invalid_payload", "upsert_opening requires room_id and type."
+            )
+            return
+        applied, issues = await coordinator.async_upsert_room_opening(
+            opening_id=payload.get("opening_id"),
+            room_id=room_id,
+            opening_type=opening_type,
+            orientation=payload.get("orientation"),
+            entity_id=payload.get("entity_id"),
+        )
+    elif action == TOPOLOGY_ACTION_DELETE_OPENING:
+        opening_id = str(payload.get("opening_id") or "").strip()
+        if not opening_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "delete_opening requires opening_id."
+            )
+            return
+        applied, issues = await coordinator.async_delete_room_opening(opening_id=opening_id)
+    elif action == TOPOLOGY_ACTION_UPSERT_CONNECTION:
+        opening_id = str(payload.get("opening_id") or "").strip()
+        room_b = str(payload.get("room_b") or "").strip()
+        if not opening_id or not room_b:
+            connection.send_error(
+                msg["id"], "invalid_payload", "upsert_connection requires opening_id and room_b."
+            )
+            return
+        applied, issues = await coordinator.async_upsert_room_connection(
+            connection_id=payload.get("connection_id"),
+            opening_id=opening_id,
+            room_b=room_b,
+            access_type=payload.get("access_type"),
+            connection_type_override=payload.get("connection_type_override"),
+        )
+    elif action == TOPOLOGY_ACTION_DELETE_CONNECTION:
+        connection_id = str(payload.get("connection_id") or "").strip()
+        if not connection_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "delete_connection requires connection_id."
+            )
+            return
+        applied, issues = await coordinator.async_delete_room_connection(
+            connection_id=connection_id
+        )
+    else:
+        connection.send_error(msg["id"], "unsupported_action", f"Unsupported action '{action}'.")
+        return
+
+    if not applied:
+        if issues:
+            reasons = "; ".join(str(issue.get("description") or "") for issue in issues)
+            connection.send_error(msg["id"], "validation_failed", reasons)
+        else:
+            connection.send_error(
+                msg["id"], "not_found", f"Room topology action '{action}' could not be applied."
+            )
+        return
+
+    _record_admin_action(
+        coordinator,
+        summary=f"Admin applied room topology action '{action}'.",
+        reason_code=f"room_topology.{action}",
+        object_links=_topology_action_object_links(action, payload),
+    )
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(
+        msg["id"],
+        {
+            "ok": True,
+            "action": action,
+            "snapshot": build_room_topology_snapshot(options),
+        },
+    )
+
+
+def _topology_action_object_links(
+    action: str, payload: dict[str, Any]
+) -> tuple[dict[str, str], ...]:
+    if action == TOPOLOGY_ACTION_SET_ROOM_FIELDS:
+        return ({"kind": "room", "id": str(payload.get("room_id") or "")},)
+    if action in (TOPOLOGY_ACTION_UPSERT_OPENING, TOPOLOGY_ACTION_DELETE_OPENING):
+        return ({"kind": "opening", "id": str(payload.get("opening_id") or "")},)
+    if action in (TOPOLOGY_ACTION_UPSERT_CONNECTION, TOPOLOGY_ACTION_DELETE_CONNECTION):
+        return ({"kind": "connection", "id": str(payload.get("connection_id") or "")},)
+    return ()
 
 
 def _coordinator_entry_id(coordinator: Any) -> str:

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from .const import OPT_ROOM_CONNECTIONS, OPT_ROOM_OPENINGS, OPT_ROOMS
 
@@ -485,3 +486,175 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
             )
 
     return tuple(issues)
+
+
+# --- AR4: admin editor support — read-only snapshot and pure mutation functions ---
+#
+# Every mutation below follows the same shape: build the candidate options, run
+# validate_topology() against them, and reject (return None, blocking_issues) if any
+# error-severity issue results. This is the single choke point for "save-time blocking
+# on error-severity only" (see the spec's resolved Open Questions) — the admin editor
+# websocket layer (coordinator.py, websocket_api.py) never re-implements this check.
+
+
+def build_room_topology_snapshot(options: dict[str, Any]) -> dict[str, Any]:
+    """Read-only snapshot for the admin editor: rooms, openings, connections, and issues."""
+    rooms = [room for room in options.get(OPT_ROOMS, []) or [] if isinstance(room, dict)]
+    graph = build_topology_graph(options)
+    issues = validate_topology(options)
+    return {
+        "rooms": [
+            {
+                "room_id": room_id,
+                "display_name": str(room.get("display_name") or room_id),
+                "room_type": room_type_of(room),
+                "floor": room_floor_of(room),
+                "exposure": list(graph.exposure_by_room.get(room_id, ())),
+            }
+            for room in rooms
+            for room_id in (str(room.get("room_id") or ""),)
+            if room_id
+        ],
+        "openings": [opening.as_dict() for opening in graph.openings],
+        "connections": [connection.as_dict() for connection in graph.connections],
+        "issues": [issue.as_dict() for issue in issues],
+    }
+
+
+def _apply_and_validate(
+    options: dict[str, Any],
+    key: str,
+    updated_list: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    new_options = dict(options)
+    new_options[key] = updated_list
+    blocking = tuple(issue for issue in validate_topology(new_options) if issue.severity == "error")
+    if blocking:
+        return None, blocking
+    return new_options, ()
+
+
+def apply_room_topology_fields(
+    options: dict[str, Any],
+    *,
+    room_id: str,
+    room_type: str | None = None,
+    floor: int | None = None,
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    """Set topology fields on an existing Room. Returns (None, ()) if room_id is unknown."""
+    room_id = str(room_id or "").strip()
+    if not room_id:
+        return None, ()
+    if room_type is not None and room_type not in ROOM_TYPES:
+        return None, ()
+    rooms = list(options.get(OPT_ROOMS) or [])
+    found = False
+    updated_rooms: list[Any] = []
+    for raw in rooms:
+        if isinstance(raw, dict) and str(raw.get("room_id") or "") == room_id:
+            found = True
+            room = dict(raw)
+            if room_type is not None:
+                room["room_type"] = room_type
+            if floor is not None:
+                room["floor"] = floor
+            updated_rooms.append(room)
+        else:
+            updated_rooms.append(raw)
+    if not found:
+        return None, ()
+    return _apply_and_validate(options, OPT_ROOMS, updated_rooms)
+
+
+def apply_room_opening_upsert(
+    options: dict[str, Any],
+    *,
+    opening_id: str | None,
+    room_id: str,
+    type: str,
+    orientation: str | None = None,
+    entity_id: str | None = None,
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    """Create or replace one Opening by opening_id (generated if not provided)."""
+    room_id = str(room_id or "").strip()
+    opening_type = str(type or "").strip()
+    if not room_id or opening_type not in OPENING_TYPES:
+        return None, ()
+    if orientation is not None and orientation not in ORIENTATIONS:
+        return None, ()
+    resolved_id = str(opening_id or "").strip() or str(uuid4())
+    record = {
+        "opening_id": resolved_id,
+        "room_id": room_id,
+        "type": opening_type,
+        "orientation": orientation,
+        "entity_id": str(entity_id).strip() if entity_id else None,
+    }
+    existing = [o for o in (options.get(OPT_ROOM_OPENINGS) or []) if isinstance(o, dict)]
+    replaced = [o for o in existing if str(o.get("opening_id") or "") != resolved_id]
+    replaced.append(record)
+    return _apply_and_validate(options, OPT_ROOM_OPENINGS, replaced)
+
+
+def apply_room_opening_delete(
+    options: dict[str, Any],
+    *,
+    opening_id: str,
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    """Delete one Opening. Blocked (via validate_topology) if a Connection still references it."""
+    opening_id = str(opening_id or "").strip()
+    if not opening_id:
+        return None, ()
+    existing = [o for o in (options.get(OPT_ROOM_OPENINGS) or []) if isinstance(o, dict)]
+    remaining = [o for o in existing if str(o.get("opening_id") or "") != opening_id]
+    if len(remaining) == len(existing):
+        return None, ()
+    return _apply_and_validate(options, OPT_ROOM_OPENINGS, remaining)
+
+
+def apply_room_connection_upsert(
+    options: dict[str, Any],
+    *,
+    connection_id: str | None,
+    opening_id: str,
+    room_b: str,
+    access_type: str | None = None,
+    connection_type_override: str | None = None,
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    """Create or replace one Connection by connection_id (generated if not provided)."""
+    opening_id = str(opening_id or "").strip()
+    room_b = str(room_b or "").strip()
+    if not opening_id or not room_b:
+        return None, ()
+    if access_type is not None and access_type not in ACCESS_TYPES:
+        return None, ()
+    if connection_type_override is not None and connection_type_override not in CONNECTION_TYPES:
+        return None, ()
+    resolved_id = str(connection_id or "").strip() or str(uuid4())
+    record = {
+        "connection_id": resolved_id,
+        "opening_id": opening_id,
+        "room_b": room_b,
+        "access_type": access_type or DEFAULT_ACCESS_TYPE,
+        "connection_type_override": connection_type_override,
+    }
+    existing = [c for c in (options.get(OPT_ROOM_CONNECTIONS) or []) if isinstance(c, dict)]
+    replaced = [c for c in existing if str(c.get("connection_id") or "") != resolved_id]
+    replaced.append(record)
+    return _apply_and_validate(options, OPT_ROOM_CONNECTIONS, replaced)
+
+
+def apply_room_connection_delete(
+    options: dict[str, Any],
+    *,
+    connection_id: str,
+) -> tuple[dict[str, Any] | None, tuple[ValidationIssue, ...]]:
+    """Delete one Connection."""
+    connection_id = str(connection_id or "").strip()
+    if not connection_id:
+        return None, ()
+    existing = [c for c in (options.get(OPT_ROOM_CONNECTIONS) or []) if isinstance(c, dict)]
+    remaining = [c for c in existing if str(c.get("connection_id") or "") != connection_id]
+    if len(remaining) == len(existing):
+        return None, ()
+    return _apply_and_validate(options, OPT_ROOM_CONNECTIONS, remaining)

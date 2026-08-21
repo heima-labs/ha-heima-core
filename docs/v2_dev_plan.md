@@ -136,11 +136,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
 — Structured Runtime Source.
-**Active slice:** Phase AR — Room Topology, AR1-AR3 done, tests green.
+**Active slice:** Phase AR — Room Topology, AR1-AR3 done, AR4 backend done, AR4 frontend not started
+(explicit developer decision to split backend/frontend into separate slices).
 **Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
-**Next action:** AR4 — Admin Editor (Panel): `heima/topology/snapshot` and `heima/topology/action`
-websocket commands, admin-only, mirroring the AO7 admin-action pattern; save-time blocking reuses
-AR1's pure validation core (error-severity blocks, warning-severity does not).
+**Next action:** AR4 frontend — extend `custom_components/heima/frontend/heima-admin-panel.js` with
+a room/opening/connection editor section, wired to the now-complete `heima/topology/snapshot` and
+`heima/topology/action` websocket commands.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1425,15 +1426,52 @@ Resulting order and rationale per phase:
 
 #### AR4 — Admin Editor (Panel)
 
-- Status: `PLANNED`.
+- Status: `IN PROGRESS` — backend done, frontend not started (explicit developer decision,
+  2026-08-21: backend first as its own reviewable/testable slice, panel UI as a separate follow-up
+  slice rather than one large risky change).
 - Depends on: AR1 (save-time blocking reuses the same pure validation core — error-severity blocks
   the save, warning-severity does not).
-- Add `heima/topology/snapshot` and `heima/topology/action` websocket commands (admin-only),
-  mirroring the AO7 admin-action pattern (payload validation, updated snapshot returned, action
-  recorded for observability).
-- Panel UI: graph/form-based room + opening + connection editor, not an Options Flow step.
-- Tests: admin-gating, mutation round-trip through `config_entries.async_update_entry`, save-time
-  blocking on error-severity only.
+
+**Backend — done:**
+
+- `room_topology.py` (still pure) gained: `build_room_topology_snapshot(options)` (rooms with
+  topology fields + derived `exposure`, openings, resolved connections, pending validation issues)
+  and 5 mutation functions — `apply_room_topology_fields`, `apply_room_opening_upsert`,
+  `apply_room_opening_delete`, `apply_room_connection_upsert`, `apply_room_connection_delete` — each
+  `(options, ...) -> (new_options | None, blocking_issues)`. All five share one private
+  `_apply_and_validate()` choke point: build the candidate options, run `validate_topology()`,
+  reject with the error-severity issues if any exist. This is the single place "save-time blocking
+  on error-severity only" is enforced — deleting an `Opening` still referenced by a `Connection` is
+  rejected for free, via the same dangling-reference check AR1 already has, with no special-cased
+  cascade-delete logic needed.
+- `coordinator.py`: 5 thin `async_*` wrapper methods (mirroring the `async_review_runtime_promotion`
+  precedent — coordinator owns the actual `config_entries.async_update_entry` call, business logic
+  stays in the pure functions) sharing one `_apply_room_topology_mutation()` persistence helper.
+- `websocket_api.py`: `heima/topology/snapshot` (read-only, `@websocket_api.require_admin`) and
+  `heima/topology/action` (mutating, manual `connection.user.is_admin` check + `hass.async_create_task`
+  dispatch — same two-mechanism split as `websocket_observability_snapshot`/`_action`, for the same
+  reason: the mutation handler is `@callback`-sync but dispatches an async task). Action allowlist:
+  `set_room_fields`, `upsert_opening`, `delete_opening`, `upsert_connection`, `delete_connection`.
+  Rejections distinguish `invalid_payload` (missing required field, caught before calling the
+  coordinator) from `validation_failed` (rejected by AR1's validation core, message built from the
+  returned issues) from `not_found` (target id doesn't exist). Every successful action calls
+  `_record_admin_action(...)` with a `room_topology.<action>` reason code and an object link typed
+  by what was touched (`room`/`opening`/`connection`), then returns the updated snapshot — the same
+  `{"ok", "action", "snapshot"}` envelope every other admin action already returns.
+- Tests: `tests/test_room_topology_coordinator.py` (8: field updates, unknown-room rejection, opening
+  upsert with generated id, connection upsert, the conflicting-shared-entity rejection surfacing
+  AR1's `shared_conflict` error through the mutation path, opening delete, delete-blocked-while-
+  referenced, connection delete) and `tests/test_room_topology_websocket.py` (6: snapshot admin-gating
+  and content, action admin-gating, invalid-payload rejection, a full mutate-and-audit round trip
+  asserting on `coordinator.engine._observability`'s recorded event, and a validation-failure
+  rejection that leaves `entry.options` unchanged).
+- Verification: `pytest tests/ -q` — 1926 passed (full suite). `ruff check` / `ruff format --check`
+  on all touched files — clean.
+
+**Frontend — not started:** graph/form-based room + opening + connection editor in
+`custom_components/heima/frontend/heima-admin-panel.js` (single ~2170-line vanilla-JS custom
+element, no framework — a new section/tab following its existing `_render()`-from-state pattern),
+not an Options Flow step. Next action when resumed.
 
 #### AR5 — HouseState Consumption
 
