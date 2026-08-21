@@ -14,6 +14,10 @@ class HeimaAdminPanel extends HTMLElement {
     this._focusFilter = null;
     this._onHashChange = () => this._restoreRouteFromHash();
     this._refreshTimer = null;
+    this._topologySnapshot = null;
+    this._topologyLoading = false;
+    this._topologyError = "";
+    this._topologyActionError = "";
   }
 
   connectedCallback() {
@@ -21,6 +25,9 @@ class HeimaAdminPanel extends HTMLElement {
     window.addEventListener("hashchange", this._onHashChange);
     this._render();
     this._loadSnapshot();
+    if (this._route === "topology") {
+      this._loadTopologySnapshot();
+    }
     this._refreshTimer = window.setInterval(() => this._loadSnapshot(), 15000);
   }
 
@@ -36,6 +43,9 @@ class HeimaAdminPanel extends HTMLElement {
     this._hass = value;
     if (!this._snapshot && !this._loading) {
       this._loadSnapshot();
+    }
+    if (this._route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
+      this._loadTopologySnapshot();
     }
   }
 
@@ -66,9 +76,48 @@ class HeimaAdminPanel extends HTMLElement {
     }
   }
 
+  async _loadTopologySnapshot() {
+    if (!this._hass || typeof this._hass.callWS !== "function") {
+      return;
+    }
+    this._topologyLoading = true;
+    this._topologyError = "";
+    this._topologyActionError = "";
+    this._render();
+    try {
+      this._topologySnapshot = await this._hass.callWS({ type: "heima/topology/snapshot" });
+    } catch (err) {
+      this._topologyError = err?.message || "Unable to load Heima room topology data.";
+    } finally {
+      this._topologyLoading = false;
+      this._render();
+    }
+  }
+
+  async _runTopologyAction(action, payload, confirmMessage) {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    this._topologyActionError = "";
+    try {
+      const result = await this._hass.callWS({ type: "heima/topology/action", action, payload });
+      if (result?.snapshot) {
+        this._topologySnapshot = result.snapshot;
+      } else {
+        await this._loadTopologySnapshot();
+      }
+    } catch (err) {
+      this._topologyActionError =
+        err?.message || "Unable to complete Heima room topology action.";
+    } finally {
+      this._render();
+    }
+  }
+
   _setRoute(route) {
     this._route = route;
     this._detail = null;
+    if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
+      this._loadTopologySnapshot();
+    }
     this._syncHash();
     this._render();
   }
@@ -336,6 +385,32 @@ class HeimaAdminPanel extends HTMLElement {
           border-color: var(--error-color);
           color: var(--error-color);
         }
+        .topology-issues {
+          margin: 0;
+          padding-left: 18px;
+        }
+        .topology-issues li.error {
+          color: var(--error-color);
+        }
+        .topology-issues li.warning {
+          color: var(--warning-color, var(--secondary-text-color));
+        }
+        .topology-add-form {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin-top: 12px;
+        }
+        .topology-add-form select,
+        .topology-add-form input {
+          border: 1px solid var(--divider-color);
+          border-radius: 6px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          padding: 6px 8px;
+          font: inherit;
+        }
         .empty {
           color: var(--secondary-text-color);
           padding: 16px;
@@ -380,6 +455,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("proposals", "Proposals")}
             ${this._navButton("entities", "Entities")}
             ${this._navButton("health", "Health")}
+            ${this._navButton("topology", "Topology")}
           </div>
         </nav>
         <main>
@@ -399,7 +475,11 @@ class HeimaAdminPanel extends HTMLElement {
       button.addEventListener("click", () => {
         const route = button.getAttribute("data-route");
         if (route === "refresh") {
-          this._loadSnapshot();
+          if (this._route === "topology") {
+            this._loadTopologySnapshot();
+          } else {
+            this._loadSnapshot();
+          }
         } else {
           this._setRoute(route);
         }
@@ -441,6 +521,12 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-inspect-why-not-now]").forEach((button) => {
       button.addEventListener("click", () => this._runWhyNotNow(button));
     });
+    this.shadowRoot.querySelectorAll("[data-room-topology-field]").forEach((field) => {
+      field.addEventListener("change", () => this._onRoomTopologyFieldChange(field));
+    });
+    this.shadowRoot.querySelectorAll("button[data-topology-action]").forEach((button) => {
+      button.addEventListener("click", () => this._onTopologyActionButton(button));
+    });
     this._restoreFilterFocus();
   }
 
@@ -461,10 +547,12 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "proposals") return "Proposal Backlog Inspector";
     if (this._route === "entities") return "Entity Impact";
     if (this._route === "health") return "Health";
+    if (this._route === "topology") return "Room Topology";
     return "Overview";
   }
 
   _body(snapshot) {
+    if (this._route === "topology") return this._topologyBody();
     if (this._loading && !this._snapshot) {
       return `<div class="empty">Loading observability snapshot.</div>`;
     }
@@ -497,6 +585,272 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "entities") return this._entities(snapshot);
     if (this._route === "health") return this._health(snapshot);
     return this._overview(snapshot);
+  }
+
+  // ---------------------------------------------------------------------
+  // Room Topology (AR4): admin editor for rooms' topology fields, openings,
+  // and connections. Uses its own snapshot (heima/topology/snapshot), not
+  // the observability snapshot every other route above renders from.
+  // ---------------------------------------------------------------------
+
+  _topologyBody() {
+    if (this._topologyLoading && !this._topologySnapshot) {
+      return `<div class="empty">Loading room topology.</div>`;
+    }
+    if (this._topologyError) {
+      return `<div class="card error">${this._escape(this._topologyError)}</div>`;
+    }
+    if (!this._topologySnapshot) {
+      return `<div class="empty">No room topology data available.</div>`;
+    }
+    const actionError = this._topologyActionError
+      ? `<div class="card error">${this._escape(this._topologyActionError)}</div>`
+      : "";
+    return `${actionError}${this._topology(this._topologySnapshot)}`;
+  }
+
+  _topology(snapshot) {
+    const rooms = snapshot.rooms || [];
+    const openings = snapshot.openings || [];
+    const connections = snapshot.connections || [];
+    const issues = snapshot.issues || [];
+    const enums = snapshot.enums || {};
+    return `
+      ${this._topologyIssues(issues)}
+      <section class="card">
+        <h2>Rooms</h2>
+        <table>
+          <thead>
+            <tr><th>Room</th><th>Type</th><th>Floor</th><th>Exposure</th></tr>
+          </thead>
+          <tbody>
+            ${rooms.map((room) => this._topologyRoomRow(room, enums)).join("") || `<tr><td colspan="4">No rooms configured.</td></tr>`}
+          </tbody>
+        </table>
+      </section>
+      <section class="card">
+        <h2>Openings</h2>
+        <table>
+          <thead>
+            <tr><th>Room</th><th>Type</th><th>Orientation</th><th>Entity</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${openings.map((opening) => this._topologyOpeningRow(opening)).join("") || `<tr><td colspan="5">No openings configured.</td></tr>`}
+          </tbody>
+        </table>
+        ${this._topologyAddOpeningForm(rooms, enums)}
+      </section>
+      <section class="card">
+        <h2>Connections</h2>
+        <table>
+          <thead>
+            <tr><th>Opening</th><th>Room A</th><th>Room B</th><th>Type</th><th>Access</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${connections.map((connection) => this._topologyConnectionRow(connection)).join("") || `<tr><td colspan="6">No connections configured.</td></tr>`}
+          </tbody>
+        </table>
+        ${this._topologyAddConnectionForm(openings, rooms, enums)}
+      </section>
+    `;
+  }
+
+  _topologyIssues(issues) {
+    if (!issues.length) {
+      return `<div class="card">No room topology validation issues.</div>`;
+    }
+    const items = issues
+      .map(
+        (issue) =>
+          `<li class="${issue.severity === "error" ? "error" : "warning"}">[${this._escape(issue.severity)}] ${this._escape(issue.title)} — ${this._escape(issue.description)}</li>`,
+      )
+      .join("");
+    return `
+      <section class="card">
+        <h2>Validation</h2>
+        <ul class="topology-issues">${items}</ul>
+      </section>
+    `;
+  }
+
+  _topologyRoomRow(room, enums) {
+    const roomId = this._escape(room.room_id);
+    const exposure = (room.exposure || []).map((value) => this._escape(value)).join(", ") || "—";
+    return `
+      <tr>
+        <td>${this._escape(room.display_name || room.room_id)}</td>
+        <td>
+          <select data-room-topology-field="room_type" data-room-id="${roomId}">
+            ${this._selectOptions(enums.room_types || [], room.room_type)}
+          </select>
+        </td>
+        <td>
+          <input
+            type="number"
+            data-room-topology-field="floor"
+            data-room-id="${roomId}"
+            value="${Number.isFinite(room.floor) ? room.floor : 0}"
+          />
+        </td>
+        <td>${exposure}</td>
+      </tr>
+    `;
+  }
+
+  _topologyOpeningRow(opening) {
+    return `
+      <tr>
+        <td>${this._escape(opening.room_id)}</td>
+        <td>${this._escape(opening.type)}</td>
+        <td>${this._escape(opening.orientation || "—")}</td>
+        <td>${this._escape(opening.entity_id || "—")}</td>
+        <td>
+          <button
+            class="inline danger"
+            data-topology-action="delete_opening"
+            data-opening-id="${this._escape(opening.opening_id)}"
+          >Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  _topologyConnectionRow(connection) {
+    const override = connection.connection_type_override
+      ? ` (override: ${this._escape(connection.connection_type_override)})`
+      : "";
+    return `
+      <tr>
+        <td class="object-id">${this._escape(connection.opening_id)}</td>
+        <td>${this._escape(connection.room_a || "—")}</td>
+        <td>${this._escape(connection.room_b)}</td>
+        <td>${this._escape(connection.connection_type)}${override}</td>
+        <td>${this._escape(connection.access_type)}</td>
+        <td>
+          <button
+            class="inline danger"
+            data-topology-action="delete_connection"
+            data-connection-id="${this._escape(connection.connection_id)}"
+          >Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  _topologyAddOpeningForm(rooms, enums) {
+    if (!rooms.length) return "";
+    const roomOptions = rooms
+      .map(
+        (room) =>
+          `<option value="${this._escape(room.room_id)}">${this._escape(room.display_name || room.room_id)}</option>`,
+      )
+      .join("");
+    const orientationOptions =
+      `<option value="">—</option>` + this._selectOptions(enums.orientations || [], "");
+    return `
+      <div class="topology-add-form">
+        <select id="topology-new-opening-room">${roomOptions}</select>
+        <select id="topology-new-opening-type">${this._selectOptions(enums.opening_types || [], "door")}</select>
+        <select id="topology-new-opening-orientation">${orientationOptions}</select>
+        <input id="topology-new-opening-entity" type="text" placeholder="entity_id (optional)" />
+        <button class="inline" data-topology-action="add_opening">Add opening</button>
+      </div>
+    `;
+  }
+
+  _topologyAddConnectionForm(openings, rooms, enums) {
+    const doorLikeOpenings = openings.filter(
+      (opening) => opening.type === "door" || opening.type === "door_window",
+    );
+    if (!doorLikeOpenings.length) return "";
+    const openingOptions = doorLikeOpenings
+      .map(
+        (opening) =>
+          `<option value="${this._escape(opening.opening_id)}">${this._escape(opening.opening_id)} (${this._escape(opening.room_id)})</option>`,
+      )
+      .join("");
+    const roomBOptions =
+      `<option value="outside">outside</option>` +
+      rooms
+        .map(
+          (room) =>
+            `<option value="${this._escape(room.room_id)}">${this._escape(room.display_name || room.room_id)}</option>`,
+        )
+        .join("");
+    const overrideOptions =
+      `<option value="">— derived —</option>` +
+      this._selectOptions(enums.connection_types || [], "");
+    return `
+      <div class="topology-add-form">
+        <select id="topology-new-connection-opening">${openingOptions}</select>
+        <select id="topology-new-connection-room-b">${roomBOptions}</select>
+        <select id="topology-new-connection-access">${this._selectOptions(enums.access_types || [], "direct")}</select>
+        <select id="topology-new-connection-override">${overrideOptions}</select>
+        <button class="inline" data-topology-action="add_connection">Add connection</button>
+      </div>
+    `;
+  }
+
+  _selectOptions(values, selected) {
+    return values
+      .map(
+        (value) =>
+          `<option value="${this._escape(value)}"${value === selected ? " selected" : ""}>${this._escape(value)}</option>`,
+      )
+      .join("");
+  }
+
+  _onRoomTopologyFieldChange(field) {
+    const roomId = field.getAttribute("data-room-id") || "";
+    const key = field.getAttribute("data-room-topology-field") || "";
+    if (!roomId || !key) return;
+    const payload = { room_id: roomId };
+    if (key === "room_type") payload.room_type = field.value;
+    if (key === "floor") payload.floor = parseInt(field.value, 10) || 0;
+    this._runTopologyAction("set_room_fields", payload);
+  }
+
+  _onTopologyActionButton(button) {
+    const action = button.getAttribute("data-topology-action") || "";
+    const root = this.shadowRoot;
+    if (action === "delete_opening") {
+      const openingId = button.getAttribute("data-opening-id") || "";
+      if (!openingId) return;
+      this._runTopologyAction(
+        "delete_opening",
+        { opening_id: openingId },
+        `Delete opening ${openingId}? This is blocked if a connection still references it.`,
+      );
+      return;
+    }
+    if (action === "delete_connection") {
+      const connectionId = button.getAttribute("data-connection-id") || "";
+      if (!connectionId) return;
+      this._runTopologyAction("delete_connection", { connection_id: connectionId }, `Delete connection ${connectionId}?`);
+      return;
+    }
+    if (action === "add_opening") {
+      const roomId = root.getElementById("topology-new-opening-room")?.value || "";
+      const openingType = root.getElementById("topology-new-opening-type")?.value || "";
+      const orientation = root.getElementById("topology-new-opening-orientation")?.value || "";
+      const entityId = root.getElementById("topology-new-opening-entity")?.value || "";
+      if (!roomId || !openingType) return;
+      const payload = { room_id: roomId, type: openingType };
+      if (orientation) payload.orientation = orientation;
+      if (entityId) payload.entity_id = entityId;
+      this._runTopologyAction("upsert_opening", payload);
+      return;
+    }
+    if (action === "add_connection") {
+      const openingId = root.getElementById("topology-new-connection-opening")?.value || "";
+      const roomB = root.getElementById("topology-new-connection-room-b")?.value || "";
+      const accessType = root.getElementById("topology-new-connection-access")?.value || "";
+      const override = root.getElementById("topology-new-connection-override")?.value || "";
+      if (!openingId || !roomB) return;
+      const payload = { opening_id: openingId, room_b: roomB, access_type: accessType };
+      if (override) payload.connection_type_override = override;
+      this._runTopologyAction("upsert_connection", payload);
+    }
   }
 
   _overview(snapshot) {

@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from custom_components.heima.const import OPT_ROOM_CONNECTIONS, OPT_ROOM_OPENINGS, OPT_ROOMS
 from custom_components.heima.room_topology import (
+    ACCESS_TYPES,
+    CONNECTION_TYPES,
+    OPENING_TYPES,
+    ORIENTATIONS,
+    ROOM_TYPES,
     Opening,
     TopologyGraphCache,
+    build_room_topology_snapshot,
     build_topology_graph,
     derive_connection_type,
     derive_exposure,
@@ -491,3 +497,39 @@ def test_topology_graph_cache_rebuilds_after_mark_stale():
 def test_topology_graph_cache_empty_before_first_call_never_raises():
     cache = TopologyGraphCache()
     assert cache.get_graph({}).connections == ()
+
+
+# --- build_room_topology_snapshot: AR4 admin editor read-only snapshot -----------
+
+
+def test_build_room_topology_snapshot_includes_rooms_openings_connections_issues():
+    options = {
+        OPT_ROOMS: [_room("kitchen", room_type="indoor"), _room("garage", room_type="garage")],
+        OPT_ROOM_OPENINGS: [_opening("op1", "kitchen", "door")],
+        OPT_ROOM_CONNECTIONS: [_connection("c1", "op1", "garage")],
+    }
+    snapshot = build_room_topology_snapshot(options)
+    assert {room["room_id"] for room in snapshot["rooms"]} == {"kitchen", "garage"}
+    assert len(snapshot["openings"]) == 1
+    assert snapshot["connections"][0]["connection_type"] == "separate"
+    assert snapshot["issues"] == []
+
+
+def test_build_room_topology_snapshot_exposes_enums_matching_the_module_constants():
+    snapshot = build_room_topology_snapshot({})
+    enums = snapshot["enums"]
+    assert set(enums["room_types"]) == ROOM_TYPES
+    assert set(enums["opening_types"]) == OPENING_TYPES
+    assert set(enums["orientations"]) == ORIENTATIONS
+    assert set(enums["connection_types"]) == CONNECTION_TYPES
+    assert set(enums["access_types"]) == ACCESS_TYPES
+
+
+def test_build_room_topology_snapshot_surfaces_validation_issues():
+    options = {
+        OPT_ROOMS: [],
+        OPT_ROOM_OPENINGS: [_opening("op1", "missing_room", "door")],
+        OPT_ROOM_CONNECTIONS: [],
+    }
+    snapshot = build_room_topology_snapshot(options)
+    assert any(issue["key"] == "topology.opening.op1.dangling_room" for issue in snapshot["issues"])

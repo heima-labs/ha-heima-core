@@ -518,6 +518,13 @@ def build_room_topology_snapshot(options: dict[str, Any]) -> dict[str, Any]:
         "openings": [opening.as_dict() for opening in graph.openings],
         "connections": [connection.as_dict() for connection in graph.connections],
         "issues": [issue.as_dict() for issue in issues],
+        "enums": {
+            "room_types": sorted(ROOM_TYPES),
+            "opening_types": sorted(OPENING_TYPES),
+            "orientations": sorted(ORIENTATIONS),
+            "connection_types": sorted(CONNECTION_TYPES),
+            "access_types": sorted(ACCESS_TYPES),
+        },
     }
 
 

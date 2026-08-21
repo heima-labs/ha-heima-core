@@ -136,12 +136,12 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
 — Structured Runtime Source.
-**Active slice:** Phase AR — Room Topology, AR1-AR3 done, AR4 backend done, AR4 frontend not started
-(explicit developer decision to split backend/frontend into separate slices).
+**Active slice:** Phase AR — Room Topology, AR1-AR4 done, tests green.
 **Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
-**Next action:** AR4 frontend — extend `custom_components/heima/frontend/heima-admin-panel.js` with
-a room/opening/connection editor section, wired to the now-complete `heima/topology/snapshot` and
-`heima/topology/action` websocket commands.
+**Next action:** AR5 — HouseState Consumption (first of the three consumers, sequenced by ascending
+blast radius: purely explanatory `topology_context` diagnostics, never changes `house_state` or
+triggers an action). AR4's frontend has not been manually verified in a live Home Assistant instance
+— worth a real smoke test before or alongside AR5-7 if the developer wants to catch UI issues early.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1426,9 +1426,7 @@ Resulting order and rationale per phase:
 
 #### AR4 — Admin Editor (Panel)
 
-- Status: `IN PROGRESS` — backend done, frontend not started (explicit developer decision,
-  2026-08-21: backend first as its own reviewable/testable slice, panel UI as a separate follow-up
-  slice rather than one large risky change).
+- Status: `DONE`.
 - Depends on: AR1 (save-time blocking reuses the same pure validation core — error-severity blocks
   the save, warning-severity does not).
 
@@ -1467,11 +1465,37 @@ Resulting order and rationale per phase:
   rejection that leaves `entry.options` unchanged).
 - Verification: `pytest tests/ -q` — 1926 passed (full suite). `ruff check` / `ruff format --check`
   on all touched files — clean.
+- `build_room_topology_snapshot` was extended with an `enums` key (`room_types`, `opening_types`,
+  `orientations`, `connection_types`, `access_types`, all derived from the module's own frozensets)
+  once the frontend needed them for `<select>` options — avoids hardcoding a second copy of AR1's
+  enums in JS that could silently drift from the Python source of truth. Covered by 3 new tests in
+  `tests/test_room_topology.py`.
 
-**Frontend — not started:** graph/form-based room + opening + connection editor in
-`custom_components/heima/frontend/heima-admin-panel.js` (single ~2170-line vanilla-JS custom
-element, no framework — a new section/tab following its existing `_render()`-from-state pattern),
-not an Options Flow step. Next action when resumed.
+**Frontend — done:** new "Topology" nav route in
+`custom_components/heima/frontend/heima-admin-panel.js`, following the file's existing
+`_render()`-from-state, template-string pattern (no framework):
+
+- Own snapshot/loading/error state (`_topologySnapshot`/`_topologyLoading`/`_topologyError`/
+  `_topologyActionError`), loaded on demand from `heima/topology/snapshot` — not part of the
+  observability snapshot the other routes render from, and not on the 15s observability poll timer,
+  since this is admin-editable configuration, not live telemetry. Loaded on route entry
+  (`_setRoute`), on initial connect if the URL hash already points at `#route=topology`
+  (`connectedCallback`), and on late `hass` assignment (`set hass`) — all three entry points a
+  direct-link/bookmark to this route could hit.
+- Rooms table: inline `<select>`/`<input>` for `room_type`/`floor`, saved on `change` via
+  `set_room_fields` (no confirmation dialog — unlike the destructive actions below, editing a
+  dropdown is not something that needs a confirm() prompt).
+- Openings and Connections: table + delete button (confirmed) + a small "add" form below each table,
+  calling `upsert_opening`/`upsert_connection`. The connection form only offers `door`/`door_window`
+  openings and rooms (+ `outside`) as choices, matching the backend's own referential constraints.
+- Validation issues surfaced as a list, error/warning styled distinctly.
+- All mutations go through one `_runTopologyAction(action, payload, confirmMessage)` helper mirroring
+  the existing `_runAction` pattern for observability actions, just targeting the topology snapshot
+  and command instead.
+- Verified: `node --check` (syntax only — this repo has no JS test runner or linter in CI, per
+  `scripts/ci_local.sh`, which only runs pytest/ruff/mypy on `custom_components/heima` and `tests`).
+  Not manually exercised in a live Home Assistant instance this session — flagged, not claimed as
+  browser-verified.
 
 #### AR5 — HouseState Consumption
 
