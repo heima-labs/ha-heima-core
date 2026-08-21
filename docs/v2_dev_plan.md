@@ -1457,6 +1457,20 @@ Resulting order and rationale per phase:
   every 15s poll or admin action silently collapsed anything the admin had opened. Fixed generically
   across all 11 call sites in `heima-admin-panel.js` with a stable per-element id + a tracked open-id
   set, not specific to the Topology route.
+- Added `tests/test_room_topology_panel_e2e.py`: real end-to-end coverage through
+  `pytest-homeassistant-custom-component` (`hass`, `MockConfigEntry`, `hass_ws_client`) instead of
+  the hand-built fakes every other AR4 test file uses — real websocket schema validation/dispatch,
+  real config entry reload, real admin authorization. 5 tests: full snapshot/upsert-opening/
+  upsert-connection round trip over a real websocket; a validation-failure rejection surfacing
+  AR1's issue description through the real error response; non-admin rejection for both commands;
+  and the two regression scenarios above verified end-to-end — same coordinator instance +
+  `admin_panel_registered` still `True` after a topology-only edit (light path), vs. a new
+  coordinator instance + `admin_panel_registered` still `True` after a genuine `area_id` change
+  (full path, panel survives). Needed one contained fixture
+  (`_warm_up_aiohttp_dns_resolver_thread`, module-scoped) to pre-trigger aiohttp's lazy pycares
+  resolver thread before the harness's per-test thread-leak check runs — a first-use cost of
+  opening any real HTTP connection in this test environment, unrelated to Heima's own code; scoped
+  to this one file only.
 
 **Backend — done:**
 
