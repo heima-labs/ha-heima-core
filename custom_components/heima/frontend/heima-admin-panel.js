@@ -426,6 +426,13 @@ class HeimaAdminPanel extends HTMLElement {
           padding: 6px 8px;
           font: inherit;
         }
+        .topology-add-form label {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
         .empty {
           color: var(--secondary-text-color);
           padding: 16px;
@@ -804,29 +811,37 @@ class HeimaAdminPanel extends HTMLElement {
       this._selectOptions(enums.orientations || [], formState.orientation || "");
     return `
       <div class="topology-add-form">
-        <select
-          id="topology-new-opening-room"
-          data-filter-section="topology_new_opening"
-          data-filter-key="room_id"
-        >${roomOptions}</select>
-        <select
-          id="topology-new-opening-type"
-          data-filter-section="topology_new_opening"
-          data-filter-key="type"
-        >${this._selectOptions(enums.opening_types || [], formState.type || "door")}</select>
-        <select
-          id="topology-new-opening-orientation"
-          data-filter-section="topology_new_opening"
-          data-filter-key="orientation"
-        >${orientationOptions}</select>
-        <input
-          id="topology-new-opening-entity"
-          type="text"
-          placeholder="entity_id (optional)"
-          data-filter-section="topology_new_opening"
-          data-filter-key="entity_id"
-          value="${this._escape(formState.entity_id || "")}"
-        />
+        <label>Room
+          <select
+            id="topology-new-opening-room"
+            data-filter-section="topology_new_opening"
+            data-filter-key="room_id"
+          >${roomOptions}</select>
+        </label>
+        <label>Opening type
+          <select
+            id="topology-new-opening-type"
+            data-filter-section="topology_new_opening"
+            data-filter-key="type"
+          >${this._selectOptions(enums.opening_types || [], formState.type || "door")}</select>
+        </label>
+        <label>Orientation
+          <select
+            id="topology-new-opening-orientation"
+            data-filter-section="topology_new_opening"
+            data-filter-key="orientation"
+          >${orientationOptions}</select>
+        </label>
+        <label>Entity ID (optional)
+          <input
+            id="topology-new-opening-entity"
+            type="text"
+            placeholder="entity_id (optional)"
+            data-filter-section="topology_new_opening"
+            data-filter-key="entity_id"
+            value="${this._escape(formState.entity_id || "")}"
+          />
+        </label>
         <button class="inline" data-topology-action="add_opening">Add opening</button>
       </div>
     `;
@@ -839,10 +854,20 @@ class HeimaAdminPanel extends HTMLElement {
     if (!doorLikeOpenings.length) return "";
     const formState = this._filters.topology_new_connection || {};
     const openingOptions = doorLikeOpenings
-      .map(
-        (opening) =>
-          `<option value="${this._escape(opening.opening_id)}"${opening.opening_id === formState.opening_id ? " selected" : ""}>${this._escape(opening.opening_id)} (${this._escape(opening.room_id)})</option>`,
-      )
+      .map((opening) => {
+        // Disambiguate multiple openings on the same room: the opening_id alone (a UUID) is
+        // meaningless in the UI, so lead with room + type/orientation/entity, id last.
+        const details = [opening.type, opening.orientation, opening.entity_id]
+          .filter(Boolean)
+          .map((value) => this._escape(value))
+          .join(" · ");
+        const label =
+          `${this._escape(opening.room_id)}` +
+          (details ? ` — ${details}` : "") +
+          ` (${this._escape(opening.opening_id)})`;
+        const selected = opening.opening_id === formState.opening_id ? " selected" : "";
+        return `<option value="${this._escape(opening.opening_id)}"${selected}>${label}</option>`;
+      })
       .join("");
     const roomBOptions =
       `<option value="outside"${formState.room_b === "outside" ? " selected" : ""}>outside</option>` +
@@ -860,26 +885,34 @@ class HeimaAdminPanel extends HTMLElement {
       );
     return `
       <div class="topology-add-form">
-        <select
-          id="topology-new-connection-opening"
-          data-filter-section="topology_new_connection"
-          data-filter-key="opening_id"
-        >${openingOptions}</select>
-        <select
-          id="topology-new-connection-room-b"
-          data-filter-section="topology_new_connection"
-          data-filter-key="room_b"
-        >${roomBOptions}</select>
-        <select
-          id="topology-new-connection-access"
-          data-filter-section="topology_new_connection"
-          data-filter-key="access_type"
-        >${this._selectOptions(enums.access_types || [], formState.access_type || "direct")}</select>
-        <select
-          id="topology-new-connection-override"
-          data-filter-section="topology_new_connection"
-          data-filter-key="connection_type_override"
-        >${overrideOptions}</select>
+        <label>Opening
+          <select
+            id="topology-new-connection-opening"
+            data-filter-section="topology_new_connection"
+            data-filter-key="opening_id"
+          >${openingOptions}</select>
+        </label>
+        <label>Room B
+          <select
+            id="topology-new-connection-room-b"
+            data-filter-section="topology_new_connection"
+            data-filter-key="room_b"
+          >${roomBOptions}</select>
+        </label>
+        <label>Access type (how you pass through)
+          <select
+            id="topology-new-connection-access"
+            data-filter-section="topology_new_connection"
+            data-filter-key="access_type"
+          >${this._selectOptions(enums.access_types || [], formState.access_type || "direct")}</select>
+        </label>
+        <label>Connection type (thermal/security boundary)
+          <select
+            id="topology-new-connection-override"
+            data-filter-section="topology_new_connection"
+            data-filter-key="connection_type_override"
+          >${overrideOptions}</select>
+        </label>
         <button class="inline" data-topology-action="add_connection">Add connection</button>
       </div>
     `;
