@@ -52,6 +52,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Heima from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
+    # async_setup (component-level) only runs once per HA startup, but async_unload_entry
+    # unregisters the admin panel on every structural-option reload (hass.config_entries.
+    # async_reload, e.g. after editing a room's topology fields). Without this, the panel
+    # would vanish from the sidebar until a full HA restart, since no other code path
+    # re-registers it. Idempotent: harmless if async_setup already registered it this session.
+    if not hass.data[DOMAIN].get("admin_panel_registered"):
+        await async_register_admin_panel(hass)
+        hass.data[DOMAIN]["admin_panel_registered"] = True
+
     normalized_options, external_context_changed = migrate_learning_external_context_options(
         dict(entry.options)
     )

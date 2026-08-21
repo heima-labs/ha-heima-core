@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from custom_components.heima import async_setup, async_unload_entry
+from custom_components.heima import async_setup, async_setup_entry, async_unload_entry
 from custom_components.heima.const import DOMAIN
 from custom_components.heima.panel import (
     PANEL_MODULE,
@@ -160,6 +160,64 @@ async def test_unload_last_entry_unregisters_admin_panel(monkeypatch) -> None:
     assert await async_unload_entry(hass, entry) is True
     assert unregister_calls == 1
     assert "admin_panel_registered" not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_reregisters_admin_panel_after_structural_reload(
+    monkeypatch,
+) -> None:
+    # Regression test: hass.config_entries.async_reload (triggered by a structural options
+    # change, e.g. editing a room's topology fields) calls async_unload_entry, which
+    # unregisters the panel and clears admin_panel_registered — but only calls
+    # async_setup_entry again, never the component-level async_setup that normally does the
+    # (re-)registration. Without the guard in async_setup_entry, the panel stays gone from
+    # the sidebar until a full HA restart.
+    panel_calls = 0
+
+    async def fake_panel(hass: Any) -> None:
+        nonlocal panel_calls
+        panel_calls += 1
+
+    monkeypatch.setattr("custom_components.heima.async_register_admin_panel", fake_panel)
+
+    class _FakeCoordinator:
+        def __init__(self, hass: Any, entry: Any) -> None:
+            self.hass = hass
+            self.entry = entry
+
+        async def async_initialize(self) -> None:
+            return None
+
+    monkeypatch.setattr("custom_components.heima.HeimaCoordinator", _FakeCoordinator)
+
+    async def fake_cleanup(hass: Any, entry: Any) -> None:
+        return None
+
+    monkeypatch.setattr("custom_components.heima._async_cleanup_stale_entities", fake_cleanup)
+
+    async def fake_forward_entry_setups(entry: Any, platforms: Any) -> bool:
+        return True
+
+    entry = SimpleNamespace(
+        entry_id="entry-1",
+        options={},
+        async_on_unload=lambda callback: None,
+        add_update_listener=lambda callback: lambda: None,
+    )
+    hass = SimpleNamespace(
+        data={DOMAIN: {}},  # admin_panel_registered already cleared, as after unload
+        states=SimpleNamespace(get=lambda entity_id: None),
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, options=None: None,
+            async_forward_entry_setups=fake_forward_entry_setups,
+        ),
+    )
+
+    result = await async_setup_entry(hass, entry)
+
+    assert result is True
+    assert panel_calls == 1
+    assert hass.data[DOMAIN]["admin_panel_registered"] is True
 
 
 def test_admin_panel_asset_declares_expected_webcomponent() -> None:
