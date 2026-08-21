@@ -266,3 +266,11 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "_serializedSnapshot" in text
     assert "URL.createObjectURL" in text
     assert "heima-observability-" in text
+    assert "heima/topology/snapshot" in text
+    assert "heima/topology/action" in text
+    assert "data-details-id" in text
+    # "Add opening"/"add connection" forms must persist their in-progress values via the
+    # same data-filter-section mechanism as the search boxes, not plain uncontrolled inputs,
+    # or an unrelated re-render (e.g. the 15s observability poll) silently resets them.
+    assert 'data-filter-section="topology_new_opening"' in text
+    assert 'data-filter-section="topology_new_connection"' in text
