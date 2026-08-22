@@ -289,3 +289,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert 'data-topology-action="edit_connection"' in text
     assert 'data-topology-action="cancel_edit_opening"' in text
     assert 'data-topology-action="cancel_edit_connection"' in text
+    # room_type is not self-explanatory (garage vs. basement vs. external vs. outdoor all sound
+    # similar); the admin editor must explain what each value means, not just offer the enum.
+    assert "What do the room types mean?" in text
+    assert "<strong>external</strong>" in text
+    assert "<strong>outdoor</strong>" in text
+    assert "<strong>indoor</strong>" in text

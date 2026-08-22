@@ -419,6 +419,16 @@ class HeimaAdminPanel extends HTMLElement {
         .topology-issues li.warning {
           color: var(--warning-color, var(--secondary-text-color));
         }
+        .topology-legend {
+          margin-bottom: 12px;
+        }
+        .topology-legend ul {
+          margin: 8px 0 0;
+          padding-left: 18px;
+        }
+        .topology-legend li {
+          margin-bottom: 4px;
+        }
         .topology-add-form {
           display: flex;
           flex-wrap: wrap;
@@ -661,6 +671,7 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._topologyIssues(issues)}
       <section class="card">
         <h2>Rooms</h2>
+        ${this._topologyRoomTypeLegend()}
         <table>
           <thead>
             <tr><th>Room</th><th>Type</th><th>Floor</th><th>Exposure</th></tr>
@@ -694,6 +705,41 @@ class HeimaAdminPanel extends HTMLElement {
         </table>
         ${this._topologyAddConnectionForm(openings, rooms, enums)}
       </section>
+    `;
+  }
+
+  _topologyRoomTypeLegend() {
+    const key = "topology.room_type_legend";
+    const open = this._openDetailIds.has(key) ? " open" : "";
+    return `
+      <details class="topology-legend" data-details-id="${this._escape(key)}"${open}>
+        <summary>What do the room types mean?</summary>
+        <ul>
+          <li><strong>indoor</strong> (default) — a room inside the main heated/insulated
+            living area (kitchen, bedroom, living room). Always expected to be reachable
+            from the rest of the house; flagged if it isn't.</li>
+          <li><strong>transit</strong> — hallway, corridor, staircase. Treated like
+            <strong>indoor</strong> for connection classification; always expected to be
+            reachable.</li>
+          <li><strong>balcony</strong> — a covered but not fully enclosed/heated space
+            attached to the house. Connections to it are classified as "outdoor"; can
+            legitimately be reachable only via a window.</li>
+          <li><strong>garage</strong> — a physically separate, typically unheated
+            structure. Connections to it default to "separate" (its own thermal/security
+            boundary); can legitimately be disconnected from the rest of the house (e.g. a
+            detached garage).</li>
+          <li><strong>basement</strong> — same treatment as <strong>garage</strong>: its
+            own "separate" boundary, can legitimately be isolated.</li>
+          <li><strong>outdoor</strong> — an outside space you still want to model as a
+            Room (garden, terrace, courtyard), e.g. to attach openings or sensors to it.
+            Connections to it are classified as "outdoor".</li>
+          <li><strong>external</strong> — a structure disconnected from the house (guest
+            house, detached office, doorbell post). Always forces a "separate" boundary
+            and can legitimately be isolated. Different from picking "outside" as a
+            Connection's Room B: "outside" means no Room at all, just the exterior world;
+            "external" is a real Room you can attach Openings and entities to.</li>
+        </ul>
+      </details>
     `;
   }
 
