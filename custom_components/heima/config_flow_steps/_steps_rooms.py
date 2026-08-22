@@ -19,6 +19,7 @@ from ..room_sources import (
     room_learning_source_entity_ids,
     room_occupancy_source_entity_ids,
 )
+from ..room_topology import OUTSIDE as ROOM_ID_RESERVED_OUTSIDE
 from ..runtime.normalization.config import (
     ROOM_OCCUPANCY_STRATEGY_CONTRACT,
     normalize_signal_set_strategy_fields,
@@ -316,6 +317,11 @@ class _RoomsStepsMixin:
             errors["room_id"] = "invalid_slug"
         if room_id.startswith("heima_"):
             errors["room_id"] = "reserved_prefix"
+        elif room_id == ROOM_ID_RESERVED_OUTSIDE:
+            # "outside" is the room topology's sentinel for "the exterior, not modeled as a
+            # Room" (Connection.room_b). A real Room with this room_id would be indistinguishable
+            # from that sentinel everywhere in room_topology.py — silently treated as "no room".
+            errors["room_id"] = "reserved_word"
 
         existing_ids = {r["room_id"] for r in self._rooms()}
         if not is_edit:

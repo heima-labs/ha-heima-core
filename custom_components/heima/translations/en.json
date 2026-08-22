@@ -986,6 +986,7 @@
       "unknown_person": "Selected Home Assistant person was not found",
       "duplicate_person_entity": "This Home Assistant person is already mapped",
       "reserved_prefix": "Value cannot start with 'heima_'",
+      "reserved_word": "'outside' is reserved (means \"the exterior\" in room connections)",
       "invalid_slug": "Invalid slug",
       "invalid": "Invalid value",
       "invalid_selection": "Invalid selection",

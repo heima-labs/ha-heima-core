@@ -38,6 +38,24 @@ def test_room_validation_requires_sources_when_occupancy_mode_derived():
     assert errors == {"occupancy_sources": "required"}
 
 
+def test_room_validation_rejects_outside_as_room_id():
+    # "outside" is reserved by room_topology.py as the Connection.room_b sentinel for "the
+    # exterior, not modeled as a Room" (OUTSIDE = "outside"). A real Room with this room_id
+    # would be silently indistinguishable from that sentinel everywhere in the topology graph.
+    flow = _flow()
+    payload = {
+        "room_id": "outside",
+        "display_name": "Esterno",
+        "area_id": "esterno",
+        "occupancy_mode": "none",
+        "occupancy_sources": [],
+        "learning_sources": [],
+        "logic": "any_of",
+    }
+    errors = flow._validate_room_payload(payload, is_edit=False)
+    assert errors == {"room_id": "reserved_word"}
+
+
 def test_finalize_options_backfills_empty_legacy_room_as_occupancy_none():
     flow = _flow(
         {

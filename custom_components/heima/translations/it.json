@@ -722,6 +722,7 @@
       "unknown_person": "La persona Home Assistant selezionata non esiste",
       "duplicate_person_entity": "Questa persona Home Assistant è già collegata",
       "reserved_prefix": "Il valore non può iniziare con 'heima_'",
+      "reserved_word": "'outside' è riservato (indica \"l'esterno\" nelle connessioni tra stanze)",
       "invalid_slug": "Slug non valido",
       "invalid": "Valore non valido",
       "invalid_selection": "Selezione non valida",
