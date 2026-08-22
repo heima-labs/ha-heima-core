@@ -770,6 +770,11 @@ class HeimaAdminPanel extends HTMLElement {
         <td>${this._escape(opening.entity_id || "—")}</td>
         <td>
           <button
+            class="inline"
+            data-topology-action="edit_opening"
+            data-opening-id="${this._escape(opening.opening_id)}"
+          >Edit</button>
+          <button
             class="inline danger"
             data-topology-action="delete_opening"
             data-opening-id="${this._escape(opening.opening_id)}"
@@ -791,6 +796,11 @@ class HeimaAdminPanel extends HTMLElement {
         <td>${this._escape(connection.connection_type)}${override}</td>
         <td>${this._escape(connection.access_type)}</td>
         <td>
+          <button
+            class="inline"
+            data-topology-action="edit_connection"
+            data-connection-id="${this._escape(connection.connection_id)}"
+          >Edit</button>
           <button
             class="inline danger"
             data-topology-action="delete_connection"
@@ -851,7 +861,14 @@ class HeimaAdminPanel extends HTMLElement {
             value="${this._escape(formState.entity_id || "")}"
           />
         </label>
-        <button class="inline" data-topology-action="add_opening">Add opening</button>
+        <button class="inline" data-topology-action="add_opening">${
+          formState.opening_id ? "Save opening" : "Add opening"
+        }</button>
+        ${
+          formState.opening_id
+            ? `<button class="inline" data-topology-action="cancel_edit_opening">Cancel</button>`
+            : ""
+        }
       </div>
     `;
   }
@@ -922,7 +939,14 @@ class HeimaAdminPanel extends HTMLElement {
             data-filter-key="connection_type_override"
           >${overrideOptions}</select>
         </label>
-        <button class="inline" data-topology-action="add_connection">Add connection</button>
+        <button class="inline" data-topology-action="add_connection">${
+          formState.connection_id ? "Save connection" : "Add connection"
+        }</button>
+        ${
+          formState.connection_id
+            ? `<button class="inline" data-topology-action="cancel_edit_connection">Cancel</button>`
+            : ""
+        }
       </div>
     `;
   }
@@ -974,6 +998,10 @@ class HeimaAdminPanel extends HTMLElement {
       const payload = { room_id: roomId, type: openingType };
       if (orientation) payload.orientation = orientation;
       if (entityId) payload.entity_id = entityId;
+      // "Edit" pre-fills this same form with the existing opening_id tracked in _filters;
+      // upsert_opening replaces that record in place instead of creating a new one.
+      const editingOpeningId = this._filters.topology_new_opening?.opening_id;
+      if (editingOpeningId) payload.opening_id = editingOpeningId;
       this._runTopologyAction("upsert_opening", payload);
       return;
     }
@@ -985,7 +1013,62 @@ class HeimaAdminPanel extends HTMLElement {
       if (!openingId || !roomB) return;
       const payload = { opening_id: openingId, room_b: roomB, access_type: accessType };
       if (override) payload.connection_type_override = override;
+      const editingConnectionId = this._filters.topology_new_connection?.connection_id;
+      if (editingConnectionId) payload.connection_id = editingConnectionId;
       this._runTopologyAction("upsert_connection", payload);
+      return;
+    }
+    if (action === "edit_opening") {
+      const openingId = button.getAttribute("data-opening-id") || "";
+      const opening = (this._topologySnapshot?.openings || []).find(
+        (candidate) => candidate.opening_id === openingId,
+      );
+      if (!opening) return;
+      this._filters = {
+        ...this._filters,
+        topology_new_opening: {
+          opening_id: opening.opening_id,
+          room_id: opening.room_id,
+          type: opening.type,
+          orientation: opening.orientation || "",
+          entity_id: opening.entity_id || "",
+        },
+      };
+      this._render();
+      return;
+    }
+    if (action === "cancel_edit_opening") {
+      const rest = { ...this._filters };
+      delete rest.topology_new_opening;
+      this._filters = rest;
+      this._render();
+      return;
+    }
+    if (action === "edit_connection") {
+      const connectionId = button.getAttribute("data-connection-id") || "";
+      const connection = (this._topologySnapshot?.connections || []).find(
+        (candidate) => candidate.connection_id === connectionId,
+      );
+      if (!connection) return;
+      this._filters = {
+        ...this._filters,
+        topology_new_connection: {
+          connection_id: connection.connection_id,
+          opening_id: connection.opening_id,
+          room_b: connection.room_b,
+          access_type: connection.access_type,
+          connection_type_override: connection.connection_type_override || "",
+        },
+      };
+      this._render();
+      return;
+    }
+    if (action === "cancel_edit_connection") {
+      const rest = { ...this._filters };
+      delete rest.topology_new_connection;
+      this._filters = rest;
+      this._render();
+      return;
     }
   }
 

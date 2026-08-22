@@ -96,6 +96,63 @@ async def test_upsert_room_connection_persists():
     ]
 
 
+async def test_upsert_room_opening_with_existing_id_edits_in_place():
+    # The admin panel's "Edit" button re-submits upsert_opening with the row's existing
+    # opening_id: this must replace that record, not append a second one alongside it.
+    options = _base_options()
+    options["room_openings"] = [
+        {"opening_id": "op1", "room_id": "kitchen", "type": "door", "orientation": "north"}
+    ]
+    coordinator = _coordinator(options)
+
+    applied, issues = await coordinator.async_upsert_room_opening(
+        opening_id="op1",
+        room_id="kitchen",
+        opening_type="window",
+        orientation="south",
+    )
+
+    assert applied is True
+    assert issues == ()
+    openings = coordinator.entry.options["room_openings"]
+    assert len(openings) == 1
+    assert openings[0] == {
+        "opening_id": "op1",
+        "room_id": "kitchen",
+        "type": "window",
+        "orientation": "south",
+        "entity_id": None,
+    }
+
+
+async def test_upsert_room_connection_with_existing_id_edits_in_place():
+    options = _base_options()
+    options["room_openings"] = [{"opening_id": "op1", "room_id": "kitchen", "type": "door"}]
+    options["room_connections"] = [
+        {
+            "connection_id": "c1",
+            "opening_id": "op1",
+            "room_b": "garage",
+            "access_type": "direct",
+            "connection_type_override": None,
+        }
+    ]
+    coordinator = _coordinator(options)
+
+    applied, issues = await coordinator.async_upsert_room_connection(
+        connection_id="c1",
+        opening_id="op1",
+        room_b="garage",
+        access_type="stairs",
+    )
+
+    assert applied is True
+    assert issues == ()
+    connections = coordinator.entry.options["room_connections"]
+    assert len(connections) == 1
+    assert connections[0]["access_type"] == "stairs"
+
+
 async def test_upsert_room_connection_rejects_conflicting_shared_entity():
     options = {
         "rooms": [

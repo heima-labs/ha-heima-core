@@ -282,3 +282,10 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # closes any open native <select>) while the admin is on the topology route, since that
     # route doesn't even render observability data.
     assert 'if (this._route !== "topology") {' in text
+    # Openings/connections must be editable in place, not just delete-and-recreate: the same
+    # add-form is reused, pre-filled with the existing record's id, so upsert_opening/
+    # upsert_connection replace it instead of creating a new one.
+    assert 'data-topology-action="edit_opening"' in text
+    assert 'data-topology-action="edit_connection"' in text
+    assert 'data-topology-action="cancel_edit_opening"' in text
+    assert 'data-topology-action="cancel_edit_connection"' in text
