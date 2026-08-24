@@ -130,6 +130,7 @@ These constraints must never be violated. See spec §16 for rationale.
 | AR | Room Topology | `DONE` | AO, M |
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
+| AU | Actuator Registry | `PLANNED` | AR |
 
 ---
 
@@ -141,8 +142,9 @@ merged to `main`. AR5-8 (HouseState/Occupancy/Security consumption + observabili
 before merge and found to be non-blocking for anything currently planned — split out to Phase AT
 (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/ar-room-topology` merged to `main` (branch retained, not deleted).
-**Next action:** none active. `core/actuator_registry_spec.md` (approved, not yet phased/numbered)
-is the next spec-first candidate — reads `rooms.topology` directly, does not depend on Phase AT.
+**Next action:** Phase AU — Actuator Registry, phased AU1-4 (see below), spec approved and complete
+(`docs/specs/core/actuator_registry_spec.md`). Not started — awaiting explicit "ok, proceed" per
+CLAUDE.md before AU1 implementation begins. Depends only on AR (merged); does not depend on Phase AT.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1658,6 +1660,136 @@ traceable in existing AO decision traces. Depends on AT3 for the decision traces
     begins.
   - Covered by unit and integration tests per the per-sub-phase sections above.
   - Mandatory merge-to-main procedure applies before any part of AT lands on `main`, per CLAUDE.md.
+
+### Phase AU — Actuator Registry
+
+- Status: `PLANNED`.
+- Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Planned — not implemented on
+  `main`; approved after design discussion, see this phase's own history for the reasoning —
+  position-aware/unaware scenario stress test, the decision to keep it separate from Lighting, and
+  the overlap check against deferred Phase AT).
+- Also touches: `core/admin_observability_panel_spec.md` (new `actuators` diagnostics summary),
+  Installation Validation (`validation.py` — new `ValidationSection`), `coordinator.py` (extends the
+  existing, already-shipped `async_delete_room_opening` with a referential-integrity check — the one
+  place this phase touches AR1-4 code instead of only adding new code).
+- Goal: a generic, room/opening-aware inventory of actuator entities (covers, fans, climate units,
+  and future equipment classes) — placement only, no command/capability model — so future
+  comfort/climate Reactions can resolve "the shutter on the south window" without hardcoding
+  entity_ids per reaction. Does not build any specific Reaction; see the spec's Future Consumers.
+- Product boundary:
+  - no command/capability schema — `entity_steps`/`ApplyStep` unchanged, reused as-is;
+  - `Actuator.room_id` is single-valued — no multi-room actuators in this phase;
+  - Lighting's `OPT_LIGHTING_ROOMS`/`OPT_LIGHTING_ZONES`, `LightingDomain`, and every lighting
+    Reaction class are untouched;
+  - no specific Reaction (comfort/climate/house-wide) is built in this phase.
+
+#### Sequencing Rationale
+
+Same fan-out shape as Phase AR, verified against the actual dependency graph, not assumed by
+analogy: Installation Validation wiring, `CanonicalState` cache exposure, and the admin editor each
+depend only on the pure `actuators.py` core (parsing + validation), not on each other — Installation
+Validation runs against raw `options`, the cache builder and the editor's save-time blocking both
+call the same pure functions directly. So, as with AR, the fan-out is sequenced by risk, not spec
+order:
+
+- **AU1** — pure data model, parsing, and validation core (`actuators.py`, no `homeassistant`
+  import, same import-hygiene rule `room_topology.py` documents for itself). Highest leverage to get
+  right first, since AU2-4 all consume it directly and never reimplement it.
+- **AU2** — Installation Validation wiring. Sequenced first among the fan-out: lowest risk (pure
+  diagnostics, no behavior change), cheapest way to exercise AU1 against realistic fixtures before
+  the two higher-risk slices.
+- **AU3** — `CanonicalState["rooms.actuators"]` cache exposure + the two additive
+  `Engine._recovery_critical_entity_ids()` loops (`Opening.entity_id`, closing the pre-existing gap,
+  and `Actuator.entity_id`). The invalidation-timing work (registry event wiring, staleness) is the
+  actual novel risk here, same as AR3 — but this slice is slightly more invasive than AR3 was,
+  because it also edits an existing, already-shipped, widely-read method (`_recovery_critical_entity_ids`)
+  instead of only adding new code. Regression-test that method's existing (Heating/Security/Lighting)
+  loops are unaffected.
+- **AU4** — admin editor (websocket commands, panel section) and the coordinator-level referential-
+  integrity check. Sequenced last: largest surface (mirrors AR4), *and* the only slice that modifies
+  already-shipped AR4 code (`HeimaCoordinator.async_delete_room_opening`) rather than only adding new
+  code — built once AU1-3 are stable and tested, and regression-tested against AR4's own existing
+  delete-blocked-by-Connection test to confirm adding the Actuator check doesn't change that path's
+  behavior.
+
+#### AU1 — Data Model, Parsing, and Validation Core
+
+- Status: `PLANNED`.
+- Depends on: AR1 (references `Room`/`Opening` records and IDs; does not modify `room_topology.py`).
+- New module `custom_components/heima/actuators.py`: `Actuator` dataclass (`actuator_id`,
+  `entity_id`, `room_id`, `opening_id`, `display_name`), `OPT_ROOM_ACTUATORS = "room_actuators"`
+  (`const.py`), `parse_actuators(options)`, `validate_actuators(options)` (the five checks from the
+  spec's Validation and Reconciliation section), `is_opening_referenced_by_actuator(options,
+  opening_id)` (the predicate AU4's coordinator check will call), and the upsert/delete apply
+  functions (`apply_actuator_upsert`, `apply_actuator_delete`) sharing one `_apply_and_validate()`
+  choke point, mirroring `room_topology.py`'s own pattern exactly.
+- Tests: malformed-entry skipping; `actuator_id` auto-generation; the `opening_id`-in-wrong-room
+  `error`; dangling `room_id`/`opening_id` `warning`s; unconditional shared-`entity_id` `warning`;
+  `entity_unavailable` marking. No derivation tests (there is no derivation — see spec).
+
+#### AU2 — Installation Validation Wiring
+
+- Status: `PLANNED`.
+- Depends on: AU1 (pure validation core).
+- New `ValidationSection` in `validation.py`, wired into `build_validation_report()` alongside the
+  existing `_topology_section()`, following the same pattern (local import of `validate_actuators`
+  to avoid the same transitive-import concern `room_topology.py`/`validation.py` already navigate).
+- Tests: mirrors `tests/test_validation_m.py`'s existing topology-section tests, one per validation
+  rule from AU1.
+
+#### AU3 — Actuator Cache and CanonicalState Exposure
+
+- Status: `PLANNED`.
+- Depends on: AU1 (reads parsed/validated `Actuator` records).
+- New `ActuatorCache` class (mirrors `TopologyGraphCache`: `mark_stale()`, `get_actuators(options)`),
+  wired into `Engine` the same way `TopologyGraphCache` is — a new `_compute_actuators` step writing
+  `CanonicalState["rooms.actuators"]`, invalidated on `async_reload_options()` and on
+  `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` (reusing the existing subscription,
+  not a second listener).
+- `Engine._recovery_critical_entity_ids()` gains two additive loops (`Opening.entity_id` from
+  `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`).
+- Tests: cache invalidation triggers (options change, both registry events); `rooms.actuators`
+  correctly empty when no actuators configured; both new entity_id sources present in
+  `_recovery_critical_entity_ids()`'s output; existing Heating/Security/Lighting entries in that
+  method's output unchanged (regression).
+
+#### AU4 — Admin Editor (Panel) and Referential Integrity
+
+- Status: `PLANNED`.
+- Depends on: AU1 (save-time blocking reuses the same pure validation core).
+- `heima/actuators/snapshot` / `heima/actuators/action` websocket commands, mirroring AR4's
+  `heima/topology/*` pattern (admin-gating split: `@websocket_api.require_admin` for the read-only
+  snapshot, manual `is_admin` check + `hass.async_create_task` dispatch for the mutating action).
+  Action allowlist: `upsert_actuator`, `delete_actuator`.
+- New "Actuators" panel section (rooms/openings dropdown-driven add form, table with Edit/Delete —
+  built directly with the Edit-in-place pattern AR4 added later, not the delete-only pattern it
+  started with).
+- `HeimaCoordinator.async_delete_room_opening()` extended: calls `actuators.is_opening_referenced_by_actuator()`
+  before delegating to `apply_room_opening_delete()`, refusing (not-applied) if any `Actuator`
+  references the opening — the one place this phase edits already-shipped AR4 code.
+- Tests: full snapshot/upsert/delete round trip (coordinator-level and real-websocket e2e, mirroring
+  both `tests/test_room_topology_coordinator.py` and `tests/test_room_topology_panel_e2e.py`);
+  admin-gating rejection for non-admin callers; Opening-delete blocked when referenced by an
+  Actuator; **regression**: Opening-delete still blocked when referenced by a Connection (AR4's
+  original behavior, unchanged by this addition).
+
+- Phase AU acceptance (from the spec's own Acceptance Criteria):
+  - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration
+    needed.
+  - `CanonicalState["rooms.actuators"]` available as cached configuration, correctly invalidated,
+    computed by a module fully independent of `room_topology.py`.
+  - No command/capability schema introduced; `entity_steps`/`ApplyStep` unchanged.
+  - `Opening` deletion blocked when referenced by an `Actuator`, enforced at the coordinator layer;
+    existing Connection-blocks-Opening-delete behavior unchanged.
+  - `Room` deletion behavior for `Actuator` matches existing Opening/Connection behavior (not
+    blocked, not cascaded, `warning` after the fact).
+  - `Engine._recovery_critical_entity_ids()` includes both `Opening.entity_id` and
+    `Actuator.entity_id`.
+  - Lighting's existing schema/domain/Reactions untouched.
+  - Installation Validation reports actuator issues with correct severity.
+  - Admin editing is panel-based, admin-only, traceable in observability.
+  - Covered by unit and integration tests per Testing Requirements.
+  - Mandatory merge-to-main procedure applies before AU lands on `main`, per CLAUDE.md.
 
 ### Recent Working Notes
 
