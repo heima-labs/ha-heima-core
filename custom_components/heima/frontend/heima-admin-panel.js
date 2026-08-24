@@ -14,6 +14,11 @@ class HeimaAdminPanel extends HTMLElement {
     this._focusFilter = null;
     this._onHashChange = () => this._restoreRouteFromHash();
     this._refreshTimer = null;
+    this._topologySnapshot = null;
+    this._topologyLoading = false;
+    this._topologyError = "";
+    this._topologyActionError = "";
+    this._openDetailIds = new Set();
   }
 
   connectedCallback() {
@@ -21,7 +26,19 @@ class HeimaAdminPanel extends HTMLElement {
     window.addEventListener("hashchange", this._onHashChange);
     this._render();
     this._loadSnapshot();
-    this._refreshTimer = window.setInterval(() => this._loadSnapshot(), 15000);
+    if (this._route === "topology") {
+      this._loadTopologySnapshot();
+    }
+    // The observability snapshot isn't rendered on the topology route (_body() early-returns
+    // to _topologyBody() for it), so polling it there only forces a pointless full DOM replace
+    // every 15s — which forcibly closes any native <select> dropdown the admin has open mid-edit
+    // (add opening/connection, room_type/floor pickers), since the underlying DOM node is
+    // destroyed and recreated. Skip the poll while on that route.
+    this._refreshTimer = window.setInterval(() => {
+      if (this._route !== "topology") {
+        this._loadSnapshot();
+      }
+    }, 15000);
   }
 
   disconnectedCallback() {
@@ -36,6 +53,9 @@ class HeimaAdminPanel extends HTMLElement {
     this._hass = value;
     if (!this._snapshot && !this._loading) {
       this._loadSnapshot();
+    }
+    if (this._route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
+      this._loadTopologySnapshot();
     }
   }
 
@@ -66,9 +86,62 @@ class HeimaAdminPanel extends HTMLElement {
     }
   }
 
+  async _loadTopologySnapshot() {
+    if (!this._hass || typeof this._hass.callWS !== "function") {
+      return;
+    }
+    this._topologyLoading = true;
+    this._topologyError = "";
+    this._topologyActionError = "";
+    this._render();
+    try {
+      this._topologySnapshot = await this._hass.callWS({ type: "heima/topology/snapshot" });
+    } catch (err) {
+      this._topologyError = err?.message || "Unable to load Heima room topology data.";
+    } finally {
+      this._topologyLoading = false;
+      this._render();
+    }
+  }
+
+  async _runTopologyAction(action, payload, confirmMessage) {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    this._topologyActionError = "";
+    try {
+      const result = await this._hass.callWS({ type: "heima/topology/action", action, payload });
+      if (result?.snapshot) {
+        this._topologySnapshot = result.snapshot;
+      } else {
+        await this._loadTopologySnapshot();
+      }
+      // Reset the matching "add" form's tracked state once it's actually been applied, so
+      // the fields are blank/default for the next entry instead of repeating stale values.
+      if (action === "upsert_opening") {
+        delete this._filters.topology_new_opening;
+      } else if (action === "upsert_connection") {
+        delete this._filters.topology_new_connection;
+      } else if (action === "set_room_fields" && payload?.room_id) {
+        // Drop the tracked in-progress value so the row falls back to reading the fresh
+        // (now-saved) value from the snapshot, instead of showing the pre-save value forever.
+        const roomFields = { ...(this._filters.topology_room_field || {}) };
+        delete roomFields[`${payload.room_id}:room_type`];
+        delete roomFields[`${payload.room_id}:floor`];
+        this._filters = { ...this._filters, topology_room_field: roomFields };
+      }
+    } catch (err) {
+      this._topologyActionError =
+        err?.message || "Unable to complete Heima room topology action.";
+    } finally {
+      this._render();
+    }
+  }
+
   _setRoute(route) {
     this._route = route;
     this._detail = null;
+    if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
+      this._loadTopologySnapshot();
+    }
     this._syncHash();
     this._render();
   }
@@ -336,6 +409,49 @@ class HeimaAdminPanel extends HTMLElement {
           border-color: var(--error-color);
           color: var(--error-color);
         }
+        .topology-issues {
+          margin: 0;
+          padding-left: 18px;
+        }
+        .topology-issues li.error {
+          color: var(--error-color);
+        }
+        .topology-issues li.warning {
+          color: var(--warning-color, var(--secondary-text-color));
+        }
+        .topology-legend {
+          margin-bottom: 12px;
+        }
+        .topology-legend ul {
+          margin: 8px 0 0;
+          padding-left: 18px;
+        }
+        .topology-legend li {
+          margin-bottom: 4px;
+        }
+        .topology-add-form {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+          margin-top: 12px;
+        }
+        .topology-add-form select,
+        .topology-add-form input {
+          border: 1px solid var(--divider-color);
+          border-radius: 6px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          padding: 6px 8px;
+          font: inherit;
+        }
+        .topology-add-form label {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
         .empty {
           color: var(--secondary-text-color);
           padding: 16px;
@@ -380,6 +496,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("proposals", "Proposals")}
             ${this._navButton("entities", "Entities")}
             ${this._navButton("health", "Health")}
+            ${this._navButton("topology", "Topology")}
           </div>
         </nav>
         <main>
@@ -399,7 +516,11 @@ class HeimaAdminPanel extends HTMLElement {
       button.addEventListener("click", () => {
         const route = button.getAttribute("data-route");
         if (route === "refresh") {
-          this._loadSnapshot();
+          if (this._route === "topology") {
+            this._loadTopologySnapshot();
+          } else {
+            this._loadSnapshot();
+          }
         } else {
           this._setRoute(route);
         }
@@ -441,6 +562,23 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-inspect-why-not-now]").forEach((button) => {
       button.addEventListener("click", () => this._runWhyNotNow(button));
     });
+    this.shadowRoot.querySelectorAll("[data-room-topology-field]").forEach((field) => {
+      field.addEventListener("change", () => this._onRoomTopologyFieldChange(field));
+    });
+    this.shadowRoot.querySelectorAll("button[data-topology-action]").forEach((button) => {
+      button.addEventListener("click", () => this._onTopologyActionButton(button));
+    });
+    this.shadowRoot.querySelectorAll("details[data-details-id]").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        const id = details.getAttribute("data-details-id") || "";
+        if (!id) return;
+        if (details.open) {
+          this._openDetailIds.add(id);
+        } else {
+          this._openDetailIds.delete(id);
+        }
+      });
+    });
     this._restoreFilterFocus();
   }
 
@@ -461,10 +599,12 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "proposals") return "Proposal Backlog Inspector";
     if (this._route === "entities") return "Entity Impact";
     if (this._route === "health") return "Health";
+    if (this._route === "topology") return "Room Topology";
     return "Overview";
   }
 
   _body(snapshot) {
+    if (this._route === "topology") return this._topologyBody();
     if (this._loading && !this._snapshot) {
       return `<div class="empty">Loading observability snapshot.</div>`;
     }
@@ -497,6 +637,485 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "entities") return this._entities(snapshot);
     if (this._route === "health") return this._health(snapshot);
     return this._overview(snapshot);
+  }
+
+  // ---------------------------------------------------------------------
+  // Room Topology (AR4): admin editor for rooms' topology fields, openings,
+  // and connections. Uses its own snapshot (heima/topology/snapshot), not
+  // the observability snapshot every other route above renders from.
+  // ---------------------------------------------------------------------
+
+  _topologyBody() {
+    if (this._topologyLoading && !this._topologySnapshot) {
+      return `<div class="empty">Loading room topology.</div>`;
+    }
+    if (this._topologyError) {
+      return `<div class="card error">${this._escape(this._topologyError)}</div>`;
+    }
+    if (!this._topologySnapshot) {
+      return `<div class="empty">No room topology data available.</div>`;
+    }
+    const actionError = this._topologyActionError
+      ? `<div class="card error">${this._escape(this._topologyActionError)}</div>`
+      : "";
+    return `${actionError}${this._topology(this._topologySnapshot)}`;
+  }
+
+  _topology(snapshot) {
+    const rooms = snapshot.rooms || [];
+    const openings = snapshot.openings || [];
+    const connections = snapshot.connections || [];
+    const issues = snapshot.issues || [];
+    const enums = snapshot.enums || {};
+    return `
+      ${this._topologyIssues(issues)}
+      <section class="card">
+        <h2>Rooms</h2>
+        ${this._topologyRoomTypeLegend()}
+        <table>
+          <thead>
+            <tr><th>Room</th><th>Type</th><th>Floor</th><th>Exposure</th></tr>
+          </thead>
+          <tbody>
+            ${rooms.map((room) => this._topologyRoomRow(room, enums)).join("") || `<tr><td colspan="4">No rooms configured.</td></tr>`}
+          </tbody>
+        </table>
+      </section>
+      <section class="card">
+        <h2>Openings</h2>
+        <table>
+          <thead>
+            <tr><th>Room</th><th>Type</th><th>Orientation</th><th>Entity</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${openings.map((opening) => this._topologyOpeningRow(opening)).join("") || `<tr><td colspan="5">No openings configured.</td></tr>`}
+          </tbody>
+        </table>
+        ${this._topologyAddOpeningForm(rooms, enums)}
+      </section>
+      <section class="card">
+        <h2>Connections</h2>
+        <table>
+          <thead>
+            <tr><th>Opening</th><th>Room A</th><th>Room B</th><th>Type</th><th>Access</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${connections.map((connection) => this._topologyConnectionRow(connection)).join("") || `<tr><td colspan="6">No connections configured.</td></tr>`}
+          </tbody>
+        </table>
+        ${this._topologyAddConnectionForm(openings, rooms, enums)}
+      </section>
+    `;
+  }
+
+  _topologyRoomTypeLegend() {
+    const key = "topology.room_type_legend";
+    const open = this._openDetailIds.has(key) ? " open" : "";
+    return `
+      <details class="topology-legend" data-details-id="${this._escape(key)}"${open}>
+        <summary>What do the room types mean?</summary>
+        <ul>
+          <li><strong>indoor</strong> (default) — a room inside the main heated/insulated
+            living area (kitchen, bedroom, living room). Always expected to be reachable
+            from the rest of the house; flagged if it isn't.</li>
+          <li><strong>transit</strong> — hallway, corridor, staircase. Treated like
+            <strong>indoor</strong> for connection classification; always expected to be
+            reachable.</li>
+          <li><strong>balcony</strong> — a covered but not fully enclosed/heated space
+            attached to the house. Connections to it are classified as "outdoor"; can
+            legitimately be reachable only via a window.</li>
+          <li><strong>garage</strong> — a physically separate, typically unheated
+            structure. Connections to it default to "separate" (its own thermal/security
+            boundary); can legitimately be disconnected from the rest of the house (e.g. a
+            detached garage).</li>
+          <li><strong>basement</strong> — same treatment as <strong>garage</strong>: its
+            own "separate" boundary, can legitimately be isolated.</li>
+          <li><strong>outdoor</strong> — an outside space you still want to model as a
+            Room (garden, terrace, courtyard), e.g. to attach openings or sensors to it.
+            Connections to it are classified as "outdoor".</li>
+          <li><strong>external</strong> — a structure disconnected from the house (guest
+            house, detached office, doorbell post). Always forces a "separate" boundary
+            and can legitimately be isolated. Different from picking "outside" as a
+            Connection's Room B: "outside" means no Room at all, just the exterior world;
+            "external" is a real Room you can attach Openings and entities to.</li>
+        </ul>
+      </details>
+    `;
+  }
+
+  _topologyIssues(issues) {
+    if (!issues.length) {
+      return `<div class="card">No room topology validation issues.</div>`;
+    }
+    const items = issues
+      .map(
+        (issue) =>
+          `<li class="${issue.severity === "error" ? "error" : "warning"}">[${this._escape(issue.severity)}] ${this._escape(issue.title)} — ${this._escape(issue.description)}</li>`,
+      )
+      .join("");
+    return `
+      <section class="card">
+        <h2>Validation</h2>
+        <ul class="topology-issues">${items}</ul>
+      </section>
+    `;
+  }
+
+  _topologyRoomRow(room, enums) {
+    const roomId = this._escape(room.room_id);
+    const exposure = (room.exposure || []).map((value) => this._escape(value)).join(", ") || "—";
+    // Same reset-on-unrelated-re-render problem as the "add" forms: these fields auto-save on
+    // change, but between the admin starting to edit and that change event firing, any
+    // unrelated re-render (15s observability poll, another admin action) would otherwise
+    // replace this row's DOM straight from the last-saved snapshot, discarding what's not yet
+    // saved. Tracked the same way via _filters, keyed per room+field; cleared on save success.
+    const roomFields = this._filters.topology_room_field || {};
+    const trackedRoomType = roomFields[`${room.room_id}:room_type`];
+    const trackedFloor = roomFields[`${room.room_id}:floor`];
+    const roomTypeValue = trackedRoomType !== undefined ? trackedRoomType : room.room_type;
+    const floorValue =
+      trackedFloor !== undefined
+        ? trackedFloor
+        : Number.isFinite(room.floor)
+          ? room.floor
+          : 0;
+    return `
+      <tr>
+        <td>${this._escape(room.display_name || room.room_id)}</td>
+        <td>
+          <select
+            data-room-topology-field="room_type"
+            data-room-id="${roomId}"
+            data-filter-section="topology_room_field"
+            data-filter-key="${roomId}:room_type"
+          >
+            ${this._selectOptions(enums.room_types || [], roomTypeValue)}
+          </select>
+        </td>
+        <td>
+          <input
+            type="number"
+            data-room-topology-field="floor"
+            data-room-id="${roomId}"
+            data-filter-section="topology_room_field"
+            data-filter-key="${roomId}:floor"
+            value="${floorValue}"
+          />
+        </td>
+        <td>${exposure}</td>
+      </tr>
+    `;
+  }
+
+  _topologyOpeningRow(opening) {
+    return `
+      <tr>
+        <td>${this._escape(opening.room_id)}</td>
+        <td>${this._escape(opening.type)}</td>
+        <td>${this._escape(opening.orientation || "—")}</td>
+        <td>${this._escape(opening.entity_id || "—")}</td>
+        <td>
+          <button
+            class="inline"
+            data-topology-action="edit_opening"
+            data-opening-id="${this._escape(opening.opening_id)}"
+          >Edit</button>
+          <button
+            class="inline danger"
+            data-topology-action="delete_opening"
+            data-opening-id="${this._escape(opening.opening_id)}"
+          >Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  _topologyConnectionRow(connection) {
+    const override = connection.connection_type_override
+      ? ` (override: ${this._escape(connection.connection_type_override)})`
+      : "";
+    return `
+      <tr>
+        <td class="object-id">${this._escape(connection.opening_id)}</td>
+        <td>${this._escape(connection.room_a || "—")}</td>
+        <td>${this._escape(connection.room_b)}</td>
+        <td>${this._escape(connection.connection_type)}${override}</td>
+        <td>${this._escape(connection.access_type)}</td>
+        <td>
+          <button
+            class="inline"
+            data-topology-action="edit_connection"
+            data-connection-id="${this._escape(connection.connection_id)}"
+          >Edit</button>
+          <button
+            class="inline danger"
+            data-topology-action="delete_connection"
+            data-connection-id="${this._escape(connection.connection_id)}"
+          >Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  _topologyAddOpeningForm(rooms, enums) {
+    if (!rooms.length) return "";
+    // Reuses the _filters/_setFilter/_restoreFilterFocus mechanism (search-box state
+    // persistence) for this in-progress "add" form too: _render() runs on every unrelated
+    // event (e.g. the 15s observability poll, any other topology action's response), which
+    // replaces this whole form's DOM — without tracked state, whatever the admin had picked
+    // or typed here would silently reset before they clicked "Add opening".
+    const formState = this._filters.topology_new_opening || {};
+    const roomOptions = rooms
+      .map(
+        (room) =>
+          `<option value="${this._escape(room.room_id)}"${room.room_id === formState.room_id ? " selected" : ""}>${this._escape(room.display_name || room.room_id)}</option>`,
+      )
+      .join("");
+    const orientationOptions =
+      `<option value="">—</option>` +
+      this._selectOptions(enums.orientations || [], formState.orientation || "");
+    return `
+      <div class="topology-add-form">
+        <label>Room
+          <select
+            id="topology-new-opening-room"
+            data-filter-section="topology_new_opening"
+            data-filter-key="room_id"
+          >${roomOptions}</select>
+        </label>
+        <label>Opening type
+          <select
+            id="topology-new-opening-type"
+            data-filter-section="topology_new_opening"
+            data-filter-key="type"
+          >${this._selectOptions(enums.opening_types || [], formState.type || "door")}</select>
+        </label>
+        <label>Orientation
+          <select
+            id="topology-new-opening-orientation"
+            data-filter-section="topology_new_opening"
+            data-filter-key="orientation"
+          >${orientationOptions}</select>
+        </label>
+        <label>Entity ID (optional)
+          <input
+            id="topology-new-opening-entity"
+            type="text"
+            placeholder="entity_id (optional)"
+            data-filter-section="topology_new_opening"
+            data-filter-key="entity_id"
+            value="${this._escape(formState.entity_id || "")}"
+          />
+        </label>
+        <button class="inline" data-topology-action="add_opening">${
+          formState.opening_id ? "Save opening" : "Add opening"
+        }</button>
+        ${
+          formState.opening_id
+            ? `<button class="inline" data-topology-action="cancel_edit_opening">Cancel</button>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  _topologyAddConnectionForm(openings, rooms, enums) {
+    const doorLikeOpenings = openings.filter(
+      (opening) => opening.type === "door" || opening.type === "door_window",
+    );
+    if (!doorLikeOpenings.length) return "";
+    const formState = this._filters.topology_new_connection || {};
+    const openingOptions = doorLikeOpenings
+      .map((opening) => {
+        // Disambiguate multiple openings on the same room: the opening_id alone (a UUID) is
+        // meaningless in the UI, so lead with room + type/orientation/entity, id last.
+        const details = [opening.type, opening.orientation, opening.entity_id]
+          .filter(Boolean)
+          .map((value) => this._escape(value))
+          .join(" · ");
+        const label =
+          `${this._escape(opening.room_id)}` +
+          (details ? ` — ${details}` : "") +
+          ` (${this._escape(opening.opening_id)})`;
+        const selected = opening.opening_id === formState.opening_id ? " selected" : "";
+        return `<option value="${this._escape(opening.opening_id)}"${selected}>${label}</option>`;
+      })
+      .join("");
+    const roomBOptions =
+      `<option value="outside"${formState.room_b === "outside" ? " selected" : ""}>outside</option>` +
+      rooms
+        .map(
+          (room) =>
+            `<option value="${this._escape(room.room_id)}"${room.room_id === formState.room_b ? " selected" : ""}>${this._escape(room.display_name || room.room_id)}</option>`,
+        )
+        .join("");
+    const overrideOptions =
+      `<option value="">— derived —</option>` +
+      this._selectOptions(
+        enums.connection_types || [],
+        formState.connection_type_override || "",
+      );
+    return `
+      <div class="topology-add-form">
+        <label>Opening
+          <select
+            id="topology-new-connection-opening"
+            data-filter-section="topology_new_connection"
+            data-filter-key="opening_id"
+          >${openingOptions}</select>
+        </label>
+        <label>Room B
+          <select
+            id="topology-new-connection-room-b"
+            data-filter-section="topology_new_connection"
+            data-filter-key="room_b"
+          >${roomBOptions}</select>
+        </label>
+        <label>Access type (how you pass through)
+          <select
+            id="topology-new-connection-access"
+            data-filter-section="topology_new_connection"
+            data-filter-key="access_type"
+          >${this._selectOptions(enums.access_types || [], formState.access_type || "direct")}</select>
+        </label>
+        <label>Connection type (thermal/security boundary)
+          <select
+            id="topology-new-connection-override"
+            data-filter-section="topology_new_connection"
+            data-filter-key="connection_type_override"
+          >${overrideOptions}</select>
+        </label>
+        <button class="inline" data-topology-action="add_connection">${
+          formState.connection_id ? "Save connection" : "Add connection"
+        }</button>
+        ${
+          formState.connection_id
+            ? `<button class="inline" data-topology-action="cancel_edit_connection">Cancel</button>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  _selectOptions(values, selected) {
+    return values
+      .map(
+        (value) =>
+          `<option value="${this._escape(value)}"${value === selected ? " selected" : ""}>${this._escape(value)}</option>`,
+      )
+      .join("");
+  }
+
+  _onRoomTopologyFieldChange(field) {
+    const roomId = field.getAttribute("data-room-id") || "";
+    const key = field.getAttribute("data-room-topology-field") || "";
+    if (!roomId || !key) return;
+    const payload = { room_id: roomId };
+    if (key === "room_type") payload.room_type = field.value;
+    if (key === "floor") payload.floor = parseInt(field.value, 10) || 0;
+    this._runTopologyAction("set_room_fields", payload);
+  }
+
+  _onTopologyActionButton(button) {
+    const action = button.getAttribute("data-topology-action") || "";
+    const root = this.shadowRoot;
+    if (action === "delete_opening") {
+      const openingId = button.getAttribute("data-opening-id") || "";
+      if (!openingId) return;
+      this._runTopologyAction(
+        "delete_opening",
+        { opening_id: openingId },
+        `Delete opening ${openingId}? This is blocked if a connection still references it.`,
+      );
+      return;
+    }
+    if (action === "delete_connection") {
+      const connectionId = button.getAttribute("data-connection-id") || "";
+      if (!connectionId) return;
+      this._runTopologyAction("delete_connection", { connection_id: connectionId }, `Delete connection ${connectionId}?`);
+      return;
+    }
+    if (action === "add_opening") {
+      const roomId = root.getElementById("topology-new-opening-room")?.value || "";
+      const openingType = root.getElementById("topology-new-opening-type")?.value || "";
+      const orientation = root.getElementById("topology-new-opening-orientation")?.value || "";
+      const entityId = root.getElementById("topology-new-opening-entity")?.value || "";
+      if (!roomId || !openingType) return;
+      const payload = { room_id: roomId, type: openingType };
+      if (orientation) payload.orientation = orientation;
+      if (entityId) payload.entity_id = entityId;
+      // "Edit" pre-fills this same form with the existing opening_id tracked in _filters;
+      // upsert_opening replaces that record in place instead of creating a new one.
+      const editingOpeningId = this._filters.topology_new_opening?.opening_id;
+      if (editingOpeningId) payload.opening_id = editingOpeningId;
+      this._runTopologyAction("upsert_opening", payload);
+      return;
+    }
+    if (action === "add_connection") {
+      const openingId = root.getElementById("topology-new-connection-opening")?.value || "";
+      const roomB = root.getElementById("topology-new-connection-room-b")?.value || "";
+      const accessType = root.getElementById("topology-new-connection-access")?.value || "";
+      const override = root.getElementById("topology-new-connection-override")?.value || "";
+      if (!openingId || !roomB) return;
+      const payload = { opening_id: openingId, room_b: roomB, access_type: accessType };
+      if (override) payload.connection_type_override = override;
+      const editingConnectionId = this._filters.topology_new_connection?.connection_id;
+      if (editingConnectionId) payload.connection_id = editingConnectionId;
+      this._runTopologyAction("upsert_connection", payload);
+      return;
+    }
+    if (action === "edit_opening") {
+      const openingId = button.getAttribute("data-opening-id") || "";
+      const opening = (this._topologySnapshot?.openings || []).find(
+        (candidate) => candidate.opening_id === openingId,
+      );
+      if (!opening) return;
+      this._filters = {
+        ...this._filters,
+        topology_new_opening: {
+          opening_id: opening.opening_id,
+          room_id: opening.room_id,
+          type: opening.type,
+          orientation: opening.orientation || "",
+          entity_id: opening.entity_id || "",
+        },
+      };
+      this._render();
+      return;
+    }
+    if (action === "cancel_edit_opening") {
+      const rest = { ...this._filters };
+      delete rest.topology_new_opening;
+      this._filters = rest;
+      this._render();
+      return;
+    }
+    if (action === "edit_connection") {
+      const connectionId = button.getAttribute("data-connection-id") || "";
+      const connection = (this._topologySnapshot?.connections || []).find(
+        (candidate) => candidate.connection_id === connectionId,
+      );
+      if (!connection) return;
+      this._filters = {
+        ...this._filters,
+        topology_new_connection: {
+          connection_id: connection.connection_id,
+          opening_id: connection.opening_id,
+          room_b: connection.room_b,
+          access_type: connection.access_type,
+          connection_type_override: connection.connection_type_override || "",
+        },
+      };
+      this._render();
+      return;
+    }
+    if (action === "cancel_edit_connection") {
+      const rest = { ...this._filters };
+      delete rest.topology_new_connection;
+      this._filters = rest;
+      this._render();
+      return;
+    }
   }
 
   _overview(snapshot) {
@@ -558,7 +1177,7 @@ class HeimaAdminPanel extends HTMLElement {
       ${criticalRows.length ? this._recoveryCriticalEntitiesTable(criticalRows) : `<div class="empty">No critical recovery entities in the snapshot.</div>`}
       ${blocked.examples?.length ? this._recoveryBlockedSteps(blocked.examples) : `<div class="empty">No apply steps blocked by recovery.</div>`}
       ${recovery.recent_events?.length ? this._recoveryEvents(recovery.recent_events) : ""}
-      ${this._rawDetails(recovery.raw || {})}
+      ${this._rawDetails(recovery.raw || {}, "recovery.raw")}
     `;
   }
 
@@ -718,7 +1337,7 @@ class HeimaAdminPanel extends HTMLElement {
         ${this._detailSection("Timers", house.timers || {})}
         ${this._detailSection("Override", house.override || {})}
       </section>
-      ${this._rawDetails(house)}
+      ${this._rawDetails(house, "house_state.raw")}
     `;
   }
 
@@ -768,7 +1387,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(this._formatDetailValue(row.state))}</td>
               <td>${this._escape(row.reason || "")}</td>
               <td>${this._escape(this._houseStateTiming(row))}</td>
-              <td>${this._rawDetails(row.inputs || {})}</td>
+              <td>${this._rawDetails(row.inputs || {}, `house_state.candidate.${row.candidate || ""}`)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1005,7 +1624,7 @@ class HeimaAdminPanel extends HTMLElement {
               <td>${this._escape(module.module_id || module.id || "unknown")}</td>
               <td><span class="status">${module.ready === true ? "ready" : "not ready"}</span></td>
               <td>${this._escape(module.pattern_count ?? module.slot_count ?? module.approved_patterns ?? "")}</td>
-              <td>${this._rawDetails(module)}</td>
+              <td>${this._rawDetails(module, `learning.module.${module.module_id || module.id || "unknown"}`)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1463,10 +2082,13 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._linkedRows("Promotion Reviews", detail.linked_promotion_reviews || [], "review_id")}
       ${this._linkedRows("Linked Proposals", detail.linked_proposals || [], "id")}
       ${this._traceSummary(detail.latest_trace)}
-      ${this._rawDetails({
-        configured_metadata: detail.configured_metadata || {},
-        runtime_diagnostics: detail.runtime_diagnostics || {},
-      })}
+      ${this._rawDetails(
+        {
+          configured_metadata: detail.configured_metadata || {},
+          runtime_diagnostics: detail.runtime_diagnostics || {},
+        },
+        `reaction.${reactionId}`,
+      )}
     `;
   }
 
@@ -1489,7 +2111,7 @@ class HeimaAdminPanel extends HTMLElement {
           link_count: (detail.links || []).length,
         })}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `manual_hold.${scope}`)}
     `;
   }
 
@@ -1513,7 +2135,7 @@ class HeimaAdminPanel extends HTMLElement {
         })}
         ${this._detailSection("Apply Result", summary.apply_result || {})}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `runtime_confirmation.${requestId}`)}
     `;
   }
 
@@ -1536,7 +2158,7 @@ class HeimaAdminPanel extends HTMLElement {
           hour_range: `${summary.start_hour_bucket ?? ""}-${summary.end_hour_bucket ?? ""}`,
         })}
       </section>
-      ${this._rawDetails(summary)}
+      ${this._rawDetails(summary, `proposal_review.${rowId}`)}
     `;
   }
 
@@ -1563,7 +2185,7 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._linkedRows("Apply Steps", detail.apply_steps || [], "step_id")}
       ${this._linkedRows("Pending Applies", detail.pending_applies || [], "step_id")}
       ${this._linkedRows("Source Metadata", detail.source_metadata || [], "kind")}
-      ${this._rawDetails(detail)}
+      ${this._rawDetails(detail, `entity.${entityId}`)}
     `;
   }
 
@@ -1638,7 +2260,7 @@ class HeimaAdminPanel extends HTMLElement {
         </section>
         ${this._linkedRows("Candidate Apply Steps", result.apply_steps || [], "step_id")}
         ${this._linkedRows("Guard Results", result.guard_results || [], "reason_code")}
-        ${this._rawDetails(result)}
+        ${this._rawDetails(result, `why_not_now.${reactionId}`)}
       </div>
     `;
   }
@@ -1909,9 +2531,15 @@ class HeimaAdminPanel extends HTMLElement {
     return this._escape(row.type || row.identity_key || "");
   }
 
-  _rawDetails(value) {
+  _rawDetails(value, id) {
+    // `id` must be stable across re-renders (a row/entity id, not an array index) so the
+    // open/closed state below survives the next _render() — every render replaces the whole
+    // shadow DOM, which would otherwise silently collapse any <details> the admin had expanded
+    // (e.g. on the next 15s snapshot poll, or right after any admin action).
+    const key = id ? String(id) : "";
+    const open = key && this._openDetailIds.has(key) ? " open" : "";
     return `
-      <details>
+      <details data-details-id="${this._escape(key)}"${open}>
         <summary>raw</summary>
         <pre>${this._escape(JSON.stringify(value, null, 2))}</pre>
       </details>

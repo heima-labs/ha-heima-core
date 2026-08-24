@@ -10,6 +10,8 @@ from .const import (
     OPT_ACTIVITY_BINDINGS,
     OPT_PEOPLE_ANON,
     OPT_PEOPLE_NAMED,
+    OPT_ROOM_CONNECTIONS,
+    OPT_ROOM_OPENINGS,
     OPT_ROOMS,
     OPT_SECURITY,
 )
@@ -91,11 +93,18 @@ def build_validation_report(
     snapshot_count: int = 0,
     approval_count: int = 0,
     pending_proposal_count: int = 0,
+    known_entity_ids: frozenset[str] | None = None,
 ) -> ValidationReport:
-    """Build a cheap structural installation validation report."""
+    """Build a cheap structural installation validation report.
+
+    `known_entity_ids` is optional: callers without HA registry access (e.g. the config-flow
+    local fallback) may omit it, in which case the topology section skips its
+    entity-still-resolves check but still runs every check that needs only `options`.
+    """
     sections = (
         _activity_section(options),
         _invariant_section(options),
+        _topology_section(options, known_entity_ids=known_entity_ids),
         _learning_section(
             snapshot_count=snapshot_count,
             approval_count=approval_count,
@@ -277,6 +286,109 @@ def _learning_section(
         available=available,
         unavailable=unavailable,
         issues=issues,
+    )
+
+
+def _topology_section(
+    options: dict[str, Any],
+    *,
+    known_entity_ids: frozenset[str] | None,
+) -> ValidationSection:
+    # Local import: room_topology.py imports ValidationIssue from this module, so importing it
+    # at module scope here would create a circular import.
+    from .room_topology import validate_topology
+
+    issues: list[ValidationIssue] = list(validate_topology(options))
+
+    rooms = [room for room in options.get(OPT_ROOMS, []) or [] if isinstance(room, dict)]
+    orphaned_room_ids = {
+        str(room.get("room_id") or "")
+        for room in rooms
+        if str(room.get("ha_sync_status") or "").strip() == "orphaned"
+    }
+    if orphaned_room_ids:
+        for opening in options.get(OPT_ROOM_OPENINGS, []) or []:
+            if not isinstance(opening, dict):
+                continue
+            room_id = str(opening.get("room_id") or "")
+            opening_id = str(opening.get("opening_id") or "")
+            if not opening_id or room_id not in orphaned_room_ids:
+                continue
+            issues.append(
+                ValidationIssue(
+                    key=f"topology.opening.{opening_id}.orphaned_room",
+                    severity="warning",
+                    title="Opening's room is no longer synced with Home Assistant",
+                    description=(
+                        f"Opening '{opening_id}' belongs to room '{room_id}', whose Home Assistant "
+                        "Area was removed. The room is retained but no longer reconciled with a "
+                        "live Area."
+                    ),
+                    capability="room_topology",
+                )
+            )
+        for connection in options.get(OPT_ROOM_CONNECTIONS, []) or []:
+            if not isinstance(connection, dict):
+                continue
+            room_b = str(connection.get("room_b") or "")
+            connection_id = str(connection.get("connection_id") or "")
+            if not connection_id or room_b not in orphaned_room_ids:
+                continue
+            issues.append(
+                ValidationIssue(
+                    key=f"topology.connection.{connection_id}.orphaned_room",
+                    severity="warning",
+                    title="Connection's room is no longer synced with Home Assistant",
+                    description=(
+                        f"Connection '{connection_id}' references room '{room_b}', whose Home "
+                        "Assistant Area was removed. The room is retained but no longer "
+                        "reconciled with a live Area."
+                    ),
+                    capability="room_topology",
+                )
+            )
+
+    if known_entity_ids is not None:
+        seen_entity_ids: set[str] = set()
+        for opening in options.get(OPT_ROOM_OPENINGS, []) or []:
+            if not isinstance(opening, dict):
+                continue
+            entity_id = str(opening.get("entity_id") or "").strip()
+            opening_id = str(opening.get("opening_id") or "").strip()
+            if not entity_id or not opening_id or entity_id in seen_entity_ids:
+                continue
+            if entity_id in known_entity_ids:
+                continue
+            seen_entity_ids.add(entity_id)
+            issues.append(
+                ValidationIssue(
+                    key=f"topology.entity.{entity_id}.unavailable",
+                    severity="warning",
+                    title="Opening entity no longer resolves",
+                    description=(
+                        f"entity_id '{entity_id}' bound to opening '{opening_id}' no longer "
+                        "resolves in Home Assistant. The opening is retained as a valid "
+                        "geographic reference."
+                    ),
+                    capability="room_topology",
+                    missing=(entity_id,),
+                )
+            )
+
+    errors = sum(1 for issue in issues if issue.severity == "error")
+    warnings = sum(1 for issue in issues if issue.severity == "warning")
+    if errors:
+        summary = f"{errors} blocking issue(s), {warnings} warning(s)."
+    elif warnings:
+        summary = f"{warnings} warning(s)."
+    else:
+        summary = "Room topology is valid."
+    return ValidationSection(
+        key="room_topology",
+        title="Room Topology",
+        severity=_max_severity(issue.severity for issue in issues) if issues else "ok",
+        summary=summary,
+        issues=tuple(issues),
     )
 
 

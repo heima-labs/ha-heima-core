@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.14.0] — 2026-08-24
+
+- Room Topology (Phase AR, AR1-4): a new declarative spatial data model — room type/floor, doors and
+  windows (`Opening`, with optional orientation and monitor entity), and room-to-room/room-to-outside
+  connections (`Connection`, with a derived `connection_type: indoor|outdoor|separate`). Persisted
+  per config entry, validated against Installation Validation with correct error/warning severity,
+  cached and exposed to future consumers via `CanonicalState["rooms.topology"]`. Fully admin-editable
+  through a new "Topology" section in the admin panel (websocket-backed, admin-gated), including
+  in-place editing of existing openings/connections, not just add/delete.
+- Fixed a pre-existing bug (made easy to trigger by the new editor): editing a room's `room_type`
+  could make the Heima admin panel vanish from the sidebar until a full Home Assistant restart.
+  `async_setup_entry` now re-registers the panel the same way `async_setup` does.
+- Editing only cosmetic room fields (`room_type`/`floor`/`geometry`) now uses a light options reload
+  instead of forcing a full config-entry reload.
+- Fixed the admin panel losing `<details>` (raw JSON) expanded state, and losing in-progress form
+  input, on every unrelated re-render (the 15s observability poll, another admin action).
+- `room_id: "outside"` is now a reserved value in the room editor — it collided with Room Topology's
+  sentinel for "the exterior, not modeled as a Room."
+- Room Topology's original consumers (HouseState, Occupancy, Security diagnostics/alarm-boundary
+  use) were re-evaluated before this release and found not to block anything currently planned;
+  split out to a deferred, unscheduled spec (`docs/specs/core/room_topology_consumers_spec.md`) so
+  the data model, validation, cache, and admin editor could ship on their own.
+
 ## [0.13.0] — 2026-08-21
 
 - Recovery no longer blocks stabilization on motion/occupancy/presence entities that are

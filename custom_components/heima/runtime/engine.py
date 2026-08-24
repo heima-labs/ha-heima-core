@@ -40,6 +40,7 @@ from ..const import (
 from ..entities.registry import build_registry
 from ..models import HeimaOptions
 from ..room_sources import room_all_source_entity_ids
+from ..room_topology import TopologyGraphCache
 from .activity_detectors import build_activity_detectors
 from .analyzers.base import ReactionProposal
 from .analyzers.context_episode_sampling import canonicalize_context_snapshot
@@ -307,6 +308,7 @@ class HeimaEngine:
         self._proposal_engine: ProposalEngine | None = None
         self._room_context_builder: RoomDeviceContextBuilder | None = None
         self._current_room_device_context: dict[str, RoomDeviceContext] = {}
+        self._room_topology_cache: TopologyGraphCache | None = None
         self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
@@ -340,6 +342,10 @@ class HeimaEngine:
     def set_room_context_builder(self, builder: RoomDeviceContextBuilder) -> None:
         """Bind the room context builder used by the runtime cycle."""
         self._room_context_builder = builder
+
+    def set_room_topology_cache(self, cache: TopologyGraphCache) -> None:
+        """Bind the room topology cache used by the runtime cycle."""
+        self._room_topology_cache = cache
 
     @property
     def lighting_last_apply_ts_by_room(self) -> dict[str, float]:
@@ -579,6 +585,8 @@ class HeimaEngine:
         self._configure_activity_detectors(dict(entry.options))
         if self._room_context_builder is not None:
             self._room_context_builder.mark_stale()
+        if self._room_topology_cache is not None:
+            self._room_topology_cache.mark_stale()
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
@@ -1683,6 +1691,7 @@ class HeimaEngine:
         calendar_cfg = dict(options.get(OPT_CALENDAR, {}))
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
+        self._compute_room_topology(options=options)
         room_device_context = self._compute_room_device_context(
             options=options,
             lights_on=dict(self._snapshot.lights_on or {}),
@@ -1917,6 +1926,14 @@ class HeimaEngine:
                 )
             )
         return observations
+
+    def _compute_room_topology(self, *, options: dict[str, Any]) -> None:
+        cache = self._room_topology_cache
+        if cache is None:
+            self._state.set_sensor("rooms.topology", {})
+            return
+        graph = cache.get_graph(options)
+        self._state.set_sensor("rooms.topology", graph.as_dict())
 
     def _compute_room_device_context(
         self,

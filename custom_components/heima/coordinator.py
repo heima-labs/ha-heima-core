@@ -37,6 +37,14 @@ from .discovery import DiscoveryReport, discover_binding_candidates
 from .models import HeimaRuntimeState
 from .reconciliation import reconcile_ha_backed_options
 from .room_sources import room_occupancy_source_entity_ids, room_signal_entity_id
+from .room_topology import (
+    TopologyGraphCache,
+    apply_room_connection_delete,
+    apply_room_connection_upsert,
+    apply_room_opening_delete,
+    apply_room_opening_upsert,
+    apply_room_topology_fields,
+)
 from .runtime.analyzers import (
     ANOMALY_RULE_CATALOG,
     ActivityAnalyzer,
@@ -338,6 +346,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self._approval_store = ApprovalStore(hass)
         self._room_context_builder = RoomDeviceContextBuilder(hass, self.engine._normalizer)
         self.engine.set_room_context_builder(self._room_context_builder)
+        self._room_topology_cache = TopologyGraphCache()
+        self.engine.set_room_topology_cache(self._room_topology_cache)
         self._weekday_module = WeekdayStateModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -991,6 +1001,97 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         options["reactions"] = reactions
         self.hass.config_entries.async_update_entry(self.entry, options=options)
         return True
+
+    def _apply_room_topology_mutation(
+        self,
+        new_options: dict[str, Any] | None,
+        issues: tuple[Any, ...],
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Persist a room topology mutation, or report the blocking issues that rejected it."""
+        if new_options is None:
+            return False, tuple(issue.as_dict() for issue in issues)
+        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+        return True, ()
+
+    async def async_set_room_topology_fields(
+        self,
+        *,
+        room_id: str,
+        room_type: str | None = None,
+        floor: int | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Set topology fields (room_type/floor) on an existing room, admin-editor entry point."""
+        new_options, issues = apply_room_topology_fields(
+            dict(getattr(self.entry, "options", {}) or {}),
+            room_id=room_id,
+            room_type=room_type,
+            floor=floor,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_upsert_room_opening(
+        self,
+        *,
+        opening_id: str | None,
+        room_id: str,
+        opening_type: str,
+        orientation: str | None = None,
+        entity_id: str | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Create or replace one Opening, admin-editor entry point."""
+        new_options, issues = apply_room_opening_upsert(
+            dict(getattr(self.entry, "options", {}) or {}),
+            opening_id=opening_id,
+            room_id=room_id,
+            type=opening_type,
+            orientation=orientation,
+            entity_id=entity_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_delete_room_opening(
+        self,
+        *,
+        opening_id: str,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Delete one Opening, admin-editor entry point."""
+        new_options, issues = apply_room_opening_delete(
+            dict(getattr(self.entry, "options", {}) or {}),
+            opening_id=opening_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_upsert_room_connection(
+        self,
+        *,
+        connection_id: str | None,
+        opening_id: str,
+        room_b: str,
+        access_type: str | None = None,
+        connection_type_override: str | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Create or replace one Connection, admin-editor entry point."""
+        new_options, issues = apply_room_connection_upsert(
+            dict(getattr(self.entry, "options", {}) or {}),
+            connection_id=connection_id,
+            opening_id=opening_id,
+            room_b=room_b,
+            access_type=access_type,
+            connection_type_override=connection_type_override,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
+
+    async def async_delete_room_connection(
+        self,
+        *,
+        connection_id: str,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Delete one Connection, admin-editor entry point."""
+        new_options, issues = apply_room_connection_delete(
+            dict(getattr(self.entry, "options", {}) or {}),
+            connection_id=connection_id,
+        )
+        return self._apply_room_topology_mutation(new_options, issues)
 
     async def async_reset_runtime_confirmation_promotion_state(self, reaction_id: str) -> bool:
         """Clear persisted runtime confirmation stats and promotion review state."""
@@ -1673,6 +1774,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         @callback
         def _handle_registry_updated(_event: Event) -> None:
             self._room_context_builder.mark_stale()
+            self._room_topology_cache.mark_stale()
 
         unsub_entity = self.hass.bus.async_listen(
             er.EVENT_ENTITY_REGISTRY_UPDATED,
@@ -2514,11 +2616,17 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         snapshot_diag = self._house_snapshot_store.diagnostics()
         approval_diag = self._approval_store.diagnostics()
         proposal_diag = self._proposal_engine.diagnostics()
+        known_entity_ids = frozenset(
+            str(getattr(state, "entity_id", "") or "")
+            for state in self._safe_all_states()
+            if getattr(state, "entity_id", None)
+        )
         return build_validation_report(
             options=dict(getattr(self.entry, "options", {}) or {}),
             snapshot_count=int(snapshot_diag.get("total_snapshots") or 0),
             approval_count=int(approval_diag.get("total_records") or 0),
             pending_proposal_count=int(proposal_diag.get("pending") or 0),
+            known_entity_ids=known_entity_ids,
         )
 
     def _sync_health_sensor(self) -> None:

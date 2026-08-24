@@ -49,6 +49,7 @@ def _complete_options() -> dict:
 def _coordinator(options: dict | None = None) -> HeimaCoordinator:
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
     coordinator.entry = SimpleNamespace(entry_id="entry-1", options=options or {})
+    coordinator.hass = SimpleNamespace(states=SimpleNamespace(async_all=lambda: []))
     coordinator.engine = SimpleNamespace(
         health=SimpleNamespace(ok=True, reason="initialized"),
         state=SimpleNamespace(
@@ -101,6 +102,79 @@ def test_validation_report_missing_bindings_are_human_readable_warnings() -> Non
     )
     assert any(
         "Presence/occupancy mismatch checks need" in description for description in descriptions
+    )
+
+
+def test_validation_report_topology_section_present_and_ok_with_no_topology():
+    report = build_validation_report(options=_complete_options(), snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert sections["room_topology"].severity == "ok"
+    assert sections["room_topology"].issues == ()
+
+
+def test_validation_report_topology_section_surfaces_dangling_reference():
+    options = _complete_options()
+    options["room_openings"] = [{"opening_id": "op1", "room_id": "missing_room", "type": "door"}]
+    report = build_validation_report(options=options, snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert sections["room_topology"].severity == "error"
+    assert any(
+        issue.key == "topology.opening.op1.dangling_room"
+        for issue in sections["room_topology"].issues
+    )
+    assert report.severity == "error"
+
+
+def test_validation_report_topology_section_flags_orphaned_room_reference():
+    options = _complete_options()
+    options["rooms"][0]["ha_sync_status"] = "orphaned"
+    options["room_openings"] = [{"opening_id": "op1", "room_id": "kitchen", "type": "door"}]
+    options["room_connections"] = [
+        {"connection_id": "c1", "opening_id": "op1", "room_b": "outside"}
+    ]
+    report = build_validation_report(options=options, snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert any(
+        issue.key == "topology.opening.op1.orphaned_room"
+        for issue in sections["room_topology"].issues
+    )
+
+
+def test_validation_report_topology_section_flags_unavailable_entity_when_known_entity_ids_given():
+    options = _complete_options()
+    options["room_openings"] = [
+        {
+            "opening_id": "op1",
+            "room_id": "kitchen",
+            "type": "window",
+            "entity_id": "binary_sensor.gone",
+        }
+    ]
+    report = build_validation_report(
+        options=options, snapshot_count=12, known_entity_ids=frozenset({"binary_sensor.other"})
+    )
+    sections = {section.key: section for section in report.sections}
+    assert any(
+        issue.key == "topology.entity.binary_sensor.gone.unavailable"
+        for issue in sections["room_topology"].issues
+    )
+
+
+def test_validation_report_topology_section_skips_entity_check_without_known_entity_ids():
+    options = _complete_options()
+    options["room_openings"] = [
+        {
+            "opening_id": "op1",
+            "room_id": "kitchen",
+            "type": "window",
+            "entity_id": "binary_sensor.gone",
+        }
+    ]
+    report = build_validation_report(options=options, snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert not any(
+        issue.key == "topology.entity.binary_sensor.gone.unavailable"
+        for issue in sections["room_topology"].issues
     )
 
 

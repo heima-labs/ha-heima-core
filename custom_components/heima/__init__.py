@@ -10,7 +10,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS, STRUCTURAL_OPTION_KEYS
+from .const import DOMAIN, OPT_ROOMS, PLATFORMS, STRUCTURAL_OPTION_KEYS
 from .coordinator import HeimaCoordinator
 from .entities.registry import build_registry
 from .options_migration import migrate_learning_external_context_options
@@ -20,6 +20,7 @@ from .room_sources import (
     migrate_burst_signal_configs_and_reactions,
     migrate_room_darkness_reactions_to_primary_bucket,
 )
+from .room_topology import is_room_options_change_topology_only
 from .runtime.reactions import normalize_reaction_options_payload
 from .services import async_register_services
 from .websocket_api import async_register_websocket_api
@@ -51,6 +52,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Heima from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+
+    # async_setup (component-level) only runs once per HA startup, but async_unload_entry
+    # unregisters the admin panel on every structural-option reload (hass.config_entries.
+    # async_reload, e.g. after editing a room's topology fields). Without this, the panel
+    # would vanish from the sidebar until a full HA restart, since no other code path
+    # re-registers it. Idempotent: harmless if async_setup already registered it this session.
+    if not hass.data[DOMAIN].get("admin_panel_registered"):
+        await async_register_admin_panel(hass)
+        hass.data[DOMAIN]["admin_panel_registered"] = True
 
     normalized_options, external_context_changed = migrate_learning_external_context_options(
         dict(entry.options)
@@ -132,14 +142,24 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     prev = coordinator.last_options_snapshot
     new = dict(entry.options)
     changed = {k for k in (prev.keys() | new.keys()) if prev.get(k) != new.get(k)}
-    is_structural = bool(changed & STRUCTURAL_OPTION_KEYS)
+    structural_changed = changed & STRUCTURAL_OPTION_KEYS
+    is_structural = bool(structural_changed)
+    if (
+        is_structural
+        and structural_changed == {OPT_ROOMS}
+        and is_room_options_change_topology_only(prev.get(OPT_ROOMS), new.get(OPT_ROOMS))
+    ):
+        # room_type/floor/geometry edits (AR4's admin editor) never affect the entity
+        # registry/platform setup the "rooms" structural-reload rule exists to rebuild —
+        # unlike adding/removing a room or rebinding area_id, which still take the full path.
+        is_structural = False
 
     coordinator.last_options_snapshot = new
 
     if is_structural:
         _LOGGER.debug(
             "Structural options changed (%s), reloading entry %s",
-            changed & STRUCTURAL_OPTION_KEYS,
+            structural_changed,
             entry.entry_id,
         )
         await hass.config_entries.async_reload(entry.entry_id)
