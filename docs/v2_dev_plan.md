@@ -137,14 +137,13 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** none. Phase AR (AR1-4: data model, validation, cache, admin editor) concluded and
-merged to `main`. AR5-8 (HouseState/Occupancy/Security consumption + observability) re-evaluated
-before merge and found to be non-blocking for anything currently planned — split out to Phase AT
-(`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/ar-room-topology` merged to `main` (branch retained, not deleted).
-**Next action:** Phase AU — Actuator Registry, phased AU1-4 (see below), spec approved and complete
-(`docs/specs/core/actuator_registry_spec.md`). Not started — awaiting explicit "ok, proceed" per
-CLAUDE.md before AU1 implementation begins. Depends only on AR (merged); does not depend on Phase AT.
+**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core) done,
+tests green. AR (AR1-4) concluded and merged to `main`; AR5-8 split out to Phase AT (`DEFERRED`, see
+`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/au-actuator-registry` (created off `main` at `124a5b3`, v0.14.0).
+**Next action:** AU2 — Installation Validation wiring (new `ValidationSection` in `validation.py`,
+consuming AU1's `validate_actuators()`; no new `known_entity_ids` plumbing needed, already threaded
+generically by `build_validation_report()`). Await explicit "ok, proceed" before starting.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1720,18 +1719,30 @@ order:
 
 #### AU1 — Data Model, Parsing, and Validation Core
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AR1 (references `Room`/`Opening` records and IDs; does not modify `room_topology.py`).
 - New module `custom_components/heima/actuators.py`: `Actuator` dataclass (`actuator_id`,
   `entity_id`, `room_id`, `opening_id`, `display_name`), `OPT_ROOM_ACTUATORS = "room_actuators"`
-  (`const.py`), `parse_actuators(options)`, `validate_actuators(options)` (the five checks from the
-  spec's Validation and Reconciliation section), `is_opening_referenced_by_actuator(options,
-  opening_id)` (the predicate AU4's coordinator check will call), and the upsert/delete apply
-  functions (`apply_actuator_upsert`, `apply_actuator_delete`) sharing one `_apply_and_validate()`
-  choke point, mirroring `room_topology.py`'s own pattern exactly.
-- Tests: malformed-entry skipping; `actuator_id` auto-generation; the `opening_id`-in-wrong-room
-  `error`; dangling `room_id`/`opening_id` `warning`s; unconditional shared-`entity_id` `warning`;
-  `entity_unavailable` marking. No derivation tests (there is no derivation — see spec).
+  (`const.py`), `parse_actuators(options)`, `validate_actuators(options)` (4 of the spec's 5 checks —
+  `opening_id`-in-wrong-room `error`, dangling `room_id`/`opening_id` `warning`s, unconditional
+  shared-`entity_id` `warning`; the 5th, `entity_unavailable`, is HA-registry-dependent and correctly
+  deferred to AU2, mirroring `room_topology.py`'s own `validate_topology()`/`_topology_section()`
+  split), `is_opening_referenced_by_actuator(options, opening_id)` (the predicate AU4's coordinator
+  check will call), and the upsert/delete apply functions (`apply_actuator_upsert`,
+  `apply_actuator_delete`) sharing one `_apply_and_validate()` choke point, mirroring
+  `room_topology.py`'s own pattern. `_apply_and_validate()` is simpler than `room_topology.py`'s
+  version — no `key` parameter needed, since `Actuator` is the only entity type here (unlike
+  Room/Opening/Connection). Imports `room_topology.parse_openings` directly (safe: `room_topology.py`
+  has no heavy transitive imports) instead of reimplementing Opening lookup.
+- Tests (`tests/test_actuators.py`, 23): malformed-entry skipping; `actuator_id` deduplication and
+  auto-generation; the `opening_id`-in-wrong-room `error`; dangling `room_id`/`opening_id`
+  `warning`s; unconditional shared-`entity_id` `warning`;
+  `is_opening_referenced_by_actuator` true/false; upsert generates/edits-in-place, rejects
+  missing `entity_id`/`room_id`, blocked only by the `error`-severity mismatch (not by
+  warning-severity dangling references); delete removes/no-ops. No derivation tests (there is no
+  derivation — see spec). Verification: full suite 1970 passed (was 1947 pre-AU1), `ruff check`/
+  `ruff format --check` clean; mypy (informational) shows only the pre-existing, unrelated
+  `room_topology.py:374` error, nothing new from `actuators.py`.
 
 #### AU2 — Installation Validation Wiring
 
