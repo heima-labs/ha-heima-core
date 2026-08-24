@@ -95,6 +95,34 @@ Migrating the ~107 test-covered `OPT_LIGHTING_ROOMS`/`OPT_LIGHTING_ZONES` occurr
 for uniformity alone, with no functional gap it closes, contradicts the additive/low-blast-radius
 approach `core/room_topology_spec.md` itself established.
 
+## Overlap with Deferred Topology Consumers (AT)
+
+`core/room_topology_consumers_spec.md` (Phase AT, `DEFERRED`) covers HouseState/Occupancy/Security
+consumption of `rooms.topology`. Checked for overlap with this registry; there isn't one at the data
+level, and the one real interaction is forward-looking and non-blocking:
+
+- **No shared storage or `CanonicalState` key.** `rooms.actuators` (this spec) and `rooms.topology`
+  (AT's input) are separate options keys and separate cache namespaces (see CanonicalState Exposure
+  below). Nothing here changes if AT ships, is modified, or never ships at all.
+- **No entity_id collision, even on the same physical `Opening`.** AT3 (Security, if built) would
+  read `Opening.entity_id` — the *monitor* sensor bound directly on the `Opening` record
+  (`core/room_topology_spec.md`), used for sensing open/closed. `Actuator.entity_id` is a separate
+  record referencing the same `Opening` via `opening_id`, used for commanding (a cover, not a
+  sensor). A single physical window can carry both — a `binary_sensor` monitor entity on its
+  `Opening` record (read by AT3, if built, for alarm-boundary classification) and a `cover` actuator
+  entity on a separate `Actuator` record referencing that same `opening_id` (read by a future comfort
+  Reaction) — with no interaction between the two beyond both pointing at the same `Opening`.
+- **AT1 (HouseState) and AT2 (Occupancy)** have no relationship to actuators at all — one is a
+  live-entity/diagnostics cross-reference, the other is about presence weighting.
+- **The one real interaction is a Reaction-level concern, not a schema one**, already named in Future
+  Consumers below: a future house-wide "open the windows to cool the house" Reaction (built on this
+  registry) should plausibly check whether Security considers the house armed before acting, if AT3
+  ever exists. That dependency runs from the *Reaction* to *AT3*, not from this registry to AT —
+  `Actuator` itself, and every comfort Reaction that only opens/closes something while the house is
+  unarmed or that never checks arming state at all, works identically whether AT3 ships, ships later,
+  or never ships. Nothing in this spec is blocked by AT's `DEFERRED` status, and nothing in AT depends
+  on this registry.
+
 ## Architecture Integration
 
 ### Not a domain: same preprocessing-layer category as Room Topology
@@ -283,9 +311,11 @@ Checks:
   cross-room-queryable list by construction. What's new is only the *shape* of such a Reaction (no
   existing built-in Reaction spans more than one room today) — worth noting for whoever builds it
   first, not a data-model gap.
-- **Security** (Phase AR7, still `PLANNED`): a house-wide window-opening Reaction should plausibly
-  respect the armed state Security will eventually own. Named here as a forward dependency on AR7,
-  not resolved by this spec.
+- **Security** (Phase AT3, `DEFERRED` — `core/room_topology_consumers_spec.md`): a house-wide
+  window-opening Reaction should plausibly respect the armed state Security would eventually own if
+  AT3 is ever picked up. Named here as a forward dependency, not resolved by this spec, and not a
+  blocker: this registry and its comfort Reactions work identically whether or not AT3 ever ships —
+  see Overlap with Deferred Topology Consumers below.
 - **Migrating lighting Reactions' `entity_steps` to reference `actuator_id`** — see Non-Goals.
 
 ## Observability
