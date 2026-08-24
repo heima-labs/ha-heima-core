@@ -1676,6 +1676,12 @@ traceable in existing AO decision traces. Depends on AT3 for the decision traces
   and future equipment classes) — placement only, no command/capability model — so future
   comfort/climate Reactions can resolve "the shutter on the south window" without hardcoding
   entity_ids per reaction. Does not build any specific Reaction; see the spec's Future Consumers.
+  This is not speculative infrastructure: comfort/climate Reactions (e.g. "close the windows, it's
+  colder outside" / "lower the shutter, too much sun") are the concrete, named motivation for this
+  whole registry, not a hypothetical future consumer — see the note after Phase AU acceptance below.
+  They are deliberately not phased here because they need their own dedicated spec-first design pass
+  (signals, thresholds, hysteresis, notify-vs-actuate fallback) — building the foundation first, per
+  the developer's explicit call, then specifying the Reactions on their own once AU concludes.
 - Product boundary:
   - no command/capability schema — `entity_steps`/`ApplyStep` unchanged, reused as-is;
   - `Actuator.room_id` is single-valued — no multi-room actuators in this phase;
@@ -1734,6 +1740,9 @@ order:
 - New `ValidationSection` in `validation.py`, wired into `build_validation_report()` alongside the
   existing `_topology_section()`, following the same pattern (local import of `validate_actuators`
   to avoid the same transitive-import concern `room_topology.py`/`validation.py` already navigate).
+  No new plumbing needed for the `entity_unavailable` check: `build_validation_report()` already
+  threads `known_entity_ids` generically to every section (verified in `validation.py`) — the new
+  section just consumes the same parameter `_topology_section()` already receives.
 - Tests: mirrors `tests/test_validation_m.py`'s existing topology-section tests, one per validation
   rule from AU1.
 
@@ -1750,8 +1759,9 @@ order:
   `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`).
 - Tests: cache invalidation triggers (options change, both registry events); `rooms.actuators`
   correctly empty when no actuators configured; both new entity_id sources present in
-  `_recovery_critical_entity_ids()`'s output; existing Heating/Security/Lighting entries in that
-  method's output unchanged (regression).
+  `_recovery_critical_entity_ids()`'s output. No new test needed for existing Heating/Security/
+  Lighting entries — since this only adds loops, not modifying existing ones, the full suite staying
+  green already guarantees that regression for free.
 
 #### AU4 — Admin Editor (Panel) and Referential Integrity
 
@@ -1770,8 +1780,9 @@ order:
 - Tests: full snapshot/upsert/delete round trip (coordinator-level and real-websocket e2e, mirroring
   both `tests/test_room_topology_coordinator.py` and `tests/test_room_topology_panel_e2e.py`);
   admin-gating rejection for non-admin callers; Opening-delete blocked when referenced by an
-  Actuator; **regression**: Opening-delete still blocked when referenced by a Connection (AR4's
-  original behavior, unchanged by this addition).
+  Actuator. No new test needed to confirm Opening-delete is still blocked when referenced by a
+  Connection — AR4's existing test for that already covers it; the full suite staying green after
+  this addition is the regression guarantee.
 
 - Phase AU acceptance (from the spec's own Acceptance Criteria):
   - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration
@@ -1790,6 +1801,16 @@ order:
   - Admin editing is panel-based, admin-only, traceable in observability.
   - Covered by unit and integration tests per Testing Requirements.
   - Mandatory merge-to-main procedure applies before AU lands on `main`, per CLAUDE.md.
+
+**Next after AU concludes:** Comfort/Climate Reactions — not yet specced, not numbered, deliberately
+built as a separate phase after this foundation. This is the concrete motivation for Phase AU (e.g.
+"close the windows, it's colder outside" / "lower the shutter, too much sun in this room"), with
+either a real actuator or a notification depending on what the admin has configured in this
+registry. Needs its own dedicated spec-first design pass before being phased: trigger signals and
+thresholds (indoor `room_temperature` vs. `ExternalContext.outdoor_temp`/`outdoor_lux`), hysteresis
+to avoid flapping, per-opening vs. room-level actuator resolution and fallback-to-notification order
+(already outlined qualitatively in this registry's Future Consumers section), and notification
+routing/audience. Do not start implementing before that spec exists and is approved.
 
 ### Recent Working Notes
 
