@@ -127,21 +127,22 @@ These constraints must never be violated. See spec §16 for rationale.
 | AO10 | Focused Why-Not-Now Evaluation | `PLANNED` | AO8 |
 | AP | Notification Delivery Policy | `DONE` | AH, AN, AO |
 | AQ | Runtime Checkpoint and Power Recovery | `DONE` | AH, MH, AO, AP |
-| AR | Room Topology | `PLANNED` | AO, M |
+| AR | Room Topology | `DONE` | AO, M |
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
+| AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS
-— Structured Runtime Source.
-**Active slice:** Phase AR — Room Topology, AR1-AR4 done, tests green.
-**Branch:** `feat/ar-room-topology` (created off `main` at `e4a79ab`, v0.13.0).
-**Next action:** AR5 — HouseState Consumption (first of the three consumers, sequenced by ascending
-blast radius: purely explanatory `topology_context` diagnostics, never changes `house_state` or
-triggers an action). AR4's frontend has not been manually verified in a live Home Assistant instance
-— worth a real smoke test before or alongside AR5-7 if the developer wants to catch UI issues early.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
+**Active slice:** none. Phase AR (AR1-4: data model, validation, cache, admin editor) concluded and
+merged to `main`. AR5-8 (HouseState/Occupancy/Security consumption + observability) re-evaluated
+before merge and found to be non-blocking for anything currently planned — split out to Phase AT
+(`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/ar-room-topology` merged to `main` (branch retained, not deleted).
+**Next action:** none active. `core/actuator_registry_spec.md` (approved, not yet phased/numbered)
+is the next spec-first candidate — reads `rooms.topology` directly, does not depend on Phase AT.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1241,17 +1242,22 @@ MVP merge.
 
 ### Phase AR — Room Topology
 
-- Status: `PLANNED`.
-- Spec source: `docs/specs/core/room_topology_spec.md` (Status: Planned — not implemented on
-  `main`; approved after a multi-round pre-spec discussion, see
-  `heima_topologia_discussione.md`).
+- Status: `DONE` (AR1-4). Originally scoped as AR1-8; AR5-8 (HouseState/Occupancy/Security
+  consumption + observability) were re-evaluated before merge, found to be non-blocking for anything
+  currently planned, and split out to Phase AT (`DEFERRED`, see below and
+  `docs/specs/core/room_topology_consumers_spec.md`) so AR1-4 could conclude and merge on their own.
+- Spec source: `docs/specs/core/room_topology_spec.md` (Status: Implemented on `main`, AR1-4 scope;
+  approved after a multi-round pre-spec discussion, see `heima_topologia_discussione.md`).
 - Also touches: `learning/room_context_spec.md` (sibling `rooms.*` CanonicalState namespace, no
   changes to that spec itself), `core/admin_observability_panel_spec.md` (new `topology` diagnostics
-  summary), Installation Validation (`validation.py`, Phase M — new `ValidationSection`).
+  summary — actually deferred to Phase AT, since it depends on Security's decision traces), 
+  Installation Validation (`validation.py`, Phase M — new `ValidationSection`).
 - Goal: give Heima a declarative spatial topology (room adjacency graph, doors/windows, orientation)
-  as configuration, without any floorplan visualization or third-party tool dependency, so Security,
-  Occupancy, and HouseState can consume it, and future orientation-aware automations are not blocked
-  by the data model.
+  as configuration, persisted/derived/validated/cached/admin-editable, without any floorplan
+  visualization or third-party tool dependency. Consumption by Security/Occupancy/HouseState was the
+  original motivation but turned out not to be a prerequisite for anything else planned — see Phase
+  AT. `core/actuator_registry_spec.md` is the first concrete consumer, reading `rooms.topology`
+  directly.
 - Product boundary:
   - the graph is admin-declared, never geometrically inferred or imported in this phase;
   - `geometry` is reserved `null` on every `Room` — an explicit, additive hook for a future
@@ -1297,17 +1303,9 @@ Resulting order and rationale per phase:
 - **AR4** — admin editor — unchanged in substance and position, still after the storage/derivation/
   validation core is stable, since it is the largest surface (websocket commands, panel UI, admin
   gating).
-- **AR5–AR7** (consumers) are reordered from Security→Occupancy→HouseState to **HouseState→Occupancy→
-  Security** — ascending blast radius of a bug, not spec order. HouseState's use of topology is purely
-  explanatory (`topology_context` diagnostics, never changes `house_state`, never triggers an action)
-  — the cheapest consumer on which to prove the `rooms.topology` read pattern. Occupancy is next: a
-  bug there degrades presence-weighting quality but has no safety implication. Security is last, so
-  its alarm-boundary classification is built once the read pattern is already proven correct on two
-  lower-stakes consumers, and the entity_id/connection_type conflict rule — which exists specifically
-  to protect Security from an ambiguous boundary — has already been enforced upstream by AR1/AR2 by
-  the time Security code is written.
-- **AR8** (observability) is unaffected — still last, it aggregates state produced by every earlier
-  phase.
+- **AR5–AR8** (consumers + observability) were originally sequenced here (HouseState→Occupancy→
+  Security→Observability, ascending blast radius). That reasoning is preserved in Phase AT below,
+  where the four sub-phases now live, deferred.
 
 #### AR1 — Data Model, Derivation, and Validation Core
 
@@ -1539,70 +1537,127 @@ Resulting order and rationale per phase:
   Not manually exercised in a live Home Assistant instance this session — flagged, not claimed as
   browser-verified.
 
-#### AR5 — HouseState Consumption
+**Further UX hardening, found during continued real-browser review (2026-08-22 to 2026-08-24):**
 
-- Status: `PLANNED`.
-- Depends on: AR3 (reads cached `rooms.topology`).
-- Sequenced first among consumers: lowest blast radius of a bug (diagnostics-only), the cheapest way
-  to validate the `rooms.topology` read pattern before higher-stakes consumers use it.
-- After `house_state` resolution runs unchanged, `HouseStateDomain` separately cross-references
-  `rooms.topology`'s `connection_type` structure with the live entity state of `separate`/`outdoor`
-  openings, and attaches the result as a new `topology_context: {open_boundary_openings: [...]}`
-  key on the existing house-state diagnostics contract (`domains/house_state_spec.md` §11).
-- Purely explanatory: never influences the resolved `house_state` value, never triggers an action.
-  No new top-level `house_state` values — the enum stays closed.
-- Tests: `topology_context` appears in diagnostics when a `separate`/`outdoor` opening is open;
-  `house_state` resolution and its enum values are unchanged before/after this slice.
+- The "add opening"/"add connection" forms lost whatever the admin had typed/selected on any
+  unrelated re-render (the 15s observability poll, another admin action) — uncontrolled `<select>`/
+  `<input>` elements rebuilt blank from the last-saved snapshot every time. Fixed by reusing the
+  existing `_filters`/`_setFilter`/`_restoreFilterFocus` mechanism (originally built for search-box
+  state) for these forms too, cleared on successful save. The Rooms table's inline `room_type`/
+  `floor` editors had the identical bug, found separately and fixed the same way, keyed per
+  room+field.
+- The opening picker in "add connection" showed only the opening's UUID with no way to tell apart
+  two openings on the same room. Now leads with room + type/orientation/entity_id, id last. Both
+  add-forms also gained explicit field `<label>`s — they were previously unlabeled and only
+  coincidentally aligned near the (differently-ordered) Connections table headers.
+- The 15s observability poll unconditionally forced a full DOM replace regardless of route,
+  including on the Topology route where that data isn't even rendered — closing any native
+  `<select>` the admin had open mid-edit, since the underlying DOM node was destroyed and recreated.
+  Fixed by skipping the poll while on the Topology route.
+- Real smoke-testing surfaced a genuine data-model gap, not just a UI bug: `room_id` had no reserved
+  words beyond the `heima_` prefix, so an admin could create a real Room with `room_id: "outside"` —
+  colliding with `room_topology.py`'s `OUTSIDE = "outside"` sentinel for "the exterior, not modeled
+  as a Room." Such a room became silently indistinguishable from the sentinel everywhere in the
+  topology graph. Fixed by reserving `"outside"` in the room editor's validator
+  (`config_flow_steps/_steps_rooms.py`); not retroactive — an already-misconfigured room must be
+  deleted and recreated with a different `room_id`, since `room_id` is immutable on edit.
+- Added an "Edit" button to Openings/Connections rows (previously delete-only). Purely frontend:
+  `apply_room_opening_upsert`/`apply_room_connection_upsert` already replace-by-id when an id is
+  supplied (AR1), so no backend change was needed — "Edit" pre-fills the same add-form with the
+  row's existing values plus its id, tracked the same way as the reset-bug fix above.
+- Added a collapsible "What do the room types mean?" legend above the Rooms table (`indoor`/
+  `transit`/`balcony`/`garage`/`basement`/`outdoor`/`external` are not self-explanatory, and the
+  distinction drives real `connection_type`/isolation-check behavior).
+- Full suite green after every fix in this batch (final count: 1947 passed), `ruff check`/
+  `ruff format --check` clean on every touched file.
 
-#### AR6 — Occupancy Consumption
+AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
+Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
+currently planned (`core/actuator_registry_spec.md` reads `rooms.topology` directly and needs none
+of them); AR5 is diagnostics-only with zero behavioral cost either way; AR6 turned out to be
+underspecified — no consumer anywhere in the codebase reads a weighted/scored presence signal, so
+building the proposed room-type weight table would ship a feature nothing uses; AR7 is net-new
+capability (`SecurityDomain` has zero door/window-based alarm logic today, verified in
+`runtime/domains/security.py` — it works entirely via an external `security_state_entity` + camera
+evidence), not a fix to anything broken. Split out to **Phase AT** (`DEFERRED`, not scheduled) —
+see below and `docs/specs/core/room_topology_consumers_spec.md` for the full per-domain contract.
 
-- Status: `PLANNED`.
-- Depends on: AR3 (reads cached `rooms.topology`).
-- Sequenced second among consumers: a bug here degrades presence-weighting quality, no safety
-  implication — moderate blast radius.
-- `OccupancyDomain` reads `room_type` from `rooms.topology` and applies its own room-type weight
-  table alongside existing `room_occupancy_mode` handling.
-- Tests: weighted presence matches expected values per room type.
-
-#### AR7 — Security Consumption
-
-- Status: `PLANNED`.
-- Depends on: AR3 (reads cached `rooms.topology`); AR1/AR2 having already enforced the
-  shared-`entity_id`/`connection_type` conflict rule, so Security never has to resolve that
-  ambiguity itself.
-- Sequenced last among consumers: highest blast radius of a bug (false-negative alarm coverage) —
-  built once the topology read pattern is already proven on two lower-stakes consumers.
-- `SecurityDomain` reads `connection_type` + `Opening.entity_id` from `rooms.topology` for
-  alarm-boundary classification; openings without a bound entity are excluded from alarm coverage
-  and explicitly visible as such in diagnostics.
-- Reuse the existing `blocked_by` convention for topology-driven blocks.
-- Tests: separate/outdoor connection with armed_away triggers correctly; entity-less opening does
-  not silently participate in alarm logic; conflicting shared `entity_id` never reaches this code
-  path (rejected upstream by AR1/AR2, confirmed by an integration test).
-
-#### AR8 — Observability
-
-- Status: `PLANNED`.
-- Depends on: AR2 (validation counts), AR3 (topology counts), AR7 (Security decision traces).
-- Add the `topology` diagnostics summary to the AO snapshot (room/opening/connection counts,
-  validation counts, unresolved entity references).
-- Ensure topology-driven Security decisions are traceable in existing AO decision traces.
-- Tests: AO snapshot includes `topology`; decision traces reference topology-derived
-  classifications.
-
-- Phase AR acceptance (from the spec's own Acceptance Criteria):
+- Phase AR acceptance (AR1-4 scope, from the spec's own Acceptance Criteria):
   - `Room` topology fields, `Opening`, `Connection` persisted per config entry via the existing
     options boundary.
   - `rooms.topology` available as cached configuration, correctly invalidated.
   - `connection_type` and `exposure` always derived, never independently stored.
   - `entity_id` optional on every `Opening`; sharing supported, not flagged as an error.
-  - Security, Occupancy, and HouseState consume topology as configuration, no new per-cycle
-    computation or `InferenceSignal` type.
-  - `house_state` enum unchanged.
   - Installation Validation reports topology issues with correct severity/scope.
   - Admin editing is panel-based, admin-only, traceable in observability.
   - Covered by unit and integration tests.
-  - Mandatory merge-to-main procedure applies before AR lands on `main`, per CLAUDE.md.
+  - Mandatory merge-to-main procedure applies before AR lands on `main`, per CLAUDE.md — see
+    version/CHANGELOG entry for this merge.
+
+### Phase AT — Room Topology Consumers (Deferred)
+
+- Status: `DEFERRED`. Not scheduled, not blocking any other work.
+- Spec source: `docs/specs/core/room_topology_consumers_spec.md`.
+- Depends on: AR (reads `CanonicalState["rooms.topology"]`, unchanged by anything here).
+- Split out of Phase AR on 2026-08-24 — see the note above for why. Kept here (not deleted) so the
+  original sequencing analysis and per-domain contract aren't lost if this is ever resumed.
+
+**Original sequencing rationale**, preserved for if this is picked up later: HouseState→Occupancy→
+Security, ascending blast radius of a bug, not spec order. HouseState's use of topology is purely
+explanatory (`topology_context` diagnostics, never changes `house_state`, never triggers an action)
+— the cheapest consumer on which to prove the `rooms.topology` read pattern. Occupancy is next: a
+bug there degrades presence-weighting quality but has no safety implication (and, as found above,
+needs a named consumer before it can even be scoped). Security is last, so its alarm-boundary
+classification would be built once the read pattern is already proven correct on two lower-stakes
+consumers, and the entity_id/connection_type conflict rule — which exists specifically to protect
+Security from an ambiguous boundary — has already been enforced upstream by AR1/AR2. Observability
+is unaffected — still last, it aggregates state produced by the other three.
+
+#### AT1 — HouseState Consumption (was AR5)
+
+After `house_state` resolution runs unchanged, `HouseStateDomain` would separately cross-reference
+`rooms.topology`'s `connection_type` structure with the live entity state of `separate`/`outdoor`
+openings, and attach the result as a new `topology_context: {open_boundary_openings: [...]}` key on
+the existing house-state diagnostics contract (`domains/house_state_spec.md` §11). Purely
+explanatory: never influences the resolved `house_state` value, never triggers an action. No new
+top-level `house_state` values.
+
+#### AT2 — Occupancy Consumption (was AR6)
+
+**Blocked on a real, named consumer, not just an implementation.** `OccupancyDomain.compute()` today
+returns `OccupancyResult(occupied_rooms: list[str], sensorized_room_count: int)` — a flat,
+unweighted list. Every current reader (`house_state.py`, `security.py`, `lighting.py`, zone-occupancy
+checks in `engine.py`) does plain `room in occupied_rooms` membership checks; none score or
+aggregate. The original proposal (`OccupancyDomain` reads `room_type`, applies a room-type weight
+table) has nothing to attach the resulting weight to. Before this is picked up, a concrete downstream
+consumer of a weighted/scored presence signal must be named — otherwise this ships a weight table
+nothing reads. Not to be confused with the existing, unrelated `source_weights`/`weight_threshold`/
+`logic: weighted_quorum` mechanism (`room_sources.py`), which fuses multiple sensors *within one
+room* into that room's own boolean occupancy and is unaffected by anything here.
+
+#### AT3 — Security Consumption (was AR7)
+
+`SecurityDomain` would read `connection_type` + `Opening.entity_id` from `rooms.topology` for
+alarm-boundary classification: `connection_type: separate`/`outdoor` + `house_state: armed_away` +
+bound entity reporting open → alarm-eligible. An `Opening` with no `entity_id` would not be
+alarm-eligible, visible as such in diagnostics. The shared-`entity_id`/conflicting-`connection_type`
+case is already rejected upstream by AR1/AR2 and must never reach this code path. Would reuse the
+existing `blocked_by` convention for topology-driven blocks, not a new format.
+
+#### AT4 — Observability (was AR8)
+
+Would add a `topology` diagnostics summary to the AO snapshot (room/opening/connection counts,
+validation counts, unresolved entity references) and ensure topology-driven Security decisions are
+traceable in existing AO decision traces. Depends on AT3 for the decision traces.
+
+- Phase AT acceptance, if resumed:
+  - Security, Occupancy, and HouseState consume topology as configuration, no new per-cycle
+    computation or `InferenceSignal` type.
+  - `house_state` enum unchanged; topology-derived facts reach HouseState as context/diagnostics only.
+  - Occupancy's weighted-presence concept has a named, concrete consumer before implementation
+    begins.
+  - Covered by unit and integration tests per the per-sub-phase sections above.
+  - Mandatory merge-to-main procedure applies before any part of AT lands on `main`, per CLAUDE.md.
 
 ### Recent Working Notes
 

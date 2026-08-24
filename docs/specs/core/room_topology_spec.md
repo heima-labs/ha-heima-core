@@ -1,17 +1,24 @@
 # Room Topology Spec
 
-**Status:** Planned — not implemented on `main`
-**Date:** 2026-08-18
-**Scope:** Spatial topology of rooms — adjacency graph, openings (doors/windows), orientation.
-Consumed by Security, Occupancy, and HouseState as configuration; named as a motivating future input
-for sun/weather-aware automations and Lighting. Explicitly excludes any 2D/3D floorplan
-visualization, which is deferred (see Non-Goals).
+**Status:** Implemented on `main` (AR1–AR4: data model, derivation, validation core, Installation
+Validation wiring, `CanonicalState` cache, admin editor panel). Consumption by HouseState, Occupancy,
+and Security — originally AR5–AR8 of this same phase — was split out to
+`core/room_topology_consumers_spec.md` (deferred, not scheduled) once AR1–AR4 shipped without
+needing them; see that document for why.
+**Date:** 2026-08-18 (consumers split out 2026-08-24)
+**Scope:** Spatial topology of rooms — adjacency graph, openings (doors/windows), orientation —
+persisted, derived, validated, cached, and admin-editable. Named as a motivating future input for
+sun/weather-aware automations (`core/actuator_registry_spec.md` is the first concrete consumer of
+that kind) and for Lighting. Explicitly excludes any 2D/3D floorplan visualization, which is
+deferred (see Non-Goals). Excludes Security/Occupancy/HouseState consumption — see
+`core/room_topology_consumers_spec.md`.
 **Related specs:** `learning/room_context_spec.md` (sibling `rooms.*` CanonicalState preprocessing
 pattern this spec follows), `core/manual_hold_framework_spec.md` (admin-only mutation boundary
 precedent), `core/admin_observability_panel_spec.md` (panel/websocket precedent, decision-trace
 explainability), `core/events_and_notifications_spec.md` (constraint on any future
-topology-derived notification), `core/apply_step_contract.md` (`blocked_by` convention reused by
-Security below), `domains/house_state_spec.md`, `domains/security_presence_simulation_spec.md`
+topology-derived notification), `core/apply_step_contract.md` (`blocked_by` convention),
+`core/room_topology_consumers_spec.md` (deferred continuation: HouseState/Occupancy/Security),
+`core/actuator_registry_spec.md` (first implemented-track consumer, reads `rooms.topology` directly)
 
 ## Purpose
 
@@ -254,9 +261,9 @@ underlying `Opening`s change; never independently declared.
 
 ### Occupancy weight
 
-Not part of this spec's data model — `room_type` is exposed; the room-type-to-weight mapping (e.g.
-indoor=1.0, balcony=0.5, garage=0.3, basement=0.2, outdoor=0.0, transit=low, external=0.0) is owned
-and configured by `OccupancyDomain` itself, the same way `room_occupancy_mode` already is.
+Not part of this spec's data model — `room_type` is exposed; any room-type-to-weight mapping is a
+question for whichever consumer needs it. See `core/room_topology_consumers_spec.md` (deferred) for
+why this turned out to need a named consumer before it can even be scoped, not just implemented.
 
 ## Storage and Persistence
 
@@ -322,59 +329,13 @@ Checks:
 
 ## Domain-Specific Notes
 
-### Security
-
-Reads `CanonicalState["rooms.topology"]` `Connection.connection_type` and `Opening.entity_id` to
-classify actuator-backed openings for alarm logic:
-
-- `connection_type: separate` or `outdoor` (unless explicitly configured to ignore outdoor
-  openings) + `house_state: armed_away` + bound entity reporting open → alarm-eligible.
-- An `Opening` with no `entity_id` is not alarm-eligible — it cannot contribute to security logic,
-  only to future informational use. This must be visible in diagnostics (Installation Validation,
-  above), not silently absent from alarm coverage.
-- An `entity_id` shared across `Opening`s whose `Connection`s resolve to *different* `connection_type`
-  values is rejected by Installation Validation as an `error` (see Validation and Reconciliation) and
-  must never reach Security's runtime classification — there is no implicit precedence rule between
-  the conflicting boundaries.
-- Reaction/apply blocking caused by topology-driven security classification should use the same
-  `blocked_by` convention already established by `core/manual_hold_framework_spec.md` and
-  `core/runtime_checkpoint_and_power_recovery_spec.md` (a short, structured reason string), not a
-  new ad hoc format.
-
-### Occupancy
-
-`OccupancyDomain` reads `room_type` per room from `CanonicalState["rooms.topology"]` and applies its
-own room-type-to-weight table (see Derivation Rules) when computing weighted presence, alongside the
-existing `room_occupancy_mode` handling. This is additive configuration input, not a competing
-occupancy engine.
-
-### HouseState
-
-Does **not** influence which `house_state` value gets resolved — the resolution logic (occupancy,
-presence, calendar) is unchanged. This spec does not add new top-level `house_state` values (no
-`away_garage_open`-style states) — `house_state` (`domains/house_state_spec.md`) remains a closed
-enum.
-
-Instead, after `house_state` has been resolved with the existing logic, HouseState separately
-cross-references `rooms.topology`'s static structure (which `Opening`s have
-`connection_type: separate` or `outdoor`) with the **live** entity state of those openings (not
-part of `rooms.topology`, which is a static cache — this is a per-cycle lookup, same as any other
-domain reading current entity state) to produce a fact like "an independent-access opening is
-currently open."
-
-This fact is attached as an addition to the existing extensible diagnostics contract
-(`domains/house_state_spec.md` §11, "Diagnostics Contract" — already exposes
-`house_signals_trace`, `candidate_trace`, `resolution_trace`, `override`), under a new key,
-`topology_context: {open_boundary_openings: [...]}`, following that section's existing pattern —
-not a new diagnostics mechanism. It never changes the resolved `house_state` value and never
-triggers an action by itself; it only makes the resolved state more explainable (e.g. "state: away —
-garage door open" visible in diagnostics/AO).
-
-This is unconditional (any `house_state`, not just `armed_away`) and purely explanatory, which is
-what distinguishes it from Security's use of the same underlying `connection_type`/`entity_id` data
-(Security's check is gated on `armed_away` and triggers an alarm; this one never triggers anything).
-The two reads are independent and intentionally not shared through a common abstraction — the
-overlap is a few lines each, not enough to justify one.
+Security, Occupancy, and HouseState consumption of `rooms.topology` — originally specified here as
+AR5–AR8 — was split out to `core/room_topology_consumers_spec.md` (deferred, not scheduled) once
+AR1–AR4 shipped without needing them. See that document for the full per-domain contract and for why
+the split happened (in short: none of the three are prerequisites for anything currently planned,
+HouseState's use is diagnostic-only, Occupancy's was found to be underspecified — no consumer exists
+for a weighted presence signal — and Security's is net-new capability, not a fix to anything broken
+today).
 
 ### Future consumers (named, not built in this phase)
 
@@ -423,8 +384,10 @@ Integration tests:
 
 ## Open Questions
 
-1. Default occupancy weight for `room_type: transit` — proposed low (analogous to `balcony`), to be
-   confirmed against a real multi-floor test case. Deferred to AR6.
+None outstanding for AR1–AR4 (this document's concluded scope). The occupancy-weight question
+(default weight for `room_type: transit`, and whether a weighted-presence consumer exists at all) is
+carried forward in `core/room_topology_consumers_spec.md`, deferred along with the rest of Occupancy
+consumption.
 
 **Resolved:**
 
@@ -448,10 +411,9 @@ Integration tests:
 - `entity_id` is optional on every `Opening`; sharing one `entity_id` across same-boundary `Opening`s
   (agreeing `connection_type`) is supported, not flagged as an error — sharing across `Opening`s that
   resolve to conflicting `connection_type` values is rejected as an `error`.
-- Security, Occupancy, and HouseState can consume topology as configuration input without any new
-  per-cycle computation or new `InferenceSignal` type.
-- `house_state`'s enum is unchanged; topology-derived facts reach HouseState as context/diagnostics
-  only.
+- `rooms.topology` is readable by any future consumer as plain cached configuration, with no new
+  per-cycle computation or `InferenceSignal` type required to read it — Security, Occupancy, and
+  HouseState consumption specifically is deferred, see `core/room_topology_consumers_spec.md`.
 - Installation Validation reports topology completeness/integrity issues with correct severity and
   scope (no false positives on legitimately disconnected non-`indoor` rooms).
 - Admin editing is panel-based, admin-only, and every mutation is traceable in admin observability.
