@@ -285,6 +285,9 @@ def apply_actuator_upsert(
     room_id = str(room_id or "").strip()
     if not entity_id or not room_id:
         return None, ()
+    # Same collision caveat as room_topology.py's apply_room_opening_upsert: not checked
+    # against existing actuator_ids, would silently overwrite on a uuid4 collision. Not
+    # defended against — negligible probability, not a realistic risk at this list size.
     resolved_id = str(actuator_id or "").strip() or str(uuid4())
     record = {
         "actuator_id": resolved_id,

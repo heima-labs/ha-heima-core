@@ -104,6 +104,39 @@ async def test_e2e_actuators_snapshot_and_action_round_trip_via_real_websocket(
     await client.client.close()
 
 
+async def test_e2e_actuators_upsert_without_client_id_returns_server_generated_id(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+    hass_ws_client,
+):
+    # Regression test: when the client omits actuator_id, the id is generated server-side.
+    # The response's object_links must expose it (see the identical topology regression test).
+    entry = _entry([{"room_id": "kitchen", "room_type": "indoor"}])
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    client = await hass_ws_client()
+
+    await client.send_json_auto_id(
+        {
+            "type": "heima/actuators/action",
+            "action": "upsert_actuator",
+            "payload": {"entity_id": "cover.kitchen_shutter", "room_id": "kitchen"},
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is True
+    links = response["result"]["object_links"]
+    assert links == [{"kind": "actuator", "id": links[0]["id"]}]
+    generated_actuator_id = links[0]["id"]
+    assert generated_actuator_id
+    assert response["result"]["snapshot"]["actuators"][0]["actuator_id"] == generated_actuator_id
+
+    await client.close()
+    await client.client.close()
+
+
 async def test_e2e_actuators_action_validation_failure_over_real_websocket(
     hass: HomeAssistant,
     enable_custom_integrations,

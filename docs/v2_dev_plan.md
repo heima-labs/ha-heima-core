@@ -1847,6 +1847,32 @@ order:
   panel section (unlike AR4, which was smoke-tested manually) — automated real-websocket e2e tests
   cover the backend/websocket contract, not actual DOM rendering/interaction in a browser.
 
+**Post-AU4 addendum — server-generated id missing from the admin-action audit trail (found during
+retrospective review, fixed on the same branch before merge):** `upsert_opening`/`upsert_connection`
+(topology, AR4) and `upsert_actuator` (AU4) generate the record's id server-side when the client
+omits it. The admin-action audit trail (`_record_admin_action`'s `object_links`) and the websocket
+response were both built from the original request `payload`, which for a new record has no id —
+so a newly *created* opening/connection/actuator was logged and returned with an empty id, though
+the persisted record itself was always correct. Fixed by resolving the id in `websocket_api.py`
+itself (not inside `apply_room_opening_upsert`/`apply_room_connection_upsert`/`apply_actuator_upsert`,
+which keep generating it internally for direct callers, e.g. their own unit tests) right before
+calling the coordinator, and echoing the resulting `(kind, id)` pairs — the same ones sent to
+observability — back in the websocket response as `object_links`. Zero changes to
+`room_topology.py`/`actuators.py`/`coordinator.py`; the fix is entirely confined to
+`websocket_api.py`, so none of AR1-4's or AU1-3's existing tests needed touching.
+Documented (per explicit developer request during review) the theoretical, undefended `uuid4()`
+collision case at both id-generation sites (`apply_room_opening_upsert`/`apply_room_connection_upsert`
+in `room_topology.py`, `apply_actuator_upsert` in `actuators.py`): a collision with an
+already-existing id would silently overwrite that record via the replace-by-id upsert semantics —
+not checked for, since the probability is negligible (2^122 space) for a per-household list of at
+most a few hundred entries. Not defended against by design; flagged as a documented, accepted edge
+case, not a bug.
+Tests: 2 new real-websocket e2e tests (`test_e2e_topology_upsert_without_client_id_returns_server_generated_id`
+in `tests/test_room_topology_panel_e2e.py`, `test_e2e_actuators_upsert_without_client_id_returns_server_generated_id`
+in `tests/test_actuator_registry_panel_e2e.py`) asserting the response's `object_links` carries a
+non-empty id matching the one that actually landed in the snapshot. Full suite 1999 passed (was
+1997), `ruff check`/`ruff format --check` clean, mypy unchanged.
+
 - Phase AU acceptance (from the spec's own Acceptance Criteria):
   - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration
     needed.

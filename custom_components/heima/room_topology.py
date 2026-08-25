@@ -589,6 +589,10 @@ def apply_room_opening_upsert(
         return None, ()
     if orientation is not None and orientation not in ORIENTATIONS:
         return None, ()
+    # Not checked against existing opening_ids: a uuid4 collision with one already present
+    # would silently overwrite it via the replace-by-id upsert below (same as an explicit
+    # edit). Not defended against — the collision probability is negligible (2^122 space) and
+    # not a realistic risk for a per-household list of at most a few hundred entries.
     resolved_id = str(opening_id or "").strip() or str(uuid4())
     record = {
         "opening_id": resolved_id,
@@ -637,6 +641,8 @@ def apply_room_connection_upsert(
         return None, ()
     if connection_type_override is not None and connection_type_override not in CONNECTION_TYPES:
         return None, ()
+    # See apply_room_opening_upsert's identical note: a generated id colliding with an
+    # existing connection_id is not checked for and would silently overwrite it.
     resolved_id = str(connection_id or "").strip() or str(uuid4())
     record = {
         "connection_id": resolved_id,

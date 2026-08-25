@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -546,8 +547,16 @@ async def _async_handle_topology_action(
                 msg["id"], "invalid_payload", "upsert_opening requires room_id and type."
             )
             return
+        # Resolved here, not left to apply_room_opening_upsert's own fallback, so a newly
+        # created opening's id is known for the admin-action audit trail and the response
+        # below (see that function's docstring for the — negligible, undefended — uuid4
+        # collision caveat, which applies identically wherever the id is generated).
+        payload = {
+            **payload,
+            "opening_id": str(payload.get("opening_id") or "").strip() or str(uuid4()),
+        }
         applied, issues = await coordinator.async_upsert_room_opening(
-            opening_id=payload.get("opening_id"),
+            opening_id=payload["opening_id"],
             room_id=room_id,
             opening_type=opening_type,
             orientation=payload.get("orientation"),
@@ -569,8 +578,13 @@ async def _async_handle_topology_action(
                 msg["id"], "invalid_payload", "upsert_connection requires opening_id and room_b."
             )
             return
+        # Same resolve-here rationale as upsert_opening above.
+        payload = {
+            **payload,
+            "connection_id": str(payload.get("connection_id") or "").strip() or str(uuid4()),
+        }
         applied, issues = await coordinator.async_upsert_room_connection(
-            connection_id=payload.get("connection_id"),
+            connection_id=payload["connection_id"],
             opening_id=opening_id,
             room_b=room_b,
             access_type=payload.get("access_type"),
@@ -600,11 +614,12 @@ async def _async_handle_topology_action(
             )
         return
 
+    object_links = _topology_action_object_links(action, payload)
     _record_admin_action(
         coordinator,
         summary=f"Admin applied room topology action '{action}'.",
         reason_code=f"room_topology.{action}",
-        object_links=_topology_action_object_links(action, payload),
+        object_links=object_links,
     )
     options = dict(getattr(coordinator.entry, "options", {}) or {})
     connection.send_result(
@@ -612,6 +627,10 @@ async def _async_handle_topology_action(
         {
             "ok": True,
             "action": action,
+            # Echoes the same (kind, id) pairs recorded in the admin-action audit trail above —
+            # for upsert_opening/upsert_connection with no client-supplied id, this is the only
+            # way the caller learns the server-generated id without diffing the full snapshot.
+            "object_links": [dict(link) for link in object_links],
             "snapshot": build_room_topology_snapshot(options),
         },
     )
@@ -700,8 +719,17 @@ async def _async_handle_actuators_action(
                 msg["id"], "invalid_payload", "upsert_actuator requires entity_id and room_id."
             )
             return
+        # Resolved here, not left to apply_actuator_upsert's own fallback — see that
+        # function's docstring for the (negligible, undefended) uuid4 collision caveat, which
+        # applies identically wherever the id is generated. Same rationale as topology's
+        # upsert_opening/upsert_connection above: makes a newly created actuator's id known
+        # for the admin-action audit trail and the response below.
+        payload = {
+            **payload,
+            "actuator_id": str(payload.get("actuator_id") or "").strip() or str(uuid4()),
+        }
         applied, issues = await coordinator.async_upsert_actuator(
-            actuator_id=payload.get("actuator_id"),
+            actuator_id=payload["actuator_id"],
             entity_id=entity_id,
             room_id=room_id,
             opening_id=payload.get("opening_id"),
@@ -729,11 +757,12 @@ async def _async_handle_actuators_action(
             )
         return
 
+    object_links = ({"kind": "actuator", "id": str(payload.get("actuator_id") or "")},)
     _record_admin_action(
         coordinator,
         summary=f"Admin applied actuator registry action '{action}'.",
         reason_code=f"actuator_registry.{action}",
-        object_links=({"kind": "actuator", "id": str(payload.get("actuator_id") or "")},),
+        object_links=object_links,
     )
     options = dict(getattr(coordinator.entry, "options", {}) or {})
     connection.send_result(
@@ -741,6 +770,10 @@ async def _async_handle_actuators_action(
         {
             "ok": True,
             "action": action,
+            # Echoes the same (kind, id) pair recorded in the admin-action audit trail above —
+            # for upsert_actuator with no client-supplied actuator_id, this is the only way the
+            # caller learns the server-generated id without diffing the full snapshot.
+            "object_links": [dict(link) for link in object_links],
             "snapshot": build_actuator_registry_snapshot(options),
         },
     )
