@@ -178,6 +178,57 @@ def test_validation_report_topology_section_skips_entity_check_without_known_ent
     )
 
 
+def test_validation_report_actuators_section_present_and_ok_with_no_actuators():
+    report = build_validation_report(options=_complete_options(), snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert sections["actuator_registry"].severity == "ok"
+    assert sections["actuator_registry"].issues == ()
+
+
+def test_validation_report_actuators_section_surfaces_opening_room_mismatch():
+    options = _complete_options()
+    options["room_openings"] = [{"opening_id": "op1", "room_id": "kitchen", "type": "door"}]
+    options["room_actuators"] = [
+        {"actuator_id": "a1", "entity_id": "cover.x", "room_id": "other_room", "opening_id": "op1"}
+    ]
+    report = build_validation_report(options=options, snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert sections["actuator_registry"].severity == "error"
+    assert any(
+        issue.key == "actuators.actuator.a1.opening_room_mismatch"
+        for issue in sections["actuator_registry"].issues
+    )
+    assert report.severity == "error"
+
+
+def test_validation_report_actuators_section_flags_unavailable_entity_when_known_entity_ids_given():
+    options = _complete_options()
+    options["room_actuators"] = [
+        {"actuator_id": "a1", "entity_id": "cover.gone", "room_id": "kitchen"}
+    ]
+    report = build_validation_report(
+        options=options, snapshot_count=12, known_entity_ids=frozenset({"cover.other"})
+    )
+    sections = {section.key: section for section in report.sections}
+    assert any(
+        issue.key == "actuators.entity.cover.gone.unavailable"
+        for issue in sections["actuator_registry"].issues
+    )
+
+
+def test_validation_report_actuators_section_skips_entity_check_without_known_entity_ids():
+    options = _complete_options()
+    options["room_actuators"] = [
+        {"actuator_id": "a1", "entity_id": "cover.gone", "room_id": "kitchen"}
+    ]
+    report = build_validation_report(options=options, snapshot_count=12)
+    sections = {section.key: section for section in report.sections}
+    assert not any(
+        issue.key == "actuators.entity.cover.gone.unavailable"
+        for issue in sections["actuator_registry"].issues
+    )
+
+
 @pytest.mark.asyncio
 async def test_coordinator_diagnostics_include_installation_validation() -> None:
     coordinator = _coordinator(_complete_options())

@@ -137,13 +137,14 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core) done,
-tests green. AR (AR1-4) concluded and merged to `main`; AR5-8 split out to Phase AT (`DEFERRED`, see
-`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core) and AU2
+(Installation Validation wiring) done, tests green. AR (AR1-4) concluded and merged to `main`; AR5-8
+split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
+scheduled.
 **Branch:** `feat/au-actuator-registry` (created off `main` at `124a5b3`, v0.14.0).
-**Next action:** AU2 — Installation Validation wiring (new `ValidationSection` in `validation.py`,
-consuming AU1's `validate_actuators()`; no new `known_entity_ids` plumbing needed, already threaded
-generically by `build_validation_report()`). Await explicit "ok, proceed" before starting.
+**Next action:** AU3 — Actuator Cache and `CanonicalState` Exposure (new `ActuatorCache` mirroring
+`TopologyGraphCache`; two additive loops in `Engine._recovery_critical_entity_ids()` for
+`Opening.entity_id` and `Actuator.entity_id`). Await explicit "ok, proceed" before starting.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1746,16 +1747,22 @@ order:
 
 #### AU2 — Installation Validation Wiring
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (pure validation core).
-- New `ValidationSection` in `validation.py`, wired into `build_validation_report()` alongside the
-  existing `_topology_section()`, following the same pattern (local import of `validate_actuators`
-  to avoid the same transitive-import concern `room_topology.py`/`validation.py` already navigate).
-  No new plumbing needed for the `entity_unavailable` check: `build_validation_report()` already
-  threads `known_entity_ids` generically to every section (verified in `validation.py`) — the new
-  section just consumes the same parameter `_topology_section()` already receives.
-- Tests: mirrors `tests/test_validation_m.py`'s existing topology-section tests, one per validation
-  rule from AU1.
+- New `_actuators_section()` in `validation.py`, wired into `build_validation_report()` right after
+  `_topology_section()`, mirroring it exactly: local import of `validate_actuators` (same
+  transitive-import concern `room_topology.py`/`validation.py` already navigate), plus the
+  `entity_unavailable` check built the same way as topology's own opening-entity check — iterating
+  `OPT_ROOM_ACTUATORS`, flagging any `entity_id` not in `known_entity_ids` when that parameter is
+  given, skipped when it's `None`. No new plumbing needed: reused the `known_entity_ids` parameter
+  `build_validation_report()` already threads generically to every section. Section key
+  `actuator_registry`, matching `actuators.py`'s own `_VALIDATION_CAPABILITY`.
+- Tests (`tests/test_validation_m.py`, 4 new): section present and `ok` with no actuators
+  configured; `opening_room_mismatch` surfaces as `error` and raises overall report severity;
+  `entity_unavailable` warning appears when `known_entity_ids` is given and the entity is missing
+  from it; the same check is skipped (no issue) when `known_entity_ids` is omitted. Verification:
+  full suite 1974 passed (was 1970 pre-AU2), `ruff check`/`ruff format --check` clean, mypy
+  (informational) unchanged — only the pre-existing, unrelated `room_topology.py:374` error.
 
 #### AU3 — Actuator Cache and CanonicalState Exposure
 
