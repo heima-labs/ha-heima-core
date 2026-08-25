@@ -1873,6 +1873,32 @@ in `tests/test_actuator_registry_panel_e2e.py`) asserting the response's `object
 non-empty id matching the one that actually landed in the snapshot. Full suite 1999 passed (was
 1997), `ruff check`/`ruff format --check` clean, mypy unchanged.
 
+**AU4 live test:** Added `scripts/live_tests/087_actuator_registry_live.py`, following the
+`080_admin_observability_panel_live.py`/`075_camera_privacy_policy_editor_live.py` pattern
+(`HAClient`/`HAWebSocketClient` against the local HA test lab, non-destructive, cleanup in
+`finally`). No live test existed yet for Room Topology (AR4) either, so this is the first live
+test to exercise `heima/topology/*` at all, used here only to seed a test Opening. Covers, against
+the real coordinator/websocket layer, not pytest fixtures: snapshot contract (baseline room
+`studio` present); `upsert_actuator` creating a record in that room, linked to the seeded Opening,
+and returning the server-generated `actuator_id` via `object_links` (exercising the fix above
+live); edit-in-place (same id, new `display_name`) replacing rather than duplicating the record;
+`opening_room_mismatch` rejected as `validation_failed`; missing `entity_id` rejected as
+`invalid_payload`; **the AU4-specific check** — `delete_opening` on the still-referenced Opening
+rejected as `validation_failed` with "referenced by an Actuator" in the message; non-admin
+websocket rejection (skipped if `HA_NON_ADMIN_TOKEN` is not provided, matching 080's pattern).
+Uses baseline fixture room `studio` and fixture entity `climate.test_heima_thermostat` (both
+already seeded by `scripts/recover_test_lab_config.py`); creates one Opening + one Actuator,
+deletes both in `finally` regardless of outcome, leaving the lab unchanged.
+Registered in `scripts/check_all_live.sh`'s `DIAGNOSTIC_SCRIPTS` tier, alongside 075/080/085 (the
+other editor/panel websocket-contract live tests) — not `LIVE_E2E_SCRIPTS` (reserved for runtime
+behavior) or `DESTRUCTIVE_SCRIPTS` (reserved for container restarts).
+Verification: `ruff check`/`ruff format --check`/`mypy --ignore-missing-imports` clean,
+`python3 -m py_compile` passed, `bash -n scripts/check_all_live.sh` passed. **Not run against a
+live HA test instance in this session** — no local `HA_URL`/`HA_TOKEN` test lab available here;
+needs `source scripts/.env && scripts/live_tests/087_actuator_registry_live.py --ha-url "$HA_URL"
+--ha-token "$HA_TOKEN" ${HA_NON_ADMIN_TOKEN:+--ha-non-admin-token "$HA_NON_ADMIN_TOKEN"}` run once
+against the developer's local test lab before this is considered proven, not just type/lint-clean.
+
 - Phase AU acceptance (from the spec's own Acceptance Criteria):
   - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration
     needed.
