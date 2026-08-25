@@ -1,6 +1,6 @@
 # Actuator Registry Spec
 
-**Status:** Planned — not implemented on `main`
+**Status:** Implemented (AU1-4) on `feat/au-actuator-registry`; not yet merged to `main`
 **Date:** 2026-08-24
 **Scope:** A generic per-entity actuator inventory — which room, optionally which opening, an
 arbitrary HA-domain entity (`cover.*`, `fan.*`, `climate.*`, and future equipment classes) is
@@ -12,7 +12,9 @@ same preprocessing-layer category and admin-panel/websocket precedent), `core/ap
 (`ApplyStep`/`entity_steps` contract reused unchanged), `core/reactive_behavior_spec.md` (Reaction
 framework that consumes this registry), `core/admin_observability_panel_spec.md` (panel/websocket
 precedent), `domains/heating_spec.md` (existing outdoor-temp-driven Reaction precedent this
-generalizes to room/opening-aware comfort reactions)
+generalizes to room/opening-aware comfort reactions), `core/actuator_discovery_spec.md` (draft:
+extends Phase L discovery and the AU4 admin editor's entity picker to populate this registry
+faster — depends on this spec, adds no new fields to it)
 
 ## Purpose
 
