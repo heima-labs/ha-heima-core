@@ -83,6 +83,36 @@ def parse_actuators(options: dict[str, Any]) -> tuple[Actuator, ...]:
     return tuple(parsed)
 
 
+_EMPTY_ACTUATORS: tuple[Actuator, ...] = ()
+
+
+class ActuatorCache:
+    """Caches parsed Actuator records; invalidated only by an explicit `mark_stale()`.
+
+    Mirrors `room_topology.py`'s own `TopologyGraphCache`: the engine calls `mark_stale()`
+    unconditionally on every options reload, and the coordinator calls it on
+    `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` — the same triggers, same
+    lifecycle, same rationale (see that class's docstring). A separate cache instance, not folded
+    into `TopologyGraphCache`, per `docs/specs/core/actuator_registry_spec.md`'s CanonicalState
+    Exposure section.
+    """
+
+    def __init__(self) -> None:
+        self._stale = True
+        self._actuators: tuple[Actuator, ...] = _EMPTY_ACTUATORS
+
+    def mark_stale(self) -> None:
+        """Force a rebuild on the next `get_actuators()` call."""
+        self._stale = True
+
+    def get_actuators(self, options: dict[str, Any]) -> tuple[Actuator, ...]:
+        """Return the cached actuators, rebuilding first if stale."""
+        if self._stale:
+            self._actuators = parse_actuators(options)
+            self._stale = False
+        return self._actuators
+
+
 def _room_ids(options: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
     for raw in options.get(OPT_ROOMS) or []:

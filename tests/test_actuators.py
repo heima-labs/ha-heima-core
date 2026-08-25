@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from custom_components.heima.actuators import (
     Actuator,
+    ActuatorCache,
     apply_actuator_delete,
     apply_actuator_upsert,
     is_opening_referenced_by_actuator,
@@ -283,3 +284,42 @@ def test_apply_actuator_delete_rejects_empty_id():
     new_options, issues = apply_actuator_delete(_base_options(), actuator_id="")
     assert new_options is None
     assert issues == ()
+
+
+# --- ActuatorCache (AU3) ----------------------------------------------------------
+
+
+def test_actuator_cache_builds_on_first_call():
+    cache = ActuatorCache()
+    options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a1", "cover.x", "kitchen")]})
+    actuators = cache.get_actuators(options)
+    assert [a.actuator_id for a in actuators] == ["a1"]
+
+
+def test_actuator_cache_does_not_rebuild_without_mark_stale():
+    cache = ActuatorCache()
+    options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a1", "cover.x", "kitchen")]})
+    first = cache.get_actuators(options)
+
+    changed_options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a2", "cover.y", "kitchen")]})
+    second = cache.get_actuators(changed_options)
+
+    assert second is first
+    assert [a.actuator_id for a in second] == ["a1"]
+
+
+def test_actuator_cache_rebuilds_after_mark_stale():
+    cache = ActuatorCache()
+    options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a1", "cover.x", "kitchen")]})
+    cache.get_actuators(options)
+
+    changed_options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a2", "cover.y", "kitchen")]})
+    cache.mark_stale()
+    rebuilt = cache.get_actuators(changed_options)
+
+    assert [a.actuator_id for a in rebuilt] == ["a2"]
+
+
+def test_actuator_cache_empty_before_first_call_never_raises():
+    cache = ActuatorCache()
+    assert cache.get_actuators({}) == ()

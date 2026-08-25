@@ -19,6 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .actuators import ActuatorCache
 from .const import (
     DEFAULT_ACTIVITY_BINDINGS,
     DOMAIN,
@@ -348,6 +349,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.set_room_context_builder(self._room_context_builder)
         self._room_topology_cache = TopologyGraphCache()
         self.engine.set_room_topology_cache(self._room_topology_cache)
+        self._actuator_cache = ActuatorCache()
+        self.engine.set_actuator_cache(self._actuator_cache)
         self._weekday_module = WeekdayStateModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -1775,6 +1778,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         def _handle_registry_updated(_event: Event) -> None:
             self._room_context_builder.mark_stale()
             self._room_topology_cache.mark_stale()
+            self._actuator_cache.mark_stale()
 
         unsub_entity = self.hass.bus.async_listen(
             er.EVENT_ENTITY_REGISTRY_UPDATED,

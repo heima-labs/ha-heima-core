@@ -16,6 +16,7 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.util import dt as dt_util
 
+from ..actuators import ActuatorCache
 from ..const import (
     DEFAULT_LIGHTING_APPLY_MODE,
     DEFAULT_OCCUPANCY_MISMATCH_MIN_DERIVED_ROOMS,
@@ -34,6 +35,8 @@ from ..const import (
     OPT_PEOPLE_DEBUG_ALIASES,
     OPT_PEOPLE_NAMED,
     OPT_REACTIONS,
+    OPT_ROOM_ACTUATORS,
+    OPT_ROOM_OPENINGS,
     OPT_ROOMS,
     OPT_SECURITY,
 )
@@ -309,6 +312,7 @@ class HeimaEngine:
         self._room_context_builder: RoomDeviceContextBuilder | None = None
         self._current_room_device_context: dict[str, RoomDeviceContext] = {}
         self._room_topology_cache: TopologyGraphCache | None = None
+        self._actuator_cache: ActuatorCache | None = None
         self._configure_activity_detectors(dict(entry.options))
         self._bind_domain_plugin_runtime()
 
@@ -346,6 +350,10 @@ class HeimaEngine:
     def set_room_topology_cache(self, cache: TopologyGraphCache) -> None:
         """Bind the room topology cache used by the runtime cycle."""
         self._room_topology_cache = cache
+
+    def set_actuator_cache(self, cache: ActuatorCache) -> None:
+        """Bind the actuator registry cache used by the runtime cycle."""
+        self._actuator_cache = cache
 
     @property
     def lighting_last_apply_ts_by_room(self) -> dict[str, float]:
@@ -587,6 +595,8 @@ class HeimaEngine:
             self._room_context_builder.mark_stale()
         if self._room_topology_cache is not None:
             self._room_topology_cache.mark_stale()
+        if self._actuator_cache is not None:
+            self._actuator_cache.mark_stale()
         self._reset_domains_for_reload(changed_keys)
         self._recent_script_applies = {}
         self._last_config_issues_fingerprint = None
@@ -1282,6 +1292,14 @@ class HeimaEngine:
                 _add_entity_id(critical, source.get("privacy_entity"))
                 _add_entity_id(critical, source.get("manual_hold_entity"))
 
+        for opening in options.get(OPT_ROOM_OPENINGS, []) or []:
+            if isinstance(opening, dict):
+                _add_entity_id(critical, opening.get("entity_id"))
+
+        for actuator in options.get(OPT_ROOM_ACTUATORS, []) or []:
+            if isinstance(actuator, dict):
+                _add_entity_id(critical, actuator.get("entity_id"))
+
         for room_map in options.get(OPT_LIGHTING_ROOMS, []) or []:
             if not isinstance(room_map, dict):
                 continue
@@ -1692,6 +1710,7 @@ class HeimaEngine:
         calendar_result = self._calendar_domain.compute(calendar_cfg)
         self._state.calendar_result = calendar_result
         self._compute_room_topology(options=options)
+        self._compute_room_actuators(options=options)
         room_device_context = self._compute_room_device_context(
             options=options,
             lights_on=dict(self._snapshot.lights_on or {}),
@@ -1934,6 +1953,14 @@ class HeimaEngine:
             return
         graph = cache.get_graph(options)
         self._state.set_sensor("rooms.topology", graph.as_dict())
+
+    def _compute_room_actuators(self, *, options: dict[str, Any]) -> None:
+        cache = self._actuator_cache
+        if cache is None:
+            self._state.set_sensor("rooms.actuators", [])
+            return
+        actuators = cache.get_actuators(options)
+        self._state.set_sensor("rooms.actuators", [actuator.as_dict() for actuator in actuators])
 
     def _compute_room_device_context(
         self,

@@ -137,14 +137,15 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core) and AU2
-(Installation Validation wiring) done, tests green. AR (AR1-4) concluded and merged to `main`; AR5-8
-split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
-scheduled.
+**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core), AU2
+(Installation Validation wiring), and AU3 (actuator cache + `CanonicalState` exposure + recovery
+tracking) done, tests green. AR (AR1-4) concluded and merged to `main`; AR5-8 split out to Phase AT
+(`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/au-actuator-registry` (created off `main` at `124a5b3`, v0.14.0).
-**Next action:** AU3 — Actuator Cache and `CanonicalState` Exposure (new `ActuatorCache` mirroring
-`TopologyGraphCache`; two additive loops in `Engine._recovery_critical_entity_ids()` for
-`Opening.entity_id` and `Actuator.entity_id`). Await explicit "ok, proceed" before starting.
+**Next action:** AU4 — Admin Editor (Panel) and Referential Integrity (`heima/actuators/snapshot`/
+`heima/actuators/action` websocket commands, new "Actuators" panel section,
+`HeimaCoordinator.async_delete_room_opening()` extended with the Actuator referential-integrity
+check). Await explicit "ok, proceed" before starting.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1766,20 +1767,33 @@ order:
 
 #### AU3 — Actuator Cache and CanonicalState Exposure
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (reads parsed/validated `Actuator` records).
-- New `ActuatorCache` class (mirrors `TopologyGraphCache`: `mark_stale()`, `get_actuators(options)`),
-  wired into `Engine` the same way `TopologyGraphCache` is — a new `_compute_actuators` step writing
-  `CanonicalState["rooms.actuators"]`, invalidated on `async_reload_options()` and on
-  `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` (reusing the existing subscription,
-  not a second listener).
+- New `ActuatorCache` class in `actuators.py` (mirrors `TopologyGraphCache`: `mark_stale()`,
+  `get_actuators(options)`), wired into `Engine` the same way `TopologyGraphCache` is: a new
+  `_compute_room_actuators()` step (called right after `_compute_room_topology()` in the main cycle)
+  writing `CanonicalState["rooms.actuators"]` as a flat list of `Actuator.as_dict()` (per the spec's
+  CanonicalState Exposure section — `orientation` deliberately not duplicated onto the record).
+  `Engine.set_actuator_cache()` setter added alongside `set_room_topology_cache()`.
+  `HeimaCoordinator` instantiates `ActuatorCache()` and binds it the same way it binds
+  `TopologyGraphCache`; `mark_stale()` called unconditionally in `Engine.async_reload_options()` and
+  from the coordinator's existing `_handle_registry_updated()` listener (reusing the same
+  `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` subscription that already
+  invalidates the topology cache and room context builder — not a second listener).
 - `Engine._recovery_critical_entity_ids()` gains two additive loops (`Opening.entity_id` from
-  `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`).
-- Tests: cache invalidation triggers (options change, both registry events); `rooms.actuators`
-  correctly empty when no actuators configured; both new entity_id sources present in
-  `_recovery_critical_entity_ids()`'s output. No new test needed for existing Heating/Security/
-  Lighting entries — since this only adds loops, not modifying existing ones, the full suite staying
-  green already guarantees that regression for free.
+  `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`), placed next to the existing
+  Heating/Security loops.
+- Tests: `ActuatorCache` unit tests (`tests/test_actuators.py`, 4 new) mirroring
+  `TopologyGraphCache`'s own coverage (builds on first call, no rebuild without `mark_stale()`,
+  rebuilds after `mark_stale()`, empty before first call never raises); engine-wiring tests
+  (`tests/test_actuator_registry_engine_wiring.py`, new file, 6 tests) mirroring
+  `tests/test_room_topology_engine_wiring.py`: `_compute_room_actuators()` writes `[]` without a
+  cache, writes parsed actuators from the cache, reuses the cache instance without `mark_stale()`;
+  plus both new `_recovery_critical_entity_ids()` entity_id sources confirmed present in its output.
+  No new test needed for existing Heating/Security/Lighting entries — since this only adds loops,
+  not modifying existing ones, the full suite staying green already guarantees that regression for
+  free. Verification: full suite 1984 passed (was 1974 pre-AU3), `ruff check`/`ruff format --check`
+  clean, mypy (informational) unchanged.
 
 #### AU4 — Admin Editor (Panel) and Referential Integrity
 
