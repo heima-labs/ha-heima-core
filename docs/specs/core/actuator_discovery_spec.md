@@ -1,6 +1,6 @@
 # Actuator Discovery Spec
 
-**Status:** Draft — under review, open questions pending resolution before phasing.
+**Status:** Planned — approved after design discussion; not implemented, no dev-plan phase assigned yet.
 **Date:** 2026-08-25
 **Scope:** Extends Phase L's rule-based discovery to also suggest `Actuator` candidates
 (`core/actuator_registry_spec.md`), and exposes the same candidate data to the AU4 admin-panel
@@ -36,12 +36,16 @@ signal. Nothing here changes that discipline; it extends the same rule table.
 - **Opening-level inference.** Discovery only ever proposes `room_id`; `opening_id` is always left
   `null` for the admin to link manually afterward via the existing AU4 editor. Nothing in this
   codebase can infer "this cover corresponds to that window," and building that heuristic is
-  explicitly out of scope here — see Open Questions for why it isn't even attempted narrowly.
-- **Broad domain coverage.** v1 proposes restricting candidate domains to `cover`, `fan`, `climate`,
-  `humidifier` — see Open Questions #1 for the `switch` boundary case and why it's excluded by
-  default.
+  explicitly out of scope here.
+- **`light`.** Owned by Lighting's existing scene/area-based domain and Reaction model — see
+  `core/actuator_registry_spec.md` §Why This Doesn't Touch Lighting. Suggesting `light.*` entities
+  as generic Actuators here would conflate two already-deliberately-separate systems. Domains
+  beyond the allowlist below (e.g. `valve`) can be added later without a schema change, since
+  `Actuator` has no per-domain "kind" field to extend.
 - **Auto-applying candidates without explicit review.** Matches every existing Phase L candidate
-  type: discovery only ever suggests; acceptance is always an explicit installer/admin action.
+  type: discovery only ever suggests; acceptance is always an explicit installer/admin action —
+  but see Resolved (below) on why `actuator_candidate` is non-`ambiguous`, meaning the bulk
+  "accept non-ambiguous" action does apply it without a per-item review step.
 - **Any change to `Actuator`'s persisted schema** (`actuator_id`, `entity_id`, `room_id`,
   `opening_id`, `display_name` — unchanged). This spec only adds faster ways to populate that
   schema, not new fields on it.
@@ -87,6 +91,13 @@ function over plain data, `hass` registries adapted at the call site).
 | `fan` | `actuator_candidate` |
 | `climate` | `actuator_candidate` |
 | `humidifier` | `actuator_candidate` |
+| `switch` | `actuator_candidate` |
+
+`switch` is included deliberately, not by default caution: HA `switch` entities are heterogeneous
+(irrigation valve, smart plug for a lamp, water heater relay, garage door opener), but an incorrect
+`Actuator` suggestion is low-cost — it is never auto-actuated (no comfort Reaction consumes this
+registry yet), and is one click to delete from the already-shipped AU4 editor. `light` remains
+excluded (see Non-Goals).
 
 For each matching entity: resolve `area_id` (existing `_entry_area_id()` helper, reused), then
 resolve `room_id` by matching `area_id` against `options[OPT_ROOMS]` — a new step; none of Phase
@@ -94,11 +105,13 @@ L's existing candidate types resolve past `area_id`/`area_name`, since none of t
 `Actuator`-shaped record. Skip any entity whose `entity_id` already appears in
 `options[OPT_ROOM_ACTUATORS]` — an already-registered actuator isn't a "candidate" anymore.
 
-Returns a `DiscoveryReport`, `category="actuator"`. Confidence `0.8` — between
-`room_occupancy_source`'s `0.85` and `activity_media_candidate`'s `0.55`: Area-based room placement
-over a small, high-precision domain set, but never fully certain the physically-primary room
-matches the HA Area (a ducted `climate` unit, or a `cover` mounted between two Areas, can still be
-wrong).
+Returns a `DiscoveryReport`, `category="actuator"`, `ambiguous=False` for every domain in the table
+(see Resolved, below — domain alone fully determines the record's shape, so there is no genuine
+binding choice for the installer to make). Confidence `0.8` — between `room_occupancy_source`'s
+`0.85` and `activity_media_candidate`'s `0.55`: Area-based room placement over a domain set that is
+usually but not always a true room-comfort actuator (a ducted `climate` unit, a `cover` mounted
+between two Areas, or a `switch` wired to something unrelated to the room can still be wrong) —
+informational only, since acceptance is gated on `ambiguous`, not on a confidence threshold.
 
 ### Surface 1 — Options Flow discovery step (Phase L)
 
@@ -131,10 +144,11 @@ registered as Actuators, same as Surface 1.
 Frontend (`heima-admin-panel.js`): the Entity ID field in `_actuatorsAddForm` changes from a
 free-text `<input>` to a `<select>` (matching the Room/Opening fields' existing pattern), populated
 from `snapshot.entity_candidates`: candidates whose `room_id` matches the currently-selected Room
-listed first, then the rest, grouped by Room. A manual-entry escape hatch (see Open Questions #3)
-must remain — the admin must always be able to register any `entity_id`, not just picker-covered
-ones, matching `core/actuator_registry_spec.md`'s "any HA-domain entity" contract; this spec must
-not narrow that.
+listed first, then the rest, grouped by Room. A manual-entry escape hatch (e.g. a trailing
+"Other (type entity_id)…" option that reveals a text input) must remain — the admin must always be
+able to register any `entity_id`, not just picker-covered ones (any domain outside the allowlist,
+or an entity with no resolved Area), matching `core/actuator_registry_spec.md`'s "any HA-domain
+entity" contract; this spec must not narrow that.
 
 ## Storage and Persistence
 
@@ -150,10 +164,10 @@ No change beyond what `core/actuator_registry_spec.md` already specifies.
 
 Unit tests:
 
-- `discover_actuator_candidates()` returns a candidate for each of the 4 allowlisted domains,
-  resolves `area_id` → `room_id` correctly, skips entities already present in
-  `options[OPT_ROOM_ACTUATORS]`, and returns nothing for domains outside the allowlist (e.g.
-  `switch`, `light`).
+- `discover_actuator_candidates()` returns a candidate for each of the 5 allowlisted domains
+  (`cover`, `fan`, `climate`, `humidifier`, `switch`), resolves `area_id` → `room_id` correctly,
+  skips entities already present in `options[OPT_ROOM_ACTUATORS]`, and returns nothing for domains
+  outside the allowlist (e.g. `light`).
 - `_apply_discovery_candidates`'s new `actuator_candidate` branch calls `apply_actuator_upsert`
   with the resolved `room_id` and `opening_id=None`; a candidate whose `area_id` has no matching
   Room is silently skipped.
@@ -168,36 +182,34 @@ Integration tests:
 
 ## Open Questions
 
-1. **Domain allowlist scope.** Proposed: `cover`, `fan`, `climate`, `humidifier` only. `switch` was
-   considered and excluded from v1 — HA `switch` entities are too heterogeneous (irrigation valve,
-   smart plug for a lamp, water heater relay, garage door opener) to auto-suggest as a "room comfort
-   actuator" without a much higher false-positive rate than the other four. Confirm this is the
-   right line, or whether `switch` should be included when `device_class` narrows it (e.g.
-   `device_class: outlet` excluded, unclassified/other `switch` included)?
-2. **`ambiguous` flag for `actuator_candidate`.** Proposed `ambiguous=False` (same tier as
-   `room_occupancy_source`) since domain alone fully determines the record's shape — no capability
-   choice to make, per `core/actuator_registry_spec.md`'s existing "no kind field" decision. That
-   means `accept_non_ambiguous` would silently create real, persisted `Actuator` records the first
-   time an installer runs discovery after upgrading, without reviewing each one individually. Is
-   that acceptable, or should `actuator_candidate` be forced `ambiguous=True` purely to guarantee a
-   human looks at each one before persistence — even though there's no genuine binding choice
-   behind it?
-3. **Manual-fallback UX in the entity picker.** Proposed a `<select>` plus a
-   "Other (type entity_id)…" option that reveals a text input. Acceptable, or would you rather keep
-   the field a plain text input with a separate `<datalist>`/suggestion list under it (less UI
-   work, weaker "prioritization" framing than what you described)?
-4. **Re-registering a *removed* Actuator.** If an admin deletes an Actuator, its `entity_id`
-   becomes a "candidate" again on the next discovery run — nothing distinguishes "never registered"
-   from "deliberately removed." Phase L already has this exact behavior for, e.g., a
-   `room_occupancy_source` an installer explicitly unlinked. Is inheriting that acceptable, or does
-   Actuator deletion need to suppress future re-suggestion (would require a new small persisted
-   "declined" set — new state this spec doesn't currently introduce)?
+None outstanding — all points raised during design discussion were resolved during spec
+definition (see Resolved, below).
+
+**Resolved:**
+
+- **Domain allowlist scope.** `cover`, `fan`, `climate`, `humidifier`, `switch` — `switch` included
+  deliberately despite its heterogeneity: an incorrect suggestion is low-cost (never auto-actuated,
+  one click to delete), so precision-at-suggestion-time is not worth narrowing the allowlist for.
+  `light` stays excluded (owned by Lighting's existing domain/Reaction model).
+- **`ambiguous` flag.** `False` for every domain in the allowlist — domain alone fully determines
+  an `Actuator`'s shape (no capability choice, per `core/actuator_registry_spec.md`'s "no kind
+  field" decision), so there is no genuine binding decision to force a human through. This means
+  the bulk "accept non-ambiguous" action in the existing Options Flow review UX does apply
+  `actuator_candidate`s without a per-item review step — accepted as consistent with there being no
+  real ambiguity to review, and with the low cost of a wrong suggestion noted above.
+- **Entity picker UX.** A `<select>` dropdown (not free text with a suggestion list), matching the
+  Room/Opening fields' existing pattern in `_actuatorsAddForm`, plus the manual-entry escape hatch
+  described in Surface 2.
+- **Re-suggesting a deleted Actuator.** Inherits Phase L's existing behavior for every other
+  candidate type (e.g. an unlinked `room_occupancy_source`): no "declined" state is introduced: a
+  removed Actuator's `entity_id` can resurface as a candidate on the next discovery run. No new
+  persisted state.
 
 ## Acceptance Criteria
 
 - `discover_actuator_candidates()` exists in `discovery.py`, rule-based only, covering
-  `cover`/`fan`/`climate`/`humidifier`, resolving `room_id` via the existing Area→Room mapping, and
-  excluding entities already registered as Actuators.
+  `cover`/`fan`/`climate`/`humidifier`/`switch`, resolving `room_id` via the existing Area→Room
+  mapping, and excluding entities already registered as Actuators.
 - The Options Flow discovery step surfaces actuator candidates using the existing review UX (no new
   step/screen); accepting one persists a real `Actuator` via `actuators.apply_actuator_upsert`.
 - `heima/actuators/snapshot` includes `entity_candidates`, computed live, additive to the existing
