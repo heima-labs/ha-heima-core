@@ -1591,6 +1591,16 @@ non-security-domain exclusion, registry-failure fallback), 1 new real-websocket 
 `entity_registry`/`area_registry` fixtures), static-asset assertions extended. Full suite 2004
 passed (was 1999), `ruff check`/`ruff format --check`/mypy clean, `node --check` passed.
 
+**Post-AU4 fix, same day:** the Connections table's "Opening" column showed the bare `opening_id`
+UUID — no inherent meaning to an admin, the exact disambiguation problem the "add connection"
+picker dropdown already solved for itself earlier in this batch. `_topologyConnectionRow()` now
+takes `openings` and looks up the referenced Opening, rendering `type · orientation · entity_id`
+instead (Room A is already its own column, not repeated); falls back to the raw id only if the
+Opening can't be found (a stale/dangling reference), with the id always still available via a
+`title` tooltip. Pure frontend, no backend change. Static-asset assertions extended; full suite
+still 2004 passed (assertions added to the existing test, no new test function), `ruff check`/
+`ruff format --check` clean, `node --check` passed.
+
 AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
 Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
 currently planned (`core/actuator_registry_spec.md` reads `rooms.topology` directly and needs none

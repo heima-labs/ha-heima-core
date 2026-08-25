@@ -763,7 +763,7 @@ class HeimaAdminPanel extends HTMLElement {
             <tr><th>Opening</th><th>Room A</th><th>Room B</th><th>Type</th><th>Access</th><th></th></tr>
           </thead>
           <tbody>
-            ${connections.map((connection) => this._topologyConnectionRow(connection)).join("") || `<tr><td colspan="6">No connections configured.</td></tr>`}
+            ${connections.map((connection) => this._topologyConnectionRow(connection, openings)).join("") || `<tr><td colspan="6">No connections configured.</td></tr>`}
           </tbody>
         </table>
         ${this._topologyAddConnectionForm(openings, rooms, enums)}
@@ -893,13 +893,27 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
-  _topologyConnectionRow(connection) {
+  _topologyConnectionRow(connection, openings) {
     const override = connection.connection_type_override
       ? ` (override: ${this._escape(connection.connection_type_override)})`
       : "";
+    // The raw opening_id is a UUID with no inherent meaning to an admin — same disambiguation
+    // problem the "add connection" picker already solves for itself. Look up the referenced
+    // Opening and show type/orientation/entity_id instead; Room A is already its own column, so
+    // it isn't repeated here. Falls back to the raw id only if the Opening can't be found (e.g.
+    // a stale/dangling reference), and the id is always still available via the tooltip.
+    const opening = (openings || []).find(
+      (candidate) => candidate.opening_id === connection.opening_id,
+    );
+    const openingLabel = opening
+      ? [opening.type, opening.orientation, opening.entity_id]
+          .filter(Boolean)
+          .map((value) => this._escape(value))
+          .join(" · ")
+      : "";
     return `
       <tr>
-        <td class="object-id">${this._escape(connection.opening_id)}</td>
+        <td title="${this._escape(connection.opening_id)}">${openingLabel || this._escape(connection.opening_id)}</td>
         <td>${this._escape(connection.room_a || "—")}</td>
         <td>${this._escape(connection.room_b)}</td>
         <td>${this._escape(connection.connection_type)}${override}</td>

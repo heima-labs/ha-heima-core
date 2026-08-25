@@ -308,6 +308,11 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "topology-new-opening-entity-list" in text
     assert 'list="${entityListId}"' in text
     assert "_entityCandidateOptions" in text
+    # The Connections table's Opening column must show a human-readable label (type/orientation/
+    # entity_id), not the bare opening_id UUID, which has no inherent meaning to an admin.
+    assert "_topologyConnectionRow(connection, openings)" in text
+    assert "const opening = (openings || []).find(" in text
+    assert 'title="${this._escape(connection.opening_id)}"' in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text
