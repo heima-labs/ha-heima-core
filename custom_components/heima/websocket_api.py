@@ -10,9 +10,13 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import Unauthorized
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .actuators import build_actuator_registry_snapshot
-from .const import DOMAIN
+from .const import DOMAIN, OPT_ROOMS
+from .discovery import discover_binding_candidates
 from .observability import build_observability_snapshot
 from .room_topology import build_room_topology_snapshot
 
@@ -481,7 +485,66 @@ def websocket_topology_snapshot(
         )
         return
     options = dict(getattr(coordinator.entry, "options", {}) or {})
-    connection.send_result(msg["id"], build_room_topology_snapshot(options))
+    snapshot = dict(build_room_topology_snapshot(options))
+    snapshot["entity_candidates"] = _opening_entity_candidates(hass, options)
+    connection.send_result(msg["id"], snapshot)
+
+
+def _opening_entity_candidates(
+    hass: HomeAssistant, options: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Room-aware autocomplete candidates for the Opening entity_id field.
+
+    Reuses Phase L's existing "security_contact" discovery rule (binary_sensor door/window/
+    opening/garage_door) as-is — no new discovery.py rule needed. Room resolution happens here,
+    not inside discovery.py, which stays unaware of Heima's own options (same principle
+    documented for the Actuator picker in docs/specs/core/actuator_discovery_spec.md).
+    """
+    try:
+        entity_registry = er.async_get(hass)
+        device_registry = dr.async_get(hass)
+        area_registry = ar.async_get(hass)
+    except Exception:  # noqa: BLE001
+        return []
+    states = getattr(hass, "states", None)
+    async_all = getattr(states, "async_all", None)
+    all_states = list(async_all()) if callable(async_all) else []
+    report = discover_binding_candidates(
+        entity_entries=list(getattr(entity_registry, "entities", {}).values()),
+        device_entries=dict(getattr(device_registry, "devices", {}) or {}),
+        area_entries={
+            str(getattr(area, "id", "") or ""): area
+            for area in getattr(area_registry, "async_list_areas", lambda: [])()
+            if str(getattr(area, "id", "") or "")
+        },
+        state_by_entity={
+            str(getattr(state, "entity_id", "") or ""): state
+            for state in all_states
+            if str(getattr(state, "entity_id", "") or "")
+        },
+    )
+    room_id_by_area_id = {
+        str(room.get("area_id") or ""): str(room.get("room_id") or "")
+        for room in options.get(OPT_ROOMS, []) or []
+        if isinstance(room, dict) and str(room.get("area_id") or "").strip()
+    }
+    candidates: list[dict[str, Any]] = []
+    for candidate in report.candidates:
+        if candidate.category != "security":
+            continue
+        room_id = room_id_by_area_id.get(str(candidate.area_id or ""))
+        if not room_id:
+            continue
+        candidates.append(
+            {
+                "entity_id": candidate.entity_id,
+                "domain": candidate.domain,
+                "device_class": candidate.device_class,
+                "room_id": room_id,
+                "area_name": candidate.area_name,
+            }
+        )
+    return candidates
 
 
 @websocket_api.websocket_command(

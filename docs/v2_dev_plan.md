@@ -1576,6 +1576,21 @@ Resulting order and rationale per phase:
 - Full suite green after every fix in this batch (final count: 1947 passed), `ruff check`/
   `ruff format --check` clean on every touched file.
 
+**Post-AU4 fix (2026-08-25):** the "add opening" form's Entity ID field was plain free text, with
+no visibility into which HA entities actually look like door/window sensors. Fixed by turning it
+into an autocomplete field: `websocket_topology_snapshot` (`websocket_api.py`) now also computes
+`entity_candidates` — reusing Phase L's existing `security_contact` discovery rule
+(`binary_sensor` with device_class `door`/`window`/`opening`/`garage_door`) as-is, resolving
+`area_id` → `room_id` itself (no new rule added to `discovery.py`, which stays unaware of Heima's
+own `options` — same principle documented in `docs/specs/core/actuator_discovery_spec.md` for the
+Actuator picker). Frontend: the field gained a `list`-bound `<datalist>` (native HTML autocomplete,
+no new dependency), entities belonging to the currently-selected room sorted first — still plain
+free text underneath, so any `entity_id` can still be entered, not just picker-covered ones. Tests:
+4 new unit tests for `_opening_entity_candidates()` (room resolution, no-match exclusion,
+non-security-domain exclusion, registry-failure fallback), 1 new real-websocket e2e test (real
+`entity_registry`/`area_registry` fixtures), static-asset assertions extended. Full suite 2004
+passed (was 1999), `ruff check`/`ruff format --check`/mypy clean, `node --check` passed.
+
 AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
 Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
 currently planned (`core/actuator_registry_spec.md` reads `rooms.topology` directly and needs none

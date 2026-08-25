@@ -303,6 +303,11 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert 'data-actuators-action="delete_actuator"' in text
     assert 'data-actuators-action="cancel_edit_actuator"' in text
     assert 'data-actuators-action="add_actuator"' in text
+    # Opening entity_id must be an autocomplete field (datalist bound to the text input, not a
+    # bare text box), populated from the topology snapshot's room-resolved entity_candidates.
+    assert "topology-new-opening-entity-list" in text
+    assert 'list="${entityListId}"' in text
+    assert "_entityCandidateOptions" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

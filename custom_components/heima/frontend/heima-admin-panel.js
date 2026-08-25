@@ -729,6 +729,7 @@ class HeimaAdminPanel extends HTMLElement {
     const connections = snapshot.connections || [];
     const issues = snapshot.issues || [];
     const enums = snapshot.enums || {};
+    const entityCandidates = snapshot.entity_candidates || [];
     return `
       ${this._topologyIssues(issues)}
       <section class="card">
@@ -753,7 +754,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${openings.map((opening) => this._topologyOpeningRow(opening)).join("") || `<tr><td colspan="5">No openings configured.</td></tr>`}
           </tbody>
         </table>
-        ${this._topologyAddOpeningForm(rooms, enums)}
+        ${this._topologyAddOpeningForm(rooms, enums, entityCandidates)}
       </section>
       <section class="card">
         <h2>Connections</h2>
@@ -919,7 +920,7 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
-  _topologyAddOpeningForm(rooms, enums) {
+  _topologyAddOpeningForm(rooms, enums, entityCandidates) {
     if (!rooms.length) return "";
     // Reuses the _filters/_setFilter/_restoreFilterFocus mechanism (search-box state
     // persistence) for this in-progress "add" form too: _render() runs on every unrelated
@@ -927,6 +928,7 @@ class HeimaAdminPanel extends HTMLElement {
     // replaces this whole form's DOM — without tracked state, whatever the admin had picked
     // or typed here would silently reset before they clicked "Add opening".
     const formState = this._filters.topology_new_opening || {};
+    const selectedRoomId = formState.room_id || rooms[0].room_id;
     const roomOptions = rooms
       .map(
         (room) =>
@@ -936,6 +938,7 @@ class HeimaAdminPanel extends HTMLElement {
     const orientationOptions =
       `<option value="">—</option>` +
       this._selectOptions(enums.orientations || [], formState.orientation || "");
+    const entityListId = "topology-new-opening-entity-list";
     return `
       <div class="topology-add-form">
         <label>Room
@@ -963,11 +966,15 @@ class HeimaAdminPanel extends HTMLElement {
           <input
             id="topology-new-opening-entity"
             type="text"
+            list="${entityListId}"
             placeholder="entity_id (optional)"
             data-filter-section="topology_new_opening"
             data-filter-key="entity_id"
             value="${this._escape(formState.entity_id || "")}"
           />
+          <datalist id="${entityListId}">
+            ${this._entityCandidateOptions(entityCandidates || [], selectedRoomId)}
+          </datalist>
         </label>
         <button class="inline" data-topology-action="add_opening">${
           formState.opening_id ? "Save opening" : "Add opening"
@@ -1065,6 +1072,24 @@ class HeimaAdminPanel extends HTMLElement {
         (value) =>
           `<option value="${this._escape(value)}"${value === selected ? " selected" : ""}>${this._escape(value)}</option>`,
       )
+      .join("");
+  }
+
+  // Datalist options for an autocomplete entity_id field: entities already known to belong to
+  // the currently-selected room sort first, then the rest. A <datalist> only ever suggests — the
+  // bound <input> still accepts any free-typed entity_id, so this never narrows what can be saved.
+  _entityCandidateOptions(entityCandidates, selectedRoomId) {
+    const sorted = [...entityCandidates].sort((a, b) => {
+      const aMatch = a.room_id === selectedRoomId ? 0 : 1;
+      const bMatch = b.room_id === selectedRoomId ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return a.entity_id.localeCompare(b.entity_id);
+    });
+    return sorted
+      .map((candidate) => {
+        const label = `${candidate.entity_id} — ${candidate.area_name || candidate.room_id}`;
+        return `<option value="${this._escape(candidate.entity_id)}" label="${this._escape(label)}">${this._escape(label)}</option>`;
+      })
       .join("");
   }
 

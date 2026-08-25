@@ -16,6 +16,8 @@ import asyncio
 import pytest
 from aiohttp.resolver import AsyncResolver
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.heima.const import DOMAIN
@@ -160,6 +162,43 @@ async def test_e2e_topology_upsert_without_client_id_returns_server_generated_id
     assert generated_connection_id
     assert (
         response["result"]["snapshot"]["connections"][0]["connection_id"] == generated_connection_id
+    )
+
+    await client.close()
+    await client.client.close()
+
+
+async def test_e2e_topology_snapshot_includes_opening_entity_candidates(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+    hass_ws_client,
+):
+    # Regression test for the "dropdown with autocomplete" fix: the topology snapshot must
+    # surface real door/window binary_sensor entities, room-resolved via their HA Area, so the
+    # admin panel's Opening entity_id field can suggest them instead of being plain free text.
+    area = ar.async_get(hass).async_create("Kitchen")
+    entity_entry = er.async_get(hass).async_get_or_create(
+        "binary_sensor",
+        "test",
+        "front_door_unique",
+        suggested_object_id="front_door",
+        original_device_class="door",
+    )
+    er.async_get(hass).async_update_entity(entity_entry.entity_id, area_id=area.id)
+
+    entry = _entry([{"room_id": "kitchen", "room_type": "indoor", "area_id": area.id}])
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    client = await hass_ws_client()
+    await client.send_json_auto_id({"type": "heima/topology/snapshot"})
+    response = await client.receive_json()
+    assert response["success"] is True
+    candidates = response["result"]["entity_candidates"]
+    assert any(
+        candidate["entity_id"] == entity_entry.entity_id and candidate["room_id"] == "kitchen"
+        for candidate in candidates
     )
 
     await client.close()
