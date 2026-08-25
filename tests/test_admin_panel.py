@@ -317,6 +317,11 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # default scroll-into-view behavior fire against the freshly-rebuilt, not-yet-settled DOM —
     # that's what was scrolling the whole page to the top on every character typed.
     assert "input.focus({ preventScroll: true })" in text
+    # preventScroll isn't honored by every browser, and a full shadow-DOM rebuild can also
+    # trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its reference
+    # node). The panel must also force-restore the pre-render scroll position as a fallback.
+    assert "this._scrollPosition = { x: window.scrollX, y: window.scrollY }" in text
+    assert "window.scrollTo(this._scrollPosition.x, this._scrollPosition.y)" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

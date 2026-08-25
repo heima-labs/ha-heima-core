@@ -216,6 +216,12 @@ class HeimaAdminPanel extends HTMLElement {
       },
     };
     this._focusFilter = { section, key };
+    // Belt-and-suspenders alongside focus({preventScroll: true}) in _restoreFilterFocus():
+    // that option isn't honored by every browser/webview, and a full shadow-DOM rebuild can
+    // also trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its
+    // reference node). Capturing and force-restoring the actual scroll position closes that
+    // gap regardless of which mechanism causes the jump.
+    this._scrollPosition = { x: window.scrollX, y: window.scrollY };
     this._render();
   }
 
@@ -2759,6 +2765,10 @@ class HeimaAdminPanel extends HTMLElement {
       if (typeof input.setSelectionRange === "function") {
         input.setSelectionRange(length, length);
       }
+    }
+    if (this._scrollPosition) {
+      window.scrollTo(this._scrollPosition.x, this._scrollPosition.y);
+      this._scrollPosition = null;
     }
     this._focusFilter = null;
   }
