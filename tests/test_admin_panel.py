@@ -313,6 +313,10 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "_topologyConnectionRow(connection, openings)" in text
     assert "const opening = (openings || []).find(" in text
     assert 'title="${this._escape(connection.opening_id)}"' in text
+    # Refocusing an input after a keystroke-triggered full re-render must not let the browser's
+    # default scroll-into-view behavior fire against the freshly-rebuilt, not-yet-settled DOM —
+    # that's what was scrolling the whole page to the top on every character typed.
+    assert "input.focus({ preventScroll: true })" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

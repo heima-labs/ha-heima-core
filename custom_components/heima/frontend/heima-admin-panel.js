@@ -2748,7 +2748,13 @@ class HeimaAdminPanel extends HTMLElement {
         candidate.getAttribute("data-filter-key") === key,
     );
     if (input && typeof input.focus === "function") {
-      input.focus();
+      // preventScroll: true is required here, not cosmetic. Every keystroke replaces the whole
+      // shadow DOM (this.shadowRoot.innerHTML = ...), so the input being refocused is a freshly
+      // created element without a stable layout yet. Without preventScroll, the browser's default
+      // "scroll the newly-focused element into view" behavior fires against that unsettled
+      // layout and jumps the page (typically to the top, since that's the first section in
+      // source order) on every single character typed.
+      input.focus({ preventScroll: true });
       const length = input.value.length;
       if (typeof input.setSelectionRange === "function") {
         input.setSelectionRange(length, length);

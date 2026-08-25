@@ -1601,6 +1601,24 @@ Opening can't be found (a stale/dangling reference), with the id always still av
 still 2004 passed (assertions added to the existing test, no new test function), `ruff check`/
 `ruff format --check` clean, `node --check` passed.
 
+**Panel-wide fix, found via live-browser testing of the Actuators form (2026-08-25):** typing into
+*any* tracked `data-filter-section` input (search boxes throughout the panel, every add/edit form
+field in Topology and Actuators) scrolled the whole page to the top on every keystroke, and felt
+like the input lost focus. Root cause: `_restoreFilterFocus()` calls `input.focus()` after every
+keystroke-triggered re-render (`this.shadowRoot.innerHTML = ...` replaces the whole tree on every
+`_setFilter()` call) — the browser's default "scroll the newly-focused element into view" behavior
+was firing against that freshly-rebuilt, not-yet-settled DOM, landing the scroll position wherever
+the browser's fallback happened to be (in practice, the top of the page, since the Validation/
+Issues card is first in source order on both Topology and Actuators). Fixed with a one-line change:
+`input.focus({ preventScroll: true })`. This was live and pre-existing in every route that uses
+this mechanism, not introduced by AU4 or by any fix in this session's batch — just never noticed
+before because Topology's own forms were the only ones smoke-tested live before this, and this
+symptom (scroll jump) is easy to misread as "focus loss" rather than "page jumped so the cursor's
+visual context moved," which is what actually made it visible this time. Static-asset assertion
+added (`input.focus({ preventScroll: true })`); full suite still 2004 passed (assertion added to
+the existing test), `ruff check`/`ruff format --check` clean, `node --check` passed. Not yet
+re-verified live in a browser after this fix — pending developer confirmation.
+
 AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
 Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
 currently planned (`core/actuator_registry_spec.md` reads `rooms.topology` directly and needs none
