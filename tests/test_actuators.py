@@ -1,4 +1,4 @@
-"""Tests for the actuator registry's pure data model and validation core (AU1)."""
+"""Tests for the actuator registry's data model, validation, and admin-editor core (AU1/AU4)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from custom_components.heima.actuators import (
     ActuatorCache,
     apply_actuator_delete,
     apply_actuator_upsert,
+    build_actuator_registry_snapshot,
     is_opening_referenced_by_actuator,
     parse_actuators,
     validate_actuators,
@@ -323,3 +324,34 @@ def test_actuator_cache_rebuilds_after_mark_stale():
 def test_actuator_cache_empty_before_first_call_never_raises():
     cache = ActuatorCache()
     assert cache.get_actuators({}) == ()
+
+
+# --- build_actuator_registry_snapshot (AU4) ---------------------------------------
+
+
+def test_build_actuator_registry_snapshot_includes_rooms_openings_actuators_and_issues():
+    options = _base_options(
+        **{
+            OPT_ROOM_ACTUATORS: [
+                _actuator("a1", "cover.kitchen_shutter", "kitchen", opening_id="op1")
+            ]
+        }
+    )
+    snapshot = build_actuator_registry_snapshot(options)
+    assert {room["room_id"] for room in snapshot["rooms"]} == {"kitchen", "garage"}
+    assert [opening["opening_id"] for opening in snapshot["openings"]] == ["op1"]
+    assert [actuator["actuator_id"] for actuator in snapshot["actuators"]] == ["a1"]
+    assert snapshot["issues"] == []
+
+
+def test_build_actuator_registry_snapshot_surfaces_issues():
+    options = _base_options(**{OPT_ROOM_ACTUATORS: [_actuator("a1", "cover.x", "missing_room")]})
+    snapshot = build_actuator_registry_snapshot(options)
+    assert any(
+        issue["key"] == "actuators.actuator.a1.dangling_room" for issue in snapshot["issues"]
+    )
+
+
+def test_build_actuator_registry_snapshot_empty_without_actuators():
+    snapshot = build_actuator_registry_snapshot(_base_options())
+    assert snapshot["actuators"] == []

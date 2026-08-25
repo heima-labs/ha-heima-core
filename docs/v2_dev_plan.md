@@ -137,15 +137,17 @@ These constraints must never be violated. See spec §16 for rationale.
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** Phase AU — Actuator Registry. AU1 (data model, parsing, validation core), AU2
-(Installation Validation wiring), and AU3 (actuator cache + `CanonicalState` exposure + recovery
-tracking) done, tests green. AR (AR1-4) concluded and merged to `main`; AR5-8 split out to Phase AT
-(`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Active slice:** Phase AU — Actuator Registry. AU1-4 all done, tests green — Phase AU is
+implementation-complete on this branch, not yet merged to `main`. AR (AR1-4) concluded and merged
+to `main`; AR5-8 split out to Phase AT (`DEFERRED`, see
+`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/au-actuator-registry` (created off `main` at `124a5b3`, v0.14.0).
-**Next action:** AU4 — Admin Editor (Panel) and Referential Integrity (`heima/actuators/snapshot`/
-`heima/actuators/action` websocket commands, new "Actuators" panel section,
-`HeimaCoordinator.async_delete_room_opening()` extended with the Actuator referential-integrity
-check). Await explicit "ok, proceed" before starting.
+**Next action:** Before merging to `main`, follow CLAUDE.md's mandatory pre-merge procedure (bump
+minor version, `CHANGELOG.md` entry, full `bash scripts/ci_local.sh`), then merge — all pending
+explicit developer confirmation. UI note: AU4's panel section was verified via automated real-
+websocket e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a live
+browser session — unlike AR4, no manual browser smoke-test has been done yet for the Actuators
+panel section.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1664,7 +1666,8 @@ traceable in existing AO decision traces. Depends on AT3 for the decision traces
 
 ### Phase AU — Actuator Registry
 
-- Status: `PLANNED`.
+- Status: `DONE` (AU1-4 implemented and tested on `feat/au-actuator-registry`; not yet merged to
+  `main` — pending the CLAUDE.md pre-merge procedure and explicit developer confirmation).
 - Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Planned — not implemented on
   `main`; approved after design discussion, see this phase's own history for the reasoning —
   position-aware/unaware scenario stress test, the decision to keep it separate from Lighting, and
@@ -1797,24 +1800,52 @@ order:
 
 #### AU4 — Admin Editor (Panel) and Referential Integrity
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (save-time blocking reuses the same pure validation core).
-- `heima/actuators/snapshot` / `heima/actuators/action` websocket commands, mirroring AR4's
-  `heima/topology/*` pattern (admin-gating split: `@websocket_api.require_admin` for the read-only
-  snapshot, manual `is_admin` check + `hass.async_create_task` dispatch for the mutating action).
-  Action allowlist: `upsert_actuator`, `delete_actuator`.
-- New "Actuators" panel section (rooms/openings dropdown-driven add form, table with Edit/Delete —
-  built directly with the Edit-in-place pattern AR4 added later, not the delete-only pattern it
-  started with).
-- `HeimaCoordinator.async_delete_room_opening()` extended: calls `actuators.is_opening_referenced_by_actuator()`
-  before delegating to `apply_room_opening_delete()`, refusing (not-applied) if any `Actuator`
-  references the opening — the one place this phase edits already-shipped AR4 code.
-- Tests: full snapshot/upsert/delete round trip (coordinator-level and real-websocket e2e, mirroring
-  both `tests/test_room_topology_coordinator.py` and `tests/test_room_topology_panel_e2e.py`);
-  admin-gating rejection for non-admin callers; Opening-delete blocked when referenced by an
-  Actuator. No new test needed to confirm Opening-delete is still blocked when referenced by a
+- `build_actuator_registry_snapshot(options)` added to `actuators.py`, mirroring
+  `room_topology.py`'s own `build_room_topology_snapshot()`: rooms/openings included only as
+  read-only reference data for the editor's dropdowns (owned by `room_topology.py`, not
+  duplicated), plus the actuators list and `validate_actuators()` issues.
+- `heima/actuators/snapshot` / `heima/actuators/action` websocket commands in `websocket_api.py`,
+  mirroring AR4's `heima/topology/*` pattern exactly (admin-gating split:
+  `@websocket_api.require_admin` for the read-only snapshot, manual `is_admin` check +
+  `hass.async_create_task` dispatch for the mutating action). Action allowlist: `upsert_actuator`,
+  `delete_actuator`.
+- `HeimaCoordinator.async_upsert_actuator()` / `async_delete_actuator()` added, reusing the same
+  persist helper AR4's topology methods use (renamed from `_apply_room_topology_mutation` to
+  `_apply_options_mutation` since it's now shared by both, not renamed to anything actuator-
+  specific — it was already fully generic).
+- `HeimaCoordinator.async_delete_room_opening()` extended: calls
+  `actuators.is_opening_referenced_by_actuator()` before delegating to
+  `apply_room_opening_delete()`, returning a `topology.opening.{id}.referenced_by_actuator` error
+  issue (not-applied) if any `Actuator` references the opening — the one place this phase edits
+  already-shipped AR4 code. Unrelated to the pre-existing Connection-blocks-delete path (that one
+  is still enforced entirely inside `room_topology.py`'s own `validate_topology()`, unaffected).
+- New "Actuators" panel section in `heima-admin-panel.js`: own snapshot/loading/error state, own
+  poll-skip on this route (the topology route's poll-skip condition was extended to cover both
+  routes, since the same 15s-observability-poll-closes-open-`<select>`s bug AR4 fixed for topology
+  would otherwise reproduce here), table with Edit/Delete built directly with the edit-in-place
+  pattern AR4 added later (not the delete-only pattern it started with), and an add/edit form
+  (Room dropdown, Opening dropdown filtered to the selected room, Entity ID text, Display name
+  text) using the same `_filters`-tracked in-progress-form persistence as Topology's own forms.
+- Tests: coordinator-level (`tests/test_actuator_registry_coordinator.py`, 6): upsert
+  generates/edits-in-place, upsert rejected by `opening_room_mismatch`, delete persists,
+  Opening-delete blocked when referenced by an Actuator, Opening-delete still succeeds when the
+  only Actuator reference is to a *different* opening (regression guard for the new check).
+  Real-websocket e2e (`tests/test_actuator_registry_panel_e2e.py`, 4, mirroring
+  `tests/test_room_topology_panel_e2e.py`): full snapshot/upsert/delete round trip, validation
+  failure surfaced as `validation_failed`, admin-gating rejection for non-admin callers, and
+  Opening-delete blocked over the real websocket layer. `build_actuator_registry_snapshot()` unit
+  tests (`tests/test_actuators.py`, 3 new). `tests/test_admin_panel.py`'s static-asset assertion
+  test extended with the new websocket command strings, route title, and `data-actuators-action`/
+  `data-filter-section` markers; its pre-existing poll-skip assertion updated to match the widened
+  condition. No new test needed to confirm Opening-delete is still blocked when referenced by a
   Connection — AR4's existing test for that already covers it; the full suite staying green after
-  this addition is the regression guarantee.
+  this addition is the regression guarantee. Verification: full suite 1997 passed (was 1984
+  pre-AU4), `ruff check`/`ruff format --check` clean, mypy (informational) unchanged, JS syntax
+  verified with `node --check`. **Not verified**: no live browser smoke-test of the new Actuators
+  panel section (unlike AR4, which was smoke-tested manually) — automated real-websocket e2e tests
+  cover the backend/websocket contract, not actual DOM rendering/interaction in a browser.
 
 - Phase AU acceptance (from the spec's own Acceptance Criteria):
   - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration

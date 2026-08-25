@@ -224,6 +224,30 @@ def validate_actuators(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
     return tuple(issues)
 
 
+def build_actuator_registry_snapshot(options: dict[str, Any]) -> dict[str, Any]:
+    """Read-only snapshot for the admin editor: rooms, openings, actuators, and issues.
+
+    Mirrors `room_topology.py`'s own `build_room_topology_snapshot()`. Rooms/openings are
+    included only as reference data for the editor's dropdowns (the same objects
+    `room_topology.py` itself owns) — this module remains the sole owner of `actuators`.
+    """
+    rooms = [room for room in options.get(OPT_ROOMS, []) or [] if isinstance(room, dict)]
+    return {
+        "rooms": [
+            {
+                "room_id": room_id,
+                "display_name": str(room.get("display_name") or room_id),
+            }
+            for room in rooms
+            for room_id in (str(room.get("room_id") or ""),)
+            if room_id
+        ],
+        "openings": [opening.as_dict() for opening in parse_openings(options)],
+        "actuators": [actuator.as_dict() for actuator in parse_actuators(options)],
+        "issues": [issue.as_dict() for issue in validate_actuators(options)],
+    }
+
+
 # --- AU4: admin editor support — pure mutation functions ---
 #
 # Both functions below follow the same shape as room_topology.py's own mutation functions:

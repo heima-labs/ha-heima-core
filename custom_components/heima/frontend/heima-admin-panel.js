@@ -18,6 +18,10 @@ class HeimaAdminPanel extends HTMLElement {
     this._topologyLoading = false;
     this._topologyError = "";
     this._topologyActionError = "";
+    this._actuatorsSnapshot = null;
+    this._actuatorsLoading = false;
+    this._actuatorsError = "";
+    this._actuatorsActionError = "";
     this._openDetailIds = new Set();
   }
 
@@ -29,13 +33,16 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "topology") {
       this._loadTopologySnapshot();
     }
-    // The observability snapshot isn't rendered on the topology route (_body() early-returns
-    // to _topologyBody() for it), so polling it there only forces a pointless full DOM replace
-    // every 15s — which forcibly closes any native <select> dropdown the admin has open mid-edit
-    // (add opening/connection, room_type/floor pickers), since the underlying DOM node is
-    // destroyed and recreated. Skip the poll while on that route.
+    if (this._route === "actuators") {
+      this._loadActuatorsSnapshot();
+    }
+    // The observability snapshot isn't rendered on the topology/actuators routes (_body()
+    // early-returns to their own body renderers), so polling it there only forces a pointless
+    // full DOM replace every 15s — which forcibly closes any native <select> dropdown the admin
+    // has open mid-edit (add/edit forms, room_type/floor pickers), since the underlying DOM node
+    // is destroyed and recreated. Skip the poll while on either route.
     this._refreshTimer = window.setInterval(() => {
-      if (this._route !== "topology") {
+      if (this._route !== "topology" && this._route !== "actuators") {
         this._loadSnapshot();
       }
     }, 15000);
@@ -56,6 +63,9 @@ class HeimaAdminPanel extends HTMLElement {
     }
     if (this._route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
       this._loadTopologySnapshot();
+    }
+    if (this._route === "actuators" && !this._actuatorsSnapshot && !this._actuatorsLoading) {
+      this._loadActuatorsSnapshot();
     }
   }
 
@@ -136,11 +146,55 @@ class HeimaAdminPanel extends HTMLElement {
     }
   }
 
+  async _loadActuatorsSnapshot() {
+    if (!this._hass || typeof this._hass.callWS !== "function") {
+      return;
+    }
+    this._actuatorsLoading = true;
+    this._actuatorsError = "";
+    this._actuatorsActionError = "";
+    this._render();
+    try {
+      this._actuatorsSnapshot = await this._hass.callWS({ type: "heima/actuators/snapshot" });
+    } catch (err) {
+      this._actuatorsError = err?.message || "Unable to load Heima actuator registry data.";
+    } finally {
+      this._actuatorsLoading = false;
+      this._render();
+    }
+  }
+
+  async _runActuatorsAction(action, payload, confirmMessage) {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    this._actuatorsActionError = "";
+    try {
+      const result = await this._hass.callWS({ type: "heima/actuators/action", action, payload });
+      if (result?.snapshot) {
+        this._actuatorsSnapshot = result.snapshot;
+      } else {
+        await this._loadActuatorsSnapshot();
+      }
+      // Same reset-on-success rationale as _runTopologyAction: clear the tracked "add" form
+      // state once the mutation actually applied, so the form goes blank for the next entry.
+      if (action === "upsert_actuator") {
+        delete this._filters.actuators_new_actuator;
+      }
+    } catch (err) {
+      this._actuatorsActionError =
+        err?.message || "Unable to complete Heima actuator registry action.";
+    } finally {
+      this._render();
+    }
+  }
+
   _setRoute(route) {
     this._route = route;
     this._detail = null;
     if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
       this._loadTopologySnapshot();
+    }
+    if (route === "actuators" && !this._actuatorsSnapshot && !this._actuatorsLoading) {
+      this._loadActuatorsSnapshot();
     }
     this._syncHash();
     this._render();
@@ -497,6 +551,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${this._navButton("entities", "Entities")}
             ${this._navButton("health", "Health")}
             ${this._navButton("topology", "Topology")}
+            ${this._navButton("actuators", "Actuators")}
           </div>
         </nav>
         <main>
@@ -518,6 +573,8 @@ class HeimaAdminPanel extends HTMLElement {
         if (route === "refresh") {
           if (this._route === "topology") {
             this._loadTopologySnapshot();
+          } else if (this._route === "actuators") {
+            this._loadActuatorsSnapshot();
           } else {
             this._loadSnapshot();
           }
@@ -568,6 +625,9 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-topology-action]").forEach((button) => {
       button.addEventListener("click", () => this._onTopologyActionButton(button));
     });
+    this.shadowRoot.querySelectorAll("button[data-actuators-action]").forEach((button) => {
+      button.addEventListener("click", () => this._onActuatorsActionButton(button));
+    });
     this.shadowRoot.querySelectorAll("details[data-details-id]").forEach((details) => {
       details.addEventListener("toggle", () => {
         const id = details.getAttribute("data-details-id") || "";
@@ -600,11 +660,13 @@ class HeimaAdminPanel extends HTMLElement {
     if (this._route === "entities") return "Entity Impact";
     if (this._route === "health") return "Health";
     if (this._route === "topology") return "Room Topology";
+    if (this._route === "actuators") return "Actuator Registry";
     return "Overview";
   }
 
   _body(snapshot) {
     if (this._route === "topology") return this._topologyBody();
+    if (this._route === "actuators") return this._actuatorsBody();
     if (this._loading && !this._snapshot) {
       return `<div class="empty">Loading observability snapshot.</div>`;
     }
@@ -1112,6 +1174,236 @@ class HeimaAdminPanel extends HTMLElement {
     if (action === "cancel_edit_connection") {
       const rest = { ...this._filters };
       delete rest.topology_new_connection;
+      this._filters = rest;
+      this._render();
+      return;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Actuator Registry (AU4): admin editor for the generic per-entity
+  // actuator inventory. Uses its own snapshot (heima/actuators/snapshot),
+  // mirroring Room Topology's own section structure and staleness handling
+  // (own loading/error state, own poll-skip on this route).
+  // ---------------------------------------------------------------------
+
+  _actuatorsBody() {
+    if (this._actuatorsLoading && !this._actuatorsSnapshot) {
+      return `<div class="empty">Loading actuator registry.</div>`;
+    }
+    if (this._actuatorsError) {
+      return `<div class="card error">${this._escape(this._actuatorsError)}</div>`;
+    }
+    if (!this._actuatorsSnapshot) {
+      return `<div class="empty">No actuator registry data available.</div>`;
+    }
+    const actionError = this._actuatorsActionError
+      ? `<div class="card error">${this._escape(this._actuatorsActionError)}</div>`
+      : "";
+    return `${actionError}${this._actuators(this._actuatorsSnapshot)}`;
+  }
+
+  _actuators(snapshot) {
+    const rooms = snapshot.rooms || [];
+    const openings = snapshot.openings || [];
+    const actuators = snapshot.actuators || [];
+    const issues = snapshot.issues || [];
+    return `
+      ${this._actuatorsIssues(issues)}
+      <section class="card">
+        <h2>Actuators</h2>
+        <table>
+          <thead>
+            <tr><th>Entity</th><th>Room</th><th>Opening</th><th>Display name</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${actuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings)).join("") || `<tr><td colspan="5">No actuators configured.</td></tr>`}
+          </tbody>
+        </table>
+        ${this._actuatorsAddForm(rooms, openings)}
+      </section>
+    `;
+  }
+
+  _actuatorsIssues(issues) {
+    if (!issues.length) {
+      return `<div class="card">No actuator registry validation issues.</div>`;
+    }
+    const items = issues
+      .map(
+        (issue) =>
+          `<li class="${issue.severity === "error" ? "error" : "warning"}">[${this._escape(issue.severity)}] ${this._escape(issue.title)} — ${this._escape(issue.description)}</li>`,
+      )
+      .join("");
+    return `
+      <section class="card">
+        <h2>Validation</h2>
+        <ul class="topology-issues">${items}</ul>
+      </section>
+    `;
+  }
+
+  _actuatorsRoomLabel(rooms, roomId) {
+    const room = rooms.find((candidate) => candidate.room_id === roomId);
+    return room ? room.display_name || room.room_id : roomId || "—";
+  }
+
+  _actuatorsOpeningLabel(openings, openingId) {
+    if (!openingId) return "—";
+    const opening = openings.find((candidate) => candidate.opening_id === openingId);
+    if (!opening) return openingId;
+    const details = [opening.type, opening.orientation].filter(Boolean).join(" · ");
+    return details ? `${opening.room_id} — ${details}` : opening.room_id;
+  }
+
+  _actuatorsRow(actuator, rooms, openings) {
+    return `
+      <tr>
+        <td class="object-id">${this._escape(actuator.entity_id)}</td>
+        <td>${this._escape(this._actuatorsRoomLabel(rooms, actuator.room_id))}</td>
+        <td>${this._escape(this._actuatorsOpeningLabel(openings, actuator.opening_id))}</td>
+        <td>${this._escape(actuator.display_name || "—")}</td>
+        <td>
+          <button
+            class="inline"
+            data-actuators-action="edit_actuator"
+            data-actuator-id="${this._escape(actuator.actuator_id)}"
+          >Edit</button>
+          <button
+            class="inline danger"
+            data-actuators-action="delete_actuator"
+            data-actuator-id="${this._escape(actuator.actuator_id)}"
+          >Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  _actuatorsAddForm(rooms, openings) {
+    if (!rooms.length) return "";
+    // Same in-progress-form persistence rationale as _topologyAddOpeningForm: tracked via
+    // _filters so an unrelated re-render (e.g. this action's own response elsewhere on the
+    // page) doesn't wipe what the admin has picked or typed before they click "Add actuator".
+    const formState = this._filters.actuators_new_actuator || {};
+    const selectedRoomId = formState.room_id || rooms[0].room_id;
+    const roomOptions = rooms
+      .map(
+        (room) =>
+          `<option value="${this._escape(room.room_id)}"${room.room_id === selectedRoomId ? " selected" : ""}>${this._escape(room.display_name || room.room_id)}</option>`,
+      )
+      .join("");
+    // Openings are filtered to the currently selected room: the room <select>'s data-filter-*
+    // attributes already trigger a full re-render on change, which recomputes this list.
+    const roomOpenings = openings.filter((opening) => opening.room_id === selectedRoomId);
+    const openingOptions =
+      `<option value="">— none —</option>` +
+      roomOpenings
+        .map((opening) => {
+          const details = [opening.type, opening.orientation].filter(Boolean).join(" · ");
+          const label = details ? `${details} (${opening.opening_id})` : opening.opening_id;
+          const selected = opening.opening_id === formState.opening_id ? " selected" : "";
+          return `<option value="${this._escape(opening.opening_id)}"${selected}>${this._escape(label)}</option>`;
+        })
+        .join("");
+    return `
+      <div class="topology-add-form">
+        <label>Room
+          <select
+            id="actuators-new-room"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="room_id"
+          >${roomOptions}</select>
+        </label>
+        <label>Opening (optional)
+          <select
+            id="actuators-new-opening"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="opening_id"
+          >${openingOptions}</select>
+        </label>
+        <label>Entity ID
+          <input
+            id="actuators-new-entity"
+            type="text"
+            placeholder="cover.kitchen_shutter"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="entity_id"
+            value="${this._escape(formState.entity_id || "")}"
+          />
+        </label>
+        <label>Display name (optional)
+          <input
+            id="actuators-new-display-name"
+            type="text"
+            placeholder="optional label"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="display_name"
+            value="${this._escape(formState.display_name || "")}"
+          />
+        </label>
+        <button class="inline" data-actuators-action="add_actuator">${
+          formState.actuator_id ? "Save actuator" : "Add actuator"
+        }</button>
+        ${
+          formState.actuator_id
+            ? `<button class="inline" data-actuators-action="cancel_edit_actuator">Cancel</button>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  _onActuatorsActionButton(button) {
+    const action = button.getAttribute("data-actuators-action") || "";
+    const root = this.shadowRoot;
+    if (action === "delete_actuator") {
+      const actuatorId = button.getAttribute("data-actuator-id") || "";
+      if (!actuatorId) return;
+      this._runActuatorsAction(
+        "delete_actuator",
+        { actuator_id: actuatorId },
+        `Delete actuator ${actuatorId}?`,
+      );
+      return;
+    }
+    if (action === "add_actuator") {
+      const roomId = root.getElementById("actuators-new-room")?.value || "";
+      const openingId = root.getElementById("actuators-new-opening")?.value || "";
+      const entityId = root.getElementById("actuators-new-entity")?.value || "";
+      const displayName = root.getElementById("actuators-new-display-name")?.value || "";
+      if (!roomId || !entityId) return;
+      const payload = { room_id: roomId, entity_id: entityId };
+      if (openingId) payload.opening_id = openingId;
+      if (displayName) payload.display_name = displayName;
+      // "Edit" pre-fills this same form with the existing actuator_id tracked in _filters;
+      // upsert_actuator replaces that record in place instead of creating a new one.
+      const editingActuatorId = this._filters.actuators_new_actuator?.actuator_id;
+      if (editingActuatorId) payload.actuator_id = editingActuatorId;
+      this._runActuatorsAction("upsert_actuator", payload);
+      return;
+    }
+    if (action === "edit_actuator") {
+      const actuatorId = button.getAttribute("data-actuator-id") || "";
+      const actuator = (this._actuatorsSnapshot?.actuators || []).find(
+        (candidate) => candidate.actuator_id === actuatorId,
+      );
+      if (!actuator) return;
+      this._filters = {
+        ...this._filters,
+        actuators_new_actuator: {
+          actuator_id: actuator.actuator_id,
+          room_id: actuator.room_id,
+          opening_id: actuator.opening_id || "",
+          entity_id: actuator.entity_id,
+          display_name: actuator.display_name || "",
+        },
+      };
+      this._render();
+      return;
+    }
+    if (action === "cancel_edit_actuator") {
+      const rest = { ...this._filters };
+      delete rest.actuators_new_actuator;
       this._filters = rest;
       this._render();
       return;

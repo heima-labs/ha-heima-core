@@ -10,6 +10,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import Unauthorized
 
+from .actuators import build_actuator_registry_snapshot
 from .const import DOMAIN
 from .observability import build_observability_snapshot
 from .room_topology import build_room_topology_snapshot
@@ -24,6 +25,10 @@ TOPOLOGY_ACTION_UPSERT_OPENING = "upsert_opening"
 TOPOLOGY_ACTION_DELETE_OPENING = "delete_opening"
 TOPOLOGY_ACTION_UPSERT_CONNECTION = "upsert_connection"
 TOPOLOGY_ACTION_DELETE_CONNECTION = "delete_connection"
+WS_TYPE_ACTUATORS_SNAPSHOT = "heima/actuators/snapshot"
+WS_TYPE_ACTUATORS_ACTION = "heima/actuators/action"
+ACTUATORS_ACTION_UPSERT = "upsert_actuator"
+ACTUATORS_ACTION_DELETE = "delete_actuator"
 WHY_NOT_NOW_RATE_LIMIT = 2
 WHY_NOT_NOW_RATE_WINDOW_S = 60.0
 ACTION_CLEAR_MANUAL_HOLD = "clear_manual_hold"
@@ -50,6 +55,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_observability_why_not_now)
     websocket_api.async_register_command(hass, websocket_topology_snapshot)
     websocket_api.async_register_command(hass, websocket_topology_action)
+    websocket_api.async_register_command(hass, websocket_actuators_snapshot)
+    websocket_api.async_register_command(hass, websocket_actuators_action)
 
 
 @websocket_api.websocket_command(
@@ -620,6 +627,123 @@ def _topology_action_object_links(
     if action in (TOPOLOGY_ACTION_UPSERT_CONNECTION, TOPOLOGY_ACTION_DELETE_CONNECTION):
         return ({"kind": "connection", "id": str(payload.get("connection_id") or "")},)
     return ()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTUATORS_SNAPSHOT,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@callback
+def websocket_actuators_snapshot(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the read-only admin actuator registry snapshot."""
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested actuator registry snapshot.",
+        )
+        return
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(msg["id"], build_actuator_registry_snapshot(options))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTUATORS_ACTION,
+        vol.Optional("entry_id"): str,
+        vol.Required("action"): vol.In([ACTUATORS_ACTION_UPSERT, ACTUATORS_ACTION_DELETE]),
+        vol.Optional("payload", default={}): dict,
+    }
+)
+@callback
+def websocket_actuators_action(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Run one allowlisted admin actuator registry mutation."""
+    if not connection.user or not connection.user.is_admin:
+        raise Unauthorized()
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested actuator registry action.",
+        )
+        return
+    hass.async_create_task(_async_handle_actuators_action(coordinator, connection, msg))
+
+
+async def _async_handle_actuators_action(
+    coordinator: Any,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle one allowlisted admin actuator registry action and send its websocket response."""
+    action = str(msg.get("action") or "").strip()
+    payload = dict(msg.get("payload") or {})
+
+    if action == ACTUATORS_ACTION_UPSERT:
+        entity_id = str(payload.get("entity_id") or "").strip()
+        room_id = str(payload.get("room_id") or "").strip()
+        if not entity_id or not room_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "upsert_actuator requires entity_id and room_id."
+            )
+            return
+        applied, issues = await coordinator.async_upsert_actuator(
+            actuator_id=payload.get("actuator_id"),
+            entity_id=entity_id,
+            room_id=room_id,
+            opening_id=payload.get("opening_id"),
+            display_name=payload.get("display_name"),
+        )
+    elif action == ACTUATORS_ACTION_DELETE:
+        actuator_id = str(payload.get("actuator_id") or "").strip()
+        if not actuator_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "delete_actuator requires actuator_id."
+            )
+            return
+        applied, issues = await coordinator.async_delete_actuator(actuator_id=actuator_id)
+    else:
+        connection.send_error(msg["id"], "unsupported_action", f"Unsupported action '{action}'.")
+        return
+
+    if not applied:
+        if issues:
+            reasons = "; ".join(str(issue.get("description") or "") for issue in issues)
+            connection.send_error(msg["id"], "validation_failed", reasons)
+        else:
+            connection.send_error(
+                msg["id"], "not_found", f"Actuator registry action '{action}' could not be applied."
+            )
+        return
+
+    _record_admin_action(
+        coordinator,
+        summary=f"Admin applied actuator registry action '{action}'.",
+        reason_code=f"actuator_registry.{action}",
+        object_links=({"kind": "actuator", "id": str(payload.get("actuator_id") or "")},),
+    )
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(
+        msg["id"],
+        {
+            "ok": True,
+            "action": action,
+            "snapshot": build_actuator_registry_snapshot(options),
+        },
+    )
 
 
 def _coordinator_entry_id(coordinator: Any) -> str:

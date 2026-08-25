@@ -279,9 +279,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # wasn't saved yet) and must be protected the same way.
     assert 'data-filter-section="topology_room_field"' in text
     # The 15s observability poll must not fire (and force a full DOM replace, which forcibly
-    # closes any open native <select>) while the admin is on the topology route, since that
-    # route doesn't even render observability data.
-    assert 'if (this._route !== "topology") {' in text
+    # closes any open native <select>) while the admin is on the topology or actuators route,
+    # since neither route renders observability data.
+    assert 'if (this._route !== "topology" && this._route !== "actuators") {' in text
     # Openings/connections must be editable in place, not just delete-and-recreate: the same
     # add-form is reused, pre-filled with the existing record's id, so upsert_opening/
     # upsert_connection replace it instead of creating a new one.
@@ -292,6 +292,17 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # room_type is not self-explanatory (garage vs. basement vs. external vs. outdoor all sound
     # similar); the admin editor must explain what each value means, not just offer the enum.
     assert "What do the room types mean?" in text
+    # Actuator Registry (AU4): its own snapshot/action websocket commands, its own route with
+    # the same poll-skip and in-progress-form persistence as Topology, edit-in-place from the
+    # start (not delete-only like Topology's own opening/connection forms started with).
+    assert "heima/actuators/snapshot" in text
+    assert "heima/actuators/action" in text
+    assert "Actuator Registry" in text
+    assert 'data-filter-section="actuators_new_actuator"' in text
+    assert 'data-actuators-action="edit_actuator"' in text
+    assert 'data-actuators-action="delete_actuator"' in text
+    assert 'data-actuators-action="cancel_edit_actuator"' in text
+    assert 'data-actuators-action="add_actuator"' in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text
