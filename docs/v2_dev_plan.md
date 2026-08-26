@@ -131,26 +131,25 @@ These constraints must never be violated. See spec §16 for rationale.
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
 | AU | Actuator Registry | `DONE` | AR |
+| AV | Actuator Discovery | `PLANNED` | AU, L |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4).
-**Active slice:** none. Phase AU (AU1-4: data model, validation, cache, admin editor, referential
-integrity with AR4's Opening delete) concluded and merged to `main`. AR (AR1-4) concluded and
-merged to `main` earlier; AR5-8 split out to Phase AT (`DEFERRED`, see
-`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/au-actuator-registry` merged to `main` (branch retained, not deleted).
-**Next action:** none active. `core/actuator_discovery_spec.md` (approved after design discussion,
-not yet phased/numbered) is the next spec-first candidate — extends Phase L's discovery dispatcher
-with actuator domain rules (cover/fan/climate/humidifier/switch) and a room-aware entity picker for
-the Actuators admin form, mirroring the fix already shipped for Topology's Opening picker. UI note:
-AU4's panel section itself was verified via automated real-websocket e2e tests
-(`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live browser
-smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus bug (found
-via live testing of this same form) was diagnosed and fixed before merge, so the mechanism it
-depends on (`_setFilter`/`_restoreFilterFocus`) is now live-verified.
+**Active slice:** Phase AV — Actuator Discovery. Spec approved (`core/actuator_discovery_spec.md`),
+phase definition just written, not yet implemented. Phase AU (AU1-4) concluded and merged to `main`
+beforehand; AR (AR1-4) concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`,
+see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/av-actuator-discovery` (to be created off `main`, v0.15.0). `feat/au-actuator-registry`
+already merged (branch retained, not deleted).
+**Next action:** AV1 — extend `discovery.py`'s rule table with the 5 new actuator domain branches.
+UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
+e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
+browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
+bug (found via live testing of this same form) was diagnosed and fixed before merge, so the
+mechanism it depends on (`_setFilter`/`_restoreFilterFocus`) is now live-verified.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1992,6 +1991,103 @@ thresholds (indoor `room_temperature` vs. `ExternalContext.outdoor_temp`/`outdoo
 to avoid flapping, per-opening vs. room-level actuator resolution and fallback-to-notification order
 (already outlined qualitatively in this registry's Future Consumers section), and notification
 routing/audience. Do not start implementing before that spec exists and is approved.
+
+### Phase AV — Actuator Discovery
+
+- Status: `PLANNED`.
+- Spec source: `docs/specs/core/actuator_discovery_spec.md` (Status: Planned — approved after design
+  discussion; not implemented, no dev-plan phase assigned until this section).
+- Also touches: `discovery.py` (Phase L's rule table — new domain branches only),
+  `config_flow_steps/_steps_discovery_validation.py` (`_apply_discovery_candidates()` — one new
+  branch), `websocket_api.py` (`websocket_actuators_snapshot` — one new additive response field).
+  Zero changes to `actuators.py`'s persisted schema or its "no `homeassistant` import" rule.
+- Goal: close two gaps raised during AU4's retrospective — Phase L's discovery never suggests
+  `Actuator` candidates, and the AU4 admin-panel Entity ID field is free text with no visibility
+  into which entities already belong to a known Room. Both share one missing primitive (recognizing
+  HA entities that look like actuators), added once as a rule-table extension and wired into both
+  surfaces — no new discovery function, no new dataclass, no new websocket command.
+- Product boundary:
+  - domain allowlist: `cover`, `fan`, `climate`, `humidifier`, `switch` — `light` stays excluded
+    (owned by Lighting's own domain/Reaction model);
+  - discovery only ever proposes `room_id`; `opening_id` is always left `null` for the admin to
+    link manually afterward — no opening-level inference;
+  - `discovery.py` gains zero new `options`-awareness — `room_id` resolution and
+    already-registered filtering happen in the two existing callers, not inside discovery itself;
+  - no auto-apply without explicit review, matching every existing Phase L candidate type (though
+    `actuator_candidate` is non-`ambiguous`, so the existing "accept non-ambiguous" bulk action does
+    apply it without a per-item step — this is a property of that existing action, not new
+    behavior introduced here).
+
+#### Sequencing Rationale
+
+Mirrors AU's own fan-out-by-risk sequencing: the rule-table extension is the highest-leverage,
+lowest-risk slice (pure data, both surfaces consume it directly), the Options Flow branch is next
+(touches persisted config, but follows an existing branch's exact shape), and the admin-panel picker
+is last (largest surface — websocket response shape plus frontend `<select>` rewiring).
+
+- **AV1** — `discovery.py` rule-table extension (5 new domain branches → `actuator_candidate`/
+  `category="actuator"`, `ambiguous=False`). No caller changes yet; both surfaces built on top of
+  this in AV2/AV3.
+- **AV2** — Surface 1: Options Flow discovery step. New `actuator_candidate` branch in
+  `_apply_discovery_candidates()`, following `room_occupancy_source`'s existing shape (`area_id`
+  → `room_id` resolution, skip-if-unresolved) plus the two mechanical notes the spec calls out:
+  thread `options = new_options` across multiple accepted candidates in one batch (unlike the two
+  existing branches' in-place mutation), and an idempotency guard against re-creating a duplicate
+  `Actuator` for an `entity_id` already in `OPT_ROOM_ACTUATORS`.
+- **AV3** — Surface 2: AU4 admin-panel picker. `websocket_actuators_snapshot` gains additive
+  `entity_candidates` (same two reconciliation steps as AV2, caller-local); `_actuatorsAddForm`'s
+  Entity ID field becomes a `<select>` populated from it (candidates in the currently-selected Room
+  listed first), with a manual-entry escape hatch preserved so any `entity_id` can still be
+  registered.
+
+#### AV1 — Discovery Rule-Table Extension
+
+- Status: `PLANNED`.
+- Depends on: Phase L (`_candidate_from_entry()`, the existing dispatcher).
+- `_candidate_from_entry()` gains 5 new domain branches (`cover`/`fan`/`climate`/`humidifier`/
+  `switch` → `suggested_binding="actuator_candidate"`, `category="actuator"`, `ambiguous=False`,
+  `confidence=0.8`). `discover_binding_candidates()`'s signature, `DiscoveryReport` shape, and
+  `_entry_area_id()` are otherwise unchanged.
+- Tests: one new case per allowlisted domain asserting `actuator_candidate`/`category="actuator"`/
+  `ambiguous=False`; a `light` entity still returns nothing for this category. Extends the existing
+  `discovery.py` test module — no new test file.
+
+#### AV2 — Options Flow Discovery Branch
+
+- Status: `PLANNED`.
+- Depends on: AV1.
+- `_apply_discovery_candidates()` gains the `actuator_candidate` branch described in Sequencing
+  Rationale above, calling `actuators.apply_actuator_upsert(options, actuator_id=None,
+  entity_id=candidate.entity_id, room_id=<resolved>, opening_id=None)`. No rejection-handling logic
+  needed — `apply_actuator_upsert` with `opening_id=None` can never return a blocking issue
+  (verified against `validate_actuators()`'s rules).
+- Tests: resolves `room_id` from `area_id` and persists via `apply_actuator_upsert`; a candidate
+  whose `area_id` has no matching Room is silently skipped; a candidate whose `entity_id` already
+  exists in `OPT_ROOM_ACTUATORS` is silently skipped; accepting two `actuator_candidate`s in the
+  same batch persists both (regression test for the `options` chaining note).
+
+#### AV3 — Admin-Panel Entity Picker
+
+- Status: `PLANNED`.
+- Depends on: AV1 (candidate recognition), AU4 (the panel section and snapshot this extends).
+- `websocket_actuators_snapshot` additionally calls `discover_binding_candidates()`, filters to
+  `category == "actuator"`, applies the same two reconciliation steps as AV2 (resolve `room_id`,
+  skip already-registered), and includes the result as additive `entity_candidates`
+  (`entity_id`/`domain`/`device_class`/`room_id`/`area_name`).
+- Frontend (`heima-admin-panel.js`): `_actuatorsAddForm`'s Entity ID field changes from free-text
+  `<input>` to a `<select>` (matching the Room/Opening fields' existing pattern), candidates in the
+  selected Room listed first, plus a trailing "Other (type entity_id)…" option revealing a text
+  input — the admin must still be able to register any `entity_id`, not just picker-covered ones.
+- Tests: `heima/actuators/snapshot`'s `entity_candidates` includes a matching entity with the
+  correct `room_id`, excludes one already registered as an `Actuator`, excludes one with no
+  resolved Room. Real-websocket e2e mirroring AV2's picker-equivalent for Topology
+  (`test_topology_opening_entity_picker.py`'s style). Static-asset assertions for the new `<select>`
+  markup and the manual-entry escape hatch, mirroring `test_admin_panel.py`'s existing coverage of
+  the Opening entity_id datalist fix.
+
+**Phase AV acceptance** (from the spec's own Acceptance Criteria): see
+`docs/specs/core/actuator_discovery_spec.md` §Acceptance Criteria — reproduced here only by
+reference to avoid drift between the two documents.
 
 ### Recent Working Notes
 

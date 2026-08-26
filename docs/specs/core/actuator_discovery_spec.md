@@ -1,6 +1,7 @@
 # Actuator Discovery Spec
 
-**Status:** Planned — approved after design discussion; not implemented, no dev-plan phase assigned yet.
+**Status:** Planned — approved after design discussion. Phased as `docs/v2_dev_plan.md` Phase AV
+(AV1-3); not yet implemented.
 **Date:** 2026-08-25
 **Scope:** Extends Phase L's rule-based discovery to also suggest `Actuator` candidates
 (`core/actuator_registry_spec.md`), and exposes the same candidate data to the AU4 admin-panel
