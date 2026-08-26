@@ -130,21 +130,27 @@ These constraints must never be violated. See spec §16 for rationale.
 | AR | Room Topology | `DONE` | AO, M |
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
-| AU | Actuator Registry | `PLANNED` | AR |
+| AU | Actuator Registry | `DONE` | AR |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** none. Phase AR (AR1-4: data model, validation, cache, admin editor) concluded and
-merged to `main`. AR5-8 (HouseState/Occupancy/Security consumption + observability) re-evaluated
-before merge and found to be non-blocking for anything currently planned — split out to Phase AT
-(`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/ar-room-topology` merged to `main` (branch retained, not deleted).
-**Next action:** Phase AU — Actuator Registry, phased AU1-4 (see below), spec approved and complete
-(`docs/specs/core/actuator_registry_spec.md`). Not started — awaiting explicit "ok, proceed" per
-CLAUDE.md before AU1 implementation begins. Depends only on AR (merged); does not depend on Phase AT.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4).
+**Active slice:** none. Phase AU (AU1-4: data model, validation, cache, admin editor, referential
+integrity with AR4's Opening delete) concluded and merged to `main`. AR (AR1-4) concluded and
+merged to `main` earlier; AR5-8 split out to Phase AT (`DEFERRED`, see
+`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/au-actuator-registry` merged to `main` (branch retained, not deleted).
+**Next action:** none active. `core/actuator_discovery_spec.md` (approved after design discussion,
+not yet phased/numbered) is the next spec-first candidate — extends Phase L's discovery dispatcher
+with actuator domain rules (cover/fan/climate/humidifier/switch) and a room-aware entity picker for
+the Actuators admin form, mirroring the fix already shipped for Topology's Opening picker. UI note:
+AU4's panel section itself was verified via automated real-websocket e2e tests
+(`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live browser
+smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus bug (found
+via live testing of this same form) was diagnosed and fixed before merge, so the mechanism it
+depends on (`_setFilter`/`_restoreFilterFocus`) is now live-verified.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1573,6 +1579,69 @@ Resulting order and rationale per phase:
 - Full suite green after every fix in this batch (final count: 1947 passed), `ruff check`/
   `ruff format --check` clean on every touched file.
 
+**Post-AU4 fix (2026-08-25):** the "add opening" form's Entity ID field was plain free text, with
+no visibility into which HA entities actually look like door/window sensors. Fixed by turning it
+into an autocomplete field: `websocket_topology_snapshot` (`websocket_api.py`) now also computes
+`entity_candidates` — reusing Phase L's existing `security_contact` discovery rule
+(`binary_sensor` with device_class `door`/`window`/`opening`/`garage_door`) as-is, resolving
+`area_id` → `room_id` itself (no new rule added to `discovery.py`, which stays unaware of Heima's
+own `options` — same principle documented in `docs/specs/core/actuator_discovery_spec.md` for the
+Actuator picker). Frontend: the field gained a `list`-bound `<datalist>` (native HTML autocomplete,
+no new dependency), entities belonging to the currently-selected room sorted first — still plain
+free text underneath, so any `entity_id` can still be entered, not just picker-covered ones. Tests:
+4 new unit tests for `_opening_entity_candidates()` (room resolution, no-match exclusion,
+non-security-domain exclusion, registry-failure fallback), 1 new real-websocket e2e test (real
+`entity_registry`/`area_registry` fixtures), static-asset assertions extended. Full suite 2004
+passed (was 1999), `ruff check`/`ruff format --check`/mypy clean, `node --check` passed.
+
+**Post-AU4 fix, same day:** the Connections table's "Opening" column showed the bare `opening_id`
+UUID — no inherent meaning to an admin, the exact disambiguation problem the "add connection"
+picker dropdown already solved for itself earlier in this batch. `_topologyConnectionRow()` now
+takes `openings` and looks up the referenced Opening, rendering `type · orientation · entity_id`
+instead (Room A is already its own column, not repeated); falls back to the raw id only if the
+Opening can't be found (a stale/dangling reference), with the id always still available via a
+`title` tooltip. Pure frontend, no backend change. Static-asset assertions extended; full suite
+still 2004 passed (assertions added to the existing test, no new test function), `ruff check`/
+`ruff format --check` clean, `node --check` passed.
+
+**Panel-wide fix, found via live-browser testing of the Actuators form (2026-08-25):** typing into
+*any* tracked `data-filter-section` input (search boxes throughout the panel, every add/edit form
+field in Topology and Actuators) scrolled the whole page to the top on every keystroke, and felt
+like the input lost focus. Root cause: `_restoreFilterFocus()` calls `input.focus()` after every
+keystroke-triggered re-render (`this.shadowRoot.innerHTML = ...` replaces the whole tree on every
+`_setFilter()` call) — the browser's default "scroll the newly-focused element into view" behavior
+was firing against that freshly-rebuilt, not-yet-settled DOM, landing the scroll position wherever
+the browser's fallback happened to be (in practice, the top of the page, since the Validation/
+Issues card is first in source order on both Topology and Actuators). Fixed with a one-line change:
+`input.focus({ preventScroll: true })`. This was live and pre-existing in every route that uses
+this mechanism, not introduced by AU4 or by any fix in this session's batch — just never noticed
+before because Topology's own forms were the only ones smoke-tested live before this, and this
+symptom (scroll jump) is easy to misread as "focus loss" rather than "page jumped so the cursor's
+visual context moved," which is what actually made it visible this time. Static-asset assertion
+added (`input.focus({ preventScroll: true })`); full suite still 2004 passed (assertion added to
+the existing test), `ruff check`/`ruff format --check` clean, `node --check` passed.
+
+**Follow-up (2026-08-25/26):** `preventScroll` alone did not resolve it on the developer's live
+test instance, even after a full docker restart (ruling out stale cache). A second, belt-and-
+suspenders attempt (`a9d09ae`) added explicit `window.scrollX/Y` capture-and-restore around
+`_setFilter()`'s re-render, on the theory that `preventScroll` isn't honored by every browser and
+that a full shadow-DOM rebuild can disturb scroll via other mechanisms (e.g. scroll anchoring
+losing its reference node). That still did not resolve it live. **The actual fix landed via
+Mistral Vibe** (commit `82a05ef`, "Fix focus loss in topology and actuators admin forms"),
+developer-applied and confirmed working: `_setFilter()` now debounces the re-render (50ms
+`setTimeout`, guarded by a `_renderScheduled` flag) instead of calling `_render()` synchronously
+on every keystroke; `_restoreFilterFocus()` is called explicitly after that deferred render
+instead of unconditionally at the end of every `_render()`. Root cause per that commit: duplicate
+render scheduling from overlapping input/change events was part of what was destroying/rebuilding
+the focused node faster than the browser could settle. `input.focus({ preventScroll: true })` and
+the `window.scrollX/Y` restore from the two earlier attempts were kept in place (harmless, still
+correct as defense in depth) — the debounce is what actually fixed it. Verified: full suite still
+2004 passed, `node --check` clean, static-asset assertions (`preventScroll`, `_scrollPosition`)
+still match since neither literal was removed. **Lesson:** this class of bug (real-browser
+scroll/focus/render-timing interaction) was not diagnosable from static code reading alone across
+two attempts — needed either live browser reproduction with devtools, or, as happened here, a
+different tool/pass to find it.
+
 AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
 Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
 currently planned (`core/actuator_registry_spec.md` reads `rooms.topology` directly and needs none
@@ -1663,9 +1732,10 @@ traceable in existing AO decision traces. Depends on AT3 for the decision traces
 
 ### Phase AU — Actuator Registry
 
-- Status: `PLANNED`.
-- Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Planned — not implemented on
-  `main`; approved after design discussion, see this phase's own history for the reasoning —
+- Status: `DONE` (AU1-4 implemented, tested, and merged to `main` via `feat/au-actuator-registry`,
+  v0.15.0).
+- Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Implemented (AU1-4) on `main`;
+  approved after design discussion, see this phase's own history for the reasoning —
   position-aware/unaware scenario stress test, the decision to keep it separate from Lighting, and
   the overlap check against deferred Phase AT).
 - Also touches: `core/admin_observability_panel_spec.md` (new `actuators` diagnostics summary),
@@ -1720,69 +1790,180 @@ order:
 
 #### AU1 — Data Model, Parsing, and Validation Core
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AR1 (references `Room`/`Opening` records and IDs; does not modify `room_topology.py`).
 - New module `custom_components/heima/actuators.py`: `Actuator` dataclass (`actuator_id`,
   `entity_id`, `room_id`, `opening_id`, `display_name`), `OPT_ROOM_ACTUATORS = "room_actuators"`
-  (`const.py`), `parse_actuators(options)`, `validate_actuators(options)` (the five checks from the
-  spec's Validation and Reconciliation section), `is_opening_referenced_by_actuator(options,
-  opening_id)` (the predicate AU4's coordinator check will call), and the upsert/delete apply
-  functions (`apply_actuator_upsert`, `apply_actuator_delete`) sharing one `_apply_and_validate()`
-  choke point, mirroring `room_topology.py`'s own pattern exactly.
-- Tests: malformed-entry skipping; `actuator_id` auto-generation; the `opening_id`-in-wrong-room
-  `error`; dangling `room_id`/`opening_id` `warning`s; unconditional shared-`entity_id` `warning`;
-  `entity_unavailable` marking. No derivation tests (there is no derivation — see spec).
+  (`const.py`), `parse_actuators(options)`, `validate_actuators(options)` (4 of the spec's 5 checks —
+  `opening_id`-in-wrong-room `error`, dangling `room_id`/`opening_id` `warning`s, unconditional
+  shared-`entity_id` `warning`; the 5th, `entity_unavailable`, is HA-registry-dependent and correctly
+  deferred to AU2, mirroring `room_topology.py`'s own `validate_topology()`/`_topology_section()`
+  split), `is_opening_referenced_by_actuator(options, opening_id)` (the predicate AU4's coordinator
+  check will call), and the upsert/delete apply functions (`apply_actuator_upsert`,
+  `apply_actuator_delete`) sharing one `_apply_and_validate()` choke point, mirroring
+  `room_topology.py`'s own pattern. `_apply_and_validate()` is simpler than `room_topology.py`'s
+  version — no `key` parameter needed, since `Actuator` is the only entity type here (unlike
+  Room/Opening/Connection). Imports `room_topology.parse_openings` directly (safe: `room_topology.py`
+  has no heavy transitive imports) instead of reimplementing Opening lookup.
+- Tests (`tests/test_actuators.py`, 23): malformed-entry skipping; `actuator_id` deduplication and
+  auto-generation; the `opening_id`-in-wrong-room `error`; dangling `room_id`/`opening_id`
+  `warning`s; unconditional shared-`entity_id` `warning`;
+  `is_opening_referenced_by_actuator` true/false; upsert generates/edits-in-place, rejects
+  missing `entity_id`/`room_id`, blocked only by the `error`-severity mismatch (not by
+  warning-severity dangling references); delete removes/no-ops. No derivation tests (there is no
+  derivation — see spec). Verification: full suite 1970 passed (was 1947 pre-AU1), `ruff check`/
+  `ruff format --check` clean; mypy (informational) shows only the pre-existing, unrelated
+  `room_topology.py:374` error, nothing new from `actuators.py`.
 
 #### AU2 — Installation Validation Wiring
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (pure validation core).
-- New `ValidationSection` in `validation.py`, wired into `build_validation_report()` alongside the
-  existing `_topology_section()`, following the same pattern (local import of `validate_actuators`
-  to avoid the same transitive-import concern `room_topology.py`/`validation.py` already navigate).
-  No new plumbing needed for the `entity_unavailable` check: `build_validation_report()` already
-  threads `known_entity_ids` generically to every section (verified in `validation.py`) — the new
-  section just consumes the same parameter `_topology_section()` already receives.
-- Tests: mirrors `tests/test_validation_m.py`'s existing topology-section tests, one per validation
-  rule from AU1.
+- New `_actuators_section()` in `validation.py`, wired into `build_validation_report()` right after
+  `_topology_section()`, mirroring it exactly: local import of `validate_actuators` (same
+  transitive-import concern `room_topology.py`/`validation.py` already navigate), plus the
+  `entity_unavailable` check built the same way as topology's own opening-entity check — iterating
+  `OPT_ROOM_ACTUATORS`, flagging any `entity_id` not in `known_entity_ids` when that parameter is
+  given, skipped when it's `None`. No new plumbing needed: reused the `known_entity_ids` parameter
+  `build_validation_report()` already threads generically to every section. Section key
+  `actuator_registry`, matching `actuators.py`'s own `_VALIDATION_CAPABILITY`.
+- Tests (`tests/test_validation_m.py`, 4 new): section present and `ok` with no actuators
+  configured; `opening_room_mismatch` surfaces as `error` and raises overall report severity;
+  `entity_unavailable` warning appears when `known_entity_ids` is given and the entity is missing
+  from it; the same check is skipped (no issue) when `known_entity_ids` is omitted. Verification:
+  full suite 1974 passed (was 1970 pre-AU2), `ruff check`/`ruff format --check` clean, mypy
+  (informational) unchanged — only the pre-existing, unrelated `room_topology.py:374` error.
 
 #### AU3 — Actuator Cache and CanonicalState Exposure
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (reads parsed/validated `Actuator` records).
-- New `ActuatorCache` class (mirrors `TopologyGraphCache`: `mark_stale()`, `get_actuators(options)`),
-  wired into `Engine` the same way `TopologyGraphCache` is — a new `_compute_actuators` step writing
-  `CanonicalState["rooms.actuators"]`, invalidated on `async_reload_options()` and on
-  `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` (reusing the existing subscription,
-  not a second listener).
+- New `ActuatorCache` class in `actuators.py` (mirrors `TopologyGraphCache`: `mark_stale()`,
+  `get_actuators(options)`), wired into `Engine` the same way `TopologyGraphCache` is: a new
+  `_compute_room_actuators()` step (called right after `_compute_room_topology()` in the main cycle)
+  writing `CanonicalState["rooms.actuators"]` as a flat list of `Actuator.as_dict()` (per the spec's
+  CanonicalState Exposure section — `orientation` deliberately not duplicated onto the record).
+  `Engine.set_actuator_cache()` setter added alongside `set_room_topology_cache()`.
+  `HeimaCoordinator` instantiates `ActuatorCache()` and binds it the same way it binds
+  `TopologyGraphCache`; `mark_stale()` called unconditionally in `Engine.async_reload_options()` and
+  from the coordinator's existing `_handle_registry_updated()` listener (reusing the same
+  `EVENT_AREA_REGISTRY_UPDATED`/`EVENT_ENTITY_REGISTRY_UPDATED` subscription that already
+  invalidates the topology cache and room context builder — not a second listener).
 - `Engine._recovery_critical_entity_ids()` gains two additive loops (`Opening.entity_id` from
-  `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`).
-- Tests: cache invalidation triggers (options change, both registry events); `rooms.actuators`
-  correctly empty when no actuators configured; both new entity_id sources present in
-  `_recovery_critical_entity_ids()`'s output. No new test needed for existing Heating/Security/
-  Lighting entries — since this only adds loops, not modifying existing ones, the full suite staying
-  green already guarantees that regression for free.
+  `OPT_ROOM_OPENINGS`, `Actuator.entity_id` from `OPT_ROOM_ACTUATORS`), placed next to the existing
+  Heating/Security loops.
+- Tests: `ActuatorCache` unit tests (`tests/test_actuators.py`, 4 new) mirroring
+  `TopologyGraphCache`'s own coverage (builds on first call, no rebuild without `mark_stale()`,
+  rebuilds after `mark_stale()`, empty before first call never raises); engine-wiring tests
+  (`tests/test_actuator_registry_engine_wiring.py`, new file, 6 tests) mirroring
+  `tests/test_room_topology_engine_wiring.py`: `_compute_room_actuators()` writes `[]` without a
+  cache, writes parsed actuators from the cache, reuses the cache instance without `mark_stale()`;
+  plus both new `_recovery_critical_entity_ids()` entity_id sources confirmed present in its output.
+  No new test needed for existing Heating/Security/Lighting entries — since this only adds loops,
+  not modifying existing ones, the full suite staying green already guarantees that regression for
+  free. Verification: full suite 1984 passed (was 1974 pre-AU3), `ruff check`/`ruff format --check`
+  clean, mypy (informational) unchanged.
 
 #### AU4 — Admin Editor (Panel) and Referential Integrity
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AU1 (save-time blocking reuses the same pure validation core).
-- `heima/actuators/snapshot` / `heima/actuators/action` websocket commands, mirroring AR4's
-  `heima/topology/*` pattern (admin-gating split: `@websocket_api.require_admin` for the read-only
-  snapshot, manual `is_admin` check + `hass.async_create_task` dispatch for the mutating action).
-  Action allowlist: `upsert_actuator`, `delete_actuator`.
-- New "Actuators" panel section (rooms/openings dropdown-driven add form, table with Edit/Delete —
-  built directly with the Edit-in-place pattern AR4 added later, not the delete-only pattern it
-  started with).
-- `HeimaCoordinator.async_delete_room_opening()` extended: calls `actuators.is_opening_referenced_by_actuator()`
-  before delegating to `apply_room_opening_delete()`, refusing (not-applied) if any `Actuator`
-  references the opening — the one place this phase edits already-shipped AR4 code.
-- Tests: full snapshot/upsert/delete round trip (coordinator-level and real-websocket e2e, mirroring
-  both `tests/test_room_topology_coordinator.py` and `tests/test_room_topology_panel_e2e.py`);
-  admin-gating rejection for non-admin callers; Opening-delete blocked when referenced by an
-  Actuator. No new test needed to confirm Opening-delete is still blocked when referenced by a
+- `build_actuator_registry_snapshot(options)` added to `actuators.py`, mirroring
+  `room_topology.py`'s own `build_room_topology_snapshot()`: rooms/openings included only as
+  read-only reference data for the editor's dropdowns (owned by `room_topology.py`, not
+  duplicated), plus the actuators list and `validate_actuators()` issues.
+- `heima/actuators/snapshot` / `heima/actuators/action` websocket commands in `websocket_api.py`,
+  mirroring AR4's `heima/topology/*` pattern exactly (admin-gating split:
+  `@websocket_api.require_admin` for the read-only snapshot, manual `is_admin` check +
+  `hass.async_create_task` dispatch for the mutating action). Action allowlist: `upsert_actuator`,
+  `delete_actuator`.
+- `HeimaCoordinator.async_upsert_actuator()` / `async_delete_actuator()` added, reusing the same
+  persist helper AR4's topology methods use (renamed from `_apply_room_topology_mutation` to
+  `_apply_options_mutation` since it's now shared by both, not renamed to anything actuator-
+  specific — it was already fully generic).
+- `HeimaCoordinator.async_delete_room_opening()` extended: calls
+  `actuators.is_opening_referenced_by_actuator()` before delegating to
+  `apply_room_opening_delete()`, returning a `topology.opening.{id}.referenced_by_actuator` error
+  issue (not-applied) if any `Actuator` references the opening — the one place this phase edits
+  already-shipped AR4 code. Unrelated to the pre-existing Connection-blocks-delete path (that one
+  is still enforced entirely inside `room_topology.py`'s own `validate_topology()`, unaffected).
+- New "Actuators" panel section in `heima-admin-panel.js`: own snapshot/loading/error state, own
+  poll-skip on this route (the topology route's poll-skip condition was extended to cover both
+  routes, since the same 15s-observability-poll-closes-open-`<select>`s bug AR4 fixed for topology
+  would otherwise reproduce here), table with Edit/Delete built directly with the edit-in-place
+  pattern AR4 added later (not the delete-only pattern it started with), and an add/edit form
+  (Room dropdown, Opening dropdown filtered to the selected room, Entity ID text, Display name
+  text) using the same `_filters`-tracked in-progress-form persistence as Topology's own forms.
+- Tests: coordinator-level (`tests/test_actuator_registry_coordinator.py`, 6): upsert
+  generates/edits-in-place, upsert rejected by `opening_room_mismatch`, delete persists,
+  Opening-delete blocked when referenced by an Actuator, Opening-delete still succeeds when the
+  only Actuator reference is to a *different* opening (regression guard for the new check).
+  Real-websocket e2e (`tests/test_actuator_registry_panel_e2e.py`, 4, mirroring
+  `tests/test_room_topology_panel_e2e.py`): full snapshot/upsert/delete round trip, validation
+  failure surfaced as `validation_failed`, admin-gating rejection for non-admin callers, and
+  Opening-delete blocked over the real websocket layer. `build_actuator_registry_snapshot()` unit
+  tests (`tests/test_actuators.py`, 3 new). `tests/test_admin_panel.py`'s static-asset assertion
+  test extended with the new websocket command strings, route title, and `data-actuators-action`/
+  `data-filter-section` markers; its pre-existing poll-skip assertion updated to match the widened
+  condition. No new test needed to confirm Opening-delete is still blocked when referenced by a
   Connection — AR4's existing test for that already covers it; the full suite staying green after
-  this addition is the regression guarantee.
+  this addition is the regression guarantee. Verification: full suite 1997 passed (was 1984
+  pre-AU4), `ruff check`/`ruff format --check` clean, mypy (informational) unchanged, JS syntax
+  verified with `node --check`. **Not verified**: no live browser smoke-test of the new Actuators
+  panel section (unlike AR4, which was smoke-tested manually) — automated real-websocket e2e tests
+  cover the backend/websocket contract, not actual DOM rendering/interaction in a browser.
+
+**Post-AU4 addendum — server-generated id missing from the admin-action audit trail (found during
+retrospective review, fixed on the same branch before merge):** `upsert_opening`/`upsert_connection`
+(topology, AR4) and `upsert_actuator` (AU4) generate the record's id server-side when the client
+omits it. The admin-action audit trail (`_record_admin_action`'s `object_links`) and the websocket
+response were both built from the original request `payload`, which for a new record has no id —
+so a newly *created* opening/connection/actuator was logged and returned with an empty id, though
+the persisted record itself was always correct. Fixed by resolving the id in `websocket_api.py`
+itself (not inside `apply_room_opening_upsert`/`apply_room_connection_upsert`/`apply_actuator_upsert`,
+which keep generating it internally for direct callers, e.g. their own unit tests) right before
+calling the coordinator, and echoing the resulting `(kind, id)` pairs — the same ones sent to
+observability — back in the websocket response as `object_links`. Zero changes to
+`room_topology.py`/`actuators.py`/`coordinator.py`; the fix is entirely confined to
+`websocket_api.py`, so none of AR1-4's or AU1-3's existing tests needed touching.
+Documented (per explicit developer request during review) the theoretical, undefended `uuid4()`
+collision case at both id-generation sites (`apply_room_opening_upsert`/`apply_room_connection_upsert`
+in `room_topology.py`, `apply_actuator_upsert` in `actuators.py`): a collision with an
+already-existing id would silently overwrite that record via the replace-by-id upsert semantics —
+not checked for, since the probability is negligible (2^122 space) for a per-household list of at
+most a few hundred entries. Not defended against by design; flagged as a documented, accepted edge
+case, not a bug.
+Tests: 2 new real-websocket e2e tests (`test_e2e_topology_upsert_without_client_id_returns_server_generated_id`
+in `tests/test_room_topology_panel_e2e.py`, `test_e2e_actuators_upsert_without_client_id_returns_server_generated_id`
+in `tests/test_actuator_registry_panel_e2e.py`) asserting the response's `object_links` carries a
+non-empty id matching the one that actually landed in the snapshot. Full suite 1999 passed (was
+1997), `ruff check`/`ruff format --check` clean, mypy unchanged.
+
+**AU4 live test:** Added `scripts/live_tests/087_actuator_registry_live.py`, following the
+`080_admin_observability_panel_live.py`/`075_camera_privacy_policy_editor_live.py` pattern
+(`HAClient`/`HAWebSocketClient` against the local HA test lab, non-destructive, cleanup in
+`finally`). No live test existed yet for Room Topology (AR4) either, so this is the first live
+test to exercise `heima/topology/*` at all, used here only to seed a test Opening. Covers, against
+the real coordinator/websocket layer, not pytest fixtures: snapshot contract (baseline room
+`studio` present); `upsert_actuator` creating a record in that room, linked to the seeded Opening,
+and returning the server-generated `actuator_id` via `object_links` (exercising the fix above
+live); edit-in-place (same id, new `display_name`) replacing rather than duplicating the record;
+`opening_room_mismatch` rejected as `validation_failed`; missing `entity_id` rejected as
+`invalid_payload`; **the AU4-specific check** — `delete_opening` on the still-referenced Opening
+rejected as `validation_failed` with "referenced by an Actuator" in the message; non-admin
+websocket rejection (skipped if `HA_NON_ADMIN_TOKEN` is not provided, matching 080's pattern).
+Uses baseline fixture room `studio` and fixture entity `climate.test_heima_thermostat` (both
+already seeded by `scripts/recover_test_lab_config.py`); creates one Opening + one Actuator,
+deletes both in `finally` regardless of outcome, leaving the lab unchanged.
+Registered in `scripts/check_all_live.sh`'s `DIAGNOSTIC_SCRIPTS` tier, alongside 075/080/085 (the
+other editor/panel websocket-contract live tests) — not `LIVE_E2E_SCRIPTS` (reserved for runtime
+behavior) or `DESTRUCTIVE_SCRIPTS` (reserved for container restarts).
+Verification: `ruff check`/`ruff format --check`/`mypy --ignore-missing-imports` clean,
+`python3 -m py_compile` passed, `bash -n scripts/check_all_live.sh` passed. **Not run against a
+live HA test instance in this session** — no local `HA_URL`/`HA_TOKEN` test lab available here;
+needs `source scripts/.env && scripts/live_tests/087_actuator_registry_live.py --ha-url "$HA_URL"
+--ha-token "$HA_TOKEN" ${HA_NON_ADMIN_TOKEN:+--ha-non-admin-token "$HA_NON_ADMIN_TOKEN"}` run once
+against the developer's local test lab before this is considered proven, not just type/lint-clean.
 
 - Phase AU acceptance (from the spec's own Acceptance Criteria):
   - `Actuator` records persisted via the existing options boundary, defaulting to `[]`, no migration

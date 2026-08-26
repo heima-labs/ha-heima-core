@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.15.0] — 2026-08-26
+
+- Actuator Registry (Phase AU, AU1-4): a new generic, room/opening-aware inventory of actuator
+  entities (covers, fans, climate units, and future equipment classes) — placement only, no
+  command/capability model — so future comfort/climate Reactions can resolve "the shutter on the
+  south window" without hardcoding entity_ids. Persisted per config entry, validated against
+  Installation Validation, cached and exposed via `CanonicalState["rooms.actuators"]`, included in
+  recovery's critical-entity tracking. Fully admin-editable through a new "Actuators" section in
+  the admin panel (websocket-backed, admin-gated), including in-place editing. Deleting a Room
+  Topology Opening still referenced by an Actuator is now blocked with a referential-integrity
+  error, mirroring the existing Connection-blocks-delete behavior.
+- Fixed: creating a new Opening/Connection/Actuator without a client-supplied id (the normal
+  "add new" flow) now returns the server-generated id in the websocket response and the
+  admin-action audit trail — previously both were built from the original request payload, which
+  has no id for a new record, so the created record was logged/returned with an empty id even
+  though the persisted record itself was always correct.
+- The Room Topology admin editor's "Add opening" Entity ID field is now an autocomplete dropdown
+  (room-resolved, reusing Phase L's discovery rule for door/window sensors) instead of plain free
+  text; the Connections table's Opening column now shows a human-readable label
+  (type/orientation/entity_id) instead of a bare UUID.
+- Fixed a pre-existing, panel-wide bug where typing into any tracked admin-panel input (search
+  boxes, every add/edit form field) could scroll the whole page to the top and feel like the field
+  lost focus, caused by the full shadow-DOM re-render triggered on every keystroke.
+
 ## [0.14.0] — 2026-08-24
 
 - Room Topology (Phase AR, AR1-4): a new declarative spatial data model — room type/floor, doors and

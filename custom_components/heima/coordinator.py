@@ -19,6 +19,12 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .actuators import (
+    ActuatorCache,
+    apply_actuator_delete,
+    apply_actuator_upsert,
+    is_opening_referenced_by_actuator,
+)
 from .const import (
     DEFAULT_ACTIVITY_BINDINGS,
     DOMAIN,
@@ -109,7 +115,7 @@ from .runtime.signal_discovery import (
     SignalSuggestion,
     apply_signal_options_patch,
 )
-from .validation import ValidationReport, build_validation_report
+from .validation import ValidationIssue, ValidationReport, build_validation_report
 
 _LOGGER = logging.getLogger(__name__)
 _PROPOSAL_RUN_INTERVAL_S = 6 * 60 * 60
@@ -348,6 +354,8 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.engine.set_room_context_builder(self._room_context_builder)
         self._room_topology_cache = TopologyGraphCache()
         self.engine.set_room_topology_cache(self._room_topology_cache)
+        self._actuator_cache = ActuatorCache()
+        self.engine.set_actuator_cache(self._actuator_cache)
         self._weekday_module = WeekdayStateModule(
             **_learning_module_threshold_kwargs(
                 learning_config,
@@ -1002,12 +1010,12 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         self.hass.config_entries.async_update_entry(self.entry, options=options)
         return True
 
-    def _apply_room_topology_mutation(
+    def _apply_options_mutation(
         self,
         new_options: dict[str, Any] | None,
         issues: tuple[Any, ...],
     ) -> tuple[bool, tuple[dict[str, Any], ...]]:
-        """Persist a room topology mutation, or report the blocking issues that rejected it."""
+        """Persist a topology/actuator mutation, or report the blocking issues that rejected it."""
         if new_options is None:
             return False, tuple(issue.as_dict() for issue in issues)
         self.hass.config_entries.async_update_entry(self.entry, options=new_options)
@@ -1027,7 +1035,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             room_type=room_type,
             floor=floor,
         )
-        return self._apply_room_topology_mutation(new_options, issues)
+        return self._apply_options_mutation(new_options, issues)
 
     async def async_upsert_room_opening(
         self,
@@ -1047,19 +1055,42 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             orientation=orientation,
             entity_id=entity_id,
         )
-        return self._apply_room_topology_mutation(new_options, issues)
+        return self._apply_options_mutation(new_options, issues)
 
     async def async_delete_room_opening(
         self,
         *,
         opening_id: str,
     ) -> tuple[bool, tuple[dict[str, Any], ...]]:
-        """Delete one Opening, admin-editor entry point."""
+        """Delete one Opening, admin-editor entry point.
+
+        Blocked if a Connection still references it (via `validate_topology`, `room_topology.py`'s
+        own concern) or if an Actuator does (checked here: `actuators.py` stays unaware of
+        `room_topology.py`, so this referential-integrity check can only live at this layer,
+        the same way it's stated in `docs/specs/core/actuator_registry_spec.md`).
+        """
+        options = dict(getattr(self.entry, "options", {}) or {})
+        normalized_opening_id = str(opening_id or "").strip()
+        if normalized_opening_id and is_opening_referenced_by_actuator(
+            options, normalized_opening_id
+        ):
+            return False, (
+                ValidationIssue(
+                    key=f"topology.opening.{normalized_opening_id}.referenced_by_actuator",
+                    severity="error",
+                    title="Opening is referenced by an Actuator",
+                    description=(
+                        f"Opening '{normalized_opening_id}' is referenced by an Actuator and "
+                        "cannot be deleted."
+                    ),
+                    capability="room_topology",
+                ).as_dict(),
+            )
         new_options, issues = apply_room_opening_delete(
-            dict(getattr(self.entry, "options", {}) or {}),
+            options,
             opening_id=opening_id,
         )
-        return self._apply_room_topology_mutation(new_options, issues)
+        return self._apply_options_mutation(new_options, issues)
 
     async def async_upsert_room_connection(
         self,
@@ -1079,7 +1110,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             access_type=access_type,
             connection_type_override=connection_type_override,
         )
-        return self._apply_room_topology_mutation(new_options, issues)
+        return self._apply_options_mutation(new_options, issues)
 
     async def async_delete_room_connection(
         self,
@@ -1091,7 +1122,39 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
             dict(getattr(self.entry, "options", {}) or {}),
             connection_id=connection_id,
         )
-        return self._apply_room_topology_mutation(new_options, issues)
+        return self._apply_options_mutation(new_options, issues)
+
+    async def async_upsert_actuator(
+        self,
+        *,
+        actuator_id: str | None,
+        entity_id: str,
+        room_id: str,
+        opening_id: str | None = None,
+        display_name: str | None = None,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Create or replace one Actuator, admin-editor entry point."""
+        new_options, issues = apply_actuator_upsert(
+            dict(getattr(self.entry, "options", {}) or {}),
+            actuator_id=actuator_id,
+            entity_id=entity_id,
+            room_id=room_id,
+            opening_id=opening_id,
+            display_name=display_name,
+        )
+        return self._apply_options_mutation(new_options, issues)
+
+    async def async_delete_actuator(
+        self,
+        *,
+        actuator_id: str,
+    ) -> tuple[bool, tuple[dict[str, Any], ...]]:
+        """Delete one Actuator, admin-editor entry point."""
+        new_options, issues = apply_actuator_delete(
+            dict(getattr(self.entry, "options", {}) or {}),
+            actuator_id=actuator_id,
+        )
+        return self._apply_options_mutation(new_options, issues)
 
     async def async_reset_runtime_confirmation_promotion_state(self, reaction_id: str) -> bool:
         """Clear persisted runtime confirmation stats and promotion review state."""
@@ -1775,6 +1838,7 @@ class HeimaCoordinator(DataUpdateCoordinator[HeimaRuntimeState]):
         def _handle_registry_updated(_event: Event) -> None:
             self._room_context_builder.mark_stale()
             self._room_topology_cache.mark_stale()
+            self._actuator_cache.mark_stale()
 
         unsub_entity = self.hass.bus.async_listen(
             er.EVENT_ENTITY_REGISTRY_UPDATED,

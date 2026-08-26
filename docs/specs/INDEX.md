@@ -51,7 +51,8 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/runtime_checkpoint_and_power_recovery_spec.md` — approved, planned checkpoint/recovery contract for HA restart, power outage, and startup stabilization (Phase AQ, not implemented on `main`)
 - `core/room_topology_spec.md` — implemented on `main`: spatial topology contract (room adjacency graph, openings, orientation), data model/validation/cache/admin editor (Phase AR, AR1-4)
 - `core/room_topology_consumers_spec.md` — deferred, not scheduled: HouseState/Occupancy/Security consumption of `rooms.topology` (originally AR5-8), split out of Phase AR once AR1-4 shipped without needing them
-- `core/actuator_registry_spec.md` — planned generic actuator inventory (room/opening placement for cover/fan/climate entities) feeding future comfort/climate Reactions; depends on `room_topology_spec.md`, not implemented on `main`
+- `core/actuator_registry_spec.md` — generic actuator inventory (room/opening placement for cover/fan/climate entities) feeding future comfort/climate Reactions; implemented (AU1-4) on `main`
+- `core/actuator_discovery_spec.md` — planned: extends Phase L rule-based discovery to suggest `Actuator` candidates and prioritizes the AU4 admin-panel entity picker with known-room entities; depends on `actuator_registry_spec.md`, not implemented, no dev-plan phase assigned yet
 - `core/house_state_override_spec.md` — `heima.set_mode` semantics
 - `core/manual_hold_framework_spec.md` — draft shared runtime contract for implicit/explicit manual holds across automations
 - `core/apply_step_contract.md` — canonical runtime action contract, including `target` vs `params.entity_id`

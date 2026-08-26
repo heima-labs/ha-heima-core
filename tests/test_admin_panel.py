@@ -279,9 +279,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # wasn't saved yet) and must be protected the same way.
     assert 'data-filter-section="topology_room_field"' in text
     # The 15s observability poll must not fire (and force a full DOM replace, which forcibly
-    # closes any open native <select>) while the admin is on the topology route, since that
-    # route doesn't even render observability data.
-    assert 'if (this._route !== "topology") {' in text
+    # closes any open native <select>) while the admin is on the topology or actuators route,
+    # since neither route renders observability data.
+    assert 'if (this._route !== "topology" && this._route !== "actuators") {' in text
     # Openings/connections must be editable in place, not just delete-and-recreate: the same
     # add-form is reused, pre-filled with the existing record's id, so upsert_opening/
     # upsert_connection replace it instead of creating a new one.
@@ -292,6 +292,36 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # room_type is not self-explanatory (garage vs. basement vs. external vs. outdoor all sound
     # similar); the admin editor must explain what each value means, not just offer the enum.
     assert "What do the room types mean?" in text
+    # Actuator Registry (AU4): its own snapshot/action websocket commands, its own route with
+    # the same poll-skip and in-progress-form persistence as Topology, edit-in-place from the
+    # start (not delete-only like Topology's own opening/connection forms started with).
+    assert "heima/actuators/snapshot" in text
+    assert "heima/actuators/action" in text
+    assert "Actuator Registry" in text
+    assert 'data-filter-section="actuators_new_actuator"' in text
+    assert 'data-actuators-action="edit_actuator"' in text
+    assert 'data-actuators-action="delete_actuator"' in text
+    assert 'data-actuators-action="cancel_edit_actuator"' in text
+    assert 'data-actuators-action="add_actuator"' in text
+    # Opening entity_id must be an autocomplete field (datalist bound to the text input, not a
+    # bare text box), populated from the topology snapshot's room-resolved entity_candidates.
+    assert "topology-new-opening-entity-list" in text
+    assert 'list="${entityListId}"' in text
+    assert "_entityCandidateOptions" in text
+    # The Connections table's Opening column must show a human-readable label (type/orientation/
+    # entity_id), not the bare opening_id UUID, which has no inherent meaning to an admin.
+    assert "_topologyConnectionRow(connection, openings)" in text
+    assert "const opening = (openings || []).find(" in text
+    assert 'title="${this._escape(connection.opening_id)}"' in text
+    # Refocusing an input after a keystroke-triggered full re-render must not let the browser's
+    # default scroll-into-view behavior fire against the freshly-rebuilt, not-yet-settled DOM —
+    # that's what was scrolling the whole page to the top on every character typed.
+    assert "input.focus({ preventScroll: true })" in text
+    # preventScroll isn't honored by every browser, and a full shadow-DOM rebuild can also
+    # trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its reference
+    # node). The panel must also force-restore the pre-render scroll position as a fallback.
+    assert "this._scrollPosition = { x: window.scrollX, y: window.scrollY }" in text
+    assert "window.scrollTo(this._scrollPosition.x, this._scrollPosition.y)" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

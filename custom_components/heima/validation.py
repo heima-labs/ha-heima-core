@@ -10,6 +10,7 @@ from .const import (
     OPT_ACTIVITY_BINDINGS,
     OPT_PEOPLE_ANON,
     OPT_PEOPLE_NAMED,
+    OPT_ROOM_ACTUATORS,
     OPT_ROOM_CONNECTIONS,
     OPT_ROOM_OPENINGS,
     OPT_ROOMS,
@@ -105,6 +106,7 @@ def build_validation_report(
         _activity_section(options),
         _invariant_section(options),
         _topology_section(options, known_entity_ids=known_entity_ids),
+        _actuators_section(options, known_entity_ids=known_entity_ids),
         _learning_section(
             snapshot_count=snapshot_count,
             approval_count=approval_count,
@@ -386,6 +388,61 @@ def _topology_section(
     return ValidationSection(
         key="room_topology",
         title="Room Topology",
+        severity=_max_severity(issue.severity for issue in issues) if issues else "ok",
+        summary=summary,
+        issues=tuple(issues),
+    )
+
+
+def _actuators_section(
+    options: dict[str, Any],
+    *,
+    known_entity_ids: frozenset[str] | None,
+) -> ValidationSection:
+    # Local import: actuators.py imports ValidationIssue from this module, so importing it
+    # at module scope here would create a circular import (same reason as _topology_section).
+    from .actuators import validate_actuators
+
+    issues: list[ValidationIssue] = list(validate_actuators(options))
+
+    if known_entity_ids is not None:
+        seen_entity_ids: set[str] = set()
+        for actuator in options.get(OPT_ROOM_ACTUATORS, []) or []:
+            if not isinstance(actuator, dict):
+                continue
+            entity_id = str(actuator.get("entity_id") or "").strip()
+            actuator_id = str(actuator.get("actuator_id") or "").strip()
+            if not entity_id or not actuator_id or entity_id in seen_entity_ids:
+                continue
+            if entity_id in known_entity_ids:
+                continue
+            seen_entity_ids.add(entity_id)
+            issues.append(
+                ValidationIssue(
+                    key=f"actuators.entity.{entity_id}.unavailable",
+                    severity="warning",
+                    title="Actuator entity no longer resolves",
+                    description=(
+                        f"entity_id '{entity_id}' bound to actuator '{actuator_id}' no longer "
+                        "resolves in Home Assistant. The actuator is retained as a valid "
+                        "placement reference."
+                    ),
+                    capability="actuator_registry",
+                    missing=(entity_id,),
+                )
+            )
+
+    errors = sum(1 for issue in issues if issue.severity == "error")
+    warnings = sum(1 for issue in issues if issue.severity == "warning")
+    if errors:
+        summary = f"{errors} blocking issue(s), {warnings} warning(s)."
+    elif warnings:
+        summary = f"{warnings} warning(s)."
+    else:
+        summary = "Actuator registry is valid."
+    return ValidationSection(
+        key="actuator_registry",
+        title="Actuator Registry",
         severity=_max_severity(issue.severity for issue in issues) if issues else "ok",
         summary=summary,
         issues=tuple(issues),

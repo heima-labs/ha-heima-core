@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import Unauthorized
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .actuators import build_actuator_registry_snapshot
+from .const import DOMAIN, OPT_ROOMS
+from .discovery import discover_binding_candidates
 from .observability import build_observability_snapshot
 from .room_topology import build_room_topology_snapshot
 
@@ -24,6 +30,10 @@ TOPOLOGY_ACTION_UPSERT_OPENING = "upsert_opening"
 TOPOLOGY_ACTION_DELETE_OPENING = "delete_opening"
 TOPOLOGY_ACTION_UPSERT_CONNECTION = "upsert_connection"
 TOPOLOGY_ACTION_DELETE_CONNECTION = "delete_connection"
+WS_TYPE_ACTUATORS_SNAPSHOT = "heima/actuators/snapshot"
+WS_TYPE_ACTUATORS_ACTION = "heima/actuators/action"
+ACTUATORS_ACTION_UPSERT = "upsert_actuator"
+ACTUATORS_ACTION_DELETE = "delete_actuator"
 WHY_NOT_NOW_RATE_LIMIT = 2
 WHY_NOT_NOW_RATE_WINDOW_S = 60.0
 ACTION_CLEAR_MANUAL_HOLD = "clear_manual_hold"
@@ -50,6 +60,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_observability_why_not_now)
     websocket_api.async_register_command(hass, websocket_topology_snapshot)
     websocket_api.async_register_command(hass, websocket_topology_action)
+    websocket_api.async_register_command(hass, websocket_actuators_snapshot)
+    websocket_api.async_register_command(hass, websocket_actuators_action)
 
 
 @websocket_api.websocket_command(
@@ -473,7 +485,66 @@ def websocket_topology_snapshot(
         )
         return
     options = dict(getattr(coordinator.entry, "options", {}) or {})
-    connection.send_result(msg["id"], build_room_topology_snapshot(options))
+    snapshot = dict(build_room_topology_snapshot(options))
+    snapshot["entity_candidates"] = _opening_entity_candidates(hass, options)
+    connection.send_result(msg["id"], snapshot)
+
+
+def _opening_entity_candidates(
+    hass: HomeAssistant, options: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Room-aware autocomplete candidates for the Opening entity_id field.
+
+    Reuses Phase L's existing "security_contact" discovery rule (binary_sensor door/window/
+    opening/garage_door) as-is — no new discovery.py rule needed. Room resolution happens here,
+    not inside discovery.py, which stays unaware of Heima's own options (same principle
+    documented for the Actuator picker in docs/specs/core/actuator_discovery_spec.md).
+    """
+    try:
+        entity_registry = er.async_get(hass)
+        device_registry = dr.async_get(hass)
+        area_registry = ar.async_get(hass)
+    except Exception:  # noqa: BLE001
+        return []
+    states = getattr(hass, "states", None)
+    async_all = getattr(states, "async_all", None)
+    all_states = list(async_all()) if callable(async_all) else []
+    report = discover_binding_candidates(
+        entity_entries=list(getattr(entity_registry, "entities", {}).values()),
+        device_entries=dict(getattr(device_registry, "devices", {}) or {}),
+        area_entries={
+            str(getattr(area, "id", "") or ""): area
+            for area in getattr(area_registry, "async_list_areas", lambda: [])()
+            if str(getattr(area, "id", "") or "")
+        },
+        state_by_entity={
+            str(getattr(state, "entity_id", "") or ""): state
+            for state in all_states
+            if str(getattr(state, "entity_id", "") or "")
+        },
+    )
+    room_id_by_area_id = {
+        str(room.get("area_id") or ""): str(room.get("room_id") or "")
+        for room in options.get(OPT_ROOMS, []) or []
+        if isinstance(room, dict) and str(room.get("area_id") or "").strip()
+    }
+    candidates: list[dict[str, Any]] = []
+    for candidate in report.candidates:
+        if candidate.category != "security":
+            continue
+        room_id = room_id_by_area_id.get(str(candidate.area_id or ""))
+        if not room_id:
+            continue
+        candidates.append(
+            {
+                "entity_id": candidate.entity_id,
+                "domain": candidate.domain,
+                "device_class": candidate.device_class,
+                "room_id": room_id,
+                "area_name": candidate.area_name,
+            }
+        )
+    return candidates
 
 
 @websocket_api.websocket_command(
@@ -539,8 +610,16 @@ async def _async_handle_topology_action(
                 msg["id"], "invalid_payload", "upsert_opening requires room_id and type."
             )
             return
+        # Resolved here, not left to apply_room_opening_upsert's own fallback, so a newly
+        # created opening's id is known for the admin-action audit trail and the response
+        # below (see that function's docstring for the — negligible, undefended — uuid4
+        # collision caveat, which applies identically wherever the id is generated).
+        payload = {
+            **payload,
+            "opening_id": str(payload.get("opening_id") or "").strip() or str(uuid4()),
+        }
         applied, issues = await coordinator.async_upsert_room_opening(
-            opening_id=payload.get("opening_id"),
+            opening_id=payload["opening_id"],
             room_id=room_id,
             opening_type=opening_type,
             orientation=payload.get("orientation"),
@@ -562,8 +641,13 @@ async def _async_handle_topology_action(
                 msg["id"], "invalid_payload", "upsert_connection requires opening_id and room_b."
             )
             return
+        # Same resolve-here rationale as upsert_opening above.
+        payload = {
+            **payload,
+            "connection_id": str(payload.get("connection_id") or "").strip() or str(uuid4()),
+        }
         applied, issues = await coordinator.async_upsert_room_connection(
-            connection_id=payload.get("connection_id"),
+            connection_id=payload["connection_id"],
             opening_id=opening_id,
             room_b=room_b,
             access_type=payload.get("access_type"),
@@ -593,11 +677,12 @@ async def _async_handle_topology_action(
             )
         return
 
+    object_links = _topology_action_object_links(action, payload)
     _record_admin_action(
         coordinator,
         summary=f"Admin applied room topology action '{action}'.",
         reason_code=f"room_topology.{action}",
-        object_links=_topology_action_object_links(action, payload),
+        object_links=object_links,
     )
     options = dict(getattr(coordinator.entry, "options", {}) or {})
     connection.send_result(
@@ -605,6 +690,10 @@ async def _async_handle_topology_action(
         {
             "ok": True,
             "action": action,
+            # Echoes the same (kind, id) pairs recorded in the admin-action audit trail above —
+            # for upsert_opening/upsert_connection with no client-supplied id, this is the only
+            # way the caller learns the server-generated id without diffing the full snapshot.
+            "object_links": [dict(link) for link in object_links],
             "snapshot": build_room_topology_snapshot(options),
         },
     )
@@ -620,6 +709,137 @@ def _topology_action_object_links(
     if action in (TOPOLOGY_ACTION_UPSERT_CONNECTION, TOPOLOGY_ACTION_DELETE_CONNECTION):
         return ({"kind": "connection", "id": str(payload.get("connection_id") or "")},)
     return ()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTUATORS_SNAPSHOT,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@callback
+def websocket_actuators_snapshot(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the read-only admin actuator registry snapshot."""
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested actuator registry snapshot.",
+        )
+        return
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(msg["id"], build_actuator_registry_snapshot(options))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTUATORS_ACTION,
+        vol.Optional("entry_id"): str,
+        vol.Required("action"): vol.In([ACTUATORS_ACTION_UPSERT, ACTUATORS_ACTION_DELETE]),
+        vol.Optional("payload", default={}): dict,
+    }
+)
+@callback
+def websocket_actuators_action(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Run one allowlisted admin actuator registry mutation."""
+    if not connection.user or not connection.user.is_admin:
+        raise Unauthorized()
+    coordinator = _coordinator_for_message(hass, msg)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"],
+            "not_found",
+            "No active Heima config entry found for the requested actuator registry action.",
+        )
+        return
+    hass.async_create_task(_async_handle_actuators_action(coordinator, connection, msg))
+
+
+async def _async_handle_actuators_action(
+    coordinator: Any,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle one allowlisted admin actuator registry action and send its websocket response."""
+    action = str(msg.get("action") or "").strip()
+    payload = dict(msg.get("payload") or {})
+
+    if action == ACTUATORS_ACTION_UPSERT:
+        entity_id = str(payload.get("entity_id") or "").strip()
+        room_id = str(payload.get("room_id") or "").strip()
+        if not entity_id or not room_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "upsert_actuator requires entity_id and room_id."
+            )
+            return
+        # Resolved here, not left to apply_actuator_upsert's own fallback — see that
+        # function's docstring for the (negligible, undefended) uuid4 collision caveat, which
+        # applies identically wherever the id is generated. Same rationale as topology's
+        # upsert_opening/upsert_connection above: makes a newly created actuator's id known
+        # for the admin-action audit trail and the response below.
+        payload = {
+            **payload,
+            "actuator_id": str(payload.get("actuator_id") or "").strip() or str(uuid4()),
+        }
+        applied, issues = await coordinator.async_upsert_actuator(
+            actuator_id=payload["actuator_id"],
+            entity_id=entity_id,
+            room_id=room_id,
+            opening_id=payload.get("opening_id"),
+            display_name=payload.get("display_name"),
+        )
+    elif action == ACTUATORS_ACTION_DELETE:
+        actuator_id = str(payload.get("actuator_id") or "").strip()
+        if not actuator_id:
+            connection.send_error(
+                msg["id"], "invalid_payload", "delete_actuator requires actuator_id."
+            )
+            return
+        applied, issues = await coordinator.async_delete_actuator(actuator_id=actuator_id)
+    else:
+        connection.send_error(msg["id"], "unsupported_action", f"Unsupported action '{action}'.")
+        return
+
+    if not applied:
+        if issues:
+            reasons = "; ".join(str(issue.get("description") or "") for issue in issues)
+            connection.send_error(msg["id"], "validation_failed", reasons)
+        else:
+            connection.send_error(
+                msg["id"], "not_found", f"Actuator registry action '{action}' could not be applied."
+            )
+        return
+
+    object_links = ({"kind": "actuator", "id": str(payload.get("actuator_id") or "")},)
+    _record_admin_action(
+        coordinator,
+        summary=f"Admin applied actuator registry action '{action}'.",
+        reason_code=f"actuator_registry.{action}",
+        object_links=object_links,
+    )
+    options = dict(getattr(coordinator.entry, "options", {}) or {})
+    connection.send_result(
+        msg["id"],
+        {
+            "ok": True,
+            "action": action,
+            # Echoes the same (kind, id) pair recorded in the admin-action audit trail above —
+            # for upsert_actuator with no client-supplied actuator_id, this is the only way the
+            # caller learns the server-generated id without diffing the full snapshot.
+            "object_links": [dict(link) for link in object_links],
+            "snapshot": build_actuator_registry_snapshot(options),
+        },
+    )
 
 
 def _coordinator_entry_id(coordinator: Any) -> str:
