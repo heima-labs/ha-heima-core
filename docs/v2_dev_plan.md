@@ -140,16 +140,19 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
 **Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`). **AW1 in progress** on
-`feat/aw-house-state-learning-viz` (created 2026-08-26): `proposal_id` join + 7x24 matrix rendering. Phase AV
-(AV1-3: discovery rule table, Options Flow branch, admin-panel picker, plus two follow-on UI
-fixes — room grouping and inline edit) concluded and merged to `main` beforehand; Phase AU
-(AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier still, AR5-8
-split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
-scheduled.
-**Branch:** `feat/aw-house-state-learning-viz` (created 2026-08-26, AW1 committed). `feat/av-actuator-discovery` and
-`feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW1 complete with tests (16 passed). Ready for live verification of join rate. Next: AW2 — per-slot detail view. Outstanding verification debt from earlier phases, unrelated to AW:
+(`core/house_state_learning_completion_viz_spec.md`). **AW1 done** on
+`feat/aw-house-state-learning-viz` (`proposal_id` join + 7×24 matrix rendering) — first-pass
+implementation by Mistral Vibe, then code-reviewed and corrected (4 real issues fixed, see AW1's
+own section below for the full list). Phase AV (AV1-3: discovery rule table, Options Flow branch,
+admin-panel picker, plus two follow-on UI fixes — room grouping and inline edit) concluded and
+merged to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4)
+concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
+`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/aw-house-state-learning-viz` (AW1 committed and fixed). `feat/av-actuator-discovery`
+and `feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
+**Next action:** AW2 — per-slot detail view. AW1's own `context_key` ⇄ `proposal_id` join rate has
+not been verified against real data yet (spec §13.3) — worth doing before AW2/AW3 build further on
+top of it. Outstanding verification debt from earlier phases, unrelated to AW:
 AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
 were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
 smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
@@ -2251,7 +2254,7 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
 
 #### AW1 — Proposal-ID Join and 7×24 Matrix
 
-- Status: `DONE` (code + tests committed to `feat/aw-house-state-learning-viz`, ready for live verification of join rate).
+- Status: `DONE`.
 - Depends on: Phase AO (admin panel + observability snapshot infra), Phase Y
   (`HouseStateInferenceModule`'s `approved_model_entries`).
 - New helper `_houseStateAcceptedProposalsByContextKey(snapshot)` builds a
@@ -2262,12 +2265,42 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
   `_houseState(snapshot)` extended to read `snapshot.learning.learning_modules` (find
   `module_id === "house_state_inference"`) and `snapshot.proposals.raw.proposals` — both already
   present on the shared snapshot object this method already receives, no new websocket call.
-- Tests: unit tests for the join helper (accepted-only filter, prefix match, miss returns
-  `undefined`/no entry) and the slot-grouping helper; static-asset assertions for the new matrix
-  markup, mirroring the existing pattern in `tests/test_admin_panel.py`.
-- **Verify early** (per the spec's own §13.3): check the `context_key` ⇄ `proposal_id` join rate
-  against real data before building AW2/AW3 on top of it — a high miss rate would argue for
-  revisiting the "no backend changes" approach.
+- **First-pass implementation, review, and fix (2026-08-26):** the initial implementation was
+  built by Mistral Vibe (commits on this branch), then code-reviewed and corrected before being
+  considered done. Four real issues found and fixed:
+  - `ruff check`/`ruff format` were failing (unused imports, trailing whitespace on blank lines in
+    the test file) — the mandatory local CI gate had never actually been run before those commits.
+  - The original test file (`tests/test_house_state_learning_matrix.py`, since deleted) tested a
+    hand-written Python re-implementation of the join/grouping logic, not the real JS — a
+    methodology with no precedent anywhere else in this repo (verified: no other test file mirrors
+    JS logic in Python) and no real JS test runner configured (no jest/vitest, `node --check` is
+    syntax-only). It could pass forever while the real `_houseStateAcceptedProposalsByContextKey`/
+    `_groupHouseStateEntriesBySlot` diverged from it. Replaced with static-asset assertions in
+    `tests/test_admin_panel.py`, matching this repo's actual established convention for verifying
+    this vanilla-JS panel's behavior.
+  - The four distinct not-ready/empty states from the spec's own §8 (no `learning_modules` /
+    module not found / not ready / zero accepted entries) had been collapsed into one generic
+    "House state learning data not ready." message — wrong for the "module ready, zero accepted
+    proposals yet" case specifically (a normal state for a fresh installation), which also hid the
+    still-useful empty matrix instead of showing it. Fixed with the four-branch structure the spec
+    specifies.
+  - `color: white` was hardcoded for every "learned" cell regardless of background. Computed actual
+    WCAG relative-luminance contrast for all 7 state colors against white: 5 of 7 (`home`,
+    `working`, `relax`, `away`, `guest`) fail the spec's own 4.5:1 requirement (§9) with white
+    text — `guest` (`#FFC107`) was the worst at ~1.6:1. Fixed with a per-state `stateTextColors`
+    map (black for the 5 lighter colors, white only for `sleeping`/`vacation`, the two dark ones
+    that actually clear 4.5:1 with white). Also fixed: tooltip `title="..."` attributes were built
+    by raw string interpolation, not `this._escape()`, inconsistent with every other dynamic
+    attribute value in this file (low practical risk — inputs are hardcoded day names or a small
+    state enum — but a real deviation from the file's own established discipline).
+- Tests: static-asset assertions in `tests/test_admin_panel.py` for the new helpers/markup, the
+  four not-ready/empty messages, `stateTextColors`, and the tooltip escaping — mirroring the exact
+  pattern every other panel feature in this session was tested with. Verification: full suite 2012
+  passed, `ruff check`/`ruff format --check` clean, `node --check` passed, full `ci_local.sh` green.
+- **Verify early** (per the spec's own §13.3, still outstanding): check the `context_key` ⇄
+  `proposal_id` join rate against real data before building AW2/AW3 on top of it — a high miss rate
+  would argue for revisiting the "no backend changes" approach. Not done in this session — no live
+  HA test lab access here.
 
 #### AW2 — Per-Slot Detail View
 

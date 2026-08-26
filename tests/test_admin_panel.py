@@ -344,6 +344,27 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "_actuatorsGroupedByRoom" in text
     assert 'class="actuator-room-group"' in text
     assert 'data-details-id="${this._escape(key)}"' in text
+    # House State Learning Completion Viz (AW1): proposal_id join against the observability
+    # snapshot's own accepted-proposals list (no backend change, see
+    # docs/specs/core/house_state_learning_completion_viz_spec.md §2.4) plus the 7x24 matrix.
+    assert "_houseStateAcceptedProposalsByContextKey" in text
+    assert "_groupHouseStateEntriesBySlot" in text
+    assert "_houseStateLearningMatrix" in text
+    assert "_houseStateSlotTooltip" in text
+    assert 'class="house-state-grid"' in text
+    # Four distinct not-ready/empty states (spec §8) — must not collapse into one generic
+    # message, since "module ready but zero accepted proposals" is a real, common state that
+    # should still show the (all-empty) matrix, not an error-sounding placeholder.
+    assert "Learning data unavailable." in text
+    assert "House state learning not active." in text
+    assert "Learning in progress" in text
+    assert "No house state patterns accepted yet." in text
+    # Text color per state background, computed for WCAG AA contrast (spec §9) — not a blanket
+    # white-on-every-color, which fails 4.5:1 against 5 of the 7 state colors in this palette.
+    assert "stateTextColors" in text
+    # Tooltips interpolate day names/state labels into a title="..." attribute; must go through
+    # the same escaping every other dynamic attribute value in this file uses.
+    assert "this._escape(this._houseStateSlotTooltip(slot))" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

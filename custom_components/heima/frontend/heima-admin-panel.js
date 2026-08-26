@@ -586,9 +586,6 @@ class HeimaAdminPanel extends HTMLElement {
         .house-state-grid td.empty {
           background-color: #E0E0E0;
         }
-        .house-state-grid td.learned {
-          color: white;
-        }
         .house-state-grid td.multiple {
           background-color: #FFEB3B;
           color: #333;
@@ -1837,25 +1834,38 @@ class HeimaAdminPanel extends HTMLElement {
     const filteredRows = this._filterRows("house_state", candidateRows);
     
     // ---- AW1: House State Learning Completion Visualization ----
-    const houseStateModule = (snapshot.learning?.learning_modules || [])
-        .find(m => m.module_id === "house_state_inference");
-    const entries = houseStateModule?.approved_model_entries || [];
-    const isReady = houseStateModule?.ready || false;
-    
-    // Resolve proposal_id per entry by joining against the accepted proposals list
-    const acceptedByContextKey = this._houseStateAcceptedProposalsByContextKey(snapshot);
-    const entriesWithProposalId = entries.map(entry => ({
-      ...entry,
-      proposal_id: acceptedByContextKey.get(entry.context_key) || null,
-    }));
-    
-    // Group entries by (weekday, hour_bucket)
-    const slots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
-    
-    const learningMatrix = isReady && Object.keys(slots).length > 0 
-        ? this._houseStateLearningMatrix(slots)
-        : `<div class="card">House state learning data not ready.</div>`;
-    
+    // Four distinct states per house_state_learning_completion_viz_spec.md §8 — collapsing them
+    // into one generic message would misreport "not ready" for an installation that IS ready but
+    // simply has nothing accepted yet, and would hide the (still useful, all-empty) matrix that
+    // case should show — the whole point of §1's "gap identification" purpose.
+    const learningModules = snapshot.learning?.learning_modules;
+    const houseStateModule = (learningModules || []).find(
+      (m) => m.module_id === "house_state_inference",
+    );
+    let learningMatrix;
+    if (!learningModules) {
+      learningMatrix = `<div class="card">Learning data unavailable.</div>`;
+    } else if (!houseStateModule) {
+      learningMatrix = `<div class="card">House state learning not active.</div>`;
+    } else if (!houseStateModule.ready) {
+      learningMatrix = `<div class="card">Learning in progress…</div>`;
+    } else {
+      const entries = houseStateModule.approved_model_entries || [];
+      if (!entries.length) {
+        learningMatrix = `<div class="card">No house state patterns accepted yet.</div>`;
+      } else {
+        // Resolve proposal_id per entry by joining against the accepted proposals list
+        const acceptedByContextKey = this._houseStateAcceptedProposalsByContextKey(snapshot);
+        const entriesWithProposalId = entries.map((entry) => ({
+          ...entry,
+          proposal_id: acceptedByContextKey.get(entry.context_key) || null,
+        }));
+        // Group entries by (weekday, hour_bucket)
+        const slots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
+        learningMatrix = this._houseStateLearningMatrix(slots);
+      }
+    }
+
     return `
       <section class="grid">
         ${this._metric("Current State", runtime.house_state || "unknown")}
@@ -1988,6 +1998,18 @@ class HeimaAdminPanel extends HTMLElement {
       guest: "#FFC107",
       vacation: "#795548"
     };
+    // Text color chosen per background for WCAG AA contrast (4.5:1, spec §9) — computed via
+    // relative luminance, not a blanket "white on every color". White only clears 4.5:1 against
+    // the two darkest backgrounds here (sleeping, vacation); the other five need black text.
+    const stateTextColors = {
+      home: "#000000",
+      working: "#000000",
+      relax: "#000000",
+      sleeping: "#FFFFFF",
+      away: "#000000",
+      guest: "#000000",
+      vacation: "#FFFFFF"
+    };
     const stateAbbrevs = {
       home: "H",
       working: "W",
@@ -2000,26 +2022,28 @@ class HeimaAdminPanel extends HTMLElement {
 
     let totalLearned = 0;
     let cells = [];
-    
+
     for (let weekday = 0; weekday < 7; weekday++) {
       let rowCells = [];
       for (let hourBucket = 0; hourBucket < 24; hourBucket++) {
         const slotKey = `${weekday},${hourBucket}`;
         const slot = slots[slotKey] || { entries: [] };
         const count = slot.entries.length;
-        
+
         if (count === 0) {
-          rowCells.push(`<td class="house-state-slot empty" data-slot-key="${slotKey}" title="${dayNames[weekday]} ${hourBucket}:00 - No learned patterns\nNo accepted proposals for this slot"> </td>`);
+          const emptyTitle = `${dayNames[weekday]} ${hourBucket}:00 - No learned patterns\nNo accepted proposals for this slot`;
+          rowCells.push(`<td class="house-state-slot empty" data-slot-key="${slotKey}" title="${this._escape(emptyTitle)}"> </td>`);
         } else if (count === 1) {
           const entry = slot.entries[0];
           const state = entry.predicted_state || entry.context_snapshot?.predicted_state || "";
           const abbrev = stateAbbrevs[state] || state.charAt(0).toUpperCase();
           const color = stateColors[state] || "#E0E0E0";
+          const textColor = stateTextColors[state] || "#000000";
           totalLearned++;
-          rowCells.push(`<td class="house-state-slot learned" data-slot-key="${slotKey}" style="background-color: ${color};" title="${this._houseStateSlotTooltip(slot)}">${this._escape(abbrev)}</td>`);
+          rowCells.push(`<td class="house-state-slot learned" data-slot-key="${slotKey}" style="background-color: ${color}; color: ${textColor};" title="${this._escape(this._houseStateSlotTooltip(slot))}">${this._escape(abbrev)}</td>`);
         } else {
           totalLearned++;
-          rowCells.push(`<td class="house-state-slot multiple" data-slot-key="${slotKey}" style="background-color: #FFEB3B;" title="${this._houseStateSlotTooltip(slot)}">${this._escape(String(count))}</td>`);
+          rowCells.push(`<td class="house-state-slot multiple" data-slot-key="${slotKey}" style="background-color: #FFEB3B;" title="${this._escape(this._houseStateSlotTooltip(slot))}">${this._escape(String(count))}</td>`);
         }
       }
       cells.push(rowCells);
