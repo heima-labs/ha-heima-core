@@ -298,11 +298,19 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "heima/actuators/snapshot" in text
     assert "heima/actuators/action" in text
     assert "Actuator Registry" in text
-    assert 'data-filter-section="actuators_new_actuator"' in text
+    assert 'filterSection: "actuators_new_actuator"' in text
     assert 'data-actuators-action="edit_actuator"' in text
     assert 'data-actuators-action="delete_actuator"' in text
     assert 'data-actuators-action="cancel_edit_actuator"' in text
     assert 'data-actuators-action="add_actuator"' in text
+    # Edit appears inline, right below the clicked row (own _filters section,
+    # actuators_edit_actuator, separate from the "add" form's actuators_new_actuator) — not in a
+    # shared form at the bottom of the section, which required scrolling past a potentially long,
+    # room-grouped actuator list to find.
+    assert 'filterSection: "actuators_edit_actuator"' in text
+    assert 'class="actuator-edit-row"' in text
+    assert 'data-actuators-action="save_actuator_edit"' in text
+    assert "_actuatorsFormFieldsHtml" in text
     # Opening entity_id must be an autocomplete field (datalist bound to the text input, not a
     # bare text box), populated from the topology snapshot's room-resolved entity_candidates.
     assert "topology-new-opening-entity-list" in text
@@ -325,9 +333,9 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # Actuators Entity ID (AV3): a <select> of room-aware picker candidates when any exist,
     # with a "__manual__" escape-hatch option that reveals a free-text input — the admin must
     # still be able to register any entity_id, not just picker-covered ones.
-    assert 'id="actuators-new-entity"' in text
+    assert 'id="${idPrefix}-entity"' in text
     assert '<option value="__manual__"' in text
-    assert 'id="actuators-new-entity-manual"' in text
+    assert 'id="${idPrefix}-entity-manual"' in text
     assert "hasEntityCandidates" in text
     # Actuators table is grouped by Room and collapsed by default (an installation can have a
     # large number of actuators, and a single flat table becomes unwieldy to scan). Persisted

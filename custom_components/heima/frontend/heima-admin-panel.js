@@ -175,10 +175,11 @@ class HeimaAdminPanel extends HTMLElement {
       } else {
         await this._loadActuatorsSnapshot();
       }
-      // Same reset-on-success rationale as _runTopologyAction: clear the tracked "add" form
-      // state once the mutation actually applied, so the form goes blank for the next entry.
+      // Same reset-on-success rationale as _runTopologyAction: clear the tracked "add" form and
+      // inline "edit" row state once the mutation actually applied, so both go blank/close.
       if (action === "upsert_actuator") {
         delete this._filters.actuators_new_actuator;
+        delete this._filters.actuators_edit_actuator;
       }
     } catch (err) {
       this._actuatorsActionError =
@@ -505,6 +506,10 @@ class HeimaAdminPanel extends HTMLElement {
         }
         .actuator-room-group table {
           margin-top: 8px;
+        }
+        .actuator-edit-row td {
+          background: var(--secondary-background-color);
+          padding: 10px 8px;
         }
         .topology-add-form {
           display: flex;
@@ -1276,13 +1281,13 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._actuatorsIssues(issues)}
       <section class="card">
         <h2>Actuators</h2>
-        ${this._actuatorsGroupedByRoom(actuators, rooms, openings)}
+        ${this._actuatorsGroupedByRoom(actuators, rooms, openings, entityCandidates)}
         ${this._actuatorsAddForm(rooms, openings, entityCandidates)}
       </section>
     `;
   }
 
-  _actuatorsGroupedByRoom(actuators, rooms, openings) {
+  _actuatorsGroupedByRoom(actuators, rooms, openings, entityCandidates) {
     // Grouped by Room and collapsed by default (data-details-id persists open/closed state
     // across re-renders, same mechanism as _topologyRoomTypeLegend): an installation can have
     // a large number of actuators, and a single flat table becomes unwieldy to scan.
@@ -1317,7 +1322,7 @@ class HeimaAdminPanel extends HTMLElement {
                 <tr><th>Entity</th><th>Room</th><th>Opening</th><th>Display name</th><th></th></tr>
               </thead>
               <tbody>
-                ${roomActuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings)).join("")}
+                ${roomActuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings, entityCandidates)).join("")}
               </tbody>
             </table>
           </details>
@@ -1357,8 +1362,8 @@ class HeimaAdminPanel extends HTMLElement {
     return details ? `${opening.room_id} — ${details}` : opening.room_id;
   }
 
-  _actuatorsRow(actuator, rooms, openings) {
-    return `
+  _actuatorsRow(actuator, rooms, openings, entityCandidates) {
+    const row = `
       <tr>
         <td class="object-id">${this._escape(actuator.entity_id)}</td>
         <td>${this._escape(this._actuatorsRoomLabel(rooms, actuator.room_id))}</td>
@@ -1378,14 +1383,38 @@ class HeimaAdminPanel extends HTMLElement {
         </td>
       </tr>
     `;
+    // Edit appears inline, right below the row that was clicked — not in a shared form at the
+    // bottom of the section, which required scrolling past a potentially long, room-grouped
+    // actuator list to find. Only one actuator can be in edit mode at a time (tracked by
+    // actuators_edit_actuator.actuator_id), so at most one row ever gets this extra <tr>.
+    const editingActuatorId = this._filters.actuators_edit_actuator?.actuator_id;
+    if (editingActuatorId !== actuator.actuator_id) return row;
+    return row + this._actuatorsEditRow(actuator, rooms, openings, entityCandidates);
   }
 
-  _actuatorsAddForm(rooms, openings, entityCandidates) {
-    if (!rooms.length) return "";
-    // Same in-progress-form persistence rationale as _topologyAddOpeningForm: tracked via
-    // _filters so an unrelated re-render (e.g. this action's own response elsewhere on the
-    // page) doesn't wipe what the admin has picked or typed before they click "Add actuator".
-    const formState = this._filters.actuators_new_actuator || {};
+  _actuatorsEditRow(actuator, rooms, openings, entityCandidates) {
+    const formState = this._filters.actuators_edit_actuator || {};
+    const fieldsHtml = this._actuatorsFormFieldsHtml(formState, rooms, openings, entityCandidates, {
+      idPrefix: "actuators-edit",
+      filterSection: "actuators_edit_actuator",
+    });
+    return `
+      <tr class="actuator-edit-row">
+        <td colspan="5">
+          <div class="topology-add-form">
+            ${fieldsHtml}
+            <button class="inline" data-actuators-action="save_actuator_edit">Save actuator</button>
+            <button class="inline" data-actuators-action="cancel_edit_actuator">Cancel</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  _actuatorsFormFieldsHtml(formState, rooms, openings, entityCandidates, { idPrefix, filterSection }) {
+    // Shared between the bottom "Add actuator" form and the inline "Edit" row — same Room/
+    // Opening/Entity ID/Display name fields, parameterized only by DOM id prefix and the
+    // _filters section they're tracked under, so the two forms never share state.
     const selectedRoomId = formState.room_id || rooms[0].room_id;
     const roomOptions = rooms
       .map(
@@ -1393,8 +1422,6 @@ class HeimaAdminPanel extends HTMLElement {
           `<option value="${this._escape(room.room_id)}"${room.room_id === selectedRoomId ? " selected" : ""}>${this._escape(room.display_name || room.room_id)}</option>`,
       )
       .join("");
-    // Openings are filtered to the currently selected room: the room <select>'s data-filter-*
-    // attributes already trigger a full re-render on change, which recomputes this list.
     const roomOpenings = openings.filter((opening) => opening.room_id === selectedRoomId);
     const openingOptions =
       `<option value="">— none —</option>` +
@@ -1406,19 +1433,13 @@ class HeimaAdminPanel extends HTMLElement {
           return `<option value="${this._escape(opening.opening_id)}"${selected}>${this._escape(label)}</option>`;
         })
         .join("");
-    // Entity ID: a <select> of room-aware picker candidates (see actuator_discovery_spec.md
-    // Surface 2) when any exist, sorted selected-room-first via the same helper the Topology
-    // Opening picker uses, with a trailing "Other" option revealing a free-text escape hatch —
-    // the admin must always be able to register any entity_id, not just picker-covered ones.
-    // With zero candidates the escape hatch is the only field shown, matching the pre-AV3
-    // free-text behavior exactly for installations discovery can't help with yet.
     const hasEntityCandidates = (entityCandidates || []).length > 0;
     const showManualEntityInput = !hasEntityCandidates || formState.entity_id === "__manual__";
     const entitySelectHtml = hasEntityCandidates
       ? `<label>Entity ID
           <select
-            id="actuators-new-entity"
-            data-filter-section="actuators_new_actuator"
+            id="${idPrefix}-entity"
+            data-filter-section="${filterSection}"
             data-filter-key="entity_id"
           >
             <option value=""${formState.entity_id ? "" : " selected"}>— select an entity —</option>
@@ -1430,51 +1451,61 @@ class HeimaAdminPanel extends HTMLElement {
     const entityManualInputHtml = showManualEntityInput
       ? `<label>${hasEntityCandidates ? "Entity ID (manual)" : "Entity ID"}
           <input
-            id="actuators-new-entity-manual"
+            id="${idPrefix}-entity-manual"
             type="text"
             placeholder="cover.kitchen_shutter"
-            data-filter-section="actuators_new_actuator"
+            data-filter-section="${filterSection}"
             data-filter-key="entity_id_manual"
             value="${this._escape(formState.entity_id_manual || "")}"
           />
         </label>`
       : "";
     return `
+      <label>Room
+        <select
+          id="${idPrefix}-room"
+          data-filter-section="${filterSection}"
+          data-filter-key="room_id"
+        >${roomOptions}</select>
+      </label>
+      <label>Opening (optional)
+        <select
+          id="${idPrefix}-opening"
+          data-filter-section="${filterSection}"
+          data-filter-key="opening_id"
+        >${openingOptions}</select>
+      </label>
+      ${entitySelectHtml}
+      ${entityManualInputHtml}
+      <label>Display name (optional)
+        <input
+          id="${idPrefix}-display-name"
+          type="text"
+          placeholder="optional label"
+          data-filter-section="${filterSection}"
+          data-filter-key="display_name"
+          value="${this._escape(formState.display_name || "")}"
+        />
+      </label>
+    `;
+  }
+
+  _actuatorsAddForm(rooms, openings, entityCandidates) {
+    if (!rooms.length) return "";
+    // Same in-progress-form persistence rationale as _topologyAddOpeningForm: tracked via
+    // _filters so an unrelated re-render (e.g. this action's own response elsewhere on the
+    // page) doesn't wipe what the admin has picked or typed before they click "Add actuator".
+    // Editing an existing actuator uses a separate inline form (_actuatorsEditRow) with its own
+    // _filters section, so this one is always "add a new actuator", never edit state.
+    const formState = this._filters.actuators_new_actuator || {};
+    const fieldsHtml = this._actuatorsFormFieldsHtml(formState, rooms, openings, entityCandidates, {
+      idPrefix: "actuators-new",
+      filterSection: "actuators_new_actuator",
+    });
+    return `
       <div class="topology-add-form">
-        <label>Room
-          <select
-            id="actuators-new-room"
-            data-filter-section="actuators_new_actuator"
-            data-filter-key="room_id"
-          >${roomOptions}</select>
-        </label>
-        <label>Opening (optional)
-          <select
-            id="actuators-new-opening"
-            data-filter-section="actuators_new_actuator"
-            data-filter-key="opening_id"
-          >${openingOptions}</select>
-        </label>
-        ${entitySelectHtml}
-        ${entityManualInputHtml}
-        <label>Display name (optional)
-          <input
-            id="actuators-new-display-name"
-            type="text"
-            placeholder="optional label"
-            data-filter-section="actuators_new_actuator"
-            data-filter-key="display_name"
-            value="${this._escape(formState.display_name || "")}"
-          />
-        </label>
-        <button class="inline" data-actuators-action="add_actuator">${
-          formState.actuator_id ? "Save actuator" : "Add actuator"
-        }</button>
-        ${
-          formState.actuator_id
-            ? `<button class="inline" data-actuators-action="cancel_edit_actuator">Cancel</button>`
-            : ""
-        }
+        ${fieldsHtml}
+        <button class="inline" data-actuators-action="add_actuator">Add actuator</button>
       </div>
     `;
   }
@@ -1508,10 +1539,24 @@ class HeimaAdminPanel extends HTMLElement {
       const payload = { room_id: roomId, entity_id: entityId };
       if (openingId) payload.opening_id = openingId;
       if (displayName) payload.display_name = displayName;
-      // "Edit" pre-fills this same form with the existing actuator_id tracked in _filters;
-      // upsert_actuator replaces that record in place instead of creating a new one.
-      const editingActuatorId = this._filters.actuators_new_actuator?.actuator_id;
-      if (editingActuatorId) payload.actuator_id = editingActuatorId;
+      this._runActuatorsAction("upsert_actuator", payload);
+      return;
+    }
+    if (action === "save_actuator_edit") {
+      const actuatorId = this._filters.actuators_edit_actuator?.actuator_id;
+      if (!actuatorId) return;
+      const roomId = root.getElementById("actuators-edit-room")?.value || "";
+      const openingId = root.getElementById("actuators-edit-opening")?.value || "";
+      const entitySelect = root.getElementById("actuators-edit-entity");
+      const entityId =
+        entitySelect && entitySelect.value && entitySelect.value !== "__manual__"
+          ? entitySelect.value
+          : root.getElementById("actuators-edit-entity-manual")?.value || "";
+      const displayName = root.getElementById("actuators-edit-display-name")?.value || "";
+      if (!roomId || !entityId) return;
+      const payload = { actuator_id: actuatorId, room_id: roomId, entity_id: entityId };
+      if (openingId) payload.opening_id = openingId;
+      if (displayName) payload.display_name = displayName;
       this._runActuatorsAction("upsert_actuator", payload);
       return;
     }
@@ -1523,7 +1568,7 @@ class HeimaAdminPanel extends HTMLElement {
       if (!actuator) return;
       this._filters = {
         ...this._filters,
-        actuators_new_actuator: {
+        actuators_edit_actuator: {
           actuator_id: actuator.actuator_id,
           room_id: actuator.room_id,
           opening_id: actuator.opening_id || "",
@@ -1540,7 +1585,7 @@ class HeimaAdminPanel extends HTMLElement {
     }
     if (action === "cancel_edit_actuator") {
       const rest = { ...this._filters };
-      delete rest.actuators_new_actuator;
+      delete rest.actuators_edit_actuator;
       this._filters = rest;
       this._render();
       return;

@@ -2164,6 +2164,45 @@ the existing test, no new test function), `ruff check`/`ruff format --check` cle
 passed. Not yet verified live in a browser — pending developer confirmation, same caveat as the
 rest of AV3's panel work.
 
+**Post-room-grouping UI fix (2026-08-26):** the room-grouping fix above surfaced a follow-on
+usability problem: the shared "Add/Edit" form always lived at the bottom of the section, so
+clicking "Edit" on a row inside an early room group showed nothing until scrolling past every
+other room's (collapsed or expanded) table to reach it — increasingly annoying with a long
+actuator list. Discussed with the developer as an explicit choice between three options
+(auto-scroll to the bottom form, move the shared form to the top, inline edit-in-row); developer
+picked inline edit-in-row.
+
+Fixed by splitting one shared, dual-purpose form into two independent ones:
+- `_actuatorsAddForm()` is now *only* "add a new actuator" — no more `formState.actuator_id`
+  branching, no more toggling its own button label/Cancel button.
+- New `_actuatorsEditRow(actuator, rooms, openings, entityCandidates)` renders the edit fields
+  inline, as an extra `<tr class="actuator-edit-row"><td colspan="5">...</td></tr>` appended
+  directly after the row being edited (inside that room's own `<table>`), via `_actuatorsRow()`
+  checking `this._filters.actuators_edit_actuator?.actuator_id` against the row's own
+  `actuator_id`. At most one row can be in edit mode at a time (matches the pre-existing
+  single-shared-form semantics), so fixed DOM ids (`actuators-edit-room`, `-opening`, `-entity`,
+  `-entity-manual`, `-display-name`) are safe — no collision risk despite being room-agnostic.
+- Both forms' field markup (Room/Opening/Entity ID picker+manual/Display name) now come from one
+  new shared helper, `_actuatorsFormFieldsHtml(formState, rooms, openings, entityCandidates, {
+  idPrefix, filterSection })`, parameterized only by DOM id prefix and the `_filters` section they
+  track — avoids duplicating the ~70 lines of Room/Opening/Entity-picker/manual-escape-hatch logic
+  AV3 introduced. The two forms never share `_filters` state:
+  `actuators_new_actuator` vs. `actuators_edit_actuator`.
+- `edit_actuator` now writes to `actuators_edit_actuator` (was `actuators_new_actuator`);
+  `save_actuator_edit` is a new action reading from the `actuators-edit-*` DOM ids and always
+  including `actuator_id` in the `upsert_actuator` payload; `cancel_edit_actuator` clears
+  `actuators_edit_actuator`; `add_actuator` no longer branches on an "editing" id at all — it's
+  unconditionally a create. `_runActuatorsAction()`'s post-success cleanup now clears both filter
+  keys (harmless to delete a key that wasn't set).
+- CSS: new `.actuator-edit-row td` (subtle background tint) to visually set the inline edit row
+  apart from normal rows; `.actuator-room-group`'s existing styling covers the rest.
+Static-asset assertions updated/extended in `test_admin_panel.py` (the two now-templated DOM id
+patterns `id="${idPrefix}-entity"`/`id="${idPrefix}-entity-manual"` replace the old hardcoded-id
+assertions; new assertions for `filterSection: "actuators_edit_actuator"`,
+`class="actuator-edit-row"`, `data-actuators-action="save_actuator_edit"`,
+`_actuatorsFormFieldsHtml`). Full suite still 2012 passed, `ruff check`/`ruff format --check`
+clean, `node --check` passed. Not yet verified live in a browser — pending developer confirmation.
+
 ### Recent Working Notes
 
 - Recent implementation slice: **Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion**.
