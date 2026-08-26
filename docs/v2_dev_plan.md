@@ -2297,10 +2297,37 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
   four not-ready/empty messages, `stateTextColors`, and the tooltip escaping — mirroring the exact
   pattern every other panel feature in this session was tested with. Verification: full suite 2012
   passed, `ruff check`/`ruff format --check` clean, `node --check` passed, full `ci_local.sh` green.
-- **Verify early** (per the spec's own §13.3, still outstanding): check the `context_key` ⇄
-  `proposal_id` join rate against real data before building AW2/AW3 on top of it — a high miss rate
-  would argue for revisiting the "no backend changes" approach. Not done in this session — no live
-  HA test lab access here.
+- **Verified live against the developer's test lab (`homeassistant-test` docker container,
+  `localhost:8823`, 2026-08-26), per the spec's own §13.3.** The instance had 23 pending
+  `house_state_learned_context` proposals but 0 accepted, so `approved_model_entries` was empty
+  and the module reported `ready: false` — confirmed this is exactly the "module ready-capable but
+  nothing accepted yet" scenario the readiness-messaging fix above handles correctly (matches
+  `HouseStateInferenceModule.__init__`'s `self._ready = False` default, only flipped by
+  `analyze()`, not by `sync_approval_state()` — accepting a proposal alone doesn't populate the
+  model until the next learning pass). Accepted 2 pending proposals via
+  `heima/observability/action` `review_proposal`/`decision: "approved"`, then forced a learning
+  pass via the `heima.command` service (`command: "learning_run"`, calls
+  `coordinator.async_run_learning_now()`) since analysis doesn't run synchronously on approval.
+  Result: **`context_key` ⇄ `proposal_id` join rate 2/2 (100%)** — every `approved_model_entries`
+  entry found its matching accepted proposal in `snapshot.proposals.raw.proposals`. No backend
+  change needed; the client-side join approach (§2.4) is validated against real data, not just
+  unit-level reasoning. The 2 accepted proposals (Thursday 16:00/17:00, studio, someone home →
+  `home`) were left accepted rather than reverted — they're real, plausible learned patterns, and
+  rejecting them would have actively discarded valid data rather than restored a prior state (no
+  "reset to pending" exists in the review API, only approved/rejected).
+- **Also fixed while verifying live: a real bug in the live-test harness itself**
+  (`scripts/lib/ha_websocket.py`, unrelated to any Heima phase). `connect()`'s HTTP-header-drain
+  loop discarded any bytes read past the `\r\n\r\n` terminator — but the server frequently writes
+  the upgrade response and the first WebSocket frame (`auth_required`) in the same TCP segment, so
+  those discarded bytes were actually the start of that frame, desyncing the frame parser for
+  everything that followed. Intermittent by nature (depends on OS/network buffering timing across
+  one `recv()` vs two) — this is why `087_actuator_registry_live.py` had worked before in this
+  session but both `087` and `088` failed identically with "WebSocket closed by server" on first
+  connection after the container restart picked up current code. Fixed by buffering the leftover
+  bytes (`self._recv_buffer`) and having `_recv_exactly()` drain from it before reading the socket
+  again. Re-ran both `087` (AU4) and `088` (AV1-3) after the fix — both fully pass live for the
+  first time this session (previously only type/lint-checked, never executed against a real
+  instance). `ruff check`/`ruff format --check`/mypy clean on the fixed file.
 
 #### AW2 — Per-Slot Detail View
 
