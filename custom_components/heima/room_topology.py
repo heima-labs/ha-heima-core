@@ -371,8 +371,8 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
         )
 
     for connection in connections:
-        opening = openings_by_id.get(connection.opening_id)
-        if opening is None:
+        referenced_opening = openings_by_id.get(connection.opening_id)
+        if referenced_opening is None:
             issues.append(
                 ValidationIssue(
                     key=f"topology.connection.{connection.connection_id}.dangling_opening",
@@ -386,7 +386,7 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
                     missing=(connection.opening_id,),
                 )
             )
-        elif opening.type not in DOOR_LIKE_OPENING_TYPES:
+        elif referenced_opening.type not in DOOR_LIKE_OPENING_TYPES:
             issues.append(
                 ValidationIssue(
                     key=f"topology.connection.{connection.connection_id}.invalid_opening_type",
@@ -394,8 +394,8 @@ def validate_topology(options: dict[str, Any]) -> tuple[ValidationIssue, ...]:
                     title="Connection references a non-door opening",
                     description=(
                         f"Connection '{connection.connection_id}' references opening "
-                        f"'{opening.opening_id}' of type '{opening.type}'; only 'door' or "
-                        "'door_window' openings may be connections."
+                        f"'{referenced_opening.opening_id}' of type '{referenced_opening.type}'; "
+                        "only 'door' or 'door_window' openings may be connections."
                     ),
                     capability=_VALIDATION_CAPABILITY,
                     missing=(),
