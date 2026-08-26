@@ -1258,6 +1258,7 @@ class HeimaAdminPanel extends HTMLElement {
     const openings = snapshot.openings || [];
     const actuators = snapshot.actuators || [];
     const issues = snapshot.issues || [];
+    const entityCandidates = snapshot.entity_candidates || [];
     return `
       ${this._actuatorsIssues(issues)}
       <section class="card">
@@ -1270,7 +1271,7 @@ class HeimaAdminPanel extends HTMLElement {
             ${actuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings)).join("") || `<tr><td colspan="5">No actuators configured.</td></tr>`}
           </tbody>
         </table>
-        ${this._actuatorsAddForm(rooms, openings)}
+        ${this._actuatorsAddForm(rooms, openings, entityCandidates)}
       </section>
     `;
   }
@@ -1329,7 +1330,7 @@ class HeimaAdminPanel extends HTMLElement {
     `;
   }
 
-  _actuatorsAddForm(rooms, openings) {
+  _actuatorsAddForm(rooms, openings, entityCandidates) {
     if (!rooms.length) return "";
     // Same in-progress-form persistence rationale as _topologyAddOpeningForm: tracked via
     // _filters so an unrelated re-render (e.g. this action's own response elsewhere on the
@@ -1355,6 +1356,39 @@ class HeimaAdminPanel extends HTMLElement {
           return `<option value="${this._escape(opening.opening_id)}"${selected}>${this._escape(label)}</option>`;
         })
         .join("");
+    // Entity ID: a <select> of room-aware picker candidates (see actuator_discovery_spec.md
+    // Surface 2) when any exist, sorted selected-room-first via the same helper the Topology
+    // Opening picker uses, with a trailing "Other" option revealing a free-text escape hatch —
+    // the admin must always be able to register any entity_id, not just picker-covered ones.
+    // With zero candidates the escape hatch is the only field shown, matching the pre-AV3
+    // free-text behavior exactly for installations discovery can't help with yet.
+    const hasEntityCandidates = (entityCandidates || []).length > 0;
+    const showManualEntityInput = !hasEntityCandidates || formState.entity_id === "__manual__";
+    const entitySelectHtml = hasEntityCandidates
+      ? `<label>Entity ID
+          <select
+            id="actuators-new-entity"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="entity_id"
+          >
+            <option value=""${formState.entity_id ? "" : " selected"}>— select an entity —</option>
+            ${this._entityCandidateOptions(entityCandidates || [], selectedRoomId)}
+            <option value="__manual__"${formState.entity_id === "__manual__" ? " selected" : ""}>Other (type entity_id)…</option>
+          </select>
+        </label>`
+      : "";
+    const entityManualInputHtml = showManualEntityInput
+      ? `<label>${hasEntityCandidates ? "Entity ID (manual)" : "Entity ID"}
+          <input
+            id="actuators-new-entity-manual"
+            type="text"
+            placeholder="cover.kitchen_shutter"
+            data-filter-section="actuators_new_actuator"
+            data-filter-key="entity_id_manual"
+            value="${this._escape(formState.entity_id_manual || "")}"
+          />
+        </label>`
+      : "";
     return `
       <div class="topology-add-form">
         <label>Room
@@ -1371,16 +1405,8 @@ class HeimaAdminPanel extends HTMLElement {
             data-filter-key="opening_id"
           >${openingOptions}</select>
         </label>
-        <label>Entity ID
-          <input
-            id="actuators-new-entity"
-            type="text"
-            placeholder="cover.kitchen_shutter"
-            data-filter-section="actuators_new_actuator"
-            data-filter-key="entity_id"
-            value="${this._escape(formState.entity_id || "")}"
-          />
-        </label>
+        ${entitySelectHtml}
+        ${entityManualInputHtml}
         <label>Display name (optional)
           <input
             id="actuators-new-display-name"
@@ -1419,7 +1445,14 @@ class HeimaAdminPanel extends HTMLElement {
     if (action === "add_actuator") {
       const roomId = root.getElementById("actuators-new-room")?.value || "";
       const openingId = root.getElementById("actuators-new-opening")?.value || "";
-      const entityId = root.getElementById("actuators-new-entity")?.value || "";
+      // Entity ID is a <select> of picker candidates when any exist, with a "__manual__"
+      // escape-hatch option that reveals a free-text <input> — fall back to that input
+      // whenever the select is absent (no candidates at all), empty, or set to "__manual__".
+      const entitySelect = root.getElementById("actuators-new-entity");
+      const entityId =
+        entitySelect && entitySelect.value && entitySelect.value !== "__manual__"
+          ? entitySelect.value
+          : root.getElementById("actuators-new-entity-manual")?.value || "";
       const displayName = root.getElementById("actuators-new-display-name")?.value || "";
       if (!roomId || !entityId) return;
       const payload = { room_id: roomId, entity_id: entityId };
@@ -1444,7 +1477,11 @@ class HeimaAdminPanel extends HTMLElement {
           actuator_id: actuator.actuator_id,
           room_id: actuator.room_id,
           opening_id: actuator.opening_id || "",
-          entity_id: actuator.entity_id,
+          // An actuator being edited is, by construction, already registered — the picker's
+          // backend already excludes registered entity_ids from entity_candidates, so it can
+          // never appear as a <select> option. Always prefill via the manual escape hatch.
+          entity_id: "__manual__",
+          entity_id_manual: actuator.entity_id,
           display_name: actuator.display_name || "",
         },
       };

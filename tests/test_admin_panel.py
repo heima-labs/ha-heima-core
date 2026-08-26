@@ -322,6 +322,13 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # node). The panel must also force-restore the pre-render scroll position as a fallback.
     assert "this._scrollPosition = { x: window.scrollX, y: window.scrollY }" in text
     assert "window.scrollTo(this._scrollPosition.x, this._scrollPosition.y)" in text
+    # Actuators Entity ID (AV3): a <select> of room-aware picker candidates when any exist,
+    # with a "__manual__" escape-hatch option that reveals a free-text input — the admin must
+    # still be able to register any entity_id, not just picker-covered ones.
+    assert 'id="actuators-new-entity"' in text
+    assert '<option value="__manual__"' in text
+    assert 'id="actuators-new-entity-manual"' in text
+    assert "hasEntityCandidates" in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

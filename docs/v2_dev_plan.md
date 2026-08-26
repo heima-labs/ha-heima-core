@@ -144,8 +144,10 @@ beforehand; AR (AR1-4) concluded and merged earlier still, AR5-8 split out to Ph
 see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/av-actuator-discovery` (to be created off `main`, v0.15.0). `feat/au-actuator-registry`
 already merged (branch retained, not deleted).
-**Next action:** AV3 — AU4 admin-panel entity picker (`entity_candidates` + `<select>` field). AV1
-and AV2 done.
+**Next action:** none active. AV1-3 all done, tests green — Phase AV is implementation-complete on
+this branch, not yet merged to `main`. UI note: AV3's `<select>`/manual-escape-hatch picker was
+verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
+smoke-test — worth a real check before merge, same caveat AU4's panel section had.
 UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
 e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
 browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
@@ -1995,9 +1997,10 @@ routing/audience. Do not start implementing before that spec exists and is appro
 
 ### Phase AV — Actuator Discovery
 
-- Status: `PLANNED`.
+- Status: `DONE` (AV1-3 implemented and tested on `feat/av-actuator-discovery`; not yet merged to
+  `main` — pending the CLAUDE.md pre-merge procedure and explicit developer confirmation).
 - Spec source: `docs/specs/core/actuator_discovery_spec.md` (Status: Planned — approved after design
-  discussion; not implemented, no dev-plan phase assigned until this section).
+  discussion; phased as this section, AV1-3).
 - Also touches: `discovery.py` (Phase L's rule table — new domain branches only),
   `config_flow_steps/_steps_discovery_validation.py` (`_apply_discovery_candidates()` — one new
   branch), `websocket_api.py` (`websocket_actuators_snapshot` — one new additive response field).
@@ -2084,22 +2087,37 @@ is last (largest surface — websocket response shape plus frontend `<select>` r
 
 #### AV3 — Admin-Panel Entity Picker
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AV1 (candidate recognition), AU4 (the panel section and snapshot this extends).
-- `websocket_actuators_snapshot` additionally calls `discover_binding_candidates()`, filters to
-  `category == "actuator"`, applies the same two reconciliation steps as AV2 (resolve `room_id`,
-  skip already-registered), and includes the result as additive `entity_candidates`
-  (`entity_id`/`domain`/`device_class`/`room_id`/`area_name`).
-- Frontend (`heima-admin-panel.js`): `_actuatorsAddForm`'s Entity ID field changes from free-text
-  `<input>` to a `<select>` (matching the Room/Opening fields' existing pattern), candidates in the
-  selected Room listed first, plus a trailing "Other (type entity_id)…" option revealing a text
-  input — the admin must still be able to register any `entity_id`, not just picker-covered ones.
-- Tests: `heima/actuators/snapshot`'s `entity_candidates` includes a matching entity with the
-  correct `room_id`, excludes one already registered as an `Actuator`, excludes one with no
-  resolved Room. Real-websocket e2e mirroring AV2's picker-equivalent for Topology
-  (`test_topology_opening_entity_picker.py`'s style). Static-asset assertions for the new `<select>`
-  markup and the manual-entry escape hatch, mirroring `test_admin_panel.py`'s existing coverage of
-  the Opening entity_id datalist fix.
+- New `_actuator_entity_candidates()` in `websocket_api.py` (mirrors `_opening_entity_candidates()`
+  exactly, one extra step): calls `discover_binding_candidates()` against the live registries,
+  filters to `category == "actuator"`, excludes any `entity_id` already present in
+  `options[OPT_ROOM_ACTUATORS]` (the AV3-specific reconciliation step
+  `_opening_entity_candidates()` doesn't need), resolves `room_id` via `area_id`, skips
+  unresolved. Wired into `websocket_actuators_snapshot` as additive `entity_candidates`
+  (`entity_id`/`domain`/`device_class`/`room_id`/`area_name`), same shape as the Opening picker's.
+- Frontend (`heima-admin-panel.js`): `_actuatorsAddForm`'s Entity ID field is now a `<select>`
+  (reusing `_entityCandidateOptions()` — the exact same selected-room-first sort the Topology
+  Opening picker uses, no duplicated sorting logic) with a trailing `"__manual__"` sentinel option
+  ("Other (type entity_id)…") that reveals a free-text `<input id="actuators-new-entity-manual">`.
+  With zero candidates, only the free-text input renders — identical to the pre-AV3 behavior for
+  installations discovery can't help with yet. Submit-time reads fall back to the manual input
+  whenever the select is absent, empty, or set to `"__manual__"`. `edit_actuator` always prefills
+  via the manual escape hatch (`entity_id: "__manual__"`, `entity_id_manual: <current value>`) —
+  an actuator being edited is, by construction, already registered, so its `entity_id` can never
+  appear as a picker option (excluded by the backend's own dedupe); no need to check membership
+  client-side.
+- Tests: `_actuator_entity_candidates()` unit tests (`tests/test_actuator_entity_picker.py`, new
+  file, 5, mirroring `test_topology_opening_entity_picker.py`): room resolution via area, no-
+  matching-room exclusion, non-actuator-domain exclusion, already-registered-entity_id exclusion,
+  registry-failure returns `[]`. Real-websocket e2e
+  (`test_e2e_actuators_snapshot_includes_entity_candidates` in
+  `tests/test_actuator_registry_panel_e2e.py`): a real `cover` entity with a resolved Area appears
+  in `entity_candidates` with the correct `room_id`; a `switch` entity already registered as an
+  `Actuator` does not. Static-asset assertions in `test_admin_panel.py` for the `<select>` id, the
+  `"__manual__"` option, the manual input id, and the `hasEntityCandidates` branch. Verification:
+  full suite 2012 passed (was 2006), `ruff check`/`ruff format --check` clean, mypy clean on
+  `websocket_api.py`, `node --check` passed.
 
 **Phase AV acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/actuator_discovery_spec.md` §Acceptance Criteria — reproduced here only by
