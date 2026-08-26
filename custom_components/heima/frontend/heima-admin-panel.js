@@ -23,6 +23,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._actuatorsError = "";
     this._actuatorsActionError = "";
     this._openDetailIds = new Set();
+    this._renderScheduled = false;
   }
 
   connectedCallback() {
@@ -216,13 +217,16 @@ class HeimaAdminPanel extends HTMLElement {
       },
     };
     this._focusFilter = { section, key };
-    // Belt-and-suspenders alongside focus({preventScroll: true}) in _restoreFilterFocus():
-    // that option isn't honored by every browser/webview, and a full shadow-DOM rebuild can
-    // also trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its
-    // reference node). Capturing and force-restoring the actual scroll position closes that
-    // gap regardless of which mechanism causes the jump.
     this._scrollPosition = { x: window.scrollX, y: window.scrollY };
-    this._render();
+    
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    
+    setTimeout(() => {
+      this._render();
+      this._restoreFilterFocus();
+      this._renderScheduled = false;
+    }, 50);
   }
 
   _restoreRouteFromHash() {
@@ -645,7 +649,6 @@ class HeimaAdminPanel extends HTMLElement {
         }
       });
     });
-    this._restoreFilterFocus();
   }
 
   _navButton(route, label) {
@@ -853,6 +856,7 @@ class HeimaAdminPanel extends HTMLElement {
         <td>${this._escape(room.display_name || room.room_id)}</td>
         <td>
           <select
+            name="room_${roomId}_room_type"
             data-room-topology-field="room_type"
             data-room-id="${roomId}"
             data-filter-section="topology_room_field"
@@ -864,6 +868,7 @@ class HeimaAdminPanel extends HTMLElement {
         <td>
           <input
             type="number"
+            name="room_${roomId}_floor"
             data-room-topology-field="floor"
             data-room-id="${roomId}"
             data-filter-section="topology_room_field"
@@ -2619,6 +2624,7 @@ class HeimaAdminPanel extends HTMLElement {
       <div class="toolbar">
         <input
           type="search"
+          name="search_${this._escape(section)}"
           data-filter-section="${this._escape(section)}"
           data-filter-key="text"
           placeholder="${this._escape(placeholder)}"
@@ -2754,12 +2760,6 @@ class HeimaAdminPanel extends HTMLElement {
         candidate.getAttribute("data-filter-key") === key,
     );
     if (input && typeof input.focus === "function") {
-      // preventScroll: true is required here, not cosmetic. Every keystroke replaces the whole
-      // shadow DOM (this.shadowRoot.innerHTML = ...), so the input being refocused is a freshly
-      // created element without a stable layout yet. Without preventScroll, the browser's default
-      // "scroll the newly-focused element into view" behavior fires against that unsettled
-      // layout and jumps the page (typically to the top, since that's the first section in
-      // source order) on every single character typed.
       input.focus({ preventScroll: true });
       const length = input.value.length;
       if (typeof input.setSelectionRange === "function") {
