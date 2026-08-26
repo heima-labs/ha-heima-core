@@ -379,6 +379,12 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert 'data-house-state-action="remove_proposal"' in text
     assert 'data-house-state-action="close_detail"' in text
     assert "No accepted proposals for this time slot." in text
+    # Force one learning pass when the matrix would render empty only because the module's
+    # (unpersisted) in-memory model hasn't recomputed yet, not because nothing is genuinely
+    # accepted — one-shot per route visit (this._houseStateRecalcAttempted), not a retry loop.
+    assert "_maybeForceHouseStateRecalc" in text
+    assert "this._houseStateRecalcAttempted" in text
+    assert 'this._hass.callService("heima", "command", { command: "learning_run" })' in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text

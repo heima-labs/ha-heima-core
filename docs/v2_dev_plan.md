@@ -2369,6 +2369,34 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
   data AW1's live join test already proved correct) — not smoke-tested in an actual browser,
   same outstanding caveat as every other panel feature this session.
 
+**Post-AW2 fix — force one learning pass when the matrix would render empty for a stale-model
+reason, not a genuinely-empty one (2026-08-26):** live-verified against the developer's test lab
+that after a container restart, the matrix disappeared even with 2 real accepted proposals still
+persisted in `ApprovalStore` — `HouseStateInferenceModule._models`/`_ready` are **not** persisted,
+only rebuilt when `analyze()` runs (`sync_approval_state()` alone doesn't repopulate them), and
+that only happens automatically every `_ANALYZE_INTERVAL_S` (6 hours, `coordinator.py:122`) in
+production — a real, if narrow, gap for a freshly (re)started instance. Root-caused live: forcing
+`coordinator.async_run_learning_now()` (already exposed as the `heima.command`
+`command: "learning_run"` service) immediately repopulated both `ready` and
+`approved_model_entries` from the still-persisted approval data.
+Fixed by having the panel force exactly one learning pass when it detects `!houseStateModule.ready`
+(not the separate "ready but genuinely zero accepted" case, where recalculating can't invent
+proposals that were never approved): new `_maybeForceHouseStateRecalc()`, guarded by
+`this._houseStateRecalcAttempted` so it fires once per route visit, not on every 15s poll while
+waiting — calls `this._hass.callService("heima", "command", { command: "learning_run" })`, the
+first use of `callService` in this file (every other action here calls a `heima/*/action`
+websocket command instead — `learning_run` only exists as a plain HA service, and adding a
+websocket wrapper around it would have just duplicated an already-exposed capability). Flag resets
+in `_setRoute()` on route change, matching `this._detail`'s own reset. Two possible outcomes per
+the developer's own framing: the table repopulates (model had data, just hadn't recomputed), or it
+stays empty (genuinely nothing to show) — no infinite retry either way.
+Tests: static-asset assertions for the new method, the one-shot flag, and the exact `callService`
+call. Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check`
+passed, full `ci_local.sh` green. The underlying service-call mechanics were proven correct via
+direct API testing against the live instance (same call, same result, via Python) — the actual
+`this._hass.callService()` binding inside a real rendered browser panel is not verified, same
+caveat as the rest of this phase's frontend work.
+
 #### AW3 — Remove Proposal Action
 
 - Status: `PLANNED`.

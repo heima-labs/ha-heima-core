@@ -25,6 +25,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._openDetailIds = new Set();
     this._renderScheduled = false;
     this._openHouseStateSlot = null;
+    this._houseStateRecalcAttempted = false;
   }
 
   connectedCallback() {
@@ -96,6 +97,27 @@ class HeimaAdminPanel extends HTMLElement {
       this._loading = false;
       this._render();
     }
+  }
+
+  // AW2 follow-up: force one learning pass when the House State matrix would otherwise render
+  // empty only because the module's in-memory model hasn't been (re)computed yet — not because
+  // there's genuinely nothing accepted. this._hass.callService() is the standard HA panel API
+  // for invoking a service (heima.command, command: "learning_run" — the same one
+  // coordinator.async_run_learning_now() is already exposed as); every other action in this file
+  // calls a heima/*/action websocket command instead, since none of them needed a plain HA
+  // service before now.
+  async _maybeForceHouseStateRecalc() {
+    if (this._houseStateRecalcAttempted) return;
+    this._houseStateRecalcAttempted = true;
+    if (!this._hass || typeof this._hass.callService !== "function") return;
+    try {
+      await this._hass.callService("heima", "command", { command: "learning_run" });
+    } catch (err) {
+      // Best-effort: if the service call fails, the matrix just keeps showing "Learning in
+      // progress…" for this route visit; the periodic 15s poll still applies whatever state
+      // exists server-side regardless of whether this specific call succeeded.
+    }
+    await this._loadSnapshot();
   }
 
   async _loadTopologySnapshot() {
@@ -194,6 +216,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._route = route;
     this._detail = null;
     this._openHouseStateSlot = null;
+    this._houseStateRecalcAttempted = false;
     if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
       this._loadTopologySnapshot();
     }
@@ -1899,6 +1922,15 @@ class HeimaAdminPanel extends HTMLElement {
       learningMatrix = `<div class="card">House state learning not active.</div>`;
     } else if (!houseStateModule.ready) {
       learningMatrix = `<div class="card">Learning in progress…</div>`;
+      // The module's statistical model isn't persisted — only rebuilt when analyze() runs,
+      // which happens automatically every few hours in production (coordinator.py's own
+      // _ANALYZE_INTERVAL_S tick) but not immediately after a restart. A proposal can be
+      // genuinely accepted (ApprovalStore, persisted) while still invisible here simply because
+      // the model hasn't recomputed since. One-shot per route visit, not a retry loop: either
+      // the forced run populates the model (next snapshot reload shows it) or it doesn't (e.g.
+      // truly no snapshot history yet) — re-forcing every 15s while waiting would be pointless
+      // extra load, not a faster result.
+      this._maybeForceHouseStateRecalc();
     } else {
       const entries = houseStateModule.approved_model_entries || [];
       if (!entries.length) {
