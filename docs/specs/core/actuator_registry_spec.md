@@ -1,6 +1,6 @@
 # Actuator Registry Spec
 
-**Status:** Implemented (AU1-4) on `feat/au-actuator-registry`; not yet merged to `main`
+**Status:** Implemented (AU1-4) on `main`
 **Date:** 2026-08-24
 **Scope:** A generic per-entity actuator inventory — which room, optionally which opening, an
 arbitrary HA-domain entity (`cover.*`, `fan.*`, `climate.*`, and future equipment classes) is

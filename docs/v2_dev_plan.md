@@ -130,24 +130,27 @@ These constraints must never be violated. See spec §16 for rationale.
 | AR | Room Topology | `DONE` | AO, M |
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
-| AU | Actuator Registry | `PLANNED` | AR |
+| AU | Actuator Registry | `DONE` | AR |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4).
-**Active slice:** Phase AU — Actuator Registry. AU1-4 all done, tests green — Phase AU is
-implementation-complete on this branch, not yet merged to `main`. AR (AR1-4) concluded and merged
-to `main`; AR5-8 split out to Phase AT (`DEFERRED`, see
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4).
+**Active slice:** none. Phase AU (AU1-4: data model, validation, cache, admin editor, referential
+integrity with AR4's Opening delete) concluded and merged to `main`. AR (AR1-4) concluded and
+merged to `main` earlier; AR5-8 split out to Phase AT (`DEFERRED`, see
 `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/au-actuator-registry` (created off `main` at `124a5b3`, v0.14.0).
-**Next action:** Before merging to `main`, follow CLAUDE.md's mandatory pre-merge procedure (bump
-minor version, `CHANGELOG.md` entry, full `bash scripts/ci_local.sh`), then merge — all pending
-explicit developer confirmation. UI note: AU4's panel section was verified via automated real-
-websocket e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a live
-browser session — unlike AR4, no manual browser smoke-test has been done yet for the Actuators
-panel section.
+**Branch:** `feat/au-actuator-registry` merged to `main` (branch retained, not deleted).
+**Next action:** none active. `core/actuator_discovery_spec.md` (approved after design discussion,
+not yet phased/numbered) is the next spec-first candidate — extends Phase L's discovery dispatcher
+with actuator domain rules (cover/fan/climate/humidifier/switch) and a room-aware entity picker for
+the Actuators admin form, mirroring the fix already shipped for Topology's Opening picker. UI note:
+AU4's panel section itself was verified via automated real-websocket e2e tests
+(`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live browser
+smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus bug (found
+via live testing of this same form) was diagnosed and fixed before merge, so the mechanism it
+depends on (`_setFilter`/`_restoreFilterFocus`) is now live-verified.
 
 ### Phase AO — Admin Observability Panel
 
@@ -1729,10 +1732,10 @@ traceable in existing AO decision traces. Depends on AT3 for the decision traces
 
 ### Phase AU — Actuator Registry
 
-- Status: `DONE` (AU1-4 implemented and tested on `feat/au-actuator-registry`; not yet merged to
-  `main` — pending the CLAUDE.md pre-merge procedure and explicit developer confirmation).
-- Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Planned — not implemented on
-  `main`; approved after design discussion, see this phase's own history for the reasoning —
+- Status: `DONE` (AU1-4 implemented, tested, and merged to `main` via `feat/au-actuator-registry`,
+  v0.15.0).
+- Spec source: `docs/specs/core/actuator_registry_spec.md` (Status: Implemented (AU1-4) on `main`;
+  approved after design discussion, see this phase's own history for the reasoning —
   position-aware/unaware scenario stress test, the decision to keep it separate from Lighting, and
   the overlap check against deferred Phase AT).
 - Also touches: `core/admin_observability_panel_spec.md` (new `actuators` diagnostics summary),
