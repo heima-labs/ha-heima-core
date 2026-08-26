@@ -149,7 +149,7 @@ split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_
 scheduled.
 **Branch:** `feat/aw-house-state-learning-viz` (created 2026-08-26, AW1 committed). `feat/av-actuator-discovery` and
 `feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW1 code complete, ready for live test. Next: AW2 — per-slot detail view. Outstanding verification debt from earlier phases, unrelated to AW:
+**Next action:** AW1 complete with tests (16 passed). Ready for live verification of join rate. Next: AW2 — per-slot detail view. Outstanding verification debt from earlier phases, unrelated to AW:
 AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
 were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
 smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
@@ -2251,7 +2251,7 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
 
 #### AW1 — Proposal-ID Join and 7×24 Matrix
 
-- Status: `IN PROGRESS` (code committed to `feat/aw-house-state-learning-viz`, ready for live verification).
+- Status: `DONE` (code + tests committed to `feat/aw-house-state-learning-viz`, ready for live verification of join rate).
 - Depends on: Phase AO (admin panel + observability snapshot infra), Phase Y
   (`HouseStateInferenceModule`'s `approved_model_entries`).
 - New helper `_houseStateAcceptedProposalsByContextKey(snapshot)` builds a
