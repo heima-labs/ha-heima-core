@@ -140,18 +140,16 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
 **Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`), phase definition just written, not yet
-implemented — branch not yet created (planning only, per explicit developer request). Phase AV
+(`core/house_state_learning_completion_viz_spec.md`). **AW1 in progress** on
+`feat/aw-house-state-learning-viz` (created 2026-08-26): `proposal_id` join + 7x24 matrix rendering. Phase AV
 (AV1-3: discovery rule table, Options Flow branch, admin-panel picker, plus two follow-on UI
 fixes — room grouping and inline edit) concluded and merged to `main` beforehand; Phase AU
 (AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier still, AR5-8
 split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
 scheduled.
-**Branch:** none yet for Phase AW (to be created off `main` as `feat/aw-house-state-learning-viz`
-once the developer confirms starting implementation). `feat/av-actuator-discovery` and
+**Branch:** `feat/aw-house-state-learning-viz` (created 2026-08-26, AW1 committed). `feat/av-actuator-discovery` and
 `feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW1 — `proposal_id` join + 7×24 matrix rendering, once the developer confirms
-starting implementation. Outstanding verification debt from earlier phases, unrelated to AW:
+**Next action:** AW1 code complete, ready for live test. Next: AW2 — per-slot detail view. Outstanding verification debt from earlier phases, unrelated to AW:
 AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
 were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
 smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
@@ -2253,7 +2251,7 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
 
 #### AW1 — Proposal-ID Join and 7×24 Matrix
 
-- Status: `PLANNED`.
+- Status: `IN PROGRESS` (code committed to `feat/aw-house-state-learning-viz`, ready for live verification).
 - Depends on: Phase AO (admin panel + observability snapshot infra), Phase Y
   (`HouseStateInferenceModule`'s `approved_model_entries`).
 - New helper `_houseStateAcceptedProposalsByContextKey(snapshot)` builds a
