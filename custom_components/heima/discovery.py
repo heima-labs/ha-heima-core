@@ -182,6 +182,18 @@ def _candidate_from_entry(
             area_name=area_name,
             ambiguous=True,
         )
+    if domain in {"cover", "fan", "climate", "humidifier", "switch"}:
+        return _candidate(
+            entity_id=entity_id,
+            domain=domain,
+            device_class=device_class,
+            suggested_binding="actuator_candidate",
+            category="actuator",
+            reason=f"{domain} entities can be registered in the Actuator Registry.",
+            confidence=0.8,
+            area_id=area_id,
+            area_name=area_name,
+        )
     return None
 
 

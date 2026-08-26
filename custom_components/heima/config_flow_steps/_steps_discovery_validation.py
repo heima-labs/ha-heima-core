@@ -12,7 +12,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from ..const import OPT_ACTIVITY_BINDINGS, OPT_DISCOVERY, OPT_ROOMS
+from ..actuators import apply_actuator_upsert
+from ..const import OPT_ACTIVITY_BINDINGS, OPT_DISCOVERY, OPT_ROOM_ACTUATORS, OPT_ROOMS
 from ..discovery import (
     DiscoveredBindingCandidate,
     DiscoveryReport,
@@ -175,6 +176,8 @@ class _DiscoveryValidationStepsMixin:
         rooms_changed = False
         activity_bindings = dict(self.options.get(OPT_ACTIVITY_BINDINGS, {}) or {})
         activity_changed = False
+        actuator_options = dict(self.options)
+        actuators_changed = False
 
         for candidate in candidates:
             if candidate.suggested_binding == "room_occupancy_source" and candidate.area_id:
@@ -193,11 +196,41 @@ class _DiscoveryValidationStepsMixin:
                     shower["bathroom_humidity_entity"] = candidate.entity_id
                     activity_bindings["shower_running"] = shower
                     activity_changed = True
+            elif candidate.suggested_binding == "actuator_candidate" and candidate.area_id:
+                room_id = next(
+                    (
+                        str(room.get("room_id") or "")
+                        for room in room_updates
+                        if str(room.get("area_id") or "") == candidate.area_id
+                    ),
+                    "",
+                )
+                if not room_id:
+                    continue
+                existing_entity_ids = {
+                    str(actuator.get("entity_id") or "")
+                    for actuator in (actuator_options.get(OPT_ROOM_ACTUATORS) or [])
+                    if isinstance(actuator, dict)
+                }
+                if candidate.entity_id in existing_entity_ids:
+                    continue
+                new_actuator_options, _ = apply_actuator_upsert(
+                    actuator_options,
+                    actuator_id=None,
+                    entity_id=candidate.entity_id,
+                    room_id=room_id,
+                    opening_id=None,
+                )
+                if new_actuator_options is not None:
+                    actuator_options = new_actuator_options
+                    actuators_changed = True
 
         if rooms_changed:
             self._store_list(OPT_ROOMS, room_updates)
         if activity_changed:
             self._update_options({OPT_ACTIVITY_BINDINGS: activity_bindings})
+        if actuators_changed:
+            self._update_options({OPT_ROOM_ACTUATORS: actuator_options.get(OPT_ROOM_ACTUATORS, [])})
 
     def _store_discovery_review(
         self,

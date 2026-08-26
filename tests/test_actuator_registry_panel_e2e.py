@@ -10,6 +10,8 @@ import asyncio
 import pytest
 from aiohttp.resolver import AsyncResolver
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.heima.const import DOMAIN
@@ -35,7 +37,11 @@ def _warm_up_aiohttp_dns_resolver_thread():
     yield
 
 
-def _entry(rooms: list[dict], openings: list[dict] | None = None) -> MockConfigEntry:
+def _entry(
+    rooms: list[dict],
+    openings: list[dict] | None = None,
+    actuators: list[dict] | None = None,
+) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Heima",
@@ -44,7 +50,7 @@ def _entry(rooms: list[dict], openings: list[dict] | None = None) -> MockConfigE
             "rooms": rooms,
             "room_openings": openings or [],
             "room_connections": [],
-            "room_actuators": [],
+            "room_actuators": actuators or [],
         },
     )
 
@@ -132,6 +138,58 @@ async def test_e2e_actuators_upsert_without_client_id_returns_server_generated_i
     generated_actuator_id = links[0]["id"]
     assert generated_actuator_id
     assert response["result"]["snapshot"]["actuators"][0]["actuator_id"] == generated_actuator_id
+
+    await client.close()
+    await client.client.close()
+
+
+async def test_e2e_actuators_snapshot_includes_entity_candidates(
+    hass: HomeAssistant,
+    enable_custom_integrations,
+    hass_ws_client,
+):
+    # Regression test for AV3 (actuator_discovery_spec.md Surface 2): the actuators snapshot
+    # must surface real cover/fan/climate/humidifier/switch entities, room-resolved via their HA
+    # Area, for the admin panel's Entity ID picker — and must exclude an entity already
+    # registered as an Actuator, so the picker never suggests a duplicate.
+    area = ar.async_get(hass).async_create("Kitchen")
+    new_entity = er.async_get(hass).async_get_or_create(
+        "cover", "test", "kitchen_shutter_unique", suggested_object_id="kitchen_shutter"
+    )
+    er.async_get(hass).async_update_entity(new_entity.entity_id, area_id=area.id)
+    registered_entity = er.async_get(hass).async_get_or_create(
+        "switch", "test", "kitchen_valve_unique", suggested_object_id="kitchen_valve"
+    )
+    er.async_get(hass).async_update_entity(registered_entity.entity_id, area_id=area.id)
+
+    entry = _entry(
+        [{"room_id": "kitchen", "room_type": "indoor", "area_id": area.id}],
+        actuators=[
+            {
+                "actuator_id": "existing-1",
+                "entity_id": registered_entity.entity_id,
+                "room_id": "kitchen",
+                "opening_id": None,
+                "display_name": None,
+            }
+        ],
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    client = await hass_ws_client()
+    await client.send_json_auto_id({"type": "heima/actuators/snapshot"})
+    response = await client.receive_json()
+    assert response["success"] is True
+    candidates = response["result"]["entity_candidates"]
+    assert any(
+        candidate["entity_id"] == new_entity.entity_id and candidate["room_id"] == "kitchen"
+        for candidate in candidates
+    )
+    assert not any(
+        candidate["entity_id"] == registered_entity.entity_id for candidate in candidates
+    )
 
     await client.close()
     await client.client.close()

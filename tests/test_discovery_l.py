@@ -86,6 +86,42 @@ def test_discovery_maps_device_classes_to_grouped_candidates() -> None:
     assert by_binding["activity_media_candidate"].ambiguous is True
 
 
+def test_discovery_maps_actuator_domains_to_actuator_candidates() -> None:
+    report = discover_binding_candidates(
+        entity_entries=[
+            _entry("cover.living_shutter", area_id="living"),
+            _entry("fan.bedroom_ceiling", area_id="bedroom"),
+            _entry("climate.living_thermostat", area_id="living"),
+            _entry("humidifier.bathroom", area_id="bathroom"),
+            _entry("switch.garage_opener", area_id="garage"),
+            _entry("light.living_lamp", area_id="living"),
+        ],
+        area_entries={
+            "living": SimpleNamespace(id="living", name="Living"),
+            "bedroom": SimpleNamespace(id="bedroom", name="Bedroom"),
+            "bathroom": SimpleNamespace(id="bathroom", name="Bathroom"),
+            "garage": SimpleNamespace(id="garage", name="Garage"),
+        },
+    )
+
+    actuator_candidates = {
+        candidate.entity_id: candidate
+        for candidate in report.candidates
+        if candidate.category == "actuator"
+    }
+    assert set(actuator_candidates) == {
+        "cover.living_shutter",
+        "fan.bedroom_ceiling",
+        "climate.living_thermostat",
+        "humidifier.bathroom",
+        "switch.garage_opener",
+    }
+    for candidate in actuator_candidates.values():
+        assert candidate.suggested_binding == "actuator_candidate"
+        assert candidate.ambiguous is False
+    assert not any(entity_id.startswith("light.") for entity_id in actuator_candidates)
+
+
 @pytest.mark.asyncio
 async def test_coordinator_async_discover_entities_reads_ha_registries(monkeypatch) -> None:
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
@@ -218,3 +254,73 @@ async def test_options_flow_discovery_accept_all_records_ambiguous_without_mutat
     accepted = set(flow.options["discovery"]["accepted_candidate_ids"])
     assert "room_occupancy_source:binary_sensor.bath_motion" in accepted
     assert "activity_power_candidate:sensor.washer_power" in accepted
+
+
+@pytest.mark.asyncio
+async def test_options_flow_discovery_accepts_actuator_candidates_with_room_resolution(
+    monkeypatch,
+) -> None:
+    flow = _flow(
+        {
+            "rooms": [
+                {
+                    "room_id": "living",
+                    "display_name": "Living",
+                    "area_id": "living",
+                    "occupancy_sources": [],
+                    "learning_sources": [],
+                }
+            ],
+            # Pre-existing Actuator for switch.garage_opener: the discovery-flow idempotency
+            # guard must skip re-creating a duplicate for this entity_id even though it also
+            # resolves to a known room via a different area.
+            "room_actuators": [
+                {
+                    "actuator_id": "existing-1",
+                    "entity_id": "switch.garage_opener",
+                    "room_id": "living",
+                    "opening_id": None,
+                    "display_name": None,
+                }
+            ],
+        }
+    )
+    entity_registry = SimpleNamespace(
+        entities={
+            "cover": _entry("cover.living_shutter", area_id="living"),
+            # A second, genuinely-new candidate in the same batch: regression guard for the
+            # options = new_options chaining note in actuator_discovery_spec.md (apply_actuator_
+            # upsert returns a whole new dict per call, unlike the in-place mutation the other
+            # branches use — without chaining, only the last accepted candidate would persist).
+            "fan": _entry("fan.living_ceiling", area_id="living"),
+            "switch": _entry("switch.garage_opener", area_id="living"),
+            "climate": _entry("climate.unmapped_thermostat", area_id="attic"),
+        }
+    )
+    device_registry = SimpleNamespace(devices={})
+    area_registry = _FakeAreaRegistry([("living", "Living"), ("attic", "Attic")])
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get", lambda _hass: entity_registry
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get", lambda _hass: device_registry
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.area_registry.async_get", lambda _hass: area_registry
+    )
+
+    result = await flow.async_step_discovery({"action": "accept_non_ambiguous"})
+
+    assert result["type"] == "menu"
+    actuators = flow.options["room_actuators"]
+    by_entity_id = {actuator["entity_id"]: actuator for actuator in actuators}
+    # Both new actuators in this batch are persisted, not just the last one accepted.
+    assert "cover.living_shutter" in by_entity_id
+    assert by_entity_id["cover.living_shutter"]["room_id"] == "living"
+    assert "fan.living_ceiling" in by_entity_id
+    assert by_entity_id["fan.living_ceiling"]["room_id"] == "living"
+    # Unmapped area (no Room with a matching area_id) is silently skipped.
+    assert "climate.unmapped_thermostat" not in by_entity_id
+    # Already-registered entity_id is not duplicated; the original record is untouched.
+    assert len(actuators) == 3
+    assert by_entity_id["switch.garage_opener"]["actuator_id"] == "existing-1"

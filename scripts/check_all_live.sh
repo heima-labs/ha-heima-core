@@ -71,6 +71,7 @@ DIAGNOSTIC_SCRIPTS=(
   "scripts/live_tests/083_health_invariant_clear_active_live.py"
   "scripts/live_tests/082_runtime_state_replay_live.py"
   "scripts/live_tests/087_actuator_registry_live.py"
+  "scripts/live_tests/088_actuator_discovery_live.py"
 )
 
 DESTRUCTIVE_SCRIPTS=(
