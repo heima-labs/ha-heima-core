@@ -144,7 +144,7 @@ beforehand; AR (AR1-4) concluded and merged earlier still, AR5-8 split out to Ph
 see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/av-actuator-discovery` (to be created off `main`, v0.15.0). `feat/au-actuator-registry`
 already merged (branch retained, not deleted).
-**Next action:** AV1 — extend `discovery.py`'s rule table with the 5 new actuator domain branches.
+**Next action:** AV2 — Options Flow discovery branch (`_apply_discovery_candidates()`). AV1 done.
 UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
 e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
 browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
@@ -2042,15 +2042,21 @@ is last (largest surface — websocket response shape plus frontend `<select>` r
 
 #### AV1 — Discovery Rule-Table Extension
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: Phase L (`_candidate_from_entry()`, the existing dispatcher).
-- `_candidate_from_entry()` gains 5 new domain branches (`cover`/`fan`/`climate`/`humidifier`/
-  `switch` → `suggested_binding="actuator_candidate"`, `category="actuator"`, `ambiguous=False`,
-  `confidence=0.8`). `discover_binding_candidates()`'s signature, `DiscoveryReport` shape, and
-  `_entry_area_id()` are otherwise unchanged.
-- Tests: one new case per allowlisted domain asserting `actuator_candidate`/`category="actuator"`/
-  `ambiguous=False`; a `light` entity still returns nothing for this category. Extends the existing
-  `discovery.py` test module — no new test file.
+- `_candidate_from_entry()` gains one new combined branch for the 5 allowlisted domains
+  (`cover`/`fan`/`climate`/`humidifier`/`switch` → `suggested_binding="actuator_candidate"`,
+  `category="actuator"`, `ambiguous=False`, `confidence=0.8`) — a single `if domain in {...}:` check
+  rather than 5 near-duplicate branches, since all 5 share identical
+  suggested_binding/category/confidence/ambiguous (the spec's table describes the mapping, not a
+  mandate for 5 separate `if` statements). `discover_binding_candidates()`'s signature,
+  `DiscoveryReport` shape, and `_entry_area_id()` are otherwise unchanged.
+- Tests (`tests/test_discovery_l.py`, 1 new):
+  `test_discovery_maps_actuator_domains_to_actuator_candidates` — one entity per allowlisted domain
+  plus a `light` entity; asserts all 5 surface as `category="actuator"`/`suggested_binding=
+  "actuator_candidate"`/`ambiguous=False`, and that `light` is absent from the actuator group.
+  Verification: full suite 2005 passed (was 2004), `ruff check`/`ruff format --check` clean, mypy
+  clean on `discovery.py`.
 
 #### AV2 — Options Flow Discovery Branch
 

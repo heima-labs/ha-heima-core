@@ -86,6 +86,42 @@ def test_discovery_maps_device_classes_to_grouped_candidates() -> None:
     assert by_binding["activity_media_candidate"].ambiguous is True
 
 
+def test_discovery_maps_actuator_domains_to_actuator_candidates() -> None:
+    report = discover_binding_candidates(
+        entity_entries=[
+            _entry("cover.living_shutter", area_id="living"),
+            _entry("fan.bedroom_ceiling", area_id="bedroom"),
+            _entry("climate.living_thermostat", area_id="living"),
+            _entry("humidifier.bathroom", area_id="bathroom"),
+            _entry("switch.garage_opener", area_id="garage"),
+            _entry("light.living_lamp", area_id="living"),
+        ],
+        area_entries={
+            "living": SimpleNamespace(id="living", name="Living"),
+            "bedroom": SimpleNamespace(id="bedroom", name="Bedroom"),
+            "bathroom": SimpleNamespace(id="bathroom", name="Bathroom"),
+            "garage": SimpleNamespace(id="garage", name="Garage"),
+        },
+    )
+
+    actuator_candidates = {
+        candidate.entity_id: candidate
+        for candidate in report.candidates
+        if candidate.category == "actuator"
+    }
+    assert set(actuator_candidates) == {
+        "cover.living_shutter",
+        "fan.bedroom_ceiling",
+        "climate.living_thermostat",
+        "humidifier.bathroom",
+        "switch.garage_opener",
+    }
+    for candidate in actuator_candidates.values():
+        assert candidate.suggested_binding == "actuator_candidate"
+        assert candidate.ambiguous is False
+    assert not any(entity_id.startswith("light.") for entity_id in actuator_candidates)
+
+
 @pytest.mark.asyncio
 async def test_coordinator_async_discover_entities_reads_ha_registries(monkeypatch) -> None:
     coordinator = HeimaCoordinator.__new__(HeimaCoordinator)
