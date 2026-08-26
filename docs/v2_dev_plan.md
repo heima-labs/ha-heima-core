@@ -144,7 +144,8 @@ beforehand; AR (AR1-4) concluded and merged earlier still, AR5-8 split out to Ph
 see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
 **Branch:** `feat/av-actuator-discovery` (to be created off `main`, v0.15.0). `feat/au-actuator-registry`
 already merged (branch retained, not deleted).
-**Next action:** AV2 — Options Flow discovery branch (`_apply_discovery_candidates()`). AV1 done.
+**Next action:** AV3 — AU4 admin-panel entity picker (`entity_candidates` + `<select>` field). AV1
+and AV2 done.
 UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
 e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
 browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
@@ -2060,17 +2061,26 @@ is last (largest surface — websocket response shape plus frontend `<select>` r
 
 #### AV2 — Options Flow Discovery Branch
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AV1.
-- `_apply_discovery_candidates()` gains the `actuator_candidate` branch described in Sequencing
-  Rationale above, calling `actuators.apply_actuator_upsert(options, actuator_id=None,
-  entity_id=candidate.entity_id, room_id=<resolved>, opening_id=None)`. No rejection-handling logic
-  needed — `apply_actuator_upsert` with `opening_id=None` can never return a blocking issue
-  (verified against `validate_actuators()`'s rules).
-- Tests: resolves `room_id` from `area_id` and persists via `apply_actuator_upsert`; a candidate
-  whose `area_id` has no matching Room is silently skipped; a candidate whose `entity_id` already
-  exists in `OPT_ROOM_ACTUATORS` is silently skipped; accepting two `actuator_candidate`s in the
-  same batch persists both (regression test for the `options` chaining note).
+- `_apply_discovery_candidates()` (`config_flow_steps/_steps_discovery_validation.py`) gains the
+  `actuator_candidate` branch: resolves `room_id` by scanning `room_updates` for a room whose
+  `area_id` matches the candidate's (same loop shape as the `room_occupancy_source` branch), skips
+  if unresolved, skips if `candidate.entity_id` already appears in a local `actuator_options`
+  tracking dict's `OPT_ROOM_ACTUATORS` list (idempotency guard), otherwise calls
+  `actuators.apply_actuator_upsert(actuator_options, actuator_id=None,
+  entity_id=candidate.entity_id, room_id=<resolved>, opening_id=None)` and threads the result
+  forward (`actuator_options = new_actuator_options`) — the mechanical difference from the other
+  two branches' in-place mutation, per the spec's own note. Persisted once at the end via
+  `self._update_options({OPT_ROOM_ACTUATORS: ...})`, only if anything changed. No rejection-handling
+  logic needed — `apply_actuator_upsert` with `opening_id=None` can never return a blocking issue.
+- Tests (`tests/test_discovery_l.py`, 1 new):
+  `test_options_flow_discovery_accepts_actuator_candidates_with_room_resolution` — one
+  `cover`/`fan` pair in a known room (both persist, batch-chaining regression), one `climate`
+  entity in an area with no matching Room (silently skipped), one pre-seeded `Actuator` whose
+  `entity_id` also appears as a discovered `switch` candidate (idempotency guard: original record
+  untouched, no duplicate created). Verification: full suite 2006 passed (was 2005), `ruff check`/
+  `ruff format --check` clean, mypy clean on the touched module.
 
 #### AV3 — Admin-Panel Entity Picker
 
