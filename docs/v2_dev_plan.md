@@ -1616,8 +1616,28 @@ before because Topology's own forms were the only ones smoke-tested live before 
 symptom (scroll jump) is easy to misread as "focus loss" rather than "page jumped so the cursor's
 visual context moved," which is what actually made it visible this time. Static-asset assertion
 added (`input.focus({ preventScroll: true })`); full suite still 2004 passed (assertion added to
-the existing test), `ruff check`/`ruff format --check` clean, `node --check` passed. Not yet
-re-verified live in a browser after this fix — pending developer confirmation.
+the existing test), `ruff check`/`ruff format --check` clean, `node --check` passed.
+
+**Follow-up (2026-08-25/26):** `preventScroll` alone did not resolve it on the developer's live
+test instance, even after a full docker restart (ruling out stale cache). A second, belt-and-
+suspenders attempt (`a9d09ae`) added explicit `window.scrollX/Y` capture-and-restore around
+`_setFilter()`'s re-render, on the theory that `preventScroll` isn't honored by every browser and
+that a full shadow-DOM rebuild can disturb scroll via other mechanisms (e.g. scroll anchoring
+losing its reference node). That still did not resolve it live. **The actual fix landed via
+Mistral Vibe** (commit `82a05ef`, "Fix focus loss in topology and actuators admin forms"),
+developer-applied and confirmed working: `_setFilter()` now debounces the re-render (50ms
+`setTimeout`, guarded by a `_renderScheduled` flag) instead of calling `_render()` synchronously
+on every keystroke; `_restoreFilterFocus()` is called explicitly after that deferred render
+instead of unconditionally at the end of every `_render()`. Root cause per that commit: duplicate
+render scheduling from overlapping input/change events was part of what was destroying/rebuilding
+the focused node faster than the browser could settle. `input.focus({ preventScroll: true })` and
+the `window.scrollX/Y` restore from the two earlier attempts were kept in place (harmless, still
+correct as defense in depth) — the debounce is what actually fixed it. Verified: full suite still
+2004 passed, `node --check` clean, static-asset assertions (`preventScroll`, `_scrollPosition`)
+still match since neither literal was removed. **Lesson:** this class of bug (real-browser
+scroll/focus/render-timing interaction) was not diagnosable from static code reading alone across
+two attempts — needed either live browser reproduction with devtools, or, as happened here, a
+different tool/pass to find it.
 
 AR5-8 (HouseState/Occupancy/Security consumption + observability) were originally specified here.
 Re-evaluated on 2026-08-24, before merge: none of the three consumers are prerequisites for anything
