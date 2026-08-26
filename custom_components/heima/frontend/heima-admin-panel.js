@@ -671,6 +671,23 @@ class HeimaAdminPanel extends HTMLElement {
           opacity: 0.5;
           cursor: not-allowed;
         }
+        .house-state-loading {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .spinner {
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+          border: 2px solid var(--divider-color);
+          border-top-color: var(--primary-color, #03A9F4);
+          border-radius: 50%;
+          animation: heima-spin 0.8s linear infinite;
+        }
+        @keyframes heima-spin {
+          to { transform: rotate(360deg); }
+        }
       </style>
       <div class="shell">
         <nav>
@@ -1935,7 +1952,7 @@ class HeimaAdminPanel extends HTMLElement {
     } else if (!houseStateModule) {
       learningMatrix = `<div class="card">House state learning not active.</div>`;
     } else if (!houseStateModule.ready) {
-      learningMatrix = `<div class="card">Learning in progress…</div>`;
+      learningMatrix = `<div class="card house-state-loading"><span class="spinner"></span> Learning in progress…</div>`;
       // The module's statistical model isn't persisted — only rebuilt when analyze() runs,
       // which happens automatically every few hours in production (coordinator.py's own
       // _ANALYZE_INTERVAL_S tick) but not immediately after a restart. A proposal can be
@@ -2095,6 +2112,10 @@ class HeimaAdminPanel extends HTMLElement {
     return slots;
   }
 
+  _formatHourBucket(hourBucket) {
+    return `${String(hourBucket).padStart(2, "0")}:00`;
+  }
+
   _houseStateLearningMatrix(slots) {
     const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const stateColors = {
@@ -2139,7 +2160,7 @@ class HeimaAdminPanel extends HTMLElement {
         const count = slot.entries.length;
 
         if (count === 0) {
-          const emptyTitle = `${dayNames[weekday]} ${hourBucket}:00 - No learned patterns\nNo accepted proposals for this slot`;
+          const emptyTitle = `${dayNames[weekday]} ${this._formatHourBucket(hourBucket)} - No learned patterns\nNo accepted proposals for this slot`;
           rowCells.push(`<td class="house-state-slot empty" data-slot-key="${slotKey}" title="${this._escape(emptyTitle)}"> </td>`);
         } else if (count === 1) {
           const entry = slot.entries[0];
@@ -2167,13 +2188,13 @@ class HeimaAdminPanel extends HTMLElement {
             <thead>
               <tr>
                 <th></th>
-                ${Array.from({length: 24}, (_, h) => `<th>${h}</th>`).join("")}
+                ${Array.from({length: 24}, (_, h) => `<th>${this._formatHourBucket(h)}</th>`).join("")}
               </tr>
             </thead>
             <tbody>
               ${cells.map((rowCells, weekday) => `
                 <tr>
-                  <th>${dayNames[weekday].charAt(0)}</th>
+                  <th>${dayNames[weekday].slice(0, 2)}</th>
                   ${rowCells.join("")}
                 </tr>
               `).join("")}
@@ -2188,16 +2209,17 @@ class HeimaAdminPanel extends HTMLElement {
     const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const dayName = dayNames[slot.weekday] || "Unknown";
     const hour = slot.hourBucket !== undefined ? slot.hourBucket : slot.entries[0]?.context_snapshot?.hour_bucket || 0;
-    
+    const hourLabel = this._formatHourBucket(hour);
+
     if (!slot.entries || slot.entries.length === 0) {
-      return `${dayName} ${hour}:00 - No learned patterns\nNo accepted proposals for this slot`;
+      return `${dayName} ${hourLabel} - No learned patterns\nNo accepted proposals for this slot`;
     }
-    
+
     const states = slot.entries.map(e => e.predicted_state || e.context_snapshot?.predicted_state).filter(Boolean);
     const stateList = [...new Set(states)].join(", ");
     const count = slot.entries.length;
-    
-    return `${dayName} ${hour}:00 - ${stateList}\n${count} accepted proposal(s) for this slot\nClick to view details and manage`;
+
+    return `${dayName} ${hourLabel} - ${stateList}\n${count} accepted proposal(s) for this slot\nClick to view details and manage`;
   }
 
   _houseStateSlotDetail(slotKey, slot) {
@@ -2266,7 +2288,7 @@ class HeimaAdminPanel extends HTMLElement {
     return `
       <section class="card house-state-detail">
         <div class="house-state-detail-header">
-          <h3>${this._escape(dayName)} ${hourBucket}:00 — Proposal Management</h3>
+          <h3>${this._escape(dayName)} ${this._formatHourBucket(hourBucket)} — Proposal Management</h3>
           <button class="inline" data-house-state-action="close_detail">Close</button>
         </div>
         ${body}

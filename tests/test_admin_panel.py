@@ -356,6 +356,14 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "_houseStateLearningMatrix" in text
     assert "_houseStateSlotTooltip" in text
     assert 'class="house-state-grid"' in text
+    # Matrix headers: hour buckets as zero-padded "HH:00" (not a bare 0-23 number) and weekdays
+    # as two-letter abbreviations (not a single ambiguous initial), via one shared helper reused
+    # by the header row, cell/tooltip text, and the per-slot detail header.
+    assert "_formatHourBucket" in text
+    assert "dayNames[weekday].slice(0, 2)" in text
+    # A visible spinner (not just static text) while the module is not yet ready and a recalc has
+    # been forced — makes clear the matrix is loading rather than broken.
+    assert 'class="card house-state-loading"><span class="spinner"></span>' in text
     # Four distinct not-ready/empty states (spec §8) — must not collapse into one generic
     # message, since "module ready but zero accepted proposals" is a real, common state that
     # should still show the (all-empty) matrix, not an error-sounding placeholder.

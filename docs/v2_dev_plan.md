@@ -2423,6 +2423,28 @@ Tests: static-asset assertions updated to match the new local-variable pattern (
 re-verified live in a browser after this fix — pending developer confirmation, same as the
 original AU/AV scroll fixes were before the developer confirmed those.
 
+**Post-AW2 fix — matrix header readability + loading indicator (2026-08-26):** developer request
+after updating/restarting the live instance: hour headers were a bare 0-23 number and weekday
+headers a single ambiguous initial (`M` for both Monday and... no actual collision in English, but
+still low-readability); also, the matrix can go through a visible "not ready → forced recalc →
+next poll" gap (see the force-recalc fix above) with only plain text, which reads as broken rather
+than loading.
+Fixed: new shared `_formatHourBucket(h)` helper (`"HH:00"`, zero-padded) reused by the header row,
+empty/learned/multiple cell tooltips, and the per-slot detail header — one source of truth instead
+of four independent `${hourBucket}:00` interpolations. Weekday header changed from
+`dayNames[weekday].charAt(0)` to `.slice(0, 2)` (`Mo/Tu/We/Th/Fr/Sa/Su`). Added a small CSS spinner
+(`.spinner` + `@keyframes heima-spin`, no external assets) shown next to the "Learning in
+progress…" message via a new `.house-state-loading` flex wrapper — the only branch of the four
+not-ready/empty states where something is actually in flight (the forced `learning_run` service
+call), the other three are terminal states and don't get a spinner.
+Tests: static-asset assertions added for `_formatHourBucket`, the two-letter weekday slice, and the
+spinner markup. Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean,
+`node --check` passed, full `ci_local.sh` green. Not yet re-verified live — this was bundled with
+the developer's live report that the matrix wasn't appearing at all after their own prod
+update+restart; that root cause is still unconfirmed (message arrived mid-`/compact`, no repro
+detail given yet — if it recurs after this fix, needs its own live diagnosis, not assumed fixed by
+this slice).
+
 #### AW3 — Remove Proposal Action
 
 - Status: `PLANNED`.
