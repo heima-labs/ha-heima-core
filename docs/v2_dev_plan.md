@@ -2119,6 +2119,31 @@ is last (largest surface — websocket response shape plus frontend `<select>` r
   full suite 2012 passed (was 2006), `ruff check`/`ruff format --check` clean, mypy clean on
   `websocket_api.py`, `node --check` passed.
 
+**AV1-3 live test:** Added `scripts/live_tests/088_actuator_discovery_live.py`, following the
+`087_actuator_registry_live.py`/`010_config_flow.py` pattern (`HAClient`/`HAWebSocketClient` against
+the local HA test lab; a local `HAFlowClient(HAClient)` subclass adds Options Flow REST driving,
+mirroring `010_config_flow.py`'s own — not shared in `lib/ha_client.py`, kept local there too).
+Uses the baseline fixture entity `switch.test_heima_studio_fan` (already assigned to the "Test
+Heima Studio" HA Area by `scripts/recover_test_lab_config.py`, which resolves to Heima room
+`studio`) instead of creating new entities live. Covers all three slices against the real
+registries/config-entry/websocket layers, not pytest fixtures: AV1 — the fixture entity is
+suggested as `entity_candidates` before registration, with the correct `room_id`; AV2 — drives the
+real Options Flow (`options_flow_init` → `next_step_id=discovery` → `action=accept_selected` with
+exactly one `candidate_id`, never `accept_all`/`accept_non_ambiguous`, which would also persist any
+other currently-discoverable candidate on the shared test lab instance) and confirms the resulting
+Actuator is retrievable via `heima/actuators/snapshot`; AV3 — the now-registered entity no longer
+appears in `entity_candidates` (idempotency guard, live). Self-healing: if the fixture entity is
+already registered from a previous run, it's deleted first to restore a clean starting state;
+cleanup always runs in `finally` regardless of outcome. Registered in `scripts/check_all_live.sh`'s
+`DIAGNOSTIC_SCRIPTS` tier, next to 087 (same category: editor/websocket-and-config-flow contract,
+not runtime behavior).
+Verification: `ruff check`/`ruff format --check`/`mypy --ignore-missing-imports` clean,
+`python3 -m py_compile` passed, `bash -n scripts/check_all_live.sh` passed. **Not run against a
+live HA test instance in this session** — no local `HA_URL`/`HA_TOKEN` test lab available here;
+needs `source scripts/.env && scripts/live_tests/088_actuator_discovery_live.py --ha-url "$HA_URL"
+--ha-token "$HA_TOKEN"` run once against the developer's local test lab before this is considered
+proven, not just type/lint-clean.
+
 **Phase AV acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/actuator_discovery_spec.md` §Acceptance Criteria — reproduced here only by
 reference to avoid drift between the two documents.
