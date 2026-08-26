@@ -561,6 +561,49 @@ class HeimaAdminPanel extends HTMLElement {
             padding: 14px;
           }
         }
+        /* AW1: House State Learning Matrix */
+        .house-state-grid {
+          border-collapse: collapse;
+          margin-top: 16px;
+        }
+        .house-state-grid th {
+          border: 1px solid var(--divider-color);
+          padding: 4px 8px;
+          text-align: center;
+          font-weight: 600;
+          background: var(--card-background-color);
+        }
+        .house-state-grid td {
+          border: 1px solid var(--divider-color);
+          width: 30px;
+          height: 30px;
+          min-width: 30px;
+          font-size: 14px;
+          font-weight: bold;
+          text-align: center;
+          cursor: pointer;
+        }
+        .house-state-grid td.empty {
+          background-color: #E0E0E0;
+        }
+        .house-state-grid td.learned {
+          color: white;
+        }
+        .house-state-grid td.multiple {
+          background-color: #FFEB3B;
+          color: #333;
+        }
+        .house-state-grid td:hover {
+          filter: brightness(90%);
+        }
+        .house-state-matrix {
+          overflow-x: auto;
+        }
+        @media (max-width: 1200px) {
+          .house-state-matrix {
+            max-width: 100%;
+          }
+        }
       </style>
       <div class="shell">
         <nav>
@@ -1792,6 +1835,27 @@ class HeimaAdminPanel extends HTMLElement {
     const activeCandidates = house.active_candidates || [];
     const candidateRows = this._houseStateCandidateRows(house);
     const filteredRows = this._filterRows("house_state", candidateRows);
+    
+    // ---- AW1: House State Learning Completion Visualization ----
+    const houseStateModule = (snapshot.learning?.learning_modules || [])
+        .find(m => m.module_id === "house_state_inference");
+    const entries = houseStateModule?.approved_model_entries || [];
+    const isReady = houseStateModule?.ready || false;
+    
+    // Resolve proposal_id per entry by joining against the accepted proposals list
+    const acceptedByContextKey = this._houseStateAcceptedProposalsByContextKey(snapshot);
+    const entriesWithProposalId = entries.map(entry => ({
+      ...entry,
+      proposal_id: acceptedByContextKey.get(entry.context_key) || null,
+    }));
+    
+    // Group entries by (weekday, hour_bucket)
+    const slots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
+    
+    const learningMatrix = isReady && Object.keys(slots).length > 0 
+        ? this._houseStateLearningMatrix(slots)
+        : `<div class="card">House state learning data not ready.</div>`;
+    
     return `
       <section class="grid">
         ${this._metric("Current State", runtime.house_state || "unknown")}
@@ -1803,6 +1867,9 @@ class HeimaAdminPanel extends HTMLElement {
         ${this._metric("Pending Candidate", house.pending_candidate || "none")}
         ${this._metric("Resolution Path", house.resolution_path || "")}
       </section>
+      
+      ${learningMatrix}
+      
       ${this._filterToolbar("house_state", "Search house-state candidates")}
       ${this._filteredCount(filteredRows.length, candidateRows.length)}
       ${filteredRows.length ? this._houseStateCandidateTable(filteredRows) : `<div class="empty">No house-state candidate diagnostics in the snapshot.</div>`}
@@ -1874,6 +1941,131 @@ class HeimaAdminPanel extends HTMLElement {
     if (row.since) parts.push(`since ${row.since}`);
     if (row.remaining_s !== "") parts.push(`remaining ${this._duration(row.remaining_s)}`);
     return parts.join(", ");
+  }
+
+  // ---- AW1: House State Learning Completion Visualization ----
+
+  _houseStateAcceptedProposalsByContextKey(snapshot) {
+    const allProposals = snapshot.proposals?.raw?.proposals || [];
+    const acceptedByContextKey = new Map();
+    const prefix = "house_state_learned_context:";
+    for (const proposal of allProposals) {
+      if (proposal.status !== "accepted") continue;
+      const identityKey = proposal.identity_key || "";
+      if (!identityKey.startsWith(prefix)) continue;
+      const contextKey = identityKey.slice(prefix.length);
+      if (contextKey) {
+        acceptedByContextKey.set(contextKey, proposal.id);
+      }
+    }
+    return acceptedByContextKey;
+  }
+
+  _groupHouseStateEntriesBySlot(entries) {
+    const slots = {};
+    for (const entry of entries) {
+      const snapshot = entry.context_snapshot || {};
+      const weekday = snapshot.weekday;
+      const hourBucket = snapshot.hour_bucket;
+      if (weekday === undefined || hourBucket === undefined) continue;
+      const slotKey = `${weekday},${hourBucket}`;
+      if (!slots[slotKey]) {
+        slots[slotKey] = { weekday, hourBucket, entries: [] };
+      }
+      slots[slotKey].entries.push(entry);
+    }
+    return slots;
+  }
+
+  _houseStateLearningMatrix(slots) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const stateColors = {
+      home: "#4CAF50",
+      working: "#FF9800",
+      relax: "#2196F3",
+      sleeping: "#673AB7",
+      away: "#F44336",
+      guest: "#FFC107",
+      vacation: "#795548"
+    };
+    const stateAbbrevs = {
+      home: "H",
+      working: "W",
+      relax: "R",
+      sleeping: "S",
+      away: "A",
+      guest: "G",
+      vacation: "V"
+    };
+
+    let totalLearned = 0;
+    let cells = [];
+    
+    for (let weekday = 0; weekday < 7; weekday++) {
+      let rowCells = [];
+      for (let hourBucket = 0; hourBucket < 24; hourBucket++) {
+        const slotKey = `${weekday},${hourBucket}`;
+        const slot = slots[slotKey] || { entries: [] };
+        const count = slot.entries.length;
+        
+        if (count === 0) {
+          rowCells.push(`<td class="house-state-slot empty" data-slot-key="${slotKey}" title="${dayNames[weekday]} ${hourBucket}:00 - No learned patterns\nNo accepted proposals for this slot"> </td>`);
+        } else if (count === 1) {
+          const entry = slot.entries[0];
+          const state = entry.predicted_state || entry.context_snapshot?.predicted_state || "";
+          const abbrev = stateAbbrevs[state] || state.charAt(0).toUpperCase();
+          const color = stateColors[state] || "#E0E0E0";
+          totalLearned++;
+          rowCells.push(`<td class="house-state-slot learned" data-slot-key="${slotKey}" style="background-color: ${color};" title="${this._houseStateSlotTooltip(slot)}">${this._escape(abbrev)}</td>`);
+        } else {
+          totalLearned++;
+          rowCells.push(`<td class="house-state-slot multiple" data-slot-key="${slotKey}" style="background-color: #FFEB3B;" title="${this._houseStateSlotTooltip(slot)}">${this._escape(String(count))}</td>`);
+        }
+      }
+      cells.push(rowCells);
+    }
+
+    const completionPercentage = Math.round((totalLearned / 168) * 100);
+    
+    return `
+      <section class="card">
+        <h3>House State Learning: ${totalLearned}/168 slots with accepted proposals (${completionPercentage}%)</h3>
+        <div class="house-state-matrix">
+          <table class="house-state-grid">
+            <thead>
+              <tr>
+                <th></th>
+                ${Array.from({length: 24}, (_, h) => `<th>${h}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${cells.map((rowCells, weekday) => `
+                <tr>
+                  <th>${dayNames[weekday].charAt(0)}</th>
+                  ${rowCells.join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  _houseStateSlotTooltip(slot) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const dayName = dayNames[slot.weekday] || "Unknown";
+    const hour = slot.hourBucket !== undefined ? slot.hourBucket : slot.entries[0]?.context_snapshot?.hour_bucket || 0;
+    
+    if (!slot.entries || slot.entries.length === 0) {
+      return `${dayName} ${hour}:00 - No learned patterns\nNo accepted proposals for this slot`;
+    }
+    
+    const states = slot.entries.map(e => e.predicted_state || e.context_snapshot?.predicted_state).filter(Boolean);
+    const stateList = [...new Set(states)].join(", ");
+    const count = slot.entries.length;
+    
+    return `${dayName} ${hour}:00 - ${stateList}\n${count} accepted proposal(s) for this slot\nClick to view details and manage`;
   }
 
   _reactions(snapshot) {
