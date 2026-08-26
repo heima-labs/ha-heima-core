@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0] — 2026-08-26
+
+- Actuator Discovery (Phase AV, AV1-3): Phase L's rule-based discovery now suggests `Actuator`
+  candidates for `cover`/`fan`/`climate`/`humidifier`/`switch` entities whose HA Area maps to a
+  known Room, both in the Options Flow discovery step (accept and it's persisted as a real
+  `Actuator`, with an idempotency guard against re-creating a duplicate) and as a room-aware
+  entity picker in the Actuators admin form — a `<select>` of suggested entities (selected room
+  listed first) with a manual free-text escape hatch, replacing the plain text field. `light`
+  stays excluded (owned by Lighting's own domain/Reaction model); discovery only ever proposes
+  `room_id`, never `opening_id`.
+- The Actuators admin table is now grouped by Room, collapsed by default — an installation can
+  have a large number of actuators, and a single flat table had become unwieldy to scan.
+- Editing an actuator now opens an inline form directly below the clicked row instead of a shared
+  form at the bottom of the section, which required scrolling past every other room's table to
+  reach with a long actuator list.
+
 ## [0.15.0] — 2026-08-26
 
 - Actuator Registry (Phase AU, AU1-4): a new generic, room/opening-aware inventory of actuator
