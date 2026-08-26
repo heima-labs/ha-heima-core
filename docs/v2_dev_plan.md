@@ -2148,6 +2148,22 @@ proven, not just type/lint-clean.
 `docs/specs/core/actuator_discovery_spec.md` §Acceptance Criteria — reproduced here only by
 reference to avoid drift between the two documents.
 
+**Post-AV3 UI fix (2026-08-26):** the Actuators table was a single flat table of every actuator
+across every room — flagged as unwieldy for an installation with many actuators, before this had
+even been exercised live. Fixed: `_actuators()`'s table replaced with new
+`_actuatorsGroupedByRoom()`, one `<details data-details-id="actuators.room.{roomId}">` per room
+(known rooms in snapshot order, any dangling `room_id` grouped last and sorted), each containing
+that room's own actuators table, `<summary>{room label} ({count})</summary>`. Collapsed by default
+(no room's group is pre-populated into `_openDetailIds`) — reuses the exact same
+`data-details-id`/`_openDetailIds`/toggle-listener persistence mechanism
+`_topologyRoomTypeLegend()` already established, so open/closed state survives unrelated
+re-renders (the 15s observability poll, another admin action) the same way. Pure frontend, no
+backend change — `entity_candidates`/`build_actuator_registry_snapshot()` unchanged. Static-asset
+assertions extended in `test_admin_panel.py`; full suite still 2012 passed (assertions added to
+the existing test, no new test function), `ruff check`/`ruff format --check` clean, `node --check`
+passed. Not yet verified live in a browser — pending developer confirmation, same caveat as the
+rest of AV3's panel work.
+
 ### Recent Working Notes
 
 - Recent implementation slice: **Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion**.

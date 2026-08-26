@@ -493,6 +493,19 @@ class HeimaAdminPanel extends HTMLElement {
         .topology-legend li {
           margin-bottom: 4px;
         }
+        .actuator-room-group {
+          margin-bottom: 10px;
+          border: 1px solid var(--divider-color);
+          border-radius: 6px;
+          padding: 8px 12px;
+        }
+        .actuator-room-group summary {
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .actuator-room-group table {
+          margin-top: 8px;
+        }
         .topology-add-form {
           display: flex;
           flex-wrap: wrap;
@@ -1263,17 +1276,54 @@ class HeimaAdminPanel extends HTMLElement {
       ${this._actuatorsIssues(issues)}
       <section class="card">
         <h2>Actuators</h2>
-        <table>
-          <thead>
-            <tr><th>Entity</th><th>Room</th><th>Opening</th><th>Display name</th><th></th></tr>
-          </thead>
-          <tbody>
-            ${actuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings)).join("") || `<tr><td colspan="5">No actuators configured.</td></tr>`}
-          </tbody>
-        </table>
+        ${this._actuatorsGroupedByRoom(actuators, rooms, openings)}
         ${this._actuatorsAddForm(rooms, openings, entityCandidates)}
       </section>
     `;
+  }
+
+  _actuatorsGroupedByRoom(actuators, rooms, openings) {
+    // Grouped by Room and collapsed by default (data-details-id persists open/closed state
+    // across re-renders, same mechanism as _topologyRoomTypeLegend): an installation can have
+    // a large number of actuators, and a single flat table becomes unwieldy to scan.
+    if (!actuators.length) {
+      return `<table><tbody><tr><td>No actuators configured.</td></tr></tbody></table>`;
+    }
+    const byRoomId = new Map();
+    for (const actuator of actuators) {
+      const roomId = actuator.room_id || "";
+      if (!byRoomId.has(roomId)) byRoomId.set(roomId, []);
+      byRoomId.get(roomId).push(actuator);
+    }
+    // Known rooms first, in the order they appear in the snapshot; any actuator whose room_id
+    // is dangling (references a Room that no longer exists — a warning, not blocking, per
+    // validate_actuators()) is grouped last, sorted for determinism.
+    const knownRoomIds = rooms.map((room) => room.room_id).filter((roomId) => byRoomId.has(roomId));
+    const danglingRoomIds = [...byRoomId.keys()]
+      .filter((roomId) => !rooms.some((room) => room.room_id === roomId))
+      .sort();
+    const orderedRoomIds = [...knownRoomIds, ...danglingRoomIds];
+    return orderedRoomIds
+      .map((roomId) => {
+        const roomActuators = byRoomId.get(roomId) || [];
+        const key = `actuators.room.${roomId || "__unassigned__"}`;
+        const open = this._openDetailIds.has(key) ? " open" : "";
+        const label = this._actuatorsRoomLabel(rooms, roomId);
+        return `
+          <details class="actuator-room-group" data-details-id="${this._escape(key)}"${open}>
+            <summary>${this._escape(label)} (${roomActuators.length})</summary>
+            <table>
+              <thead>
+                <tr><th>Entity</th><th>Room</th><th>Opening</th><th>Display name</th><th></th></tr>
+              </thead>
+              <tbody>
+                ${roomActuators.map((actuator) => this._actuatorsRow(actuator, rooms, openings)).join("")}
+              </tbody>
+            </table>
+          </details>
+        `;
+      })
+      .join("");
   }
 
   _actuatorsIssues(issues) {

@@ -329,6 +329,13 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert '<option value="__manual__"' in text
     assert 'id="actuators-new-entity-manual"' in text
     assert "hasEntityCandidates" in text
+    # Actuators table is grouped by Room and collapsed by default (an installation can have a
+    # large number of actuators, and a single flat table becomes unwieldy to scan). Persisted
+    # open/closed state reuses the same data-details-id/_openDetailIds mechanism as the Topology
+    # room-type legend.
+    assert "_actuatorsGroupedByRoom" in text
+    assert 'class="actuator-room-group"' in text
+    assert 'data-details-id="${this._escape(key)}"' in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text
