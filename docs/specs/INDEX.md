@@ -67,6 +67,10 @@ Related reference docs also live outside this tree, under `docs/`:
 - `core/heima_monitoring_spec.md` — monitoring surfaces, learning review, and ongoing operability contract
 - `core/admin_observability_panel_spec.md` — custom HA admin panel for runtime explainability,
   learning transparency, and operational inspection
+- `core/house_state_learning_completion_viz_spec.md` — approved, not yet phased: 7×24
+  weekday/hour-bucket matrix of accepted house-state learning proposals in the admin panel, with
+  per-slot detail and a Remove action; no backend changes (proposal_id resolved by joining two
+  already-exposed snapshot fields)
 - `core/ha_backed_people_rooms_spec.md` — reconciliation model for HA-backed people and rooms, including discovery, notification, and edit-first UX
 - `core/ha_backed_room_inventory_spec.md` — synced HA-derived room inventory and suggested bindings for the `Rooms` flow
 - `core/people_presence_rules_spec.md` — per-person `presence_rule` contract for presence aggregation (`observer | resident | recurrent`)

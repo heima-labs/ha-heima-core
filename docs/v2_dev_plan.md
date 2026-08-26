@@ -132,29 +132,30 @@ These constraints must never be violated. See spec §16 for rationale.
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
 | AU | Actuator Registry | `DONE` | AR |
 | AV | Actuator Discovery | `DONE` | AU, L |
+| AW | House State Learning Completion Viz | `PLANNED` | AO, Y |
 
 ---
 
 ## Current State
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
-**Active slice:** none. Phase AV (AV1-3: discovery rule table, Options Flow branch, admin-panel
-picker, plus two follow-on UI fixes — room grouping and inline edit) concluded and merged to
-`main`. Phase AU (AU1-4) concluded and merged earlier; AR (AR1-4) concluded and merged earlier
-still, AR5-8 split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`),
-not scheduled.
-**Branch:** `feat/av-actuator-discovery` merged to `main` (branch retained, not deleted).
-`feat/au-actuator-registry` also merged (branch retained, not deleted).
-**Next action:** none active. UI note: AV3's `<select>`/manual-escape-hatch picker, the room
-grouping, and the inline edit row were all verified via automated real-websocket e2e tests and a
-JS syntax check, not a live browser smoke-test — worth a real check on the developer's test
-instance. The AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
+**Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
+(`core/house_state_learning_completion_viz_spec.md`), phase definition just written, not yet
+implemented — branch not yet created (planning only, per explicit developer request). Phase AV
+(AV1-3: discovery rule table, Options Flow branch, admin-panel picker, plus two follow-on UI
+fixes — room grouping and inline edit) concluded and merged to `main` beforehand; Phase AU
+(AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier still, AR5-8
+split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
+scheduled.
+**Branch:** none yet for Phase AW (to be created off `main` as `feat/aw-house-state-learning-viz`
+once the developer confirms starting implementation). `feat/av-actuator-discovery` and
+`feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
+**Next action:** AW1 — `proposal_id` join + 7×24 matrix rendering, once the developer confirms
+starting implementation. Outstanding verification debt from earlier phases, unrelated to AW:
+AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
+were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
+smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
 yet been run against a real HA test lab.
-UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
-e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
-browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
-bug (found via live testing of this same form) was diagnosed and fixed before merge, so the
-mechanism it depends on (`_setFilter`/`_restoreFilterFocus`) is now live-verified.
 
 ### Phase AO — Admin Observability Panel
 
@@ -2203,6 +2204,106 @@ assertions; new assertions for `filterSection: "actuators_edit_actuator"`,
 `class="actuator-edit-row"`, `data-actuators-action="save_actuator_edit"`,
 `_actuatorsFormFieldsHtml`). Full suite still 2012 passed, `ruff check`/`ruff format --check`
 clean, `node --check` passed. Not yet verified live in a browser — pending developer confirmation.
+
+### Phase AW — House State Learning Completion Viz
+
+- Status: `PLANNED`.
+- Spec source: `docs/specs/core/house_state_learning_completion_viz_spec.md` (Status: Planned —
+  approved after design discussion, all Open Questions resolved; not yet phased/numbered until
+  this section).
+- Also touches: `heima-admin-panel.js` (`_houseState()` — new matrix/detail-view section reading
+  fields already in scope on the shared observability snapshot; no new websocket command, no
+  backend change at all — see the spec's own §6/§12).
+- Goal: a 7×24 (weekday × hour_bucket) matrix in the House State admin page showing which
+  house-state patterns have been learned and accepted, with a per-slot detail view and a Remove
+  action for accepted proposals that are no longer valid. Addresses gap identification (unlearned
+  slots), correctness validation, debugging (anomalous learned states), and proposal cleanup — see
+  the spec's own §1 Purpose.
+- Product boundary (from the spec):
+  - zero backend changes — `proposal_id` (missing from `approved_model_entries`) is resolved
+    client-side by joining `snapshot.learning.learning_modules` against
+    `snapshot.proposals.raw.proposals` on `context_key`/`identity_key`, both already reaching the
+    frontend on the existing shared snapshot object;
+  - no multi-select/batch removal in this phase (`review_proposal_batch` exists server-side as a
+    low-cost future extension, not built here);
+  - `learning_context` is not a table column — exposed only on demand via the panel's existing
+    `_setDetail`/raw-JSON inspection pattern, not a new UI mechanism;
+  - Remove confirms via `window.confirm()`, matching every other destructive action already in
+    this panel (`delete_opening`, `delete_connection`, `delete_actuator`) — no new confirmation
+    mechanism introduced.
+
+#### Sequencing Rationale
+
+Three slices, ordered by what each depends on, not by spec section order: the data layer (join +
+matrix) must exist before the interactive detail view can be built on top of it, and the mutating
+Remove action is sequenced last as the highest-blast-radius piece (the only one that changes
+persisted state), same discipline AU/AV/AR applied to their own admin-editor slices.
+
+- **AW1** — `proposal_id` join (`context_key` ⇄ `identity_key`) plus the static 7×24 matrix:
+  completion index, cell coloring/abbreviations, hover tooltips. Read-only, zero mutation risk —
+  proves the join and the grid rendering before anything interactive is built on top.
+- **AW2** — per-slot detail view: click-to-expand table (State/Rooms/Anyone Home/Confidence/
+  Support/Proposal ID/Actions), Details button reusing `_setDetail`. Still read-only; only new
+  risk is DOM state management (single-open-detail persistence, mirroring the `_openDetailIds`/
+  `data-details-id` pattern already used for Topology's room-type legend and the Actuators
+  room-grouping).
+- **AW3** — Remove action end-to-end: `window.confirm()`, `heima/observability/action`
+  `review_proposal` call (payload-nested), success/error handling, snapshot refresh. Sequenced
+  last since it's the only slice that mutates persisted state (rejects an accepted proposal).
+
+#### AW1 — Proposal-ID Join and 7×24 Matrix
+
+- Status: `PLANNED`.
+- Depends on: Phase AO (admin panel + observability snapshot infra), Phase Y
+  (`HouseStateInferenceModule`'s `approved_model_entries`).
+- New helper `_houseStateAcceptedProposalsByContextKey(snapshot)` builds a
+  `Map<context_key, proposal_id>` from `snapshot.proposals.raw.proposals`, filtered to
+  `status === "accepted"` and `identity_key` prefixed `"house_state_learned_context:"`. New
+  `_groupHouseStateEntriesBySlot(entries)` groups the joined entries by `(weekday, hour_bucket)`.
+  New `_houseStateLearningMatrix(slots)` + `_houseStateSlotTooltip(slot)` render the grid.
+  `_houseState(snapshot)` extended to read `snapshot.learning.learning_modules` (find
+  `module_id === "house_state_inference"`) and `snapshot.proposals.raw.proposals` — both already
+  present on the shared snapshot object this method already receives, no new websocket call.
+- Tests: unit tests for the join helper (accepted-only filter, prefix match, miss returns
+  `undefined`/no entry) and the slot-grouping helper; static-asset assertions for the new matrix
+  markup, mirroring the existing pattern in `tests/test_admin_panel.py`.
+- **Verify early** (per the spec's own §13.3): check the `context_key` ⇄ `proposal_id` join rate
+  against real data before building AW2/AW3 on top of it — a high miss rate would argue for
+  revisiting the "no backend changes" approach.
+
+#### AW2 — Per-Slot Detail View
+
+- Status: `PLANNED`.
+- Depends on: AW1 (the joined, grouped slot data).
+- New `_houseStateSlotDetail(slotKey, entries)` renders the detail table on cell click, one open
+  slot at a time (mirrors the existing `_openDetailIds`/`data-details-id` single-open pattern).
+  Details button per row reuses `_setDetail(kind, id)` and the panel's existing raw-JSON renderer
+  (`<pre>${JSON.stringify(...)}</pre>`) — no new inspection mechanism.
+- Tests: detail-table rendering (correct rows for a given slot, empty-slot message), Details
+  button wiring (reuses existing `_setDetail` — regression-covered by that mechanism's own
+  existing tests, not re-tested here).
+
+#### AW3 — Remove Proposal Action
+
+- Status: `PLANNED`.
+- Depends on: AW2 (the detail view's Remove button), Phase AC (proposal review plumbing —
+  `review_proposal`/`async_review_proposal` already shipped, reused as-is, not modified).
+- New `_removeHouseStateProposal(proposalId)`: `window.confirm()` then
+  `this._hass.callWS({ type: "heima/observability/action", action: "review_proposal", payload:
+  { proposal_id, decision: "rejected" } })` — payload nested, matching `heima/topology/action`/
+  `heima/actuators/action`'s convention (a real bug in the spec's first draft, corrected before
+  approval — see the spec's own §2.4). On success: reload snapshot, re-render matrix + detail. On
+  error: error toast, detail table stays open.
+- Tests: real-websocket e2e exercising `review_proposal` for a house-state proposal (accept via
+  the existing config-flow/options path or a coordinator-level fixture, then reject via this
+  action, confirm it disappears from `snapshot.proposals.raw.proposals` and from the matrix's
+  join). No new coordinator/backend code — this slice only wires the frontend to an
+  already-shipped endpoint, so no new backend unit tests are needed beyond what already covers
+  `async_review_proposal`/`async_review_house_state_proposal`.
+
+**Phase AW acceptance** (from the spec's own Acceptance Criteria): see
+`docs/specs/core/house_state_learning_completion_viz_spec.md` §10 — reproduced here only by
+reference to avoid drift between the two documents.
 
 ### Recent Working Notes
 
