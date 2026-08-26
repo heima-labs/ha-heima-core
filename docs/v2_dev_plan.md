@@ -131,23 +131,25 @@ These constraints must never be violated. See spec §16 for rationale.
 | AS | Structured Runtime Source | `DONE` | AH, MH, AQ, AO, AP |
 | AT | Room Topology Consumers (HouseState/Occupancy/Security) | `DEFERRED` | AR |
 | AU | Actuator Registry | `DONE` | AR |
-| AV | Actuator Discovery | `PLANNED` | AU, L |
+| AV | Actuator Discovery | `DONE` | AU, L |
 
 ---
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4).
-**Active slice:** Phase AV — Actuator Discovery. Spec approved (`core/actuator_discovery_spec.md`),
-phase definition just written, not yet implemented. Phase AU (AU1-4) concluded and merged to `main`
-beforehand; AR (AR1-4) concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`,
-see `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/av-actuator-discovery` (to be created off `main`, v0.15.0). `feat/au-actuator-registry`
-already merged (branch retained, not deleted).
-**Next action:** none active. AV1-3 all done, tests green — Phase AV is implementation-complete on
-this branch, not yet merged to `main`. UI note: AV3's `<select>`/manual-escape-hatch picker was
-verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
-smoke-test — worth a real check before merge, same caveat AU4's panel section had.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
+**Active slice:** none. Phase AV (AV1-3: discovery rule table, Options Flow branch, admin-panel
+picker, plus two follow-on UI fixes — room grouping and inline edit) concluded and merged to
+`main`. Phase AU (AU1-4) concluded and merged earlier; AR (AR1-4) concluded and merged earlier
+still, AR5-8 split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`),
+not scheduled.
+**Branch:** `feat/av-actuator-discovery` merged to `main` (branch retained, not deleted).
+`feat/au-actuator-registry` also merged (branch retained, not deleted).
+**Next action:** none active. UI note: AV3's `<select>`/manual-escape-hatch picker, the room
+grouping, and the inline edit row were all verified via automated real-websocket e2e tests and a
+JS syntax check, not a live browser smoke-test — worth a real check on the developer's test
+instance. The AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
+yet been run against a real HA test lab.
 UI note (carried over from AU): AU4's panel section itself was verified via automated real-websocket
 e2e tests (`tests/test_actuator_registry_panel_e2e.py`) and a JS syntax check, not a dedicated live
 browser smoke-test of that specific section — though the shared panel-wide keystroke scroll/focus
@@ -1997,10 +1999,9 @@ routing/audience. Do not start implementing before that spec exists and is appro
 
 ### Phase AV — Actuator Discovery
 
-- Status: `DONE` (AV1-3 implemented and tested on `feat/av-actuator-discovery`; not yet merged to
-  `main` — pending the CLAUDE.md pre-merge procedure and explicit developer confirmation).
-- Spec source: `docs/specs/core/actuator_discovery_spec.md` (Status: Planned — approved after design
-  discussion; phased as this section, AV1-3).
+- Status: `DONE` (AV1-3 implemented, tested, and merged to `main` via `feat/av-actuator-discovery`,
+  v0.16.0).
+- Spec source: `docs/specs/core/actuator_discovery_spec.md` (Status: Implemented (AV1-3) on `main`).
 - Also touches: `discovery.py` (Phase L's rule table — new domain branches only),
   `config_flow_steps/_steps_discovery_validation.py` (`_apply_discovery_candidates()` — one new
   branch), `websocket_api.py` (`websocket_actuators_snapshot` — one new additive response field).
