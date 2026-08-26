@@ -327,9 +327,13 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "input.focus({ preventScroll: true })" in text
     # preventScroll isn't honored by every browser, and a full shadow-DOM rebuild can also
     # trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its reference
-    # node). The panel must also force-restore the pre-render scroll position as a fallback.
-    assert "this._scrollPosition = { x: window.scrollX, y: window.scrollY }" in text
-    assert "window.scrollTo(this._scrollPosition.x, this._scrollPosition.y)" in text
+    # node). _render() itself captures and restores scroll (both window and the House State
+    # matrix's own horizontal-scrolling container) for *every* render, not just filter-triggered
+    # ones — the 15s observability poll and matrix cell clicks hit this same class of bug.
+    assert "const scrollX = window.scrollX;" in text
+    assert "const scrollY = window.scrollY;" in text
+    assert 'this.shadowRoot.querySelector(".house-state-matrix")?.scrollLeft' in text
+    assert "window.scrollTo(scrollX, scrollY);" in text
     # Actuators Entity ID (AV3): a <select> of room-aware picker candidates when any exist,
     # with a "__manual__" escape-hatch option that reveals a free-text input — the admin must
     # still be able to register any entity_id, not just picker-covered ones.

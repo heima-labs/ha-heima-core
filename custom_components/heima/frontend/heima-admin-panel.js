@@ -243,14 +243,12 @@ class HeimaAdminPanel extends HTMLElement {
       },
     };
     this._focusFilter = { section, key };
-    this._scrollPosition = { x: window.scrollX, y: window.scrollY };
-    
+
     if (this._renderScheduled) return;
     this._renderScheduled = true;
-    
+
     setTimeout(() => {
       this._render();
-      this._restoreFilterFocus();
       this._renderScheduled = false;
     }, 50);
   }
@@ -281,6 +279,16 @@ class HeimaAdminPanel extends HTMLElement {
   }
 
   _render() {
+    // Every render fully replaces the shadow DOM (this.shadowRoot.innerHTML = ...), which loses
+    // both page scroll and any inner-scrollable-container position (e.g. .house-state-matrix's
+    // own horizontal overflow-x: auto) — not just on typing/filter changes (the only case this
+    // used to guard against via a manually-threaded this._scrollPosition field), but on *every*
+    // trigger: matrix cell clicks, the 15s observability poll, any action button. Capturing and
+    // restoring locally here, inside the one method that actually destroys/recreates the DOM,
+    // covers all of them uniformly instead of requiring each call site to remember to opt in.
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const matrixScrollLeft = this.shadowRoot.querySelector(".house-state-matrix")?.scrollLeft;
     const snapshot = this._snapshot || {};
     this.shadowRoot.innerHTML = `
       <style>
@@ -779,6 +787,12 @@ class HeimaAdminPanel extends HTMLElement {
         }
       });
     });
+    this._restoreFilterFocus();
+    window.scrollTo(scrollX, scrollY);
+    if (matrixScrollLeft) {
+      const matrix = this.shadowRoot.querySelector(".house-state-matrix");
+      if (matrix) matrix.scrollLeft = matrixScrollLeft;
+    }
   }
 
   _navButton(route, label) {
@@ -3298,10 +3312,6 @@ class HeimaAdminPanel extends HTMLElement {
       if (typeof input.setSelectionRange === "function") {
         input.setSelectionRange(length, length);
       }
-    }
-    if (this._scrollPosition) {
-      window.scrollTo(this._scrollPosition.x, this._scrollPosition.y);
-      this._scrollPosition = null;
     }
     this._focusFilter = null;
   }

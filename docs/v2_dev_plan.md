@@ -2397,6 +2397,32 @@ direct API testing against the live instance (same call, same result, via Python
 `this._hass.callService()` binding inside a real rendered browser panel is not verified, same
 caveat as the rest of this phase's frontend work.
 
+**Post-AW2 fix — generalized scroll preservation to every re-render, not just filter typing
+(2026-08-26):** live-reported by the developer: clicking a matrix cell opened the detail view
+correctly, but the page (and the matrix's own horizontal scroll, since `.house-state-matrix` has
+`overflow-x: auto`) jumped back to top-left — then, separately, reported that the 15s
+observability poll did the same thing. Root cause: the scroll-preservation mechanism built during
+AU/AV (`this._scrollPosition`, restored inside `_restoreFilterFocus()`) only ever ran from
+`_setFilter()`'s debounced `setTimeout` wrapper — every *other* path that calls `_render()`
+directly (`_onHouseStateSlotClick`, the 15s poll's `_loadSnapshot()`, any action button) never
+captured or restored anything, so the exact same class of bug AU/AV had already fixed once for
+typing was still wide open everywhere else.
+Fixed by moving capture and restore into `_render()` itself — the one method that actually
+destroys/recreates the DOM — instead of requiring every caller to opt in via instance-level state:
+`window.scrollX/Y` and `.house-state-matrix`'s `scrollLeft` (if present) are read into local
+variables at the very top of `_render()`, before `this.shadowRoot.innerHTML = ...` wipes
+everything, and restored at the very end, after all listener wiring (and after
+`_restoreFilterFocus()`'s own `input.focus({ preventScroll: true })`, so the explicit
+`window.scrollTo()` is the last word). This is strictly simpler than the mechanism it replaces —
+no `this._scrollPosition` field, no coupling to `_focusFilter`/`_setFilter` — and covers every
+render trigger uniformly instead of chasing individual call sites one at a time. `_restoreFilterFocus()`
+itself is now purely about focus/cursor position, unrelated to scroll.
+Tests: static-asset assertions updated to match the new local-variable pattern (the old
+`this._scrollPosition = ...` literal no longer exists). Verification: full suite 2012 passed,
+`ruff check`/`ruff format --check` clean, `node --check` passed, full `ci_local.sh` green. Not
+re-verified live in a browser after this fix — pending developer confirmation, same as the
+original AU/AV scroll fixes were before the developer confirmed those.
+
 #### AW3 — Remove Proposal Action
 
 - Status: `PLANNED`.
