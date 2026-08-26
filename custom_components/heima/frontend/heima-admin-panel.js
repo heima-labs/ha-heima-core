@@ -24,6 +24,7 @@ class HeimaAdminPanel extends HTMLElement {
     this._actuatorsActionError = "";
     this._openDetailIds = new Set();
     this._renderScheduled = false;
+    this._openHouseStateSlot = null;
   }
 
   connectedCallback() {
@@ -192,6 +193,7 @@ class HeimaAdminPanel extends HTMLElement {
   _setRoute(route) {
     this._route = route;
     this._detail = null;
+    this._openHouseStateSlot = null;
     if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
       this._loadTopologySnapshot();
     }
@@ -601,6 +603,43 @@ class HeimaAdminPanel extends HTMLElement {
             max-width: 100%;
           }
         }
+        /* AW2: House State per-slot detail view */
+        .house-state-detail-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .house-state-detail-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 8px;
+        }
+        .house-state-detail-table th {
+          font-weight: 700;
+          background: #F5F5F5;
+          text-align: left;
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        .house-state-detail-table td {
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        .house-state-detail-total {
+          margin-top: 8px;
+          color: var(--secondary-text-color);
+        }
+        .house-state-remove {
+          color: #F44336;
+        }
+        .house-state-remove:hover:not(:disabled) {
+          background: #F44336;
+          color: white;
+        }
+        .house-state-remove:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       </style>
       <div class="shell">
         <nav>
@@ -695,6 +734,16 @@ class HeimaAdminPanel extends HTMLElement {
     });
     this.shadowRoot.querySelectorAll("button[data-actuators-action]").forEach((button) => {
       button.addEventListener("click", () => this._onActuatorsActionButton(button));
+    });
+    // td[data-slot-key], not the bare attribute selector: the AW3 Remove button also carries
+    // data-slot-key (for its own future use) but must not toggle the detail view when clicked.
+    this.shadowRoot.querySelectorAll("td[data-slot-key]").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        this._onHouseStateSlotClick(cell.getAttribute("data-slot-key") || "");
+      });
+    });
+    this.shadowRoot.querySelectorAll("button[data-house-state-action]").forEach((button) => {
+      button.addEventListener("click", () => this._onHouseStateActionButton(button));
     });
     this.shadowRoot.querySelectorAll("details[data-details-id]").forEach((details) => {
       details.addEventListener("toggle", () => {
@@ -1843,6 +1892,7 @@ class HeimaAdminPanel extends HTMLElement {
       (m) => m.module_id === "house_state_inference",
     );
     let learningMatrix;
+    let houseStateSlots = {};
     if (!learningModules) {
       learningMatrix = `<div class="card">Learning data unavailable.</div>`;
     } else if (!houseStateModule) {
@@ -1861,10 +1911,21 @@ class HeimaAdminPanel extends HTMLElement {
           proposal_id: acceptedByContextKey.get(entry.context_key) || null,
         }));
         // Group entries by (weekday, hour_bucket)
-        const slots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
-        learningMatrix = this._houseStateLearningMatrix(slots);
+        houseStateSlots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
+        learningMatrix = this._houseStateLearningMatrix(houseStateSlots);
       }
     }
+    // AW2: per-slot detail, one open at a time (this._openHouseStateSlot), toggled by clicking
+    // any matrix cell (data-slot-key, wired generically in _render()). Works for empty slots too
+    // — the spec's own trigger is "click on any cell in the matrix (learned or empty)" — falling
+    // back to an empty entries list if the slot has nothing (also covers the case where the
+    // admin has a slot open and its last entry gets removed out from under it).
+    const houseStateDetail = this._openHouseStateSlot
+      ? this._houseStateSlotDetail(
+          this._openHouseStateSlot,
+          houseStateSlots[this._openHouseStateSlot] || { entries: [] },
+        )
+      : "";
 
     return `
       <section class="grid">
@@ -1879,7 +1940,8 @@ class HeimaAdminPanel extends HTMLElement {
       </section>
       
       ${learningMatrix}
-      
+      ${houseStateDetail}
+
       ${this._filterToolbar("house_state", "Search house-state candidates")}
       ${this._filteredCount(filteredRows.length, candidateRows.length)}
       ${filteredRows.length ? this._houseStateCandidateTable(filteredRows) : `<div class="empty">No house-state candidate diagnostics in the snapshot.</div>`}
@@ -2090,6 +2152,97 @@ class HeimaAdminPanel extends HTMLElement {
     const count = slot.entries.length;
     
     return `${dayName} ${hour}:00 - ${stateList}\n${count} accepted proposal(s) for this slot\nClick to view details and manage`;
+  }
+
+  _houseStateSlotDetail(slotKey, slot) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const [weekdayRaw, hourBucketRaw] = slotKey.split(",");
+    const weekday = Number(weekdayRaw);
+    const hourBucket = Number(hourBucketRaw);
+    const dayName = dayNames[weekday] || "Unknown";
+    const entries = slot.entries || [];
+
+    const body = entries.length
+      ? `
+        <table class="house-state-detail-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>State</th>
+              <th>Rooms</th>
+              <th>Anyone Home</th>
+              <th>Confidence</th>
+              <th>Support</th>
+              <th>Proposal ID</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries
+              .map((entry, index) => {
+                const state = entry.predicted_state || entry.context_snapshot?.predicted_state || "";
+                const rooms = (entry.context_snapshot?.rooms || []).join(", ") || "-";
+                const anyoneHome = entry.context_snapshot?.anyone_home ? "Yes" : "No";
+                const confidencePct = Math.round((entry.confidence || 0) * 100);
+                const support = `${entry.count ?? 0}/${entry.total ?? 0}`;
+                const proposalId = entry.proposal_id || "";
+                const proposalIdLabel = proposalId ? `${proposalId.slice(0, 12)}…` : "—";
+                const detailKey = `house_state.entry.${entry.context_key || `${slotKey}.${index}`}`;
+                return `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${this._escape(state)}</td>
+                    <td>${this._escape(rooms)}</td>
+                    <td>${anyoneHome}</td>
+                    <td>${confidencePct}%</td>
+                    <td>${this._escape(support)}</td>
+                    <td class="object-id" title="${this._escape(proposalId)}">${this._escape(proposalIdLabel)}</td>
+                    <td>
+                      ${this._rawDetails(entry, detailKey)}
+                      <button
+                        class="inline danger house-state-remove"
+                        data-house-state-action="remove_proposal"
+                        data-proposal-id="${this._escape(proposalId)}"
+                        data-slot-key="${this._escape(slotKey)}"
+                        ${proposalId ? "" : "disabled"}
+                      >Remove</button>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+        <div class="house-state-detail-total">Total: ${entries.length} proposal(s) for this slot</div>
+      `
+      : `<div class="empty">No accepted proposals for this time slot.</div>`;
+
+    return `
+      <section class="card house-state-detail">
+        <div class="house-state-detail-header">
+          <h3>${this._escape(dayName)} ${hourBucket}:00 — Proposal Management</h3>
+          <button class="inline" data-house-state-action="close_detail">Close</button>
+        </div>
+        ${body}
+      </section>
+    `;
+  }
+
+  _onHouseStateSlotClick(slotKey) {
+    this._openHouseStateSlot = this._openHouseStateSlot === slotKey ? null : slotKey;
+    this._render();
+  }
+
+  _onHouseStateActionButton(button) {
+    const action = button.getAttribute("data-house-state-action") || "";
+    if (action === "close_detail") {
+      this._openHouseStateSlot = null;
+      this._render();
+      return;
+    }
+    // "remove_proposal" is wired in AW3 — the button exists now (per the spec's own table) but
+    // has no handler yet, matching how AW1's matrix cells got cursor:pointer before AW2 wired
+    // their click.
   }
 
   _reactions(snapshot) {

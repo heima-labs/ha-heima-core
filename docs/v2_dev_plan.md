@@ -140,23 +140,26 @@ These constraints must never be violated. See spec §16 for rationale.
 
 **Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
 **Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`). **AW1 done** on
-`feat/aw-house-state-learning-viz` (`proposal_id` join + 7×24 matrix rendering) — first-pass
-implementation by Mistral Vibe, then code-reviewed and corrected (4 real issues fixed, see AW1's
-own section below for the full list). Phase AV (AV1-3: discovery rule table, Options Flow branch,
-admin-panel picker, plus two follow-on UI fixes — room grouping and inline edit) concluded and
-merged to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4)
-concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
+(`core/house_state_learning_completion_viz_spec.md`). **AW1 and AW2 done** on
+`feat/aw-house-state-learning-viz` (`proposal_id` join + 7×24 matrix rendering; per-slot detail
+view). AW1's first pass was implemented by Mistral Vibe, then code-reviewed and corrected (4 real
+issues fixed, see AW1's own section for the full list) and live-verified against the developer's
+test lab (`context_key` ⇄ `proposal_id` join rate 2/2 after forcing a learning run — see AW1's own
+section). While verifying live, also found and fixed a real bug in the live-test harness itself
+(`scripts/lib/ha_websocket.py` dropping bytes past the HTTP upgrade headers) — with that fixed,
+`087_actuator_registry_live.py` (AU4) and `088_actuator_discovery_live.py` (AV1-3) both ran live
+successfully for the first time this session, closing that outstanding verification debt from
+Phase AV. Phase AV (AV1-3 + two follow-on UI fixes) concluded and merged to `main` beforehand;
+Phase AU (AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier
+still, AR5-8 split out to Phase AT (`DEFERRED`, see
 `docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
-**Branch:** `feat/aw-house-state-learning-viz` (AW1 committed and fixed). `feat/av-actuator-discovery`
-and `feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW2 — per-slot detail view. AW1's own `context_key` ⇄ `proposal_id` join rate has
-not been verified against real data yet (spec §13.3) — worth doing before AW2/AW3 build further on
-top of it. Outstanding verification debt from earlier phases, unrelated to AW:
-AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
-were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
-smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
-yet been run against a real HA test lab.
+**Branch:** `feat/aw-house-state-learning-viz` (AW1-2 committed). `feat/av-actuator-discovery` and
+`feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
+**Next action:** AW3 — Remove Proposal Action (wire the already-rendered, already-disabled-when-
+unresolvable Remove button to `heima/observability/action` `review_proposal`). Not yet smoke-tested
+in an actual browser: the matrix (AW1) and detail view (AW2) are both verified via automated
+real-websocket data checks and static-asset assertions, not manual browser interaction — same
+outstanding caveat as most panel features added this session.
 
 ### Phase AO — Admin Observability Panel
 
@@ -2331,15 +2334,40 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
 
 #### AW2 — Per-Slot Detail View
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AW1 (the joined, grouped slot data).
-- New `_houseStateSlotDetail(slotKey, entries)` renders the detail table on cell click, one open
-  slot at a time (mirrors the existing `_openDetailIds`/`data-details-id` single-open pattern).
-  Details button per row reuses `_setDetail(kind, id)` and the panel's existing raw-JSON renderer
-  (`<pre>${JSON.stringify(...)}</pre>`) — no new inspection mechanism.
-- Tests: detail-table rendering (correct rows for a given slot, empty-slot message), Details
-  button wiring (reuses existing `_setDetail` — regression-covered by that mechanism's own
-  existing tests, not re-tested here).
+- New `_houseStateSlotDetail(slotKey, slot)` renders the detail table below the matrix on cell
+  click (works for empty cells too, per spec's own trigger — "click on any cell, learned or
+  empty"). One slot open at a time, tracked via a new `this._openHouseStateSlot` string (not the
+  `_openDetailIds` set — that mechanism is for independently-toggleable `<details>` elements;
+  this is a single active selection, closer to `this._detail`'s own shape, and is reset on route
+  change in `_setRoute()` the same way `this._detail` already is).
+- **Correction from the spec during implementation:** §3.4 named `_setDetail`/`_detailPanel`
+  (`heima-admin-panel.js:205`) as the reuse target for the "Details" button. On inspection, that
+  citation was wrong — this file actually has two separate, unrelated inspection mechanisms:
+  `_setDetail`/`_detailPanel` is a full-page detail view for whole entities (reactions, manual
+  holds, etc.), while `_rawDetails(value, id)` is a small inline `<details><summary>raw</summary>
+  <pre>JSON</pre></details>` blob already embedded directly in rows elsewhere (recovery, house
+  state candidates, learning modules, manual holds, entities — 9 existing call sites). `_rawDetails`
+  is the correct fit — inline, no page navigation, exactly the "inspect this one entry including
+  learning_context" need — and is what got used, keyed by
+  `` `house_state.entry.${entry.context_key}` `` for stable open/closed persistence across
+  re-renders (same discipline as `_rawDetails`'s existing callers).
+- Click wiring: matrix cells use `td[data-slot-key]` (not the bare attribute selector) precisely
+  because the Remove button being staged for AW3 also carries `data-slot-key` for its own future
+  use — the tag qualifier is what keeps clicking Remove from also toggling the detail view closed.
+  A new `_onHouseStateActionButton(button)` dispatcher (mirrors `_onTopologyActionButton`/
+  `_onActuatorsActionButton`) handles `close_detail` now; `remove_proposal` is rendered (per the
+  spec's own Actions column, `disabled` when `proposal_id` couldn't be resolved) but not wired to
+  a case yet — that's AW3, same staged-before-wired pattern AW1's `cursor: pointer` established
+  for AW2's own click handling.
+- Tests: static-asset assertions in `test_admin_panel.py` for the new methods, the `td[...]`
+  selector qualifier, the `_rawDetails` reuse, and both `data-house-state-action` values.
+  Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check`
+  passed, full `ci_local.sh` green. No new websocket surface, so nothing new to live-verify beyond
+  what AW1 already confirmed (the underlying `learning`/`proposals` data this slices is the same
+  data AW1's live join test already proved correct) — not smoke-tested in an actual browser,
+  same outstanding caveat as every other panel feature this session.
 
 #### AW3 — Remove Proposal Action
 

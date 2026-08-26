@@ -365,6 +365,20 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     # Tooltips interpolate day names/state labels into a title="..." attribute; must go through
     # the same escaping every other dynamic attribute value in this file uses.
     assert "this._escape(this._houseStateSlotTooltip(slot))" in text
+    # House State per-slot detail view (AW2): click any matrix cell (learned or empty) to expand
+    # a detail table below the matrix, one slot open at a time. Details reuses the existing
+    # _rawDetails() raw-JSON pattern (not a new inspection mechanism); Remove is rendered per the
+    # spec's own table but not yet wired to the endpoint — that's AW3.
+    assert "_houseStateSlotDetail" in text
+    assert "_onHouseStateSlotClick" in text
+    assert (
+        "this._openHouseStateSlot = this._openHouseStateSlot === slotKey ? null : slotKey" in text
+    )
+    assert "td[data-slot-key]" in text
+    assert "this._rawDetails(entry, detailKey)" in text
+    assert 'data-house-state-action="remove_proposal"' in text
+    assert 'data-house-state-action="close_detail"' in text
+    assert "No accepted proposals for this time slot." in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text
