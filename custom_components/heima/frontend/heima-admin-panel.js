@@ -24,6 +24,8 @@ class HeimaAdminPanel extends HTMLElement {
     this._actuatorsActionError = "";
     this._openDetailIds = new Set();
     this._renderScheduled = false;
+    this._openHouseStateSlot = null;
+    this._houseStateRecalcAttempted = false;
   }
 
   connectedCallback() {
@@ -95,6 +97,27 @@ class HeimaAdminPanel extends HTMLElement {
       this._loading = false;
       this._render();
     }
+  }
+
+  // AW2 follow-up: force one learning pass when the House State matrix would otherwise render
+  // empty only because the module's in-memory model hasn't been (re)computed yet — not because
+  // there's genuinely nothing accepted. this._hass.callService() is the standard HA panel API
+  // for invoking a service (heima.command, command: "learning_run" — the same one
+  // coordinator.async_run_learning_now() is already exposed as); every other action in this file
+  // calls a heima/*/action websocket command instead, since none of them needed a plain HA
+  // service before now.
+  async _maybeForceHouseStateRecalc() {
+    if (this._houseStateRecalcAttempted) return;
+    this._houseStateRecalcAttempted = true;
+    if (!this._hass || typeof this._hass.callService !== "function") return;
+    try {
+      await this._hass.callService("heima", "command", { command: "learning_run" });
+    } catch (err) {
+      // Best-effort: if the service call fails, the matrix just keeps showing "Learning in
+      // progress…" for this route visit; the periodic 15s poll still applies whatever state
+      // exists server-side regardless of whether this specific call succeeded.
+    }
+    await this._loadSnapshot();
   }
 
   async _loadTopologySnapshot() {
@@ -192,6 +215,8 @@ class HeimaAdminPanel extends HTMLElement {
   _setRoute(route) {
     this._route = route;
     this._detail = null;
+    this._openHouseStateSlot = null;
+    this._houseStateRecalcAttempted = false;
     if (route === "topology" && !this._topologySnapshot && !this._topologyLoading) {
       this._loadTopologySnapshot();
     }
@@ -218,14 +243,12 @@ class HeimaAdminPanel extends HTMLElement {
       },
     };
     this._focusFilter = { section, key };
-    this._scrollPosition = { x: window.scrollX, y: window.scrollY };
-    
+
     if (this._renderScheduled) return;
     this._renderScheduled = true;
-    
+
     setTimeout(() => {
       this._render();
-      this._restoreFilterFocus();
       this._renderScheduled = false;
     }, 50);
   }
@@ -256,6 +279,16 @@ class HeimaAdminPanel extends HTMLElement {
   }
 
   _render() {
+    // Every render fully replaces the shadow DOM (this.shadowRoot.innerHTML = ...), which loses
+    // both page scroll and any inner-scrollable-container position (e.g. .house-state-matrix's
+    // own horizontal overflow-x: auto) — not just on typing/filter changes (the only case this
+    // used to guard against via a manually-threaded this._scrollPosition field), but on *every*
+    // trigger: matrix cell clicks, the 15s observability poll, any action button. Capturing and
+    // restoring locally here, inside the one method that actually destroys/recreates the DOM,
+    // covers all of them uniformly instead of requiring each call site to remember to opt in.
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const matrixScrollLeft = this.shadowRoot.querySelector(".house-state-matrix")?.scrollLeft;
     const snapshot = this._snapshot || {};
     this.shadowRoot.innerHTML = `
       <style>
@@ -561,6 +594,89 @@ class HeimaAdminPanel extends HTMLElement {
             padding: 14px;
           }
         }
+        /* AW1: House State Learning Matrix */
+        .house-state-grid {
+          border-collapse: collapse;
+          margin-top: 16px;
+        }
+        .house-state-grid th {
+          border: 1px solid var(--divider-color);
+          padding: 4px 8px;
+          text-align: center;
+          font-weight: 600;
+          background: var(--card-background-color);
+        }
+        .house-state-grid td {
+          border: 1px solid var(--divider-color);
+          width: 30px;
+          height: 30px;
+          min-width: 30px;
+          font-size: 14px;
+          font-weight: bold;
+          text-align: center;
+          cursor: pointer;
+        }
+        .house-state-grid td.empty {
+          background-color: #E0E0E0;
+        }
+        .house-state-grid td.multiple {
+          background-color: #FFEB3B;
+          color: #333;
+        }
+        .house-state-grid td:hover {
+          filter: brightness(90%);
+        }
+        .house-state-matrix {
+          overflow-x: auto;
+        }
+        @media (max-width: 1200px) {
+          .house-state-matrix {
+            max-width: 100%;
+          }
+        }
+        /* AW2: House State per-slot detail view */
+        .house-state-detail-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .house-state-detail-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 8px;
+        }
+        .house-state-detail-table th {
+          font-weight: 700;
+          background: #F5F5F5;
+          text-align: left;
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        .house-state-detail-table td {
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+        .house-state-detail-total {
+          margin-top: 8px;
+          color: var(--secondary-text-color);
+        }
+        .house-state-loading {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .spinner {
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+          border: 2px solid var(--divider-color);
+          border-top-color: var(--primary-color, #03A9F4);
+          border-radius: 50%;
+          animation: heima-spin 0.8s linear infinite;
+        }
+        @keyframes heima-spin {
+          to { transform: rotate(360deg); }
+        }
       </style>
       <div class="shell">
         <nav>
@@ -656,6 +772,14 @@ class HeimaAdminPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("button[data-actuators-action]").forEach((button) => {
       button.addEventListener("click", () => this._onActuatorsActionButton(button));
     });
+    this.shadowRoot.querySelectorAll("td[data-slot-key]").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        this._onHouseStateSlotClick(cell.getAttribute("data-slot-key") || "");
+      });
+    });
+    this.shadowRoot.querySelectorAll("button[data-house-state-action]").forEach((button) => {
+      button.addEventListener("click", () => this._onHouseStateActionButton(button));
+    });
     this.shadowRoot.querySelectorAll("details[data-details-id]").forEach((details) => {
       details.addEventListener("toggle", () => {
         const id = details.getAttribute("data-details-id") || "";
@@ -667,6 +791,12 @@ class HeimaAdminPanel extends HTMLElement {
         }
       });
     });
+    this._restoreFilterFocus();
+    window.scrollTo(scrollX, scrollY);
+    if (matrixScrollLeft) {
+      const matrix = this.shadowRoot.querySelector(".house-state-matrix");
+      if (matrix) matrix.scrollLeft = matrixScrollLeft;
+    }
   }
 
   _navButton(route, label) {
@@ -1792,6 +1922,61 @@ class HeimaAdminPanel extends HTMLElement {
     const activeCandidates = house.active_candidates || [];
     const candidateRows = this._houseStateCandidateRows(house);
     const filteredRows = this._filterRows("house_state", candidateRows);
+    
+    // ---- AW1: House State Learning Completion Visualization ----
+    // Four distinct states per house_state_learning_completion_viz_spec.md §8 — collapsing them
+    // into one generic message would misreport "not ready" for an installation that IS ready but
+    // simply has nothing accepted yet, and would hide the (still useful, all-empty) matrix that
+    // case should show — the whole point of §1's "gap identification" purpose.
+    const learningModules = snapshot.learning?.learning_modules;
+    const houseStateModule = (learningModules || []).find(
+      (m) => m.module_id === "house_state_inference",
+    );
+    let learningMatrix;
+    let houseStateSlots = {};
+    if (!learningModules) {
+      learningMatrix = `<div class="card">Learning data unavailable.</div>`;
+    } else if (!houseStateModule) {
+      learningMatrix = `<div class="card">House state learning not active.</div>`;
+    } else if (!houseStateModule.ready) {
+      learningMatrix = `<div class="card house-state-loading"><span class="spinner"></span> Learning in progress…</div>`;
+      // The module's statistical model isn't persisted — only rebuilt when analyze() runs,
+      // which happens automatically every few hours in production (coordinator.py's own
+      // _ANALYZE_INTERVAL_S tick) but not immediately after a restart. A proposal can be
+      // genuinely accepted (ApprovalStore, persisted) while still invisible here simply because
+      // the model hasn't recomputed since. One-shot per route visit, not a retry loop: either
+      // the forced run populates the model (next snapshot reload shows it) or it doesn't (e.g.
+      // truly no snapshot history yet) — re-forcing every 15s while waiting would be pointless
+      // extra load, not a faster result.
+      this._maybeForceHouseStateRecalc();
+    } else {
+      const entries = houseStateModule.approved_model_entries || [];
+      if (!entries.length) {
+        learningMatrix = `<div class="card">No house state patterns accepted yet.</div>`;
+      } else {
+        // Resolve proposal_id per entry by joining against the accepted proposals list
+        const acceptedByContextKey = this._houseStateAcceptedProposalsByContextKey(snapshot);
+        const entriesWithProposalId = entries.map((entry) => ({
+          ...entry,
+          proposal_id: acceptedByContextKey.get(entry.context_key) || null,
+        }));
+        // Group entries by (weekday, hour_bucket)
+        houseStateSlots = this._groupHouseStateEntriesBySlot(entriesWithProposalId);
+        learningMatrix = this._houseStateLearningMatrix(houseStateSlots);
+      }
+    }
+    // AW2: per-slot detail, one open at a time (this._openHouseStateSlot), toggled by clicking
+    // any matrix cell (data-slot-key, wired generically in _render()). Works for empty slots too
+    // — the spec's own trigger is "click on any cell in the matrix (learned or empty)" — falling
+    // back to an empty entries list if the slot has nothing (also covers the case where the
+    // admin has a slot open and its last entry gets removed out from under it).
+    const houseStateDetail = this._openHouseStateSlot
+      ? this._houseStateSlotDetail(
+          this._openHouseStateSlot,
+          houseStateSlots[this._openHouseStateSlot] || { entries: [] },
+        )
+      : "";
+
     return `
       <section class="grid">
         ${this._metric("Current State", runtime.house_state || "unknown")}
@@ -1803,6 +1988,10 @@ class HeimaAdminPanel extends HTMLElement {
         ${this._metric("Pending Candidate", house.pending_candidate || "none")}
         ${this._metric("Resolution Path", house.resolution_path || "")}
       </section>
+      
+      ${learningMatrix}
+      ${houseStateDetail}
+
       ${this._filterToolbar("house_state", "Search house-state candidates")}
       ${this._filteredCount(filteredRows.length, candidateRows.length)}
       ${filteredRows.length ? this._houseStateCandidateTable(filteredRows) : `<div class="empty">No house-state candidate diagnostics in the snapshot.</div>`}
@@ -1874,6 +2063,240 @@ class HeimaAdminPanel extends HTMLElement {
     if (row.since) parts.push(`since ${row.since}`);
     if (row.remaining_s !== "") parts.push(`remaining ${this._duration(row.remaining_s)}`);
     return parts.join(", ");
+  }
+
+  // ---- AW1: House State Learning Completion Visualization ----
+
+  _houseStateAcceptedProposalsByContextKey(snapshot) {
+    const allProposals = snapshot.proposals?.raw?.proposals || [];
+    const acceptedByContextKey = new Map();
+    const prefix = "house_state_learned_context:";
+    for (const proposal of allProposals) {
+      if (proposal.status !== "accepted") continue;
+      const identityKey = proposal.identity_key || "";
+      if (!identityKey.startsWith(prefix)) continue;
+      const contextKey = identityKey.slice(prefix.length);
+      if (contextKey) {
+        acceptedByContextKey.set(contextKey, proposal.id);
+      }
+    }
+    return acceptedByContextKey;
+  }
+
+  _groupHouseStateEntriesBySlot(entries) {
+    const slots = {};
+    for (const entry of entries) {
+      const snapshot = entry.context_snapshot || {};
+      const weekday = snapshot.weekday;
+      const hourBucket = snapshot.hour_bucket;
+      if (weekday === undefined || hourBucket === undefined) continue;
+      const slotKey = `${weekday},${hourBucket}`;
+      if (!slots[slotKey]) {
+        slots[slotKey] = { weekday, hourBucket, entries: [] };
+      }
+      slots[slotKey].entries.push(entry);
+    }
+    return slots;
+  }
+
+  _formatHourBucket(hourBucket) {
+    return `${String(hourBucket).padStart(2, "0")}:00`;
+  }
+
+  _houseStateLearningMatrix(slots) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const stateColors = {
+      home: "#4CAF50",
+      working: "#FF9800",
+      relax: "#2196F3",
+      sleeping: "#673AB7",
+      away: "#F44336",
+      guest: "#FFC107",
+      vacation: "#795548"
+    };
+    // Text color chosen per background for WCAG AA contrast (4.5:1, spec §9) — computed via
+    // relative luminance, not a blanket "white on every color". White only clears 4.5:1 against
+    // the two darkest backgrounds here (sleeping, vacation); the other five need black text.
+    const stateTextColors = {
+      home: "#000000",
+      working: "#000000",
+      relax: "#000000",
+      sleeping: "#FFFFFF",
+      away: "#000000",
+      guest: "#000000",
+      vacation: "#FFFFFF"
+    };
+    const stateAbbrevs = {
+      home: "H",
+      working: "W",
+      relax: "R",
+      sleeping: "S",
+      away: "A",
+      guest: "G",
+      vacation: "V"
+    };
+
+    let totalLearned = 0;
+    let cells = [];
+
+    for (let weekday = 0; weekday < 7; weekday++) {
+      let rowCells = [];
+      for (let hourBucket = 0; hourBucket < 24; hourBucket++) {
+        const slotKey = `${weekday},${hourBucket}`;
+        const slot = slots[slotKey] || { entries: [] };
+        const count = slot.entries.length;
+
+        if (count === 0) {
+          const emptyTitle = `${dayNames[weekday]} ${this._formatHourBucket(hourBucket)} - No learned patterns\nNo accepted proposals for this slot`;
+          rowCells.push(`<td class="house-state-slot empty" data-slot-key="${slotKey}" title="${this._escape(emptyTitle)}"> </td>`);
+        } else if (count === 1) {
+          const entry = slot.entries[0];
+          const state = entry.predicted_state || entry.context_snapshot?.predicted_state || "";
+          const abbrev = stateAbbrevs[state] || state.charAt(0).toUpperCase();
+          const color = stateColors[state] || "#E0E0E0";
+          const textColor = stateTextColors[state] || "#000000";
+          totalLearned++;
+          rowCells.push(`<td class="house-state-slot learned" data-slot-key="${slotKey}" style="background-color: ${color}; color: ${textColor};" title="${this._escape(this._houseStateSlotTooltip(slot))}">${this._escape(abbrev)}</td>`);
+        } else {
+          totalLearned++;
+          rowCells.push(`<td class="house-state-slot multiple" data-slot-key="${slotKey}" style="background-color: #FFEB3B;" title="${this._escape(this._houseStateSlotTooltip(slot))}">${this._escape(String(count))}</td>`);
+        }
+      }
+      cells.push(rowCells);
+    }
+
+    const completionPercentage = Math.round((totalLearned / 168) * 100);
+    
+    return `
+      <section class="card">
+        <h3>House State Learning: ${totalLearned}/168 slots with accepted proposals (${completionPercentage}%)</h3>
+        <div class="house-state-matrix">
+          <table class="house-state-grid">
+            <thead>
+              <tr>
+                <th></th>
+                ${Array.from({length: 24}, (_, h) => `<th>${this._formatHourBucket(h)}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${cells.map((rowCells, weekday) => `
+                <tr>
+                  <th>${dayNames[weekday].slice(0, 2)}</th>
+                  ${rowCells.join("")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  _houseStateSlotTooltip(slot) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const dayName = dayNames[slot.weekday] || "Unknown";
+    const hour = slot.hourBucket !== undefined ? slot.hourBucket : slot.entries[0]?.context_snapshot?.hour_bucket || 0;
+    const hourLabel = this._formatHourBucket(hour);
+
+    if (!slot.entries || slot.entries.length === 0) {
+      return `${dayName} ${hourLabel} - No learned patterns\nNo accepted proposals for this slot`;
+    }
+
+    const states = slot.entries.map(e => e.predicted_state || e.context_snapshot?.predicted_state).filter(Boolean);
+    const stateList = [...new Set(states)].join(", ");
+    const count = slot.entries.length;
+
+    return `${dayName} ${hourLabel} - ${stateList}\n${count} accepted proposal(s) for this slot\nClick to view details and manage`;
+  }
+
+  _houseStateSlotDetail(slotKey, slot) {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const [weekdayRaw, hourBucketRaw] = slotKey.split(",");
+    const weekday = Number(weekdayRaw);
+    const hourBucket = Number(hourBucketRaw);
+    const dayName = dayNames[weekday] || "Unknown";
+    const entries = slot.entries || [];
+
+    const body = entries.length
+      ? `
+        <table class="house-state-detail-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>State</th>
+              <th>Rooms</th>
+              <th>Anyone Home</th>
+              <th>Confidence</th>
+              <th>Support</th>
+              <th>Proposal ID</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries
+              .map((entry, index) => {
+                const state = entry.predicted_state || entry.context_snapshot?.predicted_state || "";
+                const rooms = (entry.context_snapshot?.rooms || []).join(", ") || "-";
+                const anyoneHome = entry.context_snapshot?.anyone_home ? "Yes" : "No";
+                const confidencePct = Math.round((entry.confidence || 0) * 100);
+                const support = `${entry.count ?? 0}/${entry.total ?? 0}`;
+                const proposalId = entry.proposal_id || "";
+                const proposalIdLabel = proposalId ? `${proposalId.slice(0, 12)}…` : "—";
+                const detailKey = `house_state.entry.${entry.context_key || `${slotKey}.${index}`}`;
+                return `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${this._escape(state)}</td>
+                    <td>${this._escape(rooms)}</td>
+                    <td>${anyoneHome}</td>
+                    <td>${confidencePct}%</td>
+                    <td>${this._escape(support)}</td>
+                    <td class="object-id" title="${this._escape(proposalId)}">${this._escape(proposalIdLabel)}</td>
+                    <td>
+                      ${this._rawDetails(entry, detailKey)}
+                      <button
+                        class="inline danger"
+                        data-action="review_proposal"
+                        data-proposal-id="${this._escape(proposalId)}"
+                        data-decision="rejected"
+                        ${proposalId ? "" : "disabled"}
+                      >Remove</button>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+        <div class="house-state-detail-total">Total: ${entries.length} proposal(s) for this slot</div>
+      `
+      : `<div class="empty">No accepted proposals for this time slot.</div>`;
+
+    return `
+      <section class="card house-state-detail">
+        <div class="house-state-detail-header">
+          <h3>${this._escape(dayName)} ${this._formatHourBucket(hourBucket)} — Proposal Management</h3>
+          <button class="inline" data-house-state-action="close_detail">Close</button>
+        </div>
+        ${body}
+      </section>
+    `;
+  }
+
+  _onHouseStateSlotClick(slotKey) {
+    this._openHouseStateSlot = this._openHouseStateSlot === slotKey ? null : slotKey;
+    this._render();
+  }
+
+  _onHouseStateActionButton(button) {
+    const action = button.getAttribute("data-house-state-action") || "";
+    if (action === "close_detail") {
+      this._openHouseStateSlot = null;
+      this._render();
+    }
+    // Remove (AW3) reuses the generic button[data-action="review_proposal"] wiring/_runAction
+    // instead of a bespoke case here — it's the same heima/observability/action review_proposal
+    // endpoint _proposalReviewButtons() already uses elsewhere in this file.
   }
 
   _reactions(snapshot) {
@@ -2897,10 +3320,6 @@ class HeimaAdminPanel extends HTMLElement {
       if (typeof input.setSelectionRange === "function") {
         input.setSelectionRange(length, length);
       }
-    }
-    if (this._scrollPosition) {
-      window.scrollTo(this._scrollPosition.x, this._scrollPosition.y);
-      this._scrollPosition = null;
     }
     this._focusFilter = null;
   }

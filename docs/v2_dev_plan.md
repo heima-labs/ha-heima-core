@@ -138,24 +138,27 @@ These constraints must never be violated. See spec §16 for rationale.
 
 ## Current State
 
-**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3).
-**Active slice:** Phase AW — House State Learning Completion Viz. Spec approved
-(`core/house_state_learning_completion_viz_spec.md`), phase definition just written, not yet
-implemented — branch not yet created (planning only, per explicit developer request). Phase AV
-(AV1-3: discovery rule table, Options Flow branch, admin-panel picker, plus two follow-on UI
-fixes — room grouping and inline edit) concluded and merged to `main` beforehand; Phase AU
-(AU1-4) concluded and merged earlier still; AR (AR1-4) concluded and merged earlier still, AR5-8
-split out to Phase AT (`DEFERRED`, see `docs/specs/core/room_topology_consumers_spec.md`), not
-scheduled.
-**Branch:** none yet for Phase AW (to be created off `main` as `feat/aw-house-state-learning-viz`
-once the developer confirms starting implementation). `feat/av-actuator-discovery` and
-`feat/au-actuator-registry` both merged to `main` (branches retained, not deleted).
-**Next action:** AW1 — `proposal_id` join + 7×24 matrix rendering, once the developer confirms
-starting implementation. Outstanding verification debt from earlier phases, unrelated to AW:
-AV3's `<select>`/manual-escape-hatch picker, the Actuators room grouping, and the inline edit row
-were all verified via automated real-websocket e2e tests and a JS syntax check, not a live browser
-smoke-test; the AV1-3 live test (`scripts/live_tests/088_actuator_discovery_live.py`) has also not
-yet been run against a real HA test lab.
+**Last completed phases:** Phase E — OutcomeTracker + Feedback Loop; Phase F — ActivityDomain; Phase G — Role model + product constraints; Phase H — House State Learning; Phase I — Activity Inference and Learning; Phase J — Event-Driven Trigger; Phase K — Installer alert channel + health entity; Phase L — Auto-discovery config flow; Phase M — Installation validation; Phase N — Semantic Policy Suggestions; Phase O — HouseSnapshot Alignment + Proposal Revocation; Phase P — Learning Modules D2; Phase Q — AnomalyAnalyzer Statistical Detection Rules; Phase R — OutcomeTracker Positive Feedback + WeekdayStateModule Consolidation; Phase S — Learning Module Threshold Configurability; Phase U — Physical Light State Awareness; Phase V — Signal Discovery Pipeline; Phase W — Calendar day_off and holiday categories; Phase X — Room Context Model; Phase Y — HouseStateInferenceModule tiered feature enrichment; Phase Z — Activity cold start mitigation; Phase AA — Global drift detection; Phase AC — Proposal Review Grouping; Phase AD — Proposal/Reaction Lifecycle Management; Phase MH — Manual Hold Framework; Phase AE — Camera Privacy Guard & Extensible Entity Actions; Phase AF — Policy Editor Framework + Camera Privacy Policy UI; Phase AG — Translate Developer Scripts, Docs, and Specs to English; Phase AH — Resident Runtime Confirmation & Auto-Apply Promotion; Phase AN — Notification Admin UI & Execution Policy Profiles; Phase AO — Admin Observability Panel; Phase AO8 — Observability Usability & Detail Views; Phase AP — Notification Delivery Policy; Phase AQ — Runtime Checkpoint and Power Recovery; Phase AS — Structured Runtime Source; Phase AR — Room Topology (AR1-4); Phase AU — Actuator Registry (AU1-4); Phase AV — Actuator Discovery (AV1-3); Phase AW — House State Learning Completion Viz (AW1-3); `InputNormalizer.boolean_signal()` battery_state charging-states fix (unrelated to AW, merged separately).
+**Active slice:** none — Phase AW (AW1-3) is complete, backend- and browser-verified, and merged to
+`main` as `v0.18.0`, alongside the unrelated `boolean_signal()` battery_state charging-states fix
+(merged first, as `v0.17.0`; found while diagnosing why the developer's house never proposed the
+`sleeping` state, using ~29 real nightly diagnostics snapshots in `debug/diagnostics_snapshots/`).
+AW1's first pass was implemented by Mistral Vibe, then code-reviewed and corrected (4 real issues
+fixed, see AW1's own section) and live-verified against the developer's test lab (`context_key` ⇄
+`proposal_id` join rate 2/2 after forcing a learning run). While verifying live, also found and
+fixed a real bug in the live-test harness itself (`scripts/lib/ha_websocket.py` dropping bytes past
+the HTTP upgrade headers) — with that fixed, `087_actuator_registry_live.py` (AU4) and
+`088_actuator_discovery_live.py` (AV1-3) both ran live successfully for the first time that
+session, closing that outstanding verification debt from Phase AV. AW3's Remove action has its own
+live e2e test, `089_house_state_remove_proposal_live.py`. Phase AV (AV1-3 + two follow-on UI fixes)
+concluded and merged to `main` beforehand; Phase AU (AU1-4) concluded and merged earlier still; AR
+(AR1-4) concluded and merged earlier still, AR5-8 split out to Phase AT (`DEFERRED`, see
+`docs/specs/core/room_topology_consumers_spec.md`), not scheduled.
+**Branch:** `feat/aw-house-state-learning-viz` and `fix/boolean-signal-charging-states` both merged
+to `main` (retained, not deleted, matching this project's convention for prior merged phases).
+**Next action:** none currently active — no phase past AW is planned or spec'd yet. Start the next
+slice of work by reading this document's own instructions above (spec-first, explicit approval
+gate) before making any architectural decision not already covered here.
 
 ### Phase AO — Admin Observability Panel
 
@@ -2207,7 +2210,8 @@ clean, `node --check` passed. Not yet verified live in a browser — pending dev
 
 ### Phase AW — House State Learning Completion Viz
 
-- Status: `PLANNED`.
+- Status: `DONE` (AW1-3 all implemented, backend-verified live, and confirmed working in an actual
+  browser by the developer on 2026-08-27).
 - Spec source: `docs/specs/core/house_state_learning_completion_viz_spec.md` (Status: Planned —
   approved after design discussion, all Open Questions resolved; not yet phased/numbered until
   this section).
@@ -2253,7 +2257,7 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
 
 #### AW1 — Proposal-ID Join and 7×24 Matrix
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: Phase AO (admin panel + observability snapshot infra), Phase Y
   (`HouseStateInferenceModule`'s `approved_model_entries`).
 - New helper `_houseStateAcceptedProposalsByContextKey(snapshot)` builds a
@@ -2264,42 +2268,216 @@ persisted state), same discipline AU/AV/AR applied to their own admin-editor sli
   `_houseState(snapshot)` extended to read `snapshot.learning.learning_modules` (find
   `module_id === "house_state_inference"`) and `snapshot.proposals.raw.proposals` — both already
   present on the shared snapshot object this method already receives, no new websocket call.
-- Tests: unit tests for the join helper (accepted-only filter, prefix match, miss returns
-  `undefined`/no entry) and the slot-grouping helper; static-asset assertions for the new matrix
-  markup, mirroring the existing pattern in `tests/test_admin_panel.py`.
-- **Verify early** (per the spec's own §13.3): check the `context_key` ⇄ `proposal_id` join rate
-  against real data before building AW2/AW3 on top of it — a high miss rate would argue for
-  revisiting the "no backend changes" approach.
+- **First-pass implementation, review, and fix (2026-08-26):** the initial implementation was
+  built by Mistral Vibe (commits on this branch), then code-reviewed and corrected before being
+  considered done. Four real issues found and fixed:
+  - `ruff check`/`ruff format` were failing (unused imports, trailing whitespace on blank lines in
+    the test file) — the mandatory local CI gate had never actually been run before those commits.
+  - The original test file (`tests/test_house_state_learning_matrix.py`, since deleted) tested a
+    hand-written Python re-implementation of the join/grouping logic, not the real JS — a
+    methodology with no precedent anywhere else in this repo (verified: no other test file mirrors
+    JS logic in Python) and no real JS test runner configured (no jest/vitest, `node --check` is
+    syntax-only). It could pass forever while the real `_houseStateAcceptedProposalsByContextKey`/
+    `_groupHouseStateEntriesBySlot` diverged from it. Replaced with static-asset assertions in
+    `tests/test_admin_panel.py`, matching this repo's actual established convention for verifying
+    this vanilla-JS panel's behavior.
+  - The four distinct not-ready/empty states from the spec's own §8 (no `learning_modules` /
+    module not found / not ready / zero accepted entries) had been collapsed into one generic
+    "House state learning data not ready." message — wrong for the "module ready, zero accepted
+    proposals yet" case specifically (a normal state for a fresh installation), which also hid the
+    still-useful empty matrix instead of showing it. Fixed with the four-branch structure the spec
+    specifies.
+  - `color: white` was hardcoded for every "learned" cell regardless of background. Computed actual
+    WCAG relative-luminance contrast for all 7 state colors against white: 5 of 7 (`home`,
+    `working`, `relax`, `away`, `guest`) fail the spec's own 4.5:1 requirement (§9) with white
+    text — `guest` (`#FFC107`) was the worst at ~1.6:1. Fixed with a per-state `stateTextColors`
+    map (black for the 5 lighter colors, white only for `sleeping`/`vacation`, the two dark ones
+    that actually clear 4.5:1 with white). Also fixed: tooltip `title="..."` attributes were built
+    by raw string interpolation, not `this._escape()`, inconsistent with every other dynamic
+    attribute value in this file (low practical risk — inputs are hardcoded day names or a small
+    state enum — but a real deviation from the file's own established discipline).
+- Tests: static-asset assertions in `tests/test_admin_panel.py` for the new helpers/markup, the
+  four not-ready/empty messages, `stateTextColors`, and the tooltip escaping — mirroring the exact
+  pattern every other panel feature in this session was tested with. Verification: full suite 2012
+  passed, `ruff check`/`ruff format --check` clean, `node --check` passed, full `ci_local.sh` green.
+- **Verified live against the developer's test lab (`homeassistant-test` docker container,
+  `localhost:8823`, 2026-08-26), per the spec's own §13.3.** The instance had 23 pending
+  `house_state_learned_context` proposals but 0 accepted, so `approved_model_entries` was empty
+  and the module reported `ready: false` — confirmed this is exactly the "module ready-capable but
+  nothing accepted yet" scenario the readiness-messaging fix above handles correctly (matches
+  `HouseStateInferenceModule.__init__`'s `self._ready = False` default, only flipped by
+  `analyze()`, not by `sync_approval_state()` — accepting a proposal alone doesn't populate the
+  model until the next learning pass). Accepted 2 pending proposals via
+  `heima/observability/action` `review_proposal`/`decision: "approved"`, then forced a learning
+  pass via the `heima.command` service (`command: "learning_run"`, calls
+  `coordinator.async_run_learning_now()`) since analysis doesn't run synchronously on approval.
+  Result: **`context_key` ⇄ `proposal_id` join rate 2/2 (100%)** — every `approved_model_entries`
+  entry found its matching accepted proposal in `snapshot.proposals.raw.proposals`. No backend
+  change needed; the client-side join approach (§2.4) is validated against real data, not just
+  unit-level reasoning. The 2 accepted proposals (Thursday 16:00/17:00, studio, someone home →
+  `home`) were left accepted rather than reverted — they're real, plausible learned patterns, and
+  rejecting them would have actively discarded valid data rather than restored a prior state (no
+  "reset to pending" exists in the review API, only approved/rejected).
+- **Also fixed while verifying live: a real bug in the live-test harness itself**
+  (`scripts/lib/ha_websocket.py`, unrelated to any Heima phase). `connect()`'s HTTP-header-drain
+  loop discarded any bytes read past the `\r\n\r\n` terminator — but the server frequently writes
+  the upgrade response and the first WebSocket frame (`auth_required`) in the same TCP segment, so
+  those discarded bytes were actually the start of that frame, desyncing the frame parser for
+  everything that followed. Intermittent by nature (depends on OS/network buffering timing across
+  one `recv()` vs two) — this is why `087_actuator_registry_live.py` had worked before in this
+  session but both `087` and `088` failed identically with "WebSocket closed by server" on first
+  connection after the container restart picked up current code. Fixed by buffering the leftover
+  bytes (`self._recv_buffer`) and having `_recv_exactly()` drain from it before reading the socket
+  again. Re-ran both `087` (AU4) and `088` (AV1-3) after the fix — both fully pass live for the
+  first time this session (previously only type/lint-checked, never executed against a real
+  instance). `ruff check`/`ruff format --check`/mypy clean on the fixed file.
 
 #### AW2 — Per-Slot Detail View
 
-- Status: `PLANNED`.
+- Status: `DONE`.
 - Depends on: AW1 (the joined, grouped slot data).
-- New `_houseStateSlotDetail(slotKey, entries)` renders the detail table on cell click, one open
-  slot at a time (mirrors the existing `_openDetailIds`/`data-details-id` single-open pattern).
-  Details button per row reuses `_setDetail(kind, id)` and the panel's existing raw-JSON renderer
-  (`<pre>${JSON.stringify(...)}</pre>`) — no new inspection mechanism.
-- Tests: detail-table rendering (correct rows for a given slot, empty-slot message), Details
-  button wiring (reuses existing `_setDetail` — regression-covered by that mechanism's own
-  existing tests, not re-tested here).
+- New `_houseStateSlotDetail(slotKey, slot)` renders the detail table below the matrix on cell
+  click (works for empty cells too, per spec's own trigger — "click on any cell, learned or
+  empty"). One slot open at a time, tracked via a new `this._openHouseStateSlot` string (not the
+  `_openDetailIds` set — that mechanism is for independently-toggleable `<details>` elements;
+  this is a single active selection, closer to `this._detail`'s own shape, and is reset on route
+  change in `_setRoute()` the same way `this._detail` already is).
+- **Correction from the spec during implementation:** §3.4 named `_setDetail`/`_detailPanel`
+  (`heima-admin-panel.js:205`) as the reuse target for the "Details" button. On inspection, that
+  citation was wrong — this file actually has two separate, unrelated inspection mechanisms:
+  `_setDetail`/`_detailPanel` is a full-page detail view for whole entities (reactions, manual
+  holds, etc.), while `_rawDetails(value, id)` is a small inline `<details><summary>raw</summary>
+  <pre>JSON</pre></details>` blob already embedded directly in rows elsewhere (recovery, house
+  state candidates, learning modules, manual holds, entities — 9 existing call sites). `_rawDetails`
+  is the correct fit — inline, no page navigation, exactly the "inspect this one entry including
+  learning_context" need — and is what got used, keyed by
+  `` `house_state.entry.${entry.context_key}` `` for stable open/closed persistence across
+  re-renders (same discipline as `_rawDetails`'s existing callers).
+- Click wiring: matrix cells use `td[data-slot-key]` (not the bare attribute selector) precisely
+  because the Remove button being staged for AW3 also carries `data-slot-key` for its own future
+  use — the tag qualifier is what keeps clicking Remove from also toggling the detail view closed.
+  A new `_onHouseStateActionButton(button)` dispatcher (mirrors `_onTopologyActionButton`/
+  `_onActuatorsActionButton`) handles `close_detail` now; `remove_proposal` is rendered (per the
+  spec's own Actions column, `disabled` when `proposal_id` couldn't be resolved) but not wired to
+  a case yet — that's AW3, same staged-before-wired pattern AW1's `cursor: pointer` established
+  for AW2's own click handling.
+- Tests: static-asset assertions in `test_admin_panel.py` for the new methods, the `td[...]`
+  selector qualifier, the `_rawDetails` reuse, and both `data-house-state-action` values.
+  Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check`
+  passed, full `ci_local.sh` green. No new websocket surface, so nothing new to live-verify beyond
+  what AW1 already confirmed (the underlying `learning`/`proposals` data this slices is the same
+  data AW1's live join test already proved correct). Confirmed working in an actual browser by the
+  developer on 2026-08-27 (alongside AW1's matrix and AW3's Remove action, all exercised in the
+  same manual pass).
+
+**Post-AW2 fix — force one learning pass when the matrix would render empty for a stale-model
+reason, not a genuinely-empty one (2026-08-26):** live-verified against the developer's test lab
+that after a container restart, the matrix disappeared even with 2 real accepted proposals still
+persisted in `ApprovalStore` — `HouseStateInferenceModule._models`/`_ready` are **not** persisted,
+only rebuilt when `analyze()` runs (`sync_approval_state()` alone doesn't repopulate them), and
+that only happens automatically every `_ANALYZE_INTERVAL_S` (6 hours, `coordinator.py:122`) in
+production — a real, if narrow, gap for a freshly (re)started instance. Root-caused live: forcing
+`coordinator.async_run_learning_now()` (already exposed as the `heima.command`
+`command: "learning_run"` service) immediately repopulated both `ready` and
+`approved_model_entries` from the still-persisted approval data.
+Fixed by having the panel force exactly one learning pass when it detects `!houseStateModule.ready`
+(not the separate "ready but genuinely zero accepted" case, where recalculating can't invent
+proposals that were never approved): new `_maybeForceHouseStateRecalc()`, guarded by
+`this._houseStateRecalcAttempted` so it fires once per route visit, not on every 15s poll while
+waiting — calls `this._hass.callService("heima", "command", { command: "learning_run" })`, the
+first use of `callService` in this file (every other action here calls a `heima/*/action`
+websocket command instead — `learning_run` only exists as a plain HA service, and adding a
+websocket wrapper around it would have just duplicated an already-exposed capability). Flag resets
+in `_setRoute()` on route change, matching `this._detail`'s own reset. Two possible outcomes per
+the developer's own framing: the table repopulates (model had data, just hadn't recomputed), or it
+stays empty (genuinely nothing to show) — no infinite retry either way.
+Tests: static-asset assertions for the new method, the one-shot flag, and the exact `callService`
+call. Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check`
+passed, full `ci_local.sh` green. The underlying service-call mechanics were proven correct via
+direct API testing against the live instance (same call, same result, via Python) — the actual
+`this._hass.callService()` binding inside a real rendered browser panel is not verified, same
+caveat as the rest of this phase's frontend work.
+
+**Post-AW2 fix — generalized scroll preservation to every re-render, not just filter typing
+(2026-08-26):** live-reported by the developer: clicking a matrix cell opened the detail view
+correctly, but the page (and the matrix's own horizontal scroll, since `.house-state-matrix` has
+`overflow-x: auto`) jumped back to top-left — then, separately, reported that the 15s
+observability poll did the same thing. Root cause: the scroll-preservation mechanism built during
+AU/AV (`this._scrollPosition`, restored inside `_restoreFilterFocus()`) only ever ran from
+`_setFilter()`'s debounced `setTimeout` wrapper — every *other* path that calls `_render()`
+directly (`_onHouseStateSlotClick`, the 15s poll's `_loadSnapshot()`, any action button) never
+captured or restored anything, so the exact same class of bug AU/AV had already fixed once for
+typing was still wide open everywhere else.
+Fixed by moving capture and restore into `_render()` itself — the one method that actually
+destroys/recreates the DOM — instead of requiring every caller to opt in via instance-level state:
+`window.scrollX/Y` and `.house-state-matrix`'s `scrollLeft` (if present) are read into local
+variables at the very top of `_render()`, before `this.shadowRoot.innerHTML = ...` wipes
+everything, and restored at the very end, after all listener wiring (and after
+`_restoreFilterFocus()`'s own `input.focus({ preventScroll: true })`, so the explicit
+`window.scrollTo()` is the last word). This is strictly simpler than the mechanism it replaces —
+no `this._scrollPosition` field, no coupling to `_focusFilter`/`_setFilter` — and covers every
+render trigger uniformly instead of chasing individual call sites one at a time. `_restoreFilterFocus()`
+itself is now purely about focus/cursor position, unrelated to scroll.
+Tests: static-asset assertions updated to match the new local-variable pattern (the old
+`this._scrollPosition = ...` literal no longer exists). Verification: full suite 2012 passed,
+`ruff check`/`ruff format --check` clean, `node --check` passed, full `ci_local.sh` green. Not
+re-verified live in a browser after this fix — pending developer confirmation, same as the
+original AU/AV scroll fixes were before the developer confirmed those.
+
+**Post-AW2 fix — matrix header readability + loading indicator (2026-08-26):** developer request
+after updating/restarting the live instance: hour headers were a bare 0-23 number and weekday
+headers a single ambiguous initial (`M` for both Monday and... no actual collision in English, but
+still low-readability); also, the matrix can go through a visible "not ready → forced recalc →
+next poll" gap (see the force-recalc fix above) with only plain text, which reads as broken rather
+than loading.
+Fixed: new shared `_formatHourBucket(h)` helper (`"HH:00"`, zero-padded) reused by the header row,
+empty/learned/multiple cell tooltips, and the per-slot detail header — one source of truth instead
+of four independent `${hourBucket}:00` interpolations. Weekday header changed from
+`dayNames[weekday].charAt(0)` to `.slice(0, 2)` (`Mo/Tu/We/Th/Fr/Sa/Su`). Added a small CSS spinner
+(`.spinner` + `@keyframes heima-spin`, no external assets) shown next to the "Learning in
+progress…" message via a new `.house-state-loading` flex wrapper — the only branch of the four
+not-ready/empty states where something is actually in flight (the forced `learning_run` service
+call), the other three are terminal states and don't get a spinner.
+Tests: static-asset assertions added for `_formatHourBucket`, the two-letter weekday slice, and the
+spinner markup. Verification: full suite 2012 passed, `ruff check`/`ruff format --check` clean,
+`node --check` passed, full `ci_local.sh` green. Not yet re-verified live — this was bundled with
+the developer's live report that the matrix wasn't appearing at all after their own prod
+update+restart; that root cause is still unconfirmed (message arrived mid-`/compact`, no repro
+detail given yet — if it recurs after this fix, needs its own live diagnosis, not assumed fixed by
+this slice).
 
 #### AW3 — Remove Proposal Action
 
-- Status: `PLANNED`.
+- Status: `DONE` (2026-08-27).
 - Depends on: AW2 (the detail view's Remove button), Phase AC (proposal review plumbing —
   `review_proposal`/`async_review_proposal` already shipped, reused as-is, not modified).
-- New `_removeHouseStateProposal(proposalId)`: `window.confirm()` then
-  `this._hass.callWS({ type: "heima/observability/action", action: "review_proposal", payload:
-  { proposal_id, decision: "rejected" } })` — payload nested, matching `heima/topology/action`/
-  `heima/actuators/action`'s convention (a real bug in the spec's first draft, corrected before
-  approval — see the spec's own §2.4). On success: reload snapshot, re-render matrix + detail. On
-  error: error toast, detail table stays open.
-- Tests: real-websocket e2e exercising `review_proposal` for a house-state proposal (accept via
-  the existing config-flow/options path or a coordinator-level fixture, then reject via this
-  action, confirm it disappears from `snapshot.proposals.raw.proposals` and from the matrix's
-  join). No new coordinator/backend code — this slice only wires the frontend to an
-  already-shipped endpoint, so no new backend unit tests are needed beyond what already covers
-  `async_review_proposal`/`async_review_house_state_proposal`.
+- Implementation note: rather than a bespoke `_removeHouseStateProposal()` handler, the Remove
+  button was switched from the inert `data-house-state-action="remove_proposal"` marker to the
+  panel's existing generic `button[data-action="review_proposal"]` wiring
+  (`_runAction`/`_actionPayload`/`_actionConfirmation`, already used by `_proposalReviewButtons()`
+  elsewhere in the file) — `data-proposal-id` + `data-decision="rejected"`. This is the exact same
+  `heima/observability/action`/`review_proposal` call with nested payload the spec calls for, with
+  zero new call-site code: confirm message, `heima/observability/action` call, snapshot
+  reload/re-render, and error handling (error shown, detail stays open since
+  `this._openHouseStateSlot` is untouched by `_runAction`) all come from the existing generic path.
+  Removed the now-redundant `.house-state-remove` CSS (the generic `button.danger` +
+  `button:disabled` rules already cover it) and the `_onHouseStateActionButton`'s dead
+  `remove_proposal` branch/comment.
+- Tests: static-asset assertions added to `test_admin_panel.py` for the button's
+  `data-action="review_proposal"`/`data-decision="rejected"` wiring. No new backend code (reuses
+  `async_review_proposal`/`async_review_house_state_proposal` as-is), no new coordinator tests
+  needed. Full suite 2012 passed, `ruff check`/`ruff format --check` clean, `node --check` passed,
+  full `ci_local.sh` green.
+- Live verification: `scripts/live_tests/089_house_state_remove_proposal_live.py`, run against the
+  test lab (`localhost:8823`). Finds the currently-accepted `house_state_learned_context` proposal
+  (does not manufacture one from a pending proposal — that setup wouldn't be cleanly reversible),
+  rejects it via the exact `heima/observability/action`/`review_proposal` call the panel's Remove
+  button now sends, confirms `status` flips to `rejected` and the context_key drops out of a
+  from-scratch reimplementation of `_houseStateAcceptedProposalsByContextKey()`'s join, then
+  restores it to `accepted` in `finally` (confirmed via a fresh snapshot fetch after the script
+  exits — state matched the pre-test baseline exactly). Passed on the first run. Confirmed working
+  in an actual browser by the developer on 2026-08-27 — the last outstanding verification gap for
+  Phase AW is now closed.
 
 **Phase AW acceptance** (from the spec's own Acceptance Criteria): see
 `docs/specs/core/house_state_learning_completion_viz_spec.md` §10 — reproduced here only by

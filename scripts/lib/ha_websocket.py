@@ -43,6 +43,7 @@ class HAWebSocketClient:
         self._token = token
         self._timeout = timeout
         self._sock: socket.socket | None = None
+        self._recv_buffer: bytes = b""
         self._msg_id = 1
 
     # ------------------------------------------------------------------
@@ -81,13 +82,22 @@ class HAWebSocketClient:
             ).encode()
         )
 
-        # Drain HTTP response headers
+        # Drain HTTP response headers. The server often writes the upgrade response and the
+        # first WebSocket frame (auth_required) in the same TCP segment, so whatever arrives
+        # after the header terminator is already the start of that frame — it must be kept for
+        # _recv_exactly() to consume first, not discarded, or the frame parser desyncs on every
+        # byte that follows (manifests intermittently as "WebSocket closed by server", since
+        # whether headers and the first frame land in one recv() or two depends on OS/network
+        # buffering timing).
         buf = b""
-        while b"\r\n\r\n" not in buf:
+        header_end = -1
+        while header_end < 0:
             chunk = self._sock.recv(4096)
             if not chunk:
                 raise HAWebSocketError("Connection closed during WebSocket handshake")
             buf += chunk
+            header_end = buf.find(b"\r\n\r\n")
+        self._recv_buffer = buf[header_end + 4 :]
 
         # Auth
         msg = self._recv()
@@ -135,6 +145,10 @@ class HAWebSocketClient:
     def _recv_exactly(self, n: int) -> bytes:
         assert self._sock
         buf = b""
+        if self._recv_buffer:
+            take = self._recv_buffer[:n]
+            self._recv_buffer = self._recv_buffer[n:]
+            buf += take
         while len(buf) < n:
             chunk = self._sock.recv(n - len(buf))
             if not chunk:

@@ -327,9 +327,13 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "input.focus({ preventScroll: true })" in text
     # preventScroll isn't honored by every browser, and a full shadow-DOM rebuild can also
     # trigger scroll adjustments unrelated to focus (e.g. scroll anchoring losing its reference
-    # node). The panel must also force-restore the pre-render scroll position as a fallback.
-    assert "this._scrollPosition = { x: window.scrollX, y: window.scrollY }" in text
-    assert "window.scrollTo(this._scrollPosition.x, this._scrollPosition.y)" in text
+    # node). _render() itself captures and restores scroll (both window and the House State
+    # matrix's own horizontal-scrolling container) for *every* render, not just filter-triggered
+    # ones — the 15s observability poll and matrix cell clicks hit this same class of bug.
+    assert "const scrollX = window.scrollX;" in text
+    assert "const scrollY = window.scrollY;" in text
+    assert 'this.shadowRoot.querySelector(".house-state-matrix")?.scrollLeft' in text
+    assert "window.scrollTo(scrollX, scrollY);" in text
     # Actuators Entity ID (AV3): a <select> of room-aware picker candidates when any exist,
     # with a "__manual__" escape-hatch option that reveals a free-text input — the admin must
     # still be able to register any entity_id, not just picker-covered ones.
@@ -344,6 +348,59 @@ def test_admin_panel_asset_declares_expected_webcomponent() -> None:
     assert "_actuatorsGroupedByRoom" in text
     assert 'class="actuator-room-group"' in text
     assert 'data-details-id="${this._escape(key)}"' in text
+    # House State Learning Completion Viz (AW1): proposal_id join against the observability
+    # snapshot's own accepted-proposals list (no backend change, see
+    # docs/specs/core/house_state_learning_completion_viz_spec.md §2.4) plus the 7x24 matrix.
+    assert "_houseStateAcceptedProposalsByContextKey" in text
+    assert "_groupHouseStateEntriesBySlot" in text
+    assert "_houseStateLearningMatrix" in text
+    assert "_houseStateSlotTooltip" in text
+    assert 'class="house-state-grid"' in text
+    # Matrix headers: hour buckets as zero-padded "HH:00" (not a bare 0-23 number) and weekdays
+    # as two-letter abbreviations (not a single ambiguous initial), via one shared helper reused
+    # by the header row, cell/tooltip text, and the per-slot detail header.
+    assert "_formatHourBucket" in text
+    assert "dayNames[weekday].slice(0, 2)" in text
+    # A visible spinner (not just static text) while the module is not yet ready and a recalc has
+    # been forced — makes clear the matrix is loading rather than broken.
+    assert 'class="card house-state-loading"><span class="spinner"></span>' in text
+    # Four distinct not-ready/empty states (spec §8) — must not collapse into one generic
+    # message, since "module ready but zero accepted proposals" is a real, common state that
+    # should still show the (all-empty) matrix, not an error-sounding placeholder.
+    assert "Learning data unavailable." in text
+    assert "House state learning not active." in text
+    assert "Learning in progress" in text
+    assert "No house state patterns accepted yet." in text
+    # Text color per state background, computed for WCAG AA contrast (spec §9) — not a blanket
+    # white-on-every-color, which fails 4.5:1 against 5 of the 7 state colors in this palette.
+    assert "stateTextColors" in text
+    # Tooltips interpolate day names/state labels into a title="..." attribute; must go through
+    # the same escaping every other dynamic attribute value in this file uses.
+    assert "this._escape(this._houseStateSlotTooltip(slot))" in text
+    # House State per-slot detail view (AW2): click any matrix cell (learned or empty) to expand
+    # a detail table below the matrix, one slot open at a time. Details reuses the existing
+    # _rawDetails() raw-JSON pattern (not a new inspection mechanism).
+    assert "_houseStateSlotDetail" in text
+    assert "_onHouseStateSlotClick" in text
+    assert (
+        "this._openHouseStateSlot = this._openHouseStateSlot === slotKey ? null : slotKey" in text
+    )
+    assert "td[data-slot-key]" in text
+    assert "this._rawDetails(entry, detailKey)" in text
+    assert 'data-house-state-action="close_detail"' in text
+    assert "No accepted proposals for this time slot." in text
+    # Remove (AW3) reuses the existing generic button[data-action="review_proposal"] wiring
+    # (_runAction/_actionPayload/_actionConfirmation) instead of a bespoke handler — same
+    # heima/observability/action review_proposal endpoint _proposalReviewButtons() already uses.
+    assert 'data-action="review_proposal"' in text
+    assert 'data-decision="rejected"' in text
+    assert ">Remove</button>" in text
+    # Force one learning pass when the matrix would render empty only because the module's
+    # (unpersisted) in-memory model hasn't recomputed yet, not because nothing is genuinely
+    # accepted — one-shot per route visit (this._houseStateRecalcAttempted), not a retry loop.
+    assert "_maybeForceHouseStateRecalc" in text
+    assert "this._houseStateRecalcAttempted" in text
+    assert 'this._hass.callService("heima", "command", { command: "learning_run" })' in text
     assert "<strong>external</strong>" in text
     assert "<strong>outdoor</strong>" in text
     assert "<strong>indoor</strong>" in text
